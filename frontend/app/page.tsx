@@ -1,13 +1,20 @@
 import Link from "next/link";
 
+const topOpportunity = {
+  name: "Gold",
+  category: "Commodities",
+  direction: "SELL",
+  score: 85,
+  timeframe: "H4",
+  risk: "Low",
+};
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="flex">
         <aside className="w-64 min-h-screen bg-gray-900 p-6">
-          <h1 className="text-2xl font-bold mb-8">
-            AI Trading System
-          </h1>
+          <h1 className="text-2xl font-bold mb-8">AI Trading System</h1>
 
           <nav className="space-y-4">
             <Link className="block hover:text-blue-400" href="/">🏠 Dashboard</Link>
@@ -21,13 +28,8 @@ export default function Home() {
         </aside>
 
         <section className="flex-1 p-10">
-          <h2 className="text-4xl font-bold mb-2">
-            Willkommen Michael 👊
-          </h2>
-
-          <p className="text-gray-400 mb-8">
-            AI Trading Ecosystem Dashboard
-          </p>
+          <h2 className="text-4xl font-bold mb-2">Willkommen Michael 👊</h2>
+          <p className="text-gray-400 mb-8">AI Trading Ecosystem Dashboard</p>
 
           <div className="grid grid-cols-4 gap-6 mb-8">
             <div className="bg-gray-900 p-5 rounded-xl">
@@ -64,7 +66,25 @@ export default function Home() {
 
             <div className="bg-gray-900 p-6 rounded-xl">
               <h3 className="text-xl font-bold mb-4">🎯 Top Opportunity</h3>
-              <p>Noch keine Analyse verfügbar</p>
+
+              <div className="space-y-2">
+                <p className="text-2xl font-bold">{topOpportunity.name}</p>
+                <p className="text-gray-400">{topOpportunity.category}</p>
+
+                <p
+                  className={
+                    topOpportunity.direction === "BUY"
+                      ? "text-green-400 font-bold"
+                      : "text-red-400 font-bold"
+                  }
+                >
+                  Direction: {topOpportunity.direction}
+                </p>
+
+                <p>Score: {topOpportunity.score}</p>
+                <p>Timeframe: {topOpportunity.timeframe}</p>
+                <p className="text-green-400">Risk: {topOpportunity.risk}</p>
+              </div>
             </div>
           </div>
         </section>
