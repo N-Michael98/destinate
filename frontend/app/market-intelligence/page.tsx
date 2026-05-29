@@ -24,7 +24,7 @@ export default function MarketIntelligence() {
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Märkte werden automatisch nach Risiko und Analyse-Qualität sortiert.
+        Märkte werden automatisch nach Risiko, Confidence und Analyse-Qualität sortiert.
       </p>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
@@ -54,11 +54,13 @@ export default function MarketIntelligence() {
           🎯 Beste Chancen stehen automatisch oben
         </div>
 
-        <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold">
+        <div className="grid grid-cols-8 gap-4 p-4 bg-gray-800 font-bold">
           <div>Market</div>
           <div>Category</div>
           <div>Direction</div>
           <div>Score</div>
+          <div>Confidence</div>
+          <div>Trend</div>
           <div>Timeframe</div>
           <div>Risk</div>
         </div>
@@ -66,7 +68,7 @@ export default function MarketIntelligence() {
         {sortedMarkets.map((market) => (
           <div
             key={market.name}
-            className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800"
+            className="grid grid-cols-8 gap-4 p-4 border-t border-gray-800"
           >
             <div className="font-bold">{market.name}</div>
             <div>{market.category}</div>
@@ -84,6 +86,23 @@ export default function MarketIntelligence() {
             </div>
 
             <div>{market.score}</div>
+
+            <div className="text-cyan-400 font-bold">
+              {market.confidence}%
+            </div>
+
+            <div
+              className={
+                market.trend === "Bullish"
+                  ? "text-green-400"
+                  : market.trend === "Bearish"
+                  ? "text-red-400"
+                  : "text-yellow-400"
+              }
+            >
+              {market.trend}
+            </div>
+
             <div>{market.timeframe}</div>
 
             <div
