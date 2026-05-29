@@ -19,6 +19,15 @@ const sortedMarkets = [...markets].sort((a, b) => {
 
 const topOpportunity = sortedMarkets[0];
 
+const indicesCount = markets.filter((market) => market.category === "Indices").length;
+const forexCount = markets.filter((market) => market.category === "Forex").length;
+const commoditiesCount = markets.filter((market) => market.category === "Commodities").length;
+const cryptoCount = markets.filter((market) => market.category === "Crypto").length;
+
+const buyCount = markets.filter((market) => market.direction === "BUY").length;
+const sellCount = markets.filter((market) => market.direction === "SELL").length;
+const neutralCount = markets.filter((market) => market.direction === "NEUTRAL").length;
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white">
@@ -63,16 +72,22 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-6 mb-8">
             <div className="bg-gray-900 p-6 rounded-xl">
-              <h3 className="text-xl font-bold mb-4">📊 Market Intelligence</h3>
+              <h3 className="text-xl font-bold mb-4">📊 Market Statistics</h3>
 
-              <ul className="space-y-2">
-                <li>📈 Indices</li>
-                <li>💱 Forex</li>
-                <li>🛢️ Commodities</li>
-                <li>₿ Crypto</li>
-              </ul>
+              <div className="grid grid-cols-2 gap-3">
+                <p>📈 Indices: {indicesCount}</p>
+                <p>💱 Forex: {forexCount}</p>
+                <p>🛢️ Commodities: {commoditiesCount}</p>
+                <p>₿ Crypto: {cryptoCount}</p>
+              </div>
+
+              <div className="mt-6 border-t border-gray-800 pt-4 grid grid-cols-3 gap-3">
+                <p className="text-green-400">BUY: {buyCount}</p>
+                <p className="text-red-400">SELL: {sellCount}</p>
+                <p className="text-yellow-400">NEUTRAL: {neutralCount}</p>
+              </div>
 
               <Link
                 href="/market-intelligence"
