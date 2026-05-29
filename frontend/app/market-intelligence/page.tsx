@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { markets } from "../data/markets";
 
 const riskValue = {
@@ -29,12 +30,17 @@ export default function MarketIntelligence() {
 
       <div className="space-y-6">
         {sortedMarkets.map((market) => (
-          <div
+          <Link
             key={market.name}
-            className="bg-gray-900 rounded-xl p-6 border border-gray-800"
+            href={`/market-intelligence/${market.name
+              .toLowerCase()
+              .replaceAll(" ", "-")}`}
+            className="block bg-gray-900 rounded-xl p-6 border border-gray-800 hover:border-blue-500 hover:scale-[1.01] transition-all"
           >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold">{market.name}</h2>
+              <h2 className="text-2xl font-bold">
+                {market.name}
+              </h2>
 
               <span
                 className={
@@ -111,7 +117,11 @@ export default function MarketIntelligence() {
                 </div>
               </div>
             </div>
-          </div>
+
+            <div className="mt-4 text-blue-400 font-semibold">
+              Analyse öffnen →
+            </div>
+          </Link>
         ))}
       </div>
     </main>

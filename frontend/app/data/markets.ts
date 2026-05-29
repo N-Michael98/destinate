@@ -13,7 +13,20 @@ export const markets = [
     entry: "58.20",
     stopLoss: "57.40",
     takeProfit: "60.10",
+
+    analysis: [
+      "Bullisher Trend auf H4",
+      "Starke Nachfragezone",
+      "Momentum zeigt nach oben",
+      "AI bestätigt Long Setup",
+    ],
+
+    news: [
+      "Ölnachfrage steigt",
+      "Angebotsrisiken unterstützen Preise",
+    ],
   },
+
   {
     name: "Gold",
     category: "Commodities",
@@ -28,7 +41,20 @@ export const markets = [
     entry: "3345",
     stopLoss: "3365",
     takeProfit: "3290",
+
+    analysis: [
+      "Bearisher Trend",
+      "Negative Marktstruktur",
+      "Momentum zeigt nach unten",
+      "AI bestätigt Verkauf",
+    ],
+
+    news: [
+      "USD aktuell stark",
+      "Gold unter Verkaufsdruck",
+    ],
   },
+
   {
     name: "NAS100",
     category: "Indices",
@@ -43,7 +69,20 @@ export const markets = [
     entry: "21250",
     stopLoss: "21120",
     takeProfit: "21500",
+
+    analysis: [
+      "Bullisher Trend",
+      "Technologiesektor stark",
+      "Momentum positiv",
+      "AI erkennt Kaufchance",
+    ],
+
+    news: [
+      "Positive Tech-Stimmung",
+      "Starke US-Unternehmenszahlen",
+    ],
   },
+
   {
     name: "EURUSD",
     category: "Forex",
@@ -58,5 +97,17 @@ export const markets = [
     entry: "-",
     stopLoss: "-",
     takeProfit: "-",
+
+    analysis: [
+      "Keine klare Trendrichtung",
+      "Seitwärtsphase",
+      "Momentum neutral",
+      "Abwarten empfohlen",
+    ],
+
+    news: [
+      "Wichtige Zentralbankdaten erwartet",
+      "Hohe Volatilität möglich",
+    ],
   },
 ];
