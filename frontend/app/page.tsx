@@ -117,6 +117,23 @@ export default function Home() {
                 </p>
 
                 <p>Score: {topOpportunity.score}</p>
+
+                <p className="text-cyan-400 font-bold">
+                  Confidence: {topOpportunity.confidence}%
+                </p>
+
+                <p
+                  className={
+                    topOpportunity.trend === "Bullish"
+                      ? "text-green-400"
+                      : topOpportunity.trend === "Bearish"
+                      ? "text-red-400"
+                      : "text-yellow-400"
+                  }
+                >
+                  Trend: {topOpportunity.trend}
+                </p>
+
                 <p>Timeframe: {topOpportunity.timeframe}</p>
 
                 <p

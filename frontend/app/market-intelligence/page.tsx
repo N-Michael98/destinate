@@ -24,97 +24,92 @@ export default function MarketIntelligence() {
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Märkte werden automatisch nach Risiko, Confidence und Analyse-Qualität sortiert.
+        AI Analyse, Confidence, Trend und Trading Setup Übersicht.
       </p>
 
-      <div className="grid grid-cols-4 gap-6 mb-8">
-        <div className="bg-gray-900 p-5 rounded-xl">
-          <h2 className="font-bold">📈 Indices</h2>
-          <p className="text-gray-400 mt-2">Scanning...</p>
-        </div>
-
-        <div className="bg-gray-900 p-5 rounded-xl">
-          <h2 className="font-bold">💱 Forex</h2>
-          <p className="text-gray-400 mt-2">Scanning...</p>
-        </div>
-
-        <div className="bg-gray-900 p-5 rounded-xl">
-          <h2 className="font-bold">🛢️ Commodities</h2>
-          <p className="text-gray-400 mt-2">Scanning...</p>
-        </div>
-
-        <div className="bg-gray-900 p-5 rounded-xl">
-          <h2 className="font-bold">₿ Crypto</h2>
-          <p className="text-gray-400 mt-2">Scanning...</p>
-        </div>
-      </div>
-
-      <div className="bg-gray-900 rounded-xl overflow-hidden">
-        <div className="bg-green-900 p-4 font-bold text-center">
-          🎯 Beste Chancen stehen automatisch oben
-        </div>
-
-        <div className="grid grid-cols-8 gap-4 p-4 bg-gray-800 font-bold">
-          <div>Market</div>
-          <div>Category</div>
-          <div>Direction</div>
-          <div>Score</div>
-          <div>Confidence</div>
-          <div>Trend</div>
-          <div>Timeframe</div>
-          <div>Risk</div>
-        </div>
-
+      <div className="space-y-6">
         {sortedMarkets.map((market) => (
           <div
             key={market.name}
-            className="grid grid-cols-8 gap-4 p-4 border-t border-gray-800"
+            className="bg-gray-900 rounded-xl p-6 border border-gray-800"
           >
-            <div className="font-bold">{market.name}</div>
-            <div>{market.category}</div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">{market.name}</h2>
 
-            <div
-              className={
-                market.direction === "BUY"
-                  ? "text-green-400 font-bold"
-                  : market.direction === "SELL"
-                  ? "text-red-400 font-bold"
-                  : "text-yellow-400 font-bold"
-              }
-            >
-              {market.direction}
+              <span
+                className={
+                  market.direction === "BUY"
+                    ? "text-green-400 font-bold"
+                    : market.direction === "SELL"
+                    ? "text-red-400 font-bold"
+                    : "text-yellow-400 font-bold"
+                }
+              >
+                {market.direction}
+              </span>
             </div>
 
-            <div>{market.score}</div>
+            <div className="grid grid-cols-4 gap-4 mb-4">
+              <div>
+                <p className="text-gray-400">Score</p>
+                <p>{market.score}</p>
+              </div>
 
-            <div className="text-cyan-400 font-bold">
-              {market.confidence}%
+              <div>
+                <p className="text-gray-400">Confidence</p>
+                <p className="text-cyan-400">
+                  {market.confidence}%
+                </p>
+              </div>
+
+              <div>
+                <p className="text-gray-400">Trend</p>
+                <p>{market.trend}</p>
+              </div>
+
+              <div>
+                <p className="text-gray-400">Risk</p>
+                <p>{market.risk}</p>
+              </div>
             </div>
 
-            <div
-              className={
-                market.trend === "Bullish"
-                  ? "text-green-400"
-                  : market.trend === "Bearish"
-                  ? "text-red-400"
-                  : "text-yellow-400"
-              }
-            >
-              {market.trend}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <p className="text-gray-400">AI Rating</p>
+                <p>{market.aiRating}</p>
+              </div>
+
+              <div>
+                <p className="text-gray-400">News Impact</p>
+                <p>{market.newsImpact}</p>
+              </div>
             </div>
 
-            <div>{market.timeframe}</div>
+            <div className="border-t border-gray-800 pt-4">
+              <h3 className="font-bold mb-3">
+                🎯 Trading Setup
+              </h3>
 
-            <div
-              className={
-                market.risk === "Low"
-                  ? "text-green-400"
-                  : market.risk === "Medium"
-                  ? "text-yellow-400"
-                  : "text-red-400"
-              }
-            >
-              {market.risk}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-gray-400">Entry</p>
+                  <p>{market.entry}</p>
+                </div>
+
+                <div>
+                  <p className="text-gray-400">Stop Loss</p>
+                  <p className="text-red-400">
+                    {market.stopLoss}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-gray-400">Take Profit</p>
+                  <p className="text-green-400">
+                    {market.takeProfit}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         ))}
