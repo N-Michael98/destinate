@@ -1,13 +1,23 @@
 import Link from "next/link";
+import { markets } from "./data/markets";
 
-const topOpportunity = {
-  name: "Gold",
-  category: "Commodities",
-  direction: "SELL",
-  score: 85,
-  timeframe: "H4",
-  risk: "Low",
+const riskValue = {
+  Low: 1,
+  Medium: 2,
+  High: 3,
 };
+
+const sortedMarkets = [...markets].sort((a, b) => {
+  const riskDiff =
+    riskValue[a.risk as keyof typeof riskValue] -
+    riskValue[b.risk as keyof typeof riskValue];
+
+  if (riskDiff !== 0) return riskDiff;
+
+  return b.score - a.score;
+});
+
+const topOpportunity = sortedMarkets[0];
 
 export default function Home() {
   return (
@@ -34,7 +44,7 @@ export default function Home() {
           <div className="grid grid-cols-4 gap-6 mb-8">
             <div className="bg-gray-900 p-5 rounded-xl">
               <h3 className="font-bold text-lg">📊 Markets</h3>
-              <p className="mt-2 text-green-400">Scanner Ready</p>
+              <p className="mt-2 text-green-400">{markets.length} Markets Loaded</p>
             </div>
 
             <div className="bg-gray-900 p-5 rounded-xl">
@@ -56,12 +66,20 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-6">
             <div className="bg-gray-900 p-6 rounded-xl">
               <h3 className="text-xl font-bold mb-4">📊 Market Intelligence</h3>
+
               <ul className="space-y-2">
                 <li>📈 Indices</li>
                 <li>💱 Forex</li>
                 <li>🛢️ Commodities</li>
                 <li>₿ Crypto</li>
               </ul>
+
+              <Link
+                href="/market-intelligence"
+                className="inline-block mt-6 text-blue-400 hover:text-blue-300"
+              >
+                Scanner öffnen →
+              </Link>
             </div>
 
             <div className="bg-gray-900 p-6 rounded-xl">
@@ -75,7 +93,9 @@ export default function Home() {
                   className={
                     topOpportunity.direction === "BUY"
                       ? "text-green-400 font-bold"
-                      : "text-red-400 font-bold"
+                      : topOpportunity.direction === "SELL"
+                      ? "text-red-400 font-bold"
+                      : "text-yellow-400 font-bold"
                   }
                 >
                   Direction: {topOpportunity.direction}
@@ -83,7 +103,18 @@ export default function Home() {
 
                 <p>Score: {topOpportunity.score}</p>
                 <p>Timeframe: {topOpportunity.timeframe}</p>
-                <p className="text-green-400">Risk: {topOpportunity.risk}</p>
+
+                <p
+                  className={
+                    topOpportunity.risk === "Low"
+                      ? "text-green-400"
+                      : topOpportunity.risk === "Medium"
+                      ? "text-yellow-400"
+                      : "text-red-400"
+                  }
+                >
+                  Risk: {topOpportunity.risk}
+                </p>
               </div>
             </div>
           </div>

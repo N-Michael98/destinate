@@ -1,37 +1,4 @@
-const markets = [
-  {
-    name: "WTI Crude Oil",
-    category: "Commodities",
-    direction: "BUY",
-    score: 92,
-    timeframe: "H4",
-    risk: "Medium",
-  },
-  {
-    name: "Gold",
-    category: "Commodities",
-    direction: "SELL",
-    score: 85,
-    timeframe: "H4",
-    risk: "Low",
-  },
-  {
-    name: "NAS100",
-    category: "Indices",
-    direction: "BUY",
-    score: 88,
-    timeframe: "H1 / H4",
-    risk: "Medium",
-  },
-  {
-    name: "EURUSD",
-    category: "Forex",
-    direction: "NEUTRAL",
-    score: 61,
-    timeframe: "H4",
-    risk: "High",
-  },
-];
+import { markets } from "../data/markets";
 
 const riskValue = {
   Low: 1,
@@ -83,7 +50,6 @@ export default function MarketIntelligence() {
       </div>
 
       <div className="bg-gray-900 rounded-xl overflow-hidden">
-
         <div className="bg-green-900 p-4 font-bold text-center">
           🎯 Beste Chancen stehen automatisch oben
         </div>
@@ -103,7 +69,6 @@ export default function MarketIntelligence() {
             className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800"
           >
             <div className="font-bold">{market.name}</div>
-
             <div>{market.category}</div>
 
             <div
@@ -119,7 +84,6 @@ export default function MarketIntelligence() {
             </div>
 
             <div>{market.score}</div>
-
             <div>{market.timeframe}</div>
 
             <div
