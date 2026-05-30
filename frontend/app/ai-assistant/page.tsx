@@ -30,6 +30,56 @@ function detectMarket(input: string) {
   return null;
 }
 
+function getMarketData(marketName: string) {
+  const marketMap: Record<string, any> = {
+    Gold: {
+      confidence: 91,
+      risk: "Low",
+      news: ["USD aktuell stark", "Gold unter Verkaufsdruck"],
+      setup: {
+        entry: "3345",
+        stopLoss: "3365",
+        takeProfit: "3290",
+      },
+    },
+
+    "WTI Crude Oil": {
+      confidence: 94,
+      risk: "Medium",
+      news: ["Ölnachfrage steigt", "Angebotsrisiken unterstützen Preise"],
+      setup: {
+        entry: "58.20",
+        stopLoss: "57.40",
+        takeProfit: "60.10",
+      },
+    },
+
+    NAS100: {
+      confidence: 89,
+      risk: "Medium",
+      news: ["Positive Tech-Stimmung", "Starke US-Unternehmenszahlen"],
+      setup: {
+        entry: "21250",
+        stopLoss: "21120",
+        takeProfit: "21500",
+      },
+    },
+
+    EURUSD: {
+      confidence: 64,
+      risk: "High",
+      news: ["Wichtige Zentralbankdaten erwartet", "Hohe Volatilität möglich"],
+      setup: {
+        entry: "-",
+        stopLoss: "-",
+        takeProfit: "-",
+      },
+    },
+  };
+
+  return marketMap[marketName];
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -40,7 +90,7 @@ export default function AIAssistant() {
     {
       sender: "AI Assistant",
       text:
-        "Ich merke mir jetzt den letzten analysierten Markt. Beispiel: Schreibe zuerst 'Analysiere Gold' und danach nur 'Warum?'.",
+        "Ich merke mir jetzt den letzten Markt und kann Folgefragen beantworten: Confidence, Risiko, News, Setup oder Warum?",
     },
   ]);
 
@@ -73,12 +123,25 @@ export default function AIAssistant() {
     const prompt = userInput.toLowerCase();
 
     let aiResponse = "";
+    const contextData = lastMarket ? getMarketData(lastMarket) : null;
 
-    if (
-      prompt.includes("warum") &&
-      !detectedMarket &&
-      lastMarket
-    ) {
+    if (prompt.includes("confidence") && lastMarket && contextData) {
+      aiResponse = `${lastMarket} Confidence: ${contextData.confidence}%`;
+    } else if (prompt.includes("risiko") && lastMarket && contextData) {
+      aiResponse = `${lastMarket} Risiko: ${contextData.risk}`;
+    } else if (prompt.includes("risk") && lastMarket && contextData) {
+      aiResponse = `${lastMarket} Risk: ${contextData.risk}`;
+    } else if (prompt.includes("news") && lastMarket && contextData) {
+      aiResponse = `${lastMarket} News
+
+${contextData.news.map((item: string) => `• ${item}`).join("\n")}`;
+    } else if (prompt.includes("setup") && lastMarket && contextData) {
+      aiResponse = `${lastMarket} Trading Setup
+
+Entry: ${contextData.setup.entry}
+Stop Loss: ${contextData.setup.stopLoss}
+Take Profit: ${contextData.setup.takeProfit}`;
+    } else if (prompt.includes("warum") && !detectedMarket && lastMarket) {
       aiResponse = explainMarket(lastMarket);
     } else {
       aiResponse = processSmartPrompt(userInput);
@@ -102,7 +165,7 @@ export default function AIAssistant() {
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Smart Prompt Engine mit einfachem Chat-Memory für den zuletzt analysierten Markt.
+        Smart Prompt Engine mit Market Context Memory für Folgefragen.
       </p>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
@@ -300,9 +363,11 @@ export default function AIAssistant() {
 
           <ul className="space-y-3 text-gray-300">
             <li>1. Schreibe: Analysiere Gold</li>
-            <li>2. Danach schreibe nur: Warum?</li>
-            <li>3. Der Assistant weiß dann, dass du Gold meinst.</li>
-            <li>4. Teste auch: Analysiere WTI → Warum?</li>
+            <li>2. Danach schreibe nur: Confidence</li>
+            <li>3. Danach: Risiko</li>
+            <li>4. Danach: News</li>
+            <li>5. Danach: Setup</li>
+            <li>6. Danach: Warum?</li>
           </ul>
         </div>
       </div>
