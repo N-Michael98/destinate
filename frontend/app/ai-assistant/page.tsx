@@ -178,6 +178,95 @@ Take Profit: ${market.takeProfit}`
   .join("\n\n")}`;
 }
 
+function showSellOpportunities() {
+  const sellMarkets = [...markets]
+    .filter(
+      (market) =>
+        market.direction === "SELL" &&
+        market.score >= 80 &&
+        market.confidence >= 80
+    )
+    .sort((a, b) => b.score - a.score);
+
+  if (sellMarkets.length === 0) {
+    return "Aktuell wurden keine starken Verkaufschancen gefunden.";
+  }
+
+  return `🚨 Aktuelle Verkaufschancen
+
+Filter:
+Direction = SELL
+Score >= 80
+Confidence >= 80
+
+${sellMarkets
+  .map(
+    (market, index) =>
+      `#${index + 1} ${market.name}
+Score: ${market.score}
+Confidence: ${market.confidence}%
+Trend: ${market.trend}
+Risk: ${market.risk}
+Risk/Reward: ${market.riskReward}
+AI Rating: ${market.aiRating}
+
+Entry: ${market.entry}
+Stop Loss: ${market.stopLoss}
+Take Profit: ${market.takeProfit}`
+  )
+  .join("\n\n")}`;
+}
+
+function showAIWatchlist() {
+  const sortedByScore = [...markets].sort((a, b) => b.score - a.score);
+
+  const bestBuy = [...markets]
+    .filter((market) => market.direction === "BUY")
+    .sort((a, b) => b.score - a.score)[0];
+
+  const bestSell = [...markets]
+    .filter((market) => market.direction === "SELL")
+    .sort((a, b) => b.score - a.score)[0];
+
+  const highestConfidence = [...markets].sort(
+    (a, b) => b.confidence - a.confidence
+  )[0];
+
+  const highestRisk = [...markets].find(
+    (market) => market.risk === "High"
+  );
+
+  const topThree = sortedByScore.slice(0, 3);
+
+  return `⭐ AI Watchlist
+
+🏆 Beste Kaufchance
+${bestBuy ? bestBuy.name : "Keine Kaufchance gefunden"}
+
+🚨 Beste Verkaufschance
+${bestSell ? bestSell.name : "Keine Verkaufschance gefunden"}
+
+🎯 Höchste Confidence
+${highestConfidence.name} (${highestConfidence.confidence}%)
+
+⚠️ Höchstes Risiko
+${highestRisk ? highestRisk.name : "Kein High-Risk Markt gefunden"}
+
+📈 Top 3 Märkte
+
+${topThree
+  .map(
+    (market, index) =>
+      `#${index + 1} ${market.name}
+Score: ${market.score}
+Confidence: ${market.confidence}%
+Direction: ${market.direction}
+Risk: ${market.risk}
+Risk/Reward: ${market.riskReward}`
+  )
+  .join("\n\n")}`;
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -274,6 +363,34 @@ export default function AIAssistant() {
       {
         sender: "AI Assistant",
         text: showBuyOpportunities(),
+      },
+    ]);
+  }
+
+  function addSellOpportunities() {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        sender: "Michael",
+        text: "Zeige mir Verkaufschancen",
+      },
+      {
+        sender: "AI Assistant",
+        text: showSellOpportunities(),
+      },
+    ]);
+  }
+
+  function addAIWatchlist() {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        sender: "Michael",
+        text: "Zeige mir die AI Watchlist",
+      },
+      {
+        sender: "AI Assistant",
+        text: showAIWatchlist(),
       },
     ]);
   }
@@ -377,10 +494,24 @@ export default function AIAssistant() {
 
           <div className="space-y-3">
             <button
+              onClick={addAIWatchlist}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-pink-500"
+            >
+              ⭐ AI Watchlist
+            </button>
+
+            <button
               onClick={addBuyOpportunities}
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-orange-500"
             >
               🔥 Zeige Kaufchancen
+            </button>
+
+            <button
+              onClick={addSellOpportunities}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-red-500"
+            >
+              🚨 Zeige Verkaufschancen
             </button>
 
             <button
@@ -445,7 +576,9 @@ export default function AIAssistant() {
           <h2 className="text-xl font-bold mb-4">🧠 Beispiel-Fragen</h2>
 
           <ul className="space-y-3 text-gray-300">
+            <li>• Zeige mir die AI Watchlist</li>
             <li>• Zeige mir Kaufchancen</li>
+            <li>• Zeige mir Verkaufschancen</li>
             <li>• Was ist heute die beste Trading Chance?</li>
             <li>• Warum ist Gold aktuell bearish?</li>
             <li>• Wie hoch ist das Risiko bei NAS100?</li>
