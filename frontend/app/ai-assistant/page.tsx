@@ -11,9 +11,7 @@ type Message = {
 function createMarketAnalysis(marketName: string) {
   const market = markets.find((item) => item.name === marketName);
 
-  if (!market) {
-    return "Markt wurde nicht gefunden.";
-  }
+  if (!market) return "Markt wurde nicht gefunden.";
 
   return `${market.name} Analyse
 
@@ -37,6 +35,88 @@ News:
 ${market.news.map((item) => `• ${item}`).join("\n")}`;
 }
 
+function showBestOpportunity() {
+  const bestMarket = [...markets].sort((a, b) => b.score - a.score)[0];
+
+  return `🏆 Beste Trading Chance heute
+
+${bestMarket.name}
+
+Score: ${bestMarket.score}
+Confidence: ${bestMarket.confidence}%
+Direction: ${bestMarket.direction}
+Trend: ${bestMarket.trend}
+Risk: ${bestMarket.risk}
+Risk/Reward: ${bestMarket.riskReward}
+AI Rating: ${bestMarket.aiRating}
+
+Trading Setup:
+Entry: ${bestMarket.entry}
+Stop Loss: ${bestMarket.stopLoss}
+Take Profit: ${bestMarket.takeProfit}
+
+Warum?
+
+${bestMarket.analysis.map((item) => `• ${item}`).join("\n")}`;
+}
+
+function compareMarkets(firstMarketName: string, secondMarketName: string) {
+  const first = markets.find((item) => item.name === firstMarketName);
+  const second = markets.find((item) => item.name === secondMarketName);
+
+  if (!first || !second) return "Einer der Märkte wurde nicht gefunden.";
+
+  const winner = first.score >= second.score ? first : second;
+
+  return `⚔️ Marktvergleich
+
+${first.name} vs ${second.name}
+
+Score:
+${first.name}: ${first.score}
+${second.name}: ${second.score}
+
+Confidence:
+${first.name}: ${first.confidence}%
+${second.name}: ${second.confidence}%
+
+Trend:
+${first.name}: ${first.trend}
+${second.name}: ${second.trend}
+
+Risk:
+${first.name}: ${first.risk}
+${second.name}: ${second.risk}
+
+Risk/Reward:
+${first.name}: ${first.riskReward}
+${second.name}: ${second.riskReward}
+
+AI Rating:
+${first.name}: ${first.aiRating}
+${second.name}: ${second.aiRating}
+
+🏆 Gewinner nach Score: ${winner.name}`;
+}
+
+function showMarketRanking() {
+  const sortedMarkets = [...markets].sort((a, b) => b.score - a.score);
+
+  return `🏅 Ranking der stärksten Märkte
+
+${sortedMarkets
+  .map(
+    (market, index) =>
+      `#${index + 1} ${market.name}
+Score: ${market.score}
+Confidence: ${market.confidence}%
+Direction: ${market.direction}
+Risk: ${market.risk}
+Risk/Reward: ${market.riskReward}`
+  )
+  .join("\n\n")}`;
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -54,8 +134,6 @@ export default function AIAssistant() {
   const [input, setInput] = useState("");
 
   function addAIAnalysis(marketName: string) {
-    const analysis = createMarketAnalysis(marketName);
-
     setMessages((currentMessages) => [
       ...currentMessages,
       {
@@ -64,7 +142,49 @@ export default function AIAssistant() {
       },
       {
         sender: "AI Assistant",
-        text: analysis,
+        text: createMarketAnalysis(marketName),
+      },
+    ]);
+  }
+
+  function addBestOpportunity() {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        sender: "Michael",
+        text: "Was ist heute die beste Trading Chance?",
+      },
+      {
+        sender: "AI Assistant",
+        text: showBestOpportunity(),
+      },
+    ]);
+  }
+
+  function addMarketComparison() {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        sender: "Michael",
+        text: "Vergleiche Gold mit WTI Crude Oil",
+      },
+      {
+        sender: "AI Assistant",
+        text: compareMarkets("Gold", "WTI Crude Oil"),
+      },
+    ]);
+  }
+
+  function addMarketRanking() {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        sender: "Michael",
+        text: "Zeige mir die stärksten Märkte",
+      },
+      {
+        sender: "AI Assistant",
+        text: showMarketRanking(),
       },
     ]);
   }
@@ -167,6 +287,27 @@ export default function AIAssistant() {
           <h2 className="text-xl font-bold mb-4">⚡ Quick Actions</h2>
 
           <div className="space-y-3">
+            <button
+              onClick={addMarketRanking}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-yellow-500"
+            >
+              🏅 Zeige stärkste Märkte
+            </button>
+
+            <button
+              onClick={addBestOpportunity}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-green-500"
+            >
+              🏆 Beste Trading Chance heute
+            </button>
+
+            <button
+              onClick={addMarketComparison}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-purple-500"
+            >
+              ⚔️ Vergleiche Gold vs WTI
+            </button>
+
             <button
               onClick={() => addAIAnalysis("Gold")}
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
