@@ -19,6 +19,17 @@ type Message = {
   text: string;
 };
 
+function detectMarket(input: string) {
+  const prompt = input.toLowerCase();
+
+  if (prompt.includes("gold")) return "Gold";
+  if (prompt.includes("wti") || prompt.includes("crude")) return "WTI Crude Oil";
+  if (prompt.includes("nas100")) return "NAS100";
+  if (prompt.includes("eurusd")) return "EURUSD";
+
+  return null;
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -29,13 +40,18 @@ export default function AIAssistant() {
     {
       sender: "AI Assistant",
       text:
-        "Du kannst jetzt auch direkt schreiben: Daily Briefing, AI Watchlist, Kaufchancen, Verkaufschancen, Analysiere Gold oder Vergleiche Gold mit WTI.",
+        "Ich merke mir jetzt den letzten analysierten Markt. Beispiel: Schreibe zuerst 'Analysiere Gold' und danach nur 'Warum?'.",
     },
   ]);
 
   const [input, setInput] = useState("");
+  const [lastMarket, setLastMarket] = useState<string | null>(null);
 
-  function addMessage(userText: string, aiText: string) {
+  function addMessage(userText: string, aiText: string, marketMemory?: string) {
+    if (marketMemory) {
+      setLastMarket(marketMemory);
+    }
+
     setMessages((currentMessages) => [
       ...currentMessages,
       {
@@ -53,9 +69,22 @@ export default function AIAssistant() {
     if (!input.trim()) return;
 
     const userInput = input;
-    const aiResponse = processSmartPrompt(userInput);
+    const detectedMarket = detectMarket(userInput);
+    const prompt = userInput.toLowerCase();
 
-    addMessage(userInput, aiResponse);
+    let aiResponse = "";
+
+    if (
+      prompt.includes("warum") &&
+      !detectedMarket &&
+      lastMarket
+    ) {
+      aiResponse = explainMarket(lastMarket);
+    } else {
+      aiResponse = processSmartPrompt(userInput);
+    }
+
+    addMessage(userInput, aiResponse, detectedMarket ?? undefined);
     setInput("");
   }
 
@@ -73,11 +102,10 @@ export default function AIAssistant() {
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Zentrale AI-Steuerung für Marktanalysen, Trading-Ideen und
-        zukünftige GPT-Integrationen.
+        Smart Prompt Engine mit einfachem Chat-Memory für den zuletzt analysierten Markt.
       </p>
 
-      <div className="grid grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-4 gap-6 mb-8">
         <div className="bg-gray-900 p-6 rounded-xl">
           <h2 className="text-xl font-bold mb-3">GPT Status</h2>
           <p className="text-yellow-400">Offline</p>
@@ -91,6 +119,13 @@ export default function AIAssistant() {
         <div className="bg-gray-900 p-6 rounded-xl">
           <h2 className="text-xl font-bold mb-3">Sandbox</h2>
           <p className="text-yellow-400">Nicht verbunden</p>
+        </div>
+
+        <div className="bg-gray-900 p-6 rounded-xl">
+          <h2 className="text-xl font-bold mb-3">Memory</h2>
+          <p className="text-cyan-400">
+            {lastMarket ? lastMarket : "Noch leer"}
+          </p>
         </div>
       </div>
 
@@ -181,7 +216,7 @@ export default function AIAssistant() {
 
             <button
               onClick={() =>
-                addMessage("Warum ist Gold bearish?", explainMarket("Gold"))
+                addMessage("Warum ist Gold bearish?", explainMarket("Gold"), "Gold")
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-red-500"
             >
@@ -219,7 +254,9 @@ export default function AIAssistant() {
             </button>
 
             <button
-              onClick={() => addMessage("Analysiere Gold", createMarketAnalysis("Gold"))}
+              onClick={() =>
+                addMessage("Analysiere Gold", createMarketAnalysis("Gold"), "Gold")
+              }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
               📊 Analysiere Gold
@@ -229,7 +266,8 @@ export default function AIAssistant() {
               onClick={() =>
                 addMessage(
                   "Analysiere WTI Crude Oil",
-                  createMarketAnalysis("WTI Crude Oil")
+                  createMarketAnalysis("WTI Crude Oil"),
+                  "WTI Crude Oil"
                 )
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
@@ -238,14 +276,18 @@ export default function AIAssistant() {
             </button>
 
             <button
-              onClick={() => addMessage("Analysiere NAS100", createMarketAnalysis("NAS100"))}
+              onClick={() =>
+                addMessage("Analysiere NAS100", createMarketAnalysis("NAS100"), "NAS100")
+              }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
               📈 Analysiere NAS100
             </button>
 
             <button
-              onClick={() => addMessage("Analysiere EURUSD", createMarketAnalysis("EURUSD"))}
+              onClick={() =>
+                addMessage("Analysiere EURUSD", createMarketAnalysis("EURUSD"), "EURUSD")
+              }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
               🌍 Analysiere EURUSD
@@ -254,18 +296,13 @@ export default function AIAssistant() {
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-4">🧠 Beispiel-Fragen</h2>
+          <h2 className="text-xl font-bold mb-4">🧠 Memory Test</h2>
 
           <ul className="space-y-3 text-gray-300">
-            <li>• Daily Briefing</li>
-            <li>• AI Watchlist</li>
-            <li>• Zeige Kaufchancen</li>
-            <li>• Zeige Verkaufschancen</li>
-            <li>• Analysiere Gold</li>
-            <li>• Analysiere WTI</li>
-            <li>• Warum ist Gold bearish?</li>
-            <li>• Zeige mir die stärksten Märkte</li>
-            <li>• Vergleiche Gold mit WTI</li>
+            <li>1. Schreibe: Analysiere Gold</li>
+            <li>2. Danach schreibe nur: Warum?</li>
+            <li>3. Der Assistant weiß dann, dass du Gold meinst.</li>
+            <li>4. Teste auch: Analysiere WTI → Warum?</li>
           </ul>
         </div>
       </div>
