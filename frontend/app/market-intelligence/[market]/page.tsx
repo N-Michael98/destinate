@@ -19,13 +19,9 @@ export default async function MarketDetail({
   if (!market) {
     return (
       <main className="min-h-screen bg-black text-white p-10">
-        <Link
-          href="/market-intelligence"
-          className="text-blue-400 hover:text-blue-300"
-        >
+        <Link href="/market-intelligence" className="text-blue-400">
           ← Zurück zum Scanner
         </Link>
-
         <h1 className="text-4xl font-bold mt-6">Market not found</h1>
       </main>
     );
@@ -40,28 +36,16 @@ export default async function MarketDetail({
         ← Zurück zum Scanner
       </Link>
 
-      <h1 className="text-5xl font-bold mb-2">
-        📊 {market.name}
-      </h1>
+      <h1 className="text-5xl font-bold mb-2">📊 {market.name}</h1>
 
       <p className="text-gray-400 mb-8">
         Detailanalyse für {market.name}
       </p>
 
-      <div className="grid grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-5 gap-6 mb-8">
         <div className="bg-gray-900 p-6 rounded-xl">
           <p className="text-gray-400">Direction</p>
-          <p
-            className={
-              market.direction === "BUY"
-                ? "text-2xl font-bold text-green-400"
-                : market.direction === "SELL"
-                ? "text-2xl font-bold text-red-400"
-                : "text-2xl font-bold text-yellow-400"
-            }
-          >
-            {market.direction}
-          </p>
+          <p className="text-2xl font-bold">{market.direction}</p>
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
@@ -78,16 +62,13 @@ export default async function MarketDetail({
 
         <div className="bg-gray-900 p-6 rounded-xl">
           <p className="text-gray-400">Risk</p>
-          <p
-            className={
-              market.risk === "Low"
-                ? "text-2xl font-bold text-green-400"
-                : market.risk === "Medium"
-                ? "text-2xl font-bold text-yellow-400"
-                : "text-2xl font-bold text-red-400"
-            }
-          >
-            {market.risk}
+          <p className="text-2xl font-bold">{market.risk}</p>
+        </div>
+
+        <div className="bg-gray-900 p-6 rounded-xl">
+          <p className="text-gray-400">Risk/Reward</p>
+          <p className="text-2xl font-bold text-green-400">
+            {market.riskReward}
           </p>
         </div>
       </div>

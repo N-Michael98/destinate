@@ -20,6 +20,13 @@ const sortedMarkets = [...markets].sort((a, b) => {
 export default function MarketIntelligence() {
   return (
     <main className="min-h-screen bg-black text-white p-10">
+      <Link
+        href="/"
+        className="inline-block mb-8 text-blue-400 hover:text-blue-300"
+      >
+        ← Zurück zum Dashboard
+      </Link>
+
       <h1 className="text-4xl font-bold mb-4">
         📊 Market Intelligence Engine
       </h1>
@@ -38,9 +45,7 @@ export default function MarketIntelligence() {
             className="block bg-gray-900 rounded-xl p-6 border border-gray-800 hover:border-blue-500 hover:scale-[1.01] transition-all"
           >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold">
-                {market.name}
-              </h2>
+              <h2 className="text-2xl font-bold">{market.name}</h2>
 
               <span
                 className={
@@ -63,9 +68,7 @@ export default function MarketIntelligence() {
 
               <div>
                 <p className="text-gray-400">Confidence</p>
-                <p className="text-cyan-400">
-                  {market.confidence}%
-                </p>
+                <p className="text-cyan-400">{market.confidence}%</p>
               </div>
 
               <div>
@@ -92,9 +95,7 @@ export default function MarketIntelligence() {
             </div>
 
             <div className="border-t border-gray-800 pt-4">
-              <h3 className="font-bold mb-3">
-                🎯 Trading Setup
-              </h3>
+              <h3 className="font-bold mb-3">🎯 Trading Setup</h3>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
@@ -104,16 +105,12 @@ export default function MarketIntelligence() {
 
                 <div>
                   <p className="text-gray-400">Stop Loss</p>
-                  <p className="text-red-400">
-                    {market.stopLoss}
-                  </p>
+                  <p className="text-red-400">{market.stopLoss}</p>
                 </div>
 
                 <div>
                   <p className="text-gray-400">Take Profit</p>
-                  <p className="text-green-400">
-                    {market.takeProfit}
-                  </p>
+                  <p className="text-green-400">{market.takeProfit}</p>
                 </div>
               </div>
             </div>

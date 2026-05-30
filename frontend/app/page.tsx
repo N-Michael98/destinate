@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { markets } from "./data/markets";
 
+function createSlug(name: string) {
+  return name.toLowerCase().replaceAll(" ", "-");
+}
+
 const riskValue = {
   Low: 1,
   Medium: 2,
@@ -16,6 +20,8 @@ const sortedMarkets = [...markets].sort((a, b) => {
 
   return b.score - a.score;
 });
+
+const rankingMarkets = [...markets].sort((a, b) => b.score - a.score);
 
 const topOpportunity = sortedMarkets[0];
 
@@ -97,12 +103,23 @@ export default function Home() {
               </Link>
             </div>
 
-            <div className="bg-gray-900 p-6 rounded-xl">
+            <Link
+              href={`/market-intelligence/${createSlug(topOpportunity.name)}`}
+              className="block bg-gray-900 p-6 rounded-xl hover:border-blue-500 border border-gray-900 transition"
+            >
               <h3 className="text-xl font-bold mb-4">🎯 Top Opportunity</h3>
 
               <div className="space-y-2">
-                <p className="text-2xl font-bold">{topOpportunity.name}</p>
+                <p className="text-2xl font-bold text-blue-400">
+                  {topOpportunity.name}
+                </p>
+
                 <p className="text-gray-400">{topOpportunity.category}</p>
+                <p>Score: {topOpportunity.score}</p>
+                <p className="text-cyan-400 font-bold">
+                  Confidence: {topOpportunity.confidence}%
+                </p>
+                <p>Risk/Reward: {topOpportunity.riskReward}</p>
 
                 <p
                   className={
@@ -116,26 +133,6 @@ export default function Home() {
                   Direction: {topOpportunity.direction}
                 </p>
 
-                <p>Score: {topOpportunity.score}</p>
-
-                <p className="text-cyan-400 font-bold">
-                  Confidence: {topOpportunity.confidence}%
-                </p>
-
-                <p
-                  className={
-                    topOpportunity.trend === "Bullish"
-                      ? "text-green-400"
-                      : topOpportunity.trend === "Bearish"
-                      ? "text-red-400"
-                      : "text-yellow-400"
-                  }
-                >
-                  Trend: {topOpportunity.trend}
-                </p>
-
-                <p>Timeframe: {topOpportunity.timeframe}</p>
-
                 <p
                   className={
                     topOpportunity.risk === "Low"
@@ -147,7 +144,49 @@ export default function Home() {
                 >
                   Risk: {topOpportunity.risk}
                 </p>
+
+                <p className="pt-3 text-blue-400 font-semibold">
+                  Analyse öffnen →
+                </p>
               </div>
+            </Link>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl">
+            <h3 className="text-xl font-bold mb-4">🏆 Market Ranking</h3>
+
+            <div className="space-y-3">
+              {rankingMarkets.map((market, index) => (
+                <Link
+                  key={market.name}
+                  href={`/market-intelligence/${createSlug(market.name)}`}
+                  className="flex justify-between items-center border border-gray-800 rounded-lg p-4 hover:border-blue-500 transition"
+                >
+                  <div>
+                    <p className="font-bold">
+                      #{index + 1} {market.name}
+                    </p>
+                    <p className="text-gray-400 text-sm">
+                      {market.category} · {market.timeframe} · {market.risk}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    <p className="font-bold">{market.score}</p>
+                    <p
+                      className={
+                        market.direction === "BUY"
+                          ? "text-green-400 text-sm"
+                          : market.direction === "SELL"
+                          ? "text-red-400 text-sm"
+                          : "text-yellow-400 text-sm"
+                      }
+                    >
+                      {market.direction}
+                    </p>
+                  </div>
+                </Link>
+              ))}
             </div>
           </div>
         </section>
