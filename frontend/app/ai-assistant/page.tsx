@@ -117,6 +117,28 @@ Risk/Reward: ${market.riskReward}`
   .join("\n\n")}`;
 }
 
+function explainMarket(marketName: string) {
+  const market = markets.find((item) => item.name === marketName);
+
+  if (!market) return "Markt wurde nicht gefunden.";
+
+  return `🧠 Warum ist ${market.name} ${market.trend}?
+
+Direction: ${market.direction}
+Trend: ${market.trend}
+AI Rating: ${market.aiRating}
+Confidence: ${market.confidence}%
+Risk: ${market.risk}
+
+Begründung:
+
+${market.analysis.map((item) => `• ${item}`).join("\n")}
+
+News Kontext:
+
+${market.news.map((item) => `• ${item}`).join("\n")}`;
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -185,6 +207,20 @@ export default function AIAssistant() {
       {
         sender: "AI Assistant",
         text: showMarketRanking(),
+      },
+    ]);
+  }
+
+  function addGoldExplanation() {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        sender: "Michael",
+        text: "Warum ist Gold bearish?",
+      },
+      {
+        sender: "AI Assistant",
+        text: explainMarket("Gold"),
       },
     ]);
   }
@@ -287,6 +323,13 @@ export default function AIAssistant() {
           <h2 className="text-xl font-bold mb-4">⚡ Quick Actions</h2>
 
           <div className="space-y-3">
+            <button
+              onClick={addGoldExplanation}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-red-500"
+            >
+              🧠 Warum ist Gold bearish?
+            </button>
+
             <button
               onClick={addMarketRanking}
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-yellow-500"
