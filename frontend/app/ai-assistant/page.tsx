@@ -139,6 +139,45 @@ News Kontext:
 ${market.news.map((item) => `• ${item}`).join("\n")}`;
 }
 
+function showBuyOpportunities() {
+  const buyMarkets = [...markets]
+    .filter(
+      (market) =>
+        market.direction === "BUY" &&
+        market.score >= 80 &&
+        market.confidence >= 80
+    )
+    .sort((a, b) => b.score - a.score);
+
+  if (buyMarkets.length === 0) {
+    return "Aktuell wurden keine starken Kaufchancen gefunden.";
+  }
+
+  return `🔥 Aktuelle Kaufchancen
+
+Filter:
+Direction = BUY
+Score >= 80
+Confidence >= 80
+
+${buyMarkets
+  .map(
+    (market, index) =>
+      `#${index + 1} ${market.name}
+Score: ${market.score}
+Confidence: ${market.confidence}%
+Trend: ${market.trend}
+Risk: ${market.risk}
+Risk/Reward: ${market.riskReward}
+AI Rating: ${market.aiRating}
+
+Entry: ${market.entry}
+Stop Loss: ${market.stopLoss}
+Take Profit: ${market.takeProfit}`
+  )
+  .join("\n\n")}`;
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -221,6 +260,20 @@ export default function AIAssistant() {
       {
         sender: "AI Assistant",
         text: explainMarket("Gold"),
+      },
+    ]);
+  }
+
+  function addBuyOpportunities() {
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        sender: "Michael",
+        text: "Zeige mir Kaufchancen",
+      },
+      {
+        sender: "AI Assistant",
+        text: showBuyOpportunities(),
       },
     ]);
   }
@@ -324,6 +377,13 @@ export default function AIAssistant() {
 
           <div className="space-y-3">
             <button
+              onClick={addBuyOpportunities}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-orange-500"
+            >
+              🔥 Zeige Kaufchancen
+            </button>
+
+            <button
               onClick={addGoldExplanation}
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-red-500"
             >
@@ -385,6 +445,7 @@ export default function AIAssistant() {
           <h2 className="text-xl font-bold mb-4">🧠 Beispiel-Fragen</h2>
 
           <ul className="space-y-3 text-gray-300">
+            <li>• Zeige mir Kaufchancen</li>
             <li>• Was ist heute die beste Trading Chance?</li>
             <li>• Warum ist Gold aktuell bearish?</li>
             <li>• Wie hoch ist das Risiko bei NAS100?</li>
