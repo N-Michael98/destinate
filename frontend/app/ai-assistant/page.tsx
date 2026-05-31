@@ -14,6 +14,10 @@ import {
   showSellOpportunities,
 } from "./helpers";
 import { askOpenAI } from "../services/openai";
+import {
+  showOpenTrades,
+  showTradeSummary,
+} from "../data/tradeUtils";
 
 type Message = {
   sender: "AI Assistant" | "Michael";
@@ -99,6 +103,11 @@ function isLocalTradingPrompt(input: string) {
     prompt.includes("vergleich") ||
     prompt.includes("vergleiche") ||
     prompt.includes("warum") ||
+    prompt.includes("offene trades") ||
+    prompt.includes("open trades") ||
+    prompt.includes("trade summary") ||
+    prompt.includes("summary") ||
+    prompt.includes("trades") ||
     prompt.includes("gold") ||
     prompt.includes("wti") ||
     prompt.includes("crude") ||
@@ -117,7 +126,7 @@ export default function AIAssistant() {
     {
       sender: "AI Assistant",
       text:
-        "V2.4 ist aktiv: Trading-Fragen laufen lokal, neue freie Fragen laufen testweise über deine /api/chat Route.",
+        "V3.0 ist aktiv: Trading-Fragen, API-Test und Trade Logger laufen jetzt im AI Assistant.",
     },
   ]);
 
@@ -162,7 +171,17 @@ export default function AIAssistant() {
     let aiResponse = "";
     const contextData = lastMarket ? getMarketData(lastMarket) : null;
 
-    if (prompt.includes("confidence") && lastMarket && contextData) {
+    if (
+      prompt.includes("offene trades") ||
+      prompt.includes("open trades")
+    ) {
+      aiResponse = showOpenTrades();
+    } else if (
+      prompt.includes("trade summary") ||
+      prompt.includes("summary")
+    ) {
+      aiResponse = showTradeSummary();
+    } else if (prompt.includes("confidence") && lastMarket && contextData) {
       aiResponse = `${lastMarket} Confidence: ${contextData.confidence}%`;
     } else if (prompt.includes("risiko") && lastMarket && contextData) {
       aiResponse = `${lastMarket} Risiko: ${contextData.risk}`;
@@ -216,8 +235,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Smart Prompt Engine mit Market Context Memory und API-Verbindung über
-        /api/chat.
+        Smart Prompt Engine mit Market Context Memory, API-Verbindung und Trade Logger.
       </p>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
@@ -303,6 +321,24 @@ Take Profit: ${contextData.setup.takeProfit}`;
           <h2 className="text-xl font-bold mb-4">⚡ Quick Actions</h2>
 
           <div className="space-y-3">
+            <button
+              onClick={() =>
+                addMessage("Zeige offene Trades", showOpenTrades())
+              }
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-cyan-500"
+            >
+              📈 Offene Trades
+            </button>
+
+            <button
+              onClick={() =>
+                addMessage("Zeige Trade Summary", showTradeSummary())
+              }
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-green-500"
+            >
+              📊 Trade Summary
+            </button>
+
             <button
               onClick={testAPIConnection}
               disabled={isLoading}
@@ -429,14 +465,14 @@ Take Profit: ${contextData.setup.takeProfit}`;
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-4">🧠 V2.4 Tests</h2>
+          <h2 className="text-xl font-bold mb-4">📘 V3.0 Trade Logger Tests</h2>
 
           <ul className="space-y-3 text-gray-300">
-            <li>1. Klicke: API Verbindung testen</li>
-            <li>2. Schreibe: Analysiere Gold</li>
-            <li>3. Schreibe danach: Confidence</li>
-            <li>4. Schreibe eine freie Frage wie: Hallo API Test</li>
-            <li>5. Freie Fragen gehen über /api/chat</li>
+            <li>1. Klicke: Offene Trades</li>
+            <li>2. Klicke: Trade Summary</li>
+            <li>3. Schreibe im Chat: offene trades</li>
+            <li>4. Schreibe im Chat: trade summary</li>
+            <li>5. Danach testen: Analysiere Gold → Confidence → News → Setup</li>
           </ul>
 
           <div className="mt-6 bg-black p-4 rounded-lg border border-gray-800 text-gray-300">
