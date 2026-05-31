@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   compareMarkets,
   createMarketAnalysis,
@@ -13,6 +13,7 @@ import {
   showMarketRanking,
   showSellOpportunities,
 } from "./helpers";
+import { askOpenAI } from "../services/openai";
 
 type Message = {
   sender: "AI Assistant" | "Michael";
@@ -80,6 +81,32 @@ function getMarketData(marketName: string) {
   return marketMap[marketName];
 }
 
+function isLocalTradingPrompt(input: string) {
+  const prompt = input.toLowerCase();
+
+  return (
+    prompt.includes("daily") ||
+    prompt.includes("briefing") ||
+    prompt.includes("watchlist") ||
+    prompt.includes("kaufchancen") ||
+    prompt.includes("buy") ||
+    prompt.includes("verkaufschancen") ||
+    prompt.includes("sell") ||
+    prompt.includes("ranking") ||
+    prompt.includes("stärkste") ||
+    prompt.includes("beste chance") ||
+    prompt.includes("top opportunity") ||
+    prompt.includes("vergleich") ||
+    prompt.includes("vergleiche") ||
+    prompt.includes("warum") ||
+    prompt.includes("gold") ||
+    prompt.includes("wti") ||
+    prompt.includes("crude") ||
+    prompt.includes("nas100") ||
+    prompt.includes("eurusd")
+  );
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -90,12 +117,19 @@ export default function AIAssistant() {
     {
       sender: "AI Assistant",
       text:
-        "Ich merke mir jetzt den letzten Markt und kann Folgefragen beantworten: Confidence, Risiko, News, Setup oder Warum?",
+        "V2.4 ist aktiv: Trading-Fragen laufen lokal, neue freie Fragen laufen testweise über deine /api/chat Route.",
     },
   ]);
 
   const [input, setInput] = useState("");
   const [lastMarket, setLastMarket] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
   function addMessage(userText: string, aiText: string, marketMemory?: string) {
     if (marketMemory) {
@@ -115,12 +149,15 @@ export default function AIAssistant() {
     ]);
   }
 
-  function handleSend() {
-    if (!input.trim()) return;
+  async function handleSend() {
+    if (!input.trim() || isLoading) return;
 
     const userInput = input;
     const detectedMarket = detectMarket(userInput);
     const prompt = userInput.toLowerCase();
+
+    setInput("");
+    setIsLoading(true);
 
     let aiResponse = "";
     const contextData = lastMarket ? getMarketData(lastMarket) : null;
@@ -143,12 +180,26 @@ Stop Loss: ${contextData.setup.stopLoss}
 Take Profit: ${contextData.setup.takeProfit}`;
     } else if (prompt.includes("warum") && !detectedMarket && lastMarket) {
       aiResponse = explainMarket(lastMarket);
-    } else {
+    } else if (isLocalTradingPrompt(userInput)) {
       aiResponse = processSmartPrompt(userInput);
+    } else {
+      aiResponse = await askOpenAI(userInput);
     }
 
     addMessage(userInput, aiResponse, detectedMarket ?? undefined);
-    setInput("");
+    setIsLoading(false);
+  }
+
+  async function testAPIConnection() {
+    if (isLoading) return;
+
+    setIsLoading(true);
+
+    const reply = await askOpenAI("API Test vom AI Trading Assistant");
+
+    addMessage("Teste API Verbindung", reply);
+
+    setIsLoading(false);
   }
 
   return (
@@ -165,23 +216,24 @@ Take Profit: ${contextData.setup.takeProfit}`;
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Smart Prompt Engine mit Market Context Memory für Folgefragen.
+        Smart Prompt Engine mit Market Context Memory und API-Verbindung über
+        /api/chat.
       </p>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
         <div className="bg-gray-900 p-6 rounded-xl">
           <h2 className="text-xl font-bold mb-3">GPT Status</h2>
-          <p className="text-yellow-400">Offline</p>
+          <p className="text-yellow-400">API vorbereitet</p>
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
           <h2 className="text-xl font-bold mb-3">Claude Status</h2>
-          <p className="text-yellow-400">Offline</p>
+          <p className="text-yellow-400">Noch nicht verbunden</p>
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-3">Sandbox</h2>
-          <p className="text-yellow-400">Nicht verbunden</p>
+          <h2 className="text-xl font-bold mb-3">Backend API</h2>
+          <p className="text-green-400">/api/chat bereit</p>
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
@@ -211,6 +263,15 @@ Take Profit: ${contextData.setup.takeProfit}`;
               <p className="text-gray-300">{message.text}</p>
             </div>
           ))}
+
+          {isLoading && (
+            <div className="mb-6">
+              <p className="text-cyan-400 font-bold">AI Assistant</p>
+              <p className="text-gray-300">Verarbeite Anfrage...</p>
+            </div>
+          )}
+
+          <div ref={chatEndRef} />
         </div>
 
         <div className="mt-4 flex gap-3">
@@ -229,9 +290,10 @@ Take Profit: ${contextData.setup.takeProfit}`;
 
           <button
             onClick={handleSend}
-            className="bg-blue-600 hover:bg-blue-700 px-6 rounded-xl"
+            disabled={isLoading}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 px-6 rounded-xl"
           >
-            Senden
+            {isLoading ? "..." : "Senden"}
           </button>
         </div>
       </div>
@@ -241,6 +303,14 @@ Take Profit: ${contextData.setup.takeProfit}`;
           <h2 className="text-xl font-bold mb-4">⚡ Quick Actions</h2>
 
           <div className="space-y-3">
+            <button
+              onClick={testAPIConnection}
+              disabled={isLoading}
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-green-500 disabled:opacity-50"
+            >
+              🧪 API Verbindung testen
+            </button>
+
             <button
               onClick={() =>
                 addMessage("Erstelle ein Daily Market Briefing", showDailyBriefing())
@@ -359,16 +429,20 @@ Take Profit: ${contextData.setup.takeProfit}`;
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-4">🧠 Memory Test</h2>
+          <h2 className="text-xl font-bold mb-4">🧠 V2.4 Tests</h2>
 
           <ul className="space-y-3 text-gray-300">
-            <li>1. Schreibe: Analysiere Gold</li>
-            <li>2. Danach schreibe nur: Confidence</li>
-            <li>3. Danach: Risiko</li>
-            <li>4. Danach: News</li>
-            <li>5. Danach: Setup</li>
-            <li>6. Danach: Warum?</li>
+            <li>1. Klicke: API Verbindung testen</li>
+            <li>2. Schreibe: Analysiere Gold</li>
+            <li>3. Schreibe danach: Confidence</li>
+            <li>4. Schreibe eine freie Frage wie: Hallo API Test</li>
+            <li>5. Freie Fragen gehen über /api/chat</li>
           </ul>
+
+          <div className="mt-6 bg-black p-4 rounded-lg border border-gray-800 text-gray-300">
+            Wichtig: Das Terminal mit <span className="text-white">npm run dev</span>{" "}
+            muss offen bleiben. Für Git-Befehle immer ein neues Terminal öffnen.
+          </div>
         </div>
       </div>
     </main>
