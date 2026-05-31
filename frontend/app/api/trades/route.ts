@@ -28,3 +28,37 @@ export async function GET() {
     );
   }
 }
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+
+    const trade = await prisma.trade.create({
+      data: {
+        market: body.market,
+        direction: body.direction,
+        entry: Number(body.entry),
+        stopLoss: Number(body.stopLoss),
+        takeProfit: Number(body.takeProfit),
+        notes: body.notes ?? "",
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      trade,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Trade konnte nicht gespeichert werden.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+}
