@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Trade {
+  id          Int      @id @default(autoincrement())
+
+  date        DateTime @default(now())
+
+  market      String
+  direction   String
+
+  entry       Float
+  stopLoss    Float
+  takeProfit  Float
+
+  status      String   @default("OPEN")
+  result      String   @default("OPEN")
+
+  profitLoss  Float    @default(0)
+
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
