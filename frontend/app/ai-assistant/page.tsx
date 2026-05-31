@@ -24,6 +24,16 @@ type Message = {
   text: string;
 };
 
+type CapturedTrade = {
+  id: number;
+  market: string;
+  direction: "LONG" | "SHORT";
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  status: "OPEN";
+};
+
 function detectMarket(input: string) {
   const prompt = input.toLowerCase();
 
@@ -116,6 +126,66 @@ function isLocalTradingPrompt(input: string) {
   );
 }
 
+function parseTradeInput(input: string): Omit<CapturedTrade, "id" | "status"> | null {
+  const text = input.toLowerCase();
+
+  const isLong = text.includes("long");
+  const isShort = text.includes("short");
+
+  if (!isLong && !isShort) return null;
+
+  const market = detectMarket(input);
+  if (!market) return null;
+
+  const entryMatch = text.match(/entry\s*[:=]?\s*(\d+(\.\d+)?)/);
+  const slMatch = text.match(/sl\s*[:=]?\s*(\d+(\.\d+)?)/);
+  const tpMatch = text.match(/tp\s*[:=]?\s*(\d+(\.\d+)?)/);
+
+  if (!entryMatch || !slMatch || !tpMatch) return null;
+
+  return {
+    market,
+    direction: isLong ? "LONG" : "SHORT",
+    entry: Number(entryMatch[1]),
+    stopLoss: Number(slMatch[1]),
+    takeProfit: Number(tpMatch[1]),
+  };
+}
+
+function formatCapturedTrade(trade: CapturedTrade) {
+  return `✅ Trade erkannt und in dieser Session gespeichert
+
+#${trade.id} ${trade.direction} ${trade.market}
+
+Entry: ${trade.entry}
+Stop Loss: ${trade.stopLoss}
+Take Profit: ${trade.takeProfit}
+Status: ${trade.status}
+
+Hinweis:
+Aktuell ist dieser Trade nur im Browser-State gespeichert. Dauerhafte Speicherung bauen wir als Nächstes mit einer API-Route.`;
+}
+
+function showSessionTrades(trades: CapturedTrade[]) {
+  if (trades.length === 0) {
+    return "In dieser Session wurden noch keine neuen Trades erfasst.";
+  }
+
+  return `🧾 Neue Trades in dieser Session
+
+${trades
+  .map(
+    (trade) =>
+      `#${trade.id} ${trade.direction} ${trade.market}
+
+Entry: ${trade.entry}
+Stop Loss: ${trade.stopLoss}
+Take Profit: ${trade.takeProfit}
+Status: ${trade.status}`
+  )
+  .join("\n\n")}`;
+}
+
 export default function AIAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -126,13 +196,14 @@ export default function AIAssistant() {
     {
       sender: "AI Assistant",
       text:
-        "V3.0 ist aktiv: Trading-Fragen, API-Test und Trade Logger laufen jetzt im AI Assistant.",
+        "V3.1 ist aktiv: Du kannst Trades im Chat erfassen. Beispiel: Long Gold Entry 3345 SL 3330 TP 3380",
     },
   ]);
 
   const [input, setInput] = useState("");
   const [lastMarket, setLastMarket] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [capturedTrades, setCapturedTrades] = useState<CapturedTrade[]>([]);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -171,7 +242,23 @@ export default function AIAssistant() {
     let aiResponse = "";
     const contextData = lastMarket ? getMarketData(lastMarket) : null;
 
-    if (
+    const parsedTrade = parseTradeInput(userInput);
+
+    if (parsedTrade) {
+      const newTrade: CapturedTrade = {
+        id: capturedTrades.length + 1,
+        ...parsedTrade,
+        status: "OPEN",
+      };
+
+      setCapturedTrades((currentTrades) => [...currentTrades, newTrade]);
+      aiResponse = formatCapturedTrade(newTrade);
+    } else if (
+      prompt.includes("session trades") ||
+      prompt.includes("neue trades")
+    ) {
+      aiResponse = showSessionTrades(capturedTrades);
+    } else if (
       prompt.includes("offene trades") ||
       prompt.includes("open trades")
     ) {
@@ -235,7 +322,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Smart Prompt Engine mit Market Context Memory, API-Verbindung und Trade Logger.
+        Smart Prompt Engine mit Market Context Memory, API-Verbindung und AI Trade Capture.
       </p>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
@@ -250,8 +337,8 @@ Take Profit: ${contextData.setup.takeProfit}`;
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-3">Backend API</h2>
-          <p className="text-green-400">/api/chat bereit</p>
+          <h2 className="text-xl font-bold mb-3">Session Trades</h2>
+          <p className="text-green-400">{capturedTrades.length} erfasst</p>
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
@@ -302,7 +389,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
                 handleSend();
               }
             }}
-            placeholder="Frage den AI Assistant..."
+            placeholder="Beispiel: Long Gold Entry 3345 SL 3330 TP 3380"
             className="flex-1 bg-black border border-gray-800 rounded-xl px-4 py-3"
           />
 
@@ -321,6 +408,15 @@ Take Profit: ${contextData.setup.takeProfit}`;
           <h2 className="text-xl font-bold mb-4">⚡ Quick Actions</h2>
 
           <div className="space-y-3">
+            <button
+              onClick={() =>
+                addMessage("Zeige Session Trades", showSessionTrades(capturedTrades))
+              }
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-purple-500"
+            >
+              🧾 Session Trades
+            </button>
+
             <button
               onClick={() =>
                 addMessage("Zeige offene Trades", showOpenTrades())
@@ -465,19 +561,19 @@ Take Profit: ${contextData.setup.takeProfit}`;
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-4">📘 V3.0 Trade Logger Tests</h2>
+          <h2 className="text-xl font-bold mb-4">📘 V3.1 Trade Capture Tests</h2>
 
           <ul className="space-y-3 text-gray-300">
-            <li>1. Klicke: Offene Trades</li>
-            <li>2. Klicke: Trade Summary</li>
-            <li>3. Schreibe im Chat: offene trades</li>
-            <li>4. Schreibe im Chat: trade summary</li>
-            <li>5. Danach testen: Analysiere Gold → Confidence → News → Setup</li>
+            <li>1. Schreibe: Long Gold Entry 3345 SL 3330 TP 3380</li>
+            <li>2. Schreibe: Short EURUSD Entry 1.085 SL 1.09 TP 1.075</li>
+            <li>3. Klicke: Session Trades</li>
+            <li>4. Bestehende Demo-Trades: Offene Trades</li>
+            <li>5. Summary: Trade Summary</li>
           </ul>
 
           <div className="mt-6 bg-black p-4 rounded-lg border border-gray-800 text-gray-300">
-            Wichtig: Das Terminal mit <span className="text-white">npm run dev</span>{" "}
-            muss offen bleiben. Für Git-Befehle immer ein neues Terminal öffnen.
+            V3.1 speichert neue Trades nur in der aktuellen Browser-Session.
+            Dauerhafte Speicherung bauen wir als V3.2 mit API-Route.
           </div>
         </div>
       </div>
