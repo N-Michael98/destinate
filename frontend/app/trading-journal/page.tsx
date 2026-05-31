@@ -202,6 +202,58 @@ export default function TradingJournal() {
     const canvas = await html2canvas(reportRef.current, {
       scale: 2,
       backgroundColor: "#000000",
+      useCORS: true,
+      onclone: (clonedDocument) => {
+        const report = clonedDocument.querySelector("[data-pdf-report]");
+
+        if (!report) return;
+
+        const allElements = report.querySelectorAll("*");
+
+        allElements.forEach((element) => {
+          const htmlElement = element as HTMLElement;
+          const className = htmlElement.className.toString();
+
+          htmlElement.style.color = "#ffffff";
+          htmlElement.style.borderColor = "#374151";
+
+          if (className.includes("bg-gray-900")) {
+            htmlElement.style.backgroundColor = "#111827";
+          }
+
+          if (className.includes("bg-gray-800")) {
+            htmlElement.style.backgroundColor = "#1f2937";
+          }
+
+          if (className.includes("bg-black")) {
+            htmlElement.style.backgroundColor = "#000000";
+          }
+
+          if (className.includes("text-green-400")) {
+            htmlElement.style.color = "#4ade80";
+          }
+
+          if (className.includes("text-red-400")) {
+            htmlElement.style.color = "#f87171";
+          }
+
+          if (className.includes("text-cyan-400")) {
+            htmlElement.style.color = "#22d3ee";
+          }
+
+          if (className.includes("text-blue-400")) {
+            htmlElement.style.color = "#60a5fa";
+          }
+
+          if (className.includes("text-yellow-400")) {
+            htmlElement.style.color = "#facc15";
+          }
+
+          if (className.includes("text-gray-400")) {
+            htmlElement.style.color = "#9ca3af";
+          }
+        });
+      },
     });
 
     const imgData = canvas.toDataURL("image/png");
@@ -300,11 +352,11 @@ export default function TradingJournal() {
         </button>
 
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
-          V3.7: Jahresreport PDF Export aktiv.
+          V3.7.1: PDF-Farben für html2canvas gefixt.
         </div>
       </div>
 
-      <div ref={reportRef} className="bg-black text-white">
+      <div ref={reportRef} data-pdf-report className="bg-black text-white">
         <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-gray-800">
           <h2 className="text-2xl font-bold mb-2">📄 Jahresreport</h2>
           <p className="text-gray-400">
