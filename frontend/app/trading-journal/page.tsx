@@ -14,11 +14,22 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { trades } from "../data/trades";
 
-type Trade = (typeof trades)[number];
-
-const STORAGE_KEY = "ai-trading-journal-trades";
+type Trade = {
+  id: number;
+  date: string;
+  market: string;
+  direction: string;
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  status: string;
+  result: string;
+  profitLoss: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 function getTotalProfit(data: Trade[]) {
   return data.reduce((sum, trade) => sum + trade.profitLoss, 0);
@@ -109,7 +120,7 @@ function buildMarketPerformance(data: Trade[]) {
 }
 
 export default function TradingJournal() {
-  const [journalTrades, setJournalTrades] = useState<Trade[]>(trades);
+  const [journalTrades, setJournalTrades] = useState<Trade[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [selectedMarket, setSelectedMarket] = useState("All");
   const reportRef = useRef<HTMLDivElement | null>(null);
@@ -117,83 +128,39 @@ export default function TradingJournal() {
   const markets = ["All", ...new Set(journalTrades.map((trade) => trade.market))];
 
   useEffect(() => {
-    const savedTrades = localStorage.getItem(STORAGE_KEY);
-
-    if (savedTrades) {
+    async function loadTrades() {
       try {
-        setJournalTrades(JSON.parse(savedTrades));
-      } catch {
-        setJournalTrades(trades);
+        const response = await fetch("/api/trades");
+        const data = await response.json();
+
+        if (data.success) {
+          setJournalTrades(data.trades);
+        }
+      } catch (error) {
+        console.error("Trades konnten nicht geladen werden:", error);
       }
+
+      setIsLoaded(true);
     }
 
-    setIsLoaded(true);
+    loadTrades();
   }, []);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(journalTrades));
-  }, [journalTrades, isLoaded]);
 
   const filteredTrades =
     selectedMarket === "All"
       ? journalTrades
       : journalTrades.filter((trade) => trade.market === selectedMarket);
 
-  function closeTrade(tradeId: number, result: "WIN" | "LOSS") {
-    const input = window.prompt(
-      result === "WIN" ? "Gewinn in CHF eingeben:" : "Verlust in CHF eingeben:"
-    );
-
-    if (!input) return;
-
-    const value = Number(input);
-
-    if (Number.isNaN(value)) {
-      alert("Bitte eine gültige Zahl eingeben.");
-      return;
-    }
-
-    const finalProfitLoss = result === "WIN" ? Math.abs(value) : -Math.abs(value);
-
-    setJournalTrades((currentTrades) =>
-      currentTrades.map((trade) =>
-        trade.id === tradeId
-          ? {
-              ...trade,
-              status: "CLOSED",
-              result,
-              profitLoss: finalProfitLoss,
-            }
-          : trade
-      )
-    );
+  function closeTrade() {
+    alert("V4.0.4: Trade schließen wird als Nächstes direkt über SQLite implementiert.");
   }
 
-  function reopenTrade(tradeId: number) {
-    setJournalTrades((currentTrades) =>
-      currentTrades.map((trade) =>
-        trade.id === tradeId
-          ? {
-              ...trade,
-              status: "OPEN",
-              result: "OPEN",
-              profitLoss: 0,
-            }
-          : trade
-      )
-    );
+  function reopenTrade() {
+    alert("V4.0.4: Reopen wird als Nächstes direkt über SQLite implementiert.");
   }
 
   function resetJournal() {
-    const confirmed = window.confirm(
-      "Willst du das Trading Journal wirklich auf die Demo-Daten zurücksetzen?"
-    );
-
-    if (!confirmed) return;
-
-    setJournalTrades(trades);
-    localStorage.removeItem(STORAGE_KEY);
+    alert("V4.0.4: Reset wird später direkt über SQLite implementiert.");
   }
 
   async function exportYearlyReportPDF() {
@@ -205,7 +172,6 @@ export default function TradingJournal() {
       useCORS: true,
       onclone: (clonedDocument) => {
         const report = clonedDocument.querySelector("[data-pdf-report]");
-
         if (!report) return;
 
         const allElements = report.querySelectorAll("*");
@@ -217,41 +183,15 @@ export default function TradingJournal() {
           htmlElement.style.color = "#ffffff";
           htmlElement.style.borderColor = "#374151";
 
-          if (className.includes("bg-gray-900")) {
-            htmlElement.style.backgroundColor = "#111827";
-          }
-
-          if (className.includes("bg-gray-800")) {
-            htmlElement.style.backgroundColor = "#1f2937";
-          }
-
-          if (className.includes("bg-black")) {
-            htmlElement.style.backgroundColor = "#000000";
-          }
-
-          if (className.includes("text-green-400")) {
-            htmlElement.style.color = "#4ade80";
-          }
-
-          if (className.includes("text-red-400")) {
-            htmlElement.style.color = "#f87171";
-          }
-
-          if (className.includes("text-cyan-400")) {
-            htmlElement.style.color = "#22d3ee";
-          }
-
-          if (className.includes("text-blue-400")) {
-            htmlElement.style.color = "#60a5fa";
-          }
-
-          if (className.includes("text-yellow-400")) {
-            htmlElement.style.color = "#facc15";
-          }
-
-          if (className.includes("text-gray-400")) {
-            htmlElement.style.color = "#9ca3af";
-          }
+          if (className.includes("bg-gray-900")) htmlElement.style.backgroundColor = "#111827";
+          if (className.includes("bg-gray-800")) htmlElement.style.backgroundColor = "#1f2937";
+          if (className.includes("bg-black")) htmlElement.style.backgroundColor = "#000000";
+          if (className.includes("text-green-400")) htmlElement.style.color = "#4ade80";
+          if (className.includes("text-red-400")) htmlElement.style.color = "#f87171";
+          if (className.includes("text-cyan-400")) htmlElement.style.color = "#22d3ee";
+          if (className.includes("text-blue-400")) htmlElement.style.color = "#60a5fa";
+          if (className.includes("text-yellow-400")) htmlElement.style.color = "#facc15";
+          if (className.includes("text-gray-400")) htmlElement.style.color = "#9ca3af";
         });
       },
     });
@@ -294,30 +234,20 @@ export default function TradingJournal() {
   const periodData = buildPeriodPerformance(filteredTrades);
   const marketPerformanceData = buildMarketPerformance(filteredTrades);
 
-  const bestTrade = [...filteredTrades].sort(
-    (a, b) => b.profitLoss - a.profitLoss
-  )[0];
-
-  const worstTrade = [...filteredTrades].sort(
-    (a, b) => a.profitLoss - b.profitLoss
-  )[0];
+  const bestTrade = [...filteredTrades].sort((a, b) => b.profitLoss - a.profitLoss)[0];
+  const worstTrade = [...filteredTrades].sort((a, b) => a.profitLoss - b.profitLoss)[0];
 
   return (
     <main className="min-h-screen bg-black text-white p-10">
-      <a
-        href="/"
-        className="inline-block mb-8 text-blue-400 hover:text-blue-300"
-      >
+      <a href="/" className="inline-block mb-8 text-blue-400 hover:text-blue-300">
         ← Zurück zum Dashboard
       </a>
 
       <div className="flex justify-between items-start mb-8">
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
-
           <p className="text-gray-400">
-            Trading Journal mit dauerhafter Speicherung, Equity Curve,
-            Kennzahlen, Trade Management und Jahresreport PDF.
+            V4.0.4: Trading Journal liest jetzt direkt aus SQLite über /api/trades.
           </p>
         </div>
 
@@ -352,7 +282,7 @@ export default function TradingJournal() {
         </button>
 
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
-          V3.7.1: PDF-Farben für html2canvas gefixt.
+          {isLoaded ? "SQLite Verbindung aktiv" : "Lade Datenbank..."}
         </div>
       </div>
 
@@ -382,13 +312,7 @@ export default function TradingJournal() {
 
           <div className="bg-gray-900 p-6 rounded-xl">
             <h2 className="font-bold">Profit / Loss</h2>
-            <p
-              className={
-                totalProfit >= 0
-                  ? "text-2xl mt-2 text-green-400"
-                  : "text-2xl mt-2 text-red-400"
-              }
-            >
+            <p className={totalProfit >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
               {totalProfit} CHF
             </p>
           </div>
@@ -427,12 +351,7 @@ export default function TradingJournal() {
                   <XAxis dataKey="name" />
                   <YAxis />
                   <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="equity"
-                    stroke="#22c55e"
-                    strokeWidth={3}
-                  />
+                  <Line type="monotone" dataKey="equity" stroke="#22c55e" strokeWidth={3} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -495,9 +414,7 @@ export default function TradingJournal() {
 
             {bestTrade ? (
               <div className="space-y-2">
-                <p className="text-2xl font-bold text-green-400">
-                  {bestTrade.market}
-                </p>
+                <p className="text-2xl font-bold text-green-400">{bestTrade.market}</p>
                 <p>Date: {bestTrade.date}</p>
                 <p>Direction: {bestTrade.direction}</p>
                 <p>Profit: {bestTrade.profitLoss} CHF</p>
@@ -512,9 +429,7 @@ export default function TradingJournal() {
 
             {worstTrade ? (
               <div className="space-y-2">
-                <p className="text-2xl font-bold text-red-400">
-                  {worstTrade.market}
-                </p>
+                <p className="text-2xl font-bold text-red-400">{worstTrade.market}</p>
                 <p>Date: {worstTrade.date}</p>
                 <p>Direction: {worstTrade.direction}</p>
                 <p>Profit: {worstTrade.profitLoss} CHF</p>
@@ -545,14 +460,10 @@ export default function TradingJournal() {
               key={trade.id}
               className="grid grid-cols-9 gap-4 p-4 border-t border-gray-800 items-center"
             >
-              <div>{trade.date}</div>
+              <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
               <div>{trade.market}</div>
 
-              <div
-                className={
-                  trade.direction === "LONG" ? "text-green-400" : "text-red-400"
-                }
-              >
+              <div className={trade.direction === "LONG" ? "text-green-400" : "text-red-400"}>
                 {trade.direction}
               </div>
 
@@ -560,19 +471,11 @@ export default function TradingJournal() {
               <div>{trade.stopLoss}</div>
               <div>{trade.takeProfit}</div>
 
-              <div
-                className={
-                  trade.status === "OPEN" ? "text-yellow-400" : "text-green-400"
-                }
-              >
+              <div className={trade.status === "OPEN" ? "text-yellow-400" : "text-green-400"}>
                 {trade.status}
               </div>
 
-              <div
-                className={
-                  trade.profitLoss >= 0 ? "text-green-400" : "text-red-400"
-                }
-              >
+              <div className={trade.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
                 {trade.profitLoss} CHF
               </div>
 
@@ -580,14 +483,14 @@ export default function TradingJournal() {
                 {trade.status === "OPEN" ? (
                   <>
                     <button
-                      onClick={() => closeTrade(trade.id, "WIN")}
+                      onClick={closeTrade}
                       className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
                     >
                       WIN
                     </button>
 
                     <button
-                      onClick={() => closeTrade(trade.id, "LOSS")}
+                      onClick={closeTrade}
                       className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
                     >
                       LOSS
@@ -595,7 +498,7 @@ export default function TradingJournal() {
                   </>
                 ) : (
                   <button
-                    onClick={() => reopenTrade(trade.id)}
+                    onClick={reopenTrade}
                     className="bg-gray-700 hover:bg-gray-800 px-3 py-1 rounded text-sm"
                   >
                     Reopen
