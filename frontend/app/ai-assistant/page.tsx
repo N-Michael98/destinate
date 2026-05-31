@@ -18,6 +18,7 @@ import {
   showOpenTrades,
   showTradeSummary,
 } from "../data/tradeUtils";
+import { showJournalAnalytics } from "../data/journalAnalytics";
 
 type Message = {
   sender: "AI Assistant" | "Michael";
@@ -117,6 +118,12 @@ function isLocalTradingPrompt(input: string) {
     prompt.includes("open trades") ||
     prompt.includes("trade summary") ||
     prompt.includes("summary") ||
+    prompt.includes("journal analyse") ||
+    prompt.includes("journal analysis") ||
+    prompt.includes("trading analyse") ||
+    prompt.includes("trading analysis") ||
+    prompt.includes("performance analyse") ||
+    prompt.includes("performance analysis") ||
     prompt.includes("trades") ||
     prompt.includes("gold") ||
     prompt.includes("wti") ||
@@ -163,7 +170,7 @@ Take Profit: ${trade.takeProfit}
 Status: ${trade.status}
 
 Hinweis:
-Aktuell ist dieser Trade nur im Browser-State gespeichert. Dauerhafte Speicherung bauen wir als Nächstes mit einer API-Route.`;
+Aktuell ist dieser Trade nur im Browser-State gespeichert. Dauerhafte Speicherung bauen wir später mit Journal-Synchronisierung.`;
 }
 
 function showSessionTrades(trades: CapturedTrade[]) {
@@ -196,7 +203,7 @@ export default function AIAssistant() {
     {
       sender: "AI Assistant",
       text:
-        "V3.1 ist aktiv: Du kannst Trades im Chat erfassen. Beispiel: Long Gold Entry 3345 SL 3330 TP 3380",
+        "V3.6 ist aktiv: Ich kann jetzt auch dein Trading Journal analysieren. Teste: journal analyse oder performance analyse.",
     },
   ]);
 
@@ -268,6 +275,15 @@ export default function AIAssistant() {
       prompt.includes("summary")
     ) {
       aiResponse = showTradeSummary();
+    } else if (
+      prompt.includes("journal analyse") ||
+      prompt.includes("journal analysis") ||
+      prompt.includes("trading analyse") ||
+      prompt.includes("trading analysis") ||
+      prompt.includes("performance analyse") ||
+      prompt.includes("performance analysis")
+    ) {
+      aiResponse = showJournalAnalytics();
     } else if (prompt.includes("confidence") && lastMarket && contextData) {
       aiResponse = `${lastMarket} Confidence: ${contextData.confidence}%`;
     } else if (prompt.includes("risiko") && lastMarket && contextData) {
@@ -322,7 +338,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
       </h1>
 
       <p className="text-gray-400 mb-8">
-        Smart Prompt Engine mit Market Context Memory, API-Verbindung und AI Trade Capture.
+        Smart Prompt Engine mit Market Context Memory, API-Verbindung, AI Trade Capture und Journal Analytics.
       </p>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
@@ -389,7 +405,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
                 handleSend();
               }
             }}
-            placeholder="Beispiel: Long Gold Entry 3345 SL 3330 TP 3380"
+            placeholder="Beispiel: journal analyse oder Long Gold Entry 3345 SL 3330 TP 3380"
             className="flex-1 bg-black border border-gray-800 rounded-xl px-4 py-3"
           />
 
@@ -408,6 +424,15 @@ Take Profit: ${contextData.setup.takeProfit}`;
           <h2 className="text-xl font-bold mb-4">⚡ Quick Actions</h2>
 
           <div className="space-y-3">
+            <button
+              onClick={() =>
+                addMessage("Zeige AI Journal Analyse", showJournalAnalytics())
+              }
+              className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
+            >
+              🤖 AI Journal Analyse
+            </button>
+
             <button
               onClick={() =>
                 addMessage("Zeige Session Trades", showSessionTrades(capturedTrades))
@@ -561,19 +586,19 @@ Take Profit: ${contextData.setup.takeProfit}`;
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-4">📘 V3.1 Trade Capture Tests</h2>
+          <h2 className="text-xl font-bold mb-4">📘 V3.6 Journal Analytics Tests</h2>
 
           <ul className="space-y-3 text-gray-300">
-            <li>1. Schreibe: Long Gold Entry 3345 SL 3330 TP 3380</li>
-            <li>2. Schreibe: Short EURUSD Entry 1.085 SL 1.09 TP 1.075</li>
-            <li>3. Klicke: Session Trades</li>
-            <li>4. Bestehende Demo-Trades: Offene Trades</li>
-            <li>5. Summary: Trade Summary</li>
+            <li>1. Klicke: AI Journal Analyse</li>
+            <li>2. Oder schreibe: journal analyse</li>
+            <li>3. Oder schreibe: performance analyse</li>
+            <li>4. Ändere Trades im Trading Journal und teste erneut.</li>
+            <li>5. Die Analyse liest deine gespeicherten Browser-Daten.</li>
           </ul>
 
           <div className="mt-6 bg-black p-4 rounded-lg border border-gray-800 text-gray-300">
-            V3.1 speichert neue Trades nur in der aktuellen Browser-Session.
-            Dauerhafte Speicherung bauen wir als V3.2 mit API-Route.
+            V3.6 verbindet Trading Journal und AI Assistant. Das ist die erste
+            echte Journal-Auswertung direkt im Chat.
           </div>
         </div>
       </div>
