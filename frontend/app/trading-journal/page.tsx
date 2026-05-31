@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -15,6 +15,8 @@ import {
 import { trades } from "../data/trades";
 
 type Trade = (typeof trades)[number];
+
+const STORAGE_KEY = "ai-trading-journal-trades";
 
 function getTotalProfit(data: Trade[]) {
   return data.reduce((sum, trade) => sum + trade.profitLoss, 0);
@@ -33,8 +35,7 @@ function getAverageWinner(data: Trade[]) {
   if (winners.length === 0) return 0;
 
   return Math.round(
-    winners.reduce((sum, trade) => sum + trade.profitLoss, 0) /
-      winners.length
+    winners.reduce((sum, trade) => sum + trade.profitLoss, 0) / winners.length
   );
 }
 
@@ -43,8 +44,7 @@ function getAverageLoser(data: Trade[]) {
   if (losers.length === 0) return 0;
 
   return Math.round(
-    losers.reduce((sum, trade) => sum + trade.profitLoss, 0) /
-      losers.length
+    losers.reduce((sum, trade) => sum + trade.profitLoss, 0) / losers.length
   );
 }
 
@@ -108,9 +108,30 @@ function buildMarketPerformance(data: Trade[]) {
 
 export default function TradingJournal() {
   const [journalTrades, setJournalTrades] = useState<Trade[]>(trades);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   const markets = ["All", ...new Set(journalTrades.map((trade) => trade.market))];
   const [selectedMarket, setSelectedMarket] = useState("All");
+
+  useEffect(() => {
+    const savedTrades = localStorage.getItem(STORAGE_KEY);
+
+    if (savedTrades) {
+      try {
+        setJournalTrades(JSON.parse(savedTrades));
+      } catch {
+        setJournalTrades(trades);
+      }
+    }
+
+    setIsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(journalTrades));
+  }, [journalTrades, isLoaded]);
 
   const filteredTrades =
     selectedMarket === "All"
@@ -119,9 +140,7 @@ export default function TradingJournal() {
 
   function closeTrade(tradeId: number, result: "WIN" | "LOSS") {
     const input = window.prompt(
-      result === "WIN"
-        ? "Gewinn in CHF eingeben:"
-        : "Verlust in CHF eingeben:"
+      result === "WIN" ? "Gewinn in CHF eingeben:" : "Verlust in CHF eingeben:"
     );
 
     if (!input) return;
@@ -164,6 +183,17 @@ export default function TradingJournal() {
     );
   }
 
+  function resetJournal() {
+    const confirmed = window.confirm(
+      "Willst du das Trading Journal wirklich auf die Demo-Daten zurücksetzen?"
+    );
+
+    if (!confirmed) return;
+
+    setJournalTrades(trades);
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
   const totalProfit = getTotalProfit(filteredTrades);
   const openTrades = filteredTrades.filter((trade) => trade.status === "OPEN");
   const closedTrades = filteredTrades.filter((trade) => trade.status === "CLOSED");
@@ -197,7 +227,8 @@ export default function TradingJournal() {
       <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
 
       <p className="text-gray-400 mb-8">
-        Trading Journal mit Equity Curve, Market-Filter, Kennzahlen und Trade Management.
+        Trading Journal mit dauerhafter Speicherung im Browser, Equity Curve,
+        Market-Filter, Kennzahlen und Trade Management.
       </p>
 
       <div className="mb-8 flex gap-4 items-end">
@@ -215,8 +246,15 @@ export default function TradingJournal() {
           </select>
         </div>
 
+        <button
+          onClick={resetJournal}
+          className="bg-red-700 hover:bg-red-800 px-4 py-3 rounded-xl"
+        >
+          Journal zurücksetzen
+        </button>
+
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
-          V3.4: Trades können als WIN oder LOSS geschlossen werden.
+          V3.5: Änderungen bleiben nach Browser-Reload gespeichert.
         </div>
       </div>
 
@@ -406,9 +444,7 @@ export default function TradingJournal() {
 
             <div
               className={
-                trade.direction === "LONG"
-                  ? "text-green-400"
-                  : "text-red-400"
+                trade.direction === "LONG" ? "text-green-400" : "text-red-400"
               }
             >
               {trade.direction}
@@ -420,9 +456,7 @@ export default function TradingJournal() {
 
             <div
               className={
-                trade.status === "OPEN"
-                  ? "text-yellow-400"
-                  : "text-green-400"
+                trade.status === "OPEN" ? "text-yellow-400" : "text-green-400"
               }
             >
               {trade.status}
