@@ -45,6 +45,7 @@ export default function Home() {
             <Link className="block hover:text-blue-400" href="/">🏠 Dashboard</Link>
             <Link className="block hover:text-blue-400" href="/market-intelligence">📊 Market Intelligence</Link>
             <Link className="block hover:text-blue-400" href="/ai-assistant">🤖 AI Assistant</Link>
+            <Link className="block hover:text-blue-400" href="/trading-journal">📒 Trading Journal</Link>
             <Link className="block hover:text-blue-400" href="/trading">📈 Trading</Link>
             <Link className="block hover:text-blue-400" href="/simulation-lab">🧪 Simulation Lab</Link>
             <Link className="block hover:text-blue-400" href="/security-center">🛡️ Security Center</Link>
@@ -110,15 +111,10 @@ export default function Home() {
               <h3 className="text-xl font-bold mb-4">🎯 Top Opportunity</h3>
 
               <div className="space-y-2">
-                <p className="text-2xl font-bold text-blue-400">
-                  {topOpportunity.name}
-                </p>
-
+                <p className="text-2xl font-bold text-blue-400">{topOpportunity.name}</p>
                 <p className="text-gray-400">{topOpportunity.category}</p>
                 <p>Score: {topOpportunity.score}</p>
-                <p className="text-cyan-400 font-bold">
-                  Confidence: {topOpportunity.confidence}%
-                </p>
+                <p className="text-cyan-400 font-bold">Confidence: {topOpportunity.confidence}%</p>
                 <p>Risk/Reward: {topOpportunity.riskReward}</p>
 
                 <p
@@ -145,9 +141,7 @@ export default function Home() {
                   Risk: {topOpportunity.risk}
                 </p>
 
-                <p className="pt-3 text-blue-400 font-semibold">
-                  Analyse öffnen →
-                </p>
+                <p className="pt-3 text-blue-400 font-semibold">Analyse öffnen →</p>
               </div>
             </Link>
           </div>
