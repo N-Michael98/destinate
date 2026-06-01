@@ -23,6 +23,13 @@ type Trade = {
   entry: number;
   stopLoss: number;
   takeProfit: number;
+
+  accountSize: number;
+  riskPercent: number;
+  riskAmount: number;
+  riskReward: number;
+  positionSize: number;
+
   status: string;
   result: string;
   profitLoss: number;
@@ -77,6 +84,18 @@ function getProfitFactor(data: Trade[]) {
   return Number((grossProfit / grossLoss).toFixed(2));
 }
 
+function getAverageRiskReward(data: Trade[]) {
+  const tradesWithRisk = data.filter((trade) => trade.riskReward > 0);
+  if (tradesWithRisk.length === 0) return 0;
+
+  const total = tradesWithRisk.reduce((sum, trade) => sum + trade.riskReward, 0);
+  return Number((total / tradesWithRisk.length).toFixed(2));
+}
+
+function getTotalRiskAmount(data: Trade[]) {
+  return data.reduce((sum, trade) => sum + (trade.riskAmount ?? 0), 0);
+}
+
 function buildEquityCurve(data: Trade[]) {
   let equity = 0;
 
@@ -125,6 +144,8 @@ export default function TradingJournal() {
   const [entry, setEntry] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
+  const [accountSize, setAccountSize] = useState("30000");
+  const [riskPercent, setRiskPercent] = useState("1");
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -134,6 +155,8 @@ export default function TradingJournal() {
   const [editEntry, setEditEntry] = useState("");
   const [editStopLoss, setEditStopLoss] = useState("");
   const [editTakeProfit, setEditTakeProfit] = useState("");
+  const [editAccountSize, setEditAccountSize] = useState("30000");
+  const [editRiskPercent, setEditRiskPercent] = useState("1");
   const [editNotes, setEditNotes] = useState("");
   const [isEditing, setIsEditing] = useState(false);
 
@@ -166,8 +189,8 @@ export default function TradingJournal() {
       : journalTrades.filter((trade) => trade.market === selectedMarket);
 
   async function createTrade() {
-    if (!market || !entry || !stopLoss || !takeProfit) {
-      alert("Bitte Market, Entry, Stop Loss und Take Profit ausfüllen.");
+    if (!market || !entry || !stopLoss || !takeProfit || !accountSize || !riskPercent) {
+      alert("Bitte Market, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
       return;
     }
 
@@ -185,6 +208,8 @@ export default function TradingJournal() {
           entry,
           stopLoss,
           takeProfit,
+          accountSize,
+          riskPercent,
           notes,
         }),
       });
@@ -203,6 +228,8 @@ export default function TradingJournal() {
       setEntry("");
       setStopLoss("");
       setTakeProfit("");
+      setAccountSize("30000");
+      setRiskPercent("1");
       setNotes("");
 
       alert("Trade erfolgreich in SQLite gespeichert.");
@@ -221,6 +248,8 @@ export default function TradingJournal() {
     setEditEntry(String(trade.entry));
     setEditStopLoss(String(trade.stopLoss));
     setEditTakeProfit(String(trade.takeProfit));
+    setEditAccountSize(String(trade.accountSize ?? 30000));
+    setEditRiskPercent(String(trade.riskPercent ?? 1));
     setEditNotes(trade.notes ?? "");
   }
 
@@ -231,14 +260,23 @@ export default function TradingJournal() {
     setEditEntry("");
     setEditStopLoss("");
     setEditTakeProfit("");
+    setEditAccountSize("30000");
+    setEditRiskPercent("1");
     setEditNotes("");
   }
 
   async function saveEditedTrade() {
     if (!editingTrade) return;
 
-    if (!editMarket || !editEntry || !editStopLoss || !editTakeProfit) {
-      alert("Bitte Market, Entry, Stop Loss und Take Profit ausfüllen.");
+    if (
+      !editMarket ||
+      !editEntry ||
+      !editStopLoss ||
+      !editTakeProfit ||
+      !editAccountSize ||
+      !editRiskPercent
+    ) {
+      alert("Bitte Market, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
       return;
     }
 
@@ -256,6 +294,8 @@ export default function TradingJournal() {
           entry: editEntry,
           stopLoss: editStopLoss,
           takeProfit: editTakeProfit,
+          accountSize: editAccountSize,
+          riskPercent: editRiskPercent,
           notes: editNotes,
         }),
       });
@@ -466,6 +506,11 @@ export default function TradingJournal() {
   const averageLoser = getAverageLoser(filteredTrades);
   const profitFactor = getProfitFactor(filteredTrades);
 
+  const totalRiskAmount = getTotalRiskAmount(filteredTrades);
+  const averageRiskReward = getAverageRiskReward(filteredTrades);
+  const latestAccountSize = filteredTrades[0]?.accountSize ?? 30000;
+  const latestRiskPercent = filteredTrades[0]?.riskPercent ?? 1;
+
   const equityData = buildEquityCurve(filteredTrades);
   const periodData = buildPeriodPerformance(filteredTrades);
   const marketPerformanceData = buildMarketPerformance(filteredTrades);
@@ -483,7 +528,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.4: Trades speichern, schließen, löschen, resetten und bearbeiten.
+            V4.5: Trading Journal mit Risk Management, Position Size und Risk/Reward.
           </p>
         </div>
 
@@ -499,7 +544,7 @@ export default function TradingJournal() {
         <div className="bg-gray-900 p-6 rounded-xl border border-blue-700 mb-8">
           <h2 className="text-2xl font-bold mb-4">✏️ Trade bearbeiten #{editingTrade.id}</h2>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <input
               placeholder="Market"
               value={editMarket}
@@ -538,6 +583,20 @@ export default function TradingJournal() {
             />
 
             <input
+              placeholder="Account Size"
+              value={editAccountSize}
+              onChange={(event) => setEditAccountSize(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            />
+
+            <input
+              placeholder="Risk %"
+              value={editRiskPercent}
+              onChange={(event) => setEditRiskPercent(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            />
+
+            <input
               placeholder="Notizen"
               value={editNotes}
               onChange={(event) => setEditNotes(event.target.value)}
@@ -567,7 +626,7 @@ export default function TradingJournal() {
       <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 mb-8">
         <h2 className="text-2xl font-bold mb-4">➕ Neuer Trade</h2>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           <input
             placeholder="Market, z.B. Gold"
             value={market}
@@ -602,6 +661,20 @@ export default function TradingJournal() {
             placeholder="Take Profit"
             value={takeProfit}
             onChange={(event) => setTakeProfit(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          />
+
+          <input
+            placeholder="Account Size"
+            value={accountSize}
+            onChange={(event) => setAccountSize(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          />
+
+          <input
+            placeholder="Risk %"
+            value={riskPercent}
+            onChange={(event) => setRiskPercent(event.target.value)}
             className="bg-black border border-gray-700 p-3 rounded-xl"
           />
 
@@ -700,6 +773,28 @@ export default function TradingJournal() {
           <div className="bg-gray-900 p-6 rounded-xl">
             <h2 className="font-bold">Closed Trades</h2>
             <p className="text-2xl mt-2">{closedTrades.length}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl">
+            <h2 className="font-bold">Account Size</h2>
+            <p className="text-2xl mt-2 text-green-400">{latestAccountSize} CHF</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl">
+            <h2 className="font-bold">Risk %</h2>
+            <p className="text-2xl mt-2 text-yellow-400">{latestRiskPercent}%</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl">
+            <h2 className="font-bold">Total Risk</h2>
+            <p className="text-2xl mt-2 text-red-400">{totalRiskAmount} CHF</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl">
+            <h2 className="font-bold">Avg. R/R</h2>
+            <p className="text-2xl mt-2 text-cyan-400">{averageRiskReward}</p>
           </div>
         </div>
 
@@ -807,89 +902,103 @@ export default function TradingJournal() {
           </div>
         </div>
 
-        <div className="bg-gray-900 p-6 rounded-xl">
+        <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
           <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
 
-          <div className="grid grid-cols-11 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
-            <div>Date</div>
-            <div>Market</div>
-            <div>Direction</div>
-            <div>Entry</div>
-            <div>SL</div>
-            <div>TP</div>
-            <div>Status</div>
-            <div>P/L</div>
-            <div>Actions</div>
-            <div>Edit</div>
-            <div>Delete</div>
-          </div>
-
-          {filteredTrades.map((trade) => (
-            <div
-              key={trade.id}
-              className="grid grid-cols-11 gap-4 p-4 border-t border-gray-800 items-center"
-            >
-              <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
-              <div>{trade.market}</div>
-
-              <div className={trade.direction === "LONG" ? "text-green-400" : "text-red-400"}>
-                {trade.direction}
-              </div>
-
-              <div>{trade.entry}</div>
-              <div>{trade.stopLoss}</div>
-              <div>{trade.takeProfit}</div>
-
-              <div className={trade.status === "OPEN" ? "text-yellow-400" : "text-green-400"}>
-                {trade.status}
-              </div>
-
-              <div className={trade.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
-                {trade.profitLoss} CHF
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {trade.status === "OPEN" ? (
-                  <>
-                    <button
-                      onClick={() => closeTrade(trade.id, "WIN")}
-                      className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
-                    >
-                      WIN
-                    </button>
-
-                    <button
-                      onClick={() => closeTrade(trade.id, "LOSS")}
-                      className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
-                    >
-                      LOSS
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => reopenTrade(trade.id)}
-                    className="bg-gray-700 hover:bg-gray-800 px-3 py-1 rounded text-sm"
-                  >
-                    Reopen
-                  </button>
-                )}
-              </div>
-
-              <button
-                onClick={() => startEditTrade(trade)}
-                className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm"
-              >
-                Edit
-              </button>
-
-              <button
-                onClick={() => deleteTrade(trade.id)}
-                className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm"
-              >
-                Löschen
-              </button>
+          <div className="min-w-[1700px]">
+            <div className="grid grid-cols-16 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+              <div>Date</div>
+              <div>Market</div>
+              <div>Direction</div>
+              <div>Entry</div>
+              <div>SL</div>
+              <div>TP</div>
+              <div>Risk</div>
+              <div>R/R</div>
+              <div>Size</div>
+              <div>Status</div>
+              <div>P/L</div>
+              <div>Actions</div>
+              <div>Edit</div>
+              <div>Delete</div>
+              <div>Account</div>
+              <div>Risk %</div>
             </div>
-          ))}
+
+            {filteredTrades.map((trade) => (
+              <div
+                key={trade.id}
+                className="grid grid-cols-16 gap-4 p-4 border-t border-gray-800 items-center"
+              >
+                <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
+                <div>{trade.market}</div>
+
+                <div className={trade.direction === "LONG" ? "text-green-400" : "text-red-400"}>
+                  {trade.direction}
+                </div>
+
+                <div>{trade.entry}</div>
+                <div>{trade.stopLoss}</div>
+                <div>{trade.takeProfit}</div>
+
+                <div className="text-red-400">{trade.riskAmount ?? 0} CHF</div>
+                <div className="text-cyan-400">{trade.riskReward ?? 0}</div>
+                <div className="text-blue-400">{trade.positionSize ?? 0}</div>
+
+                <div className={trade.status === "OPEN" ? "text-yellow-400" : "text-green-400"}>
+                  {trade.status}
+                </div>
+
+                <div className={trade.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
+                  {trade.profitLoss} CHF
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {trade.status === "OPEN" ? (
+                    <>
+                      <button
+                        onClick={() => closeTrade(trade.id, "WIN")}
+                        className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
+                      >
+                        WIN
+                      </button>
+
+                      <button
+                        onClick={() => closeTrade(trade.id, "LOSS")}
+                        className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
+                      >
+                        LOSS
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => reopenTrade(trade.id)}
+                      className="bg-gray-700 hover:bg-gray-800 px-3 py-1 rounded text-sm"
+                    >
+                      Reopen
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => startEditTrade(trade)}
+                  className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm"
+                >
+                  Edit
+                </button>
+
+                <button
+                  onClick={() => deleteTrade(trade.id)}
+                  className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm"
+                >
+                  Löschen
+                </button>
+
+                <div>{trade.accountSize ?? 30000}</div>
+                <div>{trade.riskPercent ?? 1}%</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </main>
