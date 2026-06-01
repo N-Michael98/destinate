@@ -117,6 +117,80 @@ function buildEquityCurve(data: Trade[]) {
     });
 }
 
+// ===== Account Equity System V4.7.1 =====
+
+function buildAccountEquityCurve(data: Trade[], startingBalance: number) {
+  let accountEquity = startingBalance;
+  let peakAccountEquity = startingBalance;
+
+  return [...data]
+    .filter((trade) => trade.status === "CLOSED")
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    )
+    .map((trade) => {
+      accountEquity += trade.profitLoss;
+
+      if (accountEquity > peakAccountEquity) {
+        peakAccountEquity = accountEquity;
+      }
+
+      const drawdown = accountEquity - peakAccountEquity;
+      const drawdownPercent =
+        peakAccountEquity > 0
+          ? Number(((Math.abs(drawdown) / peakAccountEquity) * 100).toFixed(2))
+          : 0;
+
+      return {
+        name: `#${trade.id}`,
+        date: trade.date,
+        market: trade.market,
+        profitLoss: trade.profitLoss,
+        accountEquity: Number(accountEquity.toFixed(2)),
+        peakAccountEquity: Number(peakAccountEquity.toFixed(2)),
+        drawdown: Number(drawdown.toFixed(2)),
+        drawdownPercent,
+      };
+    });
+}
+
+function getAccountEquityStats(data: Trade[], startingBalance: number) {
+  const accountEquityData = buildAccountEquityCurve(data, startingBalance);
+  const totalProfit = getTotalProfit(data);
+  const currentEquity = startingBalance + totalProfit;
+  const growthPercent =
+    startingBalance > 0 ? (totalProfit / startingBalance) * 100 : 0;
+
+  const peakAccountEquity = accountEquityData.reduce(
+    (highest, item) => Math.max(highest, item.peakAccountEquity),
+    startingBalance
+  );
+
+  let maxDrawdown = 0;
+  let currentDrawdown = 0;
+  let maxDrawdownPercent = 0;
+
+  accountEquityData.forEach((item) => {
+    currentDrawdown = item.drawdown;
+
+    if (item.drawdown < maxDrawdown) {
+      maxDrawdown = item.drawdown;
+      maxDrawdownPercent = item.drawdownPercent;
+    }
+  });
+
+  return {
+    currentEquity: Number(currentEquity.toFixed(2)),
+    growthPercent: Number(growthPercent.toFixed(2)),
+    peakAccountEquity: Number(peakAccountEquity.toFixed(2)),
+    maxDrawdown: Number(maxDrawdown.toFixed(2)),
+    currentDrawdown: Number(currentDrawdown.toFixed(2)),
+    maxDrawdownPercent: Number(maxDrawdownPercent.toFixed(2)),
+    accountEquityData,
+  };
+}
+
 // ===== Max Drawdown System V4.6 =====
 
 function getMaxDrawdownStats(data: Trade[]) {
@@ -203,6 +277,9 @@ export default function TradingJournal() {
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  const [startingBalance, setStartingBalance] = useState("30000");
+  const [accountRiskPercent, setAccountRiskPercent] = useState("1");
+
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [editMarket, setEditMarket] = useState("");
   const [editDirection, setEditDirection] = useState("LONG");
@@ -236,6 +313,31 @@ export default function TradingJournal() {
   useEffect(() => {
     loadTrades();
   }, []);
+
+  useEffect(() => {
+    const savedStartingBalance = localStorage.getItem("startingBalance");
+    const savedAccountRiskPercent = localStorage.getItem("accountRiskPercent");
+
+    if (savedStartingBalance) {
+      setStartingBalance(savedStartingBalance);
+      setAccountSize(savedStartingBalance);
+    }
+
+    if (savedAccountRiskPercent) {
+      setAccountRiskPercent(savedAccountRiskPercent);
+      setRiskPercent(savedAccountRiskPercent);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("startingBalance", startingBalance);
+    setAccountSize(startingBalance);
+  }, [startingBalance]);
+
+  useEffect(() => {
+    localStorage.setItem("accountRiskPercent", accountRiskPercent);
+    setRiskPercent(accountRiskPercent);
+  }, [accountRiskPercent]);
 
   const filteredTrades =
     selectedMarket === "All"
@@ -282,8 +384,8 @@ export default function TradingJournal() {
       setEntry("");
       setStopLoss("");
       setTakeProfit("");
-      setAccountSize("30000");
-      setRiskPercent("1");
+      setAccountSize(startingBalance);
+      setRiskPercent(accountRiskPercent);
       setNotes("");
 
       alert("Trade erfolgreich in SQLite gespeichert.");
@@ -551,6 +653,13 @@ export default function TradingJournal() {
     pdf.save("jahresreport-trading-journal.pdf");
   }
 
+  const numericStartingBalance = Number(startingBalance) || 0;
+  const numericAccountRiskPercent = Number(accountRiskPercent) || 0;
+  const plannedRiskAmount =
+    numericStartingBalance > 0
+      ? Number(((numericStartingBalance * numericAccountRiskPercent) / 100).toFixed(2))
+      : 0;
+
   const totalProfit = getTotalProfit(filteredTrades);
   const openTrades = filteredTrades.filter((trade) => trade.status === "OPEN");
   const closedTrades = filteredTrades.filter((trade) => trade.status === "CLOSED");
@@ -561,15 +670,18 @@ export default function TradingJournal() {
   const profitFactor = getProfitFactor(filteredTrades);
 
   const totalRiskAmount = getTotalRiskAmount(filteredTrades);
+  const openRiskAmount = getTotalRiskAmount(openTrades);
   const averageRiskReward = getAverageRiskReward(filteredTrades);
-  const latestAccountSize = filteredTrades[0]?.accountSize ?? 30000;
-  const latestRiskPercent = filteredTrades[0]?.riskPercent ?? 1;
 
   const equityData = buildEquityCurve(filteredTrades);
   const periodData = buildPeriodPerformance(filteredTrades);
   const marketPerformanceData = buildMarketPerformance(filteredTrades);
 
   const drawdownStats = getMaxDrawdownStats(filteredTrades);
+  const accountStats = getAccountEquityStats(
+    filteredTrades,
+    numericStartingBalance
+  );
 
   const bestTrade = [...filteredTrades].sort((a, b) => b.profitLoss - a.profitLoss)[0];
   const worstTrade = [...filteredTrades].sort((a, b) => a.profitLoss - b.profitLoss)[0];
@@ -584,7 +696,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.6: Trading Journal mit Risk Management, Position Size, Risk/Reward und Max Drawdown.
+            V4.7: Trading Journal mit Account Equity, Account Risk %, Risk Management und Max Drawdown.
           </p>
         </div>
 
@@ -594,6 +706,44 @@ export default function TradingJournal() {
         >
           📄 Jahresreport PDF exportieren
         </button>
+      </div>
+
+      <div className="bg-gray-900 p-6 rounded-xl border border-green-800 mb-8">
+        <h2 className="text-2xl font-bold mb-4">💼 Account Settings V4.7.1</h2>
+
+        <div className="grid grid-cols-4 gap-4">
+          <div>
+            <label className="block mb-2 text-gray-400">Starting Balance</label>
+            <input
+              placeholder="z.B. 30000"
+              value={startingBalance}
+              onChange={(event) => setStartingBalance(event.target.value)}
+              className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+            />
+          </div>
+
+          <div>
+            <label className="block mb-2 text-gray-400">Account Risk %</label>
+            <input
+              placeholder="z.B. 1"
+              value={accountRiskPercent}
+              onChange={(event) => setAccountRiskPercent(event.target.value)}
+              className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+            />
+          </div>
+
+          <div className="bg-black border border-gray-800 p-4 rounded-xl">
+            <h3 className="font-bold text-gray-300">Risk pro Trade</h3>
+            <p className="text-2xl mt-2 text-red-400">{plannedRiskAmount} CHF</p>
+          </div>
+
+          <div className="bg-black border border-gray-800 p-4 rounded-xl">
+            <h3 className="font-bold text-gray-300">Auto Trade Values</h3>
+            <p className="text-sm mt-2 text-gray-400">
+              Neue Trades nutzen automatisch diese Account Size und Risk %.
+            </p>
+          </div>
+        </div>
       </div>
 
       {editingTrade && (
@@ -833,22 +983,54 @@ export default function TradingJournal() {
         </div>
 
         <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Account Size</h2>
-            <p className="text-2xl mt-2 text-green-400">{latestAccountSize} CHF</p>
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Starting Balance</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {numericStartingBalance} CHF
+            </p>
           </div>
 
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Risk %</h2>
-            <p className="text-2xl mt-2 text-yellow-400">{latestRiskPercent}%</p>
+          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+            <h2 className="font-bold">Current Equity</h2>
+            <p className="text-2xl mt-2 text-cyan-400">
+              {accountStats.currentEquity} CHF
+            </p>
           </div>
 
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Total Risk</h2>
+          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+            <h2 className="font-bold">Growth %</h2>
+            <p className={accountStats.growthPercent >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
+              {accountStats.growthPercent}%
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+            <h2 className="font-bold">Risk pro Trade</h2>
+            <p className="text-2xl mt-2 text-yellow-400">
+              {plannedRiskAmount} CHF
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+            <h2 className="font-bold">Account Risk %</h2>
+            <p className="text-2xl mt-2 text-yellow-400">
+              {accountRiskPercent}%
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Historical Total Risk</h2>
             <p className="text-2xl mt-2 text-red-400">{totalRiskAmount} CHF</p>
           </div>
 
-          <div className="bg-gray-900 p-6 rounded-xl">
+          <div className="bg-gray-900 p-6 rounded-xl border border-orange-800">
+            <h2 className="font-bold">Open Trade Risk</h2>
+            <p className="text-2xl mt-2 text-orange-400">{openRiskAmount} CHF</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
             <h2 className="font-bold">Avg. R/R</h2>
             <p className="text-2xl mt-2 text-cyan-400">{averageRiskReward}</p>
           </div>
@@ -858,28 +1040,28 @@ export default function TradingJournal() {
           <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
             <h2 className="font-bold">Max Drawdown</h2>
             <p className="text-2xl mt-2 text-red-400">
-              {drawdownStats.maxDrawdown} CHF
+              {accountStats.maxDrawdown} CHF
             </p>
           </div>
 
           <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
             <h2 className="font-bold">Max DD %</h2>
             <p className="text-2xl mt-2 text-yellow-400">
-              {drawdownStats.maxDrawdownPercent}%
+              {accountStats.maxDrawdownPercent}%
             </p>
           </div>
 
           <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
             <h2 className="font-bold">Current Drawdown</h2>
             <p className="text-2xl mt-2 text-blue-400">
-              {drawdownStats.currentDrawdown} CHF
+              {accountStats.currentDrawdown} CHF
             </p>
           </div>
 
           <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Peak Equity</h2>
+            <h2 className="font-bold">Peak Account Value</h2>
             <p className="text-2xl mt-2 text-green-400">
-              {drawdownStats.peakEquity} CHF
+              {accountStats.peakAccountEquity} CHF
             </p>
           </div>
         </div>
@@ -921,11 +1103,32 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
+              <h2 className="text-xl font-bold mb-4">💼 Account Equity Curve</h2>
+
+              <div className="h-80 min-h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={accountStats.accountEquityData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="accountEquity"
+                      stroke="#22d3ee"
+                      strokeWidth={3}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
               <h2 className="text-xl font-bold mb-4">📉 Max Drawdown Curve</h2>
 
               <div className="h-80 min-h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={drawdownStats.drawdownData}>
+                  <LineChart data={accountStats.accountEquityData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis />
