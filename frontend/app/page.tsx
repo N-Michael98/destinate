@@ -47,6 +47,7 @@ export default function Home() {
             <Link className="block hover:text-blue-400" href="/ai-assistant">🤖 AI Assistant</Link>
             <Link className="block hover:text-blue-400" href="/trading-journal">📒 Trading Journal</Link>
             <Link className="block hover:text-blue-400" href="/trading">📈 Trading</Link>
+            <Link className="block hover:text-blue-400" href="#broker-hub">🔌 Broker Hub</Link>
             <Link className="block hover:text-blue-400" href="/simulation-lab">🧪 Simulation Lab</Link>
             <Link className="block hover:text-blue-400" href="/security-center">🛡️ Security Center</Link>
             <Link className="block hover:text-blue-400" href="/settings">⚙️ Settings</Link>
@@ -76,6 +77,11 @@ export default function Home() {
             <div className="bg-gray-900 p-5 rounded-xl">
               <h3 className="font-bold text-lg">☁️ Server</h3>
               <p className="mt-2 text-blue-400">Localhost</p>
+            </div>
+
+            <div className="bg-gray-900 p-5 rounded-xl border border-orange-900">
+              <h3 className="font-bold text-lg">🔌 Broker Hub</h3>
+              <p className="mt-2 text-orange-400">Simulation Mode</p>
             </div>
           </div>
 
@@ -144,6 +150,106 @@ export default function Home() {
                 <p className="pt-3 text-blue-400 font-semibold">Analyse öffnen →</p>
               </div>
             </Link>
+          </div>
+
+
+          <div id="broker-hub" className="bg-gray-900 p-6 rounded-xl mb-8 border border-orange-900">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-2xl font-bold">🔌 Broker Integration Layer V6.0</h3>
+                <p className="text-gray-400 mt-2">
+                  Architektur für zukünftige Broker-Verbindungen. Aktuell sicher im Simulationsmodus.
+                </p>
+              </div>
+
+              <div className="bg-black border border-orange-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Bot Execution</p>
+                <p className="text-orange-400 font-bold">Simulation Only</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6 mb-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <div className="flex justify-between items-start mb-4">
+                  <h4 className="text-xl font-bold">Capital.com</h4>
+                  <span className="text-red-400 font-bold">Disconnected</span>
+                </div>
+
+                <div className="space-y-3 text-gray-300">
+                  <p>API Key: <span className="text-gray-500">Not configured</span></p>
+                  <p>Account: <span className="text-gray-500">Demo / Live later</span></p>
+                  <p>Status: <span className="text-orange-400">Coming Soon</span></p>
+                </div>
+
+                <button className="mt-5 w-full bg-gray-800 text-gray-400 px-4 py-3 rounded-xl cursor-not-allowed">
+                  Connect später
+                </button>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <div className="flex justify-between items-start mb-4">
+                  <h4 className="text-xl font-bold">IC Markets</h4>
+                  <span className="text-red-400 font-bold">Disconnected</span>
+                </div>
+
+                <div className="space-y-3 text-gray-300">
+                  <p>Account Number: <span className="text-gray-500">Not configured</span></p>
+                  <p>Server: <span className="text-gray-500">Not configured</span></p>
+                  <p>Status: <span className="text-orange-400">Coming Soon</span></p>
+                </div>
+
+                <button className="mt-5 w-full bg-gray-800 text-gray-400 px-4 py-3 rounded-xl cursor-not-allowed">
+                  Connect später
+                </button>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <div className="flex justify-between items-start mb-4">
+                  <h4 className="text-xl font-bold">MetaTrader 5</h4>
+                  <span className="text-red-400 font-bold">Disconnected</span>
+                </div>
+
+                <div className="space-y-3 text-gray-300">
+                  <p>Bridge: <span className="text-gray-500">Not installed</span></p>
+                  <p>Execution: <span className="text-gray-500">Disabled</span></p>
+                  <p>Status: <span className="text-orange-400">Coming Soon</span></p>
+                </div>
+
+                <button className="mt-5 w-full bg-gray-800 text-gray-400 px-4 py-3 rounded-xl cursor-not-allowed">
+                  Connect später
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡️ Bot Permissions</h4>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Read Account Data</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Read Open Positions</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">🔒 Place Orders</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">🔒 Modify Orders</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">🔒 Close Orders</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">🔒 Auto Execution</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🤖 Future Bot Flow</h4>
+
+                <div className="space-y-3 text-gray-300">
+                  <p>1. Signal Engine prüft Setup Quality.</p>
+                  <p>2. AI Trade Review bewertet den Trade.</p>
+                  <p>3. Bot Readiness prüft System-Reife.</p>
+                  <p>4. Broker Hub sendet später Orders an Capital.com / IC Markets / MT5.</p>
+                </div>
+
+                <p className="mt-5 text-orange-400 font-semibold">
+                  Aktuell: Keine echten Orders. Nur Architektur und Sicherheitsschicht.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="bg-gray-900 p-6 rounded-xl">
