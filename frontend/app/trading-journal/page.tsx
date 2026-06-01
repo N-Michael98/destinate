@@ -94,14 +94,10 @@ function buildEquityCurve(data: Trade[]) {
 }
 
 function buildPeriodPerformance(data: Trade[]) {
-  const weeklyProfit = getTotalProfit(data.slice(-3));
-  const monthlyProfit = getTotalProfit(data);
-  const yearlyProfit = getTotalProfit(data);
-
   return [
-    { name: "Woche", value: weeklyProfit },
-    { name: "Monat", value: monthlyProfit },
-    { name: "Jahr", value: yearlyProfit },
+    { name: "Woche", value: getTotalProfit(data.slice(-3)) },
+    { name: "Monat", value: getTotalProfit(data) },
+    { name: "Jahr", value: getTotalProfit(data) },
   ];
 }
 
@@ -131,6 +127,15 @@ export default function TradingJournal() {
   const [takeProfit, setTakeProfit] = useState("");
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
+  const [editMarket, setEditMarket] = useState("");
+  const [editDirection, setEditDirection] = useState("LONG");
+  const [editEntry, setEditEntry] = useState("");
+  const [editStopLoss, setEditStopLoss] = useState("");
+  const [editTakeProfit, setEditTakeProfit] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
 
   const reportRef = useRef<HTMLDivElement | null>(null);
 
@@ -206,6 +211,69 @@ export default function TradingJournal() {
       alert("Fehler beim Speichern des Trades.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  function startEditTrade(trade: Trade) {
+    setEditingTrade(trade);
+    setEditMarket(trade.market);
+    setEditDirection(trade.direction);
+    setEditEntry(String(trade.entry));
+    setEditStopLoss(String(trade.stopLoss));
+    setEditTakeProfit(String(trade.takeProfit));
+    setEditNotes(trade.notes ?? "");
+  }
+
+  function cancelEditTrade() {
+    setEditingTrade(null);
+    setEditMarket("");
+    setEditDirection("LONG");
+    setEditEntry("");
+    setEditStopLoss("");
+    setEditTakeProfit("");
+    setEditNotes("");
+  }
+
+  async function saveEditedTrade() {
+    if (!editingTrade) return;
+
+    if (!editMarket || !editEntry || !editStopLoss || !editTakeProfit) {
+      alert("Bitte Market, Entry, Stop Loss und Take Profit ausfüllen.");
+      return;
+    }
+
+    setIsEditing(true);
+
+    try {
+      const response = await fetch(`/api/trades/${editingTrade.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          market: editMarket,
+          direction: editDirection,
+          entry: editEntry,
+          stopLoss: editStopLoss,
+          takeProfit: editTakeProfit,
+          notes: editNotes,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        alert("Trade konnte nicht bearbeitet werden.");
+        return;
+      }
+
+      await loadTrades();
+      cancelEditTrade();
+    } catch (error) {
+      console.error(error);
+      alert("Fehler beim Bearbeiten des Trades.");
+    } finally {
+      setIsEditing(false);
     }
   }
 
@@ -415,7 +483,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.3: Trades speichern, schließen, löschen und Datenbank zurücksetzen.
+            V4.4: Trades speichern, schließen, löschen, resetten und bearbeiten.
           </p>
         </div>
 
@@ -426,6 +494,75 @@ export default function TradingJournal() {
           📄 Jahresreport PDF exportieren
         </button>
       </div>
+
+      {editingTrade && (
+        <div className="bg-gray-900 p-6 rounded-xl border border-blue-700 mb-8">
+          <h2 className="text-2xl font-bold mb-4">✏️ Trade bearbeiten #{editingTrade.id}</h2>
+
+          <div className="grid grid-cols-3 gap-4">
+            <input
+              placeholder="Market"
+              value={editMarket}
+              onChange={(event) => setEditMarket(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            />
+
+            <select
+              value={editDirection}
+              onChange={(event) => setEditDirection(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            >
+              <option value="LONG">LONG</option>
+              <option value="SHORT">SHORT</option>
+            </select>
+
+            <input
+              placeholder="Entry"
+              value={editEntry}
+              onChange={(event) => setEditEntry(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            />
+
+            <input
+              placeholder="Stop Loss"
+              value={editStopLoss}
+              onChange={(event) => setEditStopLoss(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            />
+
+            <input
+              placeholder="Take Profit"
+              value={editTakeProfit}
+              onChange={(event) => setEditTakeProfit(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            />
+
+            <input
+              placeholder="Notizen"
+              value={editNotes}
+              onChange={(event) => setEditNotes(event.target.value)}
+              className="bg-black border border-gray-700 p-3 rounded-xl"
+            />
+          </div>
+
+          <div className="flex gap-4 mt-4">
+            <button
+              onClick={saveEditedTrade}
+              disabled={isEditing}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold"
+            >
+              {isEditing ? "Speichert..." : "💾 Änderungen speichern"}
+            </button>
+
+            <button
+              onClick={cancelEditTrade}
+              className="bg-gray-700 hover:bg-gray-800 px-5 py-3 rounded-xl font-bold"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 mb-8">
         <h2 className="text-2xl font-bold mb-4">➕ Neuer Trade</h2>
@@ -673,7 +810,7 @@ export default function TradingJournal() {
         <div className="bg-gray-900 p-6 rounded-xl">
           <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
 
-          <div className="grid grid-cols-10 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+          <div className="grid grid-cols-11 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
             <div>Date</div>
             <div>Market</div>
             <div>Direction</div>
@@ -683,13 +820,14 @@ export default function TradingJournal() {
             <div>Status</div>
             <div>P/L</div>
             <div>Actions</div>
+            <div>Edit</div>
             <div>Delete</div>
           </div>
 
           {filteredTrades.map((trade) => (
             <div
               key={trade.id}
-              className="grid grid-cols-10 gap-4 p-4 border-t border-gray-800 items-center"
+              className="grid grid-cols-11 gap-4 p-4 border-t border-gray-800 items-center"
             >
               <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
               <div>{trade.market}</div>
@@ -736,6 +874,13 @@ export default function TradingJournal() {
                   </button>
                 )}
               </div>
+
+              <button
+                onClick={() => startEditTrade(trade)}
+                className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm"
+              >
+                Edit
+              </button>
 
               <button
                 onClick={() => deleteTrade(trade.id)}
