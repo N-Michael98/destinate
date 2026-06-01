@@ -99,18 +99,72 @@ function getTotalRiskAmount(data: Trade[]) {
 function buildEquityCurve(data: Trade[]) {
   let equity = 0;
 
-  return data.map((trade) => {
+  return [...data]
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    )
+    .map((trade) => {
+      equity += trade.profitLoss;
+
+      return {
+        name: `#${trade.id}`,
+        date: trade.date,
+        market: trade.market,
+        profitLoss: trade.profitLoss,
+        equity,
+      };
+    });
+}
+
+// ===== Max Drawdown System V4.6 =====
+
+function getMaxDrawdownStats(data: Trade[]) {
+  const closedTrades = [...data]
+    .filter((trade) => trade.status === "CLOSED")
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+  let equity = 0;
+  let peak = 0;
+  let maxDrawdown = 0;
+  let currentDrawdown = 0;
+  let maxDrawdownPercent = 0;
+
+  const drawdownData = closedTrades.map((trade) => {
     equity += trade.profitLoss;
+
+    if (equity > peak) {
+      peak = equity;
+    }
+
+    currentDrawdown = equity - peak;
+
+    if (currentDrawdown < maxDrawdown) {
+      maxDrawdown = currentDrawdown;
+      maxDrawdownPercent = peak > 0 ? (Math.abs(maxDrawdown) / peak) * 100 : 0;
+    }
 
     return {
       name: `#${trade.id}`,
-      date: trade.date,
-      market: trade.market,
-      profitLoss: trade.profitLoss,
       equity,
+      peak,
+      drawdown: currentDrawdown,
     };
   });
+
+  return {
+    maxDrawdown: Math.round(maxDrawdown),
+    currentDrawdown: Math.round(currentDrawdown),
+    maxDrawdownPercent: Number(maxDrawdownPercent.toFixed(2)),
+    peakEquity: Math.round(peak),
+    drawdownData,
+  };
 }
+
+// ===============================
 
 function buildPeriodPerformance(data: Trade[]) {
   return [
@@ -515,6 +569,8 @@ export default function TradingJournal() {
   const periodData = buildPeriodPerformance(filteredTrades);
   const marketPerformanceData = buildMarketPerformance(filteredTrades);
 
+  const drawdownStats = getMaxDrawdownStats(filteredTrades);
+
   const bestTrade = [...filteredTrades].sort((a, b) => b.profitLoss - a.profitLoss)[0];
   const worstTrade = [...filteredTrades].sort((a, b) => a.profitLoss - b.profitLoss)[0];
 
@@ -528,7 +584,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.5: Trading Journal mit Risk Management, Position Size und Risk/Reward.
+            V4.6: Trading Journal mit Risk Management, Position Size, Risk/Reward und Max Drawdown.
           </p>
         </div>
 
@@ -798,6 +854,36 @@ export default function TradingJournal() {
           </div>
         </div>
 
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Max Drawdown</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {drawdownStats.maxDrawdown} CHF
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+            <h2 className="font-bold">Max DD %</h2>
+            <p className="text-2xl mt-2 text-yellow-400">
+              {drawdownStats.maxDrawdownPercent}%
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+            <h2 className="font-bold">Current Drawdown</h2>
+            <p className="text-2xl mt-2 text-blue-400">
+              {drawdownStats.currentDrawdown} CHF
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Peak Equity</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {drawdownStats.peakEquity} CHF
+            </p>
+          </div>
+        </div>
+
         {isLoaded && (
           <>
             <div className="grid grid-cols-2 gap-6 mb-8">
@@ -831,6 +917,27 @@ export default function TradingJournal() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
+              <h2 className="text-xl font-bold mb-4">📉 Max Drawdown Curve</h2>
+
+              <div className="h-80 min-h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={drawdownStats.drawdownData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="drawdown"
+                      stroke="#ef4444"
+                      strokeWidth={3}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
 
