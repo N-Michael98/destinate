@@ -1280,7 +1280,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.4: Trading Journal mit Professional Analytics Charts, Window Layout, Reports und Trade Management.
+            V5.4.2: Trading Journal mit Full Professional Analytics Upgrade für Reports, Performance, Charts und Trade History.
           </p>
         </div>
 
@@ -1561,69 +1561,64 @@ export default function TradingJournal() {
 
         {activeSection === "reports" && (
           <div className="space-y-8">
-            <div className="bg-gray-900 p-6 rounded-xl border border-indigo-800">
-              <h2 className="text-2xl font-bold mb-2">📄 Reports & Time Statistics</h2>
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-indigo-800">
+              <h2 className="text-3xl font-bold mb-2">📄 Reports & Time Analytics V5.4.2</h2>
               <p className="text-gray-400">
-                Jahresreport, Weekly/Monthly Statistics und zeitliche Performance Diagramme.
+                Zeitliche Performance im professionellen Dashboard-Stil: Daily, Weekly, Monthly und Jahresreport.
               </p>
             </div>
 
             <div className="grid grid-cols-4 gap-6">
-              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
                 <h2 className="font-bold">Best Week</h2>
-                <p className="text-2xl mt-2 text-green-400">{weeklyStats.bestWeek.profitLoss} CHF</p>
+                <p className="text-3xl mt-3 text-green-400">{weeklyStats.bestWeek.profitLoss} CHF</p>
                 <p className="text-sm mt-2 text-gray-400">{weeklyStats.bestWeek.label}</p>
               </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-900">
                 <h2 className="font-bold">Worst Week</h2>
-                <p className="text-2xl mt-2 text-red-400">{weeklyStats.worstWeek.profitLoss} CHF</p>
+                <p className="text-3xl mt-3 text-red-400">{weeklyStats.worstWeek.profitLoss} CHF</p>
                 <p className="text-sm mt-2 text-gray-400">{weeklyStats.worstWeek.label}</p>
               </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-900">
                 <h2 className="font-bold">Best Month</h2>
-                <p className="text-2xl mt-2 text-green-400">{monthlyStats.bestMonth.profitLoss} CHF</p>
+                <p className="text-3xl mt-3 text-green-400">{monthlyStats.bestMonth.profitLoss} CHF</p>
                 <p className="text-sm mt-2 text-gray-400">{monthlyStats.bestMonth.label}</p>
               </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-900">
                 <h2 className="font-bold">Worst Month</h2>
-                <p className="text-2xl mt-2 text-red-400">{monthlyStats.worstMonth.profitLoss} CHF</p>
+                <p className="text-3xl mt-3 text-red-400">{monthlyStats.worstMonth.profitLoss} CHF</p>
                 <p className="text-sm mt-2 text-gray-400">{monthlyStats.worstMonth.label}</p>
               </div>
             </div>
 
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900">
+                <h2 className="font-bold">Weekly Winrate</h2>
+                <p className="text-3xl mt-3 text-cyan-400">{weeklyStats.weeklyWinrate}%</p>
+                <div className="mt-5 h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${Math.min(weeklyStats.weeklyWinrate, 100)}%` }} />
+                </div>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900">
+                <h2 className="font-bold">Monthly Winrate</h2>
+                <p className="text-3xl mt-3 text-cyan-400">{monthlyStats.monthlyWinrate}%</p>
+                <div className="mt-5 h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${Math.min(monthlyStats.monthlyWinrate, 100)}%` }} />
+                </div>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-900">
+                <h2 className="font-bold">Positive Weeks</h2>
+                <p className="text-3xl mt-3 text-green-400">{weeklyStats.positiveWeeks}</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-900">
+                <h2 className="font-bold">Negative Weeks</h2>
+                <p className="text-3xl mt-3 text-red-400">{weeklyStats.negativeWeeks}</p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={weeklyStats.weeklyPerformance}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="label" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="profitLoss" fill="#3b82f6" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyStats.monthlyPerformance}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="label" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="profitLoss" fill="#6366f1" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
+                <h2 className="text-xl font-bold mb-4">📆 Daily Performance Board</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={buildDailyPerformance(filteredTrades)}>
@@ -1631,14 +1626,44 @@ export default function TradingJournal() {
                       <XAxis dataKey="date" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="value" fill="#22c55e" />
+                      <Bar dataKey="value" fill="#22c55e" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900">
+                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance Board</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={weeklyStats.weeklyPerformance}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-indigo-900">
+                <h2 className="text-xl font-bold mb-4">📆 Monthly Performance Board</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyStats.monthlyPerformance}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#6366f1" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
+                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance Board</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={periodData}>
@@ -1646,140 +1671,33 @@ export default function TradingJournal() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="value" fill="#06b6d4" />
+                      <Bar dataKey="value" fill="#06b6d4" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
-                <h2 className="text-xl font-bold mb-4">📅 Weekly Statistics Table</h2>
-                <div className="min-w-[900px]">
-                  <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
-                    <div>Week</div><div>P/L</div><div>Trades</div><div>Wins</div><div>Losses</div><div>Winrate</div>
-                  </div>
-                  {weeklyStats.weeklyPerformance.map((week) => (
-                    <div key={week.week} className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center">
-                      <div>{week.label}</div>
-                      <div className={week.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>{week.profitLoss} CHF</div>
-                      <div>{week.trades}</div>
-                      <div className="text-green-400">{week.wins}</div>
-                      <div className="text-red-400">{week.losses}</div>
-                      <div className="text-cyan-400">{week.winrate}%</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
-                <h2 className="text-xl font-bold mb-4">📆 Monthly Statistics Table</h2>
-                <div className="min-w-[900px]">
-                  <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
-                    <div>Month</div><div>P/L</div><div>Trades</div><div>Wins</div><div>Losses</div><div>Winrate</div>
-                  </div>
-                  {monthlyStats.monthlyPerformance.map((month) => (
-                    <div key={month.month} className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center">
-                      <div>{month.label}</div>
-                      <div className={month.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>{month.profitLoss} CHF</div>
-                      <div>{month.trades}</div>
-                      <div className="text-green-400">{month.wins}</div>
-                      <div className="text-red-400">{month.losses}</div>
-                      <div className="text-cyan-400">{month.winrate}%</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
         )}
+
 
         {activeSection === "performance" && (
           <div className="space-y-8">
-            <div className="bg-gray-900 p-6 rounded-xl border border-purple-800">
-              <h2 className="text-2xl font-bold mb-2">🧠 Performance Analytics V5.0</h2>
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-purple-800">
+              <h2 className="text-3xl font-bold mb-2">🧠 Performance Analytics V5.4.2</h2>
               <p className="text-gray-400">
-                Expectancy, R-Multiple, Streaks, Performance Score und Performance nach Market.
+                Professionelles Performance-Board mit Expectancy, Score, R-Multiple, Streaks und Market-Analyse.
               </p>
             </div>
 
             <div className="grid grid-cols-4 gap-6">
-              <div className="bg-gray-900 p-6 rounded-xl border border-purple-800">
-                <h2 className="font-bold">Expectancy</h2>
-                <p className={expectancyR >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>{expectancyR}R</p>
-              </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-                <h2 className="font-bold">Average R</h2>
-                <p className={averageRMultiple >= 0 ? "text-2xl mt-2 text-cyan-400" : "text-2xl mt-2 text-red-400"}>{averageRMultiple}R</p>
-              </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-                <h2 className="font-bold">Average Trade</h2>
-                <p className={averageTrade >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>{averageTrade} CHF</p>
-              </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-                <h2 className="font-bold">Performance Score</h2>
-                <p className="text-2xl mt-2 text-yellow-400">{performanceScore}/100</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-6">
-              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-                <h2 className="font-bold">Winning Streak</h2>
-                <p className="text-2xl mt-2 text-green-400">{winningStreak} Trades</p>
-              </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-                <h2 className="font-bold">Losing Streak</h2>
-                <p className="text-2xl mt-2 text-red-400">{losingStreak} Trades</p>
-              </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-                <h2 className="font-bold">Best Trading Day</h2>
-                <p className="text-2xl mt-2 text-green-400">{bestTradingDay.value} CHF</p>
-                <p className="text-sm mt-2 text-gray-400">{bestTradingDay.date}</p>
-              </div>
-              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-                <h2 className="font-bold">Worst Trading Day</h2>
-                <p className="text-2xl mt-2 text-red-400">{worstTradingDay.value} CHF</p>
-                <p className="text-sm mt-2 text-gray-400">{worstTradingDay.date}</p>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-              <h2 className="text-xl font-bold mb-4">🎯 Performance nach Market</h2>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={marketPerformanceData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="market" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#a855f7" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection === "charts" && (
-          <div className="space-y-8">
-            <div className="bg-gradient-to-br from-gray-900 to-gray-950 p-6 rounded-2xl border border-cyan-800">
-              <h2 className="text-3xl font-bold mb-2">📈 Professional Charts Center V5.4</h2>
-              <p className="text-gray-400">
-                Moderne Chart-Zentrale: Equity, Drawdown, Profit/Loss, Account Growth und Risk Performance.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-4 gap-6">
-              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
-                <h2 className="font-bold mb-4">Growth Gauge</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
+                <h2 className="font-bold mb-4">Expectancy Gauge</h2>
                 <div className="flex items-center justify-center">
-                  <div className="w-36 h-36 rounded-full border-[14px] border-green-500 flex items-center justify-center bg-black">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-purple-500 flex items-center justify-center bg-black">
                     <div className="text-center">
-                      <p className="text-3xl font-bold text-green-400">
-                        {accountStats.growthPercent}%
-                      </p>
-                      <p className="text-xs text-gray-400">Growth</p>
+                      <p className={expectancyR >= 0 ? "text-3xl font-bold text-purple-400" : "text-3xl font-bold text-red-400"}>{expectancyR}R</p>
+                      <p className="text-xs text-gray-400">per Trade</p>
                     </div>
                   </div>
                 </div>
@@ -1790,6 +1708,117 @@ export default function TradingJournal() {
                 <div className="flex items-center justify-center">
                   <div className="w-36 h-36 rounded-full border-[14px] border-yellow-500 flex items-center justify-center bg-black">
                     <div className="text-center">
+                      <p className="text-3xl font-bold text-yellow-400">{performanceScore}</p>
+                      <p className="text-xs text-gray-400">/100</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold">Average R</h2>
+                <p className={averageRMultiple >= 0 ? "text-3xl mt-4 text-cyan-400" : "text-3xl mt-4 text-red-400"}>{averageRMultiple}R</p>
+                <div className="mt-6 h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${Math.min(Math.abs(averageRMultiple) * 40, 100)}%` }} />
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-800">
+                <h2 className="font-bold">Average Trade</h2>
+                <p className={averageTrade >= 0 ? "text-3xl mt-4 text-green-400" : "text-3xl mt-4 text-red-400"}>{averageTrade} CHF</p>
+                <div className="mt-6 h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div className={averageTrade >= 0 ? "h-full bg-green-400 rounded-full" : "h-full bg-red-400 rounded-full"} style={{ width: "70%" }} />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Winning Streak</h2>
+                <p className="text-3xl mt-4 text-green-400">{winningStreak}</p>
+                <p className="text-gray-400 mt-2">Trades</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold">Losing Streak</h2>
+                <p className="text-3xl mt-4 text-red-400">{losingStreak}</p>
+                <p className="text-gray-400 mt-2">Trades</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Best Trading Day</h2>
+                <p className="text-3xl mt-4 text-green-400">{bestTradingDay.value} CHF</p>
+                <p className="text-gray-400 mt-2">{bestTradingDay.date}</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold">Worst Trading Day</h2>
+                <p className="text-3xl mt-4 text-red-400">{worstTradingDay.value} CHF</p>
+                <p className="text-gray-400 mt-2">{worstTradingDay.date}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
+                <h2 className="text-xl font-bold mb-4">🎯 Performance nach Market</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={marketPerformanceData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="market" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
+                <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={buildDailyPerformance(filteredTrades)}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#22c55e" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+
+        {activeSection === "charts" && (
+          <div className="space-y-8">
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-cyan-800">
+              <h2 className="text-3xl font-bold mb-2">📈 Professional Charts Center V5.4.2</h2>
+              <p className="text-gray-400">
+                Kompakte Analytics-Zentrale im Dashboard-Stil: Gauges, Equity, Drawdown, Daily, Weekly, Monthly und Market Performance.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800 shadow-lg">
+                <h2 className="font-bold mb-4">Growth Gauge</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-green-500 flex items-center justify-center bg-black shadow-inner">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-green-400">
+                        {accountStats.growthPercent}%
+                      </p>
+                      <p className="text-xs text-gray-400">Growth</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-800 shadow-lg">
+                <h2 className="font-bold mb-4">Performance Score</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-yellow-500 flex items-center justify-center bg-black shadow-inner">
+                    <div className="text-center">
                       <p className="text-3xl font-bold text-yellow-400">
                         {performanceScore}
                       </p>
@@ -1799,10 +1828,10 @@ export default function TradingJournal() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800 shadow-lg">
                 <h2 className="font-bold mb-4">Max DD Gauge</h2>
                 <div className="flex items-center justify-center">
-                  <div className="w-36 h-36 rounded-full border-[14px] border-red-500 flex items-center justify-center bg-black">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-red-500 flex items-center justify-center bg-black shadow-inner">
                     <div className="text-center">
                       <p className="text-3xl font-bold text-red-400">
                         {accountStats.maxDrawdownPercent}%
@@ -1813,10 +1842,10 @@ export default function TradingJournal() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800 shadow-lg">
                 <h2 className="font-bold mb-4">Expectancy</h2>
                 <div className="flex items-center justify-center">
-                  <div className="w-36 h-36 rounded-full border-[14px] border-cyan-500 flex items-center justify-center bg-black">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-cyan-500 flex items-center justify-center bg-black shadow-inner">
                     <div className="text-center">
                       <p className={expectancyR >= 0 ? "text-3xl font-bold text-cyan-400" : "text-3xl font-bold text-red-400"}>
                         {expectancyR}R
@@ -1828,8 +1857,61 @@ export default function TradingJournal() {
               </div>
             </div>
 
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-900">
+                <h2 className="font-bold">Current Equity</h2>
+                <p className="text-3xl mt-3 text-cyan-400">{accountStats.currentEquity} CHF</p>
+                <div className="mt-5 h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-400 rounded-full" style={{ width: "75%" }} />
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
+                <h2 className="font-bold">Peak Account Value</h2>
+                <p className="text-3xl mt-3 text-green-400">{accountStats.peakAccountEquity} CHF</p>
+                <div className="mt-5 h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-400 rounded-full" style={{ width: "90%" }} />
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-900">
+                <h2 className="font-bold">Max Drawdown</h2>
+                <p className="text-3xl mt-3 text-red-400">{accountStats.maxDrawdown} CHF</p>
+                <div className="mt-5 h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(accountStats.maxDrawdownPercent * 10, 100)}%` }} />
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-900">
+                <h2 className="font-bold">Risk Status</h2>
+                <p
+                  className={
+                    propFirmStats.status === "PASS"
+                      ? "text-3xl mt-3 text-green-400"
+                      : propFirmStats.status === "WARNING"
+                        ? "text-3xl mt-3 text-yellow-400"
+                        : "text-3xl mt-3 text-red-400"
+                  }
+                >
+                  {propFirmStats.status}
+                </p>
+                <div className="mt-5 h-2 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className={
+                      propFirmStats.status === "PASS"
+                        ? "h-full bg-green-400 rounded-full"
+                        : propFirmStats.status === "WARNING"
+                          ? "h-full bg-yellow-400 rounded-full"
+                          : "h-full bg-red-400 rounded-full"
+                    }
+                    style={{ width: propFirmStats.status === "PASS" ? "35%" : propFirmStats.status === "WARNING" ? "70%" : "100%" }}
+                  />
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold">📈 Equity Curve</h2>
                   <span className="text-sm text-green-400">{totalProfit} CHF</span>
@@ -1848,26 +1930,7 @@ export default function TradingJournal() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold">📊 Profit / Loss pro Trade</h2>
-                  <span className="text-sm text-blue-400">{closedTrades.length} Closed</span>
-                </div>
-
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={equityData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold">💼 Account Equity Curve</h2>
                   <span className="text-sm text-cyan-400">{accountStats.currentEquity} CHF</span>
@@ -1886,7 +1949,26 @@ export default function TradingJournal() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-red-900">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900 shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">📊 Profit / Loss pro Trade</h2>
+                  <span className="text-sm text-blue-400">{closedTrades.length} Closed</span>
+                </div>
+
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={equityData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-red-900 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold">📉 Max Drawdown Curve</h2>
                   <span className="text-sm text-red-400">{accountStats.maxDrawdown} CHF</span>
@@ -1907,22 +1989,37 @@ export default function TradingJournal() {
             </div>
 
             <div className="grid grid-cols-3 gap-6">
-              <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900">
-                <h2 className="text-xl font-bold mb-4">🎯 Market Performance</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-900 shadow-lg">
+                <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={marketPerformanceData}>
+                    <BarChart data={buildDailyPerformance(filteredTrades)}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="market" />
+                      <XAxis dataKey="date" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="value" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="value" fill="#22c55e" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-2xl border border-indigo-900">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900 shadow-lg">
+                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={weeklyStats.weeklyPerformance}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-indigo-900 shadow-lg">
                 <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
@@ -1937,18 +2034,68 @@ export default function TradingJournal() {
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
-                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900 shadow-lg">
+                <h2 className="text-xl font-bold mb-4">🎯 Market Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={weeklyStats.weeklyPerformance}>
+                    <BarChart data={marketPerformanceData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="label" />
+                      <XAxis dataKey="market" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="value" fill="#a855f7" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900 shadow-lg">
+                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance</h2>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={periodData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#06b6d4" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-900 shadow-lg">
+                <h2 className="text-xl font-bold mb-4">⚡ Risk Usage</h2>
+                <div className="space-y-5 mt-6">
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Daily Usage</span>
+                      <span>{propFirmStats.dailyUsagePercent}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(propFirmStats.dailyUsagePercent, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Overall DD Usage</span>
+                      <span>{propFirmStats.overallUsagePercent}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(propFirmStats.overallUsagePercent, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Winrate</span>
+                      <span>{winrate}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-400 rounded-full" style={{ width: `${Math.min(winrate, 100)}%` }} />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1957,37 +2104,84 @@ export default function TradingJournal() {
 
         {activeSection === "history" && (
           <div className="space-y-8">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-900 p-6 rounded-xl">
-                <h2 className="text-xl font-bold mb-4">🏆 Best Trade</h2>
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-gray-700">
+              <h2 className="text-3xl font-bold mb-2">🧾 Trade History Analytics V5.4.2</h2>
+              <p className="text-gray-400">
+                Trade-Historie mit Best/Worst Trade, Trade-Verteilung und Profit/Loss Übersicht.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Best Trade</h2>
                 {bestTrade ? (
-                  <div className="space-y-2">
-                    <p className="text-2xl font-bold text-green-400">{bestTrade.market}</p>
-                    <p>Date: {new Date(bestTrade.date).toLocaleDateString("de-CH")}</p>
-                    <p>Direction: {bestTrade.direction}</p>
-                    <p>Profit: {bestTrade.profitLoss} CHF</p>
-                  </div>
+                  <>
+                    <p className="text-3xl mt-4 text-green-400">{bestTrade.profitLoss} CHF</p>
+                    <p className="text-gray-400 mt-2">{bestTrade.market}</p>
+                  </>
                 ) : (
-                  <p className="text-gray-400">Keine Trades vorhanden.</p>
+                  <p className="text-gray-400 mt-4">Keine Trades.</p>
                 )}
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-xl">
-                <h2 className="text-xl font-bold mb-4">⚠️ Worst Trade</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold">Worst Trade</h2>
                 {worstTrade ? (
-                  <div className="space-y-2">
-                    <p className="text-2xl font-bold text-red-400">{worstTrade.market}</p>
-                    <p>Date: {new Date(worstTrade.date).toLocaleDateString("de-CH")}</p>
-                    <p>Direction: {worstTrade.direction}</p>
-                    <p>Profit: {worstTrade.profitLoss} CHF</p>
-                  </div>
+                  <>
+                    <p className="text-3xl mt-4 text-red-400">{worstTrade.profitLoss} CHF</p>
+                    <p className="text-gray-400 mt-2">{worstTrade.market}</p>
+                  </>
                 ) : (
-                  <p className="text-gray-400">Keine Trades vorhanden.</p>
+                  <p className="text-gray-400 mt-4">Keine Trades.</p>
                 )}
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold">Closed Trades</h2>
+                <p className="text-3xl mt-4 text-cyan-400">{closedTrades.length}</p>
+                <p className="text-gray-400 mt-2">abgeschlossene Trades</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-800">
+                <h2 className="font-bold">Open Trades</h2>
+                <p className="text-3xl mt-4 text-yellow-400">{openTrades.length}</p>
+                <p className="text-gray-400 mt-2">laufende Trades</p>
               </div>
             </div>
 
-            <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900">
+                <h2 className="text-xl font-bold mb-4">📊 Profit / Loss pro Trade</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={equityData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
+                <h2 className="text-xl font-bold mb-4">🎯 Trades nach Market</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={marketPerformanceData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="market" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl overflow-x-auto border border-gray-800">
               <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
               <div className="min-w-[1700px]">
                 <div className="grid grid-cols-16 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
@@ -2027,6 +2221,7 @@ export default function TradingJournal() {
             </div>
           </div>
         )}
+
       </div>
     </main>
   );
