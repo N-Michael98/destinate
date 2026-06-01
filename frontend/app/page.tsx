@@ -48,6 +48,7 @@ export default function Home() {
             <Link className="block hover:text-blue-400" href="/trading-journal">📒 Trading Journal</Link>
             <Link className="block hover:text-blue-400" href="/trading">📈 Trading</Link>
             <Link className="block hover:text-blue-400" href="#broker-hub">🔌 Broker Hub</Link>
+            <Link className="block hover:text-blue-400" href="#execution-core">🧠 Execution Core</Link>
             <Link className="block hover:text-blue-400" href="/simulation-lab">🧪 Simulation Lab</Link>
             <Link className="block hover:text-blue-400" href="/security-center">🛡️ Security Center</Link>
             <Link className="block hover:text-blue-400" href="/settings">⚙️ Settings</Link>
@@ -82,6 +83,11 @@ export default function Home() {
             <div className="bg-gray-900 p-5 rounded-xl border border-orange-900">
               <h3 className="font-bold text-lg">🔌 Broker Hub</h3>
               <p className="mt-2 text-orange-400">Simulation Mode</p>
+            </div>
+
+            <div className="bg-gray-900 p-5 rounded-xl border border-purple-900">
+              <h3 className="font-bold text-lg">🧠 Execution Core</h3>
+              <p className="mt-2 text-purple-400">Decision Engine</p>
             </div>
           </div>
 
@@ -152,6 +158,145 @@ export default function Home() {
             </Link>
           </div>
 
+
+
+          <div id="execution-core" className="bg-gray-900 p-6 rounded-xl mb-8 border border-purple-900">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-2xl font-bold">🧠 AI Execution Core V6.1</h3>
+                <p className="text-gray-400 mt-2">
+                  Simulationsbasierte Entscheidungszentrale zwischen Signal Engine, AI Review, Bot Readiness und Broker Hub.
+                </p>
+              </div>
+
+              <div className="bg-black border border-purple-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Execution Mode</p>
+                <p className="text-purple-400 font-bold">Simulation Only</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6 mb-6">
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Decision</h4>
+                <p className="text-3xl mt-4 text-yellow-400">WAIT</p>
+                <p className="text-gray-400 mt-2">No live execution</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Confidence</h4>
+                <p className="text-3xl mt-4 text-blue-400">74%</p>
+                <p className="text-gray-400 mt-2">Demo signal score</p>
+              </div>
+
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">AI Approval</h4>
+                <p className="text-3xl mt-4 text-cyan-400">Neutral</p>
+                <p className="text-gray-400 mt-2">Needs confirmation</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Order Status</h4>
+                <p className="text-3xl mt-4 text-red-400">Blocked</p>
+                <p className="text-gray-400 mt-2">Safety lock active</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">⚙️ Decision Pipeline</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Signal Engine: Setup Quality prüfen
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ AI Trade Review: Trade Quality bewerten
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Bot Readiness: System-Reife prüfen
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    🔒 Broker Hub: Live Execution gesperrt
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡️ Execution Safety Rules</h4>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Prop Firm Rules müssen PASS sein
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Risk pro Trade muss definiert sein
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Confidence mindestens 75% empfohlen
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    🔒 Live Order Execution deaktiviert
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6 mb-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📌 Example Signal</h4>
+                <div className="space-y-2 text-gray-300">
+                  <p>Market: <span className="text-blue-400">NAS100</span></p>
+                  <p>Strategy: <span className="text-green-400">Liquidity Sweep</span></p>
+                  <p>Direction: <span className="text-green-400">BUY</span></p>
+                  <p>Risk/Reward: <span className="text-cyan-400">2.5R</span></p>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🤖 AI Decision</h4>
+                <div className="space-y-2 text-gray-300">
+                  <p>GPT: <span className="text-yellow-400">WAIT</span></p>
+                  <p>Claude: <span className="text-yellow-400">WAIT</span></p>
+                  <p>System: <span className="text-yellow-400">WAIT</span></p>
+                  <p>Consensus: <span className="text-blue-400">74%</span></p>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🚦Final Action</h4>
+                <p className="text-4xl font-bold text-yellow-400">WAIT</p>
+                <p className="text-gray-400 mt-3">
+                  Noch kein Trade. Mehr Confirmation oder bessere Confidence nötig.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-black border border-purple-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 Execution Roadmap</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.1</h5>
+                  <p className="text-gray-300 mt-2">AI Execution Core</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.2</h5>
+                  <p className="text-gray-300 mt-2">Paper Trading Engine</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.3</h5>
+                  <p className="text-gray-300 mt-2">Broker API Connection</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.4</h5>
+                  <p className="text-gray-300 mt-2">Live Execution Lock</p>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div id="broker-hub" className="bg-gray-900 p-6 rounded-xl mb-8 border border-orange-900">
             <div className="flex justify-between items-start mb-6">
