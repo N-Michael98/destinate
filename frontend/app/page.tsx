@@ -49,6 +49,7 @@ export default function Home() {
             <Link className="block hover:text-blue-400" href="/trading">📈 Trading</Link>
             <Link className="block hover:text-blue-400" href="#broker-hub">🔌 Broker Hub</Link>
             <Link className="block hover:text-blue-400" href="#execution-core">🧠 Execution Core</Link>
+            <Link className="block hover:text-blue-400" href="#paper-trading">📝 Paper Trading</Link>
             <Link className="block hover:text-blue-400" href="/simulation-lab">🧪 Simulation Lab</Link>
             <Link className="block hover:text-blue-400" href="/security-center">🛡️ Security Center</Link>
             <Link className="block hover:text-blue-400" href="/settings">⚙️ Settings</Link>
@@ -88,6 +89,11 @@ export default function Home() {
             <div className="bg-gray-900 p-5 rounded-xl border border-purple-900">
               <h3 className="font-bold text-lg">🧠 Execution Core</h3>
               <p className="mt-2 text-purple-400">Decision Engine</p>
+            </div>
+
+            <div className="bg-gray-900 p-5 rounded-xl border border-cyan-900">
+              <h3 className="font-bold text-lg">📝 Paper Trading</h3>
+              <p className="mt-2 text-cyan-400">Virtual Orders</p>
             </div>
           </div>
 
@@ -159,6 +165,206 @@ export default function Home() {
           </div>
 
 
+
+
+          <div id="paper-trading" className="bg-gray-900 p-6 rounded-xl mb-8 border border-cyan-900">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-2xl font-bold">📝 Paper Trading Engine V6.2</h3>
+                <p className="text-gray-400 mt-2">
+                  Virtuelle Bot-Trades, Paper Balance, simulierte Positionen und Bot-Performance ohne echtes Geld.
+                </p>
+              </div>
+
+              <div className="bg-black border border-cyan-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Trading Mode</p>
+                <p className="text-cyan-400 font-bold">Paper Trading</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6 mb-6">
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Paper Balance</h4>
+                <p className="text-3xl mt-4 text-green-400">30'000 CHF</p>
+                <p className="text-gray-400 mt-2">Virtual account</p>
+              </div>
+
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Virtual Equity</h4>
+                <p className="text-3xl mt-4 text-cyan-400">30'420 CHF</p>
+                <p className="text-gray-400 mt-2">Simulated value</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Virtual P/L</h4>
+                <p className="text-3xl mt-4 text-blue-400">+420 CHF</p>
+                <p className="text-gray-400 mt-2">Demo performance</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Bot Winrate</h4>
+                <p className="text-3xl mt-4 text-yellow-400">67%</p>
+                <p className="text-gray-400 mt-2">Paper trades</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6 mb-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📌 Virtual Order Ticket</h4>
+
+                <div className="space-y-3">
+                  <input
+                    className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-gray-400"
+                    value="NAS100"
+                    readOnly
+                  />
+                  <select className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-gray-400" disabled>
+                    <option>BUY</option>
+                    <option>SELL</option>
+                  </select>
+                  <input
+                    className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-gray-400"
+                    value="Liquidity Sweep"
+                    readOnly
+                  />
+                  <button className="w-full bg-cyan-700 hover:bg-cyan-800 px-4 py-3 rounded-xl font-bold">
+                    Simulate Order
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500 mt-4">
+                  Noch ohne echte Speicherung. Das ist die Paper-Trading-Architektur.
+                </p>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📂 Open Virtual Positions</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    <p className="font-bold">NAS100 BUY</p>
+                    <p className="text-gray-300 text-sm">Liquidity Sweep · +180 CHF</p>
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    <p className="font-bold">Gold SELL</p>
+                    <p className="text-gray-300 text-sm">Breakout · -45 CHF</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">✅ Closed Paper Trades</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    <p className="font-bold">WTI Crude Oil BUY</p>
+                    <p className="text-gray-300 text-sm">+220 CHF · A Setup</p>
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    <p className="font-bold">EUR/USD SELL</p>
+                    <p className="text-gray-300 text-sm">-80 CHF · C Setup</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📊 Paper Bot Metrics</h4>
+
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Paper Winrate</span>
+                      <span>67%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-400 rounded-full" style={{ width: "67%" }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Profit Factor</span>
+                      <span>1.85</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: "74%" }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Max Paper Drawdown</span>
+                      <span>2.1%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-red-400 rounded-full" style={{ width: "21%" }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Execution Readiness</span>
+                      <span>42%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-cyan-400 rounded-full" style={{ width: "42%" }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡️ Paper Trading Safety Rules</h4>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No real money execution
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ All trades are simulated
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Paper results are not live broker results
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    🔒 Live execution remains locked
+                  </div>
+                </div>
+
+                <p className="text-gray-400 mt-5">
+                  In V6.3 werden wir daraus echte Datenstrukturen bauen: Paper Orders, Paper Positions und Paper Trade History.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 Paper Trading Roadmap</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.2</h5>
+                  <p className="text-gray-300 mt-2">Paper Trading UI</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.3</h5>
+                  <p className="text-gray-300 mt-2">Paper Orders DB</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.4</h5>
+                  <p className="text-gray-300 mt-2">Paper Execution Logic</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V6.5</h5>
+                  <p className="text-gray-300 mt-2">Broker API Bridge</p>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div id="execution-core" className="bg-gray-900 p-6 rounded-xl mb-8 border border-purple-900">
             <div className="flex justify-between items-start mb-6">
