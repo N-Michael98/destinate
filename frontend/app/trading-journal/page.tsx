@@ -324,6 +324,211 @@ function getMaxDrawdownStats(data: Trade[]) {
 
 
 
+
+// ===== Journal Intelligence V5.5 =====
+
+function getDirectionStats(data: Trade[]) {
+  const closedTrades = data.filter((trade) => trade.status === "CLOSED");
+
+  const longTrades = closedTrades.filter((trade) => trade.direction === "LONG");
+  const shortTrades = closedTrades.filter((trade) => trade.direction === "SHORT");
+
+  const longWins = longTrades.filter((trade) => trade.profitLoss > 0).length;
+  const shortWins = shortTrades.filter((trade) => trade.profitLoss > 0).length;
+
+  const longProfit = longTrades.reduce((sum, trade) => sum + trade.profitLoss, 0);
+  const shortProfit = shortTrades.reduce((sum, trade) => sum + trade.profitLoss, 0);
+
+  return {
+    longTrades: longTrades.length,
+    shortTrades: shortTrades.length,
+    longWinrate:
+      longTrades.length > 0 ? Math.round((longWins / longTrades.length) * 100) : 0,
+    shortWinrate:
+      shortTrades.length > 0 ? Math.round((shortWins / shortTrades.length) * 100) : 0,
+    longProfit: Number(longProfit.toFixed(2)),
+    shortProfit: Number(shortProfit.toFixed(2)),
+    bestDirection: longProfit >= shortProfit ? "LONG" : "SHORT",
+  };
+}
+
+function getMarketIntelligence(data: Trade[]) {
+  const closedTrades = data.filter((trade) => trade.status === "CLOSED");
+  const marketMap = new Map<
+    string,
+    {
+      market: string;
+      profitLoss: number;
+      trades: number;
+      wins: number;
+      losses: number;
+    }
+  >();
+
+  closedTrades.forEach((trade) => {
+    const current =
+      marketMap.get(trade.market) ??
+      {
+        market: trade.market,
+        profitLoss: 0,
+        trades: 0,
+        wins: 0,
+        losses: 0,
+      };
+
+    current.profitLoss += trade.profitLoss;
+    current.trades += 1;
+
+    if (trade.profitLoss > 0) current.wins += 1;
+    if (trade.profitLoss < 0) current.losses += 1;
+
+    marketMap.set(trade.market, current);
+  });
+
+  const marketStats = Array.from(marketMap.values())
+    .map((item) => ({
+      ...item,
+      profitLoss: Number(item.profitLoss.toFixed(2)),
+      winrate: item.trades > 0 ? Math.round((item.wins / item.trades) * 100) : 0,
+    }))
+    .sort((a, b) => b.profitLoss - a.profitLoss);
+
+  return {
+    marketStats,
+    bestMarket: marketStats[0] ?? {
+      market: "-",
+      profitLoss: 0,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      winrate: 0,
+    },
+    worstMarket: marketStats[marketStats.length - 1] ?? {
+      market: "-",
+      profitLoss: 0,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      winrate: 0,
+    },
+  };
+}
+
+function getWeekdayIntelligence(data: Trade[]) {
+  const closedTrades = data.filter((trade) => trade.status === "CLOSED");
+  const weekdayMap = new Map<
+    string,
+    {
+      weekday: string;
+      profitLoss: number;
+      trades: number;
+      wins: number;
+      losses: number;
+    }
+  >();
+
+  closedTrades.forEach((trade) => {
+    const weekday = new Date(trade.date).toLocaleDateString("de-CH", {
+      weekday: "long",
+    });
+
+    const current =
+      weekdayMap.get(weekday) ??
+      {
+        weekday,
+        profitLoss: 0,
+        trades: 0,
+        wins: 0,
+        losses: 0,
+      };
+
+    current.profitLoss += trade.profitLoss;
+    current.trades += 1;
+
+    if (trade.profitLoss > 0) current.wins += 1;
+    if (trade.profitLoss < 0) current.losses += 1;
+
+    weekdayMap.set(weekday, current);
+  });
+
+  const weekdayStats = Array.from(weekdayMap.values())
+    .map((item) => ({
+      ...item,
+      profitLoss: Number(item.profitLoss.toFixed(2)),
+      winrate: item.trades > 0 ? Math.round((item.wins / item.trades) * 100) : 0,
+    }))
+    .sort((a, b) => b.profitLoss - a.profitLoss);
+
+  return {
+    weekdayStats,
+    bestWeekday: weekdayStats[0] ?? {
+      weekday: "-",
+      profitLoss: 0,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      winrate: 0,
+    },
+    worstWeekday: weekdayStats[weekdayStats.length - 1] ?? {
+      weekday: "-",
+      profitLoss: 0,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      winrate: 0,
+    },
+  };
+}
+
+function getJournalIntelligenceScore(input: {
+  winrate: number;
+  profitFactor: number;
+  expectancyR: number;
+  maxDrawdownPercent: number;
+  closedTrades: number;
+}) {
+  let score = 0;
+
+  if (input.closedTrades >= 5) score += 10;
+  if (input.closedTrades >= 20) score += 10;
+
+  if (input.winrate >= 50) score += 20;
+  if (input.winrate >= 60) score += 10;
+
+  if (input.profitFactor >= 1.2) score += 15;
+  if (input.profitFactor >= 2) score += 10;
+
+  if (input.expectancyR > 0) score += 15;
+  if (input.maxDrawdownPercent <= 5) score += 10;
+
+  return Math.min(score, 100);
+}
+
+function getJournalIntelligenceVerdict(input: {
+  score: number;
+  expectancyR: number;
+  profitFactor: number;
+  winrate: number;
+}) {
+  if (input.score >= 80) {
+    return "Strong Edge";
+  }
+
+  if (input.score >= 60) {
+    return "Developing Edge";
+  }
+
+  if (input.expectancyR > 0 && input.profitFactor >= 1) {
+    return "Promising";
+  }
+
+  if (input.winrate === 0) {
+    return "Needs Data";
+  }
+
+  return "Needs Improvement";
+}
+
 // ===== Weekly Statistics V5.2 =====
 
 function getWeekKey(dateValue: string) {
@@ -1243,6 +1448,22 @@ export default function TradingJournal() {
 
   const monthlyStats = getMonthlyStats(filteredTrades);
   const weeklyStats = getWeeklyStats(filteredTrades);
+  const directionStats = getDirectionStats(filteredTrades);
+  const marketIntelligence = getMarketIntelligence(filteredTrades);
+  const weekdayIntelligence = getWeekdayIntelligence(filteredTrades);
+  const journalIntelligenceScore = getJournalIntelligenceScore({
+    winrate,
+    profitFactor,
+    expectancyR,
+    maxDrawdownPercent: accountStats.maxDrawdownPercent,
+    closedTrades: closedTrades.length,
+  });
+  const journalIntelligenceVerdict = getJournalIntelligenceVerdict({
+    score: journalIntelligenceScore,
+    expectancyR,
+    profitFactor,
+    winrate,
+  });
 
   function scrollToSection(
     section:
@@ -1280,7 +1501,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.4.2: Trading Journal mit Full Professional Analytics Upgrade für Reports, Performance, Charts und Trade History.
+            V5.5: Trading Journal mit Journal Intelligence, Full Professional Analytics, Reports, Charts und Trade History.
           </p>
         </div>
 
@@ -1299,6 +1520,7 @@ export default function TradingJournal() {
             { id: "trading", label: "➕ Neuer Trade" },
             { id: "reports", label: "📄 Reports & Time" },
             { id: "performance", label: "🧠 Performance Analytics" },
+            { id: "intelligence", label: "🤖 Journal Intelligence" },
             { id: "charts", label: "📈 Charts Center" },
             { id: "history", label: "🧾 Trade History" },
           ].map((item) => (
@@ -1789,6 +2011,150 @@ export default function TradingJournal() {
           </div>
         )}
 
+
+        {activeSection === "intelligence" && (
+          <div className="space-y-8">
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-cyan-800">
+              <h2 className="text-3xl font-bold mb-2">🤖 Journal Intelligence V5.5</h2>
+              <p className="text-gray-400">
+                Erste echte Intelligenz-Schicht: beste Märkte, schlechteste Märkte, Richtungsvorteil, Wochentage und Strategy Edge Score.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold mb-4">Intelligence Score</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-cyan-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-cyan-400">{journalIntelligenceScore}</p>
+                      <p className="text-xs text-gray-400">/100</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
+                <h2 className="font-bold">System Verdict</h2>
+                <p
+                  className={
+                    journalIntelligenceScore >= 80
+                      ? "text-3xl mt-6 text-green-400"
+                      : journalIntelligenceScore >= 60
+                        ? "text-3xl mt-6 text-yellow-400"
+                        : "text-3xl mt-6 text-red-400"
+                  }
+                >
+                  {journalIntelligenceVerdict}
+                </p>
+                <p className="text-gray-400 mt-3">Strategy Health</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Best Market</h2>
+                <p className="text-3xl mt-6 text-green-400">{marketIntelligence.bestMarket.market}</p>
+                <p className="text-gray-400 mt-2">
+                  {marketIntelligence.bestMarket.profitLoss} CHF · {marketIntelligence.bestMarket.winrate}% WR
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold">Worst Market</h2>
+                <p className="text-3xl mt-6 text-red-400">{marketIntelligence.worstMarket.market}</p>
+                <p className="text-gray-400 mt-2">
+                  {marketIntelligence.worstMarket.profitLoss} CHF · {marketIntelligence.worstMarket.winrate}% WR
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Best Direction</h2>
+                <p className="text-3xl mt-6 text-green-400">{directionStats.bestDirection}</p>
+                <p className="text-gray-400 mt-2">
+                  LONG {directionStats.longWinrate}% · SHORT {directionStats.shortWinrate}%
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-800">
+                <h2 className="font-bold">LONG Performance</h2>
+                <p className={directionStats.longProfit >= 0 ? "text-3xl mt-6 text-green-400" : "text-3xl mt-6 text-red-400"}>
+                  {directionStats.longProfit} CHF
+                </p>
+                <p className="text-gray-400 mt-2">{directionStats.longTrades} Trades</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-orange-800">
+                <h2 className="font-bold">SHORT Performance</h2>
+                <p className={directionStats.shortProfit >= 0 ? "text-3xl mt-6 text-green-400" : "text-3xl mt-6 text-red-400"}>
+                  {directionStats.shortProfit} CHF
+                </p>
+                <p className="text-gray-400 mt-2">{directionStats.shortTrades} Trades</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-800">
+                <h2 className="font-bold">Best Weekday</h2>
+                <p className="text-3xl mt-6 text-yellow-400">{weekdayIntelligence.bestWeekday.weekday}</p>
+                <p className="text-gray-400 mt-2">
+                  {weekdayIntelligence.bestWeekday.profitLoss} CHF · {weekdayIntelligence.bestWeekday.winrate}% WR
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
+                <h2 className="text-xl font-bold mb-4">🎯 Market Intelligence</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={marketIntelligence.marketStats}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="market" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-yellow-900">
+                <h2 className="text-xl font-bold mb-4">📅 Weekday Intelligence</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={weekdayIntelligence.weekdayStats}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="weekday" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#facc15" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+              <h2 className="text-xl font-bold mb-4">🧠 Intelligence Notes</h2>
+              <div className="grid grid-cols-2 gap-6 text-gray-300">
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-bold text-green-400 mb-2">What works best</h3>
+                  <p>
+                    Aktuell performt <span className="text-green-400">{marketIntelligence.bestMarket.market}</span> am stärksten.
+                    Die beste Richtung ist <span className="text-green-400">{directionStats.bestDirection}</span>.
+                  </p>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-bold text-red-400 mb-2">What needs attention</h3>
+                  <p>
+                    Schwächster Markt ist <span className="text-red-400">{marketIntelligence.worstMarket.market}</span>.
+                    Beobachte Drawdown, Profit Factor und Expectancy bevor du Risiko erhöhst.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeSection === "charts" && (
           <div className="space-y-8">
