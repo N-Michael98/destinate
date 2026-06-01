@@ -1280,7 +1280,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.3.1: Trading Journal mit Dashboard Navigation, Weekly/Monthly Statistics, Performance Analytics und Prop Firm Rules.
+            V5.3.2: Trading Journal mit Window Layout, Reports, Analytics, Charts Center und Trade Management.
           </p>
         </div>
 
@@ -1296,25 +1296,15 @@ export default function TradingJournal() {
         <div className="flex flex-wrap gap-3">
           {[
             { id: "overview", label: "📊 Overview" },
-            { id: "trading", label: "➕ Trading" },
+            { id: "trading", label: "➕ Neuer Trade" },
+            { id: "reports", label: "📄 Reports & Time" },
             { id: "performance", label: "🧠 Performance Analytics" },
-            { id: "time", label: "📅 Weekly / Monthly" },
             { id: "charts", label: "📈 Charts Center" },
             { id: "history", label: "🧾 Trade History" },
           ].map((item) => (
             <button
               key={item.id}
-              onClick={() =>
-                scrollToSection(
-                  item.id as
-                    | "overview"
-                    | "trading"
-                    | "performance"
-                    | "time"
-                    | "charts"
-                    | "history"
-                )
-              }
+              onClick={() => setActiveSection(item.id)}
               className={
                 activeSection === item.id
                   ? "bg-blue-600 text-white px-4 py-3 rounded-xl font-bold"
@@ -1327,706 +1317,463 @@ export default function TradingJournal() {
         </div>
       </div>
 
-      <div ref={tradingSectionRef} className="grid grid-cols-2 gap-6 mb-8 scroll-mt-28">
-        <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.3.1</h2>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block mb-2 text-gray-400">Starting Balance</label>
-              <input
-                placeholder="z.B. 30000"
-                value={startingBalance}
-                onChange={(event) => setStartingBalance(event.target.value)}
-                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
-              />
-            </div>
-
-            <div>
-              <label className="block mb-2 text-gray-400">Account Risk %</label>
-              <input
-                placeholder="z.B. 1"
-                value={accountRiskPercent}
-                onChange={(event) => setAccountRiskPercent(event.target.value)}
-                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
-              />
-            </div>
-
-            <div className="bg-black border border-gray-800 p-4 rounded-xl">
-              <h3 className="font-bold text-gray-300">Risk pro Trade</h3>
-              <p className="text-2xl mt-2 text-red-400">{plannedRiskAmount} CHF</p>
-            </div>
-
-            <div className="bg-black border border-gray-800 p-4 rounded-xl">
-              <h3 className="font-bold text-gray-300">Auto Trade Values</h3>
-              <p className="text-sm mt-2 text-gray-400">
-                Neue Trades nutzen diese Account Size und Risk % automatisch.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.3.1</h2>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block mb-2 text-gray-400">Max Daily Loss %</label>
-              <input
-                placeholder="z.B. 5"
-                value={maxDailyLossPercent}
-                onChange={(event) => setMaxDailyLossPercent(event.target.value)}
-                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
-              />
-            </div>
-
-            <div>
-              <label className="block mb-2 text-gray-400">Max Overall Drawdown %</label>
-              <input
-                placeholder="z.B. 10"
-                value={maxOverallDrawdownPercent}
-                onChange={(event) =>
-                  setMaxOverallDrawdownPercent(event.target.value)
-                }
-                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
-              />
-            </div>
-
-            <div className="bg-black border border-gray-800 p-4 rounded-xl">
-              <h3 className="font-bold text-gray-300">Daily Limit</h3>
-              <p className="text-2xl mt-2 text-yellow-400">
-                {propFirmStats.dailyLossLimit} CHF
-              </p>
-            </div>
-
-            <div className="bg-black border border-gray-800 p-4 rounded-xl">
-              <h3 className="font-bold text-gray-300">Overall Limit</h3>
-              <p className="text-2xl mt-2 text-red-400">
-                {propFirmStats.overallDrawdownLimit} CHF
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {editingTrade && (
-        <div className="bg-gray-900 p-6 rounded-xl border border-blue-700 mb-8">
-          <h2 className="text-2xl font-bold mb-4">✏️ Trade bearbeiten #{editingTrade.id}</h2>
-
-          <div className="grid grid-cols-4 gap-4">
-            <input
-              placeholder="Market"
-              value={editMarket}
-              onChange={(event) => setEditMarket(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            />
-
-            <select
-              value={editDirection}
-              onChange={(event) => setEditDirection(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            >
-              <option value="LONG">LONG</option>
-              <option value="SHORT">SHORT</option>
-            </select>
-
-            <input
-              placeholder="Entry"
-              value={editEntry}
-              onChange={(event) => setEditEntry(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            />
-
-            <input
-              placeholder="Stop Loss"
-              value={editStopLoss}
-              onChange={(event) => setEditStopLoss(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            />
-
-            <input
-              placeholder="Take Profit"
-              value={editTakeProfit}
-              onChange={(event) => setEditTakeProfit(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            />
-
-            <input
-              placeholder="Account Size"
-              value={editAccountSize}
-              onChange={(event) => setEditAccountSize(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            />
-
-            <input
-              placeholder="Risk %"
-              value={editRiskPercent}
-              onChange={(event) => setEditRiskPercent(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            />
-
-            <input
-              placeholder="Notizen"
-              value={editNotes}
-              onChange={(event) => setEditNotes(event.target.value)}
-              className="bg-black border border-gray-700 p-3 rounded-xl"
-            />
-          </div>
-
-          <div className="flex gap-4 mt-4">
-            <button
-              onClick={saveEditedTrade}
-              disabled={isEditing}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold"
-            >
-              {isEditing ? "Speichert..." : "💾 Änderungen speichern"}
-            </button>
-
-            <button
-              onClick={cancelEditTrade}
-              className="bg-gray-700 hover:bg-gray-800 px-5 py-3 rounded-xl font-bold"
-            >
-              Abbrechen
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 mb-8">
-        <h2 className="text-2xl font-bold mb-4">➕ Neuer Trade</h2>
-
-        <div className="grid grid-cols-4 gap-4">
-          <input
-            placeholder="Market, z.B. Gold"
-            value={market}
-            onChange={(event) => setMarket(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          />
-
-          <select
-            value={direction}
-            onChange={(event) => setDirection(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          >
-            <option value="LONG">LONG</option>
-            <option value="SHORT">SHORT</option>
-          </select>
-
-          <input
-            placeholder="Entry"
-            value={entry}
-            onChange={(event) => setEntry(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          />
-
-          <input
-            placeholder="Stop Loss"
-            value={stopLoss}
-            onChange={(event) => setStopLoss(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          />
-
-          <input
-            placeholder="Take Profit"
-            value={takeProfit}
-            onChange={(event) => setTakeProfit(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          />
-
-          <input
-            placeholder="Account Size"
-            value={accountSize}
-            onChange={(event) => setAccountSize(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          />
-
-          <input
-            placeholder="Risk %"
-            value={riskPercent}
-            onChange={(event) => setRiskPercent(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          />
-
-          <input
-            placeholder="Notizen"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            className="bg-black border border-gray-700 p-3 rounded-xl"
-          />
-        </div>
-
-        <button
-          onClick={createTrade}
-          disabled={isSaving}
-          className="mt-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold"
-        >
-          {isSaving ? "Speichert..." : "💾 Trade speichern"}
-        </button>
-      </div>
-
-      <div className="mb-8 flex gap-4 items-end">
-        <div>
-          <label className="block mb-2 text-gray-400">Market auswählen</label>
-
-          <select
-            value={selectedMarket}
-            onChange={(event) => setSelectedMarket(event.target.value)}
-            className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3"
-          >
-            {markets.map((marketItem) => (
-              <option key={marketItem}>{marketItem}</option>
-            ))}
-          </select>
-        </div>
-
-        <button
-          onClick={resetJournal}
-          className="bg-red-700 hover:bg-red-800 px-4 py-3 rounded-xl"
-        >
-          Datenbank zurücksetzen
-        </button>
-
-        <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
-          {isLoaded ? "SQLite Verbindung aktiv" : "Lade Datenbank..."}
-        </div>
-      </div>
-
       <div ref={reportRef} data-pdf-report className="bg-black text-white">
-        <div ref={overviewSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-gray-800 scroll-mt-28">
-          <h2 className="text-2xl font-bold mb-2">📄 Jahresreport</h2>
-          <p className="text-gray-400">
-            AI Trading Journal Jahresübersicht · Filter: {selectedMarket}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Total Trades</h2>
-            <p className="text-2xl mt-2">{filteredTrades.length}</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Open Trades</h2>
-            <p className="text-2xl mt-2">{openTrades.length}</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Winrate</h2>
-            <p className="text-2xl mt-2 text-cyan-400">{winrate}%</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Profit / Loss</h2>
-            <p className={totalProfit >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
-              {totalProfit} CHF
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Profit Factor</h2>
-            <p className="text-2xl mt-2 text-blue-400">{profitFactor}</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Average Winner</h2>
-            <p className="text-2xl mt-2 text-green-400">{averageWinner} CHF</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Average Loser</h2>
-            <p className="text-2xl mt-2 text-red-400">{averageLoser} CHF</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="font-bold">Closed Trades</h2>
-            <p className="text-2xl mt-2">{closedTrades.length}</p>
-          </div>
-        </div>
-
-        <div ref={timeSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-blue-800 scroll-mt-28">
-          <h2 className="text-2xl font-bold mb-2">📅 Weekly Statistics V5.2</h2>
-          <p className="text-gray-400">
-            Wöchentliche Performance, beste/schlechteste Wochen und Wochen-Winrate.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Best Week</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {weeklyStats.bestWeek.profitLoss} CHF
-            </p>
-            <p className="text-sm mt-2 text-gray-400">
-              {weeklyStats.bestWeek.label}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Worst Week</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {weeklyStats.worstWeek.profitLoss} CHF
-            </p>
-            <p className="text-sm mt-2 text-gray-400">
-              {weeklyStats.worstWeek.label}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-            <h2 className="font-bold">Average Week</h2>
-            <p
-              className={
-                weeklyStats.averageWeek >= 0
-                  ? "text-2xl mt-2 text-green-400"
-                  : "text-2xl mt-2 text-red-400"
-              }
-            >
-              {weeklyStats.averageWeek} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-            <h2 className="font-bold">Weekly Winrate</h2>
-            <p className="text-2xl mt-2 text-cyan-400">
-              {weeklyStats.weeklyWinrate}%
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Positive Weeks</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {weeklyStats.positiveWeeks}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Negative Weeks</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {weeklyStats.negativeWeeks}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800 col-span-2">
-            <h2 className="font-bold mb-2">Weekly Summary</h2>
-            <p className="text-gray-400">
-              Du hast aktuell {weeklyStats.weeklyPerformance.length} ausgewertete Wochen im Journal.
-            </p>
-          </div>
-        </div>
-
-        <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-indigo-800">
-          <h2 className="text-2xl font-bold mb-2">📆 Monthly Statistics V5.1</h2>
-          <p className="text-gray-400">
-            Monatliche Performance, beste/schlechteste Monate und Monats-Winrate.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Best Month</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {monthlyStats.bestMonth.profitLoss} CHF
-            </p>
-            <p className="text-sm mt-2 text-gray-400">
-              {monthlyStats.bestMonth.label}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Worst Month</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {monthlyStats.worstMonth.profitLoss} CHF
-            </p>
-            <p className="text-sm mt-2 text-gray-400">
-              {monthlyStats.worstMonth.label}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-            <h2 className="font-bold">Average Month</h2>
-            <p
-              className={
-                monthlyStats.averageMonth >= 0
-                  ? "text-2xl mt-2 text-green-400"
-                  : "text-2xl mt-2 text-red-400"
-              }
-            >
-              {monthlyStats.averageMonth} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-            <h2 className="font-bold">Monthly Winrate</h2>
-            <p className="text-2xl mt-2 text-cyan-400">
-              {monthlyStats.monthlyWinrate}%
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Positive Months</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {monthlyStats.positiveMonths}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Negative Months</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {monthlyStats.negativeMonths}
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-indigo-800 col-span-2">
-            <h2 className="font-bold mb-2">Monthly Summary</h2>
-            <p className="text-gray-400">
-              Du hast aktuell {monthlyStats.monthlyPerformance.length} ausgewertete Monate im Journal.
-            </p>
-          </div>
-        </div>
-
-        <div ref={performanceSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-purple-800 scroll-mt-28">
-          <h2 className="text-2xl font-bold mb-2">🧠 Performance Analytics V5.0</h2>
-          <p className="text-gray-400">
-            Analyse deiner Strategie: Expectancy, R-Multiple, Streaks und Trading-Tage.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-purple-800">
-            <h2 className="font-bold">Expectancy</h2>
-            <p className={expectancyR >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
-              {expectancyR}R
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-            <h2 className="font-bold">Average R</h2>
-            <p className={averageRMultiple >= 0 ? "text-2xl mt-2 text-cyan-400" : "text-2xl mt-2 text-red-400"}>
-              {averageRMultiple}R
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-            <h2 className="font-bold">Average Trade</h2>
-            <p className={averageTrade >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
-              {averageTrade} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-            <h2 className="font-bold">Performance Score</h2>
-            <p className="text-2xl mt-2 text-yellow-400">
-              {performanceScore}/100
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Winning Streak</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {winningStreak} Trades
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Losing Streak</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {losingStreak} Trades
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Best Trading Day</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {bestTradingDay.value} CHF
-            </p>
-            <p className="text-sm mt-2 text-gray-400">{bestTradingDay.date}</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Worst Trading Day</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {worstTradingDay.value} CHF
-            </p>
-            <p className="text-sm mt-2 text-gray-400">{worstTradingDay.date}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Starting Balance</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {numericStartingBalance} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-            <h2 className="font-bold">Current Equity</h2>
-            <p className="text-2xl mt-2 text-cyan-400">
-              {accountStats.currentEquity} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-            <h2 className="font-bold">Growth %</h2>
-            <p className={accountStats.growthPercent >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
-              {accountStats.growthPercent}%
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-            <h2 className="font-bold">Risk pro Trade</h2>
-            <p className="text-2xl mt-2 text-yellow-400">
-              {plannedRiskAmount} CHF
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-            <h2 className="font-bold">Account Risk %</h2>
-            <p className="text-2xl mt-2 text-yellow-400">
-              {accountRiskPercent}%
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Historical Total Risk</h2>
-            <p className="text-2xl mt-2 text-red-400">{totalRiskAmount} CHF</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-orange-800">
-            <h2 className="font-bold">Open Trade Risk</h2>
-            <p className="text-2xl mt-2 text-orange-400">{openRiskAmount} CHF</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-            <h2 className="font-bold">Avg. R/R</h2>
-            <p className="text-2xl mt-2 text-cyan-400">{averageRiskReward}</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-            <h2 className="font-bold">Today Loss</h2>
-            <p className="text-2xl mt-2 text-cyan-400">
-              {propFirmStats.todayLoss} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-            <h2 className="font-bold">Daily Limit</h2>
-            <p className="text-2xl mt-2 text-yellow-400">
-              {propFirmStats.dailyLossLimit} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Overall DD Limit</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {propFirmStats.overallDrawdownLimit} CHF
-            </p>
-          </div>
-
-          <div
-            className={
-              propFirmStats.status === "PASS"
-                ? "bg-gray-900 p-6 rounded-xl border border-green-800"
-                : propFirmStats.status === "WARNING"
-                  ? "bg-gray-900 p-6 rounded-xl border border-yellow-800"
-                  : "bg-gray-900 p-6 rounded-xl border border-red-800"
-            }
-          >
-            <h2 className="font-bold">Risk Status</h2>
-            <p
-              className={
-                propFirmStats.status === "PASS"
-                  ? "text-2xl mt-2 text-green-400"
-                  : propFirmStats.status === "WARNING"
-                    ? "text-2xl mt-2 text-yellow-400"
-                    : "text-2xl mt-2 text-red-400"
-              }
-            >
-              {propFirmStats.status === "PASS"
-                ? "PASS ✅"
-                : propFirmStats.status === "WARNING"
-                  ? "WARNING ⚠️"
-                  : "VIOLATION ❌"}
-            </p>
-          </div>
-        </div>
-
-        
-        <div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-            <h2 className="font-bold">Today's P/L</h2>
-            <p className="text-2xl mt-2 text-cyan-400">{todaysPL} CHF</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Today's Loss</h2>
-            <p className="text-2xl mt-2 text-red-400">{todaysLoss} CHF</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-            <h2 className="font-bold">Remaining Daily Limit</h2>
-            <p className="text-2xl mt-2 text-yellow-400">{remainingDailyLimit} CHF</p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-            <h2 className="font-bold">Daily Status</h2>
-            <p className="text-2xl mt-2 text-blue-400">{dailyStatus}</p>
-          </div>
-        </div>
-
-<div className="grid grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
-            <h2 className="font-bold">Max Drawdown</h2>
-            <p className="text-2xl mt-2 text-red-400">
-              {accountStats.maxDrawdown} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-            <h2 className="font-bold">Max DD %</h2>
-            <p className="text-2xl mt-2 text-yellow-400">
-              {accountStats.maxDrawdownPercent}%
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-            <h2 className="font-bold">Current Drawdown</h2>
-            <p className="text-2xl mt-2 text-blue-400">
-              {accountStats.currentDrawdown} CHF
-            </p>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-            <h2 className="font-bold">Peak Account Value</h2>
-            <p className="text-2xl mt-2 text-green-400">
-              {accountStats.peakAccountEquity} CHF
-            </p>
-          </div>
-        </div>
-
-        {isLoaded && (
-          <>
-            <div ref={chartsSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-cyan-800 scroll-mt-28">
-              <h2 className="text-2xl font-bold mb-2">📈 Charts Center V5.3.1</h2>
-              <p className="text-gray-400">Alle Diagramme gesammelt: Equity, Account Equity, Drawdown, Daily, Weekly, Monthly und Market Performance.</p>
+        {activeSection === "overview" && (
+          <div className="space-y-8">
+            <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+              <h2 className="text-2xl font-bold mb-2">📊 Overview Dashboard V5.3.2</h2>
+              <p className="text-gray-400">
+                Wichtigste Trading- und Risk-Kennzahlen auf einen Blick.
+              </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-6 mb-8">
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl">
+                <h2 className="font-bold">Total Trades</h2>
+                <p className="text-2xl mt-2">{filteredTrades.length}</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl">
+                <h2 className="font-bold">Winrate</h2>
+                <p className="text-2xl mt-2 text-cyan-400">{winrate}%</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl">
+                <h2 className="font-bold">Profit / Loss</h2>
+                <p className={totalProfit >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
+                  {totalProfit} CHF
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+                <h2 className="font-bold">Current Equity</h2>
+                <p className="text-2xl mt-2 text-cyan-400">
+                  {accountStats.currentEquity} CHF
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+                <h2 className="font-bold">Growth %</h2>
+                <p className="text-2xl mt-2 text-green-400">
+                  {accountStats.growthPercent}%
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+                <h2 className="font-bold">Max Drawdown</h2>
+                <p className="text-2xl mt-2 text-red-400">
+                  {accountStats.maxDrawdown} CHF
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+                <h2 className="font-bold">Daily Status</h2>
+                <p className="text-2xl mt-2 text-yellow-400">{dailyStatus}</p>
+              </div>
+
+              <div
+                className={
+                  propFirmStats.status === "PASS"
+                    ? "bg-gray-900 p-6 rounded-xl border border-green-800"
+                    : propFirmStats.status === "WARNING"
+                      ? "bg-gray-900 p-6 rounded-xl border border-yellow-800"
+                      : "bg-gray-900 p-6 rounded-xl border border-red-800"
+                }
+              >
+                <h2 className="font-bold">Risk Status</h2>
+                <p
+                  className={
+                    propFirmStats.status === "PASS"
+                      ? "text-2xl mt-2 text-green-400"
+                      : propFirmStats.status === "WARNING"
+                        ? "text-2xl mt-2 text-yellow-400"
+                        : "text-2xl mt-2 text-red-400"
+                  }
+                >
+                  {propFirmStats.status === "PASS"
+                    ? "PASS ✅"
+                    : propFirmStats.status === "WARNING"
+                      ? "WARNING ⚠️"
+                      : "VIOLATION ❌"}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "trading" && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+                <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.3.2</h2>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-2 text-gray-400">Starting Balance</label>
+                    <input
+                      placeholder="z.B. 30000"
+                      value={startingBalance}
+                      onChange={(event) => setStartingBalance(event.target.value)}
+                      className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block mb-2 text-gray-400">Account Risk %</label>
+                    <input
+                      placeholder="z.B. 1"
+                      value={accountRiskPercent}
+                      onChange={(event) => setAccountRiskPercent(event.target.value)}
+                      className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+                    />
+                  </div>
+
+                  <div className="bg-black border border-gray-800 p-4 rounded-xl">
+                    <h3 className="font-bold text-gray-300">Risk pro Trade</h3>
+                    <p className="text-2xl mt-2 text-red-400">{plannedRiskAmount} CHF</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 p-4 rounded-xl">
+                    <h3 className="font-bold text-gray-300">Auto Trade Values</h3>
+                    <p className="text-sm mt-2 text-gray-400">
+                      Neue Trades nutzen diese Account Size und Risk % automatisch.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+                <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.3.2</h2>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-2 text-gray-400">Max Daily Loss %</label>
+                    <input
+                      placeholder="z.B. 5"
+                      value={maxDailyLossPercent}
+                      onChange={(event) => setMaxDailyLossPercent(event.target.value)}
+                      className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block mb-2 text-gray-400">Max Overall Drawdown %</label>
+                    <input
+                      placeholder="z.B. 10"
+                      value={maxOverallDrawdownPercent}
+                      onChange={(event) =>
+                        setMaxOverallDrawdownPercent(event.target.value)
+                      }
+                      className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+                    />
+                  </div>
+
+                  <div className="bg-black border border-gray-800 p-4 rounded-xl">
+                    <h3 className="font-bold text-gray-300">Daily Limit</h3>
+                    <p className="text-2xl mt-2 text-yellow-400">
+                      {propFirmStats.dailyLossLimit} CHF
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 p-4 rounded-xl">
+                    <h3 className="font-bold text-gray-300">Overall Limit</h3>
+                    <p className="text-2xl mt-2 text-red-400">
+                      {propFirmStats.overallDrawdownLimit} CHF
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {editingTrade && (
+              <div className="bg-gray-900 p-6 rounded-xl border border-blue-700">
+                <h2 className="text-2xl font-bold mb-4">✏️ Trade bearbeiten #{editingTrade.id}</h2>
+
+                <div className="grid grid-cols-4 gap-4">
+                  <input placeholder="Market" value={editMarket} onChange={(event) => setEditMarket(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                  <select value={editDirection} onChange={(event) => setEditDirection(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
+                    <option value="LONG">LONG</option>
+                    <option value="SHORT">SHORT</option>
+                  </select>
+                  <input placeholder="Entry" value={editEntry} onChange={(event) => setEditEntry(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                  <input placeholder="Stop Loss" value={editStopLoss} onChange={(event) => setEditStopLoss(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                  <input placeholder="Take Profit" value={editTakeProfit} onChange={(event) => setEditTakeProfit(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                  <input placeholder="Account Size" value={editAccountSize} onChange={(event) => setEditAccountSize(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                  <input placeholder="Risk %" value={editRiskPercent} onChange={(event) => setEditRiskPercent(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                  <input placeholder="Notizen" value={editNotes} onChange={(event) => setEditNotes(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                </div>
+
+                <div className="flex gap-4 mt-4">
+                  <button onClick={saveEditedTrade} disabled={isEditing} className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold">
+                    {isEditing ? "Speichert..." : "💾 Änderungen speichern"}
+                  </button>
+                  <button onClick={cancelEditTrade} className="bg-gray-700 hover:bg-gray-800 px-5 py-3 rounded-xl font-bold">
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
+              <h2 className="text-2xl font-bold mb-4">➕ Neuer Trade</h2>
+
+              <div className="grid grid-cols-4 gap-4">
+                <input placeholder="Market, z.B. Gold" value={market} onChange={(event) => setMarket(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                <select value={direction} onChange={(event) => setDirection(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
+                  <option value="LONG">LONG</option>
+                  <option value="SHORT">SHORT</option>
+                </select>
+                <input placeholder="Entry" value={entry} onChange={(event) => setEntry(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                <input placeholder="Stop Loss" value={stopLoss} onChange={(event) => setStopLoss(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                <input placeholder="Take Profit" value={takeProfit} onChange={(event) => setTakeProfit(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                <input placeholder="Account Size" value={accountSize} onChange={(event) => setAccountSize(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                <input placeholder="Risk %" value={riskPercent} onChange={(event) => setRiskPercent(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+                <input placeholder="Notizen" value={notes} onChange={(event) => setNotes(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
+              </div>
+
+              <button onClick={createTrade} disabled={isSaving} className="mt-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold">
+                {isSaving ? "Speichert..." : "💾 Trade speichern"}
+              </button>
+            </div>
+
+            <div className="flex gap-4 items-end">
+              <div>
+                <label className="block mb-2 text-gray-400">Market auswählen</label>
+                <select value={selectedMarket} onChange={(event) => setSelectedMarket(event.target.value)} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                  {markets.map((marketItem) => (
+                    <option key={marketItem}>{marketItem}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button onClick={resetJournal} className="bg-red-700 hover:bg-red-800 px-4 py-3 rounded-xl">
+                Datenbank zurücksetzen
+              </button>
+
+              <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
+                {isLoaded ? "SQLite Verbindung aktiv" : "Lade Datenbank..."}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "reports" && (
+          <div className="space-y-8">
+            <div className="bg-gray-900 p-6 rounded-xl border border-indigo-800">
+              <h2 className="text-2xl font-bold mb-2">📄 Reports & Time Statistics</h2>
+              <p className="text-gray-400">
+                Jahresreport, Weekly/Monthly Statistics und zeitliche Performance Diagramme.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+                <h2 className="font-bold">Best Week</h2>
+                <p className="text-2xl mt-2 text-green-400">{weeklyStats.bestWeek.profitLoss} CHF</p>
+                <p className="text-sm mt-2 text-gray-400">{weeklyStats.bestWeek.label}</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+                <h2 className="font-bold">Worst Week</h2>
+                <p className="text-2xl mt-2 text-red-400">{weeklyStats.worstWeek.profitLoss} CHF</p>
+                <p className="text-sm mt-2 text-gray-400">{weeklyStats.worstWeek.label}</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+                <h2 className="font-bold">Best Month</h2>
+                <p className="text-2xl mt-2 text-green-400">{monthlyStats.bestMonth.profitLoss} CHF</p>
+                <p className="text-sm mt-2 text-gray-400">{monthlyStats.bestMonth.label}</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+                <h2 className="font-bold">Worst Month</h2>
+                <p className="text-2xl mt-2 text-red-400">{monthlyStats.worstMonth.profitLoss} CHF</p>
+                <p className="text-sm mt-2 text-gray-400">{monthlyStats.worstMonth.label}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={weeklyStats.weeklyPerformance}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyStats.monthlyPerformance}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#6366f1" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={buildDailyPerformance(filteredTrades)}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#22c55e" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={periodData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#06b6d4" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
+                <h2 className="text-xl font-bold mb-4">📅 Weekly Statistics Table</h2>
+                <div className="min-w-[900px]">
+                  <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+                    <div>Week</div><div>P/L</div><div>Trades</div><div>Wins</div><div>Losses</div><div>Winrate</div>
+                  </div>
+                  {weeklyStats.weeklyPerformance.map((week) => (
+                    <div key={week.week} className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center">
+                      <div>{week.label}</div>
+                      <div className={week.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>{week.profitLoss} CHF</div>
+                      <div>{week.trades}</div>
+                      <div className="text-green-400">{week.wins}</div>
+                      <div className="text-red-400">{week.losses}</div>
+                      <div className="text-cyan-400">{week.winrate}%</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
+                <h2 className="text-xl font-bold mb-4">📆 Monthly Statistics Table</h2>
+                <div className="min-w-[900px]">
+                  <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+                    <div>Month</div><div>P/L</div><div>Trades</div><div>Wins</div><div>Losses</div><div>Winrate</div>
+                  </div>
+                  {monthlyStats.monthlyPerformance.map((month) => (
+                    <div key={month.month} className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center">
+                      <div>{month.label}</div>
+                      <div className={month.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>{month.profitLoss} CHF</div>
+                      <div>{month.trades}</div>
+                      <div className="text-green-400">{month.wins}</div>
+                      <div className="text-red-400">{month.losses}</div>
+                      <div className="text-cyan-400">{month.winrate}%</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "performance" && (
+          <div className="space-y-8">
+            <div className="bg-gray-900 p-6 rounded-xl border border-purple-800">
+              <h2 className="text-2xl font-bold mb-2">🧠 Performance Analytics V5.0</h2>
+              <p className="text-gray-400">
+                Expectancy, R-Multiple, Streaks, Performance Score und Performance nach Market.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl border border-purple-800">
+                <h2 className="font-bold">Expectancy</h2>
+                <p className={expectancyR >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>{expectancyR}R</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+                <h2 className="font-bold">Average R</h2>
+                <p className={averageRMultiple >= 0 ? "text-2xl mt-2 text-cyan-400" : "text-2xl mt-2 text-red-400"}>{averageRMultiple}R</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+                <h2 className="font-bold">Average Trade</h2>
+                <p className={averageTrade >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>{averageTrade} CHF</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+                <h2 className="font-bold">Performance Score</h2>
+                <p className="text-2xl mt-2 text-yellow-400">{performanceScore}/100</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+                <h2 className="font-bold">Winning Streak</h2>
+                <p className="text-2xl mt-2 text-green-400">{winningStreak} Trades</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+                <h2 className="font-bold">Losing Streak</h2>
+                <p className="text-2xl mt-2 text-red-400">{losingStreak} Trades</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+                <h2 className="font-bold">Best Trading Day</h2>
+                <p className="text-2xl mt-2 text-green-400">{bestTradingDay.value} CHF</p>
+                <p className="text-sm mt-2 text-gray-400">{bestTradingDay.date}</p>
+              </div>
+              <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+                <h2 className="font-bold">Worst Trading Day</h2>
+                <p className="text-2xl mt-2 text-red-400">{worstTradingDay.value} CHF</p>
+                <p className="text-sm mt-2 text-gray-400">{worstTradingDay.date}</p>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+              <h2 className="text-xl font-bold mb-4">🎯 Performance nach Market</h2>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={marketPerformanceData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="market" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#a855f7" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "charts" && (
+          <div className="space-y-8">
+            <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+              <h2 className="text-2xl font-bold mb-2">📈 Charts Center V5.3.2</h2>
+              <p className="text-gray-400">
+                Equity Curve, Profit/Loss pro Trade, Account Equity Curve und Max Drawdown Curve.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-xl min-h-96">
                 <h2 className="text-xl font-bold mb-4">📈 Equity Curve</h2>
-
-                <div className="h-80 min-h-80">
+                <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={equityData}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -2041,8 +1788,7 @@ export default function TradingJournal() {
 
               <div className="bg-gray-900 p-6 rounded-xl min-h-96">
                 <h2 className="text-xl font-bold mb-4">📊 Profit / Loss pro Trade</h2>
-
-                <div className="h-80 min-h-80">
+                <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={equityData}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -2054,326 +1800,112 @@ export default function TradingJournal() {
                   </ResponsiveContainer>
                 </div>
               </div>
-            </div>
 
-            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
-              <h2 className="text-xl font-bold mb-4">💼 Account Equity Curve</h2>
-
-              <div className="h-80 min-h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={accountStats.accountEquityData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="accountEquity"
-                      stroke="#22d3ee"
-                      strokeWidth={3}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
-              <h2 className="text-xl font-bold mb-4">📉 Max Drawdown Curve</h2>
-
-              <div className="h-80 min-h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={accountStats.accountEquityData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="drawdown"
-                      stroke="#ef4444"
-                      strokeWidth={3}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
-              <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
-
-              <div className="h-80 min-h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weeklyStats.weeklyPerformance}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="profitLoss" fill="#3b82f6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
-              <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
-
-              <div className="h-80 min-h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyStats.monthlyPerformance}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="profitLoss" fill="#6366f1" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
-              <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
-
-              <div className="h-80 min-h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={buildDailyPerformance(filteredTrades)}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#22c55e" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6 mb-8">
               <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance</h2>
-
-                <div className="h-80 min-h-80">
+                <h2 className="text-xl font-bold mb-4">💼 Account Equity Curve</h2>
+                <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={periodData}>
+                    <LineChart data={accountStats.accountEquityData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="value" fill="#06b6d4" />
-                    </BarChart>
+                      <Line type="monotone" dataKey="accountEquity" stroke="#22d3ee" strokeWidth={3} />
+                    </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">🎯 Performance nach Market</h2>
-
-                <div className="h-80 min-h-80">
+                <h2 className="text-xl font-bold mb-4">📉 Max Drawdown Curve</h2>
+                <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={marketPerformanceData}>
+                    <LineChart data={accountStats.accountEquityData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="market" />
+                      <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="value" fill="#a855f7" />
-                    </BarChart>
+                      <Line type="monotone" dataKey="drawdown" stroke="#ef4444" strokeWidth={3} />
+                    </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
             </div>
-          </>
+          </div>
         )}
 
-        <div ref={historySectionRef} className="grid grid-cols-2 gap-6 mb-8 scroll-mt-28">
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4">🏆 Best Trade</h2>
-
-            {bestTrade ? (
-              <div className="space-y-2">
-                <p className="text-2xl font-bold text-green-400">{bestTrade.market}</p>
-                <p>Date: {new Date(bestTrade.date).toLocaleDateString("de-CH")}</p>
-                <p>Direction: {bestTrade.direction}</p>
-                <p>Profit: {bestTrade.profitLoss} CHF</p>
+        {activeSection === "history" && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-xl">
+                <h2 className="text-xl font-bold mb-4">🏆 Best Trade</h2>
+                {bestTrade ? (
+                  <div className="space-y-2">
+                    <p className="text-2xl font-bold text-green-400">{bestTrade.market}</p>
+                    <p>Date: {new Date(bestTrade.date).toLocaleDateString("de-CH")}</p>
+                    <p>Direction: {bestTrade.direction}</p>
+                    <p>Profit: {bestTrade.profitLoss} CHF</p>
+                  </div>
+                ) : (
+                  <p className="text-gray-400">Keine Trades vorhanden.</p>
+                )}
               </div>
-            ) : (
-              <p className="text-gray-400">Keine Trades vorhanden.</p>
-            )}
-          </div>
 
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4">⚠️ Worst Trade</h2>
-
-            {worstTrade ? (
-              <div className="space-y-2">
-                <p className="text-2xl font-bold text-red-400">{worstTrade.market}</p>
-                <p>Date: {new Date(worstTrade.date).toLocaleDateString("de-CH")}</p>
-                <p>Direction: {worstTrade.direction}</p>
-                <p>Profit: {worstTrade.profitLoss} CHF</p>
+              <div className="bg-gray-900 p-6 rounded-xl">
+                <h2 className="text-xl font-bold mb-4">⚠️ Worst Trade</h2>
+                {worstTrade ? (
+                  <div className="space-y-2">
+                    <p className="text-2xl font-bold text-red-400">{worstTrade.market}</p>
+                    <p>Date: {new Date(worstTrade.date).toLocaleDateString("de-CH")}</p>
+                    <p>Direction: {worstTrade.direction}</p>
+                    <p>Profit: {worstTrade.profitLoss} CHF</p>
+                  </div>
+                ) : (
+                  <p className="text-gray-400">Keine Trades vorhanden.</p>
+                )}
               </div>
-            ) : (
-              <p className="text-gray-400">Keine Trades vorhanden.</p>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto mb-8">
-          <h2 className="text-xl font-bold mb-4">📅 Weekly Statistics Table</h2>
-
-          <div className="min-w-[900px]">
-            <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
-              <div>Week</div>
-              <div>P/L</div>
-              <div>Trades</div>
-              <div>Wins</div>
-              <div>Losses</div>
-              <div>Winrate</div>
             </div>
 
-            {weeklyStats.weeklyPerformance.map((week) => (
-              <div
-                key={week.week}
-                className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center"
-              >
-                <div>{week.label}</div>
-                <div className={week.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
-                  {week.profitLoss} CHF
+            <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
+              <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
+              <div className="min-w-[1700px]">
+                <div className="grid grid-cols-16 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+                  <div>Date</div><div>Market</div><div>Direction</div><div>Entry</div><div>SL</div><div>TP</div><div>Risk</div><div>R/R</div><div>Size</div><div>Status</div><div>P/L</div><div>Actions</div><div>Edit</div><div>Delete</div><div>Entry Account</div><div>Entry Risk %</div>
                 </div>
-                <div>{week.trades}</div>
-                <div className="text-green-400">{week.wins}</div>
-                <div className="text-red-400">{week.losses}</div>
-                <div className="text-cyan-400">{week.winrate}%</div>
+
+                {filteredTrades.map((trade) => (
+                  <div key={trade.id} className="grid grid-cols-16 gap-4 p-4 border-t border-gray-800 items-center">
+                    <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
+                    <div>{trade.market}</div>
+                    <div className={trade.direction === "LONG" ? "text-green-400" : "text-red-400"}>{trade.direction}</div>
+                    <div>{trade.entry}</div>
+                    <div>{trade.stopLoss}</div>
+                    <div>{trade.takeProfit}</div>
+                    <div className="text-red-400">{trade.riskAmount ?? 0} CHF</div>
+                    <div className="text-cyan-400">{trade.riskReward ?? 0}</div>
+                    <div className="text-blue-400">{trade.positionSize ?? 0}</div>
+                    <div className={trade.status === "OPEN" ? "text-yellow-400" : "text-green-400"}>{trade.status}</div>
+                    <div className={trade.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>{trade.profitLoss} CHF</div>
+                    <div className="flex flex-col gap-2">
+                      {trade.status === "OPEN" ? (
+                        <>
+                          <button onClick={() => closeTrade(trade.id, "WIN")} className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm">WIN</button>
+                          <button onClick={() => closeTrade(trade.id, "LOSS")} className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm">LOSS</button>
+                        </>
+                      ) : (
+                        <button onClick={() => reopenTrade(trade.id)} className="bg-gray-700 hover:bg-gray-800 px-3 py-1 rounded text-sm">Reopen</button>
+                      )}
+                    </div>
+                    <button onClick={() => startEditTrade(trade)} className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm">Edit</button>
+                    <button onClick={() => deleteTrade(trade.id)} className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm">Löschen</button>
+                    <div>{trade.accountSize ?? 30000}</div>
+                    <div>{trade.riskPercent ?? 1}%</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto mb-8">
-          <h2 className="text-xl font-bold mb-4">📆 Monthly Statistics Table</h2>
-
-          <div className="min-w-[900px]">
-            <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
-              <div>Month</div>
-              <div>P/L</div>
-              <div>Trades</div>
-              <div>Wins</div>
-              <div>Losses</div>
-              <div>Winrate</div>
             </div>
-
-            {monthlyStats.monthlyPerformance.map((month) => (
-              <div
-                key={month.month}
-                className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center"
-              >
-                <div>{month.label}</div>
-                <div className={month.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
-                  {month.profitLoss} CHF
-                </div>
-                <div>{month.trades}</div>
-                <div className="text-green-400">{month.wins}</div>
-                <div className="text-red-400">{month.losses}</div>
-                <div className="text-cyan-400">{month.winrate}%</div>
-              </div>
-            ))}
           </div>
-        </div>
-
-        <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto">
-          <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
-
-          <div className="min-w-[1700px]">
-            <div className="grid grid-cols-16 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
-              <div>Date</div>
-              <div>Market</div>
-              <div>Direction</div>
-              <div>Entry</div>
-              <div>SL</div>
-              <div>TP</div>
-              <div>Risk</div>
-              <div>R/R</div>
-              <div>Size</div>
-              <div>Status</div>
-              <div>P/L</div>
-              <div>Actions</div>
-              <div>Edit</div>
-              <div>Delete</div>
-              <div>Entry Account</div>
-              <div>Entry Risk %</div>
-            </div>
-
-            {filteredTrades.map((trade) => (
-              <div
-                key={trade.id}
-                className="grid grid-cols-16 gap-4 p-4 border-t border-gray-800 items-center"
-              >
-                <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
-                <div>{trade.market}</div>
-
-                <div className={trade.direction === "LONG" ? "text-green-400" : "text-red-400"}>
-                  {trade.direction}
-                </div>
-
-                <div>{trade.entry}</div>
-                <div>{trade.stopLoss}</div>
-                <div>{trade.takeProfit}</div>
-
-                <div className="text-red-400">{trade.riskAmount ?? 0} CHF</div>
-                <div className="text-cyan-400">{trade.riskReward ?? 0}</div>
-                <div className="text-blue-400">{trade.positionSize ?? 0}</div>
-
-                <div className={trade.status === "OPEN" ? "text-yellow-400" : "text-green-400"}>
-                  {trade.status}
-                </div>
-
-                <div className={trade.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
-                  {trade.profitLoss} CHF
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  {trade.status === "OPEN" ? (
-                    <>
-                      <button
-                        onClick={() => closeTrade(trade.id, "WIN")}
-                        className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
-                      >
-                        WIN
-                      </button>
-
-                      <button
-                        onClick={() => closeTrade(trade.id, "LOSS")}
-                        className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
-                      >
-                        LOSS
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => reopenTrade(trade.id)}
-                      className="bg-gray-700 hover:bg-gray-800 px-3 py-1 rounded text-sm"
-                    >
-                      Reopen
-                    </button>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => startEditTrade(trade)}
-                  className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm"
-                >
-                  Edit
-                </button>
-
-                <button
-                  onClick={() => deleteTrade(trade.id)}
-                  className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm"
-                >
-                  Löschen
-                </button>
-
-                <div>{trade.accountSize ?? 30000}</div>
-                <div>{trade.riskPercent ?? 1}%</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
     </main>
   );
