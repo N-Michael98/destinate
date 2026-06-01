@@ -328,6 +328,179 @@ function getMaxDrawdownStats(data: Trade[]) {
 
 
 
+
+// ===== Signal Engine V5.8 =====
+
+type SignalEngineResult = {
+  confidenceScore: number;
+  setupQuality: "A+" | "A" | "B" | "C" | "D";
+  recommendation: "TRADE" | "WAIT" | "AVOID";
+  riskStatus: "PASS" | "WARNING" | "FAIL";
+  strategyStatus: "PASS" | "WARNING" | "FAIL";
+  marketStatus: "PASS" | "WARNING" | "FAIL";
+  checks: {
+    label: string;
+    status: "PASS" | "WARNING" | "FAIL";
+  }[];
+  distribution: {
+    signal: string;
+    count: number;
+  }[];
+};
+
+function getSignalEngineResult(input: {
+  selectedStrategy: string;
+  selectedMarket: string;
+  plannedRiskAmount: number;
+  riskReward: number;
+  winrate: number;
+  profitFactor: number;
+  expectancyR: number;
+  propFirmStatus: string;
+  remainingDailyLimit: number;
+  strategyStats: ReturnType<typeof getStrategyStats>;
+  marketIntelligence: ReturnType<typeof getMarketIntelligence>;
+  aiTradeReviewStats: ReturnType<typeof getAITradeReviewStats>;
+}): SignalEngineResult {
+  const selectedStrategyStats = input.strategyStats.strategyStats.find(
+    (item) => item.strategy === input.selectedStrategy
+  );
+
+  const selectedMarketStats = input.marketIntelligence.marketStats.find(
+    (item) => item.market === input.selectedMarket
+  );
+
+  const strategyProfit = selectedStrategyStats?.profitLoss ?? 0;
+  const strategyWinrate = selectedStrategyStats?.winrate ?? 0;
+  const marketProfit = selectedMarketStats?.profitLoss ?? 0;
+  const marketWinrate = selectedMarketStats?.winrate ?? 0;
+
+  let confidenceScore = 0;
+
+  if (input.winrate >= 50) confidenceScore += 15;
+  if (input.winrate >= 60) confidenceScore += 10;
+
+  if (input.profitFactor >= 1.2) confidenceScore += 15;
+  if (input.profitFactor >= 2) confidenceScore += 10;
+
+  if (input.expectancyR > 0) confidenceScore += 15;
+  if (input.expectancyR >= 0.5) confidenceScore += 10;
+
+  if (strategyProfit > 0) confidenceScore += 15;
+  if (strategyWinrate >= 60) confidenceScore += 5;
+
+  if (marketProfit > 0) confidenceScore += 10;
+  if (marketWinrate >= 60) confidenceScore += 5;
+
+  if (input.riskReward >= 2) confidenceScore += 10;
+  if (input.riskReward >= 3) confidenceScore += 5;
+
+  if (input.propFirmStatus === "PASS") confidenceScore += 10;
+  if (input.remainingDailyLimit >= input.plannedRiskAmount) confidenceScore += 5;
+
+  confidenceScore = Math.min(confidenceScore, 100);
+
+  const setupQuality =
+    confidenceScore >= 90
+      ? "A+"
+      : confidenceScore >= 75
+        ? "A"
+        : confidenceScore >= 60
+          ? "B"
+          : confidenceScore >= 40
+            ? "C"
+            : "D";
+
+  const recommendation =
+    confidenceScore >= 75 && input.propFirmStatus === "PASS"
+      ? "TRADE"
+      : confidenceScore >= 60 && input.propFirmStatus !== "VIOLATION"
+        ? "WAIT"
+        : "AVOID";
+
+  const riskStatus =
+    input.propFirmStatus === "PASS" && input.remainingDailyLimit >= input.plannedRiskAmount
+      ? "PASS"
+      : input.propFirmStatus === "WARNING"
+        ? "WARNING"
+        : "FAIL";
+
+  const strategyStatus =
+    strategyProfit > 0 && strategyWinrate >= 50
+      ? "PASS"
+      : strategyProfit >= 0
+        ? "WARNING"
+        : "FAIL";
+
+  const marketStatus =
+    marketProfit > 0 && marketWinrate >= 50
+      ? "PASS"
+      : marketProfit >= 0
+        ? "WARNING"
+        : "FAIL";
+
+  const reviews = input.aiTradeReviewStats.reviews;
+  const distribution = [
+    {
+      signal: "Strong Buy",
+      count: reviews.filter((review) => review.score >= 90).length,
+    },
+    {
+      signal: "Good Setup",
+      count: reviews.filter((review) => review.score >= 75 && review.score < 90).length,
+    },
+    {
+      signal: "Medium Setup",
+      count: reviews.filter((review) => review.score >= 60 && review.score < 75).length,
+    },
+    {
+      signal: "Avoid",
+      count: reviews.filter((review) => review.score < 60).length,
+    },
+  ];
+
+  return {
+    confidenceScore,
+    setupQuality,
+    recommendation,
+    riskStatus,
+    strategyStatus,
+    marketStatus,
+    checks: [
+      {
+        label: "Risk unter Daily Limit",
+        status: input.remainingDailyLimit >= input.plannedRiskAmount ? "PASS" : "FAIL",
+      },
+      {
+        label: "Prop Firm Rules",
+        status:
+          input.propFirmStatus === "PASS"
+            ? "PASS"
+            : input.propFirmStatus === "WARNING"
+              ? "WARNING"
+              : "FAIL",
+      },
+      {
+        label: "Risk/Reward mindestens 2",
+        status: input.riskReward >= 2 ? "PASS" : input.riskReward >= 1.5 ? "WARNING" : "FAIL",
+      },
+      {
+        label: "Strategy historisch positiv",
+        status: strategyStatus,
+      },
+      {
+        label: "Market historisch positiv",
+        status: marketStatus,
+      },
+      {
+        label: "Expectancy positiv",
+        status: input.expectancyR > 0 ? "PASS" : "WARNING",
+      },
+    ],
+    distribution,
+  };
+}
+
 // ===== Strategy Builder V5.7 =====
 
 function getStrategyStats(data: Trade[]) {
@@ -1174,6 +1347,9 @@ export default function TradingJournal() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [selectedMarket, setSelectedMarket] = useState("All");
   const [activeSection, setActiveSection] = useState("overview");
+  const [signalStrategy, setSignalStrategy] = useState("Liquidity Sweep");
+  const [signalMarket, setSignalMarket] = useState("All");
+  const [signalRiskReward, setSignalRiskReward] = useState("2");
 
   const [market, setMarket] = useState("");
   const [direction, setDirection] = useState("LONG");
@@ -1734,6 +1910,21 @@ export default function TradingJournal() {
 
   const aiTradeReviewStats = getAITradeReviewStats(filteredTrades);
 
+  const signalEngineResult = getSignalEngineResult({
+    selectedStrategy: signalStrategy,
+    selectedMarket: signalMarket,
+    plannedRiskAmount,
+    riskReward: Number(signalRiskReward) || 0,
+    winrate,
+    profitFactor,
+    expectancyR,
+    propFirmStatus: propFirmStats.status,
+    remainingDailyLimit,
+    strategyStats,
+    marketIntelligence,
+    aiTradeReviewStats,
+  });
+
   function scrollToSection(
     section:
       | "overview"
@@ -1770,7 +1961,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.7: Trading Journal mit Strategy Builder, AI Trade Review, Journal Intelligence und Bot-Vorbereitung.
+            V5.8: Trading Journal mit Signal Engine, Strategy Builder, AI Trade Review und Bot-Vorbereitung.
           </p>
         </div>
 
@@ -1792,6 +1983,7 @@ export default function TradingJournal() {
             { id: "intelligence", label: "🤖 Journal Intelligence" },
             { id: "strategy", label: "🧩 Strategy Builder" },
             { id: "tradeReview", label: "⭐ AI Trade Review" },
+            { id: "signal", label: "🎯 Signal Engine" },
             { id: "charts", label: "📈 Charts Center" },
             { id: "history", label: "🧾 Trade History" },
           ].map((item) => (
@@ -2732,6 +2924,241 @@ export default function TradingJournal() {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeSection === "signal" && (
+          <div className="space-y-8">
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-orange-800">
+              <h2 className="text-3xl font-bold mb-2">🎯 Signal Engine V5.8</h2>
+              <p className="text-gray-400">
+                Erste Entscheidungslogik: Confidence Score, Trade Recommendation, Risk Validation und Bot-Signal-Vorschau.
+              </p>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
+              <h2 className="text-xl font-bold mb-4">⚙️ Signal Input</h2>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div>
+                  <label className="block mb-2 text-gray-400">Market</label>
+                  <select
+                    value={signalMarket}
+                    onChange={(event) => setSignalMarket(event.target.value)}
+                    className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+                  >
+                    {markets.map((marketItem) => (
+                      <option key={marketItem} value={marketItem}>
+                        {marketItem}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block mb-2 text-gray-400">Strategy</label>
+                  <select
+                    value={signalStrategy}
+                    onChange={(event) => setSignalStrategy(event.target.value)}
+                    className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+                  >
+                    {strategies.map((strategyItem) => (
+                      <option key={strategyItem} value={strategyItem}>
+                        {strategyItem}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block mb-2 text-gray-400">Planned R/R</label>
+                  <input
+                    value={signalRiskReward}
+                    onChange={(event) => setSignalRiskReward(event.target.value)}
+                    className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+                    placeholder="z.B. 2"
+                  />
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <h3 className="font-bold text-gray-300">Planned Risk</h3>
+                  <p className="text-2xl mt-2 text-red-400">{plannedRiskAmount} CHF</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-orange-800">
+                <h2 className="font-bold mb-4">Confidence Score</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-orange-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-orange-400">
+                        {signalEngineResult.confidenceScore}%
+                      </p>
+                      <p className="text-xs text-gray-400">Confidence</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold">Setup Quality</h2>
+                <p
+                  className={
+                    signalEngineResult.setupQuality === "A+" || signalEngineResult.setupQuality === "A"
+                      ? "text-5xl mt-8 text-green-400"
+                      : signalEngineResult.setupQuality === "B"
+                        ? "text-5xl mt-8 text-yellow-400"
+                        : "text-5xl mt-8 text-red-400"
+                  }
+                >
+                  {signalEngineResult.setupQuality}
+                </p>
+                <p className="text-gray-400 mt-3">Quality Grade</p>
+              </div>
+
+              <div
+                className={
+                  signalEngineResult.recommendation === "TRADE"
+                    ? "bg-gray-900 p-6 rounded-2xl border border-green-800"
+                    : signalEngineResult.recommendation === "WAIT"
+                      ? "bg-gray-900 p-6 rounded-2xl border border-yellow-800"
+                      : "bg-gray-900 p-6 rounded-2xl border border-red-800"
+                }
+              >
+                <h2 className="font-bold">Recommendation</h2>
+                <p
+                  className={
+                    signalEngineResult.recommendation === "TRADE"
+                      ? "text-5xl mt-8 text-green-400"
+                      : signalEngineResult.recommendation === "WAIT"
+                        ? "text-5xl mt-8 text-yellow-400"
+                        : "text-5xl mt-8 text-red-400"
+                  }
+                >
+                  {signalEngineResult.recommendation}
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
+                <h2 className="font-bold">Bot Mode</h2>
+                <p className="text-4xl mt-8 text-purple-400">SIM</p>
+                <p className="text-gray-400 mt-3">Simulation only</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div
+                className={
+                  signalEngineResult.riskStatus === "PASS"
+                    ? "bg-gray-900 p-6 rounded-2xl border border-green-800"
+                    : signalEngineResult.riskStatus === "WARNING"
+                      ? "bg-gray-900 p-6 rounded-2xl border border-yellow-800"
+                      : "bg-gray-900 p-6 rounded-2xl border border-red-800"
+                }
+              >
+                <h2 className="font-bold">Risk Status</h2>
+                <p className="text-3xl mt-6">{signalEngineResult.riskStatus}</p>
+              </div>
+
+              <div
+                className={
+                  signalEngineResult.strategyStatus === "PASS"
+                    ? "bg-gray-900 p-6 rounded-2xl border border-green-800"
+                    : signalEngineResult.strategyStatus === "WARNING"
+                      ? "bg-gray-900 p-6 rounded-2xl border border-yellow-800"
+                      : "bg-gray-900 p-6 rounded-2xl border border-red-800"
+                }
+              >
+                <h2 className="font-bold">Strategy Status</h2>
+                <p className="text-3xl mt-6">{signalEngineResult.strategyStatus}</p>
+              </div>
+
+              <div
+                className={
+                  signalEngineResult.marketStatus === "PASS"
+                    ? "bg-gray-900 p-6 rounded-2xl border border-green-800"
+                    : signalEngineResult.marketStatus === "WARNING"
+                      ? "bg-gray-900 p-6 rounded-2xl border border-yellow-800"
+                      : "bg-gray-900 p-6 rounded-2xl border border-red-800"
+                }
+              >
+                <h2 className="font-bold">Market Status</h2>
+                <p className="text-3xl mt-6">{signalEngineResult.marketStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-orange-900">
+                <h2 className="text-xl font-bold mb-4">📊 Signal Distribution</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={signalEngineResult.distribution}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="signal" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="count" fill="#fb923c" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="text-xl font-bold mb-4">✅ Signal Validation Checklist</h2>
+
+                <div className="grid grid-cols-1 gap-3">
+                  {signalEngineResult.checks.map((check) => (
+                    <div
+                      key={check.label}
+                      className={
+                        check.status === "PASS"
+                          ? "bg-green-950 border border-green-800 rounded-xl p-4"
+                          : check.status === "WARNING"
+                            ? "bg-yellow-950 border border-yellow-800 rounded-xl p-4"
+                            : "bg-red-950 border border-red-800 rounded-xl p-4"
+                      }
+                    >
+                      <p className="font-bold">
+                        {check.status === "PASS"
+                          ? "✅ "
+                          : check.status === "WARNING"
+                            ? "⚠️ "
+                            : "❌ "}
+                        {check.label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl border border-orange-800">
+              <h2 className="text-xl font-bold mb-4">🤖 AI Signal Panel</h2>
+              <div className="grid grid-cols-2 gap-6 text-gray-300">
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-bold text-orange-400 mb-2">Signal Summary</h3>
+                  <p>
+                    Market: <span className="text-cyan-400">{signalMarket}</span>
+                    <br />
+                    Strategy: <span className="text-green-400">{signalStrategy}</span>
+                    <br />
+                    Confidence: <span className="text-orange-400">{signalEngineResult.confidenceScore}%</span>
+                    <br />
+                    Recommendation: <span className="text-yellow-400">{signalEngineResult.recommendation}</span>
+                  </p>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-bold text-purple-400 mb-2">Bot Preparation</h3>
+                  <p>
+                    Diese Engine läuft aktuell im Simulationsmodus. Später kann sie als Filter vor
+                    OpenAI/Claude und Broker-Ausführung über Capital.com oder IC Markets genutzt werden.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         )}
