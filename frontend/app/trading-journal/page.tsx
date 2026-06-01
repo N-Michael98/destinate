@@ -329,6 +329,134 @@ function getMaxDrawdownStats(data: Trade[]) {
 
 
 
+
+// ===== Bot Readiness Center V5.9 =====
+
+type BotReadinessResult = {
+  score: number;
+  phase: "Training Phase" | "Validation Phase" | "Bot Ready";
+  verdict: string;
+  missingTrades: number;
+  checklist: {
+    label: string;
+    status: "READY" | "BUILDING" | "LOCKED";
+    value: string;
+  }[];
+  connections: {
+    name: string;
+    status: "Ready" | "Coming Soon" | "Locked";
+  }[];
+};
+
+function getBotReadinessResult(input: {
+  closedTrades: number;
+  winrate: number;
+  profitFactor: number;
+  expectancyR: number;
+  maxDrawdownPercent: number;
+  journalIntelligenceScore: number;
+  performanceScore: number;
+  signalConfidence: number;
+}) {
+  let score = 0;
+
+  if (input.closedTrades >= 25) score += 10;
+  if (input.closedTrades >= 100) score += 10;
+  if (input.closedTrades >= 250) score += 10;
+
+  if (input.winrate >= 50) score += 10;
+  if (input.winrate >= 60) score += 10;
+
+  if (input.profitFactor >= 1.2) score += 10;
+  if (input.profitFactor >= 1.5) score += 10;
+
+  if (input.expectancyR > 0) score += 10;
+  if (input.maxDrawdownPercent <= 10) score += 10;
+  if (input.journalIntelligenceScore >= 60) score += 5;
+  if (input.performanceScore >= 60) score += 5;
+  if (input.signalConfidence >= 60) score += 10;
+
+  score = Math.min(score, 100);
+
+  const missingTrades = Math.max(0, 500 - input.closedTrades);
+
+  const phase =
+    score >= 80 && input.closedTrades >= 250
+      ? "Bot Ready"
+      : score >= 55 && input.closedTrades >= 100
+        ? "Validation Phase"
+        : "Training Phase";
+
+  const verdict =
+    phase === "Bot Ready"
+      ? "System ist nahe an Bot-Bereitschaft. Broker-Integration kann vorbereitet werden."
+      : phase === "Validation Phase"
+        ? "System ist in der Validierungsphase. Mehr Daten und stabile Kennzahlen sammeln."
+        : "Noch nicht bereit für Live Auto Trading. Erst mehr Trades und stabile Performance sammeln.";
+
+  return {
+    score,
+    phase,
+    verdict,
+    missingTrades,
+    checklist: [
+      {
+        label: "Data Collection",
+        status: input.closedTrades >= 25 ? "READY" : "BUILDING",
+        value: `${input.closedTrades} Closed Trades`,
+      },
+      {
+        label: "Journal Analytics",
+        status: input.journalIntelligenceScore >= 50 ? "READY" : "BUILDING",
+        value: `${input.journalIntelligenceScore}/100`,
+      },
+      {
+        label: "Strategy Builder",
+        status: "READY",
+        value: "V5.7 active",
+      },
+      {
+        label: "Signal Engine",
+        status: input.signalConfidence >= 60 ? "READY" : "BUILDING",
+        value: `${input.signalConfidence}% Confidence`,
+      },
+      {
+        label: "AI Trade Review",
+        status: "READY",
+        value: "V5.6 active",
+      },
+      {
+        label: "Broker Integration",
+        status: "LOCKED",
+        value: "V6.0",
+      },
+      {
+        label: "GPT / OpenAI Integration",
+        status: "LOCKED",
+        value: "Coming Soon",
+      },
+      {
+        label: "Claude Integration",
+        status: "LOCKED",
+        value: "Coming Soon",
+      },
+      {
+        label: "Auto Execution",
+        status: "LOCKED",
+        value: "Final Stage",
+      },
+    ],
+    connections: [
+      { name: "OpenAI GPT", status: "Coming Soon" },
+      { name: "Claude", status: "Coming Soon" },
+      { name: "Capital.com", status: "Coming Soon" },
+      { name: "IC Markets", status: "Coming Soon" },
+      { name: "MetaTrader 5", status: "Coming Soon" },
+      { name: "TradingView", status: "Coming Soon" },
+    ],
+  } satisfies BotReadinessResult;
+}
+
 // ===== Signal Engine V5.8 =====
 
 type SignalEngineResult = {
@@ -1925,6 +2053,17 @@ export default function TradingJournal() {
     aiTradeReviewStats,
   });
 
+  const botReadinessResult = getBotReadinessResult({
+    closedTrades: closedTrades.length,
+    winrate,
+    profitFactor,
+    expectancyR,
+    maxDrawdownPercent: accountStats.maxDrawdownPercent,
+    journalIntelligenceScore,
+    performanceScore,
+    signalConfidence: signalEngineResult.confidenceScore,
+  });
+
   function scrollToSection(
     section:
       | "overview"
@@ -1961,7 +2100,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.8: Trading Journal mit Signal Engine, Strategy Builder, AI Trade Review und Bot-Vorbereitung.
+            V5.9: Trading Journal mit Bot Readiness Center, Signal Engine, Strategy Builder und AI Trade Review.
           </p>
         </div>
 
@@ -1984,6 +2123,7 @@ export default function TradingJournal() {
             { id: "strategy", label: "🧩 Strategy Builder" },
             { id: "tradeReview", label: "⭐ AI Trade Review" },
             { id: "signal", label: "🎯 Signal Engine" },
+            { id: "bot", label: "🤖 Bot Readiness" },
             { id: "charts", label: "📈 Charts Center" },
             { id: "history", label: "🧾 Trade History" },
           ].map((item) => (
@@ -3157,6 +3297,215 @@ export default function TradingJournal() {
                     Diese Engine läuft aktuell im Simulationsmodus. Später kann sie als Filter vor
                     OpenAI/Claude und Broker-Ausführung über Capital.com oder IC Markets genutzt werden.
                   </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "bot" && (
+          <div className="space-y-8">
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-purple-800">
+              <h2 className="text-3xl font-bold mb-2">🤖 Bot Readiness Center V5.9</h2>
+              <p className="text-gray-400">
+                Brücke vom Trading Journal zum professionellen Trading Bot: System Score, Deployment Status und zukünftige API-Verbindungen.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
+                <h2 className="font-bold mb-4">Bot Readiness Score</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-40 h-40 rounded-full border-[16px] border-purple-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className="text-4xl font-bold text-purple-400">
+                        {botReadinessResult.score}
+                      </p>
+                      <p className="text-xs text-gray-400">/100</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={
+                  botReadinessResult.phase === "Bot Ready"
+                    ? "bg-gray-900 p-6 rounded-2xl border border-green-800"
+                    : botReadinessResult.phase === "Validation Phase"
+                      ? "bg-gray-900 p-6 rounded-2xl border border-yellow-800"
+                      : "bg-gray-900 p-6 rounded-2xl border border-blue-800"
+                }
+              >
+                <h2 className="font-bold">Current Phase</h2>
+                <p
+                  className={
+                    botReadinessResult.phase === "Bot Ready"
+                      ? "text-3xl mt-8 text-green-400"
+                      : botReadinessResult.phase === "Validation Phase"
+                        ? "text-3xl mt-8 text-yellow-400"
+                        : "text-3xl mt-8 text-blue-400"
+                  }
+                >
+                  {botReadinessResult.phase}
+                </p>
+                <p className="text-gray-400 mt-3">Development Stage</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold">Closed Trades</h2>
+                <p className="text-4xl mt-8 text-cyan-400">{closedTrades.length}</p>
+                <p className="text-gray-400 mt-3">Target: 500</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-orange-800">
+                <h2 className="font-bold">Missing Trades</h2>
+                <p className="text-4xl mt-8 text-orange-400">{botReadinessResult.missingTrades}</p>
+                <p className="text-gray-400 mt-3">until strong dataset</p>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
+              <h2 className="text-xl font-bold mb-4">🧠 AI Readiness Verdict</h2>
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <p className="text-gray-300 text-lg">{botReadinessResult.verdict}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Winrate</h2>
+                <p className="text-3xl mt-5 text-cyan-400">{winrate}%</p>
+                <div className="mt-5 h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${Math.min(winrate, 100)}%` }} />
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-800">
+                <h2 className="font-bold">Profit Factor</h2>
+                <p className="text-3xl mt-5 text-yellow-400">{profitFactor}</p>
+                <div className="mt-5 h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(profitFactor * 25, 100)}%` }} />
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold">Max Drawdown %</h2>
+                <p className="text-3xl mt-5 text-red-400">{accountStats.maxDrawdownPercent}%</p>
+                <div className="mt-5 h-3 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(accountStats.maxDrawdownPercent * 10, 100)}%` }} />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
+              <h2 className="text-xl font-bold mb-4">🚦 Deployment Status</h2>
+
+              <div className="grid grid-cols-3 gap-4">
+                {botReadinessResult.checklist.map((item) => (
+                  <div
+                    key={item.label}
+                    className={
+                      item.status === "READY"
+                        ? "bg-green-950 border border-green-800 rounded-xl p-4"
+                        : item.status === "BUILDING"
+                          ? "bg-yellow-950 border border-yellow-800 rounded-xl p-4"
+                          : "bg-gray-950 border border-gray-800 rounded-xl p-4"
+                    }
+                  >
+                    <h3 className="font-bold">
+                      {item.status === "READY"
+                        ? "✅ "
+                        : item.status === "BUILDING"
+                          ? "⚠️ "
+                          : "🔒 "}
+                      {item.label}
+                    </h3>
+                    <p className="text-gray-400 mt-2">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
+                <h2 className="text-xl font-bold mb-4">📈 Bot Readiness Progress</h2>
+                <div className="space-y-5 mt-8">
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Data Collection</span>
+                      <span>{Math.min(Math.round((closedTrades.length / 500) * 100), 100)}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${Math.min(Math.round((closedTrades.length / 500) * 100), 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Analytics Maturity</span>
+                      <span>{journalIntelligenceScore}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-400 rounded-full" style={{ width: `${Math.min(journalIntelligenceScore, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Signal Engine</span>
+                      <span>{signalEngineResult.confidenceScore}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-orange-400 rounded-full" style={{ width: `${Math.min(signalEngineResult.confidenceScore, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Overall Bot Readiness</span>
+                      <span>{botReadinessResult.score}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-purple-400 rounded-full" style={{ width: `${botReadinessResult.score}%` }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
+                <h2 className="text-xl font-bold mb-4">🔌 Future Connections</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  {botReadinessResult.connections.map((connection) => (
+                    <div
+                      key={connection.name}
+                      className="bg-black border border-gray-800 rounded-xl p-4"
+                    >
+                      <h3 className="font-bold text-blue-400">{connection.name}</h3>
+                      <p className="text-gray-400 mt-2">
+                        {connection.status === "Coming Soon"
+                          ? "🔒 Coming Soon"
+                          : connection.status}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
+              <h2 className="text-xl font-bold mb-4">🧭 Next Bot Steps</h2>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-bold text-cyan-400">V6.0</h3>
+                  <p className="text-gray-300 mt-2">Broker Integration Layer vorbereiten.</p>
+                </div>
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-bold text-green-400">V6.1</h3>
+                  <p className="text-gray-300 mt-2">OpenAI/Claude Signal Review anbinden.</p>
+                </div>
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-bold text-orange-400">V6.2</h3>
+                  <p className="text-gray-300 mt-2">Paper Trading Execution Engine bauen.</p>
                 </div>
               </div>
             </div>
