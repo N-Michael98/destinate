@@ -45,3 +45,34 @@ model Trade {
 
   updatedAt     DateTime @updatedAt
 }
+
+model PaperOrder {
+  id            Int      @id @default(autoincrement())
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  market        String
+  direction     String
+  strategy      String   @default("Unclassified")
+
+  entry         Float
+  stopLoss      Float
+  takeProfit    Float
+
+  accountSize   Float    @default(30000)
+  riskPercent   Float    @default(1)
+  riskAmount    Float    @default(300)
+  riskReward    Float    @default(0)
+  positionSize  Float    @default(0)
+
+  status        String   @default("OPEN")
+  result        String   @default("OPEN")
+  profitLoss    Float    @default(0)
+
+  confidence    Float    @default(0)
+  qualityGrade  String   @default("B")
+  aiDecision    String   @default("WAIT")
+
+  notes         String?
+}

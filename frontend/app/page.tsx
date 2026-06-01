@@ -170,9 +170,9 @@ export default function Home() {
           <div id="paper-trading" className="bg-gray-900 p-6 rounded-xl mb-8 border border-cyan-900">
             <div className="flex justify-between items-start mb-6">
               <div>
-                <h3 className="text-2xl font-bold">📝 Paper Trading Engine V6.2</h3>
+                <h3 className="text-2xl font-bold">📝 Paper Trading Engine V6.3</h3>
                 <p className="text-gray-400 mt-2">
-                  Virtuelle Bot-Trades, Paper Balance, simulierte Positionen und Bot-Performance ohne echtes Geld.
+                  Paper Orders Database vorbereitet: virtuelle Orders, Positionen, Trade History und Bot-Performance ohne echtes Geld.
                 </p>
               </div>
 
@@ -233,7 +233,7 @@ export default function Home() {
                 </div>
 
                 <p className="text-xs text-gray-500 mt-4">
-                  Noch ohne echte Speicherung. Das ist die Paper-Trading-Architektur.
+                  V6.3: Datenbank und API Routes sind vorbereitet. In V6.4 verbinden wir den Button mit echter Paper Execution.
                 </p>
               </div>
 
@@ -316,6 +316,29 @@ export default function Home() {
               </div>
 
               <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🗄️ Paper Orders Database</h4>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Prisma Model: PaperOrder
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ API: GET /api/paper-orders
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ API: POST /api/paper-orders
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    🔵 API: PATCH /api/paper-orders/[id]
+                  </div>
+                </div>
+
+                <p className="text-gray-400 mt-5">
+                  Die Datenstruktur ist jetzt bereit. Als Nächstes bauen wir die echte Paper Execution Logic.
+                </p>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
                 <h4 className="text-xl font-bold mb-4">🛡️ Paper Trading Safety Rules</h4>
 
                 <div className="grid grid-cols-1 gap-3">
@@ -348,9 +371,9 @@ export default function Home() {
                   <p className="text-gray-300 mt-2">Paper Trading UI</p>
                 </div>
 
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
                   <h5 className="font-bold">V6.3</h5>
-                  <p className="text-gray-300 mt-2">Paper Orders DB</p>
+                  <p className="text-gray-300 mt-2">Paper Orders DB active</p>
                 </div>
 
                 <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
