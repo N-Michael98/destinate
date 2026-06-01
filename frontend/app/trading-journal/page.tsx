@@ -322,6 +322,125 @@ function getMaxDrawdownStats(data: Trade[]) {
 }
 
 
+
+// ===== Monthly Statistics V5.1 =====
+
+function getMonthKey(dateValue: string) {
+  const date = new Date(dateValue);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getMonthLabel(monthKey: string) {
+  const [year, month] = monthKey.split("-");
+  const date = new Date(Number(year), Number(month) - 1, 1);
+
+  return date.toLocaleDateString("de-CH", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function buildMonthlyPerformance(data: Trade[]) {
+  const monthMap = new Map<
+    string,
+    {
+      month: string;
+      label: string;
+      profitLoss: number;
+      trades: number;
+      wins: number;
+      losses: number;
+    }
+  >();
+
+  data
+    .filter((trade) => trade.status === "CLOSED")
+    .forEach((trade) => {
+      const monthKey = getMonthKey(trade.date);
+      const currentMonth =
+        monthMap.get(monthKey) ??
+        {
+          month: monthKey,
+          label: getMonthLabel(monthKey),
+          profitLoss: 0,
+          trades: 0,
+          wins: 0,
+          losses: 0,
+        };
+
+      currentMonth.profitLoss += trade.profitLoss;
+      currentMonth.trades += 1;
+
+      if (trade.profitLoss > 0) currentMonth.wins += 1;
+      if (trade.profitLoss < 0) currentMonth.losses += 1;
+
+      monthMap.set(monthKey, currentMonth);
+    });
+
+  return Array.from(monthMap.values())
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((item) => ({
+      ...item,
+      profitLoss: Number(item.profitLoss.toFixed(2)),
+      winrate:
+        item.trades > 0 ? Math.round((item.wins / item.trades) * 100) : 0,
+    }));
+}
+
+function getMonthlyStats(data: Trade[]) {
+  const monthlyPerformance = buildMonthlyPerformance(data);
+
+  if (monthlyPerformance.length === 0) {
+    return {
+      bestMonth: { label: "-", profitLoss: 0 },
+      worstMonth: { label: "-", profitLoss: 0 },
+      averageMonth: 0,
+      positiveMonths: 0,
+      negativeMonths: 0,
+      monthlyWinrate: 0,
+      monthlyPerformance,
+    };
+  }
+
+  const bestMonth = [...monthlyPerformance].sort(
+    (a, b) => b.profitLoss - a.profitLoss
+  )[0];
+
+  const worstMonth = [...monthlyPerformance].sort(
+    (a, b) => a.profitLoss - b.profitLoss
+  )[0];
+
+  const totalMonthlyProfit = monthlyPerformance.reduce(
+    (sum, month) => sum + month.profitLoss,
+    0
+  );
+
+  const positiveMonths = monthlyPerformance.filter(
+    (month) => month.profitLoss > 0
+  ).length;
+
+  const negativeMonths = monthlyPerformance.filter(
+    (month) => month.profitLoss < 0
+  ).length;
+
+  const monthlyWinrate =
+    monthlyPerformance.length > 0
+      ? Math.round((positiveMonths / monthlyPerformance.length) * 100)
+      : 0;
+
+  return {
+    bestMonth,
+    worstMonth,
+    averageMonth: Number(
+      (totalMonthlyProfit / monthlyPerformance.length).toFixed(2)
+    ),
+    positiveMonths,
+    negativeMonths,
+    monthlyWinrate,
+    monthlyPerformance,
+  };
+}
+
 // ===== Performance Analytics V5.0 =====
 
 function getAverageTrade(data: Trade[]) {
@@ -994,6 +1113,8 @@ export default function TradingJournal() {
     maxDrawdownPercent: accountStats.maxDrawdownPercent,
   });
 
+  const monthlyStats = getMonthlyStats(filteredTrades);
+
   return (
     <main className="min-h-screen bg-black text-white p-10">
       <a href="/" className="inline-block mb-8 text-blue-400 hover:text-blue-300">
@@ -1004,7 +1125,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.0: Trading Journal mit Performance Analytics, Daily Drawdown, Prop Firm Rules und Account Equity.
+            V5.1: Trading Journal mit Monthly Statistics, Performance Analytics, Prop Firm Rules und Account Equity.
           </p>
         </div>
 
@@ -1018,7 +1139,7 @@ export default function TradingJournal() {
 
       <div className="grid grid-cols-2 gap-6 mb-8">
         <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.0</h2>
+          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.1</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1056,7 +1177,7 @@ export default function TradingJournal() {
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.0</h2>
+          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.1</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1331,6 +1452,78 @@ export default function TradingJournal() {
           <div className="bg-gray-900 p-6 rounded-xl">
             <h2 className="font-bold">Closed Trades</h2>
             <p className="text-2xl mt-2">{closedTrades.length}</p>
+          </div>
+        </div>
+
+        <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-indigo-800">
+          <h2 className="text-2xl font-bold mb-2">📆 Monthly Statistics V5.1</h2>
+          <p className="text-gray-400">
+            Monatliche Performance, beste/schlechteste Monate und Monats-Winrate.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Best Month</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {monthlyStats.bestMonth.profitLoss} CHF
+            </p>
+            <p className="text-sm mt-2 text-gray-400">
+              {monthlyStats.bestMonth.label}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Worst Month</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {monthlyStats.worstMonth.profitLoss} CHF
+            </p>
+            <p className="text-sm mt-2 text-gray-400">
+              {monthlyStats.worstMonth.label}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+            <h2 className="font-bold">Average Month</h2>
+            <p
+              className={
+                monthlyStats.averageMonth >= 0
+                  ? "text-2xl mt-2 text-green-400"
+                  : "text-2xl mt-2 text-red-400"
+              }
+            >
+              {monthlyStats.averageMonth} CHF
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+            <h2 className="font-bold">Monthly Winrate</h2>
+            <p className="text-2xl mt-2 text-cyan-400">
+              {monthlyStats.monthlyWinrate}%
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Positive Months</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {monthlyStats.positiveMonths}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Negative Months</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {monthlyStats.negativeMonths}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-indigo-800 col-span-2">
+            <h2 className="font-bold mb-2">Monthly Summary</h2>
+            <p className="text-gray-400">
+              Du hast aktuell {monthlyStats.monthlyPerformance.length} ausgewertete Monate im Journal.
+            </p>
           </div>
         </div>
 
@@ -1639,6 +1832,22 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
+              <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
+
+              <div className="h-80 min-h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyStats.monthlyPerformance}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="profitLoss" fill="#6366f1" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
               <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
 
               <div className="h-80 min-h-80">
@@ -1719,6 +1928,37 @@ export default function TradingJournal() {
             ) : (
               <p className="text-gray-400">Keine Trades vorhanden.</p>
             )}
+          </div>
+        </div>
+
+        <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto mb-8">
+          <h2 className="text-xl font-bold mb-4">📆 Monthly Statistics Table</h2>
+
+          <div className="min-w-[900px]">
+            <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+              <div>Month</div>
+              <div>P/L</div>
+              <div>Trades</div>
+              <div>Wins</div>
+              <div>Losses</div>
+              <div>Winrate</div>
+            </div>
+
+            {monthlyStats.monthlyPerformance.map((month) => (
+              <div
+                key={month.month}
+                className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center"
+              >
+                <div>{month.label}</div>
+                <div className={month.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
+                  {month.profitLoss} CHF
+                </div>
+                <div>{month.trades}</div>
+                <div className="text-green-400">{month.wins}</div>
+                <div className="text-red-400">{month.losses}</div>
+                <div className="text-cyan-400">{month.winrate}%</div>
+              </div>
+            ))}
           </div>
         </div>
 
