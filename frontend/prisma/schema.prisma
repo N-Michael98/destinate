@@ -8,24 +8,39 @@ datasource db {
 }
 
 model Trade {
-  id          Int      @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
 
-  date        DateTime @default(now())
+  date          DateTime @default(now())
 
-  market      String
-  direction   String
+  market        String
+  direction     String
 
-  entry       Float
-  stopLoss    Float
-  takeProfit  Float
+  entry         Float
+  stopLoss      Float
+  takeProfit    Float
 
-  status      String   @default("OPEN")
-  result      String   @default("OPEN")
+  status        String   @default("OPEN")
+  result        String   @default("OPEN")
 
-  profitLoss  Float    @default(0)
+  profitLoss    Float    @default(0)
 
-  notes       String?
+  // ===== Risk Management V4.5 =====
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  accountSize   Float    @default(30000)
+
+  riskPercent   Float    @default(1)
+
+  riskAmount    Float    @default(300)
+
+  riskReward    Float    @default(0)
+
+  positionSize  Float    @default(0)
+
+  // ===============================
+
+  notes         String?
+
+  createdAt     DateTime @default(now())
+
+  updatedAt     DateTime @updatedAt
 }
