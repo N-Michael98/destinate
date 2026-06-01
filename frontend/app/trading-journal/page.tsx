@@ -209,16 +209,79 @@ export default function TradingJournal() {
     }
   }
 
-  function closeTrade() {
-    alert("V4.1: Trade schließen wird als Nächstes direkt über SQLite implementiert.");
+  async function closeTrade(tradeId: number, result: "WIN" | "LOSS") {
+    const input = window.prompt(
+      result === "WIN" ? "Gewinn in CHF eingeben:" : "Verlust in CHF eingeben:"
+    );
+
+    if (!input) return;
+
+    const value = Number(input);
+
+    if (Number.isNaN(value)) {
+      alert("Bitte eine gültige Zahl eingeben.");
+      return;
+    }
+
+    const profitLoss = result === "WIN" ? Math.abs(value) : -Math.abs(value);
+
+    try {
+      const response = await fetch(`/api/trades/${tradeId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: "CLOSED",
+          result,
+          profitLoss,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        alert("Trade konnte nicht geschlossen werden.");
+        return;
+      }
+
+      await loadTrades();
+    } catch (error) {
+      console.error(error);
+      alert("Fehler beim Schließen des Trades.");
+    }
   }
 
-  function reopenTrade() {
-    alert("V4.1: Reopen wird als Nächstes direkt über SQLite implementiert.");
+  async function reopenTrade(tradeId: number) {
+    try {
+      const response = await fetch(`/api/trades/${tradeId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: "OPEN",
+          result: "OPEN",
+          profitLoss: 0,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        alert("Trade konnte nicht wieder geöffnet werden.");
+        return;
+      }
+
+      await loadTrades();
+    } catch (error) {
+      console.error(error);
+      alert("Fehler beim Wiederöffnen des Trades.");
+    }
   }
 
   function resetJournal() {
-    alert("V4.1: Reset wird später direkt über SQLite implementiert.");
+    alert("V4.2: Reset wird später direkt über SQLite implementiert.");
   }
 
   async function exportYearlyReportPDF() {
@@ -305,7 +368,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.1: Trading Journal liest aus SQLite und kann neue Trades direkt speichern.
+            V4.2: Trading Journal speichert neue Trades und schließt Trades direkt in SQLite.
           </p>
         </div>
 
@@ -603,14 +666,14 @@ export default function TradingJournal() {
                 {trade.status === "OPEN" ? (
                   <>
                     <button
-                      onClick={closeTrade}
+                      onClick={() => closeTrade(trade.id, "WIN")}
                       className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
                     >
                       WIN
                     </button>
 
                     <button
-                      onClick={closeTrade}
+                      onClick={() => closeTrade(trade.id, "LOSS")}
                       className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
                     >
                       LOSS
@@ -618,7 +681,7 @@ export default function TradingJournal() {
                   </>
                 ) : (
                   <button
-                    onClick={reopenTrade}
+                    onClick={() => reopenTrade(trade.id)}
                     className="bg-gray-700 hover:bg-gray-800 px-3 py-1 rounded text-sm"
                   >
                     Reopen
