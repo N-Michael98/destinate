@@ -191,6 +191,89 @@ function getAccountEquityStats(data: Trade[], startingBalance: number) {
   };
 }
 
+
+// ===== Prop Firm Risk Rules V4.8 =====
+
+function getDateKey(dateValue: string) {
+  return new Date(dateValue).toISOString().slice(0, 10);
+}
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getPropFirmRiskStats(input: {
+  trades: Trade[];
+  startingBalance: number;
+  maxDailyLossPercent: number;
+  maxOverallDrawdownPercent: number;
+}) {
+  const dailyLossLimit = Number(
+    ((input.startingBalance * input.maxDailyLossPercent) / 100).toFixed(2)
+  );
+
+  const overallDrawdownLimit = Number(
+    ((input.startingBalance * input.maxOverallDrawdownPercent) / 100).toFixed(2)
+  );
+
+  const todayKey = getTodayKey();
+
+  const todaysClosedTrades = input.trades.filter(
+    (trade) => trade.status === "CLOSED" && getDateKey(trade.date) === todayKey
+  );
+
+  const todayLoss = Math.abs(
+    todaysClosedTrades
+      .filter((trade) => trade.profitLoss < 0)
+      .reduce((sum, trade) => sum + trade.profitLoss, 0)
+  );
+
+  const accountEquityData = buildAccountEquityCurve(
+    input.trades,
+    input.startingBalance
+  );
+
+  const lowestAccountEquity = accountEquityData.reduce(
+    (lowest, item) => Math.min(lowest, item.accountEquity),
+    input.startingBalance
+  );
+
+  const overallDrawdownUsed = Math.max(
+    0,
+    Number((input.startingBalance - lowestAccountEquity).toFixed(2))
+  );
+
+  const dailyUsagePercent =
+    dailyLossLimit > 0 ? (todayLoss / dailyLossLimit) * 100 : 0;
+
+  const overallUsagePercent =
+    overallDrawdownLimit > 0
+      ? (overallDrawdownUsed / overallDrawdownLimit) * 100
+      : 0;
+
+  const isViolation =
+    todayLoss > dailyLossLimit || overallDrawdownUsed > overallDrawdownLimit;
+
+  const isWarning =
+    !isViolation && (dailyUsagePercent >= 80 || overallUsagePercent >= 80);
+
+  const status = isViolation ? "VIOLATION" : isWarning ? "WARNING" : "PASS";
+
+  return {
+    dailyLossLimit,
+    overallDrawdownLimit,
+    todayLoss: Number(todayLoss.toFixed(2)),
+    overallDrawdownUsed,
+    remainingDailyLoss: Number((dailyLossLimit - todayLoss).toFixed(2)),
+    remainingOverallDrawdown: Number(
+      (overallDrawdownLimit - overallDrawdownUsed).toFixed(2)
+    ),
+    dailyUsagePercent: Number(dailyUsagePercent.toFixed(2)),
+    overallUsagePercent: Number(overallUsagePercent.toFixed(2)),
+    status,
+  };
+}
+
 // ===== Max Drawdown System V4.6 =====
 
 function getMaxDrawdownStats(data: Trade[]) {
@@ -279,6 +362,8 @@ export default function TradingJournal() {
 
   const [startingBalance, setStartingBalance] = useState("30000");
   const [accountRiskPercent, setAccountRiskPercent] = useState("1");
+  const [maxDailyLossPercent, setMaxDailyLossPercent] = useState("5");
+  const [maxOverallDrawdownPercent, setMaxOverallDrawdownPercent] = useState("10");
 
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [editMarket, setEditMarket] = useState("");
@@ -317,6 +402,8 @@ export default function TradingJournal() {
   useEffect(() => {
     const savedStartingBalance = localStorage.getItem("startingBalance");
     const savedAccountRiskPercent = localStorage.getItem("accountRiskPercent");
+    const savedMaxDailyLossPercent = localStorage.getItem("maxDailyLossPercent");
+    const savedMaxOverallDrawdownPercent = localStorage.getItem("maxOverallDrawdownPercent");
 
     if (savedStartingBalance) {
       setStartingBalance(savedStartingBalance);
@@ -326,6 +413,14 @@ export default function TradingJournal() {
     if (savedAccountRiskPercent) {
       setAccountRiskPercent(savedAccountRiskPercent);
       setRiskPercent(savedAccountRiskPercent);
+    }
+
+    if (savedMaxDailyLossPercent) {
+      setMaxDailyLossPercent(savedMaxDailyLossPercent);
+    }
+
+    if (savedMaxOverallDrawdownPercent) {
+      setMaxOverallDrawdownPercent(savedMaxOverallDrawdownPercent);
     }
   }, []);
 
@@ -338,6 +433,17 @@ export default function TradingJournal() {
     localStorage.setItem("accountRiskPercent", accountRiskPercent);
     setRiskPercent(accountRiskPercent);
   }, [accountRiskPercent]);
+
+  useEffect(() => {
+    localStorage.setItem("maxDailyLossPercent", maxDailyLossPercent);
+  }, [maxDailyLossPercent]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "maxOverallDrawdownPercent",
+      maxOverallDrawdownPercent
+    );
+  }, [maxOverallDrawdownPercent]);
 
   const filteredTrades =
     selectedMarket === "All"
@@ -655,6 +761,10 @@ export default function TradingJournal() {
 
   const numericStartingBalance = Number(startingBalance) || 0;
   const numericAccountRiskPercent = Number(accountRiskPercent) || 0;
+  const numericMaxDailyLossPercent = Number(maxDailyLossPercent) || 0;
+  const numericMaxOverallDrawdownPercent =
+    Number(maxOverallDrawdownPercent) || 0;
+
   const plannedRiskAmount =
     numericStartingBalance > 0
       ? Number(((numericStartingBalance * numericAccountRiskPercent) / 100).toFixed(2))
@@ -683,6 +793,13 @@ export default function TradingJournal() {
     numericStartingBalance
   );
 
+  const propFirmStats = getPropFirmRiskStats({
+    trades: filteredTrades,
+    startingBalance: numericStartingBalance,
+    maxDailyLossPercent: numericMaxDailyLossPercent,
+    maxOverallDrawdownPercent: numericMaxOverallDrawdownPercent,
+  });
+
   const bestTrade = [...filteredTrades].sort((a, b) => b.profitLoss - a.profitLoss)[0];
   const worstTrade = [...filteredTrades].sort((a, b) => a.profitLoss - b.profitLoss)[0];
 
@@ -708,40 +825,84 @@ export default function TradingJournal() {
         </button>
       </div>
 
-      <div className="bg-gray-900 p-6 rounded-xl border border-green-800 mb-8">
-        <h2 className="text-2xl font-bold mb-4">💼 Account Settings V4.7.1</h2>
+      <div className="grid grid-cols-2 gap-6 mb-8">
+        <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V4.8</h2>
 
-        <div className="grid grid-cols-4 gap-4">
-          <div>
-            <label className="block mb-2 text-gray-400">Starting Balance</label>
-            <input
-              placeholder="z.B. 30000"
-              value={startingBalance}
-              onChange={(event) => setStartingBalance(event.target.value)}
-              className="w-full bg-black border border-gray-700 p-3 rounded-xl"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block mb-2 text-gray-400">Starting Balance</label>
+              <input
+                placeholder="z.B. 30000"
+                value={startingBalance}
+                onChange={(event) => setStartingBalance(event.target.value)}
+                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 text-gray-400">Account Risk %</label>
+              <input
+                placeholder="z.B. 1"
+                value={accountRiskPercent}
+                onChange={(event) => setAccountRiskPercent(event.target.value)}
+                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+              />
+            </div>
+
+            <div className="bg-black border border-gray-800 p-4 rounded-xl">
+              <h3 className="font-bold text-gray-300">Risk pro Trade</h3>
+              <p className="text-2xl mt-2 text-red-400">{plannedRiskAmount} CHF</p>
+            </div>
+
+            <div className="bg-black border border-gray-800 p-4 rounded-xl">
+              <h3 className="font-bold text-gray-300">Auto Trade Values</h3>
+              <p className="text-sm mt-2 text-gray-400">
+                Neue Trades nutzen diese Account Size und Risk % automatisch.
+              </p>
+            </div>
           </div>
+        </div>
 
-          <div>
-            <label className="block mb-2 text-gray-400">Account Risk %</label>
-            <input
-              placeholder="z.B. 1"
-              value={accountRiskPercent}
-              onChange={(event) => setAccountRiskPercent(event.target.value)}
-              className="w-full bg-black border border-gray-700 p-3 rounded-xl"
-            />
-          </div>
+        <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V4.8</h2>
 
-          <div className="bg-black border border-gray-800 p-4 rounded-xl">
-            <h3 className="font-bold text-gray-300">Risk pro Trade</h3>
-            <p className="text-2xl mt-2 text-red-400">{plannedRiskAmount} CHF</p>
-          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block mb-2 text-gray-400">Max Daily Loss %</label>
+              <input
+                placeholder="z.B. 5"
+                value={maxDailyLossPercent}
+                onChange={(event) => setMaxDailyLossPercent(event.target.value)}
+                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+              />
+            </div>
 
-          <div className="bg-black border border-gray-800 p-4 rounded-xl">
-            <h3 className="font-bold text-gray-300">Auto Trade Values</h3>
-            <p className="text-sm mt-2 text-gray-400">
-              Neue Trades nutzen automatisch diese Account Size und Risk %.
-            </p>
+            <div>
+              <label className="block mb-2 text-gray-400">Max Overall Drawdown %</label>
+              <input
+                placeholder="z.B. 10"
+                value={maxOverallDrawdownPercent}
+                onChange={(event) =>
+                  setMaxOverallDrawdownPercent(event.target.value)
+                }
+                className="w-full bg-black border border-gray-700 p-3 rounded-xl"
+              />
+            </div>
+
+            <div className="bg-black border border-gray-800 p-4 rounded-xl">
+              <h3 className="font-bold text-gray-300">Daily Limit</h3>
+              <p className="text-2xl mt-2 text-yellow-400">
+                {propFirmStats.dailyLossLimit} CHF
+              </p>
+            </div>
+
+            <div className="bg-black border border-gray-800 p-4 rounded-xl">
+              <h3 className="font-bold text-gray-300">Overall Limit</h3>
+              <p className="text-2xl mt-2 text-red-400">
+                {propFirmStats.overallDrawdownLimit} CHF
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -1033,6 +1194,56 @@ export default function TradingJournal() {
           <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
             <h2 className="font-bold">Avg. R/R</h2>
             <p className="text-2xl mt-2 text-cyan-400">{averageRiskReward}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+            <h2 className="font-bold">Today Loss</h2>
+            <p className="text-2xl mt-2 text-cyan-400">
+              {propFirmStats.todayLoss} CHF
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+            <h2 className="font-bold">Daily Limit</h2>
+            <p className="text-2xl mt-2 text-yellow-400">
+              {propFirmStats.dailyLossLimit} CHF
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Overall DD Limit</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {propFirmStats.overallDrawdownLimit} CHF
+            </p>
+          </div>
+
+          <div
+            className={
+              propFirmStats.status === "PASS"
+                ? "bg-gray-900 p-6 rounded-xl border border-green-800"
+                : propFirmStats.status === "WARNING"
+                  ? "bg-gray-900 p-6 rounded-xl border border-yellow-800"
+                  : "bg-gray-900 p-6 rounded-xl border border-red-800"
+            }
+          >
+            <h2 className="font-bold">Risk Status</h2>
+            <p
+              className={
+                propFirmStats.status === "PASS"
+                  ? "text-2xl mt-2 text-green-400"
+                  : propFirmStats.status === "WARNING"
+                    ? "text-2xl mt-2 text-yellow-400"
+                    : "text-2xl mt-2 text-red-400"
+              }
+            >
+              {propFirmStats.status === "PASS"
+                ? "PASS ✅"
+                : propFirmStats.status === "WARNING"
+                  ? "WARNING ⚠️"
+                  : "VIOLATION ❌"}
+            </p>
           </div>
         </div>
 
