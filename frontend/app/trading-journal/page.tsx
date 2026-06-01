@@ -20,6 +20,7 @@ type Trade = {
   date: string;
   market: string;
   direction: string;
+  strategy: string;
   entry: number;
   stopLoss: number;
   takeProfit: number;
@@ -325,6 +326,74 @@ function getMaxDrawdownStats(data: Trade[]) {
 
 
 
+
+
+// ===== Strategy Builder V5.7 =====
+
+function getStrategyStats(data: Trade[]) {
+  const closedTrades = data.filter((trade) => trade.status === "CLOSED");
+
+  const strategyMap = new Map<
+    string,
+    {
+      strategy: string;
+      profitLoss: number;
+      trades: number;
+      wins: number;
+      losses: number;
+    }
+  >();
+
+  closedTrades.forEach((trade) => {
+    const strategyName = trade.strategy || "Unclassified";
+
+    const current =
+      strategyMap.get(strategyName) ??
+      {
+        strategy: strategyName,
+        profitLoss: 0,
+        trades: 0,
+        wins: 0,
+        losses: 0,
+      };
+
+    current.profitLoss += trade.profitLoss;
+    current.trades += 1;
+
+    if (trade.profitLoss > 0) current.wins += 1;
+    if (trade.profitLoss < 0) current.losses += 1;
+
+    strategyMap.set(strategyName, current);
+  });
+
+  const strategyStats = Array.from(strategyMap.values())
+    .map((item) => ({
+      ...item,
+      profitLoss: Number(item.profitLoss.toFixed(2)),
+      winrate: item.trades > 0 ? Math.round((item.wins / item.trades) * 100) : 0,
+    }))
+    .sort((a, b) => b.profitLoss - a.profitLoss);
+
+  return {
+    strategyStats,
+    bestStrategy: strategyStats[0] ?? {
+      strategy: "-",
+      profitLoss: 0,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      winrate: 0,
+    },
+    worstStrategy: strategyStats[strategyStats.length - 1] ?? {
+      strategy: "-",
+      profitLoss: 0,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      winrate: 0,
+    },
+  };
+}
 
 // ===== AI Trade Review V5.6 =====
 
@@ -1108,6 +1177,7 @@ export default function TradingJournal() {
 
   const [market, setMarket] = useState("");
   const [direction, setDirection] = useState("LONG");
+  const [strategy, setStrategy] = useState("Liquidity Sweep");
   const [entry, setEntry] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
@@ -1125,6 +1195,7 @@ export default function TradingJournal() {
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [editMarket, setEditMarket] = useState("");
   const [editDirection, setEditDirection] = useState("LONG");
+  const [editStrategy, setEditStrategy] = useState("Liquidity Sweep");
   const [editEntry, setEditEntry] = useState("");
   const [editStopLoss, setEditStopLoss] = useState("");
   const [editTakeProfit, setEditTakeProfit] = useState("");
@@ -1142,6 +1213,17 @@ export default function TradingJournal() {
   const historySectionRef = useRef<HTMLDivElement | null>(null);
 
   const markets = ["All", ...new Set(journalTrades.map((trade) => trade.market))];
+
+  const strategies = [
+    "Liquidity Sweep",
+    "Breakout",
+    "Trend Continuation",
+    "Support Resistance",
+    "ICT Model",
+    "SMC Model",
+    "News Trade",
+    "Custom",
+  ];
 
   async function loadTrades() {
     try {
@@ -1224,8 +1306,8 @@ export default function TradingJournal() {
       : journalTrades.filter((trade) => trade.market === selectedMarket);
 
   async function createTrade() {
-    if (!market || !entry || !stopLoss || !takeProfit || !accountSize || !riskPercent) {
-      alert("Bitte Market, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
+    if (!market || !strategy || !entry || !stopLoss || !takeProfit || !accountSize || !riskPercent) {
+      alert("Bitte Market, Strategy, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
       return;
     }
 
@@ -1240,6 +1322,7 @@ export default function TradingJournal() {
         body: JSON.stringify({
           market,
           direction,
+          strategy,
           entry,
           stopLoss,
           takeProfit,
@@ -1260,6 +1343,7 @@ export default function TradingJournal() {
 
       setMarket("");
       setDirection("LONG");
+      setStrategy("Liquidity Sweep");
       setEntry("");
       setStopLoss("");
       setTakeProfit("");
@@ -1280,6 +1364,7 @@ export default function TradingJournal() {
     setEditingTrade(trade);
     setEditMarket(trade.market);
     setEditDirection(trade.direction);
+    setEditStrategy(trade.strategy || "Liquidity Sweep");
     setEditEntry(String(trade.entry));
     setEditStopLoss(String(trade.stopLoss));
     setEditTakeProfit(String(trade.takeProfit));
@@ -1292,6 +1377,7 @@ export default function TradingJournal() {
     setEditingTrade(null);
     setEditMarket("");
     setEditDirection("LONG");
+    setEditStrategy("Liquidity Sweep");
     setEditEntry("");
     setEditStopLoss("");
     setEditTakeProfit("");
@@ -1305,13 +1391,14 @@ export default function TradingJournal() {
 
     if (
       !editMarket ||
+      !editStrategy ||
       !editEntry ||
       !editStopLoss ||
       !editTakeProfit ||
       !editAccountSize ||
       !editRiskPercent
     ) {
-      alert("Bitte Market, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
+      alert("Bitte Market, Strategy, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
       return;
     }
 
@@ -1326,6 +1413,7 @@ export default function TradingJournal() {
         body: JSON.stringify({
           market: editMarket,
           direction: editDirection,
+          strategy: editStrategy,
           entry: editEntry,
           stopLoss: editStopLoss,
           takeProfit: editTakeProfit,
@@ -1626,6 +1714,7 @@ export default function TradingJournal() {
 
   const monthlyStats = getMonthlyStats(filteredTrades);
   const weeklyStats = getWeeklyStats(filteredTrades);
+  const strategyStats = getStrategyStats(filteredTrades);
   const directionStats = getDirectionStats(filteredTrades);
   const marketIntelligence = getMarketIntelligence(filteredTrades);
   const weekdayIntelligence = getWeekdayIntelligence(filteredTrades);
@@ -1681,7 +1770,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.6: Trading Journal mit AI Trade Review, Journal Intelligence, Professional Analytics und Bot-Vorbereitung.
+            V5.7: Trading Journal mit Strategy Builder, AI Trade Review, Journal Intelligence und Bot-Vorbereitung.
           </p>
         </div>
 
@@ -1701,6 +1790,7 @@ export default function TradingJournal() {
             { id: "reports", label: "📄 Reports & Time" },
             { id: "performance", label: "🧠 Performance Analytics" },
             { id: "intelligence", label: "🤖 Journal Intelligence" },
+            { id: "strategy", label: "🧩 Strategy Builder" },
             { id: "tradeReview", label: "⭐ AI Trade Review" },
             { id: "charts", label: "📈 Charts Center" },
             { id: "history", label: "🧾 Trade History" },
@@ -1900,6 +1990,13 @@ export default function TradingJournal() {
                     <option value="LONG">LONG</option>
                     <option value="SHORT">SHORT</option>
                   </select>
+                  <select value={editStrategy} onChange={(event) => setEditStrategy(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
+                    {strategies.map((strategyItem) => (
+                      <option key={strategyItem} value={strategyItem}>
+                        {strategyItem}
+                      </option>
+                    ))}
+                  </select>
                   <input placeholder="Entry" value={editEntry} onChange={(event) => setEditEntry(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
                   <input placeholder="Stop Loss" value={editStopLoss} onChange={(event) => setEditStopLoss(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
                   <input placeholder="Take Profit" value={editTakeProfit} onChange={(event) => setEditTakeProfit(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
@@ -1927,6 +2024,13 @@ export default function TradingJournal() {
                 <select value={direction} onChange={(event) => setDirection(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
                   <option value="LONG">LONG</option>
                   <option value="SHORT">SHORT</option>
+                </select>
+                <select value={strategy} onChange={(event) => setStrategy(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
+                  {strategies.map((strategyItem) => (
+                    <option key={strategyItem} value={strategyItem}>
+                      {strategyItem}
+                    </option>
+                  ))}
                 </select>
                 <input placeholder="Entry" value={entry} onChange={(event) => setEntry(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
                 <input placeholder="Stop Loss" value={stopLoss} onChange={(event) => setStopLoss(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
@@ -2333,6 +2437,124 @@ export default function TradingJournal() {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "strategy" && (
+          <div className="space-y-8">
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-green-800">
+              <h2 className="text-3xl font-bold mb-2">🧩 Strategy Builder V5.7</h2>
+              <p className="text-gray-400">
+                Strategie-Analyse als Grundlage für den späteren AI Trading Bot: Welche Setups funktionieren wirklich?
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Best Strategy</h2>
+                <p className="text-3xl mt-6 text-green-400">{strategyStats.bestStrategy.strategy}</p>
+                <p className="text-gray-400 mt-2">
+                  {strategyStats.bestStrategy.profitLoss} CHF · {strategyStats.bestStrategy.winrate}% WR
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold">Worst Strategy</h2>
+                <p className="text-3xl mt-6 text-red-400">{strategyStats.worstStrategy.strategy}</p>
+                <p className="text-gray-400 mt-2">
+                  {strategyStats.worstStrategy.profitLoss} CHF · {strategyStats.worstStrategy.winrate}% WR
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold">Tracked Strategies</h2>
+                <p className="text-3xl mt-6 text-cyan-400">{strategyStats.strategyStats.length}</p>
+                <p className="text-gray-400 mt-2">aktive Strategien</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-800">
+                <h2 className="font-bold">Bot Readiness</h2>
+                <p className="text-3xl mt-6 text-yellow-400">
+                  {strategyStats.strategyStats.length >= 3
+                    ? "High"
+                    : strategyStats.strategyStats.length >= 1
+                      ? "Building"
+                      : "Needs Data"}
+                </p>
+                <p className="text-gray-400 mt-2">Strategy Dataset</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
+                <h2 className="text-xl font-bold mb-4">📊 Strategy Performance</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={strategyStats.strategyStats}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="strategy" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#22c55e" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
+                <h2 className="text-xl font-bold mb-4">🎯 Strategy Winrate</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={strategyStats.strategyStats}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="strategy" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="winrate" fill="#22d3ee" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl overflow-x-auto border border-gray-800">
+              <h2 className="text-xl font-bold mb-4">🧩 Strategy Table</h2>
+              <div className="min-w-[1000px]">
+                <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+                  <div>Strategy</div>
+                  <div>P/L</div>
+                  <div>Trades</div>
+                  <div>Wins</div>
+                  <div>Losses</div>
+                  <div>Winrate</div>
+                </div>
+
+                {strategyStats.strategyStats.map((item) => (
+                  <div
+                    key={item.strategy}
+                    className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center"
+                  >
+                    <div>{item.strategy}</div>
+                    <div className={item.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
+                      {item.profitLoss} CHF
+                    </div>
+                    <div>{item.trades}</div>
+                    <div className="text-green-400">{item.wins}</div>
+                    <div className="text-red-400">{item.losses}</div>
+                    <div className="text-cyan-400">{item.winrate}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+              <h2 className="text-xl font-bold mb-4">🤖 Bot Logic Preview</h2>
+              <p className="text-gray-300">
+                Später kann der Bot neue Setups mit deinen besten Strategien vergleichen.
+                Beispiel: Wenn ein Setup zu <span className="text-green-400">{strategyStats.bestStrategy.strategy}</span> passt,
+                kann GPT/Claude eine höhere Confidence geben.
+              </p>
             </div>
           </div>
         )}
@@ -2908,15 +3130,16 @@ export default function TradingJournal() {
             <div className="bg-gray-900 p-6 rounded-2xl overflow-x-auto border border-gray-800">
               <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
               <div className="min-w-[1700px]">
-                <div className="grid grid-cols-16 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
-                  <div>Date</div><div>Market</div><div>Direction</div><div>Entry</div><div>SL</div><div>TP</div><div>Risk</div><div>R/R</div><div>Size</div><div>Status</div><div>P/L</div><div>Actions</div><div>Edit</div><div>Delete</div><div>Entry Account</div><div>Entry Risk %</div>
+                <div className="grid grid-cols-17 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+                  <div>Date</div><div>Market</div><div>Direction</div><div>Strategy</div><div>Entry</div><div>SL</div><div>TP</div><div>Risk</div><div>R/R</div><div>Size</div><div>Status</div><div>P/L</div><div>Actions</div><div>Edit</div><div>Delete</div><div>Entry Account</div><div>Entry Risk %</div>
                 </div>
 
                 {filteredTrades.map((trade) => (
-                  <div key={trade.id} className="grid grid-cols-16 gap-4 p-4 border-t border-gray-800 items-center">
+                  <div key={trade.id} className="grid grid-cols-17 gap-4 p-4 border-t border-gray-800 items-center">
                     <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
                     <div>{trade.market}</div>
                     <div className={trade.direction === "LONG" ? "text-green-400" : "text-red-400"}>{trade.direction}</div>
+                    <div>{trade.strategy || "Unclassified"}</div>
                     <div>{trade.entry}</div>
                     <div>{trade.stopLoss}</div>
                     <div>{trade.takeProfit}</div>
