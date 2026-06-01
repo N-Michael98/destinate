@@ -793,12 +793,46 @@ export default function TradingJournal() {
     numericStartingBalance
   );
 
+  
   const propFirmStats = getPropFirmRiskStats({
     trades: filteredTrades,
     startingBalance: numericStartingBalance,
     maxDailyLossPercent: numericMaxDailyLossPercent,
     maxOverallDrawdownPercent: numericMaxOverallDrawdownPercent,
   });
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  const todaysTrades = filteredTrades.filter(
+    (trade) =>
+      trade.status === "CLOSED" &&
+      new Date(trade.date).toISOString().slice(0, 10) === todayKey
+  );
+
+  const todaysPL = Number(
+    todaysTrades.reduce((sum, trade) => sum + trade.profitLoss, 0).toFixed(2)
+  );
+
+  const todaysLoss = Math.abs(
+    Number(
+      todaysTrades
+        .filter((trade) => trade.profitLoss < 0)
+        .reduce((sum, trade) => sum + trade.profitLoss, 0)
+        .toFixed(2)
+    )
+  );
+
+  const remainingDailyLimit = Number(
+    (propFirmStats.dailyLossLimit - todaysLoss).toFixed(2)
+  );
+
+  const dailyStatus =
+    todaysLoss > propFirmStats.dailyLossLimit
+      ? "VIOLATION"
+      : todaysLoss >= propFirmStats.dailyLossLimit * 0.8
+        ? "WARNING"
+        : "PASS";
+
 
   const bestTrade = [...filteredTrades].sort((a, b) => b.profitLoss - a.profitLoss)[0];
   const worstTrade = [...filteredTrades].sort((a, b) => a.profitLoss - b.profitLoss)[0];
@@ -1247,7 +1281,30 @@ export default function TradingJournal() {
           </div>
         </div>
 
+        
         <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+            <h2 className="font-bold">Today's P/L</h2>
+            <p className="text-2xl mt-2 text-cyan-400">{todaysPL} CHF</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Today's Loss</h2>
+            <p className="text-2xl mt-2 text-red-400">{todaysLoss} CHF</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+            <h2 className="font-bold">Remaining Daily Limit</h2>
+            <p className="text-2xl mt-2 text-yellow-400">{remainingDailyLimit} CHF</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+            <h2 className="font-bold">Daily Status</h2>
+            <p className="text-2xl mt-2 text-blue-400">{dailyStatus}</p>
+          </div>
+        </div>
+
+<div className="grid grid-cols-4 gap-6 mb-8">
           <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
             <h2 className="font-bold">Max Drawdown</h2>
             <p className="text-2xl mt-2 text-red-400">
