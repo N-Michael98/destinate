@@ -8,14 +8,39 @@ export async function PATCH(
   try {
     const { id } = await context.params;
     const tradeId = Number(id);
+
     const body = await request.json();
 
     const updatedTrade = await prisma.trade.update({
-      where: { id: tradeId },
+      where: {
+        id: tradeId,
+      },
       data: {
-        status: body.status,
-        result: body.result,
-        profitLoss: Number(body.profitLoss),
+        ...(body.market !== undefined && { market: body.market }),
+        ...(body.direction !== undefined && {
+          direction: body.direction,
+        }),
+        ...(body.entry !== undefined && {
+          entry: Number(body.entry),
+        }),
+        ...(body.stopLoss !== undefined && {
+          stopLoss: Number(body.stopLoss),
+        }),
+        ...(body.takeProfit !== undefined && {
+          takeProfit: Number(body.takeProfit),
+        }),
+        ...(body.notes !== undefined && {
+          notes: body.notes,
+        }),
+        ...(body.status !== undefined && {
+          status: body.status,
+        }),
+        ...(body.result !== undefined && {
+          result: body.result,
+        }),
+        ...(body.profitLoss !== undefined && {
+          profitLoss: Number(body.profitLoss),
+        }),
       },
     });
 
@@ -31,7 +56,9 @@ export async function PATCH(
         success: false,
         error: "Trade konnte nicht aktualisiert werden.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
@@ -42,15 +69,15 @@ export async function DELETE(
 ) {
   try {
     const { id } = await context.params;
-    const tradeId = Number(id);
 
     await prisma.trade.delete({
-      where: { id: tradeId },
+      where: {
+        id: Number(id),
+      },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Trade wurde gelöscht.",
     });
   } catch (error) {
     console.error(error);
@@ -58,9 +85,10 @@ export async function DELETE(
     return NextResponse.json(
       {
         success: false,
-        error: "Trade konnte nicht gelöscht werden.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
