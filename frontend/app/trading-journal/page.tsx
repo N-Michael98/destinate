@@ -1280,7 +1280,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.3.2: Trading Journal mit Window Layout, Reports, Analytics, Charts Center und Trade Management.
+            V5.4: Trading Journal mit Professional Analytics Charts, Window Layout, Reports und Trade Management.
           </p>
         </div>
 
@@ -1763,16 +1763,78 @@ export default function TradingJournal() {
 
         {activeSection === "charts" && (
           <div className="space-y-8">
-            <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
-              <h2 className="text-2xl font-bold mb-2">📈 Charts Center V5.3.2</h2>
+            <div className="bg-gradient-to-br from-gray-900 to-gray-950 p-6 rounded-2xl border border-cyan-800">
+              <h2 className="text-3xl font-bold mb-2">📈 Professional Charts Center V5.4</h2>
               <p className="text-gray-400">
-                Equity Curve, Profit/Loss pro Trade, Account Equity Curve und Max Drawdown Curve.
+                Moderne Chart-Zentrale: Equity, Drawdown, Profit/Loss, Account Growth und Risk Performance.
               </p>
             </div>
 
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold mb-4">Growth Gauge</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-green-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-green-400">
+                        {accountStats.growthPercent}%
+                      </p>
+                      <p className="text-xs text-gray-400">Growth</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-800">
+                <h2 className="font-bold mb-4">Performance Score</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-yellow-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-yellow-400">
+                        {performanceScore}
+                      </p>
+                      <p className="text-xs text-gray-400">/100</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold mb-4">Max DD Gauge</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-red-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-red-400">
+                        {accountStats.maxDrawdownPercent}%
+                      </p>
+                      <p className="text-xs text-gray-400">Drawdown</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold mb-4">Expectancy</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-cyan-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className={expectancyR >= 0 ? "text-3xl font-bold text-cyan-400" : "text-3xl font-bold text-red-400"}>
+                        {expectancyR}R
+                      </p>
+                      <p className="text-xs text-gray-400">per Trade</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📈 Equity Curve</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">📈 Equity Curve</h2>
+                  <span className="text-sm text-green-400">{totalProfit} CHF</span>
+                </div>
+
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={equityData}>
@@ -1780,14 +1842,18 @@ export default function TradingJournal() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Line type="monotone" dataKey="equity" stroke="#22c55e" strokeWidth={3} />
+                      <Line type="monotone" dataKey="equity" stroke="#22c55e" strokeWidth={4} dot={{ r: 4 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📊 Profit / Loss pro Trade</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">📊 Profit / Loss pro Trade</h2>
+                  <span className="text-sm text-blue-400">{closedTrades.length} Closed</span>
+                </div>
+
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={equityData}>
@@ -1795,14 +1861,18 @@ export default function TradingJournal() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="profitLoss" fill="#3b82f6" />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">💼 Account Equity Curve</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">💼 Account Equity Curve</h2>
+                  <span className="text-sm text-cyan-400">{accountStats.currentEquity} CHF</span>
+                </div>
+
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={accountStats.accountEquityData}>
@@ -1810,14 +1880,18 @@ export default function TradingJournal() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Line type="monotone" dataKey="accountEquity" stroke="#22d3ee" strokeWidth={3} />
+                      <Line type="monotone" dataKey="accountEquity" stroke="#22d3ee" strokeWidth={4} dot={{ r: 4 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
-                <h2 className="text-xl font-bold mb-4">📉 Max Drawdown Curve</h2>
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-red-900">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">📉 Max Drawdown Curve</h2>
+                  <span className="text-sm text-red-400">{accountStats.maxDrawdown} CHF</span>
+                </div>
+
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={accountStats.accountEquityData}>
@@ -1825,8 +1899,55 @@ export default function TradingJournal() {
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Line type="monotone" dataKey="drawdown" stroke="#ef4444" strokeWidth={3} />
+                      <Line type="monotone" dataKey="drawdown" stroke="#ef4444" strokeWidth={4} dot={{ r: 4 }} />
                     </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900">
+                <h2 className="text-xl font-bold mb-4">🎯 Market Performance</h2>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={marketPerformanceData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="market" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-indigo-900">
+                <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyStats.monthlyPerformance}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#6366f1" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
+                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={weeklyStats.weeklyPerformance}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
