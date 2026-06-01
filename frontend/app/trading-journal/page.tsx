@@ -721,6 +721,7 @@ export default function TradingJournal() {
   const [journalTrades, setJournalTrades] = useState<Trade[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [selectedMarket, setSelectedMarket] = useState("All");
+  const [activeSection, setActiveSection] = useState("overview");
 
   const [market, setMarket] = useState("");
   const [direction, setDirection] = useState("LONG");
@@ -750,6 +751,12 @@ export default function TradingJournal() {
   const [isEditing, setIsEditing] = useState(false);
 
   const reportRef = useRef<HTMLDivElement | null>(null);
+  const tradingSectionRef = useRef<HTMLDivElement | null>(null);
+  const overviewSectionRef = useRef<HTMLDivElement | null>(null);
+  const performanceSectionRef = useRef<HTMLDivElement | null>(null);
+  const timeSectionRef = useRef<HTMLDivElement | null>(null);
+  const chartsSectionRef = useRef<HTMLDivElement | null>(null);
+  const historySectionRef = useRef<HTMLDivElement | null>(null);
 
   const markets = ["All", ...new Set(journalTrades.map((trade) => trade.market))];
 
@@ -1237,6 +1244,32 @@ export default function TradingJournal() {
   const monthlyStats = getMonthlyStats(filteredTrades);
   const weeklyStats = getWeeklyStats(filteredTrades);
 
+  function scrollToSection(
+    section:
+      | "overview"
+      | "trading"
+      | "performance"
+      | "time"
+      | "charts"
+      | "history"
+  ) {
+    setActiveSection(section);
+
+    const sectionMap = {
+      overview: overviewSectionRef,
+      trading: tradingSectionRef,
+      performance: performanceSectionRef,
+      time: timeSectionRef,
+      charts: chartsSectionRef,
+      history: historySectionRef,
+    };
+
+    sectionMap[section].current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+
   return (
     <main className="min-h-screen bg-black text-white p-10">
       <a href="/" className="inline-block mb-8 text-blue-400 hover:text-blue-300">
@@ -1247,7 +1280,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.2: Trading Journal mit Weekly Statistics, Monthly Statistics, Performance Analytics und Prop Firm Rules.
+            V5.3.1: Trading Journal mit Dashboard Navigation, Weekly/Monthly Statistics, Performance Analytics und Prop Firm Rules.
           </p>
         </div>
 
@@ -1259,9 +1292,44 @@ export default function TradingJournal() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-6 mb-8">
+      <div className="mb-8 bg-gray-950 border border-gray-800 rounded-2xl p-4 sticky top-0 z-20">
+        <div className="flex flex-wrap gap-3">
+          {[
+            { id: "overview", label: "📊 Overview" },
+            { id: "trading", label: "➕ Trading" },
+            { id: "performance", label: "🧠 Performance Analytics" },
+            { id: "time", label: "📅 Weekly / Monthly" },
+            { id: "charts", label: "📈 Charts Center" },
+            { id: "history", label: "🧾 Trade History" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() =>
+                scrollToSection(
+                  item.id as
+                    | "overview"
+                    | "trading"
+                    | "performance"
+                    | "time"
+                    | "charts"
+                    | "history"
+                )
+              }
+              className={
+                activeSection === item.id
+                  ? "bg-blue-600 text-white px-4 py-3 rounded-xl font-bold"
+                  : "bg-gray-900 text-gray-300 hover:bg-gray-800 px-4 py-3 rounded-xl font-bold border border-gray-800"
+              }
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div ref={tradingSectionRef} className="grid grid-cols-2 gap-6 mb-8 scroll-mt-28">
         <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.2</h2>
+          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.3.1</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1299,7 +1367,7 @@ export default function TradingJournal() {
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.2</h2>
+          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.3.1</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1524,7 +1592,7 @@ export default function TradingJournal() {
       </div>
 
       <div ref={reportRef} data-pdf-report className="bg-black text-white">
-        <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-gray-800">
+        <div ref={overviewSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-gray-800 scroll-mt-28">
           <h2 className="text-2xl font-bold mb-2">📄 Jahresreport</h2>
           <p className="text-gray-400">
             AI Trading Journal Jahresübersicht · Filter: {selectedMarket}
@@ -1577,7 +1645,7 @@ export default function TradingJournal() {
           </div>
         </div>
 
-        <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-blue-800">
+        <div ref={timeSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-blue-800 scroll-mt-28">
           <h2 className="text-2xl font-bold mb-2">📅 Weekly Statistics V5.2</h2>
           <p className="text-gray-400">
             Wöchentliche Performance, beste/schlechteste Wochen und Wochen-Winrate.
@@ -1721,7 +1789,7 @@ export default function TradingJournal() {
           </div>
         </div>
 
-        <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-purple-800">
+        <div ref={performanceSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-purple-800 scroll-mt-28">
           <h2 className="text-2xl font-bold mb-2">🧠 Performance Analytics V5.0</h2>
           <p className="text-gray-400">
             Analyse deiner Strategie: Expectancy, R-Multiple, Streaks und Trading-Tage.
@@ -1949,6 +2017,11 @@ export default function TradingJournal() {
 
         {isLoaded && (
           <>
+            <div ref={chartsSectionRef} className="mb-8 bg-gray-900 p-6 rounded-xl border border-cyan-800 scroll-mt-28">
+              <h2 className="text-2xl font-bold mb-2">📈 Charts Center V5.3.1</h2>
+              <p className="text-gray-400">Alle Diagramme gesammelt: Equity, Account Equity, Drawdown, Daily, Weekly, Monthly und Market Performance.</p>
+            </div>
+
             <div className="grid grid-cols-2 gap-6 mb-8">
               <div className="bg-gray-900 p-6 rounded-xl min-h-96">
                 <h2 className="text-xl font-bold mb-4">📈 Equity Curve</h2>
@@ -2109,7 +2182,7 @@ export default function TradingJournal() {
           </>
         )}
 
-        <div className="grid grid-cols-2 gap-6 mb-8">
+        <div ref={historySectionRef} className="grid grid-cols-2 gap-6 mb-8 scroll-mt-28">
           <div className="bg-gray-900 p-6 rounded-xl">
             <h2 className="text-xl font-bold mb-4">🏆 Best Trade</h2>
 
