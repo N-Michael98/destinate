@@ -323,6 +323,127 @@ function getMaxDrawdownStats(data: Trade[]) {
 
 
 
+
+// ===== Weekly Statistics V5.2 =====
+
+function getWeekKey(dateValue: string) {
+  const date = new Date(dateValue);
+  const tempDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNumber = tempDate.getUTCDay() || 7;
+
+  tempDate.setUTCDate(tempDate.getUTCDate() + 4 - dayNumber);
+
+  const yearStart = new Date(Date.UTC(tempDate.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(
+    ((tempDate.getTime() - yearStart.getTime()) / 86400000 + 1) / 7
+  );
+
+  return `${tempDate.getUTCFullYear()}-W${String(weekNumber).padStart(2, "0")}`;
+}
+
+function getWeekLabel(weekKey: string) {
+  return weekKey.replace("-W", " · Woche ");
+}
+
+function buildWeeklyPerformance(data: Trade[]) {
+  const weekMap = new Map<
+    string,
+    {
+      week: string;
+      label: string;
+      profitLoss: number;
+      trades: number;
+      wins: number;
+      losses: number;
+    }
+  >();
+
+  data
+    .filter((trade) => trade.status === "CLOSED")
+    .forEach((trade) => {
+      const weekKey = getWeekKey(trade.date);
+      const currentWeek =
+        weekMap.get(weekKey) ??
+        {
+          week: weekKey,
+          label: getWeekLabel(weekKey),
+          profitLoss: 0,
+          trades: 0,
+          wins: 0,
+          losses: 0,
+        };
+
+      currentWeek.profitLoss += trade.profitLoss;
+      currentWeek.trades += 1;
+
+      if (trade.profitLoss > 0) currentWeek.wins += 1;
+      if (trade.profitLoss < 0) currentWeek.losses += 1;
+
+      weekMap.set(weekKey, currentWeek);
+    });
+
+  return Array.from(weekMap.values())
+    .sort((a, b) => a.week.localeCompare(b.week))
+    .map((item) => ({
+      ...item,
+      profitLoss: Number(item.profitLoss.toFixed(2)),
+      winrate:
+        item.trades > 0 ? Math.round((item.wins / item.trades) * 100) : 0,
+    }));
+}
+
+function getWeeklyStats(data: Trade[]) {
+  const weeklyPerformance = buildWeeklyPerformance(data);
+
+  if (weeklyPerformance.length === 0) {
+    return {
+      bestWeek: { label: "-", profitLoss: 0 },
+      worstWeek: { label: "-", profitLoss: 0 },
+      averageWeek: 0,
+      positiveWeeks: 0,
+      negativeWeeks: 0,
+      weeklyWinrate: 0,
+      weeklyPerformance,
+    };
+  }
+
+  const bestWeek = [...weeklyPerformance].sort(
+    (a, b) => b.profitLoss - a.profitLoss
+  )[0];
+
+  const worstWeek = [...weeklyPerformance].sort(
+    (a, b) => a.profitLoss - b.profitLoss
+  )[0];
+
+  const totalWeeklyProfit = weeklyPerformance.reduce(
+    (sum, week) => sum + week.profitLoss,
+    0
+  );
+
+  const positiveWeeks = weeklyPerformance.filter(
+    (week) => week.profitLoss > 0
+  ).length;
+
+  const negativeWeeks = weeklyPerformance.filter(
+    (week) => week.profitLoss < 0
+  ).length;
+
+  const weeklyWinrate =
+    weeklyPerformance.length > 0
+      ? Math.round((positiveWeeks / weeklyPerformance.length) * 100)
+      : 0;
+
+  return {
+    bestWeek,
+    worstWeek,
+    averageWeek: Number((totalWeeklyProfit / weeklyPerformance.length).toFixed(2)),
+    positiveWeeks,
+    negativeWeeks,
+    weeklyWinrate,
+    weeklyPerformance,
+  };
+}
+
 // ===== Monthly Statistics V5.1 =====
 
 function getMonthKey(dateValue: string) {
@@ -1114,6 +1235,7 @@ export default function TradingJournal() {
   });
 
   const monthlyStats = getMonthlyStats(filteredTrades);
+  const weeklyStats = getWeeklyStats(filteredTrades);
 
   return (
     <main className="min-h-screen bg-black text-white p-10">
@@ -1125,7 +1247,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.1: Trading Journal mit Monthly Statistics, Performance Analytics, Prop Firm Rules und Account Equity.
+            V5.2: Trading Journal mit Weekly Statistics, Monthly Statistics, Performance Analytics und Prop Firm Rules.
           </p>
         </div>
 
@@ -1139,7 +1261,7 @@ export default function TradingJournal() {
 
       <div className="grid grid-cols-2 gap-6 mb-8">
         <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.1</h2>
+          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.2</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1177,7 +1299,7 @@ export default function TradingJournal() {
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.1</h2>
+          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.2</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1452,6 +1574,78 @@ export default function TradingJournal() {
           <div className="bg-gray-900 p-6 rounded-xl">
             <h2 className="font-bold">Closed Trades</h2>
             <p className="text-2xl mt-2">{closedTrades.length}</p>
+          </div>
+        </div>
+
+        <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-blue-800">
+          <h2 className="text-2xl font-bold mb-2">📅 Weekly Statistics V5.2</h2>
+          <p className="text-gray-400">
+            Wöchentliche Performance, beste/schlechteste Wochen und Wochen-Winrate.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Best Week</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {weeklyStats.bestWeek.profitLoss} CHF
+            </p>
+            <p className="text-sm mt-2 text-gray-400">
+              {weeklyStats.bestWeek.label}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Worst Week</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {weeklyStats.worstWeek.profitLoss} CHF
+            </p>
+            <p className="text-sm mt-2 text-gray-400">
+              {weeklyStats.worstWeek.label}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+            <h2 className="font-bold">Average Week</h2>
+            <p
+              className={
+                weeklyStats.averageWeek >= 0
+                  ? "text-2xl mt-2 text-green-400"
+                  : "text-2xl mt-2 text-red-400"
+              }
+            >
+              {weeklyStats.averageWeek} CHF
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+            <h2 className="font-bold">Weekly Winrate</h2>
+            <p className="text-2xl mt-2 text-cyan-400">
+              {weeklyStats.weeklyWinrate}%
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Positive Weeks</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {weeklyStats.positiveWeeks}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Negative Weeks</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {weeklyStats.negativeWeeks}
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800 col-span-2">
+            <h2 className="font-bold mb-2">Weekly Summary</h2>
+            <p className="text-gray-400">
+              Du hast aktuell {weeklyStats.weeklyPerformance.length} ausgewertete Wochen im Journal.
+            </p>
           </div>
         </div>
 
@@ -1832,6 +2026,22 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
+              <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
+
+              <div className="h-80 min-h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyStats.weeklyPerformance}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="profitLoss" fill="#3b82f6" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
               <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
 
               <div className="h-80 min-h-80">
@@ -1928,6 +2138,37 @@ export default function TradingJournal() {
             ) : (
               <p className="text-gray-400">Keine Trades vorhanden.</p>
             )}
+          </div>
+        </div>
+
+        <div className="bg-gray-900 p-6 rounded-xl overflow-x-auto mb-8">
+          <h2 className="text-xl font-bold mb-4">📅 Weekly Statistics Table</h2>
+
+          <div className="min-w-[900px]">
+            <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+              <div>Week</div>
+              <div>P/L</div>
+              <div>Trades</div>
+              <div>Wins</div>
+              <div>Losses</div>
+              <div>Winrate</div>
+            </div>
+
+            {weeklyStats.weeklyPerformance.map((week) => (
+              <div
+                key={week.week}
+                className="grid grid-cols-6 gap-4 p-4 border-t border-gray-800 items-center"
+              >
+                <div>{week.label}</div>
+                <div className={week.profitLoss >= 0 ? "text-green-400" : "text-red-400"}>
+                  {week.profitLoss} CHF
+                </div>
+                <div>{week.trades}</div>
+                <div className="text-green-400">{week.wins}</div>
+                <div className="text-red-400">{week.losses}</div>
+                <div className="text-cyan-400">{week.winrate}%</div>
+              </div>
+            ))}
           </div>
         </div>
 
