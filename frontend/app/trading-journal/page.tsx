@@ -123,26 +123,35 @@ export default function TradingJournal() {
   const [journalTrades, setJournalTrades] = useState<Trade[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [selectedMarket, setSelectedMarket] = useState("All");
+
+  const [market, setMarket] = useState("");
+  const [direction, setDirection] = useState("LONG");
+  const [entry, setEntry] = useState("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
   const reportRef = useRef<HTMLDivElement | null>(null);
 
   const markets = ["All", ...new Set(journalTrades.map((trade) => trade.market))];
 
-  useEffect(() => {
-    async function loadTrades() {
-      try {
-        const response = await fetch("/api/trades");
-        const data = await response.json();
+  async function loadTrades() {
+    try {
+      const response = await fetch("/api/trades");
+      const data = await response.json();
 
-        if (data.success) {
-          setJournalTrades(data.trades);
-        }
-      } catch (error) {
-        console.error("Trades konnten nicht geladen werden:", error);
+      if (data.success) {
+        setJournalTrades(data.trades);
       }
-
-      setIsLoaded(true);
+    } catch (error) {
+      console.error("Trades konnten nicht geladen werden:", error);
     }
 
+    setIsLoaded(true);
+  }
+
+  useEffect(() => {
     loadTrades();
   }, []);
 
@@ -151,16 +160,65 @@ export default function TradingJournal() {
       ? journalTrades
       : journalTrades.filter((trade) => trade.market === selectedMarket);
 
+  async function createTrade() {
+    if (!market || !entry || !stopLoss || !takeProfit) {
+      alert("Bitte Market, Entry, Stop Loss und Take Profit ausfüllen.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const response = await fetch("/api/trades", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          market,
+          direction,
+          entry,
+          stopLoss,
+          takeProfit,
+          notes,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        alert("Trade konnte nicht gespeichert werden.");
+        return;
+      }
+
+      await loadTrades();
+
+      setMarket("");
+      setDirection("LONG");
+      setEntry("");
+      setStopLoss("");
+      setTakeProfit("");
+      setNotes("");
+
+      alert("Trade erfolgreich in SQLite gespeichert.");
+    } catch (error) {
+      console.error(error);
+      alert("Fehler beim Speichern des Trades.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function closeTrade() {
-    alert("V4.0.4: Trade schließen wird als Nächstes direkt über SQLite implementiert.");
+    alert("V4.1: Trade schließen wird als Nächstes direkt über SQLite implementiert.");
   }
 
   function reopenTrade() {
-    alert("V4.0.4: Reopen wird als Nächstes direkt über SQLite implementiert.");
+    alert("V4.1: Reopen wird als Nächstes direkt über SQLite implementiert.");
   }
 
   function resetJournal() {
-    alert("V4.0.4: Reset wird später direkt über SQLite implementiert.");
+    alert("V4.1: Reset wird später direkt über SQLite implementiert.");
   }
 
   async function exportYearlyReportPDF() {
@@ -247,7 +305,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.0.4: Trading Journal liest jetzt direkt aus SQLite über /api/trades.
+            V4.1: Trading Journal liest aus SQLite und kann neue Trades direkt speichern.
           </p>
         </div>
 
@@ -256,6 +314,64 @@ export default function TradingJournal() {
           className="bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded-xl font-bold"
         >
           📄 Jahresreport PDF exportieren
+        </button>
+      </div>
+
+      <div className="bg-gray-900 p-6 rounded-xl border border-gray-800 mb-8">
+        <h2 className="text-2xl font-bold mb-4">➕ Neuer Trade</h2>
+
+        <div className="grid grid-cols-3 gap-4">
+          <input
+            placeholder="Market, z.B. Gold"
+            value={market}
+            onChange={(event) => setMarket(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          />
+
+          <select
+            value={direction}
+            onChange={(event) => setDirection(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          >
+            <option value="LONG">LONG</option>
+            <option value="SHORT">SHORT</option>
+          </select>
+
+          <input
+            placeholder="Entry"
+            value={entry}
+            onChange={(event) => setEntry(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          />
+
+          <input
+            placeholder="Stop Loss"
+            value={stopLoss}
+            onChange={(event) => setStopLoss(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          />
+
+          <input
+            placeholder="Take Profit"
+            value={takeProfit}
+            onChange={(event) => setTakeProfit(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          />
+
+          <input
+            placeholder="Notizen"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            className="bg-black border border-gray-700 p-3 rounded-xl"
+          />
+        </div>
+
+        <button
+          onClick={createTrade}
+          disabled={isSaving}
+          className="mt-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold"
+        >
+          {isSaving ? "Speichert..." : "💾 Trade speichern"}
         </button>
       </div>
 
@@ -268,8 +384,8 @@ export default function TradingJournal() {
             onChange={(event) => setSelectedMarket(event.target.value)}
             className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3"
           >
-            {markets.map((market) => (
-              <option key={market}>{market}</option>
+            {markets.map((marketItem) => (
+              <option key={marketItem}>{marketItem}</option>
             ))}
           </select>
         </div>
@@ -340,73 +456,77 @@ export default function TradingJournal() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4">📈 Equity Curve</h2>
+        {isLoaded && (
+          <>
+            <div className="grid grid-cols-2 gap-6 mb-8">
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">📈 Equity Curve</h2>
 
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={equityData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="equity" stroke="#22c55e" strokeWidth={3} />
-                </LineChart>
-              </ResponsiveContainer>
+                <div className="h-80 min-h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={equityData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="equity" stroke="#22c55e" strokeWidth={3} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">📊 Profit / Loss pro Trade</h2>
+
+                <div className="h-80 min-h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={equityData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="profitLoss" fill="#3b82f6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4">📊 Profit / Loss pro Trade</h2>
+            <div className="grid grid-cols-2 gap-6 mb-8">
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance</h2>
 
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={equityData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="profitLoss" fill="#3b82f6" />
-                </BarChart>
-              </ResponsiveContainer>
+                <div className="h-80 min-h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={periodData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#06b6d4" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-xl min-h-96">
+                <h2 className="text-xl font-bold mb-4">🎯 Performance nach Market</h2>
+
+                <div className="h-80 min-h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={marketPerformanceData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="market" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#a855f7" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance</h2>
-
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={periodData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#06b6d4" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="bg-gray-900 p-6 rounded-xl">
-            <h2 className="text-xl font-bold mb-4">🎯 Performance nach Market</h2>
-
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={marketPerformanceData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="market" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#a855f7" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
 
         <div className="grid grid-cols-2 gap-6 mb-8">
           <div className="bg-gray-900 p-6 rounded-xl">
@@ -415,7 +535,7 @@ export default function TradingJournal() {
             {bestTrade ? (
               <div className="space-y-2">
                 <p className="text-2xl font-bold text-green-400">{bestTrade.market}</p>
-                <p>Date: {bestTrade.date}</p>
+                <p>Date: {new Date(bestTrade.date).toLocaleDateString("de-CH")}</p>
                 <p>Direction: {bestTrade.direction}</p>
                 <p>Profit: {bestTrade.profitLoss} CHF</p>
               </div>
@@ -430,7 +550,7 @@ export default function TradingJournal() {
             {worstTrade ? (
               <div className="space-y-2">
                 <p className="text-2xl font-bold text-red-400">{worstTrade.market}</p>
-                <p>Date: {worstTrade.date}</p>
+                <p>Date: {new Date(worstTrade.date).toLocaleDateString("de-CH")}</p>
                 <p>Direction: {worstTrade.direction}</p>
                 <p>Profit: {worstTrade.profitLoss} CHF</p>
               </div>
