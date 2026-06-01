@@ -35,3 +35,32 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await context.params;
+    const tradeId = Number(id);
+
+    await prisma.trade.delete({
+      where: { id: tradeId },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Trade wurde gelöscht.",
+    });
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Trade konnte nicht gelöscht werden.",
+      },
+      { status: 500 }
+    );
+  }
+}
