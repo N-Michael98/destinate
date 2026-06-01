@@ -364,6 +364,7 @@ export default function TradingJournal() {
   const [accountRiskPercent, setAccountRiskPercent] = useState("1");
   const [maxDailyLossPercent, setMaxDailyLossPercent] = useState("5");
   const [maxOverallDrawdownPercent, setMaxOverallDrawdownPercent] = useState("10");
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [editMarket, setEditMarket] = useState("");
@@ -422,28 +423,38 @@ export default function TradingJournal() {
     if (savedMaxOverallDrawdownPercent) {
       setMaxOverallDrawdownPercent(savedMaxOverallDrawdownPercent);
     }
+
+    setSettingsLoaded(true);
   }, []);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+
     localStorage.setItem("startingBalance", startingBalance);
     setAccountSize(startingBalance);
-  }, [startingBalance]);
+  }, [startingBalance, settingsLoaded]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+
     localStorage.setItem("accountRiskPercent", accountRiskPercent);
     setRiskPercent(accountRiskPercent);
-  }, [accountRiskPercent]);
+  }, [accountRiskPercent, settingsLoaded]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+
     localStorage.setItem("maxDailyLossPercent", maxDailyLossPercent);
-  }, [maxDailyLossPercent]);
+  }, [maxDailyLossPercent, settingsLoaded]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+
     localStorage.setItem(
       "maxOverallDrawdownPercent",
       maxOverallDrawdownPercent
     );
-  }, [maxOverallDrawdownPercent]);
+  }, [maxOverallDrawdownPercent, settingsLoaded]);
 
   const filteredTrades =
     selectedMarket === "All"
@@ -847,7 +858,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.7: Trading Journal mit Account Equity, Account Risk %, Risk Management und Max Drawdown.
+            V4.9.1: Trading Journal mit Daily Drawdown Tracking, Prop Firm Rules und gespeicherten Account Settings.
           </p>
         </div>
 
@@ -861,7 +872,7 @@ export default function TradingJournal() {
 
       <div className="grid grid-cols-2 gap-6 mb-8">
         <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V4.8</h2>
+          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V4.9.1</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -899,7 +910,7 @@ export default function TradingJournal() {
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V4.8</h2>
+          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V4.9.1</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1499,8 +1510,8 @@ export default function TradingJournal() {
               <div>Actions</div>
               <div>Edit</div>
               <div>Delete</div>
-              <div>Account</div>
-              <div>Risk %</div>
+              <div>Entry Account</div>
+              <div>Entry Risk %</div>
             </div>
 
             {filteredTrades.map((trade) => (
