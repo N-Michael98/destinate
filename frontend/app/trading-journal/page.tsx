@@ -321,6 +321,138 @@ function getMaxDrawdownStats(data: Trade[]) {
   };
 }
 
+
+// ===== Performance Analytics V5.0 =====
+
+function getAverageTrade(data: Trade[]) {
+  const closedTrades = data.filter((trade) => trade.status === "CLOSED");
+  if (closedTrades.length === 0) return 0;
+
+  const total = closedTrades.reduce((sum, trade) => sum + trade.profitLoss, 0);
+  return Number((total / closedTrades.length).toFixed(2));
+}
+
+function getExpectancyR(data: Trade[]) {
+  const closedTrades = data.filter(
+    (trade) => trade.status === "CLOSED" && trade.riskAmount > 0
+  );
+
+  if (closedTrades.length === 0) return 0;
+
+  const totalR = closedTrades.reduce((sum, trade) => {
+    return sum + trade.profitLoss / trade.riskAmount;
+  }, 0);
+
+  return Number((totalR / closedTrades.length).toFixed(2));
+}
+
+function getAverageRMultiple(data: Trade[]) {
+  return getExpectancyR(data);
+}
+
+function getWinningStreak(data: Trade[]) {
+  const closedTrades = [...data]
+    .filter((trade) => trade.status === "CLOSED")
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+  let currentStreak = 0;
+  let bestStreak = 0;
+
+  closedTrades.forEach((trade) => {
+    if (trade.profitLoss > 0) {
+      currentStreak += 1;
+      bestStreak = Math.max(bestStreak, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
+  });
+
+  return bestStreak;
+}
+
+function getLosingStreak(data: Trade[]) {
+  const closedTrades = [...data]
+    .filter((trade) => trade.status === "CLOSED")
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+  let currentStreak = 0;
+  let worstStreak = 0;
+
+  closedTrades.forEach((trade) => {
+    if (trade.profitLoss < 0) {
+      currentStreak += 1;
+      worstStreak = Math.max(worstStreak, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
+  });
+
+  return worstStreak;
+}
+
+function buildDailyPerformance(data: Trade[]) {
+  const dayMap = new Map<string, number>();
+
+  data
+    .filter((trade) => trade.status === "CLOSED")
+    .forEach((trade) => {
+      const dayKey = new Date(trade.date).toLocaleDateString("de-CH");
+      const currentValue = dayMap.get(dayKey) ?? 0;
+      dayMap.set(dayKey, currentValue + trade.profitLoss);
+    });
+
+  return Array.from(dayMap.entries()).map(([date, value]) => ({
+    date,
+    value: Number(value.toFixed(2)),
+  }));
+}
+
+function getBestTradingDay(data: Trade[]) {
+  const dailyPerformance = buildDailyPerformance(data);
+  if (dailyPerformance.length === 0) {
+    return { date: "-", value: 0 };
+  }
+
+  return [...dailyPerformance].sort((a, b) => b.value - a.value)[0];
+}
+
+function getWorstTradingDay(data: Trade[]) {
+  const dailyPerformance = buildDailyPerformance(data);
+  if (dailyPerformance.length === 0) {
+    return { date: "-", value: 0 };
+  }
+
+  return [...dailyPerformance].sort((a, b) => a.value - b.value)[0];
+}
+
+function getPerformanceScore(input: {
+  expectancyR: number;
+  winrate: number;
+  profitFactor: number;
+  maxDrawdownPercent: number;
+}) {
+  let score = 0;
+
+  if (input.expectancyR > 0) score += 30;
+  if (input.expectancyR >= 0.5) score += 10;
+
+  if (input.winrate >= 50) score += 20;
+  if (input.winrate >= 60) score += 10;
+
+  if (input.profitFactor >= 1.2) score += 15;
+  if (input.profitFactor >= 2) score += 10;
+
+  if (input.maxDrawdownPercent <= 5) score += 5;
+
+  return Math.min(score, 100);
+}
+
 // ===============================
 
 function buildPeriodPerformance(data: Trade[]) {
@@ -848,6 +980,20 @@ export default function TradingJournal() {
   const bestTrade = [...filteredTrades].sort((a, b) => b.profitLoss - a.profitLoss)[0];
   const worstTrade = [...filteredTrades].sort((a, b) => a.profitLoss - b.profitLoss)[0];
 
+  const averageTrade = getAverageTrade(filteredTrades);
+  const expectancyR = getExpectancyR(filteredTrades);
+  const averageRMultiple = getAverageRMultiple(filteredTrades);
+  const winningStreak = getWinningStreak(filteredTrades);
+  const losingStreak = getLosingStreak(filteredTrades);
+  const bestTradingDay = getBestTradingDay(filteredTrades);
+  const worstTradingDay = getWorstTradingDay(filteredTrades);
+  const performanceScore = getPerformanceScore({
+    expectancyR,
+    winrate,
+    profitFactor,
+    maxDrawdownPercent: accountStats.maxDrawdownPercent,
+  });
+
   return (
     <main className="min-h-screen bg-black text-white p-10">
       <a href="/" className="inline-block mb-8 text-blue-400 hover:text-blue-300">
@@ -858,7 +1004,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.9.1: Trading Journal mit Daily Drawdown Tracking, Prop Firm Rules und gespeicherten Account Settings.
+            V5.0: Trading Journal mit Performance Analytics, Daily Drawdown, Prop Firm Rules und Account Equity.
           </p>
         </div>
 
@@ -872,7 +1018,7 @@ export default function TradingJournal() {
 
       <div className="grid grid-cols-2 gap-6 mb-8">
         <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V4.9.1</h2>
+          <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.0</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -910,7 +1056,7 @@ export default function TradingJournal() {
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V4.9.1</h2>
+          <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.0</h2>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1188,6 +1334,75 @@ export default function TradingJournal() {
           </div>
         </div>
 
+        <div className="mb-8 bg-gray-900 p-6 rounded-xl border border-purple-800">
+          <h2 className="text-2xl font-bold mb-2">🧠 Performance Analytics V5.0</h2>
+          <p className="text-gray-400">
+            Analyse deiner Strategie: Expectancy, R-Multiple, Streaks und Trading-Tage.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-purple-800">
+            <h2 className="font-bold">Expectancy</h2>
+            <p className={expectancyR >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
+              {expectancyR}R
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-cyan-800">
+            <h2 className="font-bold">Average R</h2>
+            <p className={averageRMultiple >= 0 ? "text-2xl mt-2 text-cyan-400" : "text-2xl mt-2 text-red-400"}>
+              {averageRMultiple}R
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
+            <h2 className="font-bold">Average Trade</h2>
+            <p className={averageTrade >= 0 ? "text-2xl mt-2 text-green-400" : "text-2xl mt-2 text-red-400"}>
+              {averageTrade} CHF
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
+            <h2 className="font-bold">Performance Score</h2>
+            <p className="text-2xl mt-2 text-yellow-400">
+              {performanceScore}/100
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Winning Streak</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {winningStreak} Trades
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Losing Streak</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {losingStreak} Trades
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
+            <h2 className="font-bold">Best Trading Day</h2>
+            <p className="text-2xl mt-2 text-green-400">
+              {bestTradingDay.value} CHF
+            </p>
+            <p className="text-sm mt-2 text-gray-400">{bestTradingDay.date}</p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-xl border border-red-800">
+            <h2 className="font-bold">Worst Trading Day</h2>
+            <p className="text-2xl mt-2 text-red-400">
+              {worstTradingDay.value} CHF
+            </p>
+            <p className="text-sm mt-2 text-gray-400">{worstTradingDay.date}</p>
+          </div>
+        </div>
+
         <div className="grid grid-cols-4 gap-6 mb-8">
           <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
             <h2 className="font-bold">Starting Balance</h2>
@@ -1419,6 +1634,22 @@ export default function TradingJournal() {
                       strokeWidth={3}
                     />
                   </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-6 rounded-xl min-h-96 mb-8">
+              <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
+
+              <div className="h-80 min-h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={buildDailyPerformance(filteredTrades)}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#22c55e" />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
