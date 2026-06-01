@@ -1,6 +1,36 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../lib/prisma";
 
+function calculateRiskValues(input: {
+  direction: string;
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  accountSize?: number;
+  riskPercent?: number;
+}) {
+  const accountSize = input.accountSize ?? 30000;
+  const riskPercent = input.riskPercent ?? 1;
+
+  const riskAmount = (accountSize * riskPercent) / 100;
+  const riskPerUnit = Math.abs(input.entry - input.stopLoss);
+  const rewardPerUnit = Math.abs(input.takeProfit - input.entry);
+
+  const positionSize =
+    riskPerUnit > 0 ? Number((riskAmount / riskPerUnit).toFixed(2)) : 0;
+
+  const riskReward =
+    riskPerUnit > 0 ? Number((rewardPerUnit / riskPerUnit).toFixed(2)) : 0;
+
+  return {
+    accountSize,
+    riskPercent,
+    riskAmount,
+    riskReward,
+    positionSize,
+  };
+}
+
 export async function GET() {
   try {
     const trades = await prisma.trade.findMany({
@@ -31,14 +61,34 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
+    const entry = Number(body.entry);
+    const stopLoss = Number(body.stopLoss);
+    const takeProfit = Number(body.takeProfit);
+    const accountSize = body.accountSize ? Number(body.accountSize) : 30000;
+    const riskPercent = body.riskPercent ? Number(body.riskPercent) : 1;
+
+    const riskValues = calculateRiskValues({
+      direction: body.direction,
+      entry,
+      stopLoss,
+      takeProfit,
+      accountSize,
+      riskPercent,
+    });
+
     const trade = await prisma.trade.create({
       data: {
         market: body.market,
         direction: body.direction,
-        entry: Number(body.entry),
-        stopLoss: Number(body.stopLoss),
-        takeProfit: Number(body.takeProfit),
+        entry,
+        stopLoss,
+        takeProfit,
         notes: body.notes ?? "",
+        accountSize: riskValues.accountSize,
+        riskPercent: riskValues.riskPercent,
+        riskAmount: riskValues.riskAmount,
+        riskReward: riskValues.riskReward,
+        positionSize: riskValues.positionSize,
       },
     });
 
