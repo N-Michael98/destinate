@@ -80,6 +80,7 @@ export async function POST(request: Request) {
       data: {
         market: body.market,
         direction: body.direction,
+        strategy: body.strategy ?? "Unclassified",
         entry,
         stopLoss,
         takeProfit,

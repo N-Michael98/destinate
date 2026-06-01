@@ -14,6 +14,7 @@ model Trade {
 
   market        String
   direction     String
+  strategy      String   @default("Unclassified")
 
   entry         Float
   stopLoss      Float

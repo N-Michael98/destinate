@@ -102,6 +102,9 @@ export async function PATCH(
         ...(body.direction !== undefined && {
           direction: body.direction,
         }),
+        ...(body.strategy !== undefined && {
+          strategy: body.strategy,
+        }),
         ...(body.entry !== undefined && {
           entry: nextEntry,
         }),
