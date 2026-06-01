@@ -280,8 +280,55 @@ export default function TradingJournal() {
     }
   }
 
-  function resetJournal() {
-    alert("V4.2: Reset wird später direkt über SQLite implementiert.");
+  async function deleteTrade(tradeId: number) {
+    const confirmed = window.confirm("Diesen Trade wirklich löschen?");
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/trades/${tradeId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        alert("Trade konnte nicht gelöscht werden.");
+        return;
+      }
+
+      await loadTrades();
+    } catch (error) {
+      console.error(error);
+      alert("Fehler beim Löschen des Trades.");
+    }
+  }
+
+  async function resetJournal() {
+    const confirmed = window.confirm(
+      "Wirklich ALLE Trades aus der SQLite-Datenbank löschen?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch("/api/trades", {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        alert("Datenbank konnte nicht zurückgesetzt werden.");
+        return;
+      }
+
+      setSelectedMarket("All");
+      await loadTrades();
+      alert("Alle Trades wurden gelöscht.");
+    } catch (error) {
+      console.error(error);
+      alert("Fehler beim Zurücksetzen der Datenbank.");
+    }
   }
 
   async function exportYearlyReportPDF() {
@@ -368,7 +415,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V4.2: Trading Journal speichert neue Trades und schließt Trades direkt in SQLite.
+            V4.3: Trades speichern, schließen, löschen und Datenbank zurücksetzen.
           </p>
         </div>
 
@@ -457,7 +504,7 @@ export default function TradingJournal() {
           onClick={resetJournal}
           className="bg-red-700 hover:bg-red-800 px-4 py-3 rounded-xl"
         >
-          Journal zurücksetzen
+          Datenbank zurücksetzen
         </button>
 
         <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
@@ -626,7 +673,7 @@ export default function TradingJournal() {
         <div className="bg-gray-900 p-6 rounded-xl">
           <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
 
-          <div className="grid grid-cols-9 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
+          <div className="grid grid-cols-10 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
             <div>Date</div>
             <div>Market</div>
             <div>Direction</div>
@@ -636,12 +683,13 @@ export default function TradingJournal() {
             <div>Status</div>
             <div>P/L</div>
             <div>Actions</div>
+            <div>Delete</div>
           </div>
 
           {filteredTrades.map((trade) => (
             <div
               key={trade.id}
-              className="grid grid-cols-9 gap-4 p-4 border-t border-gray-800 items-center"
+              className="grid grid-cols-10 gap-4 p-4 border-t border-gray-800 items-center"
             >
               <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
               <div>{trade.market}</div>
@@ -688,6 +736,13 @@ export default function TradingJournal() {
                   </button>
                 )}
               </div>
+
+              <button
+                onClick={() => deleteTrade(trade.id)}
+                className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm"
+              >
+                Löschen
+              </button>
             </div>
           ))}
         </div>
