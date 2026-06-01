@@ -325,6 +325,184 @@ function getMaxDrawdownStats(data: Trade[]) {
 
 
 
+
+// ===== AI Trade Review V5.6 =====
+
+type TradeReview = {
+  tradeId: number;
+  market: string;
+  direction: string;
+  grade: "A+" | "A" | "B" | "C" | "D";
+  score: number;
+  scoreValue: number;
+  verdict: string;
+  profitLoss: number;
+  riskReward: number;
+  riskAmount: number;
+  checks: {
+    label: string;
+    status: "PASS" | "WARNING" | "FAIL";
+  }[];
+};
+
+function getTradeReview(trade: Trade): TradeReview {
+  let score = 0;
+
+  const isClosed = trade.status === "CLOSED";
+  const isWin = trade.profitLoss > 0;
+  const isLoss = trade.profitLoss < 0;
+  const hasGoodRR = trade.riskReward >= 2;
+  const hasExcellentRR = trade.riskReward >= 3;
+  const hasRisk = trade.riskAmount > 0;
+  const lossWithinRisk =
+    !isLoss || (hasRisk && Math.abs(trade.profitLoss) <= trade.riskAmount * 1.2);
+
+  if (isClosed) score += 10;
+  if (hasRisk) score += 15;
+  if (trade.riskReward >= 1.5) score += 15;
+  if (hasGoodRR) score += 15;
+  if (hasExcellentRR) score += 10;
+  if (isWin) score += 25;
+  if (lossWithinRisk) score += 10;
+
+  if (isLoss && !lossWithinRisk) score -= 20;
+  if (trade.riskReward < 1) score -= 15;
+
+  const finalScore = Math.max(0, Math.min(score, 100));
+
+  let grade: TradeReview["grade"] = "D";
+  let verdict = "Needs Improvement";
+
+  if (finalScore >= 90) {
+    grade = "A+";
+    verdict = "Excellent Trade";
+  } else if (finalScore >= 75) {
+    grade = "A";
+    verdict = "High Quality Trade";
+  } else if (finalScore >= 60) {
+    grade = "B";
+    verdict = "Good Trade";
+  } else if (finalScore >= 40) {
+    grade = "C";
+    verdict = "Risk Controlled but Weak";
+  }
+
+  const scoreValue =
+    grade === "A+" ? 5 : grade === "A" ? 4 : grade === "B" ? 3 : grade === "C" ? 2 : 1;
+
+  return {
+    tradeId: trade.id,
+    market: trade.market,
+    direction: trade.direction,
+    grade,
+    score: finalScore,
+    scoreValue,
+    verdict,
+    profitLoss: trade.profitLoss,
+    riskReward: trade.riskReward,
+    riskAmount: trade.riskAmount,
+    checks: [
+      {
+        label: "Trade abgeschlossen",
+        status: isClosed ? "PASS" : "WARNING",
+      },
+      {
+        label: "Risk definiert",
+        status: hasRisk ? "PASS" : "FAIL",
+      },
+      {
+        label: "R/R mindestens 1.5",
+        status: trade.riskReward >= 1.5 ? "PASS" : "WARNING",
+      },
+      {
+        label: "R/R mindestens 2.0",
+        status: hasGoodRR ? "PASS" : "WARNING",
+      },
+      {
+        label: "Profitabel",
+        status: isWin ? "PASS" : isLoss ? "FAIL" : "WARNING",
+      },
+      {
+        label: "Loss innerhalb Risiko",
+        status: lossWithinRisk ? "PASS" : "FAIL",
+      },
+    ],
+  };
+}
+
+function buildTradeReviews(data: Trade[]) {
+  return [...data]
+    .filter((trade) => trade.status === "CLOSED")
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+    .map((trade) => getTradeReview(trade));
+}
+
+function getAITradeReviewStats(data: Trade[]) {
+  const reviews = buildTradeReviews(data);
+
+  if (reviews.length === 0) {
+    return {
+      reviews,
+      averageScore: 0,
+      averageGrade: "-",
+      bestReview: null as TradeReview | null,
+      worstReview: null as TradeReview | null,
+      distribution: [
+        { grade: "A+", count: 0 },
+        { grade: "A", count: 0 },
+        { grade: "B", count: 0 },
+        { grade: "C", count: 0 },
+        { grade: "D", count: 0 },
+      ],
+      scoreHistory: [],
+    };
+  }
+
+  const averageScore = Number(
+    (reviews.reduce((sum, review) => sum + review.score, 0) / reviews.length).toFixed(2)
+  );
+
+  const averageGradeValue =
+    reviews.reduce((sum, review) => sum + review.scoreValue, 0) / reviews.length;
+
+  const averageGrade =
+    averageGradeValue >= 4.5
+      ? "A+"
+      : averageGradeValue >= 3.5
+        ? "A"
+        : averageGradeValue >= 2.5
+          ? "B"
+          : averageGradeValue >= 1.5
+            ? "C"
+            : "D";
+
+  const distribution = ["A+", "A", "B", "C", "D"].map((grade) => ({
+    grade,
+    count: reviews.filter((review) => review.grade === grade).length,
+  }));
+
+  const scoreHistory = [...reviews]
+    .reverse()
+    .map((review) => ({
+      trade: `#${review.tradeId}`,
+      score: review.score,
+      scoreValue: review.scoreValue,
+    }));
+
+  return {
+    reviews,
+    averageScore,
+    averageGrade,
+    bestReview: [...reviews].sort((a, b) => b.score - a.score)[0],
+    worstReview: [...reviews].sort((a, b) => a.score - b.score)[0],
+    distribution,
+    scoreHistory,
+  };
+}
+
 // ===== Journal Intelligence V5.5 =====
 
 function getDirectionStats(data: Trade[]) {
@@ -1465,6 +1643,8 @@ export default function TradingJournal() {
     winrate,
   });
 
+  const aiTradeReviewStats = getAITradeReviewStats(filteredTrades);
+
   function scrollToSection(
     section:
       | "overview"
@@ -1501,7 +1681,7 @@ export default function TradingJournal() {
         <div>
           <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
-            V5.5: Trading Journal mit Journal Intelligence, Full Professional Analytics, Reports, Charts und Trade History.
+            V5.6: Trading Journal mit AI Trade Review, Journal Intelligence, Professional Analytics und Bot-Vorbereitung.
           </p>
         </div>
 
@@ -1521,6 +1701,7 @@ export default function TradingJournal() {
             { id: "reports", label: "📄 Reports & Time" },
             { id: "performance", label: "🧠 Performance Analytics" },
             { id: "intelligence", label: "🤖 Journal Intelligence" },
+            { id: "tradeReview", label: "⭐ AI Trade Review" },
             { id: "charts", label: "📈 Charts Center" },
             { id: "history", label: "🧾 Trade History" },
           ].map((item) => (
@@ -2152,6 +2333,183 @@ export default function TradingJournal() {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "tradeReview" && (
+          <div className="space-y-8">
+            <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-yellow-800">
+              <h2 className="text-3xl font-bold mb-2">⭐ AI Trade Review V5.6</h2>
+              <p className="text-gray-400">
+                Automatische Trade-Bewertung als Grundlage für den späteren AI Trading Bot.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-800">
+                <h2 className="font-bold mb-4">Average Trade Score</h2>
+                <div className="flex items-center justify-center">
+                  <div className="w-36 h-36 rounded-full border-[14px] border-yellow-500 flex items-center justify-center bg-black">
+                    <div className="text-center">
+                      <p className="text-3xl font-bold text-yellow-400">
+                        {aiTradeReviewStats.averageScore}
+                      </p>
+                      <p className="text-xs text-gray-400">/100</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
+                <h2 className="font-bold">Average Grade</h2>
+                <p className="text-5xl mt-8 text-cyan-400">{aiTradeReviewStats.averageGrade}</p>
+                <p className="text-gray-400 mt-3">Trade Quality</p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
+                <h2 className="font-bold">Best Rated Trade</h2>
+                <p className="text-4xl mt-8 text-green-400">
+                  {aiTradeReviewStats.bestReview?.grade ?? "-"}
+                </p>
+                <p className="text-gray-400 mt-3">
+                  {aiTradeReviewStats.bestReview
+                    ? `#${aiTradeReviewStats.bestReview.tradeId} · ${aiTradeReviewStats.bestReview.market}`
+                    : "Keine Trades"}
+                </p>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl border border-red-800">
+                <h2 className="font-bold">Worst Rated Trade</h2>
+                <p className="text-4xl mt-8 text-red-400">
+                  {aiTradeReviewStats.worstReview?.grade ?? "-"}
+                </p>
+                <p className="text-gray-400 mt-3">
+                  {aiTradeReviewStats.worstReview
+                    ? `#${aiTradeReviewStats.worstReview.tradeId} · ${aiTradeReviewStats.worstReview.market}`
+                    : "Keine Trades"}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-yellow-900">
+                <h2 className="text-xl font-bold mb-4">📊 Trade Quality Distribution</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={aiTradeReviewStats.distribution}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="grade" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="count" fill="#facc15" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
+                <h2 className="text-xl font-bold mb-4">📈 Trade Score Development</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={aiTradeReviewStats.scoreHistory}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="trade" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="score" stroke="#22d3ee" strokeWidth={4} dot={{ r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6">
+              {aiTradeReviewStats.reviews.map((review) => (
+                <div
+                  key={review.tradeId}
+                  className="bg-gray-900 p-6 rounded-2xl border border-gray-800"
+                >
+                  <div className="flex justify-between items-start gap-6">
+                    <div>
+                      <h2 className="text-2xl font-bold">
+                        Trade #{review.tradeId} · {review.market}
+                      </h2>
+                      <p className="text-gray-400 mt-2">
+                        {review.direction} · P/L {review.profitLoss} CHF · R/R {review.riskReward}
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <p
+                        className={
+                          review.grade === "A+" || review.grade === "A"
+                            ? "text-5xl font-bold text-green-400"
+                            : review.grade === "B"
+                              ? "text-5xl font-bold text-yellow-400"
+                              : "text-5xl font-bold text-red-400"
+                        }
+                      >
+                        {review.grade}
+                      </p>
+                      <p className="text-gray-400 mt-2">{review.score}/100</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 mt-6">
+                    <div className="bg-black border border-gray-800 rounded-xl p-4">
+                      <h3 className="font-bold text-cyan-400">AI Verdict</h3>
+                      <p className="text-gray-300 mt-2">{review.verdict}</p>
+                    </div>
+
+                    <div className="bg-black border border-gray-800 rounded-xl p-4">
+                      <h3 className="font-bold text-yellow-400">Risk Check</h3>
+                      <p className="text-gray-300 mt-2">
+                        Risk Amount: {review.riskAmount} CHF
+                      </p>
+                    </div>
+
+                    <div className="bg-black border border-gray-800 rounded-xl p-4">
+                      <h3 className="font-bold text-purple-400">Bot Relevance</h3>
+                      <p className="text-gray-300 mt-2">
+                        Später kann dieser Score mit GPT/Claude als Entscheidungsfilter genutzt werden.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 mt-6">
+                    {review.checks.map((check) => (
+                      <div
+                        key={check.label}
+                        className={
+                          check.status === "PASS"
+                            ? "bg-green-950 border border-green-800 rounded-xl p-3"
+                            : check.status === "WARNING"
+                              ? "bg-yellow-950 border border-yellow-800 rounded-xl p-3"
+                              : "bg-red-950 border border-red-800 rounded-xl p-3"
+                        }
+                      >
+                        <p className="font-bold">
+                          {check.status === "PASS"
+                            ? "✅ "
+                            : check.status === "WARNING"
+                              ? "⚠️ "
+                              : "❌ "}
+                          {check.label}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {aiTradeReviewStats.reviews.length === 0 && (
+                <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
+                  <p className="text-gray-400">
+                    Noch keine geschlossenen Trades für AI Trade Review vorhanden.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
