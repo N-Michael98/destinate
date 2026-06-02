@@ -413,6 +413,15 @@ export default function Home() {
   const evolutionMode = "Ranking Only";
   const autonomousAgentStatus = "Locked";
 
+  const demoAgentScore = 61;
+  const demoAgentStatus = "Prepared";
+  const agentMode = "Planning Only";
+  const agentDecisionStatus = "Mock Decision";
+  const agentConsensusStatus = "Approved";
+  const agentTradePlans = 3;
+  const agentLiveExecutionStatus = "Locked";
+  const agentNextPhase = "V8.1 Demo Execution";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -566,6 +575,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#forward-testing-engine">🚀 Forward Testing</a>
               <a className="block hover:text-blue-400 py-1" href="#ai-learning-memory">🧠 AI Memory</a>
               <a className="block hover:text-blue-400 py-1" href="#strategy-evolution-engine">🧬 Strategy Evolution</a>
+              <a className="block hover:text-blue-400 py-1" href="#demo-trading-agent">🤖 Demo Agent</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -589,7 +599,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.9 Strategy Evolution Engine
+              AI Trading Mission Control · V8.0 Demo Trading Agent
             </p>
           </div>
 
@@ -1359,7 +1369,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.9 Strategy Evolution Engine</p>
+                  <p className="text-orange-400 font-bold">V8.0 Demo Trading Agent</p>
                 </div>
               </div>
             </div>
@@ -2705,6 +2715,186 @@ export default function Home() {
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
                   <h5 className="font-bold">V9.0</h5>
                   <p className="text-gray-300 mt-2">Controlled Live</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="demo-trading-agent" className="bg-gray-900 p-6 rounded-2xl border border-indigo-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🤖 Demo Trading Agent V8.0</h3>
+                <p className="text-gray-400 mt-2">
+                  Zentraler AI-Agent-Kern: verbindet GPT Analyst, Claude Risk, Consensus Engine, Forward Testing, AI Memory und Strategy Evolution zu einem Demo-Trading-Planer.
+                </p>
+              </div>
+
+              <div className="bg-black border border-indigo-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Agent Status</p>
+                <p className="text-indigo-400 font-bold">{demoAgentStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-indigo-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Agent Score</h4>
+                <p className="text-5xl mt-4 text-indigo-400">{demoAgentScore}%</p>
+                <p className="text-gray-400 mt-2">AI brain architecture</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Mode</h4>
+                <p className="text-2xl mt-4 text-blue-400">{agentMode}</p>
+                <p className="text-gray-400 mt-2">No execution yet</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Decision</h4>
+                <p className="text-2xl mt-4 text-purple-400">{agentDecisionStatus}</p>
+                <p className="text-gray-400 mt-2">AI plan later</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Consensus</h4>
+                <p className="text-2xl mt-4 text-green-400">{agentConsensusStatus}</p>
+                <p className="text-gray-400 mt-2">GPT + Claude</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Live Execution</h4>
+                <p className="text-2xl mt-4 text-red-400">{agentLiveExecutionStatus}</p>
+                <p className="text-gray-400 mt-2">Safety first</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 Agent Brain</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Market: NAS100
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Strategy: Momentum Breakout
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Direction: LONG
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Confidence: 83%
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    AI decision is mock/planning only in V8.0.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">⚡ Agent Consensus</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    GPT Vote: LONG
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Claude Risk Vote: LONG
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Agreement: 100%
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Result: APPROVED
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Execution still locked until V8.1+.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Agent Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Planning only in V8.0
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No broker order placement
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Demo execution starts later
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live trading remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Next Phase</p>
+                  <p className="text-indigo-400 font-bold">{agentNextPhase}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-indigo-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">📋 Demo Trade Plans Preview</h4>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">PLAN-001 · NAS100</h5>
+                  <p className="text-gray-300 mt-2">Momentum Breakout · LONG · 83%</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">PLAN-002 · XAUUSD</h5>
+                  <p className="text-gray-300 mt-2">Risk-Off Trend · LONG · 78%</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">PLAN-003 · USOIL</h5>
+                  <p className="text-gray-300 mt-2">Inventory Reaction · SHORT · 71%</p>
+                </div>
+              </div>
+
+              <div className="mt-5 border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                <p className="text-gray-400 text-sm">Planned Agent Trades</p>
+                <p className="text-indigo-400 text-3xl font-bold">{agentTradePlans}</p>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Full AI Agent Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.0 verbindet alle bisherigen Module zu einem zentralen Agenten. Der Agent kann Märkte, Strategien, Memory, Intelligence, Consensus und Risk-Status lesen,
+                aber in dieser Version noch keine Orders ausführen. Demo-Ausführung kommt erst mit V8.1.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">GPT</h5>
+                  <p className="text-gray-300 mt-2">Trade Analyst</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Claude</h5>
+                  <p className="text-gray-300 mt-2">Risk Analyst</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">Memory</h5>
+                  <p className="text-gray-300 mt-2">Learning Data</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">Evolution</h5>
+                  <p className="text-gray-300 mt-2">Strategy Ranking</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">Agent</h5>
+                  <p className="text-gray-300 mt-2">Demo Planner</p>
                 </div>
               </div>
             </div>
