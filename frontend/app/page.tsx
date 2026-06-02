@@ -371,6 +371,15 @@ export default function Home() {
   const icMarketsDemoServerStatus = "Not configured";
   const icMarketsDemoBridgeStatus = "Not connected";
 
+  const marketDataBridgeScore = 34;
+  const marketDataBridgeStatus = "Prepared";
+  const marketDataProviderStatus = "Simulation";
+  const priceFeedStatus = "Mock Feed";
+  const marketCacheStatus = "Ready";
+  const dataFreshnessStatus = "Local Snapshot";
+  const trackedMarketCount = 8;
+  const aiLearningBridgeStatus = "Forward Learning Ready";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -519,6 +528,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#ic-markets-connector">🌐 IC Markets Connector</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-api-layer">🧱 Broker API Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#demo-auth-center">🔐 Demo Auth Center</a>
+              <a className="block hover:text-blue-400 py-1" href="#market-data-bridge">📈 Market Data Bridge</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -542,7 +552,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.4 Demo Authentication Center
+              AI Trading Mission Control · V7.5 Market Data Bridge
             </p>
           </div>
 
@@ -1312,7 +1322,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.4 Demo Authentication Center</p>
+                  <p className="text-orange-400 font-bold">V7.5 Market Data Bridge</p>
                 </div>
               </div>
             </div>
@@ -1853,6 +1863,163 @@ export default function Home() {
                 <div className="border border-purple-900 bg-purple-950 rounded-lg p-4"><h5 className="font-bold">V7.6</h5><p className="text-gray-300 mt-2">Account Sync</p></div>
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4"><h5 className="font-bold">V7.7</h5><p className="text-gray-300 mt-2">Position Sync</p></div>
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4"><h5 className="font-bold">V8.0</h5><p className="text-gray-300 mt-2">Live Execution</p></div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="market-data-bridge" className="bg-gray-900 p-6 rounded-2xl border border-green-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">📈 Market Data Bridge V7.5</h3>
+                <p className="text-gray-400 mt-2">
+                  Offene Market-Data-Architektur für Broker-Preise, TradingView, Yahoo Finance, News, technische Analyse, Fundamentals und späteren AI Forward-Learning-Loop.
+                </p>
+              </div>
+
+              <div className="bg-black border border-green-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Market Data Status</p>
+                <p className="text-green-400 font-bold">{marketDataBridgeStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Bridge Score</h4>
+                <p className="text-5xl mt-4 text-green-400">{marketDataBridgeScore}%</p>
+                <p className="text-gray-400 mt-2">Architecture ready</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Provider</h4>
+                <p className="text-2xl mt-4 text-blue-400">{marketDataProviderStatus}</p>
+                <p className="text-gray-400 mt-2">Broker + external later</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Price Feed</h4>
+                <p className="text-2xl mt-4 text-purple-400">{priceFeedStatus}</p>
+                <p className="text-gray-400 mt-2">No live feed yet</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Tracked Markets</h4>
+                <p className="text-5xl mt-4 text-yellow-400">{trackedMarketCount}</p>
+                <p className="text-gray-400 mt-2">Watchlist prepared</p>
+              </div>
+
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">AI Learning</h4>
+                <p className="text-2xl mt-4 text-cyan-400">{aiLearningBridgeStatus}</p>
+                <p className="text-gray-400 mt-2">Forward testing later</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📡 Data Sources Roadmap</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">🔵 Capital.com Price + News later</div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">🌐 IC Markets Price Bridge later</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">📊 TradingView Technical Signals later</div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">🟡 Yahoo Finance Fundamentals later</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">📰 News + Macro Calendar later</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 AI Resource Pipeline</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Market Prices → GPT Trade Analyst</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">News Events → Claude Risk Analyst</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Technical Signals → Consensus Engine</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Fundamentals → Trade Quality Score</div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">Forward Results → AI Learning Memory</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧪 Feed Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Mock feed first</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ No live orders from feed</div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Provider API keys later via .env.local</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live execution remains blocked</div>
+                </div>
+
+                <div className="mt-5 border border-cyan-900 bg-cyan-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Data Freshness</p>
+                  <p className="text-cyan-400 font-bold">{dataFreshnessStatus}</p>
+                </div>
+
+                <div className="mt-3 border border-green-900 bg-green-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Cache Status</p>
+                  <p className="text-green-400 font-bold">{marketCacheStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-green-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">👁 Market Watchlist Snapshot</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold text-blue-400">NAS100</h5>
+                  <p className="text-gray-300 mt-2">Index · AI favourite</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold text-yellow-400">XAUUSD</h5>
+                  <p className="text-gray-300 mt-2">Gold · Risk sentiment</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold text-orange-400">USOIL</h5>
+                  <p className="text-gray-300 mt-2">Crude Oil · Macro driver</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold text-green-400">EURUSD</h5>
+                  <p className="text-gray-300 mt-2">Forex · ECB/Fed</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Forward Learning Connection</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V7.5 bereitet die Datenbasis vor, damit spätere AI-Agenten nicht nur Backtests lesen, sondern kommende Demo-Zeiträume planen können.
+                Preise, News, technische Signale und Fundamentals werden später mit Demo-Trades, Ergebnissen und Strategie-Performance verbunden.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.5</h5>
+                  <p className="text-gray-300 mt-2">Market Data</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.6</h5>
+                  <p className="text-gray-300 mt-2">News Resources</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.7</h5>
+                  <p className="text-gray-300 mt-2">Forward Testing</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.8</h5>
+                  <p className="text-gray-300 mt-2">AI Memory</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
               </div>
             </div>
           </div>
