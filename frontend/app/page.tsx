@@ -524,6 +524,15 @@ export default function Home() {
   const openAiSafetyStatus = "Server Only";
   const openAiNextPhase = "V9.2 Claude Integration";
 
+  const claudeIntegrationScore = 108;
+  const claudeIntegrationStatus = "Prepared";
+  const claudeClientStatus = "SDK Ready Later";
+  const claudeRiskReviewStatus = "Prepared";
+  const claudePortfolioReviewStatus = "Prepared";
+  const claudeDrawdownReviewStatus = "Prepared";
+  const claudeSafetyStatus = "Server Only";
+  const claudeNextPhase = "V9.3 Real Multi-AI Consensus";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -689,6 +698,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#portfolio-intelligence">📊 Portfolio Intelligence</a>
               <a className="block hover:text-blue-400 py-1" href="#autonomous-portfolio-brain">🧠 Portfolio Brain</a>
               <a className="block hover:text-blue-400 py-1" href="#openai-integration-layer">🤖 OpenAI Layer</a>
+              <a className="block hover:text-blue-400 py-1" href="#claude-integration-layer">🛡 Claude Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -712,7 +722,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V9.1 OpenAI Integration Layer
+              AI Trading Mission Control · V9.2 Claude Integration Layer
             </p>
           </div>
 
@@ -1482,7 +1492,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V9.1 OpenAI Integration Layer</p>
+                  <p className="text-orange-400 font-bold">V9.2 Claude Integration Layer</p>
                 </div>
               </div>
             </div>
@@ -5075,6 +5085,191 @@ export default function Home() {
                 <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
                   <h5 className="font-bold">V9.5</h5>
                   <p className="text-gray-300 mt-2">Live Demo Learning</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="claude-integration-layer" className="bg-gray-900 p-6 rounded-2xl border border-red-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🛡 Claude Integration Layer V9.2</h3>
+                <p className="text-gray-400 mt-2">
+                  Serverseitige Claude-Schicht: Claude wird später als Risk Analyst, Portfolio Risk Reviewer und Drawdown Reviewer in das Portfolio Brain eingebunden.
+                </p>
+              </div>
+
+              <div className="bg-black border border-red-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Claude Status</p>
+                <p className="text-red-400 font-bold">{claudeIntegrationStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Claude Score</h4>
+                <p className="text-5xl mt-4 text-red-400">{claudeIntegrationScore}%</p>
+                <p className="text-gray-400 mt-2">Risk provider architecture</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Client</h4>
+                <p className="text-2xl mt-4 text-blue-400">{claudeClientStatus}</p>
+                <p className="text-gray-400 mt-2">Anthropic SDK later</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Risk Review</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{claudeRiskReviewStatus}</p>
+                <p className="text-gray-400 mt-2">Trade risk</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Portfolio Review</h4>
+                <p className="text-2xl mt-4 text-purple-400">{claudePortfolioReviewStatus}</p>
+                <p className="text-gray-400 mt-2">Exposure risk</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Safety</h4>
+                <p className="text-2xl mt-4 text-red-400">{claudeSafetyStatus}</p>
+                <p className="text-gray-400 mt-2">No browser keys</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Claude Risk Analyst</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Input: GPT Opportunity Signal
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Input: News + Macro Risk
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    Input: Volatility + Drawdown
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Output: ACCEPT / REVIEW / BLOCK
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Status: {claudeRiskReviewStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📊 Claude Portfolio Review</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Checks portfolio exposure
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Detects correlation concentration
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Reviews max drawdown risk
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Validates position sizing later
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Status: {claudePortfolioReviewStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔒 Claude Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ API key only via .env.local
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Server-side calls only
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Claude can block high-risk demo plans
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live broker execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Next Phase</p>
+                  <p className="text-red-400 font-bold">{claudeNextPhase}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-red-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧯 Drawdown & Risk Review Preview</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Drawdown Review</h5>
+                  <p className="text-gray-300 mt-2">Max DD, loss streak, recovery risk</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">Macro Review</h5>
+                  <p className="text-gray-300 mt-2">CPI, FOMC, NFP, rate risk</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">Portfolio Review</h5>
+                  <p className="text-gray-300 mt-2">Exposure + correlation concentration</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">Sizing Review</h5>
+                  <p className="text-gray-300 mt-2">Risk per trade validation later</p>
+                </div>
+              </div>
+
+              <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
+                <p className="text-gray-400 text-sm">Drawdown Review Status</p>
+                <p className="text-red-400 font-bold">{claudeDrawdownReviewStatus}</p>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Claude Provider Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V9.2 bereitet Claude als zweiten echten AI-Provider vor. GPT sucht Chancen, Claude kontrolliert Risiko,
+                der AI Agent prüft Ausführung und der Consensus Core entscheidet gemeinsam.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">GPT</h5>
+                  <p className="text-gray-300 mt-2">Opportunity</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Claude</h5>
+                  <p className="text-gray-300 mt-2">Risk</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">Agent</h5>
+                  <p className="text-gray-300 mt-2">Execution</p>
+                </div>
+
+                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <h5 className="font-bold">Consensus</h5>
+                  <p className="text-gray-300 mt-2">Final gate</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">Demo</h5>
+                  <p className="text-gray-300 mt-2">Paper only</p>
                 </div>
               </div>
             </div>
