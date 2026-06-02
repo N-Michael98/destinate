@@ -338,6 +338,13 @@ export default function Home() {
   const capitalComAccountMode = "Demo later";
   const capitalComTradingPermission = "Locked";
 
+  const icMarketsConnectorScore = 10;
+  const icMarketsConnectorStatus = "Disconnected";
+  const icMarketsApiStatus = "Not configured";
+  const icMarketsAccountMode = "Demo later";
+  const icMarketsTradingPermission = "Locked";
+  const icMarketsPlatform = "MT5 / cTrader later";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -483,6 +490,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#execution-overview">⚡ Execution Center</a>
               <a className="block hover:text-blue-400 py-1" href="#live-trading-prep">🚀 Live Trading Prep</a>
               <a className="block hover:text-blue-400 py-1" href="#capital-com-connector">🔌 Capital.com Connector</a>
+              <a className="block hover:text-blue-400 py-1" href="#ic-markets-connector">🌐 IC Markets Connector</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -506,7 +514,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.1 Capital.com Connector
+              AI Trading Mission Control · V7.2 IC Markets Connector
             </p>
           </div>
 
@@ -1276,7 +1284,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.1 Capital.com Connector</p>
+                  <p className="text-orange-400 font-bold">V7.2 IC Markets Connector</p>
                 </div>
               </div>
             </div>
@@ -1451,6 +1459,144 @@ export default function Home() {
             </div>
           </div>
 
+          <div id="ic-markets-connector" className="bg-gray-900 p-6 rounded-2xl border border-purple-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🌐 IC Markets Connector V7.2</h3>
+                <p className="text-gray-400 mt-2">
+                  Sichere Broker-Connector-Vorbereitung für IC Markets. Aktuell ohne echte API-Verbindung, ohne Login-Daten und ohne Live Orders.
+                </p>
+              </div>
+
+              <div className="bg-black border border-purple-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Connector Status</p>
+                <p className="text-red-400 font-bold">{icMarketsConnectorStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Connector Score</h4>
+                <p className="text-5xl mt-4 text-purple-400">{icMarketsConnectorScore}%</p>
+                <p className="text-gray-400 mt-2">Preparation only</p>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="font-bold text-lg">API Status</h4>
+                <p className="text-2xl mt-4 text-gray-500">{icMarketsApiStatus}</p>
+                <p className="text-gray-400 mt-2">No credentials saved</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Platform</h4>
+                <p className="text-2xl mt-4 text-blue-400">{icMarketsPlatform}</p>
+                <p className="text-gray-400 mt-2">Bridge later</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Account Mode</h4>
+                <p className="text-2xl mt-4 text-purple-400">{icMarketsAccountMode}</p>
+                <p className="text-gray-400 mt-2">Demo first</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Trading</h4>
+                <p className="text-2xl mt-4 text-red-400">{icMarketsTradingPermission}</p>
+                <p className="text-gray-400 mt-2">Live orders blocked</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔐 IC Markets Setup</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Account ID: <span className="text-gray-500">Not stored</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Server: <span className="text-gray-500">Not configured</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Platform Bridge: <span className="text-gray-500">Not connected</span>
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Credentials werden später nur über Environment Variables gespeichert.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧪 Connection Test Plan</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ UI Connector vorbereitet
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    🔵 Demo Account zuerst
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    🌐 MT5 / cTrader Bridge später
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    🔒 Order Placement gesperrt
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Keine Login-Daten im Code
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Kein echtes Order Placement
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Erst Demo-Verbindung testen
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live Trading bleibt locked
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 IC Markets Connector Roadmap</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.2</h5>
+                  <p className="text-gray-300 mt-2">Connector UI</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.3</h5>
+                  <p className="text-gray-300 mt-2">Broker API Layer</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.4</h5>
+                  <p className="text-gray-300 mt-2">Demo Auth Test</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.5</h5>
+                  <p className="text-gray-300 mt-2">Market Data Bridge</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Live Execution</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div id="execution-overview" className="grid grid-cols-3 gap-6 mb-8">
             <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900">
               <h3 className="text-2xl font-bold mb-3">🧠 Execution Core</h3>
@@ -1467,7 +1613,7 @@ export default function Home() {
             <div className="bg-gray-900 p-6 rounded-2xl border border-orange-900">
               <h3 className="text-2xl font-bold mb-3">🔌 Broker Hub</h3>
               <p className="text-orange-400 text-2xl font-bold">Disconnected</p>
-              <p className="text-gray-400 mt-3">Capital.com and IC Markets later.</p>
+              <p className="text-gray-400 mt-3">Capital.com prepared · IC Markets V7.2 prepared.</p>
             </div>
           </div>
 
