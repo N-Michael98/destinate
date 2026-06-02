@@ -488,6 +488,15 @@ export default function Home() {
   const finalDecisionStatus = "Consensus Required";
   const consensusSafetyMode = "Block on conflict";
 
+  const marketRegimeScore = 98;
+  const marketRegimeStatus = "Prepared";
+  const trendRegimeStatus = "Detected";
+  const volatilityRegimeStatus = "Simulation";
+  const riskRegimeStatus = "Prepared";
+  const newsDrivenRegimeStatus = "Watched";
+  const preferredRegimeStrategy = "Momentum Breakout";
+  const regimeSafetyMode = "Strategy filter only";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -649,6 +658,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#multi-ai-learning-reports">📑 Learning Reports</a>
               <a className="block hover:text-blue-400 py-1" href="#autonomous-learning-scheduler">⏱️ Learning Scheduler</a>
               <a className="block hover:text-blue-400 py-1" href="#consensus-intelligence-core">🧩 Consensus Core</a>
+              <a className="block hover:text-blue-400 py-1" href="#market-regime-engine">🌍 Market Regime</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -672,7 +682,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.7 Consensus Intelligence Core
+              AI Trading Mission Control · V8.8 Market Regime Engine
             </p>
           </div>
 
@@ -1442,7 +1452,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.7 Consensus Intelligence Core</p>
+                  <p className="text-orange-400 font-bold">V8.8 Market Regime Engine</p>
                 </div>
               </div>
             </div>
@@ -4271,6 +4281,188 @@ export default function Home() {
                 <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
                   <h5 className="font-bold">Consensus</h5>
                   <p className="text-gray-300 mt-2">Final gate</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">Demo</h5>
+                  <p className="text-gray-300 mt-2">Execution later</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="market-regime-engine" className="bg-gray-900 p-6 rounded-2xl border border-lime-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🌍 Market Regime Engine V8.8</h3>
+                <p className="text-gray-400 mt-2">
+                  Marktregime-Erkennung: Das System prüft zuerst, ob der Markt trending, ranging, volatil, risk-on, risk-off oder news-driven ist, bevor Strategien bewertet werden.
+                </p>
+              </div>
+
+              <div className="bg-black border border-lime-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Regime Status</p>
+                <p className="text-lime-400 font-bold">{marketRegimeStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-lime-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Regime Score</h4>
+                <p className="text-5xl mt-4 text-lime-400">{marketRegimeScore}%</p>
+                <p className="text-gray-400 mt-2">Condition architecture</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Trend Regime</h4>
+                <p className="text-2xl mt-4 text-green-400">{trendRegimeStatus}</p>
+                <p className="text-gray-400 mt-2">Trend / range logic</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Volatility</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{volatilityRegimeStatus}</p>
+                <p className="text-gray-400 mt-2">ATR / volatility later</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Risk Regime</h4>
+                <p className="text-2xl mt-4 text-blue-400">{riskRegimeStatus}</p>
+                <p className="text-gray-400 mt-2">Risk-on / risk-off</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">News Driven</h4>
+                <p className="text-2xl mt-4 text-red-400">{newsDrivenRegimeStatus}</p>
+                <p className="text-gray-400 mt-2">Macro event filter</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📈 Regime Detection Preview</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    NAS100 → TRENDING · Momentum favored
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    EURUSD → RANGING · Mean reversion later
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    XAUUSD → RISK-OFF · Safe-haven logic
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    USOIL → NEWS-DRIVEN · Inventory/macro filter
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 Strategy Filter Logic</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Trending → Momentum Breakout
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Ranging → Mean Reversion later
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Risk-Off → Gold / defensive setups
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    News-Driven → Reduce size / wait for confirmation
+                  </div>
+                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
+                    Preferred Strategy: {preferredRegimeStrategy}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Regime Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Regime filters strategy selection
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No trade from regime alone
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ News-driven markets require extra review
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Regime Safety Mode</p>
+                  <p className="text-lime-400 font-bold">{regimeSafetyMode}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-lime-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 Market Regime Matrix</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">TRENDING</h5>
+                  <p className="text-gray-300 mt-2">Breakout / momentum bias</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">RANGING</h5>
+                  <p className="text-gray-300 mt-2">Mean reversion later</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">VOLATILE</h5>
+                  <p className="text-gray-300 mt-2">Reduce size / wider risk</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">RISK-OFF</h5>
+                  <p className="text-gray-300 mt-2">Gold / safe-haven focus</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">NEWS-DRIVEN</h5>
+                  <p className="text-gray-300 mt-2">Event filter required</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Regime to Consensus Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.8 prüft das Marktregime vor der endgültigen AI-Entscheidung. Der Agent soll später nicht nur fragen, welche Strategie gut ist,
+                sondern ob die Strategie zum aktuellen Marktumfeld passt.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <h5 className="font-bold">Regime</h5>
+                  <p className="text-gray-300 mt-2">Market condition</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">Strategy</h5>
+                  <p className="text-gray-300 mt-2">Filter best setup</p>
+                </div>
+
+                <div className="border border-violet-900 bg-violet-950 rounded-lg p-4">
+                  <h5 className="font-bold">Confidence</h5>
+                  <p className="text-gray-300 mt-2">Adjust score</p>
+                </div>
+
+                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <h5 className="font-bold">Consensus</h5>
+                  <p className="text-gray-300 mt-2">Final validation</p>
                 </div>
 
                 <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
