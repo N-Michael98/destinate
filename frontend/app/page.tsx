@@ -422,6 +422,15 @@ export default function Home() {
   const agentLiveExecutionStatus = "Locked";
   const agentNextPhase = "V8.1 Demo Execution";
 
+  const demoExecutionEngineScore = 67;
+  const demoExecutionEngineStatus = "Prepared";
+  const executionMode = "Paper Only";
+  const generatedDemoOrders = 3;
+  const openDemoExecutions = 0;
+  const executionSafetyStatus = "Locked to Demo";
+  const paperOrderBridgeStatus = "Prepared";
+  const liveOrderFirewallStatus = "Active";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -576,6 +585,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#ai-learning-memory">🧠 AI Memory</a>
               <a className="block hover:text-blue-400 py-1" href="#strategy-evolution-engine">🧬 Strategy Evolution</a>
               <a className="block hover:text-blue-400 py-1" href="#demo-trading-agent">🤖 Demo Agent</a>
+              <a className="block hover:text-blue-400 py-1" href="#demo-execution-engine">⚡ Demo Execution</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -599,7 +609,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.0 Demo Trading Agent
+              AI Trading Mission Control · V8.1 Demo Execution Engine
             </p>
           </div>
 
@@ -1369,7 +1379,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.0 Demo Trading Agent</p>
+                  <p className="text-orange-400 font-bold">V8.1 Demo Execution Engine</p>
                 </div>
               </div>
             </div>
@@ -2895,6 +2905,178 @@ export default function Home() {
                 <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
                   <h5 className="font-bold">Agent</h5>
                   <p className="text-gray-300 mt-2">Demo Planner</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="demo-execution-engine" className="bg-gray-900 p-6 rounded-2xl border border-orange-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">⚡ Demo Execution Engine V8.1</h3>
+                <p className="text-gray-400 mt-2">
+                  Sichere Demo-Ausführungsschicht: Agent-Pläne werden in Paper/Demo Orders übersetzt. Keine Live Orders, keine echten Broker-Trades.
+                </p>
+              </div>
+
+              <div className="bg-black border border-orange-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Execution Status</p>
+                <p className="text-orange-400 font-bold">{demoExecutionEngineStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-orange-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Execution Score</h4>
+                <p className="text-5xl mt-4 text-orange-400">{demoExecutionEngineScore}%</p>
+                <p className="text-gray-400 mt-2">Demo architecture</p>
+              </div>
+
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Mode</h4>
+                <p className="text-2xl mt-4 text-cyan-400">{executionMode}</p>
+                <p className="text-gray-400 mt-2">Paper engine only</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Generated Orders</h4>
+                <p className="text-5xl mt-4 text-blue-400">{generatedDemoOrders}</p>
+                <p className="text-gray-400 mt-2">Mock execution plans</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Open Executions</h4>
+                <p className="text-5xl mt-4 text-green-400">{openDemoExecutions}</p>
+                <p className="text-gray-400 mt-2">Execution later</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Live Firewall</h4>
+                <p className="text-2xl mt-4 text-red-400">{liveOrderFirewallStatus}</p>
+                <p className="text-gray-400 mt-2">Broker orders blocked</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📦 Demo Order Generator</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    NAS100 · LONG · Momentum Breakout · Confidence 83%
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    XAUUSD · LONG · Risk-Off Trend · Confidence 78%
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    USOIL · SHORT · Inventory Reaction · Confidence 71%
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Orders are generated for demo/paper mode only.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔗 Paper Order Bridge</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Agent Plan → Demo Order
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Demo Order → Paper Engine
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Paper Engine → Position Manager
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Result → AI Learning Memory
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Bridge Status: {paperOrderBridgeStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Execution Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Demo/Paper only
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No broker execution
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Real broker bridge stays disconnected
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live order placement blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Execution Safety</p>
+                  <p className="text-orange-400 font-bold">{executionSafetyStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-orange-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧾 Execution Ticket Preview</h4>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">DEMO-001 · NAS100</h5>
+                  <p className="text-gray-300 mt-2">LONG · SL 120 pts · TP 300 pts · Paper only</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">DEMO-002 · XAUUSD</h5>
+                  <p className="text-gray-300 mt-2">LONG · SL 25 pts · TP 60 pts · Paper only</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">DEMO-003 · USOIL</h5>
+                  <p className="text-gray-300 mt-2">SHORT · SL 1.2 · TP 2.8 · Paper only</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Execution Learning Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.1 verbindet den Demo Agent mit einer sicheren Paper-Execution-Schicht. Später werden Demo-Orders ausgeführt,
+                Positionen verfolgt, Ergebnisse analysiert und zurück in AI Memory sowie Strategy Evolution geschrieben.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.1</h5>
+                  <p className="text-gray-300 mt-2">Demo Execution</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.2</h5>
+                  <p className="text-gray-300 mt-2">Performance Tracker</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.3</h5>
+                  <p className="text-gray-300 mt-2">Feedback Engine</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.5</h5>
+                  <p className="text-gray-300 mt-2">Learning Reports</p>
                 </div>
               </div>
             </div>
