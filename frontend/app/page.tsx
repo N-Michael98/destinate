@@ -431,6 +431,15 @@ export default function Home() {
   const paperOrderBridgeStatus = "Prepared";
   const liveOrderFirewallStatus = "Active";
 
+  const performanceTrackerScore = 72;
+  const performanceTrackerStatus = "Prepared";
+  const trackedTradesCount = 3;
+  const performanceWinrate = 67;
+  const performanceProfitFactor = 2.15;
+  const performanceDrawdown = 3.2;
+  const bestPerformanceStrategy = "Momentum Breakout";
+  const performanceLearningStatus = "Ready";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -586,6 +595,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#strategy-evolution-engine">🧬 Strategy Evolution</a>
               <a className="block hover:text-blue-400 py-1" href="#demo-trading-agent">🤖 Demo Agent</a>
               <a className="block hover:text-blue-400 py-1" href="#demo-execution-engine">⚡ Demo Execution</a>
+              <a className="block hover:text-blue-400 py-1" href="#performance-tracker">📊 Performance Tracker</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -609,7 +619,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.1 Demo Execution Engine
+              AI Trading Mission Control · V8.2 Performance Tracker
             </p>
           </div>
 
@@ -1379,7 +1389,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.1 Demo Execution Engine</p>
+                  <p className="text-orange-400 font-bold">V8.2 Performance Tracker</p>
                 </div>
               </div>
             </div>
@@ -3075,6 +3085,183 @@ export default function Home() {
                 </div>
 
                 <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.5</h5>
+                  <p className="text-gray-300 mt-2">Learning Reports</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="performance-tracker" className="bg-gray-900 p-6 rounded-2xl border border-teal-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">📊 Performance Tracker V8.2</h3>
+                <p className="text-gray-400 mt-2">
+                  Performance-Schicht für Demo-Trades: bewertet Winrate, Profit Factor, Average Return, Drawdown und Strategie-Qualität für den AI-Lernkreislauf.
+                </p>
+              </div>
+
+              <div className="bg-black border border-teal-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Performance Status</p>
+                <p className="text-teal-400 font-bold">{performanceTrackerStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-teal-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Tracker Score</h4>
+                <p className="text-5xl mt-4 text-teal-400">{performanceTrackerScore}%</p>
+                <p className="text-gray-400 mt-2">Performance architecture</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Tracked Trades</h4>
+                <p className="text-5xl mt-4 text-blue-400">{trackedTradesCount}</p>
+                <p className="text-gray-400 mt-2">Mock results</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Winrate</h4>
+                <p className="text-5xl mt-4 text-green-400">{performanceWinrate}%</p>
+                <p className="text-gray-400 mt-2">Demo sample</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Profit Factor</h4>
+                <p className="text-5xl mt-4 text-purple-400">{performanceProfitFactor}</p>
+                <p className="text-gray-400 mt-2">Mock performance</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Drawdown</h4>
+                <p className="text-5xl mt-4 text-red-400">{performanceDrawdown}%</p>
+                <p className="text-gray-400 mt-2">Risk tracking</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📈 Trade Performance</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    NAS100 · LONG · Momentum Breakout · +4.2R · WIN
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    XAUUSD · LONG · Risk-Off Trend · +1.8R · WIN
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    USOIL · SHORT · Inventory Reaction · -1.0R · LOSS
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Results are mock values until real demo execution is connected.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🏆 Strategy Performance</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Best Strategy: {bestPerformanceStrategy}
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Momentum Breakout · +4.2R · Strong
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Risk-Off Trend · +1.8R · Developing
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    Inventory Reaction · -1.0R · Needs Review
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Learning Status: {performanceLearningStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Performance Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Tracking only in V8.2
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No live execution
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Mock performance until demo executions run
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Broker trading remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-teal-900 bg-teal-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Performance Learning</p>
+                  <p className="text-teal-400 font-bold">{performanceLearningStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-teal-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">📉 Equity Performance Preview</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">Average Return</h5>
+                  <p className="text-gray-300 mt-2">+1.67R per demo trade</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">Profit Factor</h5>
+                  <p className="text-gray-300 mt-2">2.15 mock sample</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Max Drawdown</h5>
+                  <p className="text-gray-300 mt-2">3.2% risk sample</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">Consistency</h5>
+                  <p className="text-gray-300 mt-2">2 wins / 1 loss</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Performance to Learning Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.2 bereitet die Performance-Auswertung vor. Demo-Trade-Ergebnisse werden später gemessen,
+                in AI Memory gespeichert, an Strategy Evolution übergeben und zur Verbesserung zukünftiger Agent-Pläne genutzt.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.1</h5>
+                  <p className="text-gray-300 mt-2">Demo Execution</p>
+                </div>
+
+                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.2</h5>
+                  <p className="text-gray-300 mt-2">Performance Tracker</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.3</h5>
+                  <p className="text-gray-300 mt-2">Feedback Engine</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.4</h5>
+                  <p className="text-gray-300 mt-2">Adaptive Confidence</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
                   <h5 className="font-bold">V8.5</h5>
                   <p className="text-gray-300 mt-2">Learning Reports</p>
                 </div>
