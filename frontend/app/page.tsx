@@ -440,6 +440,15 @@ export default function Home() {
   const bestPerformanceStrategy = "Momentum Breakout";
   const performanceLearningStatus = "Ready";
 
+  const feedbackEngineScore = 78;
+  const feedbackEngineStatus = "Prepared";
+  const tradeFeedbackStatus = "Ready";
+  const strategyFeedbackStatus = "Ready";
+  const confidenceFeedbackStatus = "Simulation";
+  const generatedFeedbackItems = 3;
+  const memoryUpdateStatus = "Prepared";
+  const evolutionUpdateStatus = "Prepared";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -596,6 +605,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#demo-trading-agent">🤖 Demo Agent</a>
               <a className="block hover:text-blue-400 py-1" href="#demo-execution-engine">⚡ Demo Execution</a>
               <a className="block hover:text-blue-400 py-1" href="#performance-tracker">📊 Performance Tracker</a>
+              <a className="block hover:text-blue-400 py-1" href="#feedback-engine">🧠 Feedback Engine</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -619,7 +629,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.2 Performance Tracker
+              AI Trading Mission Control · V8.3 Feedback Engine
             </p>
           </div>
 
@@ -1389,7 +1399,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.2 Performance Tracker</p>
+                  <p className="text-orange-400 font-bold">V8.3 Feedback Engine</p>
                 </div>
               </div>
             </div>
@@ -3264,6 +3274,188 @@ export default function Home() {
                 <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
                   <h5 className="font-bold">V8.5</h5>
                   <p className="text-gray-300 mt-2">Learning Reports</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="feedback-engine" className="bg-gray-900 p-6 rounded-2xl border border-pink-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🧠 Feedback Engine V8.3</h3>
+                <p className="text-gray-400 mt-2">
+                  Feedback-Schicht für den AI-Lernkreislauf: Demo-Performance wird in Trade-Feedback, Strategie-Feedback und Confidence-Anpassungen übersetzt.
+                </p>
+              </div>
+
+              <div className="bg-black border border-pink-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Feedback Status</p>
+                <p className="text-pink-400 font-bold">{feedbackEngineStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-pink-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Feedback Score</h4>
+                <p className="text-5xl mt-4 text-pink-400">{feedbackEngineScore}%</p>
+                <p className="text-gray-400 mt-2">Learning loop architecture</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Trade Feedback</h4>
+                <p className="text-2xl mt-4 text-green-400">{tradeFeedbackStatus}</p>
+                <p className="text-gray-400 mt-2">Win/Loss feedback</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Strategy Feedback</h4>
+                <p className="text-2xl mt-4 text-purple-400">{strategyFeedbackStatus}</p>
+                <p className="text-gray-400 mt-2">Ranking updates</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Confidence</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{confidenceFeedbackStatus}</p>
+                <p className="text-gray-400 mt-2">Score adjustment</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Feedback Items</h4>
+                <p className="text-5xl mt-4 text-blue-400">{generatedFeedbackItems}</p>
+                <p className="text-gray-400 mt-2">Mock sample</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">✅ Trade Feedback</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    NAS100 WIN · Momentum Breakout → Increase confidence
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    XAUUSD WIN · Risk-Off Trend → Keep strategy active
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    USOIL LOSS · Inventory Reaction → Review conditions
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Feedback uses mock performance until demo execution is connected.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧬 Strategy Feedback</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Momentum Breakout → Rank Up
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Risk-Off Trend → Stable
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    Inventory Reaction → Reduce weight
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Memory Update: {memoryUpdateStatus}
+                  </div>
+                  <div className="border border-pink-900 bg-pink-950 rounded-lg p-3">
+                    Evolution Update: {evolutionUpdateStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Feedback Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Feedback only in V8.3
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No automatic live orders
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Confidence changes are simulated
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Broker execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-pink-900 bg-pink-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Feedback Engine</p>
+                  <p className="text-pink-400 font-bold">{feedbackEngineStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-pink-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Feedback to Learning Pipeline</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
+                  <h5 className="font-bold">Performance</h5>
+                  <p className="text-gray-300 mt-2">Winrate · R-Multiple · Drawdown</p>
+                </div>
+
+                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
+                  <h5 className="font-bold">Feedback</h5>
+                  <p className="text-gray-300 mt-2">Trade + Strategy review</p>
+                </div>
+
+                <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-4">
+                  <h5 className="font-bold">Memory</h5>
+                  <p className="text-gray-300 mt-2">Store lessons</p>
+                </div>
+
+                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <h5 className="font-bold">Evolution</h5>
+                  <p className="text-gray-300 mt-2">Update ranking</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">Agent</h5>
+                  <p className="text-gray-300 mt-2">Better next plan</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Adaptive Confidence</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.3 erzeugt Feedback aus Performance-Ergebnissen. V8.4 nutzt dieses Feedback, um Confidence Scores dynamisch anzupassen,
+                Gewinner-Setups höher zu bewerten und schwache Setups kontrolliert zurückzustufen.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.2</h5>
+                  <p className="text-gray-300 mt-2">Performance</p>
+                </div>
+
+                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.3</h5>
+                  <p className="text-gray-300 mt-2">Feedback Engine</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.4</h5>
+                  <p className="text-gray-300 mt-2">Adaptive Confidence</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.5</h5>
+                  <p className="text-gray-300 mt-2">Learning Reports</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.0</h5>
+                  <p className="text-gray-300 mt-2">Controlled Live</p>
                 </div>
               </div>
             </div>
