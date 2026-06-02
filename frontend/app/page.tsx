@@ -62,6 +62,32 @@ export default function Home() {
   const openPaperOrders = paperOrders.filter((order) => order.status === "OPEN");
   const closedPaperOrders = paperOrders.filter((order) => order.status === "CLOSED");
 
+  const openPositionExposure = openPaperOrders.reduce(
+    (sum, order) => sum + Math.abs(order.entry - order.stopLoss),
+    0
+  );
+
+  const floatingProfitLoss = openPaperOrders.reduce((sum, order) => {
+    const simulatedMove =
+      order.direction === "BUY"
+        ? order.takeProfit - order.entry
+        : order.entry - order.takeProfit;
+
+    return sum + simulatedMove * 0.1;
+  }, 0);
+
+  const riskExposure = openPaperOrders.reduce((sum, order) => {
+    const riskPerUnit = Math.abs(order.entry - order.stopLoss);
+    return sum + riskPerUnit;
+  }, 0);
+
+  const positionManagerHealth =
+    openPaperOrders.length === 0
+      ? "Stable"
+      : openPaperOrders.length <= 3
+        ? "Controlled"
+        : "High Exposure";
+
   const paperProfitLoss = paperOrders.reduce(
     (sum, order) => sum + Number(order.profitLoss || 0),
     0
@@ -323,9 +349,9 @@ export default function Home() {
           <div id="paper-trading" className="bg-gray-900 p-6 rounded-xl mb-8 border border-cyan-900">
             <div className="flex justify-between items-start mb-6">
               <div>
-                <h3 className="text-2xl font-bold">📝 Paper Trading Engine V6.4</h3>
+                <h3 className="text-2xl font-bold">📝 Paper Trading Engine V6.5</h3>
                 <p className="text-gray-400 mt-2">
-                  Paper Execution Logic aktiv: Simulate Order erstellt echte Paper Orders in der Datenbank.
+                  Paper Position Manager aktiv: offene Paper Orders werden als Positionen mit Exposure, Floating P/L und Positionskontrolle angezeigt.
                 </p>
               </div>
 
@@ -349,15 +375,15 @@ export default function Home() {
               </div>
 
               <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Virtual P/L</h4>
+                <h4 className="font-bold text-lg">Closed P/L</h4>
                 <p className="text-3xl mt-4 text-blue-400">{paperProfitLoss.toLocaleString("de-CH")} CHF</p>
-                <p className="text-gray-400 mt-2">Demo performance</p>
+                <p className="text-gray-400 mt-2">Closed paper trades</p>
               </div>
 
               <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Bot Winrate</h4>
-                <p className="text-3xl mt-4 text-yellow-400">{paperWinrate}%</p>
-                <p className="text-gray-400 mt-2">Paper trades</p>
+                <h4 className="font-bold text-lg">Open Positions</h4>
+                <p className="text-3xl mt-4 text-yellow-400">{openPaperOrders.length}</p>
+                <p className="text-gray-400 mt-2">Active paper positions</p>
               </div>
             </div>
 
@@ -395,38 +421,79 @@ export default function Home() {
               </div>
 
               <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📂 Open Virtual Positions</h4>
+                <h4 className="text-xl font-bold mb-4">📂 Paper Position Manager</h4>
 
                 <div className="space-y-3">
                   {openPaperOrders.length === 0 && (
-                    <p className="text-gray-500">Keine offenen Paper Orders.</p>
+                    <p className="text-gray-500">Keine offenen Paper Positionen.</p>
                   )}
 
-                  {openPaperOrders.slice(0, 5).map((order) => (
-                    <div key={order.id} className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                      <p className="font-bold">
-                        #{order.id} {order.market} {order.direction}
-                      </p>
-                      <p className="text-gray-300 text-sm">
-                        {order.strategy} · Confidence {order.confidence}%
-                      </p>
+                  {openPaperOrders.slice(0, 5).map((order) => {
+                    const floatingPositionProfit =
+                      order.direction === "BUY"
+                        ? Number(((order.takeProfit - order.entry) * 0.1).toFixed(2))
+                        : Number(((order.entry - order.takeProfit) * 0.1).toFixed(2));
 
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => closePaperOrder(order.id, "WIN")}
-                          className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
-                        >
-                          WIN
-                        </button>
-                        <button
-                          onClick={() => closePaperOrder(order.id, "LOSS")}
-                          className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
-                        >
-                          LOSS
-                        </button>
+                    const positionRisk = Number(Math.abs(order.entry - order.stopLoss).toFixed(2));
+
+                    return (
+                      <div key={order.id} className="border border-cyan-900 bg-cyan-950 rounded-lg p-4">
+                        <div className="flex justify-between gap-4">
+                          <div>
+                            <p className="font-bold">
+                              #{order.id} {order.market} {order.direction}
+                            </p>
+                            <p className="text-gray-300 text-sm">
+                              {order.strategy} · Confidence {order.confidence}%
+                            </p>
+                          </div>
+
+                          <div className="text-right">
+                            <p className={floatingPositionProfit >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
+                              {floatingPositionProfit} CHF
+                            </p>
+                            <p className="text-gray-400 text-xs">Floating P/L</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 mt-4 text-sm">
+                          <div className="bg-black border border-gray-800 rounded-lg p-2">
+                            Entry: {order.entry}
+                          </div>
+                          <div className="bg-black border border-gray-800 rounded-lg p-2">
+                            SL: {order.stopLoss}
+                          </div>
+                          <div className="bg-black border border-gray-800 rounded-lg p-2">
+                            TP: {order.takeProfit}
+                          </div>
+                          <div className="bg-black border border-gray-800 rounded-lg p-2">
+                            Risk: {positionRisk}
+                          </div>
+                          <div className="bg-black border border-gray-800 rounded-lg p-2">
+                            Grade: {order.qualityGrade}
+                          </div>
+                          <div className="bg-black border border-gray-800 rounded-lg p-2">
+                            AI: {order.aiDecision}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-4">
+                          <button
+                            onClick={() => closePaperOrder(order.id, "WIN")}
+                            className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
+                          >
+                            Take Profit
+                          </button>
+                          <button
+                            onClick={() => closePaperOrder(order.id, "LOSS")}
+                            className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
+                          >
+                            Stop Loss
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -537,6 +604,49 @@ export default function Home() {
               </div>
 
               <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📊 Position Manager Analytics</h4>
+
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Floating P/L</span>
+                      <span>{Number(floatingProfitLoss.toFixed(2)).toLocaleString("de-CH")} CHF</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className={floatingProfitLoss >= 0 ? "h-full bg-green-400 rounded-full" : "h-full bg-red-400 rounded-full"}
+                        style={{ width: `${Math.min(Math.abs(floatingProfitLoss), 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Open Position Exposure</span>
+                      <span>{Number(openPositionExposure.toFixed(2)).toLocaleString("de-CH")}</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${Math.min(openPositionExposure, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Risk Exposure</span>
+                      <span>{Number(riskExposure.toFixed(2)).toLocaleString("de-CH")}</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(riskExposure, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Position Health: {positionManagerHealth}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
                 <h4 className="text-xl font-bold mb-4">🛡️ Paper Trading Safety Rules</h4>
 
                 <div className="grid grid-cols-1 gap-3">
@@ -555,7 +665,7 @@ export default function Home() {
                 </div>
 
                 <p className="text-gray-400 mt-5">
-                  In V6.3 werden wir daraus echte Datenstrukturen bauen: Paper Orders, Paper Positions und Paper Trade History.
+                  V6.5 verwaltet offene Paper Orders als Positionen mit Floating P/L und Exposure.
                 </p>
               </div>
             </div>
@@ -579,9 +689,9 @@ export default function Home() {
                   <p className="text-gray-300 mt-2">Paper Execution Logic active</p>
                 </div>
 
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
                   <h5 className="font-bold">V6.5</h5>
-                  <p className="text-gray-300 mt-2">Broker API Bridge</p>
+                  <p className="text-gray-300 mt-2">Paper Position Manager active</p>
                 </div>
               </div>
             </div>
