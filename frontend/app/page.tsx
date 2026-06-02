@@ -458,6 +458,17 @@ export default function Home() {
   const confidenceRiskFilterStatus = "Active";
   const adaptiveLearningStatus = "Ready";
 
+  const learningReportsScore = 88;
+  const learningReportsStatus = "Prepared";
+  const gptReviewStatus = "Ready";
+  const claudeReviewStatus = "Ready";
+  const agentReviewStatus = "Ready";
+  const consensusReviewScore = 87;
+  const dailyReportStatus = "Prepared";
+  const weeklyReportStatus = "Prepared";
+  const monthlyReportStatus = "Prepared";
+  const multiAiValidationStatus = "Active";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -616,6 +627,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#performance-tracker">📊 Performance Tracker</a>
               <a className="block hover:text-blue-400 py-1" href="#feedback-engine">🧠 Feedback Engine</a>
               <a className="block hover:text-blue-400 py-1" href="#adaptive-confidence-system">🎯 Adaptive Confidence</a>
+              <a className="block hover:text-blue-400 py-1" href="#multi-ai-learning-reports">📑 Learning Reports</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -639,7 +651,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.4 Adaptive Confidence System
+              AI Trading Mission Control · V8.5 Multi-AI Learning Reports Center
             </p>
           </div>
 
@@ -1409,7 +1421,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.4 Adaptive Confidence System</p>
+                  <p className="text-orange-400 font-bold">V8.5 Multi-AI Learning Reports Center</p>
                 </div>
               </div>
             </div>
@@ -3638,6 +3650,223 @@ export default function Home() {
                 <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
                   <h5 className="font-bold">Agent</h5>
                   <p className="text-gray-300 mt-2">Better decision</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="multi-ai-learning-reports" className="bg-gray-900 p-6 rounded-2xl border border-sky-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">📑 Multi-AI Learning Reports Center V8.5</h3>
+                <p className="text-gray-400 mt-2">
+                  Gemeinsames Review-System: GPT, Claude und der AI Agent kontrollieren Performance, Risiko, Ausführung und Strategie-Entwicklung gemeinsam, um Fehlanalysen zu reduzieren.
+                </p>
+              </div>
+
+              <div className="bg-black border border-sky-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Reports Status</p>
+                <p className="text-sky-400 font-bold">{learningReportsStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-sky-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Reports Score</h4>
+                <p className="text-5xl mt-4 text-sky-400">{learningReportsScore}%</p>
+                <p className="text-gray-400 mt-2">Review architecture</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">GPT Review</h4>
+                <p className="text-2xl mt-4 text-green-400">{gptReviewStatus}</p>
+                <p className="text-gray-400 mt-2">Trade quality</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Claude Review</h4>
+                <p className="text-2xl mt-4 text-red-400">{claudeReviewStatus}</p>
+                <p className="text-gray-400 mt-2">Risk control</p>
+              </div>
+
+              <div className="bg-black border border-indigo-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Agent Review</h4>
+                <p className="text-2xl mt-4 text-indigo-400">{agentReviewStatus}</p>
+                <p className="text-gray-400 mt-2">Execution logic</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Consensus</h4>
+                <p className="text-5xl mt-4 text-purple-400">{consensusReviewScore}</p>
+                <p className="text-gray-400 mt-2">Agreement score</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6 mb-6">
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🟢 GPT Trade Review</h4>
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Trade Quality Score: 89/100
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Technical Structure: Strong
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Setup Logic: Momentum confirmed
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    GPT checks setup quality and market structure.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔴 Claude Risk Review</h4>
+                <div className="space-y-3">
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Risk Score: 82/100
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    News Risk: Medium
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    Drawdown Risk: Controlled
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Claude checks risk, volatility and macro exposure.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-indigo-900 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🤖 Agent Execution Review</h4>
+                <div className="space-y-3">
+                  <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-3">
+                    Agent Score: 91/100
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Plan Followed: Yes
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Confidence Match: Good
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Agent reviews execution quality and plan discipline.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">⚖️ Consensus Review</h4>
+                <div className="space-y-3">
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    GPT + Claude + Agent = {consensusReviewScore}/100
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Validation: Approved
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Multi-AI Check: {multiAiValidationStatus}
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Consensus reduces single-model misjudgment.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📅 Daily Report</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Status: {dailyReportStatus}
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Trades: 3 · Winrate: 67%
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Best Strategy: Momentum Breakout
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Needs Review: Inventory Reaction
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📆 Weekly Report</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Status: {weeklyReportStatus}
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Confidence Changes: 3 strategies
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Market Behavior: stored later
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Agent Development: tracked later
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🗓 Monthly Report</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Status: {monthlyReportStatus}
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Total Performance: aggregated later
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Evolution Ranking: summarized later
+                  </div>
+                  <div className="border border-sky-900 bg-sky-950 rounded-lg p-3">
+                    AI Improvement: measured later
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-sky-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Multi-AI Learning Report Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.5 erstellt die Grundlage für tägliche, wöchentliche und monatliche Lernberichte. GPT bewertet Trade-Qualität,
+                Claude kontrolliert Risiko, der AI Agent prüft Ausführung und die Consensus Review validiert die Ergebnisse gemeinsam.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">GPT</h5>
+                  <p className="text-gray-300 mt-2">Trade Review</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Claude</h5>
+                  <p className="text-gray-300 mt-2">Risk Review</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">Agent</h5>
+                  <p className="text-gray-300 mt-2">Execution Review</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">Consensus</h5>
+                  <p className="text-gray-300 mt-2">Validation</p>
+                </div>
+
+                <div className="border border-sky-900 bg-sky-950 rounded-lg p-4">
+                  <h5 className="font-bold">Report</h5>
+                  <p className="text-gray-300 mt-2">Learning Output</p>
                 </div>
               </div>
             </div>
