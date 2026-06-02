@@ -506,6 +506,15 @@ export default function Home() {
   const portfolioDiversificationScore = 74;
   const portfolioSafetyMode = "Demo portfolio only";
 
+  const portfolioBrainScore = 100;
+  const portfolioBrainStatus = "Prepared";
+  const brainDecisionMode = "Simulation";
+  const brainInputStatus = "All Engines Connected";
+  const brainOutputStatus = "Demo Plan Only";
+  const brainSafetyStatus = "Live Blocked";
+  const brainConsensusStatus = "Required";
+  const brainNextPhase = "V9.1 OpenAI Integration";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -669,6 +678,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#consensus-intelligence-core">🧩 Consensus Core</a>
               <a className="block hover:text-blue-400 py-1" href="#market-regime-engine">🌍 Market Regime</a>
               <a className="block hover:text-blue-400 py-1" href="#portfolio-intelligence">📊 Portfolio Intelligence</a>
+              <a className="block hover:text-blue-400 py-1" href="#autonomous-portfolio-brain">🧠 Portfolio Brain</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -692,7 +702,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.9 Portfolio Intelligence
+              AI Trading Mission Control · V9.0 Autonomous Portfolio Brain
             </p>
           </div>
 
@@ -1462,7 +1472,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.9 Portfolio Intelligence</p>
+                  <p className="text-orange-400 font-bold">V9.0 Autonomous Portfolio Brain</p>
                 </div>
               </div>
             </div>
@@ -4660,6 +4670,216 @@ export default function Home() {
                 <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
                   <h5 className="font-bold">Execution</h5>
                   <p className="text-gray-300 mt-2">Paper only</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="autonomous-portfolio-brain" className="bg-gray-900 p-6 rounded-2xl border border-fuchsia-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🧠 Autonomous Portfolio Brain V9.0</h3>
+                <p className="text-gray-400 mt-2">
+                  Zentrales AI-Entscheidungszentrum: verbindet Market Data, News, Regime, Portfolio, Consensus, Agent, Memory, Evolution, Feedback und Reports zu einem gemeinsamen Portfolio-Brain.
+                </p>
+              </div>
+
+              <div className="bg-black border border-fuchsia-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Brain Status</p>
+                <p className="text-fuchsia-400 font-bold">{portfolioBrainStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-fuchsia-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Brain Score</h4>
+                <p className="text-5xl mt-4 text-fuchsia-400">{portfolioBrainScore}%</p>
+                <p className="text-gray-400 mt-2">Central brain architecture</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Inputs</h4>
+                <p className="text-2xl mt-4 text-blue-400">{brainInputStatus}</p>
+                <p className="text-gray-400 mt-2">All modules prepared</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Decision Mode</h4>
+                <p className="text-2xl mt-4 text-purple-400">{brainDecisionMode}</p>
+                <p className="text-gray-400 mt-2">No real AI calls yet</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Output</h4>
+                <p className="text-2xl mt-4 text-green-400">{brainOutputStatus}</p>
+                <p className="text-gray-400 mt-2">Paper/Demo only</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Safety</h4>
+                <p className="text-2xl mt-4 text-red-400">{brainSafetyStatus}</p>
+                <p className="text-gray-400 mt-2">Broker firewall active</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔌 Brain Input Engines</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Market Data + Watchlist
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    News Intelligence + Macro Events
+                  </div>
+                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
+                    Market Regime Detection
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Portfolio Intelligence + Exposure
+                  </div>
+                  <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-3">
+                    Consensus Intelligence Core
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">⚙️ Brain Decision Logic</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    GPT Opportunity Review later
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Claude Risk Review later
+                  </div>
+                  <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-3">
+                    Agent Execution Review
+                  </div>
+                  <div className="border border-violet-900 bg-violet-950 rounded-lg p-3">
+                    Adaptive Confidence + Strategy Evolution
+                  </div>
+                  <div className="border border-fuchsia-900 bg-fuchsia-950 rounded-lg p-3">
+                    Consensus Required: {brainConsensusStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Brain Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No single engine can execute
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Consensus required before demo plan
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Real OpenAI/Claude calls start later
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live broker execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-fuchsia-900 bg-fuchsia-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Next Phase</p>
+                  <p className="text-fuchsia-400 font-bold">{brainNextPhase}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-fuchsia-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 Autonomous Decision Flow</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">1. Data</h5>
+                  <p className="text-gray-300 mt-2">Prices, watchlist, market context</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">2. Intelligence</h5>
+                  <p className="text-gray-300 mt-2">News, macro, sentiment</p>
+                </div>
+
+                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <h5 className="font-bold">3. Regime</h5>
+                  <p className="text-gray-300 mt-2">Trend, range, risk-on/off</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">4. Portfolio</h5>
+                  <p className="text-gray-300 mt-2">Exposure, allocation, correlation</p>
+                </div>
+
+                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <h5 className="font-bold">5. Consensus</h5>
+                  <p className="text-gray-300 mt-2">Approve, review, block</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">6. Agent</h5>
+                  <p className="text-gray-300 mt-2">Demo trade planning</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">7. Execution</h5>
+                  <p className="text-gray-300 mt-2">Paper execution only</p>
+                </div>
+
+                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
+                  <h5 className="font-bold">8. Performance</h5>
+                  <p className="text-gray-300 mt-2">Winrate, PF, drawdown</p>
+                </div>
+
+                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
+                  <h5 className="font-bold">9. Feedback</h5>
+                  <p className="text-gray-300 mt-2">Lessons, updates</p>
+                </div>
+
+                <div className="border border-sky-900 bg-sky-950 rounded-lg p-4">
+                  <h5 className="font-bold">10. Learning</h5>
+                  <p className="text-gray-300 mt-2">Reports and scheduler</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Real AI Providers</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V9.0 verbindet die Architektur zu einem zentralen Portfolio Brain. Ab V9.1 werden echte AI Provider vorbereitet:
+                OpenAI für Opportunity-Analyse, Claude für Risk Review und später TradingView, Yahoo Finance, News APIs und Economic Calendar als Ressourcen.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-fuchsia-900 bg-fuchsia-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.0</h5>
+                  <p className="text-gray-300 mt-2">Portfolio Brain</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.1</h5>
+                  <p className="text-gray-300 mt-2">OpenAI Integration</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.2</h5>
+                  <p className="text-gray-300 mt-2">Claude Integration</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.3</h5>
+                  <p className="text-gray-300 mt-2">TradingView</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.5</h5>
+                  <p className="text-gray-300 mt-2">Forward Learning Live</p>
                 </div>
               </div>
             </div>
