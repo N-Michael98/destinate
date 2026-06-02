@@ -101,6 +101,84 @@ export default function Home() {
 
   const paperBalance = 30000;
   const paperEquity = paperBalance + paperProfitLoss;
+  const floatingEquity = paperEquity + floatingProfitLoss;
+
+  const winningPaperTrades = closedPaperOrders.filter((order) => order.profitLoss > 0);
+  const losingPaperTrades = closedPaperOrders.filter((order) => order.profitLoss < 0);
+
+  const grossPaperProfit = winningPaperTrades.reduce(
+    (sum, order) => sum + order.profitLoss,
+    0
+  );
+
+  const grossPaperLoss = Math.abs(
+    losingPaperTrades.reduce((sum, order) => sum + order.profitLoss, 0)
+  );
+
+  const paperProfitFactor =
+    grossPaperLoss > 0
+      ? Number((grossPaperProfit / grossPaperLoss).toFixed(2))
+      : grossPaperProfit > 0
+        ? grossPaperProfit
+        : 0;
+
+  const averagePaperWin =
+    winningPaperTrades.length > 0
+      ? Number((grossPaperProfit / winningPaperTrades.length).toFixed(2))
+      : 0;
+
+  const averagePaperLoss =
+    losingPaperTrades.length > 0
+      ? Number((grossPaperLoss / losingPaperTrades.length).toFixed(2))
+      : 0;
+
+  const paperExpectancy =
+    closedPaperOrders.length > 0
+      ? Number((paperProfitLoss / closedPaperOrders.length).toFixed(2))
+      : 0;
+
+  const paperEquityCurve = closedPaperOrders
+    .slice()
+    .reverse()
+    .reduce(
+      (curve, order, index) => {
+        const previousEquity =
+          index === 0 ? paperBalance : curve[index - 1].equity;
+
+        curve.push({
+          trade: `#${order.id}`,
+          equity: Number((previousEquity + order.profitLoss).toFixed(2)),
+        });
+
+        return curve;
+      },
+      [] as { trade: string; equity: number }[]
+    );
+
+  const paperPeakEquity = paperEquityCurve.reduce(
+    (peak, point) => Math.max(peak, point.equity),
+    paperBalance
+  );
+
+  const paperMaxDrawdown = paperEquityCurve.reduce(
+    (maxDrawdown, point) => {
+      const drawdown = paperPeakEquity - point.equity;
+      return Math.max(maxDrawdown, drawdown);
+    },
+    0
+  );
+
+  const paperMaxDrawdownPercent =
+    paperPeakEquity > 0
+      ? Number(((paperMaxDrawdown / paperPeakEquity) * 100).toFixed(2))
+      : 0;
+
+  const equityEngineHealth =
+    paperProfitFactor >= 2 && paperExpectancy > 0
+      ? "Strong"
+      : paperProfitFactor >= 1.2 && paperExpectancy >= 0
+        ? "Developing"
+        : "Needs Data";
 
   async function loadPaperOrders() {
     try {
@@ -349,9 +427,9 @@ export default function Home() {
           <div id="paper-trading" className="bg-gray-900 p-6 rounded-xl mb-8 border border-cyan-900">
             <div className="flex justify-between items-start mb-6">
               <div>
-                <h3 className="text-2xl font-bold">📝 Paper Trading Engine V6.5</h3>
+                <h3 className="text-2xl font-bold">📝 Paper Trading Engine V6.6</h3>
                 <p className="text-gray-400 mt-2">
-                  Paper Position Manager aktiv: offene Paper Orders werden als Positionen mit Exposure, Floating P/L und Positionskontrolle angezeigt.
+                  Account Equity Engine aktiv: Paper Balance, Equity, Floating Equity, Drawdown, Profit Factor und Expectancy werden berechnet.
                 </p>
               </div>
 
@@ -369,9 +447,9 @@ export default function Home() {
               </div>
 
               <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Virtual Equity</h4>
-                <p className="text-3xl mt-4 text-cyan-400">{paperEquity.toLocaleString("de-CH")} CHF</p>
-                <p className="text-gray-400 mt-2">Simulated value</p>
+                <h4 className="font-bold text-lg">Floating Equity</h4>
+                <p className="text-3xl mt-4 text-cyan-400">{floatingEquity.toLocaleString("de-CH")} CHF</p>
+                <p className="text-gray-400 mt-2">Closed + open P/L</p>
               </div>
 
               <div className="bg-black border border-blue-900 rounded-xl p-5">
@@ -544,30 +622,30 @@ export default function Home() {
                   <div>
                     <div className="flex justify-between text-sm mb-2">
                       <span>Profit Factor</span>
-                      <span>1.85</span>
+                      <span>{paperProfitFactor}</span>
                     </div>
                     <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: "74%" }} />
+                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(paperProfitFactor * 25, 100)}%` }} />
                     </div>
                   </div>
 
                   <div>
                     <div className="flex justify-between text-sm mb-2">
                       <span>Max Paper Drawdown</span>
-                      <span>2.1%</span>
+                      <span>{paperMaxDrawdownPercent}%</span>
                     </div>
                     <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-red-400 rounded-full" style={{ width: "21%" }} />
+                      <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(paperMaxDrawdownPercent * 10, 100)}%` }} />
                     </div>
                   </div>
 
                   <div>
                     <div className="flex justify-between text-sm mb-2">
                       <span>Execution Readiness</span>
-                      <span>42%</span>
+                      <span>{equityEngineHealth === "Strong" ? 85 : equityEngineHealth === "Developing" ? 60 : 30}%</span>
                     </div>
                     <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-cyan-400 rounded-full" style={{ width: "42%" }} />
+                      <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${equityEngineHealth === "Strong" ? 85 : equityEngineHealth === "Developing" ? 60 : 30}%` }} />
                     </div>
                   </div>
                 </div>
@@ -592,7 +670,7 @@ export default function Home() {
                 </div>
 
                 <p className="text-gray-400 mt-5">
-                  Paper Orders können jetzt erstellt, geladen, geschlossen und gelöscht werden.
+                  Paper Orders steuern jetzt Balance, Equity, Profit Factor, Drawdown und Expectancy.
                 </p>
 
                 <button
@@ -601,6 +679,66 @@ export default function Home() {
                 >
                   Reset Paper Orders
                 </button>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">💰 Account Equity Engine</h4>
+
+                <div className="grid grid-cols-2 gap-3 mb-5">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    <p className="text-gray-400 text-sm">Closed P/L</p>
+                    <p className={paperProfitLoss >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
+                      {paperProfitLoss.toLocaleString("de-CH")} CHF
+                    </p>
+                  </div>
+
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    <p className="text-gray-400 text-sm">Open P/L</p>
+                    <p className={floatingProfitLoss >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
+                      {Number(floatingProfitLoss.toFixed(2)).toLocaleString("de-CH")} CHF
+                    </p>
+                  </div>
+
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    <p className="text-gray-400 text-sm">Paper Equity</p>
+                    <p className="text-blue-400 font-bold">
+                      {paperEquity.toLocaleString("de-CH")} CHF
+                    </p>
+                  </div>
+
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    <p className="text-gray-400 text-sm">Floating Equity</p>
+                    <p className="text-purple-400 font-bold">
+                      {floatingEquity.toLocaleString("de-CH")} CHF
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Profit Factor</span>
+                      <span>{paperProfitFactor}</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(paperProfitFactor * 25, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Max Drawdown</span>
+                      <span>{paperMaxDrawdownPercent}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(paperMaxDrawdownPercent * 10, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Equity Engine Health: <span className="text-cyan-400 font-bold">{equityEngineHealth}</span>
+                  </div>
+                </div>
               </div>
 
               <div className="bg-black border border-gray-800 rounded-xl p-5">
@@ -670,6 +808,39 @@ export default function Home() {
               </div>
             </div>
 
+            <div className="bg-black border border-blue-900 rounded-xl p-5 mb-6">
+              <h4 className="text-xl font-bold mb-4">📈 Advanced Equity Metrics</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Average Win</p>
+                  <p className="text-green-400 text-xl font-bold">{averagePaperWin} CHF</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Average Loss</p>
+                  <p className="text-red-400 text-xl font-bold">{averagePaperLoss} CHF</p>
+                </div>
+
+                <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Expectancy</p>
+                  <p className={paperExpectancy >= 0 ? "text-green-400 text-xl font-bold" : "text-red-400 text-xl font-bold"}>
+                    {paperExpectancy} CHF
+                  </p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Peak Equity</p>
+                  <p className="text-yellow-400 text-xl font-bold">{paperPeakEquity.toLocaleString("de-CH")} CHF</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Equity Points</p>
+                  <p className="text-purple-400 text-xl font-bold">{paperEquityCurve.length}</p>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-black border border-cyan-900 rounded-xl p-5">
               <h4 className="text-xl font-bold mb-4">🧭 Paper Trading Roadmap</h4>
 
@@ -691,7 +862,7 @@ export default function Home() {
 
                 <div className="border border-green-900 bg-green-950 rounded-lg p-4">
                   <h5 className="font-bold">V6.5</h5>
-                  <p className="text-gray-300 mt-2">Paper Position Manager active</p>
+                  <p className="text-gray-300 mt-2">Position Manager active</p>
                 </div>
               </div>
             </div>
