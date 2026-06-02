@@ -449,6 +449,15 @@ export default function Home() {
   const memoryUpdateStatus = "Prepared";
   const evolutionUpdateStatus = "Prepared";
 
+  const adaptiveConfidenceScore = 83;
+  const adaptiveConfidenceStatus = "Prepared";
+  const confidenceAdjustmentMode = "Simulation";
+  const confidenceHistoryStatus = "Ready";
+  const adjustedStrategiesCount = 3;
+  const topConfidenceStrategy = "Momentum Breakout";
+  const confidenceRiskFilterStatus = "Active";
+  const adaptiveLearningStatus = "Ready";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -606,6 +615,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#demo-execution-engine">⚡ Demo Execution</a>
               <a className="block hover:text-blue-400 py-1" href="#performance-tracker">📊 Performance Tracker</a>
               <a className="block hover:text-blue-400 py-1" href="#feedback-engine">🧠 Feedback Engine</a>
+              <a className="block hover:text-blue-400 py-1" href="#adaptive-confidence-system">🎯 Adaptive Confidence</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -629,7 +639,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.3 Feedback Engine
+              AI Trading Mission Control · V8.4 Adaptive Confidence System
             </p>
           </div>
 
@@ -1399,7 +1409,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.3 Feedback Engine</p>
+                  <p className="text-orange-400 font-bold">V8.4 Adaptive Confidence System</p>
                 </div>
               </div>
             </div>
@@ -3456,6 +3466,178 @@ export default function Home() {
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
                   <h5 className="font-bold">V9.0</h5>
                   <p className="text-gray-300 mt-2">Controlled Live</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="adaptive-confidence-system" className="bg-gray-900 p-6 rounded-2xl border border-violet-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🎯 Adaptive Confidence System V8.4</h3>
+                <p className="text-gray-400 mt-2">
+                  Confidence-Anpassung für den AI-Lernkreislauf: Gewinner-Strategien erhalten höhere Confidence, schwache Setups werden kontrolliert reduziert.
+                </p>
+              </div>
+
+              <div className="bg-black border border-violet-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Confidence Status</p>
+                <p className="text-violet-400 font-bold">{adaptiveConfidenceStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-violet-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Confidence Score</h4>
+                <p className="text-5xl mt-4 text-violet-400">{adaptiveConfidenceScore}%</p>
+                <p className="text-gray-400 mt-2">Adaptive architecture</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Mode</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{confidenceAdjustmentMode}</p>
+                <p className="text-gray-400 mt-2">No live changes yet</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Adjusted</h4>
+                <p className="text-5xl mt-4 text-blue-400">{adjustedStrategiesCount}</p>
+                <p className="text-gray-400 mt-2">Mock strategies</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Top Confidence</h4>
+                <p className="text-2xl mt-4 text-green-400">{topConfidenceStrategy}</p>
+                <p className="text-gray-400 mt-2">Current leader</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Risk Filter</h4>
+                <p className="text-2xl mt-4 text-red-400">{confidenceRiskFilterStatus}</p>
+                <p className="text-gray-400 mt-2">Safety layer</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📈 Confidence Adjustments</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Momentum Breakout · 83% → 86% · Rank Up
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Risk-Off Trend · 78% → 79% · Stable
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Inventory Reaction · 71% → 67% · Reduce
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Adjustments are simulated until real demo performance is connected.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 Confidence Logic</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Wins → Confidence increase
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Losses → Confidence reduction
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Drawdown → Risk penalty
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Consistency → Stability boost
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    History Status: {confidenceHistoryStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Confidence Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Confidence changes are bounded
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No live orders from confidence alone
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Requires performance + feedback confirmation
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Broker execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-violet-900 bg-violet-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Adaptive Learning</p>
+                  <p className="text-violet-400 font-bold">{adaptiveLearningStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-violet-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">📜 Confidence History Preview</h4>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">Momentum Breakout</h5>
+                  <p className="text-gray-300 mt-2">83 → 86 · +3 confidence points</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">Risk-Off Trend</h5>
+                  <p className="text-gray-300 mt-2">78 → 79 · +1 confidence point</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Inventory Reaction</h5>
+                  <p className="text-gray-300 mt-2">71 → 67 · -4 confidence points</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Adaptive Confidence Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.4 übersetzt Feedback in adaptive Confidence-Werte. Diese Werte fließen später zurück in Agent-Entscheidungen,
+                Strategy Evolution und AI Memory, damit erfolgreiche Setups stärker und schwache Setups vorsichtiger bewertet werden.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
+                  <h5 className="font-bold">Performance</h5>
+                  <p className="text-gray-300 mt-2">Trade results</p>
+                </div>
+
+                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
+                  <h5 className="font-bold">Feedback</h5>
+                  <p className="text-gray-300 mt-2">Strategy review</p>
+                </div>
+
+                <div className="border border-violet-900 bg-violet-950 rounded-lg p-4">
+                  <h5 className="font-bold">Confidence</h5>
+                  <p className="text-gray-300 mt-2">Adaptive scores</p>
+                </div>
+
+                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <h5 className="font-bold">Evolution</h5>
+                  <p className="text-gray-300 mt-2">Ranking update</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">Agent</h5>
+                  <p className="text-gray-300 mt-2">Better decision</p>
                 </div>
               </div>
             </div>
