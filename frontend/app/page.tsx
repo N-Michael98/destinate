@@ -345,6 +345,12 @@ export default function Home() {
   const icMarketsTradingPermission = "Locked";
   const icMarketsPlatform = "MT5 / cTrader later";
 
+  const brokerApiLayerScore = 22;
+  const brokerApiLayerStatus = "Prepared";
+  const brokerApiLayerMode = "Simulation";
+  const brokerApiLayerPermission = "No Live Orders";
+  const brokerApiLayerSafety = "Credentials blocked";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -491,6 +497,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#live-trading-prep">🚀 Live Trading Prep</a>
               <a className="block hover:text-blue-400 py-1" href="#capital-com-connector">🔌 Capital.com Connector</a>
               <a className="block hover:text-blue-400 py-1" href="#ic-markets-connector">🌐 IC Markets Connector</a>
+              <a className="block hover:text-blue-400 py-1" href="#broker-api-layer">🧱 Broker API Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -514,7 +521,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.2 IC Markets Connector
+              AI Trading Mission Control · V7.3 Broker API Layer
             </p>
           </div>
 
@@ -1284,7 +1291,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.2 IC Markets Connector</p>
+                  <p className="text-orange-400 font-bold">V7.3 Broker API Layer</p>
                 </div>
               </div>
             </div>
@@ -1308,9 +1315,9 @@ export default function Home() {
                   <p className="text-gray-300 mt-2">IC Markets Connector</p>
                 </div>
 
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
                   <h5 className="font-bold">V7.3</h5>
-                  <p className="text-gray-300 mt-2">OpenAI API</p>
+                  <p className="text-gray-300 mt-2">Broker API Layer</p>
                 </div>
 
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
@@ -1443,7 +1450,7 @@ export default function Home() {
 
                 <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
                   <h5 className="font-bold">V7.3</h5>
-                  <p className="text-gray-300 mt-2">Demo Auth Test</p>
+                  <p className="text-gray-300 mt-2">Broker API Layer</p>
                 </div>
 
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
@@ -1597,6 +1604,146 @@ export default function Home() {
             </div>
           </div>
 
+
+          <div id="broker-api-layer" className="bg-gray-900 p-6 rounded-2xl border border-emerald-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🧱 Broker API Layer V7.3</h3>
+                <p className="text-gray-400 mt-2">
+                  Gemeinsame Broker-Architektur für Capital.com und IC Markets. Aktuell nur TypeScript-Layer, Simulation und Safety-Preparation.
+                </p>
+              </div>
+
+              <div className="bg-black border border-emerald-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">API Layer Status</p>
+                <p className="text-emerald-400 font-bold">{brokerApiLayerStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-emerald-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Layer Score</h4>
+                <p className="text-5xl mt-4 text-emerald-400">{brokerApiLayerScore}%</p>
+                <p className="text-gray-400 mt-2">Architecture ready</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Capital.com</h4>
+                <p className="text-2xl mt-4 text-blue-400">Connector Stub</p>
+                <p className="text-gray-400 mt-2">No real API call</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">IC Markets</h4>
+                <p className="text-2xl mt-4 text-purple-400">Connector Stub</p>
+                <p className="text-gray-400 mt-2">MT5 / cTrader later</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Mode</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{brokerApiLayerMode}</p>
+                <p className="text-gray-400 mt-2">Safe testing only</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Permission</h4>
+                <p className="text-2xl mt-4 text-red-400">{brokerApiLayerPermission}</p>
+                <p className="text-gray-400 mt-2">Live locked</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📁 New File Structure</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-3">✅ lib/brokers/shared/broker.ts</div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">✅ lib/brokers/capital/types.ts</div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">✅ lib/brokers/capital/connector.ts</div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">✅ lib/brokers/icmarkets/types.ts</div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">✅ lib/brokers/icmarkets/connector.ts</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 Unified Broker Interface</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    connect(): <span className="text-emerald-400">prepared</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    getAccount(): <span className="text-emerald-400">prepared</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    getPositions(): <span className="text-emerald-400">prepared</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    placeOrder(): <span className="text-red-400">blocked</span>
+                  </div>
+                </div>
+
+                <p className="text-gray-400 mt-5">
+                  Der Rest vom System kann später beide Broker gleich ansprechen, ohne separate Logik im Dashboard.
+                </p>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Safety Firewall</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Keine API Keys im Code
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Nur Mock Responses
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Environment Variables später
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Order Execution blockiert
+                  </div>
+                </div>
+
+                <p className="text-gray-400 mt-5">
+                  {brokerApiLayerSafety}. Live Trading bleibt bis V8.0 gesperrt.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-emerald-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 Broker API Layer Roadmap</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.3</h5>
+                  <p className="text-gray-300 mt-2">Shared API Layer</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.4</h5>
+                  <p className="text-gray-300 mt-2">Demo Auth Test</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.5</h5>
+                  <p className="text-gray-300 mt-2">Market Data Bridge</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.6</h5>
+                  <p className="text-gray-300 mt-2">Broker Account Sync</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Live Execution</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div id="execution-overview" className="grid grid-cols-3 gap-6 mb-8">
             <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900">
               <h3 className="text-2xl font-bold mb-3">🧠 Execution Core</h3>
@@ -1612,8 +1759,8 @@ export default function Home() {
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-orange-900">
               <h3 className="text-2xl font-bold mb-3">🔌 Broker Hub</h3>
-              <p className="text-orange-400 text-2xl font-bold">Disconnected</p>
-              <p className="text-gray-400 mt-3">Capital.com prepared · IC Markets V7.2 prepared.</p>
+              <p className="text-orange-400 text-2xl font-bold">API Layer Prepared</p>
+              <p className="text-gray-400 mt-3">Capital.com · IC Markets · Shared broker interface ready.</p>
             </div>
           </div>
 
