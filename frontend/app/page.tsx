@@ -380,6 +380,14 @@ export default function Home() {
   const trackedMarketCount = 8;
   const aiLearningBridgeStatus = "Forward Learning Ready";
 
+  const intelligenceLayerScore = 39;
+  const intelligenceLayerStatus = "Prepared";
+  const newsFeedStatus = "Mock News";
+  const macroCalendarStatus = "Prepared";
+  const sentimentEngineStatus = "Simulation";
+  const highImpactEventCount = 5;
+  const aiIntelligenceStatus = "Resource Ready";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -529,6 +537,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#broker-api-layer">🧱 Broker API Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#demo-auth-center">🔐 Demo Auth Center</a>
               <a className="block hover:text-blue-400 py-1" href="#market-data-bridge">📈 Market Data Bridge</a>
+              <a className="block hover:text-blue-400 py-1" href="#intelligence-layer">📰 Intelligence Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -552,7 +561,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.5 Market Data Bridge
+              AI Trading Mission Control · V7.6 News & Intelligence Resource Layer
             </p>
           </div>
 
@@ -1322,7 +1331,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.5 Market Data Bridge</p>
+                  <p className="text-orange-400 font-bold">V7.6 News & Intelligence Resource Layer</p>
                 </div>
               </div>
             </div>
@@ -2014,6 +2023,160 @@ export default function Home() {
                 <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
                   <h5 className="font-bold">V7.8</h5>
                   <p className="text-gray-300 mt-2">AI Memory</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="intelligence-layer" className="bg-gray-900 p-6 rounded-2xl border border-red-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">📰 News & Intelligence Resource Layer V7.6</h3>
+                <p className="text-gray-400 mt-2">
+                  Vorbereitung für professionelle Nachrichten-, Macro-, Sentiment- und Analysequellen. Später greifen GPT, Claude und AI-Agenten auf diese Ressourcen zu.
+                </p>
+              </div>
+
+              <div className="bg-black border border-red-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Intelligence Status</p>
+                <p className="text-red-400 font-bold">{intelligenceLayerStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Layer Score</h4>
+                <p className="text-5xl mt-4 text-red-400">{intelligenceLayerScore}%</p>
+                <p className="text-gray-400 mt-2">Resource architecture</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">News Feed</h4>
+                <p className="text-2xl mt-4 text-blue-400">{newsFeedStatus}</p>
+                <p className="text-gray-400 mt-2">Real providers later</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Macro Calendar</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{macroCalendarStatus}</p>
+                <p className="text-gray-400 mt-2">CPI · NFP · FOMC</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Sentiment</h4>
+                <p className="text-2xl mt-4 text-purple-400">{sentimentEngineStatus}</p>
+                <p className="text-gray-400 mt-2">AI scoring later</p>
+              </div>
+
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">High Impact</h4>
+                <p className="text-5xl mt-4 text-cyan-400">{highImpactEventCount}</p>
+                <p className="text-gray-400 mt-2">Events tracked</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🌍 Professional Sources Roadmap</h4>
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">🔵 Yahoo Finance News + Fundamentals later</div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">📊 Capital.com News + Analysis later</div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">📅 Economic Calendar later</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">📰 Reuters / Bloomberg / FT style sources later</div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">📈 TradingView Ideas + Technical context later</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 AI Intelligence Pipeline</h4>
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">News → Event Impact Score</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Macro → Risk Regime Detection</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Sentiment → Market Bias</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Fundamentals → Trade Quality Filter</div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">Results → AI Learning Memory</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Intelligence Safety Rules</h4>
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Mock intelligence first</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Source attribution later</div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ API keys only via .env.local</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 News cannot trigger live orders alone</div>
+                </div>
+
+                <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">AI Intelligence</p>
+                  <p className="text-red-400 font-bold">{aiIntelligenceStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-yellow-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">📅 Macro Event Snapshot</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">FOMC</h5>
+                  <p className="text-gray-300 mt-2">USD rate risk</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">CPI</h5>
+                  <p className="text-gray-300 mt-2">Inflation shock</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">NFP</h5>
+                  <p className="text-gray-300 mt-2">Labor market</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">ECB</h5>
+                  <p className="text-gray-300 mt-2">EUR risk</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">Oil Inventories</h5>
+                  <p className="text-gray-300 mt-2">USOIL driver</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Connection to Forward Learning</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V7.6 verbindet Nachrichten, Macro Events, Sentiment und externe Analysequellen mit der späteren Forward Testing Engine.
+                Die AI soll dadurch lernen, welche News- und Macro-Bedingungen bestimmte Strategien verbessern oder blockieren.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.6</h5>
+                  <p className="text-gray-300 mt-2">Intelligence</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.7</h5>
+                  <p className="text-gray-300 mt-2">Forward Testing</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.8</h5>
+                  <p className="text-gray-300 mt-2">AI Memory</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.9</h5>
+                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
                 </div>
 
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
