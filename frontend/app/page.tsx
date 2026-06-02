@@ -180,6 +180,48 @@ export default function Home() {
         ? "Developing"
         : "Needs Data";
 
+  const gptTradeAnalystScore =
+    paperProfitFactor >= 2 && paperExpectancy > 0 && paperWinrate >= 60
+      ? 88
+      : paperProfitFactor >= 1.2 && paperExpectancy >= 0
+        ? 68
+        : 42;
+
+  const gptTradeAnalystVerdict =
+    gptTradeAnalystScore >= 80
+      ? "Strong Trading Profile"
+      : gptTradeAnalystScore >= 60
+        ? "Developing Edge"
+        : "Needs More Data";
+
+  const gptTradeAnalystRecommendation =
+    gptTradeAnalystScore >= 80
+      ? "Fokus auf die profitabelsten Setups erhöhen und Risiko stabil halten."
+      : gptTradeAnalystScore >= 60
+        ? "Mehr Paper Trades sammeln, Gewinner-Strategien bestätigen und Drawdown beobachten."
+        : "Noch keine klare Edge. Mehr Daten sammeln und Risiko niedrig halten.";
+
+  const bestPaperMarket =
+    closedPaperOrders.length > 0
+      ? closedPaperOrders.reduce((best, order) =>
+          order.profitLoss > best.profitLoss ? order : best
+        ).market
+      : topOpportunity.name;
+
+  const bestPaperStrategy =
+    closedPaperOrders.length > 0
+      ? closedPaperOrders.reduce((best, order) =>
+          order.profitLoss > best.profitLoss ? order : best
+        ).strategy
+      : "Liquidity Sweep";
+
+  const worstPaperMarket =
+    closedPaperOrders.length > 0
+      ? closedPaperOrders.reduce((worst, order) =>
+          order.profitLoss < worst.profitLoss ? order : worst
+        ).market
+      : "-";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -313,6 +355,7 @@ export default function Home() {
             <div className="pt-4">
               <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">AI Center</p>
               <Link className="block hover:text-blue-400 py-1" href="/ai-assistant">🤖 AI Assistant</Link>
+              <a className="block hover:text-blue-400 py-1" href="#gpt-trade-analyst">🧠 GPT Trade Analyst</a>
               <a className="block hover:text-blue-400 py-1" href="#ai-consensus">🧠 AI Consensus</a>
               <a className="block hover:text-blue-400 py-1" href="#journal-snapshot">⭐ AI Trade Review</a>
             </div>
@@ -343,7 +386,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V6.6.5 Dashboard Architecture Refactor
+              AI Trading Mission Control · V6.7 GPT Trade Analyst
             </p>
           </div>
 
@@ -449,6 +492,11 @@ export default function Home() {
                 <div className="bg-purple-950 border border-purple-800 rounded-xl p-4">
                   <p className="text-gray-400">Consensus Score</p>
                   <p className="text-4xl font-bold text-purple-400">74%</p>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400">GPT Trade Analyst</p>
+                  <p className="text-2xl font-bold text-cyan-400">{gptTradeAnalystScore}/100</p>
                 </div>
               </div>
             </div>
@@ -561,6 +609,104 @@ export default function Home() {
                     {paperExpectancy} CHF
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="gpt-trade-analyst" className="bg-gray-900 p-6 rounded-2xl border border-cyan-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🧠 GPT Trade Analyst V6.7</h3>
+                <p className="text-gray-400 mt-2">
+                  Lokale GPT-Analyse-Simulation: bewertet Paper Trades, Strategien, Märkte und Account-Statistiken.
+                </p>
+              </div>
+
+              <div className="bg-black border border-cyan-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">AI Mode</p>
+                <p className="text-cyan-400 font-bold">Simulation</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6 mb-6">
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">GPT Analyst Score</h4>
+                <p className="text-4xl mt-4 text-cyan-400">{gptTradeAnalystScore}/100</p>
+                <p className="text-gray-400 mt-2">{gptTradeAnalystVerdict}</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Best Strategy</h4>
+                <p className="text-2xl mt-4 text-green-400">{bestPaperStrategy}</p>
+                <p className="text-gray-400 mt-2">Based on Paper Trades</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Best Market</h4>
+                <p className="text-2xl mt-4 text-blue-400">{bestPaperMarket}</p>
+                <p className="text-gray-400 mt-2">Highest paper P/L</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Weak Market</h4>
+                <p className="text-2xl mt-4 text-red-400">{worstPaperMarket}</p>
+                <p className="text-gray-400 mt-2">Needs review</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📊 GPT Performance Reading</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Winrate: <span className="text-green-400 font-bold">{paperWinrate}%</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Profit Factor: <span className="text-yellow-400 font-bold">{paperProfitFactor}</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Expectancy: <span className={paperExpectancy >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{paperExpectancy} CHF</span>
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Drawdown: <span className="text-red-400 font-bold">{paperMaxDrawdownPercent}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧭 GPT Recommendation</h4>
+
+                <p className="text-gray-300 leading-relaxed">
+                  {gptTradeAnalystRecommendation}
+                </p>
+
+                <div className="mt-5 border border-cyan-900 bg-cyan-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Current Focus</p>
+                  <p className="text-cyan-400 font-bold">
+                    {bestPaperMarket} · {bestPaperStrategy}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔒 API Status</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ OpenAI API noch nicht verbunden
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Lokale Analyse aktiv
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    🔒 Live Auto Decisions gesperrt
+                  </div>
+                </div>
+
+                <p className="text-gray-400 mt-5">
+                  Später sendet dieses Modul echte Trade-Daten an GPT und erhält strukturierte Analyse zurück.
+                </p>
               </div>
             </div>
           </div>
