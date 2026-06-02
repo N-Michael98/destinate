@@ -469,6 +469,16 @@ export default function Home() {
   const monthlyReportStatus = "Prepared";
   const multiAiValidationStatus = "Active";
 
+  const learningSchedulerScore = 92;
+  const learningSchedulerStatus = "Prepared";
+  const dailySchedulerStatus = "Ready";
+  const weeklySchedulerStatus = "Ready";
+  const monthlySchedulerStatus = "Ready";
+  const schedulerAutomationMode = "Prepared";
+  const learningCycleSteps = 10;
+  const nextPlanStatus = "Prepared";
+  const autonomousLoopStatus = "Simulation";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -628,6 +638,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#feedback-engine">🧠 Feedback Engine</a>
               <a className="block hover:text-blue-400 py-1" href="#adaptive-confidence-system">🎯 Adaptive Confidence</a>
               <a className="block hover:text-blue-400 py-1" href="#multi-ai-learning-reports">📑 Learning Reports</a>
+              <a className="block hover:text-blue-400 py-1" href="#autonomous-learning-scheduler">⏱️ Learning Scheduler</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -651,7 +662,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.5 Multi-AI Learning Reports Center
+              AI Trading Mission Control · V8.6 Autonomous Learning Scheduler
             </p>
           </div>
 
@@ -1421,7 +1432,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.5 Multi-AI Learning Reports Center</p>
+                  <p className="text-orange-400 font-bold">V8.6 Autonomous Learning Scheduler</p>
                 </div>
               </div>
             </div>
@@ -3868,6 +3879,215 @@ export default function Home() {
                   <h5 className="font-bold">Report</h5>
                   <p className="text-gray-300 mt-2">Learning Output</p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="autonomous-learning-scheduler" className="bg-gray-900 p-6 rounded-2xl border border-amber-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">⏱️ Autonomous Learning Scheduler V8.6</h3>
+                <p className="text-gray-400 mt-2">
+                  Automatischer Lernplaner: koordiniert tägliche, wöchentliche und monatliche AI-Lernzyklen für Performance, Feedback, Confidence, Memory, Evolution und Multi-AI Reports.
+                </p>
+              </div>
+
+              <div className="bg-black border border-amber-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Scheduler Status</p>
+                <p className="text-amber-400 font-bold">{learningSchedulerStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-amber-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Scheduler Score</h4>
+                <p className="text-5xl mt-4 text-amber-400">{learningSchedulerScore}%</p>
+                <p className="text-gray-400 mt-2">Autonomous cycle architecture</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Daily Cycle</h4>
+                <p className="text-2xl mt-4 text-green-400">{dailySchedulerStatus}</p>
+                <p className="text-gray-400 mt-2">End-of-day review</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Weekly Cycle</h4>
+                <p className="text-2xl mt-4 text-blue-400">{weeklySchedulerStatus}</p>
+                <p className="text-gray-400 mt-2">Strategy review</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Monthly Cycle</h4>
+                <p className="text-2xl mt-4 text-purple-400">{monthlySchedulerStatus}</p>
+                <p className="text-gray-400 mt-2">Full AI review</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Automation</h4>
+                <p className="text-2xl mt-4 text-red-400">{schedulerAutomationMode}</p>
+                <p className="text-gray-400 mt-2">Manual trigger first</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🌙 Daily Learning Cycle</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-teal-900 bg-teal-950 rounded-lg p-3">
+                    23:59 → Performance Review
+                  </div>
+                  <div className="border border-pink-900 bg-pink-950 rounded-lg p-3">
+                    Feedback Update
+                  </div>
+                  <div className="border border-violet-900 bg-violet-950 rounded-lg p-3">
+                    Confidence Adjustment
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Memory Update
+                  </div>
+                  <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-3">
+                    Next Day Plan: {nextPlanStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📆 Weekly Learning Cycle</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
+                    Strategy Evolution Review
+                  </div>
+                  <div className="border border-sky-900 bg-sky-950 rounded-lg p-3">
+                    Multi-AI Weekly Report
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Market Behavior Review
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Best/Worst Strategy Ranking
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    New Week Forward Plan
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🗓 Monthly Learning Cycle</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Full AI Performance Review
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Strategy Ranking Reset/Update
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Memory Growth Review
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    Risk & Drawdown Analysis
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Controlled Live Readiness later
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-amber-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Full Autonomous Learning Cycle</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
+                  <h5 className="font-bold">1. Performance</h5>
+                  <p className="text-gray-300 mt-2">Evaluate demo results</p>
+                </div>
+
+                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
+                  <h5 className="font-bold">2. Feedback</h5>
+                  <p className="text-gray-300 mt-2">Generate lessons</p>
+                </div>
+
+                <div className="border border-violet-900 bg-violet-950 rounded-lg p-4">
+                  <h5 className="font-bold">3. Confidence</h5>
+                  <p className="text-gray-300 mt-2">Adjust scores</p>
+                </div>
+
+                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <h5 className="font-bold">4. Evolution</h5>
+                  <p className="text-gray-300 mt-2">Update ranking</p>
+                </div>
+
+                <div className="border border-sky-900 bg-sky-950 rounded-lg p-4">
+                  <h5 className="font-bold">5. Reports</h5>
+                  <p className="text-gray-300 mt-2">Multi-AI review</p>
+                </div>
+
+                <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-4">
+                  <h5 className="font-bold">6. Memory</h5>
+                  <p className="text-gray-300 mt-2">Store learning</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">7. Agent</h5>
+                  <p className="text-gray-300 mt-2">Improve decisions</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">8. Forward Plan</h5>
+                  <p className="text-gray-300 mt-2">Plan next tests</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">9. Scheduler</h5>
+                  <p className="text-gray-300 mt-2">Organize timing</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">10. Safety</h5>
+                  <p className="text-gray-300 mt-2">Block live risk</p>
+                </div>
+              </div>
+
+              <div className="mt-5 border border-amber-900 bg-amber-950 rounded-lg p-4">
+                <p className="text-gray-400 text-sm">Learning Cycle Steps</p>
+                <p className="text-amber-400 text-3xl font-bold">{learningCycleSteps}</p>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-red-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🛡 Scheduler Safety Rules</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">Manual First</h5>
+                  <p className="text-gray-300 mt-2">Automation prepared, not active yet</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">Reports Only</h5>
+                  <p className="text-gray-300 mt-2">Scheduler cannot place orders</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">Demo Bound</h5>
+                  <p className="text-gray-300 mt-2">Demo/Paper data only</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Live Locked</h5>
+                  <p className="text-gray-300 mt-2">Broker execution remains blocked</p>
+                </div>
+              </div>
+
+              <div className="mt-5 border border-amber-900 bg-amber-950 rounded-lg p-4">
+                <p className="text-gray-400 text-sm">Autonomous Loop</p>
+                <p className="text-amber-400 font-bold">{autonomousLoopStatus}</p>
               </div>
             </div>
           </div>
