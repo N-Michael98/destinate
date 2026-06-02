@@ -388,6 +388,14 @@ export default function Home() {
   const highImpactEventCount = 5;
   const aiIntelligenceStatus = "Resource Ready";
 
+  const forwardTestingScore = 44;
+  const forwardTestingStatus = "Prepared";
+  const forwardTestingMode = "Planning Only";
+  const plannedForwardTests = 3;
+  const completedForwardTests = 0;
+  const strategyLearningStatus = "Memory later";
+  const demoExecutionStatus = "Locked";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -538,6 +546,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#demo-auth-center">🔐 Demo Auth Center</a>
               <a className="block hover:text-blue-400 py-1" href="#market-data-bridge">📈 Market Data Bridge</a>
               <a className="block hover:text-blue-400 py-1" href="#intelligence-layer">📰 Intelligence Layer</a>
+              <a className="block hover:text-blue-400 py-1" href="#forward-testing-engine">🚀 Forward Testing</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -561,7 +570,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.6 News & Intelligence Resource Layer
+              AI Trading Mission Control · V7.7 Forward Testing Engine
             </p>
           </div>
 
@@ -1331,7 +1340,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.6 News & Intelligence Resource Layer</p>
+                  <p className="text-orange-400 font-bold">V7.7 Forward Testing Engine</p>
                 </div>
               </div>
             </div>
@@ -2182,6 +2191,165 @@ export default function Home() {
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
                   <h5 className="font-bold">V8.0</h5>
                   <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="forward-testing-engine" className="bg-gray-900 p-6 rounded-2xl border border-fuchsia-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🚀 Forward Testing Engine V7.7</h3>
+                <p className="text-gray-400 mt-2">
+                  Vorbereitung für AI-Forward-Tests: kommende Tage, Wochen oder Monate planen, Demo-Trades später auswerten und erfolgreiche Strategien für zukünftige Entscheidungen speichern.
+                </p>
+              </div>
+
+              <div className="bg-black border border-fuchsia-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Forward Testing Status</p>
+                <p className="text-fuchsia-400 font-bold">{forwardTestingStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-fuchsia-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Engine Score</h4>
+                <p className="text-5xl mt-4 text-fuchsia-400">{forwardTestingScore}%</p>
+                <p className="text-gray-400 mt-2">Forward architecture</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Mode</h4>
+                <p className="text-2xl mt-4 text-blue-400">{forwardTestingMode}</p>
+                <p className="text-gray-400 mt-2">Demo execution later</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Planned Tests</h4>
+                <p className="text-5xl mt-4 text-yellow-400">{plannedForwardTests}</p>
+                <p className="text-gray-400 mt-2">Mock plans ready</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Completed</h4>
+                <p className="text-5xl mt-4 text-green-400">{completedForwardTests}</p>
+                <p className="text-gray-400 mt-2">Results later</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Demo Execution</h4>
+                <p className="text-2xl mt-4 text-red-400">{demoExecutionStatus}</p>
+                <p className="text-gray-400 mt-2">No real orders</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📋 Forward Test Plans</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    NAS100 · Momentum Breakout · LONG · 83% Confidence
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    XAUUSD · Risk-Off Trend · LONG · 78% Confidence
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    USOIL · Inventory Reaction · SHORT · 71% Confidence
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Planung für morgen, nächste Woche oder nächsten Monat später möglich.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 Learning Loop Logic</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">AI plant Setup</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Trade wird später ausgeführt</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Resultat wird analysiert</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Strategie-Score wird aktualisiert</div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">Beste Logiken gehen in AI Memory</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Forward Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Nur Planung in V7.7</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Keine Live Orders</div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Demo Execution erst später</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live Execution bleibt blockiert</div>
+                </div>
+
+                <div className="mt-5 border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Strategy Learning</p>
+                  <p className="text-purple-400 font-bold">{strategyLearningStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-fuchsia-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">📊 Strategy Score Preview</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">Momentum Breakout</h5>
+                  <p className="text-gray-300 mt-2">Score later · NAS100</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">Risk-Off Trend</h5>
+                  <p className="text-gray-300 mt-2">Score later · XAUUSD</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">Inventory Reaction</h5>
+                  <p className="text-gray-300 mt-2">Score later · USOIL</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">Macro Momentum</h5>
+                  <p className="text-gray-300 mt-2">Score later · Forex</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Roadmap to AI Learning</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V7.7 erstellt die Grundlage, damit AI-Agenten nicht nur alte Daten auswerten, sondern zukünftige Demo-Zeiträume planen können.
+                Später werden Ergebnisse, Marktbedingungen, News, technische Signale und Fundamentals gespeichert und in Strategy Evolution genutzt.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.7</h5>
+                  <p className="text-gray-300 mt-2">Forward Testing</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.8</h5>
+                  <p className="text-gray-300 mt-2">AI Memory</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.9</h5>
+                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.0</h5>
+                  <p className="text-gray-300 mt-2">Controlled Live</p>
                 </div>
               </div>
             </div>
