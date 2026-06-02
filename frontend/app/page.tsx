@@ -8,6 +8,14 @@ function createSlug(name: string) {
   return name.toLowerCase().replaceAll(" ", "-");
 }
 
+function formatCHF(value: number) {
+  return new Intl.NumberFormat("de-CH", {
+    maximumFractionDigits: 2,
+  })
+    .format(value)
+    .replaceAll("’", "'");
+}
+
 const riskValue = {
   Low: 1,
   Medium: 2,
@@ -351,6 +359,18 @@ export default function Home() {
   const brokerApiLayerPermission = "No Live Orders";
   const brokerApiLayerSafety = "Credentials blocked";
 
+  const demoAuthScore = 28;
+  const demoAuthStatus = "Prepared";
+  const demoAuthMode = "Demo credentials later";
+  const demoAuthPermission = "Test Only";
+  const demoAuthSafety = "Environment variables only";
+  const capitalDemoAuthStatus = "Not connected";
+  const capitalDemoCredentialStatus = "Not configured";
+  const capitalDemoTestStatus = "Locked";
+  const icMarketsDemoAuthStatus = "Not connected";
+  const icMarketsDemoServerStatus = "Not configured";
+  const icMarketsDemoBridgeStatus = "Not connected";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -498,6 +518,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#capital-com-connector">🔌 Capital.com Connector</a>
               <a className="block hover:text-blue-400 py-1" href="#ic-markets-connector">🌐 IC Markets Connector</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-api-layer">🧱 Broker API Layer</a>
+              <a className="block hover:text-blue-400 py-1" href="#demo-auth-center">🔐 Demo Auth Center</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -521,27 +542,27 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.3 Broker API Layer
+              AI Trading Mission Control · V7.4 Demo Authentication Center
             </p>
           </div>
 
           <div className="grid grid-cols-5 gap-6 mb-8">
             <div className="bg-gray-900 p-6 rounded-2xl border border-green-900">
               <h3 className="font-bold text-lg">💰 Balance</h3>
-              <p className="text-3xl mt-4 text-green-400">{paperBalance.toLocaleString("de-CH")} CHF</p>
+              <p className="text-3xl mt-4 text-green-400">{formatCHF(paperBalance)} CHF</p>
               <p className="text-gray-400 mt-2">Paper Account</p>
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900">
               <h3 className="font-bold text-lg">📈 Equity</h3>
-              <p className="text-3xl mt-4 text-cyan-400">{floatingEquity.toLocaleString("de-CH")} CHF</p>
+              <p className="text-3xl mt-4 text-cyan-400">{formatCHF(floatingEquity)} CHF</p>
               <p className="text-gray-400 mt-2">Floating Equity</p>
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
               <h3 className="font-bold text-lg">📊 Closed P/L</h3>
               <p className={paperProfitLoss >= 0 ? "text-3xl mt-4 text-green-400" : "text-3xl mt-4 text-red-400"}>
-                {paperProfitLoss.toLocaleString("de-CH")} CHF
+                {formatCHF(paperProfitLoss)} CHF
               </p>
               <p className="text-gray-400 mt-2">Closed paper trades</p>
             </div>
@@ -549,7 +570,7 @@ export default function Home() {
             <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-900">
               <h3 className="font-bold text-lg">⚡ Open P/L</h3>
               <p className={floatingProfitLoss >= 0 ? "text-3xl mt-4 text-green-400" : "text-3xl mt-4 text-red-400"}>
-                {Number(floatingProfitLoss.toFixed(2)).toLocaleString("de-CH")} CHF
+                {formatCHF(Number(floatingProfitLoss.toFixed(2)))} CHF
               </p>
               <p className="text-gray-400 mt-2">Floating positions</p>
             </div>
@@ -658,7 +679,7 @@ export default function Home() {
                 <div>
                   <div className="flex justify-between mb-2">
                     <span>Open Risk Exposure</span>
-                    <span>{Number(riskExposure.toFixed(2)).toLocaleString("de-CH")}</span>
+                    <span>{formatCHF(Number(riskExposure.toFixed(2)))}</span>
                   </div>
                   <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
                     <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(riskExposure, 100)}%` }} />
@@ -745,7 +766,7 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-3 mt-5">
                 <div className="bg-black border border-gray-800 rounded-xl p-3">
                   <p className="text-gray-400 text-sm">Peak Equity</p>
-                  <p className="text-yellow-400 font-bold">{paperPeakEquity.toLocaleString("de-CH")} CHF</p>
+                  <p className="text-yellow-400 font-bold">{formatCHF(paperPeakEquity)} CHF</p>
                 </div>
 
                 <div className="bg-black border border-gray-800 rounded-xl p-3">
@@ -1040,7 +1061,7 @@ export default function Home() {
                 >
                   {positionSizingStatus}
                 </p>
-                <p className="text-gray-400 mt-2">Risk Exposure {Number(riskExposure.toFixed(2)).toLocaleString("de-CH")}</p>
+                <p className="text-gray-400 mt-2">Risk Exposure {formatCHF(Number(riskExposure.toFixed(2)))}</p>
               </div>
 
               <div className="bg-black border border-purple-900 rounded-xl p-5">
@@ -1068,7 +1089,7 @@ export default function Home() {
                   <div>
                     <div className="flex justify-between text-sm mb-2">
                       <span>Open Risk Exposure</span>
-                      <span>{Number(riskExposure.toFixed(2)).toLocaleString("de-CH")}</span>
+                      <span>{formatCHF(Number(riskExposure.toFixed(2)))}</span>
                     </div>
                     <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
                       <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(riskExposure, 100)}%` }} />
@@ -1077,7 +1098,7 @@ export default function Home() {
 
                   <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
                     Floating P/L: <span className={floatingProfitLoss >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
-                      {Number(floatingProfitLoss.toFixed(2)).toLocaleString("de-CH")} CHF
+                      {formatCHF(Number(floatingProfitLoss.toFixed(2)))} CHF
                     </span>
                   </div>
                 </div>
@@ -1291,7 +1312,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.3 Broker API Layer</p>
+                  <p className="text-orange-400 font-bold">V7.4 Demo Authentication Center</p>
                 </div>
               </div>
             </div>
@@ -1740,6 +1761,98 @@ export default function Home() {
                   <h5 className="font-bold">V8.0</h5>
                   <p className="text-gray-300 mt-2">Live Execution</p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="demo-auth-center" className="bg-gray-900 p-6 rounded-2xl border border-yellow-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🔐 Demo Authentication Center V7.4</h3>
+                <p className="text-gray-400 mt-2">
+                  Vorbereitung für sichere Demo-Authentifizierung bei Capital.com und IC Markets. Keine echten API Keys im Code, keine Live Orders.
+                </p>
+              </div>
+
+              <div className="bg-black border border-yellow-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Demo Auth Status</p>
+                <p className="text-yellow-400 font-bold">{demoAuthStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Auth Score</h4>
+                <p className="text-5xl mt-4 text-yellow-400">{demoAuthScore}%</p>
+                <p className="text-gray-400 mt-2">Prepared only</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Capital.com Demo</h4>
+                <p className="text-2xl mt-4 text-blue-400">{capitalDemoAuthStatus}</p>
+                <p className="text-gray-400 mt-2">Credential check later</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">IC Markets Demo</h4>
+                <p className="text-2xl mt-4 text-purple-400">{icMarketsDemoAuthStatus}</p>
+                <p className="text-gray-400 mt-2">Bridge check later</p>
+              </div>
+
+              <div className="bg-black border border-emerald-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Mode</h4>
+                <p className="text-2xl mt-4 text-emerald-400">{demoAuthMode}</p>
+                <p className="text-gray-400 mt-2">No secrets stored</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Permission</h4>
+                <p className="text-2xl mt-4 text-red-400">{demoAuthPermission}</p>
+                <p className="text-gray-400 mt-2">Live locked</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔵 Capital.com Demo Auth</h4>
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">API Key: <span className="text-gray-500">{capitalDemoCredentialStatus}</span></div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Identifier: <span className="text-gray-500">{capitalDemoCredentialStatus}</span></div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Test: <span className="text-red-400">{capitalDemoTestStatus}</span></div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Später nur über .env.local verbinden.</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🌐 IC Markets Demo Auth</h4>
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Server: <span className="text-gray-500">{icMarketsDemoServerStatus}</span></div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Platform: <span className="text-purple-400">MT5 / cTrader later</span></div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Bridge: <span className="text-red-400">{icMarketsDemoBridgeStatus}</span></div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Bridge wird erst später technisch angebunden.</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Auth Safety Rules</h4>
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Keine Secrets in Git</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Demo zuerst</div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ {demoAuthSafety}</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live Auth bleibt blockiert</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-yellow-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 Demo Auth Roadmap</h4>
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4"><h5 className="font-bold">V7.4</h5><p className="text-gray-300 mt-2">Demo Auth Center</p></div>
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4"><h5 className="font-bold">V7.5</h5><p className="text-gray-300 mt-2">Market Data Bridge</p></div>
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4"><h5 className="font-bold">V7.6</h5><p className="text-gray-300 mt-2">Account Sync</p></div>
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4"><h5 className="font-bold">V7.7</h5><p className="text-gray-300 mt-2">Position Sync</p></div>
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4"><h5 className="font-bold">V8.0</h5><p className="text-gray-300 mt-2">Live Execution</p></div>
               </div>
             </div>
           </div>
