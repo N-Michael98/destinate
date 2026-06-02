@@ -396,6 +396,14 @@ export default function Home() {
   const strategyLearningStatus = "Memory later";
   const demoExecutionStatus = "Locked";
 
+  const aiMemoryScore = 49;
+  const aiMemoryStatus = "Prepared";
+  const tradeMemoryStatus = "Ready";
+  const strategyMemoryStatus = "Ready";
+  const marketMemoryStatus = "Ready";
+  const memoryEntriesCount = 0;
+  const learningLoopStatus = "Prepared";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -547,6 +555,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#market-data-bridge">📈 Market Data Bridge</a>
               <a className="block hover:text-blue-400 py-1" href="#intelligence-layer">📰 Intelligence Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#forward-testing-engine">🚀 Forward Testing</a>
+              <a className="block hover:text-blue-400 py-1" href="#ai-learning-memory">🧠 AI Memory</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -570,7 +579,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.7 Forward Testing Engine
+              AI Trading Mission Control · V7.8 AI Learning Memory
             </p>
           </div>
 
@@ -1340,7 +1349,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.7 Forward Testing Engine</p>
+                  <p className="text-orange-400 font-bold">V7.8 AI Learning Memory</p>
                 </div>
               </div>
             </div>
@@ -2345,6 +2354,165 @@ export default function Home() {
                 <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
                   <h5 className="font-bold">V8.0</h5>
                   <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.0</h5>
+                  <p className="text-gray-300 mt-2">Controlled Live</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="ai-learning-memory" className="bg-gray-900 p-6 rounded-2xl border border-cyan-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🧠 AI Learning Memory V7.8</h3>
+                <p className="text-gray-400 mt-2">
+                  Vorbereitung für den Lernspeicher: Trade-Ergebnisse, Strategie-Performance, Marktverhalten und erfolgreiche AI-Logiken werden später gespeichert und für zukünftige Entscheidungen genutzt.
+                </p>
+              </div>
+
+              <div className="bg-black border border-cyan-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Memory Status</p>
+                <p className="text-cyan-400 font-bold">{aiMemoryStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Memory Score</h4>
+                <p className="text-5xl mt-4 text-cyan-400">{aiMemoryScore}%</p>
+                <p className="text-gray-400 mt-2">Learning architecture</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Trade Memory</h4>
+                <p className="text-2xl mt-4 text-green-400">{tradeMemoryStatus}</p>
+                <p className="text-gray-400 mt-2">Results later</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Strategy Memory</h4>
+                <p className="text-2xl mt-4 text-purple-400">{strategyMemoryStatus}</p>
+                <p className="text-gray-400 mt-2">Ranking later</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Market Memory</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{marketMemoryStatus}</p>
+                <p className="text-gray-400 mt-2">Behavior later</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Entries</h4>
+                <p className="text-5xl mt-4 text-blue-400">{memoryEntriesCount}</p>
+                <p className="text-gray-400 mt-2">Empty for now</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📚 Memory Types</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Trade Memory · Entry, Result, Market, Strategy
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Strategy Memory · Winrate, Average Return, Confidence
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Market Memory · Best Strategy, Market Behavior, Conditions
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Learning Manager · verbindet alles für AI Decisions
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔁 Learning Feedback Loop</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Forward Test wird geplant</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Resultat wird gespeichert</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Strategie wird bewertet</div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Marktverhalten wird dokumentiert</div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">AI nutzt Memory für nächste Planung</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Memory Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Memory Layer vorbereitet</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Keine automatischen Live Orders</div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Persistente DB später</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live Execution bleibt blockiert</div>
+                </div>
+
+                <div className="mt-5 border border-cyan-900 bg-cyan-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Learning Loop</p>
+                  <p className="text-cyan-400 font-bold">{learningLoopStatus}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧩 Memory Example Preview</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">NAS100</h5>
+                  <p className="text-gray-300 mt-2">Momentum Breakout · result later</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">XAUUSD</h5>
+                  <p className="text-gray-300 mt-2">Risk-Off Trend · result later</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">USOIL</h5>
+                  <p className="text-gray-300 mt-2">Inventory Reaction · result later</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">EURUSD</h5>
+                  <p className="text-gray-300 mt-2">Macro Momentum · result later</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Strategy Evolution</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V7.8 bereitet den Speicher vor, damit spätere Forward-Test-Ergebnisse dauerhaft genutzt werden können.
+                Gewinner-Strategien werden später höher gewichtet, schwache Setups werden reduziert und neue Marktbedingungen werden automatisch dokumentiert.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.8</h5>
+                  <p className="text-gray-300 mt-2">AI Memory</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.9</h5>
+                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.5</h5>
+                  <p className="text-gray-300 mt-2">Learning Reports</p>
                 </div>
 
                 <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
