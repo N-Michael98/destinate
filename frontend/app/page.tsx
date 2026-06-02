@@ -404,6 +404,15 @@ export default function Home() {
   const memoryEntriesCount = 0;
   const learningLoopStatus = "Prepared";
 
+  const strategyEvolutionScore = 55;
+  const strategyEvolutionStatus = "Prepared";
+  const strategyRankingStatus = "Ready";
+  const confidenceEngineStatus = "Simulation";
+  const marketAdaptationStatus = "Prepared";
+  const topEvolvingStrategy = "Risk-Off Trend";
+  const evolutionMode = "Ranking Only";
+  const autonomousAgentStatus = "Locked";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -556,6 +565,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#intelligence-layer">📰 Intelligence Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#forward-testing-engine">🚀 Forward Testing</a>
               <a className="block hover:text-blue-400 py-1" href="#ai-learning-memory">🧠 AI Memory</a>
+              <a className="block hover:text-blue-400 py-1" href="#strategy-evolution-engine">🧬 Strategy Evolution</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -579,7 +589,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V7.8 AI Learning Memory
+              AI Trading Mission Control · V7.9 Strategy Evolution Engine
             </p>
           </div>
 
@@ -1349,7 +1359,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V7.8 AI Learning Memory</p>
+                  <p className="text-orange-400 font-bold">V7.9 Strategy Evolution Engine</p>
                 </div>
               </div>
             </div>
@@ -2508,6 +2518,183 @@ export default function Home() {
                 <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
                   <h5 className="font-bold">V8.0</h5>
                   <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.5</h5>
+                  <p className="text-gray-300 mt-2">Learning Reports</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.0</h5>
+                  <p className="text-gray-300 mt-2">Controlled Live</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="strategy-evolution-engine" className="bg-gray-900 p-6 rounded-2xl border border-lime-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🧬 Strategy Evolution Engine V7.9</h3>
+                <p className="text-gray-400 mt-2">
+                  Vorbereitung für dynamisches Strategie-Ranking: Gewinner-Strategien werden höher gewichtet, schwache Setups zurückgestuft und Marktbedingungen später automatisch angepasst.
+                </p>
+              </div>
+
+              <div className="bg-black border border-lime-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Evolution Status</p>
+                <p className="text-lime-400 font-bold">{strategyEvolutionStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-lime-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Evolution Score</h4>
+                <p className="text-5xl mt-4 text-lime-400">{strategyEvolutionScore}%</p>
+                <p className="text-gray-400 mt-2">Ranking architecture</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Top Strategy</h4>
+                <p className="text-2xl mt-4 text-purple-400">{topEvolvingStrategy}</p>
+                <p className="text-gray-400 mt-2">Mock leader</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Ranking</h4>
+                <p className="text-2xl mt-4 text-blue-400">{strategyRankingStatus}</p>
+                <p className="text-gray-400 mt-2">Leaderboard later</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Confidence</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{confidenceEngineStatus}</p>
+                <p className="text-gray-400 mt-2">Score adjustment</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Agent</h4>
+                <p className="text-2xl mt-4 text-red-400">{autonomousAgentStatus}</p>
+                <p className="text-gray-400 mt-2">V8.0 later</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🏆 Strategy Leaderboard Preview</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
+                    1. Risk-Off Trend · 86 Evolution Score · XAUUSD
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    2. Momentum Breakout · 78 Evolution Score · NAS100
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    3. Inventory Reaction · 69 Evolution Score · USOIL
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Dynamic ranking wird später aus echten Forward-Test-Resultaten berechnet.
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🌍 Market Adaptation</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    NAS100 → Momentum Breakout
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    XAUUSD → Risk-Off Trend
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    USOIL → Inventory Reaction
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    EURUSD → Macro Momentum
+                  </div>
+                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
+                    Market Adaptation: {marketAdaptationStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Evolution Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Nur Ranking in V7.9
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Keine autonomen Orders
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Demo Agent kommt erst V8.0
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live Execution bleibt blockiert
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Evolution Mode</p>
+                  <p className="text-lime-400 font-bold">{evolutionMode}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧠 Confidence Engine Preview</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <h5 className="font-bold">Winrate</h5>
+                  <p className="text-gray-300 mt-2">höhere Gewichtung bei stabilen Ergebnissen</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">Average Return</h5>
+                  <p className="text-gray-300 mt-2">Strategien mit besserem Return steigen</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">Market Fit</h5>
+                  <p className="text-gray-300 mt-2">Strategie wird pro Markt angepasst</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Risk Filter</h5>
+                  <p className="text-gray-300 mt-2">schwache Setups werden reduziert</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Demo Trading Agent</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V7.9 bildet die Entscheidungslogik für V8.0. Der spätere Demo Trading Agent soll nicht zufällig handeln,
+                sondern anhand von Strategie-Ranking, Marktanpassung, Confidence Score, News, Fundamentals und Risk-Filter entscheiden.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.9</h5>
+                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Demo Agent</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.1</h5>
+                  <p className="text-gray-300 mt-2">Demo Execution</p>
                 </div>
 
                 <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
