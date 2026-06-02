@@ -222,6 +222,41 @@ export default function Home() {
         ).market
       : "-";
 
+  const claudeRiskScore =
+    paperMaxDrawdownPercent <= 3 && riskExposure <= 100 && openPaperOrders.length <= 3
+      ? 88
+      : paperMaxDrawdownPercent <= 6 && riskExposure <= 250
+        ? 70
+        : 45;
+
+  const claudeRiskVerdict =
+    claudeRiskScore >= 80
+      ? "Risk Controlled"
+      : claudeRiskScore >= 60
+        ? "Moderate Risk"
+        : "High Risk";
+
+  const claudeRiskRecommendation =
+    claudeRiskScore >= 80
+      ? "Risk bleibt kontrolliert. Positionsgrösse stabil halten und keine unnötige Exposure erhöhen."
+      : claudeRiskScore >= 60
+        ? "Risk ist moderat. Neue Positionen nur mit hoher Confidence und klarem R/R eröffnen."
+        : "Risk ist erhöht. Neue Trades vermeiden, Exposure reduzieren und Drawdown priorisieren.";
+
+  const positionSizingStatus =
+    riskExposure <= 100
+      ? "Healthy"
+      : riskExposure <= 250
+        ? "Watch"
+        : "Too High";
+
+  const drawdownStatus =
+    paperMaxDrawdownPercent <= 3
+      ? "Safe"
+      : paperMaxDrawdownPercent <= 6
+        ? "Warning"
+        : "Danger";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -356,6 +391,7 @@ export default function Home() {
               <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">AI Center</p>
               <Link className="block hover:text-blue-400 py-1" href="/ai-assistant">🤖 AI Assistant</Link>
               <a className="block hover:text-blue-400 py-1" href="#gpt-trade-analyst">🧠 GPT Trade Analyst</a>
+              <a className="block hover:text-blue-400 py-1" href="#claude-risk-analyst">🛡 Claude Risk Analyst</a>
               <a className="block hover:text-blue-400 py-1" href="#ai-consensus">🧠 AI Consensus</a>
               <a className="block hover:text-blue-400 py-1" href="#journal-snapshot">⭐ AI Trade Review</a>
             </div>
@@ -386,7 +422,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V6.7 GPT Trade Analyst
+              AI Trading Mission Control · V6.8 Claude Risk Analyst
             </p>
           </div>
 
@@ -497,6 +533,11 @@ export default function Home() {
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">GPT Trade Analyst</p>
                   <p className="text-2xl font-bold text-cyan-400">{gptTradeAnalystScore}/100</p>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400">Claude Risk Analyst</p>
+                  <p className="text-2xl font-bold text-red-400">{claudeRiskScore}/100</p>
                 </div>
               </div>
             </div>
@@ -706,6 +747,141 @@ export default function Home() {
 
                 <p className="text-gray-400 mt-5">
                   Später sendet dieses Modul echte Trade-Daten an GPT und erhält strukturierte Analyse zurück.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div id="claude-risk-analyst" className="bg-gray-900 p-6 rounded-2xl border border-red-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🛡 Claude Risk Analyst V6.8</h3>
+                <p className="text-gray-400 mt-2">
+                  Lokale Claude-Risk-Simulation: bewertet Drawdown, Exposure, Position Sizing und Risk-Control.
+                </p>
+              </div>
+
+              <div className="bg-black border border-red-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Risk Mode</p>
+                <p className="text-red-400 font-bold">Simulation</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6 mb-6">
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Claude Risk Score</h4>
+                <p className="text-4xl mt-4 text-red-400">{claudeRiskScore}/100</p>
+                <p className="text-gray-400 mt-2">{claudeRiskVerdict}</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Drawdown Status</h4>
+                <p
+                  className={
+                    drawdownStatus === "Safe"
+                      ? "text-3xl mt-4 text-green-400"
+                      : drawdownStatus === "Warning"
+                        ? "text-3xl mt-4 text-yellow-400"
+                        : "text-3xl mt-4 text-red-400"
+                  }
+                >
+                  {drawdownStatus}
+                </p>
+                <p className="text-gray-400 mt-2">{paperMaxDrawdownPercent}% Max DD</p>
+              </div>
+
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Position Sizing</h4>
+                <p
+                  className={
+                    positionSizingStatus === "Healthy"
+                      ? "text-3xl mt-4 text-green-400"
+                      : positionSizingStatus === "Watch"
+                        ? "text-3xl mt-4 text-yellow-400"
+                        : "text-3xl mt-4 text-red-400"
+                  }
+                >
+                  {positionSizingStatus}
+                </p>
+                <p className="text-gray-400 mt-2">Risk Exposure {Number(riskExposure.toFixed(2)).toLocaleString("de-CH")}</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Open Exposure</h4>
+                <p className="text-4xl mt-4 text-purple-400">{openPaperOrders.length}</p>
+                <p className="text-gray-400 mt-2">Open positions</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📉 Drawdown Analysis</h4>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Max Drawdown</span>
+                      <span>{paperMaxDrawdownPercent}%</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(paperMaxDrawdownPercent * 10, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span>Open Risk Exposure</span>
+                      <span>{Number(riskExposure.toFixed(2)).toLocaleString("de-CH")}</span>
+                    </div>
+                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(riskExposure, 100)}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Floating P/L: <span className={floatingProfitLoss >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
+                      {Number(floatingProfitLoss.toFixed(2)).toLocaleString("de-CH")} CHF
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧭 Claude Recommendation</h4>
+
+                <p className="text-gray-300 leading-relaxed">
+                  {claudeRiskRecommendation}
+                </p>
+
+                <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Risk Priority</p>
+                  <p className="text-red-400 font-bold">
+                    {drawdownStatus === "Danger"
+                      ? "Reduce Exposure"
+                      : drawdownStatus === "Warning"
+                        ? "Protect Capital"
+                        : "Maintain Discipline"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔒 API Status</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Claude API noch nicht verbunden
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Lokale Risk Analyse aktiv
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    🔒 Live Risk Decisions gesperrt
+                  </div>
+                </div>
+
+                <p className="text-gray-400 mt-5">
+                  Später prüft Claude echte Positionen, Broker-Exposure und Risk-Limits vor jeder Ausführung.
                 </p>
               </div>
             </div>
