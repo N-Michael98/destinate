@@ -257,6 +257,42 @@ export default function Home() {
         ? "Warning"
         : "Danger";
 
+  const signalEngineScore =
+    topOpportunity.confidence >= 85 && paperProfitFactor >= 1.5
+      ? 90
+      : topOpportunity.confidence >= 70
+        ? 74
+        : 55;
+
+  const multiAIConsensusScore = Math.round(
+    gptTradeAnalystScore * 0.35 +
+      claudeRiskScore * 0.35 +
+      signalEngineScore * 0.3
+  );
+
+  const finalAIDecision =
+    multiAIConsensusScore >= 90 && claudeRiskScore >= 75
+      ? "STRONG BUY"
+      : multiAIConsensusScore >= 75 && claudeRiskScore >= 65
+        ? "BUY"
+        : multiAIConsensusScore >= 60
+          ? "WAIT"
+          : "BLOCK";
+
+  const executionPermission =
+    finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
+      ? "ALLOWED"
+      : finalAIDecision === "WAIT"
+        ? "WAIT"
+        : "BLOCKED";
+
+  const consensusHealth =
+    multiAIConsensusScore >= 80 && claudeRiskScore >= 70
+      ? "Aligned"
+      : multiAIConsensusScore >= 60
+        ? "Mixed"
+        : "Conflict";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -392,6 +428,7 @@ export default function Home() {
               <Link className="block hover:text-blue-400 py-1" href="/ai-assistant">🤖 AI Assistant</Link>
               <a className="block hover:text-blue-400 py-1" href="#gpt-trade-analyst">🧠 GPT Trade Analyst</a>
               <a className="block hover:text-blue-400 py-1" href="#claude-risk-analyst">🛡 Claude Risk Analyst</a>
+              <a className="block hover:text-blue-400 py-1" href="#multi-ai-consensus">⚡ Multi-AI Consensus</a>
               <a className="block hover:text-blue-400 py-1" href="#ai-consensus">🧠 AI Consensus</a>
               <a className="block hover:text-blue-400 py-1" href="#journal-snapshot">⭐ AI Trade Review</a>
             </div>
@@ -422,7 +459,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V6.8 Claude Risk Analyst
+              AI Trading Mission Control · V6.9 Multi-AI Consensus Engine
             </p>
           </div>
 
@@ -522,12 +559,22 @@ export default function Home() {
 
                 <div className="flex justify-between bg-black border border-gray-800 rounded-xl p-4">
                   <span>System Decision</span>
-                  <span className="text-yellow-400 font-bold">WAIT</span>
+                  <span
+                    className={
+                      finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
+                        ? "text-green-400 font-bold"
+                        : finalAIDecision === "WAIT"
+                          ? "text-yellow-400 font-bold"
+                          : "text-red-400 font-bold"
+                    }
+                  >
+                    {finalAIDecision}
+                  </span>
                 </div>
 
                 <div className="bg-purple-950 border border-purple-800 rounded-xl p-4">
                   <p className="text-gray-400">Consensus Score</p>
-                  <p className="text-4xl font-bold text-purple-400">74%</p>
+                  <p className="text-4xl font-bold text-purple-400">{multiAIConsensusScore}%</p>
                 </div>
 
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
@@ -651,6 +698,134 @@ export default function Home() {
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div id="multi-ai-consensus" className="bg-gray-900 p-6 rounded-2xl border border-purple-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">⚡ Multi-AI Consensus Engine V6.9</h3>
+                <p className="text-gray-400 mt-2">
+                  Gemeinsame Entscheidungslogik aus GPT Trade Analyst, Claude Risk Analyst, Signal Engine und Risk-Control.
+                </p>
+              </div>
+
+              <div className="bg-black border border-purple-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Consensus Mode</p>
+                <p className="text-purple-400 font-bold">Simulation</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6 mb-6">
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">GPT Score</h4>
+                <p className="text-4xl mt-4 text-cyan-400">{gptTradeAnalystScore}</p>
+                <p className="text-gray-400 mt-2">Trade Quality</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Claude Score</h4>
+                <p className="text-4xl mt-4 text-red-400">{claudeRiskScore}</p>
+                <p className="text-gray-400 mt-2">Risk Quality</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Signal Score</h4>
+                <p className="text-4xl mt-4 text-blue-400">{signalEngineScore}</p>
+                <p className="text-gray-400 mt-2">Market Opportunity</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Consensus</h4>
+                <p className="text-4xl mt-4 text-purple-400">{multiAIConsensusScore}%</p>
+                <p className="text-gray-400 mt-2">{consensusHealth}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div
+                className={
+                  finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
+                    ? "bg-black border border-green-900 rounded-xl p-5"
+                    : finalAIDecision === "WAIT"
+                      ? "bg-black border border-yellow-900 rounded-xl p-5"
+                      : "bg-black border border-red-900 rounded-xl p-5"
+                }
+              >
+                <h4 className="text-xl font-bold mb-4">🎯 Final Decision</h4>
+                <p
+                  className={
+                    finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
+                      ? "text-5xl font-bold text-green-400"
+                      : finalAIDecision === "WAIT"
+                        ? "text-5xl font-bold text-yellow-400"
+                        : "text-5xl font-bold text-red-400"
+                  }
+                >
+                  {finalAIDecision}
+                </p>
+                <p className="text-gray-400 mt-4">Combined AI decision</p>
+              </div>
+
+              <div
+                className={
+                  executionPermission === "ALLOWED"
+                    ? "bg-black border border-green-900 rounded-xl p-5"
+                    : executionPermission === "WAIT"
+                      ? "bg-black border border-yellow-900 rounded-xl p-5"
+                      : "bg-black border border-red-900 rounded-xl p-5"
+                }
+              >
+                <h4 className="text-xl font-bold mb-4">🛡 Execution Permission</h4>
+                <p
+                  className={
+                    executionPermission === "ALLOWED"
+                      ? "text-5xl font-bold text-green-400"
+                      : executionPermission === "WAIT"
+                        ? "text-5xl font-bold text-yellow-400"
+                        : "text-5xl font-bold text-red-400"
+                  }
+                >
+                  {executionPermission}
+                </p>
+                <p className="text-gray-400 mt-4">Live execution still locked</p>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📋 AI Voting Panel</h4>
+
+                <div className="space-y-3">
+                  <div className="flex justify-between border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    <span>GPT</span>
+                    <span className={gptTradeAnalystScore >= 75 ? "text-green-400 font-bold" : gptTradeAnalystScore >= 60 ? "text-yellow-400 font-bold" : "text-red-400 font-bold"}>
+                      {gptTradeAnalystScore >= 75 ? "BUY" : gptTradeAnalystScore >= 60 ? "WAIT" : "BLOCK"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    <span>Claude</span>
+                    <span className={claudeRiskScore >= 75 ? "text-green-400 font-bold" : claudeRiskScore >= 60 ? "text-yellow-400 font-bold" : "text-red-400 font-bold"}>
+                      {claudeRiskScore >= 75 ? "APPROVE" : claudeRiskScore >= 60 ? "CAUTION" : "BLOCK"}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    <span>Signal Engine</span>
+                    <span className={signalEngineScore >= 75 ? "text-green-400 font-bold" : signalEngineScore >= 60 ? "text-yellow-400 font-bold" : "text-red-400 font-bold"}>
+                      {signalEngineScore >= 75 ? "BUY" : signalEngineScore >= 60 ? "WAIT" : "BLOCK"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧠 Consensus Explanation</h4>
+              <p className="text-gray-300 leading-relaxed">
+                Die Engine kombiniert GPT-Performance-Analyse, Claude-Risk-Analyse und das aktuelle Signal.
+                Execution wird nur erlaubt, wenn Performance und Risiko gleichzeitig passen.
+                Aktuell bleibt alles im Simulationsmodus ohne echte Broker-Ausführung.
+              </p>
             </div>
           </div>
 
