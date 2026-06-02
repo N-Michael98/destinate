@@ -293,6 +293,44 @@ export default function Home() {
         ? "Mixed"
         : "Conflict";
 
+  const aiReadinessScore = Math.round(
+    (gptTradeAnalystScore + claudeRiskScore + multiAIConsensusScore) / 3
+  );
+
+  const riskReadinessScore = claudeRiskScore;
+
+  const executionReadinessScore =
+    paperOrders.length > 0 || openPaperOrders.length > 0 || closedPaperOrders.length > 0
+      ? 85
+      : 65;
+
+  const brokerReadinessScore = 0;
+  const apiReadinessScore = 0;
+
+  const liveTradingReadinessScore = Math.round(
+    aiReadinessScore * 0.25 +
+      riskReadinessScore * 0.25 +
+      executionReadinessScore * 0.25 +
+      brokerReadinessScore * 0.15 +
+      apiReadinessScore * 0.1
+  );
+
+  const liveTradingPermission =
+    liveTradingReadinessScore >= 85 &&
+    brokerReadinessScore >= 70 &&
+    apiReadinessScore >= 70
+      ? "LIVE READY"
+      : liveTradingReadinessScore >= 60
+        ? "PAPER ONLY"
+        : "LOCKED";
+
+  const liveTradingMode =
+    liveTradingPermission === "LIVE READY"
+      ? "Live Trading Ready"
+      : liveTradingPermission === "PAPER ONLY"
+        ? "Paper Trading Only"
+        : "Simulation Locked";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -436,6 +474,7 @@ export default function Home() {
             <div className="pt-4">
               <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">Execution</p>
               <a className="block hover:text-blue-400 py-1" href="#execution-overview">⚡ Execution Center</a>
+              <a className="block hover:text-blue-400 py-1" href="#live-trading-prep">🚀 Live Trading Prep</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -459,7 +498,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V6.9 Multi-AI Consensus Engine
+              AI Trading Mission Control · V7.0 Live Trading Preparation Center
             </p>
           </div>
 
@@ -1106,6 +1145,161 @@ export default function Home() {
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Average Loss</p>
                   <p className="text-3xl font-bold text-red-400">{averagePaperLoss} CHF</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="live-trading-prep" className="bg-gray-900 p-6 rounded-2xl border border-orange-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🚀 Live Trading Preparation Center V7.0</h3>
+                <p className="text-gray-400 mt-2">
+                  Prüft, wie weit das System von echtem Live Trading entfernt ist. Aktuell bleibt Live Execution gesperrt.
+                </p>
+              </div>
+
+              <div className="bg-black border border-orange-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Trading Permission</p>
+                <p
+                  className={
+                    liveTradingPermission === "LIVE READY"
+                      ? "text-green-400 font-bold"
+                      : liveTradingPermission === "PAPER ONLY"
+                        ? "text-yellow-400 font-bold"
+                        : "text-red-400 font-bold"
+                  }
+                >
+                  {liveTradingPermission}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-orange-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Overall Readiness</h4>
+                <p className="text-5xl mt-4 text-orange-400">{liveTradingReadinessScore}%</p>
+                <p className="text-gray-400 mt-2">{liveTradingMode}</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">AI Readiness</h4>
+                <p className="text-4xl mt-4 text-purple-400">{aiReadinessScore}%</p>
+                <p className="text-gray-400 mt-2">GPT + Claude + Consensus</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Risk Readiness</h4>
+                <p className="text-4xl mt-4 text-red-400">{riskReadinessScore}%</p>
+                <p className="text-gray-400 mt-2">Risk Engine</p>
+              </div>
+
+              <div className="bg-black border border-cyan-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Execution</h4>
+                <p className="text-4xl mt-4 text-cyan-400">{executionReadinessScore}%</p>
+                <p className="text-gray-400 mt-2">Paper Engine</p>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Broker/API</h4>
+                <p className="text-4xl mt-4 text-gray-500">0%</p>
+                <p className="text-gray-400 mt-2">Not connected</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">✅ Live Trading Checklist</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Paper Trading Engine</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Position Manager</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Account Equity Engine</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ GPT Trade Analyst</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Claude Risk Analyst</div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Multi-AI Consensus</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔒 Missing Before Live</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ OpenAI API Connection</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Claude API Connection</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Capital.com API</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ IC Markets API</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Live Order Manager</div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Risk Firewall</div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Trading Permission</h4>
+
+                <div
+                  className={
+                    liveTradingPermission === "LIVE READY"
+                      ? "border border-green-900 bg-green-950 rounded-xl p-5"
+                      : liveTradingPermission === "PAPER ONLY"
+                        ? "border border-yellow-900 bg-yellow-950 rounded-xl p-5"
+                        : "border border-red-900 bg-red-950 rounded-xl p-5"
+                  }
+                >
+                  <p
+                    className={
+                      liveTradingPermission === "LIVE READY"
+                        ? "text-4xl font-bold text-green-400"
+                        : liveTradingPermission === "PAPER ONLY"
+                          ? "text-4xl font-bold text-yellow-400"
+                          : "text-4xl font-bold text-red-400"
+                    }
+                  >
+                    {liveTradingPermission}
+                  </p>
+                  <p className="text-gray-300 mt-3">
+                    {liveTradingPermission === "LIVE READY"
+                      ? "System wäre bereit für Live Mode."
+                      : liveTradingPermission === "PAPER ONLY"
+                        ? "Nur Paper Trading erlaubt. Live Trading bleibt gesperrt."
+                        : "Live Trading ist gesperrt. Erst APIs und Broker anbinden."}
+                  </p>
+                </div>
+
+                <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400">Next Step</p>
+                  <p className="text-orange-400 font-bold">V7.1 Capital.com Connector</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-orange-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🧭 Live Trading Roadmap</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.0</h5>
+                  <p className="text-gray-300 mt-2">Live Prep Center</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.1</h5>
+                  <p className="text-gray-300 mt-2">Capital.com Connector</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.2</h5>
+                  <p className="text-gray-300 mt-2">IC Markets Connector</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V7.3</h5>
+                  <p className="text-gray-300 mt-2">OpenAI API</p>
+                </div>
+
+                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
+                  <h5 className="font-bold">V8.0</h5>
+                  <p className="text-gray-300 mt-2">Live Execution</p>
                 </div>
               </div>
             </div>
