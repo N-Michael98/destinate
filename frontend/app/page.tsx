@@ -497,6 +497,15 @@ export default function Home() {
   const preferredRegimeStrategy = "Momentum Breakout";
   const regimeSafetyMode = "Strategy filter only";
 
+  const portfolioIntelligenceScore = 99;
+  const portfolioIntelligenceStatus = "Prepared";
+  const portfolioRiskStatus = "Simulation";
+  const correlationRiskStatus = "Watched";
+  const exposureStatus = "Prepared";
+  const allocationStatus = "AI Suggested";
+  const portfolioDiversificationScore = 74;
+  const portfolioSafetyMode = "Demo portfolio only";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -659,6 +668,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#autonomous-learning-scheduler">⏱️ Learning Scheduler</a>
               <a className="block hover:text-blue-400 py-1" href="#consensus-intelligence-core">🧩 Consensus Core</a>
               <a className="block hover:text-blue-400 py-1" href="#market-regime-engine">🌍 Market Regime</a>
+              <a className="block hover:text-blue-400 py-1" href="#portfolio-intelligence">📊 Portfolio Intelligence</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -682,7 +692,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.8 Market Regime Engine
+              AI Trading Mission Control · V8.9 Portfolio Intelligence
             </p>
           </div>
 
@@ -1452,7 +1462,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.8 Market Regime Engine</p>
+                  <p className="text-orange-400 font-bold">V8.9 Portfolio Intelligence</p>
                 </div>
               </div>
             </div>
@@ -4468,6 +4478,188 @@ export default function Home() {
                 <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
                   <h5 className="font-bold">Demo</h5>
                   <p className="text-gray-300 mt-2">Execution later</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="portfolio-intelligence" className="bg-gray-900 p-6 rounded-2xl border border-blue-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">📊 Portfolio Intelligence V8.9</h3>
+                <p className="text-gray-400 mt-2">
+                  Portfolio-Analyse: Das System bewertet nicht nur einzelne Trades, sondern Gesamt-Exposure, Korrelationen, Risiko, Diversifikation und AI Allocation.
+                </p>
+              </div>
+
+              <div className="bg-black border border-blue-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Portfolio Status</p>
+                <p className="text-blue-400 font-bold">{portfolioIntelligenceStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Portfolio Score</h4>
+                <p className="text-5xl mt-4 text-blue-400">{portfolioIntelligenceScore}%</p>
+                <p className="text-gray-400 mt-2">Portfolio architecture</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Portfolio Risk</h4>
+                <p className="text-2xl mt-4 text-red-400">{portfolioRiskStatus}</p>
+                <p className="text-gray-400 mt-2">Risk model later</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Correlation</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{correlationRiskStatus}</p>
+                <p className="text-gray-400 mt-2">Overlap filter</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Exposure</h4>
+                <p className="text-2xl mt-4 text-green-400">{exposureStatus}</p>
+                <p className="text-gray-400 mt-2">Asset/currency exposure</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Allocation</h4>
+                <p className="text-2xl mt-4 text-purple-400">{allocationStatus}</p>
+                <p className="text-gray-400 mt-2">Demo sizing later</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🌍 Portfolio Exposure Preview</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    NAS100 LONG → Equity / Tech Exposure
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    XAUUSD LONG → Gold / Risk-Off Hedge
+                  </div>
+                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
+                    USOIL SHORT → Commodity Exposure
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    EURUSD LONG → Currency / USD Exposure
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔗 Correlation Risk Logic</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    NAS100 + SPX500 + DAX LONG → High equity correlation
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Gold + Oil + Forex → Better diversification
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    USD-sensitive pairs → Currency overlap risk
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    AI checks portfolio conflict before new demo plan
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Diversification Score: {portfolioDiversificationScore}/100
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Portfolio Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Portfolio filter before execution
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No single overexposed market cluster
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ High correlation reduces confidence
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Safety Mode</p>
+                  <p className="text-blue-400 font-bold">{portfolioSafetyMode}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-blue-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">📌 AI Allocation Preview</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">NAS100</h5>
+                  <p className="text-gray-300 mt-2">30% demo focus · Momentum</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">XAUUSD</h5>
+                  <p className="text-gray-300 mt-2">25% demo focus · Hedge</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">USOIL</h5>
+                  <p className="text-gray-300 mt-2">15% demo focus · Macro</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">EURUSD</h5>
+                  <p className="text-gray-300 mt-2">20% demo focus · Forex</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">Reserve</h5>
+                  <p className="text-gray-300 mt-2">10% no-trade buffer</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Portfolio to AI Brain Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.9 prüft Portfolio-Risiko, bevor ein neuer Demo-Trade geplant wird. Dadurch soll der AI Agent später nicht nur den besten Einzeltrade wählen,
+                sondern auch kontrollieren, ob dieser Trade zum gesamten Portfolio passt.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
+                  <h5 className="font-bold">Regime</h5>
+                  <p className="text-gray-300 mt-2">Market condition</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">Portfolio</h5>
+                  <p className="text-gray-300 mt-2">Exposure control</p>
+                </div>
+
+                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <h5 className="font-bold">Consensus</h5>
+                  <p className="text-gray-300 mt-2">Final validation</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">Agent</h5>
+                  <p className="text-gray-300 mt-2">Demo planner</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">Execution</h5>
+                  <p className="text-gray-300 mt-2">Paper only</p>
                 </div>
               </div>
             </div>
