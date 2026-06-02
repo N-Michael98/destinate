@@ -515,6 +515,15 @@ export default function Home() {
   const brainConsensusStatus = "Required";
   const brainNextPhase = "V9.1 OpenAI Integration";
 
+  const openAiIntegrationScore = 104;
+  const openAiIntegrationStatus = "Prepared";
+  const openAiClientStatus = "SDK Ready Later";
+  const gptMarketAnalystStatus = "Prepared";
+  const gptStrategyReviewStatus = "Prepared";
+  const gptLearningReviewStatus = "Prepared";
+  const openAiSafetyStatus = "Server Only";
+  const openAiNextPhase = "V9.2 Claude Integration";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -679,6 +688,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#market-regime-engine">🌍 Market Regime</a>
               <a className="block hover:text-blue-400 py-1" href="#portfolio-intelligence">📊 Portfolio Intelligence</a>
               <a className="block hover:text-blue-400 py-1" href="#autonomous-portfolio-brain">🧠 Portfolio Brain</a>
+              <a className="block hover:text-blue-400 py-1" href="#openai-integration-layer">🤖 OpenAI Layer</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -702,7 +712,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V9.0 Autonomous Portfolio Brain
+              AI Trading Mission Control · V9.1 OpenAI Integration Layer
             </p>
           </div>
 
@@ -1472,7 +1482,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V9.0 Autonomous Portfolio Brain</p>
+                  <p className="text-orange-400 font-bold">V9.1 OpenAI Integration Layer</p>
                 </div>
               </div>
             </div>
@@ -4880,6 +4890,191 @@ export default function Home() {
                 <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
                   <h5 className="font-bold">V9.5</h5>
                   <p className="text-gray-300 mt-2">Forward Learning Live</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="openai-integration-layer" className="bg-gray-900 p-6 rounded-2xl border border-green-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🤖 OpenAI Integration Layer V9.1</h3>
+                <p className="text-gray-400 mt-2">
+                  Serverseitige OpenAI-Schicht: GPT wird später als Market Analyst, Strategy Reviewer und Learning Reviewer in das Portfolio Brain eingebunden.
+                </p>
+              </div>
+
+              <div className="bg-black border border-green-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">OpenAI Status</p>
+                <p className="text-green-400 font-bold">{openAiIntegrationStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">OpenAI Score</h4>
+                <p className="text-5xl mt-4 text-green-400">{openAiIntegrationScore}%</p>
+                <p className="text-gray-400 mt-2">Provider architecture</p>
+              </div>
+
+              <div className="bg-black border border-blue-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Client</h4>
+                <p className="text-2xl mt-4 text-blue-400">{openAiClientStatus}</p>
+                <p className="text-gray-400 mt-2">npm openai later</p>
+              </div>
+
+              <div className="bg-black border border-purple-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">GPT Market</h4>
+                <p className="text-2xl mt-4 text-purple-400">{gptMarketAnalystStatus}</p>
+                <p className="text-gray-400 mt-2">Opportunity review</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">GPT Strategy</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{gptStrategyReviewStatus}</p>
+                <p className="text-gray-400 mt-2">Setup quality</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Safety</h4>
+                <p className="text-2xl mt-4 text-red-400">{openAiSafetyStatus}</p>
+                <p className="text-gray-400 mt-2">No browser keys</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🧠 GPT Market Analyst</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Input: Market Data + Watchlist
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Input: News + Macro + Sentiment
+                  </div>
+                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
+                    Input: Market Regime
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Output: LONG / SHORT / WAIT / BLOCK
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Status: {gptMarketAnalystStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">📈 GPT Strategy Review</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Reviews setup quality
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Compares strategy with regime
+                  </div>
+                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
+                    Checks portfolio fit
+                  </div>
+                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
+                    Returns confidence + reasoning
+                  </div>
+                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
+                    Status: {gptStrategyReviewStatus}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 OpenAI Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ API key only via .env.local
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Server-side calls only
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ GPT cannot execute trades alone
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live broker execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-green-900 bg-green-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Next Phase</p>
+                  <p className="text-green-400 font-bold">{openAiNextPhase}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-green-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔌 OpenAI Provider Pipeline</h4>
+
+              <div className="grid grid-cols-5 gap-4">
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">1. Context</h5>
+                  <p className="text-gray-300 mt-2">Market + News + Regime</p>
+                </div>
+
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">2. Prompt</h5>
+                  <p className="text-gray-300 mt-2">Structured GPT request</p>
+                </div>
+
+                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
+                  <h5 className="font-bold">3. GPT</h5>
+                  <p className="text-gray-300 mt-2">Opportunity analysis</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">4. Output</h5>
+                  <p className="text-gray-300 mt-2">Signal + confidence</p>
+                </div>
+
+                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <h5 className="font-bold">5. Consensus</h5>
+                  <p className="text-gray-300 mt-2">Final validation</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Real Multi-AI</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V9.1 bereitet die OpenAI-Verbindung vor. GPT wird später echte Marktanalysen liefern, aber Entscheidungen laufen weiterhin durch Claude Risk Review,
+                AI Agent Review, Consensus Intelligence, Market Regime und Portfolio Brain.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.1</h5>
+                  <p className="text-gray-300 mt-2">OpenAI Layer</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.2</h5>
+                  <p className="text-gray-300 mt-2">Claude Layer</p>
+                </div>
+
+                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.3</h5>
+                  <p className="text-gray-300 mt-2">Real Consensus</p>
+                </div>
+
+                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.4</h5>
+                  <p className="text-gray-300 mt-2">TradingView</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">V9.5</h5>
+                  <p className="text-gray-300 mt-2">Live Demo Learning</p>
                 </div>
               </div>
             </div>
