@@ -479,6 +479,15 @@ export default function Home() {
   const nextPlanStatus = "Prepared";
   const autonomousLoopStatus = "Simulation";
 
+  const consensusCoreScore = 96;
+  const consensusCoreStatus = "Prepared";
+  const gptSignalStatus = "Ready";
+  const claudeRiskSignalStatus = "Ready";
+  const agentSignalStatus = "Ready";
+  const conflictDetectionStatus = "Active";
+  const finalDecisionStatus = "Consensus Required";
+  const consensusSafetyMode = "Block on conflict";
+
   async function loadPaperOrders() {
     try {
       const response = await fetch("/api/paper-orders");
@@ -639,6 +648,7 @@ export default function Home() {
               <a className="block hover:text-blue-400 py-1" href="#adaptive-confidence-system">🎯 Adaptive Confidence</a>
               <a className="block hover:text-blue-400 py-1" href="#multi-ai-learning-reports">📑 Learning Reports</a>
               <a className="block hover:text-blue-400 py-1" href="#autonomous-learning-scheduler">⏱️ Learning Scheduler</a>
+              <a className="block hover:text-blue-400 py-1" href="#consensus-intelligence-core">🧩 Consensus Core</a>
               <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
               <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
             </div>
@@ -662,7 +672,7 @@ export default function Home() {
           <div className="mb-10">
             <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
             <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V8.6 Autonomous Learning Scheduler
+              AI Trading Mission Control · V8.7 Consensus Intelligence Core
             </p>
           </div>
 
@@ -1432,7 +1442,7 @@ export default function Home() {
 
                 <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V8.6 Autonomous Learning Scheduler</p>
+                  <p className="text-orange-400 font-bold">V8.7 Consensus Intelligence Core</p>
                 </div>
               </div>
             </div>
@@ -4088,6 +4098,185 @@ export default function Home() {
               <div className="mt-5 border border-amber-900 bg-amber-950 rounded-lg p-4">
                 <p className="text-gray-400 text-sm">Autonomous Loop</p>
                 <p className="text-amber-400 font-bold">{autonomousLoopStatus}</p>
+              </div>
+            </div>
+          </div>
+
+
+          <div id="consensus-intelligence-core" className="bg-gray-900 p-6 rounded-2xl border border-emerald-900 mb-8">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold">🧩 Consensus Intelligence Core V8.7</h3>
+                <p className="text-gray-400 mt-2">
+                  Zentrale Entscheidungsprüfung: GPT, Claude und AI Agent müssen gemeinsam validieren. Bei Konflikten wird ein Trade blockiert oder zur manuellen Prüfung markiert.
+                </p>
+              </div>
+
+              <div className="bg-black border border-emerald-800 rounded-xl px-5 py-3">
+                <p className="text-sm text-gray-400">Consensus Status</p>
+                <p className="text-emerald-400 font-bold">{consensusCoreStatus}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-6 mb-6">
+              <div className="bg-black border border-emerald-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Consensus Score</h4>
+                <p className="text-5xl mt-4 text-emerald-400">{consensusCoreScore}%</p>
+                <p className="text-gray-400 mt-2">Decision architecture</p>
+              </div>
+
+              <div className="bg-black border border-green-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">GPT Signal</h4>
+                <p className="text-2xl mt-4 text-green-400">{gptSignalStatus}</p>
+                <p className="text-gray-400 mt-2">Opportunity analysis</p>
+              </div>
+
+              <div className="bg-black border border-red-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Claude Risk</h4>
+                <p className="text-2xl mt-4 text-red-400">{claudeRiskSignalStatus}</p>
+                <p className="text-gray-400 mt-2">Risk validation</p>
+              </div>
+
+              <div className="bg-black border border-indigo-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Agent Signal</h4>
+                <p className="text-2xl mt-4 text-indigo-400">{agentSignalStatus}</p>
+                <p className="text-gray-400 mt-2">Execution logic</p>
+              </div>
+
+              <div className="bg-black border border-yellow-900 rounded-xl p-5">
+                <h4 className="font-bold text-lg">Conflict Check</h4>
+                <p className="text-2xl mt-4 text-yellow-400">{conflictDetectionStatus}</p>
+                <p className="text-gray-400 mt-2">Safety validation</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-6">
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🟢 Approved Scenario</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    GPT: LONG · Confidence 84%
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Claude: LONG · Risk acceptable
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    Agent: LONG · Execution plan valid
+                  </div>
+                  <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-3">
+                    Final Decision: APPROVED
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🔴 Conflict Scenario</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    GPT: LONG · Opportunity detected
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Claude: SHORT / BLOCK · High risk
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    Agent: WAIT · Execution not clean
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    Final Decision: BLOCKED
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black border border-gray-800 rounded-xl p-5">
+                <h4 className="text-xl font-bold mb-4">🛡 Consensus Safety Rules</h4>
+
+                <div className="space-y-3">
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ No single-model decision
+                  </div>
+                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
+                    ✅ Claude can block high-risk trades
+                  </div>
+                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
+                    ⚠️ Manual review on disagreement
+                  </div>
+                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
+                    🔒 Live execution remains blocked
+                  </div>
+                </div>
+
+                <div className="mt-5 border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Safety Mode</p>
+                  <p className="text-emerald-400 font-bold">{consensusSafetyMode}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-emerald-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">⚖️ Final Decision Matrix</h4>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">All Agree</h5>
+                  <p className="text-gray-300 mt-2">Approve demo plan</p>
+                </div>
+
+                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
+                  <h5 className="font-bold">Minor Conflict</h5>
+                  <p className="text-gray-300 mt-2">Reduce confidence</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">Risk Conflict</h5>
+                  <p className="text-gray-300 mt-2">Manual review</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Major Conflict</h5>
+                  <p className="text-gray-300 mt-2">Block trade</p>
+                </div>
+              </div>
+
+              <div className="mt-5 border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                <p className="text-gray-400 text-sm">Final Decision Mode</p>
+                <p className="text-emerald-400 font-bold">{finalDecisionStatus}</p>
+              </div>
+            </div>
+
+            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
+              <h4 className="text-xl font-bold mb-4">🔁 Consensus to Execution Pipeline</h4>
+              <p className="text-gray-300 leading-relaxed">
+                V8.7 stellt sicher, dass GPT, Claude und der AI Agent gemeinsam entscheiden. Der Consensus Core ist die letzte Kontrollinstanz,
+                bevor ein Demo-Trade später an Demo Execution, Performance Tracking und den Learning Loop übergeben wird.
+              </p>
+
+              <div className="grid grid-cols-5 gap-4 mt-5">
+                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
+                  <h5 className="font-bold">GPT</h5>
+                  <p className="text-gray-300 mt-2">Opportunity</p>
+                </div>
+
+                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
+                  <h5 className="font-bold">Claude</h5>
+                  <p className="text-gray-300 mt-2">Risk</p>
+                </div>
+
+                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
+                  <h5 className="font-bold">Agent</h5>
+                  <p className="text-gray-300 mt-2">Execution</p>
+                </div>
+
+                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
+                  <h5 className="font-bold">Consensus</h5>
+                  <p className="text-gray-300 mt-2">Final gate</p>
+                </div>
+
+                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
+                  <h5 className="font-bold">Demo</h5>
+                  <p className="text-gray-300 mt-2">Execution later</p>
+                </div>
               </div>
             </div>
           </div>
