@@ -804,6 +804,179 @@ function LearningCenter() {
 }
 
 
+
+function NewsLayerCenter() {
+  return (
+    <section className="bg-gray-900 border border-sky-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">📰 News Layer Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Zentrale News- und Sentiment-Schicht für Macro Events, Breaking News, Market Impact und spätere AI-Zusammenfassungen.
+          </p>
+        </div>
+        <div className="bg-black border border-sky-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">News Status</p>
+          <p className="text-sky-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Breaking News" value="Watch" subtitle="Market moving events" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Sentiment" value="Ready" subtitle="News mood layer" accent="text-sky-400" border="border-sky-900" />
+        <StatCard title="Macro Events" value="Later" subtitle="Calendar API later" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Impact Score" value="Prepared" subtitle="Low/medium/high" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="AI Summary" value="Ready" subtitle="GPT/Claude later" accent="text-green-400" border="border-green-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🌍 Source Pipeline</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Yahoo Finance" value="Later" accent="text-purple-400" />
+            <StatusPill label="Capital.com News" value="Later" accent="text-blue-400" />
+            <StatusPill label="Economic Calendar" value="Later" accent="text-yellow-400" />
+            <StatusPill label="Professional Feeds" value="Planned" accent="text-sky-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">⚡ Market Impact</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="CPI / Inflation" value="High" accent="text-red-400" />
+            <StatusPill label="FOMC / Rates" value="High" accent="text-red-400" />
+            <StatusPill label="NFP / Jobs" value="Watched" accent="text-yellow-400" />
+            <StatusPill label="Oil Inventories" value="USOIL" accent="text-orange-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🤖 AI News Review</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="GPT Summary" value="Prepared" accent="text-green-400" />
+            <StatusPill label="Claude Risk Impact" value="Prepared" accent="text-red-400" />
+            <StatusPill label="Consensus Filter" value="Required" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MarketRegimeCenter() {
+  return (
+    <section className="bg-gray-900 border border-lime-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🌍 Market Regime Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Erkennt Marktumfeld und filtert Strategien: trending, ranging, volatile, risk-on, risk-off oder news-driven.
+          </p>
+        </div>
+        <div className="bg-black border border-lime-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Regime Status</p>
+          <p className="text-lime-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="NAS100" value="Trending" subtitle="Momentum favored" accent="text-green-400" border="border-green-900" />
+        <StatCard title="EURUSD" value="Ranging" subtitle="Mean reversion later" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="XAUUSD" value="Risk-Off" subtitle="Safe-haven logic" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="USOIL" value="News" subtitle="Inventory driven" accent="text-orange-400" border="border-orange-900" />
+        <StatCard title="BTCUSD" value="Volatile" subtitle="Risk appetite" accent="text-red-400" border="border-red-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📈 Trend Logic</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Trending" value="Momentum" accent="text-green-400" />
+            <StatusPill label="Ranging" value="Mean Rev." accent="text-yellow-400" />
+            <StatusPill label="Compression" value="Breakout Later" accent="text-cyan-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">⚠️ Risk Regime</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Risk-On" value="Growth Assets" accent="text-green-400" />
+            <StatusPill label="Risk-Off" value="Gold / USD" accent="text-blue-400" />
+            <StatusPill label="News-Driven" value="Review" accent="text-red-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Strategy Filter</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Regime Fit" value="Required" accent="text-lime-400" />
+            <StatusPill label="Wrong Regime" value="Reduce" accent="text-yellow-400" />
+            <StatusPill label="High News Risk" value="Block/Review" accent="text-red-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PortfolioIntelligenceCenter() {
+  return (
+    <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">📌 Portfolio Intelligence Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Prüft Exposure, Korrelationen, Diversifikation, Allocation und Portfolio-Risiko vor jedem neuen Demo-Trade.
+          </p>
+        </div>
+        <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Portfolio Status</p>
+          <p className="text-blue-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Exposure" value="Medium" subtitle="Portfolio risk" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Correlation" value="Watched" subtitle="Overlap filter" accent="text-orange-400" border="border-orange-900" />
+        <StatCard title="Allocation" value="AI Suggested" subtitle="Demo weighting" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Diversification" value="74/100" subtitle="Mock score" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Live Risk" value="Blocked" subtitle="Paper only" accent="text-red-400" border="border-red-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🌍 Exposure Preview</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Indexes" value="30%" accent="text-blue-400" />
+            <StatusPill label="Commodities" value="40%" accent="text-yellow-400" />
+            <StatusPill label="Forex" value="20%" accent="text-green-400" />
+            <StatusPill label="Reserve" value="10%" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔗 Correlation Risk</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="NAS100 / SPX" value="High" accent="text-red-400" />
+            <StatusPill label="EURUSD / GBPUSD" value="Medium" accent="text-yellow-400" />
+            <StatusPill label="Gold / Oil" value="Low" accent="text-green-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📊 Allocation Plan</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="NAS100" value="30%" accent="text-blue-400" />
+            <StatusPill label="XAUUSD" value="25%" accent="text-yellow-400" />
+            <StatusPill label="Reserve" value="10%" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-journal") return <TradingJournalCenter />;
   if (activeView === "trading-desk") return <TradingDeskCenter />;
@@ -812,6 +985,9 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "gpt-analyst") return <GPTAnalystCenter />;
   if (activeView === "claude-risk") return <ClaudeRiskCenter />;
   if (activeView === "market-data") return <MarketDataCenter />;
+  if (activeView === "news-layer") return <NewsLayerCenter />;
+  if (activeView === "market-regime") return <MarketRegimeCenter />;
+  if (activeView === "portfolio-intelligence") return <PortfolioIntelligenceCenter />;
   if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
   if (activeView === "ai-consensus") return <ConsensusCenter />;
   if (activeView === "execution-center") return <ExecutionCenter />;
@@ -872,7 +1048,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.5</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.6</p>
           </div>
 
           <nav className="space-y-7">
@@ -929,7 +1105,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.3.5 Interactive Centers
+                AI Trading Mission Control · V9.3.6 Interactive Centers
               </p>
             </div>
 
