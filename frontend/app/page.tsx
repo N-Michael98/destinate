@@ -977,6 +977,173 @@ function PortfolioIntelligenceCenter() {
 }
 
 
+
+function BrokerCenter() {
+  return (
+    <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🔌 Broker Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Zentrale Broker-Infrastruktur für Capital.com, IC Markets, Demo Auth, Account Sync und spätere kontrollierte Execution Gateways.
+          </p>
+        </div>
+        <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Broker Status</p>
+          <p className="text-cyan-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Capital.com" value="Ready" subtitle="Connector prepared" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="IC Markets" value="Ready" subtitle="Connector prepared" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Demo Auth" value="Ready" subtitle="Safe login layer" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Execution API" value="Blocked" subtitle="No live orders" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Account Sync" value="Later" subtitle="Balance/margin sync" accent="text-yellow-400" border="border-yellow-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🏦 Broker Connections</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Capital.com Demo" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="IC Markets Demo" value="Prepared" accent="text-cyan-400" />
+            <StatusPill label="Live Gateway" value="Locked" accent="text-red-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">⚡ Execution Gateway</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Paper Orders" value="Enabled" accent="text-green-400" />
+            <StatusPill label="Demo Execution" value="Prepared" accent="text-yellow-400" />
+            <StatusPill label="Live Orders" value="Blocked" accent="text-red-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📡 Account Sync</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Balance Sync" value="Later" accent="text-yellow-400" />
+            <StatusPill label="Margin Sync" value="Later" accent="text-yellow-400" />
+            <StatusPill label="Position Sync" value="Later" accent="text-yellow-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SecurityCenter() {
+  return (
+    <section className="bg-gray-900 border border-red-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🔒 Security Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Sicherheitszentrale für API Keys, Berechtigungen, Execution Firewall, Risk Limits, Approval Gates und spätere Audit Logs.
+          </p>
+        </div>
+        <div className="bg-black border border-red-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Security Status</p>
+          <p className="text-red-400 text-2xl font-bold">Locked</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="API Keys" value=".env only" subtitle="No browser exposure" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Execution Lock" value="Active" subtitle="Live blocked" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Risk Limits" value="Prepared" subtitle="Max DD / risk rules" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Approval Gate" value="Required" subtitle="No auto live trade" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Audit Log" value="Later" subtitle="Action history" accent="text-cyan-400" border="border-cyan-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔑 API Security</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="OpenAI Key" value=".env.local" accent="text-green-400" />
+            <StatusPill label="Claude Key" value=".env.local" accent="text-green-400" />
+            <StatusPill label="Broker Keys" value="Server only" accent="text-green-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Permission Layer</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Demo Trading" value="Allowed" accent="text-green-400" />
+            <StatusPill label="Live Trading" value="Blocked" accent="text-red-400" />
+            <StatusPill label="Manual Approval" value="Required" accent="text-yellow-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📋 Audit & Monitoring</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Trade Logs" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="AI Decisions" value="Tracked later" accent="text-purple-400" />
+            <StatusPill label="Risk Events" value="Tracked later" accent="text-red-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SettingsCenter() {
+  return (
+    <section className="bg-gray-900 border border-gray-700 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">⚙️ Settings Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Zentrale Konfiguration für AI-Profile, Broker-Profile, Trading Rules, Risk Settings, Dashboard und System-Versionen.
+          </p>
+        </div>
+        <div className="bg-black border border-gray-700 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">System Version</p>
+          <p className="text-gray-200 text-2xl font-bold">V9.3.7</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="AI Profile" value="Multi-AI" subtitle="GPT + Claude + Agent" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Broker Profile" value="Demo" subtitle="Paper first" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Risk Rules" value="Safe" subtitle="Conservative mode" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Dashboard" value="Clean" subtitle="Mission Control" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Developer Mode" value="Available" subtitle="Architecture view" accent="text-orange-400" border="border-orange-900" />
+      </div>
+
+      <div className="grid grid-cols-4 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🤖 AI Settings</h3>
+          <p className="text-gray-400 mt-4">Model choice, temperature, provider routing, prompt profiles.</p>
+          <p className="text-purple-400 font-bold mt-5">Prepared</p>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔌 Broker Settings</h3>
+          <p className="text-gray-400 mt-4">Capital.com, IC Markets, demo accounts, future live gateway.</p>
+          <p className="text-cyan-400 font-bold mt-5">Prepared</p>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📈 Trading Rules</h3>
+          <p className="text-gray-400 mt-4">Risk per trade, max drawdown, max exposure, confirmation rules.</p>
+          <p className="text-green-400 font-bold mt-5">Prepared</p>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🎨 UI Settings</h3>
+          <p className="text-gray-400 mt-4">Dashboard layout, developer mode, theme and module visibility.</p>
+          <p className="text-blue-400 font-bold mt-5">Prepared</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-journal") return <TradingJournalCenter />;
   if (activeView === "trading-desk") return <TradingDeskCenter />;
@@ -988,6 +1155,9 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "news-layer") return <NewsLayerCenter />;
   if (activeView === "market-regime") return <MarketRegimeCenter />;
   if (activeView === "portfolio-intelligence") return <PortfolioIntelligenceCenter />;
+  if (activeView === "broker-center") return <BrokerCenter />;
+  if (activeView === "security") return <SecurityCenter />;
+  if (activeView === "settings") return <SettingsCenter />;
   if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
   if (activeView === "ai-consensus") return <ConsensusCenter />;
   if (activeView === "execution-center") return <ExecutionCenter />;
@@ -1048,7 +1218,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.6</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.7</p>
           </div>
 
           <nav className="space-y-7">
@@ -1105,7 +1275,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.3.6 Interactive Centers
+                AI Trading Mission Control · V9.3.7 Interactive Centers
               </p>
             </div>
 
