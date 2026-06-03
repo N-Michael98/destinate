@@ -1406,6 +1406,27 @@ function SettingsCenter() {
 
 
 
+
+type GPTAnalysisApiItem = {
+  symbol: string;
+  bias: string;
+  entryLow: number;
+  entryHigh: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  confidence: number;
+  reasoning: string;
+  createdAt: string;
+};
+
+type GPTAnalysisApiResponse = {
+  success: boolean;
+  analyses: GPTAnalysisApiItem[];
+  count: number;
+  updatedAt: string;
+};
+
 type MarketRegimeApiItem = {
   symbol: string;
   confidence: number;
@@ -1485,6 +1506,226 @@ function getRegimeColor(value: string) {
   if (value.includes("NORMAL")) return "text-cyan-400";
   return "text-yellow-400";
 }
+
+
+function getBiasColor(bias: string) {
+  if (bias === "BULLISH") return "text-green-400";
+  if (bias === "BEARISH") return "text-red-400";
+  return "text-yellow-400";
+}
+
+function GPTAnalystLiveCenter() {
+  const [analyses, setAnalyses] = useState<GPTAnalysisApiItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState("");
+
+  async function loadAnalyses() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch("/api/gpt-analyst/analyze", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`GPT analyst request failed: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as GPTAnalysisApiResponse;
+      setAnalyses(payload.analyses);
+      setLastUpdate(payload.updatedAt);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown GPT analyst error"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAnalyses();
+
+    const interval = window.setInterval(() => {
+      loadAnalyses();
+    }, 20000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const bullishCount = analyses.filter((item) => item.bias === "BULLISH").length;
+  const bearishCount = analyses.filter((item) => item.bias === "BEARISH").length;
+  const neutralCount = analyses.filter((item) => item.bias === "NEUTRAL").length;
+  const averageConfidence =
+    analyses.length > 0
+      ? Math.round(
+          analyses.reduce((sum, item) => sum + item.confidence, 0) /
+            analyses.length
+        )
+      : 0;
+
+  return (
+    <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🧠 GPT Analyst Dashboard Center V9.8.2</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Live-AI-Analyse aus der GPT Analyst API: Bias, Entry Zone, Stop Loss, Take Profits, Confidence und Reasoning.
+          </p>
+        </div>
+
+        <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">GPT Analyst Status</p>
+          <p className="text-cyan-400 text-2xl font-bold">Live</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Engine" value="Online" subtitle="GPT analyst core" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Analyses" value={`${analyses.length}`} subtitle="Trade ideas" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Confidence" value={`${averageConfidence}%`} subtitle="Average score" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Bullish" value={`${bullishCount}`} subtitle="Long bias" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Bearish" value={`${bearishCount}`} subtitle="Short bias" accent="text-red-400" border="border-red-900" />
+      </div>
+
+      <div className="bg-black border border-cyan-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🤖 Live GPT Trade Analysis</h3>
+            <p className="text-gray-400 mt-2">
+              Daten aus <span className="text-cyan-400">/api/gpt-analyst/analyze</span>. Auto-Refresh alle 20 Sekunden.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadAnalyses}
+            className="bg-cyan-950 border border-cyan-800 rounded-xl px-5 py-3 font-bold text-cyan-300 hover:bg-cyan-900 transition"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {loading && <p className="text-gray-400">Loading GPT analyses...</p>}
+        {error && <p className="text-red-400">{error}</p>}
+
+        {!loading && !error && (
+          <div className="grid grid-cols-2 gap-6">
+            {analyses.map((item) => (
+              <div key={item.symbol} className="bg-gray-950 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between gap-4 mb-5">
+                  <div>
+                    <h4 className="text-3xl font-black">{item.symbol}</h4>
+                    <p className={`${getBiasColor(item.bias)} text-2xl font-bold mt-2`}>
+                      {item.bias}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4 text-right min-w-[120px]">
+                    <p className="text-gray-400">Confidence</p>
+                    <p className="text-green-400 text-2xl font-black">{item.confidence}%</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Entry Zone</p>
+                    <p className="text-cyan-400 text-xl font-bold mt-2">
+                      {item.entryLow} - {item.entryHigh}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Stop Loss</p>
+                    <p className="text-red-400 text-xl font-bold mt-2">{item.stopLoss}</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Take Profit 1</p>
+                    <p className="text-green-400 text-xl font-bold mt-2">{item.takeProfit1}</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Take Profit 2</p>
+                    <p className="text-green-400 text-xl font-bold mt-2">{item.takeProfit2}</p>
+                  </div>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400 mb-2">Reasoning</p>
+                  <pre className="text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">
+                    {item.reasoning}
+                  </pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {lastUpdate && (
+          <p className="text-gray-500 mt-5 text-sm">
+            Last update: {new Date(lastUpdate).toLocaleString()}
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📊 Bias Overview</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Bullish Ideas" value={`${bullishCount}`} accent="text-green-400" />
+            <StatusPill label="Bearish Ideas" value={`${bearishCount}`} accent="text-red-400" />
+            <StatusPill label="Neutral Ideas" value={`${neutralCount}`} accent="text-yellow-400" />
+            <StatusPill label="Average Confidence" value={`${averageConfidence}%`} accent="text-cyan-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🧠 Analyst Logic</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Bias Detector" value="Active" accent="text-cyan-400" />
+            <StatusPill label="Entry Planner" value="Active" accent="text-blue-400" />
+            <StatusPill label="Risk/Reward" value="Active" accent="text-green-400" />
+            <StatusPill label="Reasoning Builder" value="Active" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔁 AI Pipeline</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
+            <StatusPill label="Regime Engine" value="Connected" accent="text-lime-400" />
+            <StatusPill label="GPT Analyst" value="Active" accent="text-cyan-400" />
+            <StatusPill label="Claude Risk" value="Waiting" accent="text-red-400" />
+            <StatusPill label="Consensus" value="Pending" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-purple-900 rounded-2xl p-6">
+        <h3 className="text-2xl font-bold">🚦 Next Gate: Claude Risk Review</h3>
+        <p className="text-gray-300 mt-4 leading-relaxed">
+          GPT erzeugt nur eine Analyse und Trade-Idee. Kein Trade wird allein durch GPT erlaubt.
+          Als nächstes prüft Claude Risk Engine Drawdown, Volatilität, Exposure, Positionsgröße und Safety Rules.
+        </p>
+
+        <div className="grid grid-cols-5 gap-4 mt-6">
+          {["Market Data", "Regime", "GPT Idea", "Claude Risk", "Consensus"].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-cyan-400 mt-2">Prepared</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function MarketRegimeLiveCenter() {
   const [regimes, setRegimes] = useState<MarketRegimeApiItem[]>([]);
@@ -2068,7 +2309,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-desk") return <TradingDeskCenter />;
   if (activeView === "signal-engine") return <SignalEngineCenter />;
   if (activeView === "strategy-builder") return <StrategyBuilderCenter />;
-  if (activeView === "gpt-analyst") return <GPTAnalystCenter />;
+  if (activeView === "gpt-analyst") return <GPTAnalystLiveCenter />;
   if (activeView === "claude-risk") return <ClaudeRiskCenter />;
   if (activeView === "market-data") return <MarketDataEngineCenter />;
   if (activeView === "news-layer") return <NewsLayerCenter />;
@@ -2137,7 +2378,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.7.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.8.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -2194,7 +2435,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.7.2 Interactive Centers
+                AI Trading Mission Control · V9.8.2 Interactive Centers
               </p>
             </div>
 
