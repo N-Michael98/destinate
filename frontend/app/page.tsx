@@ -1405,6 +1405,23 @@ function SettingsCenter() {
 
 
 
+
+type MarketRegimeApiItem = {
+  symbol: string;
+  confidence: number;
+  updatedAt: string;
+  trend: string;
+  volatility: string;
+  risk: string;
+};
+
+type MarketRegimeApiResponse = {
+  success: boolean;
+  regimes: MarketRegimeApiItem[];
+  count: number;
+  updatedAt: string;
+};
+
 type MarketPriceApiItem = {
   symbol: string;
   bid: number;
@@ -1459,6 +1476,197 @@ function TradingViewWidget({
     </div>
   );
 }
+
+
+function getRegimeColor(value: string) {
+  if (value.includes("BULL") || value.includes("RISK_ON")) return "text-green-400";
+  if (value.includes("BEAR") || value.includes("RISK_OFF")) return "text-red-400";
+  if (value.includes("VOLATILE")) return "text-purple-400";
+  if (value.includes("NORMAL")) return "text-cyan-400";
+  return "text-yellow-400";
+}
+
+function MarketRegimeLiveCenter() {
+  const [regimes, setRegimes] = useState<MarketRegimeApiItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState("");
+
+  async function loadRegimes() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch("/api/market-regime/classify", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Market regime request failed: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as MarketRegimeApiResponse;
+      setRegimes(payload.regimes);
+      setLastUpdate(payload.updatedAt);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown market regime error"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadRegimes();
+
+    const interval = window.setInterval(() => {
+      loadRegimes();
+    }, 20000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const averageConfidence =
+    regimes.length > 0
+      ? Math.round(
+          (regimes.reduce((sum, item) => sum + item.confidence, 0) /
+            regimes.length) *
+            100
+        )
+      : 0;
+
+  const bullishCount = regimes.filter((item) => item.trend.includes("BULL")).length;
+  const bearishCount = regimes.filter((item) => item.trend.includes("BEAR")).length;
+  const volatileCount = regimes.filter((item) => item.volatility.includes("VOLATILE")).length;
+  const riskOnCount = regimes.filter((item) => item.risk.includes("RISK_ON")).length;
+
+  return (
+    <section className="bg-gray-900 border border-lime-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🌍 Market Regime Dashboard Center V9.7.2</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Live-Regime-Erkennung aus der Market Regime API: Trend, Volatilität, Risk-On/Risk-Off und Confidence für AI-Entscheidungen.
+          </p>
+        </div>
+
+        <div className="bg-black border border-lime-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Regime Status</p>
+          <p className="text-lime-400 text-2xl font-bold">Live</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Engine" value="Online" subtitle="Regime core" accent="text-lime-400" border="border-lime-900" />
+        <StatCard title="Symbols" value={`${regimes.length}`} subtitle="Classified markets" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Confidence" value={`${averageConfidence}%`} subtitle="Average score" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Volatile" value={`${volatileCount}`} subtitle="Volatility flags" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Risk-On" value={`${riskOnCount}`} subtitle="Risk appetite" accent="text-yellow-400" border="border-yellow-900" />
+      </div>
+
+      <div className="bg-black border border-lime-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">📡 Live Regime Classification</h3>
+            <p className="text-gray-400 mt-2">
+              Daten aus <span className="text-lime-400">/api/market-regime/classify</span>. Auto-Refresh alle 20 Sekunden.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadRegimes}
+            className="bg-lime-950 border border-lime-800 rounded-xl px-5 py-3 font-bold text-lime-300 hover:bg-lime-900 transition"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {loading && <p className="text-gray-400">Loading market regimes...</p>}
+        {error && <p className="text-red-400">{error}</p>}
+
+        {!loading && !error && (
+          <div className="grid grid-cols-4 gap-5">
+            {regimes.map((item) => (
+              <div key={item.symbol} className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h4 className="text-2xl font-black">{item.symbol}</h4>
+                  <p className="text-green-400 font-bold">{Math.round(item.confidence * 100)}%</p>
+                </div>
+
+                <div className="space-y-3">
+                  <StatusPill label="Trend" value={item.trend} accent={getRegimeColor(item.trend)} />
+                  <StatusPill label="Volatility" value={item.volatility} accent={getRegimeColor(item.volatility)} />
+                  <StatusPill label="Risk" value={item.risk} accent={getRegimeColor(item.risk)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {lastUpdate && (
+          <p className="text-gray-500 mt-5 text-sm">
+            Last update: {new Date(lastUpdate).toLocaleString()}
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔥 Regime Heatmap</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Bullish Markets" value={`${bullishCount}`} accent="text-green-400" />
+            <StatusPill label="Bearish Markets" value={`${bearishCount}`} accent="text-red-400" />
+            <StatusPill label="Volatile Markets" value={`${volatileCount}`} accent="text-purple-400" />
+            <StatusPill label="Neutral Risk" value={`${regimes.filter((item) => item.risk === "NEUTRAL").length}`} accent="text-yellow-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Regime Safety Logic</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="News-driven" value="Extra review later" accent="text-yellow-400" />
+            <StatusPill label="Volatile" value="Reduce size" accent="text-purple-400" />
+            <StatusPill label="Risk-Off" value="Defensive filter" accent="text-red-400" />
+            <StatusPill label="Trending" value="Momentum allowed" accent="text-green-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔁 AI Pipeline Connection</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
+            <StatusPill label="Regime Engine" value="Active" accent="text-lime-400" />
+            <StatusPill label="GPT Analyst" value="Next input" accent="text-cyan-400" />
+            <StatusPill label="Claude Risk" value="Risk filter" accent="text-red-400" />
+            <StatusPill label="Consensus" value="Required" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-cyan-900 rounded-2xl p-6">
+        <h3 className="text-2xl font-bold">🧠 Regime Decision Impact</h3>
+        <p className="text-gray-300 mt-4 leading-relaxed">
+          Die Regime Engine wird später jede AI-Entscheidung filtern: Momentum-Strategien nur bei Trend,
+          Mean-Reversion eher bei Range, Positionsgröße kleiner bei Volatilität und zusätzliche Prüfung bei Risk-Off.
+        </p>
+
+        <div className="grid grid-cols-5 gap-4 mt-6">
+          {["Price Cache", "Regime Classifier", "Strategy Filter", "Risk Review", "Consensus Gate"].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-lime-400 mt-2">Prepared</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function MarketDataEngineCenter() {
   const tradingViewSymbols = [
@@ -1864,7 +2072,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "claude-risk") return <ClaudeRiskCenter />;
   if (activeView === "market-data") return <MarketDataEngineCenter />;
   if (activeView === "news-layer") return <NewsLayerCenter />;
-  if (activeView === "market-regime") return <MarketRegimeCenter />;
+  if (activeView === "market-regime") return <MarketRegimeLiveCenter />;
   if (activeView === "portfolio-intelligence") return <PortfolioIntelligenceCenter />;
   if (activeView === "broker-center") return <BrokerCenter />;
   if (activeView === "security") return <SecurityCenter />;
@@ -1929,7 +2137,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.6.4</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.7.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -1986,7 +2194,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.6.4 Interactive Centers
+                AI Trading Mission Control · V9.7.2 Interactive Centers
               </p>
             </div>
 
