@@ -1,5465 +1,799 @@
-"use client";
+ "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { markets } from "./data/markets";
+import React, { useState } from "react";
 
-function createSlug(name: string) {
-  return name.toLowerCase().replaceAll(" ", "-");
-}
-
-function formatCHF(value: number) {
-  return new Intl.NumberFormat("de-CH", {
-    maximumFractionDigits: 2,
-  })
-    .format(value)
-    .replaceAll("’", "'");
-}
-
-const riskValue = {
-  Low: 1,
-  Medium: 2,
-  High: 3,
+type NavItem = {
+  label: string;
+  icon: string;
+  view: string;
 };
 
-const sortedMarkets = [...markets].sort((a, b) => {
-  const riskDiff =
-    riskValue[a.risk as keyof typeof riskValue] -
-    riskValue[b.risk as keyof typeof riskValue];
+type NavGroup = {
+  title: string;
+  items: NavItem[];
+};
 
-  if (riskDiff !== 0) return riskDiff;
+const navGroups: NavGroup[] = [
+  {
+    title: "Dashboard",
+    items: [
+      { label: "Mission Control", icon: "🏠", view: "dashboard" },
+    ],
+  },
+  {
+    title: "Trading",
+    items: [
+      { label: "Trading Journal", icon: "📒", view: "trading-journal" },
+      { label: "Trading Desk", icon: "📈", view: "trading-desk" },
+      { label: "Signal Engine", icon: "🎯", view: "signal-engine" },
+      { label: "Strategy Builder", icon: "🧩", view: "strategy-builder" },
+    ],
+  },
+  {
+    title: "AI Center",
+    items: [
+      { label: "GPT Analyst", icon: "🧠", view: "gpt-analyst" },
+      { label: "Claude Risk", icon: "🛡", view: "claude-risk" },
+      { label: "Consensus", icon: "⚡", view: "ai-consensus" },
+      { label: "Portfolio Brain", icon: "🤖", view: "portfolio-brain" },
+    ],
+  },
+  {
+    title: "Intelligence",
+    items: [
+      { label: "Market Data", icon: "📊", view: "market-data" },
+      { label: "News Layer", icon: "📰", view: "news-layer" },
+      { label: "Market Regime", icon: "🌍", view: "market-regime" },
+      { label: "Portfolio Intelligence", icon: "📌", view: "portfolio-intelligence" },
+    ],
+  },
+  {
+    title: "Execution",
+    items: [
+      { label: "Execution Center", icon: "⚡", view: "execution-center" },
+      { label: "Broker Center", icon: "🔌", view: "broker-center" },
+      { label: "Live Prep", icon: "🚀", view: "live-prep" },
+    ],
+  },
+  {
+    title: "Learning",
+    items: [
+      { label: "Forward Testing", icon: "🚀", view: "forward-testing" },
+      { label: "AI Memory", icon: "🧠", view: "ai-memory" },
+      { label: "Strategy Evolution", icon: "🧬", view: "strategy-evolution" },
+      { label: "Learning Reports", icon: "📑", view: "learning-reports" },
+      { label: "Scheduler", icon: "⏱️", view: "scheduler" },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { label: "Security Center", icon: "🔐", view: "security" },
+      { label: "Settings", icon: "⚙️", view: "settings" },
+    ],
+  },
+];
 
-  return b.score - a.score;
-});
+function StatCard({
+  title,
+  value,
+  subtitle,
+  accent = "text-blue-400",
+  border = "border-blue-900",
+}: {
+  title: string;
+  value: string;
+  subtitle: string;
+  accent?: string;
+  border?: string;
+}) {
+  return (
+    <div className={`bg-gray-950 ${border} border rounded-2xl p-6 min-h-[150px]`}>
+      <h3 className="font-bold text-lg text-white">{title}</h3>
+      <p className={`text-4xl mt-5 font-semibold ${accent}`}>{value}</p>
+      <p className="text-gray-400 mt-3">{subtitle}</p>
+    </div>
+  );
+}
 
-const rankingMarkets = [...markets].sort((a, b) => b.score - a.score);
+function StatusPill({
+  label,
+  value,
+  accent = "text-green-400",
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+}) {
+  return (
+    <div className="bg-black border border-gray-800 rounded-xl p-4 flex items-center justify-between">
+      <span className="text-gray-300">{label}</span>
+      <span className={`font-bold ${accent}`}>{value}</span>
+    </div>
+  );
+}
 
-const topOpportunity = sortedMarkets[0];
-
-const indicesCount = markets.filter((market) => market.category === "Indices").length;
-const forexCount = markets.filter((market) => market.category === "Forex").length;
-const commoditiesCount = markets.filter((market) => market.category === "Commodities").length;
-const cryptoCount = markets.filter((market) => market.category === "Crypto").length;
-
-const buyCount = markets.filter((market) => market.direction === "BUY").length;
-const sellCount = markets.filter((market) => market.direction === "SELL").length;
-const neutralCount = markets.filter((market) => market.direction === "NEUTRAL").length;
-
-
-type PaperOrder = {
-  id: number;
-  market: string;
-  direction: string;
-  strategy: string;
-  entry: number;
-  stopLoss: number;
-  takeProfit: number;
+function ModuleCard({
+  title,
+  description,
+  score,
+  status,
+  accent = "text-blue-400",
+  href,
+}: {
+  title: string;
+  description: string;
+  score: string;
   status: string;
-  result: string;
-  profitLoss: number;
-  confidence: number;
-  qualityGrade: string;
-  aiDecision: string;
-  createdAt: string;
-};
+  accent?: string;
+  href: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="block bg-gray-950 border border-gray-800 hover:border-blue-700 transition rounded-2xl p-6"
+    >
+      <div className="flex justify-between gap-4">
+        <h3 className="text-xl font-bold text-white">{title}</h3>
+        <span className={`font-bold ${accent}`}>{status}</span>
+      </div>
+      <p className="text-gray-400 mt-3 leading-relaxed">{description}</p>
+      <p className={`text-3xl mt-5 font-bold ${accent}`}>{score}</p>
+    </a>
+  );
+}
+
+
+function CenterPlaceholder({
+  title,
+  subtitle,
+  cards,
+}: {
+  title: string;
+  subtitle: string;
+  cards: { title: string; value: string; note: string; accent?: string; border?: string }[];
+}) {
+  return (
+    <section className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">{title}</h2>
+          <p className="text-gray-400 text-xl mt-3">{subtitle}</p>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-5 min-w-[180px]">
+          <p className="text-gray-400">Center Status</p>
+          <p className="text-green-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        {cards.map((card) => (
+          <StatCard
+            key={card.title}
+            title={card.title}
+            value={card.value}
+            subtitle={card.note}
+            accent={card.accent ?? "text-blue-400"}
+            border={card.border ?? "border-blue-900"}
+          />
+        ))}
+      </div>
+
+      <div className="bg-black border border-gray-800 rounded-2xl p-6 mt-8">
+        <h3 className="text-2xl font-bold">🚧 Module Page Prepared</h3>
+        <p className="text-gray-400 mt-3 leading-relaxed">
+          Dieser Bereich ist jetzt sauber vom Hauptdashboard getrennt. Als nächster Schritt bauen wir für dieses Center eine eigene professionelle Detailseite oder Komponente.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+
+function GPTAnalystCenter() {
+  return (
+    <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🧠 GPT Analyst Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            OpenAI/GPT wird hier später Marktchancen, Setups, Strategien und Learning Reports analysieren.
+          </p>
+        </div>
+        <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">GPT Status</p>
+          <p className="text-cyan-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-6 mb-8">
+        <StatCard title="Market Analyst" value="Ready" subtitle="Opportunity analysis" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Strategy Review" value="Ready" subtitle="Setup quality" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Learning Review" value="Ready" subtitle="Daily/weekly reports" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Decision Output" value="WAIT" subtitle="No live execution" accent="text-yellow-400" border="border-yellow-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📈 Market Context</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Market Data" value="Prepared" accent="text-cyan-400" />
+            <StatusPill label="News Intelligence" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="Market Regime" value="Prepared" accent="text-lime-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🎯 GPT Output Preview</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Signal" value="WAIT" accent="text-yellow-400" />
+            <StatusPill label="Confidence" value="70%" accent="text-cyan-400" />
+            <StatusPill label="Reasoning" value="Structured" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Safety</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="API Key" value=".env only" accent="text-green-400" />
+            <StatusPill label="Calls" value="Server only" accent="text-green-400" />
+            <StatusPill label="Trade Permission" value="No" accent="text-red-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ClaudeRiskCenter() {
+  return (
+    <section className="bg-gray-900 border border-red-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🛡 Claude Risk Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Claude wird hier Risiko, Drawdown, Portfolio-Exposure, Volatilität und Makro-Risiken kontrollieren.
+          </p>
+        </div>
+        <div className="bg-black border border-red-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Claude Status</p>
+          <p className="text-red-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-6 mb-8">
+        <StatCard title="Risk Review" value="Ready" subtitle="Trade risk check" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Portfolio Review" value="Ready" subtitle="Exposure analysis" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Drawdown Review" value="Ready" subtitle="Loss control" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Risk Decision" value="REVIEW" subtitle="Claude can block" accent="text-orange-400" border="border-orange-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">⚠️ Risk Checks</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Volatility Risk" value="Medium" accent="text-yellow-400" />
+            <StatusPill label="Macro Risk" value="Watched" accent="text-orange-400" />
+            <StatusPill label="News Risk" value="Prepared" accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📉 Drawdown</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Current DD" value="0.73%" accent="text-green-400" />
+            <StatusPill label="Max DD Limit" value="5%" accent="text-yellow-400" />
+            <StatusPill label="Status" value="Safe" accent="text-green-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔒 Permission</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Can Approve" value="Yes" accent="text-green-400" />
+            <StatusPill label="Can Review" value="Yes" accent="text-yellow-400" />
+            <StatusPill label="Can Block" value="Yes" accent="text-red-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MarketDataCenter() {
+  return (
+    <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">📊 Market Data Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Zentrale Daten-Schicht für Watchlist, Preise, News, Regime, Fundamentals und spätere TradingView/Yahoo/Capital.com Feeds.
+          </p>
+        </div>
+        <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Data Status</p>
+          <p className="text-blue-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="NAS100" value="Watch" subtitle="Momentum market" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="XAUUSD" value="Watch" subtitle="Gold / risk sentiment" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="USOIL" value="Watch" subtitle="Inventory / macro" accent="text-orange-400" border="border-orange-900" />
+        <StatCard title="EURUSD" value="Watch" subtitle="Forex / USD risk" accent="text-green-400" border="border-green-900" />
+        <StatCard title="BTCUSD" value="Low" subtitle="Crypto risk appetite" accent="text-purple-400" border="border-purple-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔌 Data Providers</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Capital.com" value="Prepared" accent="text-cyan-400" />
+            <StatusPill label="IC Markets" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="TradingView" value="Later" accent="text-yellow-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📰 Intelligence Feeds</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="News Layer" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="Economic Calendar" value="Later" accent="text-yellow-400" />
+            <StatusPill label="Yahoo Finance" value="Later" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🌍 Regime Input</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Trend / Range" value="Prepared" accent="text-lime-400" />
+            <StatusPill label="Volatility" value="Prepared" accent="text-orange-400" />
+            <StatusPill label="Risk-On/Off" value="Prepared" accent="text-red-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PortfolioBrainCenter() {
+  return (
+    <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🤖 Portfolio Brain Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Das zentrale Gehirn: Market Data, GPT, Claude, Agent, Regime, Portfolio Intelligence und Consensus werden hier zusammengeführt.
+          </p>
+        </div>
+        <div className="bg-black border border-fuchsia-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Brain Status</p>
+          <p className="text-fuchsia-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Inputs" value="Ready" subtitle="All core engines" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Consensus" value="Required" subtitle="No single AI decision" accent="text-emerald-400" border="border-emerald-900" />
+        <StatCard title="Portfolio" value="Checked" subtitle="Exposure filter" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Output" value="Demo" subtitle="Paper only" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Live" value="Blocked" subtitle="Safety first" accent="text-red-400" border="border-red-900" />
+      </div>
+
+      <div className="bg-black border border-gray-800 rounded-2xl p-6">
+        <h3 className="text-2xl font-bold">🧭 Brain Flow</h3>
+        <div className="grid grid-cols-5 gap-4 mt-5">
+          {[
+            "Market Data",
+            "GPT Analyst",
+            "Claude Risk",
+            "Agent Review",
+            "Consensus",
+            "Regime",
+            "Portfolio",
+            "Demo Plan",
+            "Performance",
+            "Learning",
+          ].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-green-400 mt-2">Prepared</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function renderActiveCenter(activeView: string, activeLabel: string) {
+  if (activeView === "gpt-analyst") return <GPTAnalystCenter />;
+  if (activeView === "claude-risk") return <ClaudeRiskCenter />;
+  if (activeView === "market-data") return <MarketDataCenter />;
+  if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
+
+  return (
+    <CenterPlaceholder
+      title={`${activeLabel}`}
+      subtitle="Professionelles Modul-Center. Diese Ansicht ist bewusst aus dem Hauptdashboard ausgelagert."
+      cards={[
+        {
+          title: "Status",
+          value: "Prepared",
+          note: "Module architecture ready",
+          accent: "text-green-400",
+          border: "border-green-900",
+        },
+        {
+          title: "Mode",
+          value: "Simulation",
+          note: "No live execution",
+          accent: "text-purple-400",
+          border: "border-purple-900",
+        },
+        {
+          title: "Safety",
+          value: "Locked",
+          note: "Live trading blocked",
+          accent: "text-red-400",
+          border: "border-red-900",
+        },
+      ]}
+    />
+  );
+}
+
 
 export default function Home() {
-  const [paperOrders, setPaperOrders] = useState<PaperOrder[]>([]);
-  const [isSimulatingOrder, setIsSimulatingOrder] = useState(false);
-
-  const openPaperOrders = paperOrders.filter((order) => order.status === "OPEN");
-  const closedPaperOrders = paperOrders.filter((order) => order.status === "CLOSED");
-
-  const openPositionExposure = openPaperOrders.reduce(
-    (sum, order) => sum + Math.abs(order.entry - order.stopLoss),
-    0
-  );
-
-  const floatingProfitLoss = openPaperOrders.reduce((sum, order) => {
-    const simulatedMove =
-      order.direction === "BUY"
-        ? order.takeProfit - order.entry
-        : order.entry - order.takeProfit;
-
-    return sum + simulatedMove * 0.1;
-  }, 0);
-
-  const riskExposure = openPaperOrders.reduce((sum, order) => {
-    const riskPerUnit = Math.abs(order.entry - order.stopLoss);
-    return sum + riskPerUnit;
-  }, 0);
-
-  const positionManagerHealth =
-    openPaperOrders.length === 0
-      ? "Stable"
-      : openPaperOrders.length <= 3
-        ? "Controlled"
-        : "High Exposure";
-
-  const paperProfitLoss = paperOrders.reduce(
-    (sum, order) => sum + Number(order.profitLoss || 0),
-    0
-  );
-
-  const paperWins = closedPaperOrders.filter((order) => order.profitLoss > 0).length;
-  const paperWinrate =
-    closedPaperOrders.length > 0
-      ? Math.round((paperWins / closedPaperOrders.length) * 100)
-      : 0;
-
-  const paperBalance = 30000;
-  const paperEquity = paperBalance + paperProfitLoss;
-  const floatingEquity = paperEquity + floatingProfitLoss;
-
-  const winningPaperTrades = closedPaperOrders.filter((order) => order.profitLoss > 0);
-  const losingPaperTrades = closedPaperOrders.filter((order) => order.profitLoss < 0);
-
-  const grossPaperProfit = winningPaperTrades.reduce(
-    (sum, order) => sum + order.profitLoss,
-    0
-  );
-
-  const grossPaperLoss = Math.abs(
-    losingPaperTrades.reduce((sum, order) => sum + order.profitLoss, 0)
-  );
-
-  const paperProfitFactor =
-    grossPaperLoss > 0
-      ? Number((grossPaperProfit / grossPaperLoss).toFixed(2))
-      : grossPaperProfit > 0
-        ? grossPaperProfit
-        : 0;
-
-  const averagePaperWin =
-    winningPaperTrades.length > 0
-      ? Number((grossPaperProfit / winningPaperTrades.length).toFixed(2))
-      : 0;
-
-  const averagePaperLoss =
-    losingPaperTrades.length > 0
-      ? Number((grossPaperLoss / losingPaperTrades.length).toFixed(2))
-      : 0;
-
-  const paperExpectancy =
-    closedPaperOrders.length > 0
-      ? Number((paperProfitLoss / closedPaperOrders.length).toFixed(2))
-      : 0;
-
-  const paperEquityCurve = closedPaperOrders
-    .slice()
-    .reverse()
-    .reduce(
-      (curve, order, index) => {
-        const previousEquity =
-          index === 0 ? paperBalance : curve[index - 1].equity;
-
-        curve.push({
-          trade: `#${order.id}`,
-          equity: Number((previousEquity + order.profitLoss).toFixed(2)),
-        });
-
-        return curve;
-      },
-      [] as { trade: string; equity: number }[]
-    );
-
-  const paperPeakEquity = paperEquityCurve.reduce(
-    (peak, point) => Math.max(peak, point.equity),
-    paperBalance
-  );
-
-  const paperMaxDrawdown = paperEquityCurve.reduce(
-    (maxDrawdown, point) => {
-      const drawdown = paperPeakEquity - point.equity;
-      return Math.max(maxDrawdown, drawdown);
-    },
-    0
-  );
-
-  const paperMaxDrawdownPercent =
-    paperPeakEquity > 0
-      ? Number(((paperMaxDrawdown / paperPeakEquity) * 100).toFixed(2))
-      : 0;
-
-  const equityEngineHealth =
-    paperProfitFactor >= 2 && paperExpectancy > 0
-      ? "Strong"
-      : paperProfitFactor >= 1.2 && paperExpectancy >= 0
-        ? "Developing"
-        : "Needs Data";
-
-  const gptTradeAnalystScore =
-    paperProfitFactor >= 2 && paperExpectancy > 0 && paperWinrate >= 60
-      ? 88
-      : paperProfitFactor >= 1.2 && paperExpectancy >= 0
-        ? 68
-        : 42;
-
-  const gptTradeAnalystVerdict =
-    gptTradeAnalystScore >= 80
-      ? "Strong Trading Profile"
-      : gptTradeAnalystScore >= 60
-        ? "Developing Edge"
-        : "Needs More Data";
-
-  const gptTradeAnalystRecommendation =
-    gptTradeAnalystScore >= 80
-      ? "Fokus auf die profitabelsten Setups erhöhen und Risiko stabil halten."
-      : gptTradeAnalystScore >= 60
-        ? "Mehr Paper Trades sammeln, Gewinner-Strategien bestätigen und Drawdown beobachten."
-        : "Noch keine klare Edge. Mehr Daten sammeln und Risiko niedrig halten.";
-
-  const bestPaperMarket =
-    closedPaperOrders.length > 0
-      ? closedPaperOrders.reduce((best, order) =>
-          order.profitLoss > best.profitLoss ? order : best
-        ).market
-      : topOpportunity.name;
-
-  const bestPaperStrategy =
-    closedPaperOrders.length > 0
-      ? closedPaperOrders.reduce((best, order) =>
-          order.profitLoss > best.profitLoss ? order : best
-        ).strategy
-      : "Liquidity Sweep";
-
-  const worstPaperMarket =
-    closedPaperOrders.length > 0
-      ? closedPaperOrders.reduce((worst, order) =>
-          order.profitLoss < worst.profitLoss ? order : worst
-        ).market
-      : "-";
-
-  const claudeRiskScore =
-    paperMaxDrawdownPercent <= 3 && riskExposure <= 100 && openPaperOrders.length <= 3
-      ? 88
-      : paperMaxDrawdownPercent <= 6 && riskExposure <= 250
-        ? 70
-        : 45;
-
-  const claudeRiskVerdict =
-    claudeRiskScore >= 80
-      ? "Risk Controlled"
-      : claudeRiskScore >= 60
-        ? "Moderate Risk"
-        : "High Risk";
-
-  const claudeRiskRecommendation =
-    claudeRiskScore >= 80
-      ? "Risk bleibt kontrolliert. Positionsgrösse stabil halten und keine unnötige Exposure erhöhen."
-      : claudeRiskScore >= 60
-        ? "Risk ist moderat. Neue Positionen nur mit hoher Confidence und klarem R/R eröffnen."
-        : "Risk ist erhöht. Neue Trades vermeiden, Exposure reduzieren und Drawdown priorisieren.";
-
-  const positionSizingStatus =
-    riskExposure <= 100
-      ? "Healthy"
-      : riskExposure <= 250
-        ? "Watch"
-        : "Too High";
-
-  const drawdownStatus =
-    paperMaxDrawdownPercent <= 3
-      ? "Safe"
-      : paperMaxDrawdownPercent <= 6
-        ? "Warning"
-        : "Danger";
-
-  const signalEngineScore =
-    topOpportunity.confidence >= 85 && paperProfitFactor >= 1.5
-      ? 90
-      : topOpportunity.confidence >= 70
-        ? 74
-        : 55;
-
-  const multiAIConsensusScore = Math.round(
-    gptTradeAnalystScore * 0.35 +
-      claudeRiskScore * 0.35 +
-      signalEngineScore * 0.3
-  );
-
-  const finalAIDecision =
-    multiAIConsensusScore >= 90 && claudeRiskScore >= 75
-      ? "STRONG BUY"
-      : multiAIConsensusScore >= 75 && claudeRiskScore >= 65
-        ? "BUY"
-        : multiAIConsensusScore >= 60
-          ? "WAIT"
-          : "BLOCK";
-
-  const executionPermission =
-    finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
-      ? "ALLOWED"
-      : finalAIDecision === "WAIT"
-        ? "WAIT"
-        : "BLOCKED";
-
-  const consensusHealth =
-    multiAIConsensusScore >= 80 && claudeRiskScore >= 70
-      ? "Aligned"
-      : multiAIConsensusScore >= 60
-        ? "Mixed"
-        : "Conflict";
-
-  const aiReadinessScore = Math.round(
-    (gptTradeAnalystScore + claudeRiskScore + multiAIConsensusScore) / 3
-  );
-
-  const riskReadinessScore = claudeRiskScore;
-
-  const executionReadinessScore =
-    paperOrders.length > 0 || openPaperOrders.length > 0 || closedPaperOrders.length > 0
-      ? 85
-      : 65;
-
-  const brokerReadinessScore = 0;
-  const apiReadinessScore = 0;
-
-  const liveTradingReadinessScore = Math.round(
-    aiReadinessScore * 0.25 +
-      riskReadinessScore * 0.25 +
-      executionReadinessScore * 0.25 +
-      brokerReadinessScore * 0.15 +
-      apiReadinessScore * 0.1
-  );
-
-  const liveTradingPermission =
-    liveTradingReadinessScore >= 85 &&
-    brokerReadinessScore >= 70 &&
-    apiReadinessScore >= 70
-      ? "LIVE READY"
-      : liveTradingReadinessScore >= 60
-        ? "PAPER ONLY"
-        : "LOCKED";
-
-  const liveTradingMode =
-    liveTradingPermission === "LIVE READY"
-      ? "Live Trading Ready"
-      : liveTradingPermission === "PAPER ONLY"
-        ? "Paper Trading Only"
-        : "Simulation Locked";
-
-  const capitalComConnectorScore = 12;
-
-  const capitalComConnectorStatus = "Disconnected";
-  const capitalComApiStatus = "Not configured";
-  const capitalComAccountMode = "Demo later";
-  const capitalComTradingPermission = "Locked";
-
-  const icMarketsConnectorScore = 10;
-  const icMarketsConnectorStatus = "Disconnected";
-  const icMarketsApiStatus = "Not configured";
-  const icMarketsAccountMode = "Demo later";
-  const icMarketsTradingPermission = "Locked";
-  const icMarketsPlatform = "MT5 / cTrader later";
-
-  const brokerApiLayerScore = 22;
-  const brokerApiLayerStatus = "Prepared";
-  const brokerApiLayerMode = "Simulation";
-  const brokerApiLayerPermission = "No Live Orders";
-  const brokerApiLayerSafety = "Credentials blocked";
-
-  const demoAuthScore = 28;
-  const demoAuthStatus = "Prepared";
-  const demoAuthMode = "Demo credentials later";
-  const demoAuthPermission = "Test Only";
-  const demoAuthSafety = "Environment variables only";
-  const capitalDemoAuthStatus = "Not connected";
-  const capitalDemoCredentialStatus = "Not configured";
-  const capitalDemoTestStatus = "Locked";
-  const icMarketsDemoAuthStatus = "Not connected";
-  const icMarketsDemoServerStatus = "Not configured";
-  const icMarketsDemoBridgeStatus = "Not connected";
-
-  const marketDataBridgeScore = 34;
-  const marketDataBridgeStatus = "Prepared";
-  const marketDataProviderStatus = "Simulation";
-  const priceFeedStatus = "Mock Feed";
-  const marketCacheStatus = "Ready";
-  const dataFreshnessStatus = "Local Snapshot";
-  const trackedMarketCount = 8;
-  const aiLearningBridgeStatus = "Forward Learning Ready";
-
-  const intelligenceLayerScore = 39;
-  const intelligenceLayerStatus = "Prepared";
-  const newsFeedStatus = "Mock News";
-  const macroCalendarStatus = "Prepared";
-  const sentimentEngineStatus = "Simulation";
-  const highImpactEventCount = 5;
-  const aiIntelligenceStatus = "Resource Ready";
-
-  const forwardTestingScore = 44;
-  const forwardTestingStatus = "Prepared";
-  const forwardTestingMode = "Planning Only";
-  const plannedForwardTests = 3;
-  const completedForwardTests = 0;
-  const strategyLearningStatus = "Memory later";
-  const demoExecutionStatus = "Locked";
-
-  const aiMemoryScore = 49;
-  const aiMemoryStatus = "Prepared";
-  const tradeMemoryStatus = "Ready";
-  const strategyMemoryStatus = "Ready";
-  const marketMemoryStatus = "Ready";
-  const memoryEntriesCount = 0;
-  const learningLoopStatus = "Prepared";
-
-  const strategyEvolutionScore = 55;
-  const strategyEvolutionStatus = "Prepared";
-  const strategyRankingStatus = "Ready";
-  const confidenceEngineStatus = "Simulation";
-  const marketAdaptationStatus = "Prepared";
-  const topEvolvingStrategy = "Risk-Off Trend";
-  const evolutionMode = "Ranking Only";
-  const autonomousAgentStatus = "Locked";
-
-  const demoAgentScore = 61;
-  const demoAgentStatus = "Prepared";
-  const agentMode = "Planning Only";
-  const agentDecisionStatus = "Mock Decision";
-  const agentConsensusStatus = "Approved";
-  const agentTradePlans = 3;
-  const agentLiveExecutionStatus = "Locked";
-  const agentNextPhase = "V8.1 Demo Execution";
-
-  const demoExecutionEngineScore = 67;
-  const demoExecutionEngineStatus = "Prepared";
-  const executionMode = "Paper Only";
-  const generatedDemoOrders = 3;
-  const openDemoExecutions = 0;
-  const executionSafetyStatus = "Locked to Demo";
-  const paperOrderBridgeStatus = "Prepared";
-  const liveOrderFirewallStatus = "Active";
-
-  const performanceTrackerScore = 72;
-  const performanceTrackerStatus = "Prepared";
-  const trackedTradesCount = 3;
-  const performanceWinrate = 67;
-  const performanceProfitFactor = 2.15;
-  const performanceDrawdown = 3.2;
-  const bestPerformanceStrategy = "Momentum Breakout";
-  const performanceLearningStatus = "Ready";
-
-  const feedbackEngineScore = 78;
-  const feedbackEngineStatus = "Prepared";
-  const tradeFeedbackStatus = "Ready";
-  const strategyFeedbackStatus = "Ready";
-  const confidenceFeedbackStatus = "Simulation";
-  const generatedFeedbackItems = 3;
-  const memoryUpdateStatus = "Prepared";
-  const evolutionUpdateStatus = "Prepared";
-
-  const adaptiveConfidenceScore = 83;
-  const adaptiveConfidenceStatus = "Prepared";
-  const confidenceAdjustmentMode = "Simulation";
-  const confidenceHistoryStatus = "Ready";
-  const adjustedStrategiesCount = 3;
-  const topConfidenceStrategy = "Momentum Breakout";
-  const confidenceRiskFilterStatus = "Active";
-  const adaptiveLearningStatus = "Ready";
-
-  const learningReportsScore = 88;
-  const learningReportsStatus = "Prepared";
-  const gptReviewStatus = "Ready";
-  const claudeReviewStatus = "Ready";
-  const agentReviewStatus = "Ready";
-  const consensusReviewScore = 87;
-  const dailyReportStatus = "Prepared";
-  const weeklyReportStatus = "Prepared";
-  const monthlyReportStatus = "Prepared";
-  const multiAiValidationStatus = "Active";
-
-  const learningSchedulerScore = 92;
-  const learningSchedulerStatus = "Prepared";
-  const dailySchedulerStatus = "Ready";
-  const weeklySchedulerStatus = "Ready";
-  const monthlySchedulerStatus = "Ready";
-  const schedulerAutomationMode = "Prepared";
-  const learningCycleSteps = 10;
-  const nextPlanStatus = "Prepared";
-  const autonomousLoopStatus = "Simulation";
-
-  const consensusCoreScore = 96;
-  const consensusCoreStatus = "Prepared";
-  const gptSignalStatus = "Ready";
-  const claudeRiskSignalStatus = "Ready";
-  const agentSignalStatus = "Ready";
-  const conflictDetectionStatus = "Active";
-  const finalDecisionStatus = "Consensus Required";
-  const consensusSafetyMode = "Block on conflict";
-
-  const marketRegimeScore = 98;
-  const marketRegimeStatus = "Prepared";
-  const trendRegimeStatus = "Detected";
-  const volatilityRegimeStatus = "Simulation";
-  const riskRegimeStatus = "Prepared";
-  const newsDrivenRegimeStatus = "Watched";
-  const preferredRegimeStrategy = "Momentum Breakout";
-  const regimeSafetyMode = "Strategy filter only";
-
-  const portfolioIntelligenceScore = 99;
-  const portfolioIntelligenceStatus = "Prepared";
-  const portfolioRiskStatus = "Simulation";
-  const correlationRiskStatus = "Watched";
-  const exposureStatus = "Prepared";
-  const allocationStatus = "AI Suggested";
-  const portfolioDiversificationScore = 74;
-  const portfolioSafetyMode = "Demo portfolio only";
-
-  const portfolioBrainScore = 100;
-  const portfolioBrainStatus = "Prepared";
-  const brainDecisionMode = "Simulation";
-  const brainInputStatus = "All Engines Connected";
-  const brainOutputStatus = "Demo Plan Only";
-  const brainSafetyStatus = "Live Blocked";
-  const brainConsensusStatus = "Required";
-  const brainNextPhase = "V9.1 OpenAI Integration";
-
-  const openAiIntegrationScore = 104;
-  const openAiIntegrationStatus = "Prepared";
-  const openAiClientStatus = "SDK Ready Later";
-  const gptMarketAnalystStatus = "Prepared";
-  const gptStrategyReviewStatus = "Prepared";
-  const gptLearningReviewStatus = "Prepared";
-  const openAiSafetyStatus = "Server Only";
-  const openAiNextPhase = "V9.2 Claude Integration";
-
-  const claudeIntegrationScore = 108;
-  const claudeIntegrationStatus = "Prepared";
-  const claudeClientStatus = "SDK Ready Later";
-  const claudeRiskReviewStatus = "Prepared";
-  const claudePortfolioReviewStatus = "Prepared";
-  const claudeDrawdownReviewStatus = "Prepared";
-  const claudeSafetyStatus = "Server Only";
-  const claudeNextPhase = "V9.3 Real Multi-AI Consensus";
-
-  async function loadPaperOrders() {
-    try {
-      const response = await fetch("/api/paper-orders");
-      const data = await response.json();
-
-      if (data.success) {
-        setPaperOrders(data.paperOrders);
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  async function simulatePaperOrder() {
-    try {
-      setIsSimulatingOrder(true);
-
-      const response = await fetch("/api/paper-orders", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          market: "NAS100",
-          direction: "BUY",
-          strategy: "Liquidity Sweep",
-          entry: 18000,
-          stopLoss: 17900,
-          takeProfit: 18250,
-          accountSize: 30000,
-          riskPercent: 1,
-          confidence: 74,
-          qualityGrade: "B",
-          aiDecision: "WAIT",
-          notes: "V6.4 simulated paper order from dashboard.",
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        alert("Paper Order konnte nicht erstellt werden.");
-        return;
-      }
-
-      await loadPaperOrders();
-    } catch (error) {
-      console.error(error);
-      alert("Fehler beim Simulieren der Paper Order.");
-    } finally {
-      setIsSimulatingOrder(false);
-    }
-  }
-
-  async function closePaperOrder(orderId: number, result: "WIN" | "LOSS") {
-    const profitLoss = result === "WIN" ? 220 : -100;
-
-    try {
-      const response = await fetch(`/api/paper-orders/${orderId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: "CLOSED",
-          result,
-          profitLoss,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        alert("Paper Order konnte nicht geschlossen werden.");
-        return;
-      }
-
-      await loadPaperOrders();
-    } catch (error) {
-      console.error(error);
-      alert("Fehler beim Schliessen der Paper Order.");
-    }
-  }
-
-  async function resetPaperOrders() {
-    const confirmed = confirm("Alle Paper Orders löschen?");
-
-    if (!confirmed) return;
-
-    try {
-      const response = await fetch("/api/paper-orders", {
-        method: "DELETE",
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        alert("Paper Orders konnten nicht gelöscht werden.");
-        return;
-      }
-
-      await loadPaperOrders();
-    } catch (error) {
-      console.error(error);
-      alert("Fehler beim Löschen der Paper Orders.");
-    }
-  }
-
-  useEffect(() => {
-    loadPaperOrders();
-  }, []);
+  const [developerMode, setDeveloperMode] = useState(false);
+  const [activeView, setActiveView] = useState("dashboard");
+
+  const activeLabel =
+    navGroups
+      .flatMap((group) => group.items)
+      .find((item) => item.view === activeView)?.label ?? "Mission Control";
 
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="flex">
-        <aside className="w-72 min-h-screen bg-gray-950 border-r border-gray-800 p-6 sticky top-0">
-          <h1 className="text-3xl font-bold mb-2">AI Trading</h1>
-          <h2 className="text-3xl font-bold mb-8">System</h2>
+        <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
+          <div className="mb-8">
+            <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.2</p>
+          </div>
 
-          <nav className="space-y-3 text-lg">
-            <Link className="block hover:text-blue-400" href="/">🏠 Dashboard</Link>
-
-            <div className="pt-4">
-              <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">Trading</p>
-              <Link className="block hover:text-blue-400 py-1" href="/trading-journal">📒 Trading Journal</Link>
-              <Link className="block hover:text-blue-400 py-1" href="/trading">📈 Trading Desk</Link>
-              <Link className="block hover:text-blue-400 py-1" href="/trading-journal">🎯 Signal Engine</Link>
-              <Link className="block hover:text-blue-400 py-1" href="/trading-journal">🧩 Strategy Builder</Link>
-            </div>
-
-            <div className="pt-4">
-              <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">AI Center</p>
-              <Link className="block hover:text-blue-400 py-1" href="/ai-assistant">🤖 AI Assistant</Link>
-              <a className="block hover:text-blue-400 py-1" href="#gpt-trade-analyst">🧠 GPT Trade Analyst</a>
-              <a className="block hover:text-blue-400 py-1" href="#claude-risk-analyst">🛡 Claude Risk Analyst</a>
-              <a className="block hover:text-blue-400 py-1" href="#multi-ai-consensus">⚡ Multi-AI Consensus</a>
-              <a className="block hover:text-blue-400 py-1" href="#ai-consensus">🧠 AI Consensus</a>
-              <a className="block hover:text-blue-400 py-1" href="#journal-snapshot">⭐ AI Trade Review</a>
-            </div>
-
-            <div className="pt-4">
-              <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">Execution</p>
-              <a className="block hover:text-blue-400 py-1" href="#execution-overview">⚡ Execution Center</a>
-              <a className="block hover:text-blue-400 py-1" href="#live-trading-prep">🚀 Live Trading Prep</a>
-              <a className="block hover:text-blue-400 py-1" href="#capital-com-connector">🔌 Capital.com Connector</a>
-              <a className="block hover:text-blue-400 py-1" href="#ic-markets-connector">🌐 IC Markets Connector</a>
-              <a className="block hover:text-blue-400 py-1" href="#broker-api-layer">🧱 Broker API Layer</a>
-              <a className="block hover:text-blue-400 py-1" href="#demo-auth-center">🔐 Demo Auth Center</a>
-              <a className="block hover:text-blue-400 py-1" href="#market-data-bridge">📈 Market Data Bridge</a>
-              <a className="block hover:text-blue-400 py-1" href="#intelligence-layer">📰 Intelligence Layer</a>
-              <a className="block hover:text-blue-400 py-1" href="#forward-testing-engine">🚀 Forward Testing</a>
-              <a className="block hover:text-blue-400 py-1" href="#ai-learning-memory">🧠 AI Memory</a>
-              <a className="block hover:text-blue-400 py-1" href="#strategy-evolution-engine">🧬 Strategy Evolution</a>
-              <a className="block hover:text-blue-400 py-1" href="#demo-trading-agent">🤖 Demo Agent</a>
-              <a className="block hover:text-blue-400 py-1" href="#demo-execution-engine">⚡ Demo Execution</a>
-              <a className="block hover:text-blue-400 py-1" href="#performance-tracker">📊 Performance Tracker</a>
-              <a className="block hover:text-blue-400 py-1" href="#feedback-engine">🧠 Feedback Engine</a>
-              <a className="block hover:text-blue-400 py-1" href="#adaptive-confidence-system">🎯 Adaptive Confidence</a>
-              <a className="block hover:text-blue-400 py-1" href="#multi-ai-learning-reports">📑 Learning Reports</a>
-              <a className="block hover:text-blue-400 py-1" href="#autonomous-learning-scheduler">⏱️ Learning Scheduler</a>
-              <a className="block hover:text-blue-400 py-1" href="#consensus-intelligence-core">🧩 Consensus Core</a>
-              <a className="block hover:text-blue-400 py-1" href="#market-regime-engine">🌍 Market Regime</a>
-              <a className="block hover:text-blue-400 py-1" href="#portfolio-intelligence">📊 Portfolio Intelligence</a>
-              <a className="block hover:text-blue-400 py-1" href="#autonomous-portfolio-brain">🧠 Portfolio Brain</a>
-              <a className="block hover:text-blue-400 py-1" href="#openai-integration-layer">🤖 OpenAI Layer</a>
-              <a className="block hover:text-blue-400 py-1" href="#claude-integration-layer">🛡 Claude Layer</a>
-              <a className="block hover:text-blue-400 py-1" href="#paper-trading">📝 Paper Trading</a>
-              <a className="block hover:text-blue-400 py-1" href="#broker-hub">🔌 Broker Hub</a>
-            </div>
-
-            <div className="pt-4">
-              <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">Markets</p>
-              <Link className="block hover:text-blue-400 py-1" href="/market-intelligence">🌍 Market Intelligence</Link>
-              <a className="block hover:text-blue-400 py-1" href="#market-overview">📊 Market Overview</a>
-            </div>
-
-            <div className="pt-4">
-              <p className="text-gray-500 text-sm uppercase tracking-widest mb-2">System</p>
-              <Link className="block hover:text-blue-400 py-1" href="/simulation-lab">🧪 Simulation Lab</Link>
-              <Link className="block hover:text-blue-400 py-1" href="/security-center">🛡 Security Center</Link>
-              <Link className="block hover:text-blue-400 py-1" href="/settings">⚙️ Settings</Link>
-            </div>
+          <nav className="space-y-7">
+            {navGroups.map((group) => (
+              <div key={group.title}>
+                <p className="text-xs uppercase tracking-[0.25em] text-gray-500 mb-3">
+                  {group.title}
+                </p>
+                <div className="space-y-2">
+                  {group.items.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => setActiveView(item.view)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${
+                        activeView === item.view
+                          ? "bg-gray-900 text-white border border-gray-700"
+                          : "text-gray-200 hover:bg-gray-900 hover:text-white"
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </nav>
+
+          <div className="mt-8 bg-black border border-gray-800 rounded-2xl p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-bold">Developer Mode</p>
+                <p className="text-gray-500 text-sm">Show architecture blocks</p>
+              </div>
+              <button
+                onClick={() => setDeveloperMode((value) => !value)}
+                className={`px-4 py-2 rounded-xl font-bold ${
+                  developerMode
+                    ? "bg-green-900 text-green-300 border border-green-700"
+                    : "bg-gray-900 text-gray-400 border border-gray-700"
+                }`}
+              >
+                {developerMode ? "ON" : "OFF"}
+              </button>
+            </div>
+          </div>
         </aside>
 
-        <section className="flex-1 p-10">
-          <div className="mb-10">
-            <h2 className="text-5xl font-bold mb-3">Willkommen Michael 👊</h2>
-            <p className="text-gray-400 text-xl">
-              AI Trading Mission Control · V9.2 Claude Integration Layer
-            </p>
+        <section className="flex-1 p-10 max-w-[1700px] mx-auto" >
+          {activeView === "dashboard" && (
+            <>
+          <div className="flex items-start justify-between gap-8 mb-10">
+            <div>
+              <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
+              <p className="text-gray-400 text-xl mt-4">
+                AI Trading Mission Control · V9.3.2 Interactive Centers
+              </p>
+            </div>
+
+            <div className="bg-gray-950 border border-green-900 rounded-2xl p-5 min-w-[220px]">
+              <p className="text-gray-400">System Status</p>
+              <p className="text-green-400 text-2xl font-bold mt-1">Operational</p>
+              <p className="text-gray-500 mt-2 text-sm">Paper/Demo only</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-5 gap-6 mb-8">
-            <div className="bg-gray-900 p-6 rounded-2xl border border-green-900">
-              <h3 className="font-bold text-lg">💰 Balance</h3>
-              <p className="text-3xl mt-4 text-green-400">{formatCHF(paperBalance)} CHF</p>
-              <p className="text-gray-400 mt-2">Paper Account</p>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900">
-              <h3 className="font-bold text-lg">📈 Equity</h3>
-              <p className="text-3xl mt-4 text-cyan-400">{formatCHF(floatingEquity)} CHF</p>
-              <p className="text-gray-400 mt-2">Floating Equity</p>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
-              <h3 className="font-bold text-lg">📊 Closed P/L</h3>
-              <p className={paperProfitLoss >= 0 ? "text-3xl mt-4 text-green-400" : "text-3xl mt-4 text-red-400"}>
-                {formatCHF(paperProfitLoss)} CHF
-              </p>
-              <p className="text-gray-400 mt-2">Closed paper trades</p>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-900">
-              <h3 className="font-bold text-lg">⚡ Open P/L</h3>
-              <p className={floatingProfitLoss >= 0 ? "text-3xl mt-4 text-green-400" : "text-3xl mt-4 text-red-400"}>
-                {formatCHF(Number(floatingProfitLoss.toFixed(2)))} CHF
-              </p>
-              <p className="text-gray-400 mt-2">Floating positions</p>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900">
-              <h3 className="font-bold text-lg">🧠 Engine Health</h3>
-              <p className="text-3xl mt-4 text-purple-400">{equityEngineHealth}</p>
-              <p className="text-gray-400 mt-2">Account status</p>
-            </div>
+            <StatCard
+              title="💰 Balance"
+              value="30'000 CHF"
+              subtitle="Paper Account"
+              accent="text-green-400"
+              border="border-green-900"
+            />
+            <StatCard
+              title="📈 Equity"
+              value="30'120 CHF"
+              subtitle="Floating Equity"
+              accent="text-cyan-400"
+              border="border-cyan-900"
+            />
+            <StatCard
+              title="📊 Closed P/L"
+              value="120 CHF"
+              subtitle="Closed paper trades"
+              accent="text-green-400"
+              border="border-blue-900"
+            />
+            <StatCard
+              title="⚡ Open P/L"
+              value="0 CHF"
+              subtitle="No open exposure"
+              accent="text-yellow-400"
+              border="border-yellow-900"
+            />
+            <StatCard
+              title="🧠 Engine Health"
+              value="Strong"
+              subtitle="Core architecture"
+              accent="text-purple-400"
+              border="border-purple-900"
+            />
           </div>
 
-          <div className="grid grid-cols-3 gap-6 mb-8">
-            <Link
-              href={`/market-intelligence/${createSlug(topOpportunity.name)}`}
-              className="bg-gray-900 p-6 rounded-2xl border border-blue-900 hover:border-blue-500 transition"
-            >
-              <h3 className="text-2xl font-bold mb-5">🎯 Top Opportunity</h3>
-              <p className="text-4xl font-bold text-blue-400">{topOpportunity.name}</p>
-              <p className="text-gray-400 mt-2">{topOpportunity.category}</p>
+          <div className="grid grid-cols-3 gap-8 mb-8">
+            <section className="bg-gray-900 border border-blue-900 rounded-2xl p-7">
+              <h3 className="text-3xl font-bold">🎯 Top Opportunity</h3>
+              <p className="text-blue-400 text-5xl mt-6 font-black">Gold</p>
+              <p className="text-gray-400 mt-2">Commodities · Risk sentiment</p>
 
-              <div className="grid grid-cols-2 gap-3 mt-6">
-                <div className="bg-black border border-gray-800 rounded-xl p-3">
-                  <p className="text-gray-400 text-sm">Direction</p>
-                  <p
-                    className={
-                      topOpportunity.direction === "BUY"
-                        ? "text-green-400 font-bold"
-                        : topOpportunity.direction === "SELL"
-                        ? "text-red-400 font-bold"
-                        : "text-yellow-400 font-bold"
-                    }
-                  >
-                    {topOpportunity.direction}
-                  </p>
+              <div className="grid grid-cols-2 gap-4 mt-6">
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400">Direction</p>
+                  <p className="text-red-400 font-bold text-xl">SELL</p>
                 </div>
-
-                <div className="bg-black border border-gray-800 rounded-xl p-3">
-                  <p className="text-gray-400 text-sm">Confidence</p>
-                  <p className="text-cyan-400 font-bold">{topOpportunity.confidence}%</p>
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400">Confidence</p>
+                  <p className="text-cyan-400 font-bold text-xl">91%</p>
                 </div>
-
-                <div className="bg-black border border-gray-800 rounded-xl p-3">
-                  <p className="text-gray-400 text-sm">Score</p>
-                  <p className="text-blue-400 font-bold">{topOpportunity.score}</p>
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400">Score</p>
+                  <p className="text-blue-400 font-bold text-xl">85</p>
                 </div>
-
-                <div className="bg-black border border-gray-800 rounded-xl p-3">
-                  <p className="text-gray-400 text-sm">Risk/Reward</p>
-                  <p className="text-yellow-400 font-bold">{topOpportunity.riskReward}</p>
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400">Risk/Reward</p>
+                  <p className="text-yellow-400 font-bold text-xl">1:2.8</p>
                 </div>
               </div>
 
-              <p className="pt-5 text-blue-400 font-semibold">Analyse öffnen →</p>
-            </Link>
+              <a className="inline-block text-blue-400 font-bold mt-6" href="#trading-desk">
+                Analyse öffnen →
+              </a>
+            </section>
 
-            <div id="ai-consensus" className="bg-gray-900 p-6 rounded-2xl border border-purple-900">
-              <h3 className="text-2xl font-bold mb-5">🤖 AI Consensus</h3>
+            <section className="bg-gray-900 border border-purple-900 rounded-2xl p-7" id="ai-consensus">
+              <h3 className="text-3xl font-bold">🤖 AI Consensus</h3>
 
-              <div className="space-y-4">
-                <div className="flex justify-between bg-black border border-gray-800 rounded-xl p-4">
-                  <span>GPT Analyst</span>
-                  <span className="text-yellow-400 font-bold">WAIT</span>
-                </div>
+              <div className="space-y-4 mt-6">
+                <StatusPill label="GPT Analyst" value="WAIT" accent="text-yellow-400" />
+                <StatusPill label="Claude Risk Analyst" value="WAIT" accent="text-yellow-400" />
+                <StatusPill label="System Decision" value="BUY" accent="text-green-400" />
+              </div>
 
-                <div className="flex justify-between bg-black border border-gray-800 rounded-xl p-4">
-                  <span>Claude Risk Analyst</span>
-                  <span className="text-yellow-400 font-bold">WAIT</span>
-                </div>
+              <div className="bg-purple-950 border border-purple-700 rounded-xl p-5 mt-6">
+                <p className="text-gray-400">Consensus Score</p>
+                <p className="text-purple-300 text-4xl font-black">82%</p>
+              </div>
 
-                <div className="flex justify-between bg-black border border-gray-800 rounded-xl p-4">
-                  <span>System Decision</span>
-                  <span
-                    className={
-                      finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
-                        ? "text-green-400 font-bold"
-                        : finalAIDecision === "WAIT"
-                          ? "text-yellow-400 font-bold"
-                          : "text-red-400 font-bold"
-                    }
-                  >
-                    {finalAIDecision}
-                  </span>
-                </div>
-
-                <div className="bg-purple-950 border border-purple-800 rounded-xl p-4">
-                  <p className="text-gray-400">Consensus Score</p>
-                  <p className="text-4xl font-bold text-purple-400">{multiAIConsensusScore}%</p>
-                </div>
-
+              <div className="grid grid-cols-2 gap-4 mt-5">
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
                   <p className="text-gray-400">GPT Trade Analyst</p>
-                  <p className="text-2xl font-bold text-cyan-400">{gptTradeAnalystScore}/100</p>
+                  <p className="text-cyan-400 text-2xl font-bold">68/100</p>
                 </div>
-
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
-                  <p className="text-gray-400">Claude Risk Analyst</p>
-                  <p className="text-2xl font-bold text-red-400">{claudeRiskScore}/100</p>
+                  <p className="text-gray-400">Claude Risk</p>
+                  <p className="text-red-400 text-2xl font-bold">88/100</p>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <div id="risk-monitor" className="bg-gray-900 p-6 rounded-2xl border border-red-900">
-              <h3 className="text-2xl font-bold mb-5">🛡 Risk Monitor</h3>
+            <section className="bg-gray-900 border border-red-900 rounded-2xl p-7">
+              <h3 className="text-3xl font-bold">🛡 Risk Monitor</h3>
 
-              <div className="space-y-5">
+              <div className="mt-6 space-y-5">
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span>Open Risk Exposure</span>
-                    <span>{formatCHF(Number(riskExposure.toFixed(2)))}</span>
+                    <p className="text-gray-300">Open Risk Exposure</p>
+                    <p>0</p>
                   </div>
-                  <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(riskExposure, 100)}%` }} />
+                  <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-green-500 w-[5%]" />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between mb-2">
-                    <span>Max Drawdown</span>
-                    <span>{paperMaxDrawdownPercent}%</span>
+                    <p className="text-gray-300">Max Drawdown</p>
+                    <p>0.73%</p>
                   </div>
-                  <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(paperMaxDrawdownPercent * 10, 100)}%` }} />
+                  <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-red-400 w-[15%]" />
                   </div>
                 </div>
 
-                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                <div className="bg-black border border-gray-800 rounded-xl p-5">
                   <p className="text-gray-400">Risk Status</p>
-                  <p className="text-3xl font-bold text-green-400">
-                    {paperMaxDrawdownPercent < 5 ? "SAFE" : "WARNING"}
-                  </p>
+                  <p className="text-green-400 text-4xl font-black">SAFE</p>
                 </div>
               </div>
-            </div>
+            </section>
           </div>
 
-          <div className="grid grid-cols-2 gap-6 mb-8">
-            <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900">
-              <h3 className="text-2xl font-bold mb-5">📂 Open Positions</h3>
-
-              <div className="space-y-3">
-                {openPaperOrders.length === 0 && (
-                  <p className="text-gray-500">Keine offenen Paper Positionen.</p>
-                )}
-
-                {openPaperOrders.slice(0, 4).map((order) => {
-                  const floatingPositionProfit =
-                    order.direction === "BUY"
-                      ? Number(((order.takeProfit - order.entry) * 0.1).toFixed(2))
-                      : Number(((order.entry - order.takeProfit) * 0.1).toFixed(2));
-
-                  return (
-                    <div key={order.id} className="bg-black border border-cyan-900 rounded-xl p-4">
-                      <div className="flex justify-between">
-                        <div>
-                          <p className="font-bold">#{order.id} {order.market} {order.direction}</p>
-                          <p className="text-gray-400 text-sm">{order.strategy}</p>
-                        </div>
-                        <p className={floatingPositionProfit >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
-                          {floatingPositionProfit} CHF
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <a href="#paper-trading" className="inline-block mt-5 text-cyan-400 hover:text-cyan-300">
+          <div className="grid grid-cols-2 gap-8 mb-8">
+            <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-7">
+              <h3 className="text-3xl font-bold">📂 Open Positions</h3>
+              <p className="text-gray-500 mt-8">Keine offenen Paper Positionen.</p>
+              <a className="inline-block text-cyan-400 font-bold mt-6" href="#execution-center">
                 Paper Trading öffnen →
               </a>
-            </div>
+            </section>
 
-            <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
-              <h3 className="text-2xl font-bold mb-5">📈 Equity Curve Snapshot</h3>
-
-              <div className="h-56 bg-black border border-gray-800 rounded-xl p-5 flex items-end gap-3">
-                {[paperBalance, ...paperEquityCurve.map((point) => point.equity)].slice(-8).map((equity, index) => {
-                  const minEquity = paperBalance - 500;
-                  const maxEquity = paperBalance + 1000;
-                  const height = Math.max(12, Math.min(100, ((equity - minEquity) / (maxEquity - minEquity)) * 100));
-
-                  return (
-                    <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                      <div
-                        className={equity >= paperBalance ? "w-full bg-green-400 rounded-t" : "w-full bg-red-400 rounded-t"}
-                        style={{ height: `${height}%` }}
-                      />
-                      <span className="text-xs text-gray-500">#{index + 1}</span>
-                    </div>
-                  );
-                })}
+            <section className="bg-gray-900 border border-blue-900 rounded-2xl p-7">
+              <h3 className="text-3xl font-bold">📈 Equity Curve Snapshot</h3>
+              <div className="bg-black border border-gray-800 rounded-2xl h-56 mt-6 flex items-end justify-around px-8 pb-8">
+                <div className="w-16 bg-blue-950 rounded-t-xl h-16 border border-blue-900" />
+                <div className="w-16 bg-blue-950 rounded-t-xl h-28 border border-blue-900" />
+                <div className="w-16 bg-blue-950 rounded-t-xl h-40 border border-blue-900" />
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mt-5">
-                <div className="bg-black border border-gray-800 rounded-xl p-3">
-                  <p className="text-gray-400 text-sm">Peak Equity</p>
-                  <p className="text-yellow-400 font-bold">{formatCHF(paperPeakEquity)} CHF</p>
-                </div>
-
-                <div className="bg-black border border-gray-800 rounded-xl p-3">
-                  <p className="text-gray-400 text-sm">Profit Factor</p>
-                  <p className="text-blue-400 font-bold">{paperProfitFactor}</p>
-                </div>
-
-                <div className="bg-black border border-gray-800 rounded-xl p-3">
-                  <p className="text-gray-400 text-sm">Expectancy</p>
-                  <p className={paperExpectancy >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
-                    {paperExpectancy} CHF
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div id="multi-ai-consensus" className="bg-gray-900 p-6 rounded-2xl border border-purple-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">⚡ Multi-AI Consensus Engine V6.9</h3>
-                <p className="text-gray-400 mt-2">
-                  Gemeinsame Entscheidungslogik aus GPT Trade Analyst, Claude Risk Analyst, Signal Engine und Risk-Control.
-                </p>
-              </div>
-
-              <div className="bg-black border border-purple-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Consensus Mode</p>
-                <p className="text-purple-400 font-bold">Simulation</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-6 mb-6">
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">GPT Score</h4>
-                <p className="text-4xl mt-4 text-cyan-400">{gptTradeAnalystScore}</p>
-                <p className="text-gray-400 mt-2">Trade Quality</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Claude Score</h4>
-                <p className="text-4xl mt-4 text-red-400">{claudeRiskScore}</p>
-                <p className="text-gray-400 mt-2">Risk Quality</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Signal Score</h4>
-                <p className="text-4xl mt-4 text-blue-400">{signalEngineScore}</p>
-                <p className="text-gray-400 mt-2">Market Opportunity</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Consensus</h4>
-                <p className="text-4xl mt-4 text-purple-400">{multiAIConsensusScore}%</p>
-                <p className="text-gray-400 mt-2">{consensusHealth}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div
-                className={
-                  finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
-                    ? "bg-black border border-green-900 rounded-xl p-5"
-                    : finalAIDecision === "WAIT"
-                      ? "bg-black border border-yellow-900 rounded-xl p-5"
-                      : "bg-black border border-red-900 rounded-xl p-5"
-                }
-              >
-                <h4 className="text-xl font-bold mb-4">🎯 Final Decision</h4>
-                <p
-                  className={
-                    finalAIDecision === "STRONG BUY" || finalAIDecision === "BUY"
-                      ? "text-5xl font-bold text-green-400"
-                      : finalAIDecision === "WAIT"
-                        ? "text-5xl font-bold text-yellow-400"
-                        : "text-5xl font-bold text-red-400"
-                  }
-                >
-                  {finalAIDecision}
-                </p>
-                <p className="text-gray-400 mt-4">Combined AI decision</p>
-              </div>
-
-              <div
-                className={
-                  executionPermission === "ALLOWED"
-                    ? "bg-black border border-green-900 rounded-xl p-5"
-                    : executionPermission === "WAIT"
-                      ? "bg-black border border-yellow-900 rounded-xl p-5"
-                      : "bg-black border border-red-900 rounded-xl p-5"
-                }
-              >
-                <h4 className="text-xl font-bold mb-4">🛡 Execution Permission</h4>
-                <p
-                  className={
-                    executionPermission === "ALLOWED"
-                      ? "text-5xl font-bold text-green-400"
-                      : executionPermission === "WAIT"
-                        ? "text-5xl font-bold text-yellow-400"
-                        : "text-5xl font-bold text-red-400"
-                  }
-                >
-                  {executionPermission}
-                </p>
-                <p className="text-gray-400 mt-4">Live execution still locked</p>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📋 AI Voting Panel</h4>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    <span>GPT</span>
-                    <span className={gptTradeAnalystScore >= 75 ? "text-green-400 font-bold" : gptTradeAnalystScore >= 60 ? "text-yellow-400 font-bold" : "text-red-400 font-bold"}>
-                      {gptTradeAnalystScore >= 75 ? "BUY" : gptTradeAnalystScore >= 60 ? "WAIT" : "BLOCK"}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    <span>Claude</span>
-                    <span className={claudeRiskScore >= 75 ? "text-green-400 font-bold" : claudeRiskScore >= 60 ? "text-yellow-400 font-bold" : "text-red-400 font-bold"}>
-                      {claudeRiskScore >= 75 ? "APPROVE" : claudeRiskScore >= 60 ? "CAUTION" : "BLOCK"}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    <span>Signal Engine</span>
-                    <span className={signalEngineScore >= 75 ? "text-green-400 font-bold" : signalEngineScore >= 60 ? "text-yellow-400 font-bold" : "text-red-400 font-bold"}>
-                      {signalEngineScore >= 75 ? "BUY" : signalEngineScore >= 60 ? "WAIT" : "BLOCK"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧠 Consensus Explanation</h4>
-              <p className="text-gray-300 leading-relaxed">
-                Die Engine kombiniert GPT-Performance-Analyse, Claude-Risk-Analyse und das aktuelle Signal.
-                Execution wird nur erlaubt, wenn Performance und Risiko gleichzeitig passen.
-                Aktuell bleibt alles im Simulationsmodus ohne echte Broker-Ausführung.
-              </p>
-            </div>
-          </div>
-
-          <div id="gpt-trade-analyst" className="bg-gray-900 p-6 rounded-2xl border border-cyan-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🧠 GPT Trade Analyst V6.7</h3>
-                <p className="text-gray-400 mt-2">
-                  Lokale GPT-Analyse-Simulation: bewertet Paper Trades, Strategien, Märkte und Account-Statistiken.
-                </p>
-              </div>
-
-              <div className="bg-black border border-cyan-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">AI Mode</p>
-                <p className="text-cyan-400 font-bold">Simulation</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-6 mb-6">
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">GPT Analyst Score</h4>
-                <p className="text-4xl mt-4 text-cyan-400">{gptTradeAnalystScore}/100</p>
-                <p className="text-gray-400 mt-2">{gptTradeAnalystVerdict}</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Best Strategy</h4>
-                <p className="text-2xl mt-4 text-green-400">{bestPaperStrategy}</p>
-                <p className="text-gray-400 mt-2">Based on Paper Trades</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Best Market</h4>
-                <p className="text-2xl mt-4 text-blue-400">{bestPaperMarket}</p>
-                <p className="text-gray-400 mt-2">Highest paper P/L</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Weak Market</h4>
-                <p className="text-2xl mt-4 text-red-400">{worstPaperMarket}</p>
-                <p className="text-gray-400 mt-2">Needs review</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📊 GPT Performance Reading</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Winrate: <span className="text-green-400 font-bold">{paperWinrate}%</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Profit Factor: <span className="text-yellow-400 font-bold">{paperProfitFactor}</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Expectancy: <span className={paperExpectancy >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{paperExpectancy} CHF</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Drawdown: <span className="text-red-400 font-bold">{paperMaxDrawdownPercent}%</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧭 GPT Recommendation</h4>
-
-                <p className="text-gray-300 leading-relaxed">
-                  {gptTradeAnalystRecommendation}
-                </p>
-
-                <div className="mt-5 border border-cyan-900 bg-cyan-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Current Focus</p>
-                  <p className="text-cyan-400 font-bold">
-                    {bestPaperMarket} · {bestPaperStrategy}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔒 API Status</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ OpenAI API noch nicht verbunden
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Lokale Analyse aktiv
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    🔒 Live Auto Decisions gesperrt
-                  </div>
-                </div>
-
-                <p className="text-gray-400 mt-5">
-                  Später sendet dieses Modul echte Trade-Daten an GPT und erhält strukturierte Analyse zurück.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div id="claude-risk-analyst" className="bg-gray-900 p-6 rounded-2xl border border-red-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🛡 Claude Risk Analyst V6.8</h3>
-                <p className="text-gray-400 mt-2">
-                  Lokale Claude-Risk-Simulation: bewertet Drawdown, Exposure, Position Sizing und Risk-Control.
-                </p>
-              </div>
-
-              <div className="bg-black border border-red-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Risk Mode</p>
-                <p className="text-red-400 font-bold">Simulation</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-6 mb-6">
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Claude Risk Score</h4>
-                <p className="text-4xl mt-4 text-red-400">{claudeRiskScore}/100</p>
-                <p className="text-gray-400 mt-2">{claudeRiskVerdict}</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Drawdown Status</h4>
-                <p
-                  className={
-                    drawdownStatus === "Safe"
-                      ? "text-3xl mt-4 text-green-400"
-                      : drawdownStatus === "Warning"
-                        ? "text-3xl mt-4 text-yellow-400"
-                        : "text-3xl mt-4 text-red-400"
-                  }
-                >
-                  {drawdownStatus}
-                </p>
-                <p className="text-gray-400 mt-2">{paperMaxDrawdownPercent}% Max DD</p>
-              </div>
-
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Position Sizing</h4>
-                <p
-                  className={
-                    positionSizingStatus === "Healthy"
-                      ? "text-3xl mt-4 text-green-400"
-                      : positionSizingStatus === "Watch"
-                        ? "text-3xl mt-4 text-yellow-400"
-                        : "text-3xl mt-4 text-red-400"
-                  }
-                >
-                  {positionSizingStatus}
-                </p>
-                <p className="text-gray-400 mt-2">Risk Exposure {formatCHF(Number(riskExposure.toFixed(2)))}</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Open Exposure</h4>
-                <p className="text-4xl mt-4 text-purple-400">{openPaperOrders.length}</p>
-                <p className="text-gray-400 mt-2">Open positions</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📉 Drawdown Analysis</h4>
-
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span>Max Drawdown</span>
-                      <span>{paperMaxDrawdownPercent}%</span>
-                    </div>
-                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(paperMaxDrawdownPercent * 10, 100)}%` }} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-sm mb-2">
-                      <span>Open Risk Exposure</span>
-                      <span>{formatCHF(Number(riskExposure.toFixed(2)))}</span>
-                    </div>
-                    <div className="h-4 bg-gray-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${Math.min(riskExposure, 100)}%` }} />
-                    </div>
-                  </div>
-
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Floating P/L: <span className={floatingProfitLoss >= 0 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>
-                      {formatCHF(Number(floatingProfitLoss.toFixed(2)))} CHF
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧭 Claude Recommendation</h4>
-
-                <p className="text-gray-300 leading-relaxed">
-                  {claudeRiskRecommendation}
-                </p>
-
-                <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Risk Priority</p>
-                  <p className="text-red-400 font-bold">
-                    {drawdownStatus === "Danger"
-                      ? "Reduce Exposure"
-                      : drawdownStatus === "Warning"
-                        ? "Protect Capital"
-                        : "Maintain Discipline"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔒 API Status</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Claude API noch nicht verbunden
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Lokale Risk Analyse aktiv
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    🔒 Live Risk Decisions gesperrt
-                  </div>
-                </div>
-
-                <p className="text-gray-400 mt-5">
-                  Später prüft Claude echte Positionen, Broker-Exposure und Risk-Limits vor jeder Ausführung.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div id="market-overview" className="grid grid-cols-2 gap-6 mb-8">
-            <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
-              <h3 className="text-2xl font-bold mb-5">🌍 Market Overview</h3>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-black border border-gray-800 rounded-xl p-4">📈 Indices: {indicesCount}</div>
-                <div className="bg-black border border-gray-800 rounded-xl p-4">💱 Forex: {forexCount}</div>
-                <div className="bg-black border border-gray-800 rounded-xl p-4">🛢 Commodities: {commoditiesCount}</div>
-                <div className="bg-black border border-gray-800 rounded-xl p-4">₿ Crypto: {cryptoCount}</div>
-              </div>
-
-              <div className="mt-5 grid grid-cols-3 gap-3">
-                <div className="bg-green-950 border border-green-900 rounded-xl p-4 text-green-400">BUY: {buyCount}</div>
-                <div className="bg-red-950 border border-red-900 rounded-xl p-4 text-red-400">SELL: {sellCount}</div>
-                <div className="bg-yellow-950 border border-yellow-900 rounded-xl p-4 text-yellow-400">NEUTRAL: {neutralCount}</div>
-              </div>
-
-              <Link href="/market-intelligence" className="inline-block mt-5 text-blue-400 hover:text-blue-300">
-                Scanner öffnen →
-              </Link>
-            </div>
-
-            <div id="journal-snapshot" className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
-              <h3 className="text-2xl font-bold mb-5">📒 Journal Snapshot</h3>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4 mt-5">
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
-                  <p className="text-gray-400">Closed Trades</p>
-                  <p className="text-3xl font-bold">{closedPaperOrders.length}</p>
+                  <p className="text-gray-400">Peak Equity</p>
+                  <p className="text-yellow-400 font-bold">30'120 CHF</p>
                 </div>
-
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
-                  <p className="text-gray-400">Winrate</p>
-                  <p className="text-3xl font-bold text-green-400">{paperWinrate}%</p>
+                  <p className="text-gray-400">Profit Factor</p>
+                  <p className="text-blue-400 font-bold">2.2</p>
                 </div>
-
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
-                  <p className="text-gray-400">Average Win</p>
-                  <p className="text-3xl font-bold text-green-400">{averagePaperWin} CHF</p>
-                </div>
-
-                <div className="bg-black border border-gray-800 rounded-xl p-4">
-                  <p className="text-gray-400">Average Loss</p>
-                  <p className="text-3xl font-bold text-red-400">{averagePaperLoss} CHF</p>
+                  <p className="text-gray-400">Expectancy</p>
+                  <p className="text-green-400 font-bold">60 CHF</p>
                 </div>
               </div>
-            </div>
+            </section>
           </div>
 
-          <div id="live-trading-prep" className="bg-gray-900 p-6 rounded-2xl border border-orange-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🚀 Live Trading Preparation Center V7.0</h3>
-                <p className="text-gray-400 mt-2">
-                  Prüft, wie weit das System von echtem Live Trading entfernt ist. Aktuell bleibt Live Execution gesperrt.
-                </p>
-              </div>
+          <section className="bg-gray-900 border border-gray-800 rounded-2xl p-7 mb-8">
+            <h3 className="text-3xl font-bold">🧭 Core Centers</h3>
+            <p className="text-gray-400 mt-2">
+              Die großen Architekturblöcke sind jetzt als professionelle Center vorbereitet, statt alle Details im Dashboard zu zeigen.
+            </p>
 
-              <div className="bg-black border border-orange-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Trading Permission</p>
-                <p
-                  className={
-                    liveTradingPermission === "LIVE READY"
-                      ? "text-green-400 font-bold"
-                      : liveTradingPermission === "PAPER ONLY"
-                        ? "text-yellow-400 font-bold"
-                        : "text-red-400 font-bold"
-                  }
-                >
-                  {liveTradingPermission}
-                </p>
-              </div>
+            <div className="grid grid-cols-4 gap-5 mt-6">
+              <ModuleCard
+                title="AI Center"
+                description="GPT, Claude, Consensus und Portfolio Brain."
+                score="Ready"
+                status="V9.2"
+                accent="text-purple-400"
+                href="#gpt-analyst"
+              />
+              <ModuleCard
+                title="Execution Center"
+                description="Broker, Demo Auth, Paper Execution und Live Prep."
+                score="Paper Only"
+                status="Safe"
+                accent="text-yellow-400"
+                href="#execution-center"
+              />
+              <ModuleCard
+                title="Intelligence Center"
+                description="Market Data, News, Regime und Portfolio Intelligence."
+                score="Prepared"
+                status="Data"
+                accent="text-cyan-400"
+                href="#market-data"
+              />
+              <ModuleCard
+                title="Learning Center"
+                description="Forward Testing, AI Memory, Reports und Scheduler."
+                score="Loop Ready"
+                status="Learning"
+                accent="text-green-400"
+                href="#learning-reports"
+              />
             </div>
+          </section>
 
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-orange-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Overall Readiness</h4>
-                <p className="text-5xl mt-4 text-orange-400">{liveTradingReadinessScore}%</p>
-                <p className="text-gray-400 mt-2">{liveTradingMode}</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">AI Readiness</h4>
-                <p className="text-4xl mt-4 text-purple-400">{aiReadinessScore}%</p>
-                <p className="text-gray-400 mt-2">GPT + Claude + Consensus</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Risk Readiness</h4>
-                <p className="text-4xl mt-4 text-red-400">{riskReadinessScore}%</p>
-                <p className="text-gray-400 mt-2">Risk Engine</p>
-              </div>
-
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Execution</h4>
-                <p className="text-4xl mt-4 text-cyan-400">{executionReadinessScore}%</p>
-                <p className="text-gray-400 mt-2">Paper Engine</p>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Broker/API</h4>
-                <p className="text-4xl mt-4 text-gray-500">0%</p>
-                <p className="text-gray-400 mt-2">Not connected</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">✅ Live Trading Checklist</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Paper Trading Engine</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Position Manager</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Account Equity Engine</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ GPT Trade Analyst</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Claude Risk Analyst</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Multi-AI Consensus</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔒 Missing Before Live</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ OpenAI API Connection</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Claude API Connection</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Capital.com API</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ IC Markets API</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Live Order Manager</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">❌ Risk Firewall</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Trading Permission</h4>
-
-                <div
-                  className={
-                    liveTradingPermission === "LIVE READY"
-                      ? "border border-green-900 bg-green-950 rounded-xl p-5"
-                      : liveTradingPermission === "PAPER ONLY"
-                        ? "border border-yellow-900 bg-yellow-950 rounded-xl p-5"
-                        : "border border-red-900 bg-red-950 rounded-xl p-5"
-                  }
-                >
-                  <p
-                    className={
-                      liveTradingPermission === "LIVE READY"
-                        ? "text-4xl font-bold text-green-400"
-                        : liveTradingPermission === "PAPER ONLY"
-                          ? "text-4xl font-bold text-yellow-400"
-                          : "text-4xl font-bold text-red-400"
-                    }
-                  >
-                    {liveTradingPermission}
-                  </p>
-                  <p className="text-gray-300 mt-3">
-                    {liveTradingPermission === "LIVE READY"
-                      ? "System wäre bereit für Live Mode."
-                      : liveTradingPermission === "PAPER ONLY"
-                        ? "Nur Paper Trading erlaubt. Live Trading bleibt gesperrt."
-                        : "Live Trading ist gesperrt. Erst APIs und Broker anbinden."}
+          {developerMode && (
+            <section className="bg-gray-900 border border-orange-900 rounded-2xl p-7 mb-8">
+              <div className="flex items-start justify-between gap-6">
+                <div>
+                  <h3 className="text-3xl font-bold">🛠 Developer Architecture Mode</h3>
+                  <p className="text-gray-400 mt-2">
+                    Technische Roadmap- und Architektur-Übersicht. Standardmäßig versteckt, damit das Dashboard professionell clean bleibt.
                   </p>
                 </div>
 
-                <div className="mt-5 bg-gray-950 border border-gray-800 rounded-xl p-4">
-                  <p className="text-gray-400">Next Step</p>
-                  <p className="text-orange-400 font-bold">V9.2 Claude Integration Layer</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-orange-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧭 Live Trading Roadmap</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.0</h5>
-                  <p className="text-gray-300 mt-2">Live Prep Center</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.1</h5>
-                  <p className="text-gray-300 mt-2">Capital.com Connector</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.2</h5>
-                  <p className="text-gray-300 mt-2">IC Markets Connector</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.3</h5>
-                  <p className="text-gray-300 mt-2">Broker API Layer</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Live Execution</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div id="capital-com-connector" className="bg-gray-900 p-6 rounded-2xl border border-blue-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🔌 Capital.com Connector V7.1</h3>
-                <p className="text-gray-400 mt-2">
-                  Sichere Broker-Connector-Vorbereitung für Capital.com. Aktuell ohne echte API-Verbindung und ohne Live Orders.
-                </p>
-              </div>
-
-              <div className="bg-black border border-blue-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Connector Status</p>
-                <p className="text-red-400 font-bold">{capitalComConnectorStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Connector Score</h4>
-                <p className="text-5xl mt-4 text-blue-400">{capitalComConnectorScore}%</p>
-                <p className="text-gray-400 mt-2">Preparation only</p>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="font-bold text-lg">API Status</h4>
-                <p className="text-2xl mt-4 text-gray-500">{capitalComApiStatus}</p>
-                <p className="text-gray-400 mt-2">No credentials saved</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Account Mode</h4>
-                <p className="text-2xl mt-4 text-purple-400">{capitalComAccountMode}</p>
-                <p className="text-gray-400 mt-2">Demo first</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Trading</h4>
-                <p className="text-2xl mt-4 text-red-400">{capitalComTradingPermission}</p>
-                <p className="text-gray-400 mt-2">Live orders blocked</p>
-              </div>
-
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Next Step</h4>
-                <p className="text-2xl mt-4 text-cyan-400">API Layer</p>
-                <p className="text-gray-400 mt-2">V7.2/V7.3</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔐 Capital.com API Setup</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    API Key: <span className="text-gray-500">Not stored</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    API Password: <span className="text-gray-500">Not stored</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Identifier: <span className="text-gray-500">Not stored</span>
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Credentials werden später nur über Environment Variables gespeichert.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧪 Connection Test Plan</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ UI Connector vorbereitet
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    🔵 Demo Account zuerst
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    🔒 Live Account später
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    🔒 Order Placement gesperrt
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Keine API Keys im Code
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Kein echtes Order Placement
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Erst Demo-Verbindung testen
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live Trading bleibt locked
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-blue-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧭 Capital.com Connector Roadmap</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.1</h5>
-                  <p className="text-gray-300 mt-2">Connector UI</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.2</h5>
-                  <p className="text-gray-300 mt-2">API Route Layer</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.3</h5>
-                  <p className="text-gray-300 mt-2">Broker API Layer</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.4</h5>
-                  <p className="text-gray-300 mt-2">Market Data</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.5</h5>
-                  <p className="text-gray-300 mt-2">Paper-to-Broker Bridge</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div id="ic-markets-connector" className="bg-gray-900 p-6 rounded-2xl border border-purple-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🌐 IC Markets Connector V7.2</h3>
-                <p className="text-gray-400 mt-2">
-                  Sichere Broker-Connector-Vorbereitung für IC Markets. Aktuell ohne echte API-Verbindung, ohne Login-Daten und ohne Live Orders.
-                </p>
-              </div>
-
-              <div className="bg-black border border-purple-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Connector Status</p>
-                <p className="text-red-400 font-bold">{icMarketsConnectorStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Connector Score</h4>
-                <p className="text-5xl mt-4 text-purple-400">{icMarketsConnectorScore}%</p>
-                <p className="text-gray-400 mt-2">Preparation only</p>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="font-bold text-lg">API Status</h4>
-                <p className="text-2xl mt-4 text-gray-500">{icMarketsApiStatus}</p>
-                <p className="text-gray-400 mt-2">No credentials saved</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Platform</h4>
-                <p className="text-2xl mt-4 text-blue-400">{icMarketsPlatform}</p>
-                <p className="text-gray-400 mt-2">Bridge later</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Account Mode</h4>
-                <p className="text-2xl mt-4 text-purple-400">{icMarketsAccountMode}</p>
-                <p className="text-gray-400 mt-2">Demo first</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Trading</h4>
-                <p className="text-2xl mt-4 text-red-400">{icMarketsTradingPermission}</p>
-                <p className="text-gray-400 mt-2">Live orders blocked</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔐 IC Markets Setup</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Account ID: <span className="text-gray-500">Not stored</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Server: <span className="text-gray-500">Not configured</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Platform Bridge: <span className="text-gray-500">Not connected</span>
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Credentials werden später nur über Environment Variables gespeichert.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧪 Connection Test Plan</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ UI Connector vorbereitet
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    🔵 Demo Account zuerst
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    🌐 MT5 / cTrader Bridge später
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    🔒 Order Placement gesperrt
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Keine Login-Daten im Code
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Kein echtes Order Placement
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Erst Demo-Verbindung testen
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live Trading bleibt locked
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧭 IC Markets Connector Roadmap</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.2</h5>
-                  <p className="text-gray-300 mt-2">Connector UI</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.3</h5>
-                  <p className="text-gray-300 mt-2">Broker API Layer</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.4</h5>
-                  <p className="text-gray-300 mt-2">Demo Auth Test</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.5</h5>
-                  <p className="text-gray-300 mt-2">Market Data Bridge</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Live Execution</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="broker-api-layer" className="bg-gray-900 p-6 rounded-2xl border border-emerald-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🧱 Broker API Layer V7.3</h3>
-                <p className="text-gray-400 mt-2">
-                  Gemeinsame Broker-Architektur für Capital.com und IC Markets. Aktuell nur TypeScript-Layer, Simulation und Safety-Preparation.
-                </p>
-              </div>
-
-              <div className="bg-black border border-emerald-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">API Layer Status</p>
-                <p className="text-emerald-400 font-bold">{brokerApiLayerStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-emerald-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Layer Score</h4>
-                <p className="text-5xl mt-4 text-emerald-400">{brokerApiLayerScore}%</p>
-                <p className="text-gray-400 mt-2">Architecture ready</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Capital.com</h4>
-                <p className="text-2xl mt-4 text-blue-400">Connector Stub</p>
-                <p className="text-gray-400 mt-2">No real API call</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">IC Markets</h4>
-                <p className="text-2xl mt-4 text-purple-400">Connector Stub</p>
-                <p className="text-gray-400 mt-2">MT5 / cTrader later</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Mode</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{brokerApiLayerMode}</p>
-                <p className="text-gray-400 mt-2">Safe testing only</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Permission</h4>
-                <p className="text-2xl mt-4 text-red-400">{brokerApiLayerPermission}</p>
-                <p className="text-gray-400 mt-2">Live locked</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📁 New File Structure</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-3">✅ lib/brokers/shared/broker.ts</div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">✅ lib/brokers/capital/types.ts</div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">✅ lib/brokers/capital/connector.ts</div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">✅ lib/brokers/icmarkets/types.ts</div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">✅ lib/brokers/icmarkets/connector.ts</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 Unified Broker Interface</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    connect(): <span className="text-emerald-400">prepared</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    getAccount(): <span className="text-emerald-400">prepared</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    getPositions(): <span className="text-emerald-400">prepared</span>
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    placeOrder(): <span className="text-red-400">blocked</span>
-                  </div>
-                </div>
-
-                <p className="text-gray-400 mt-5">
-                  Der Rest vom System kann später beide Broker gleich ansprechen, ohne separate Logik im Dashboard.
-                </p>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Safety Firewall</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Keine API Keys im Code
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Nur Mock Responses
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Environment Variables später
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Order Execution blockiert
-                  </div>
-                </div>
-
-                <p className="text-gray-400 mt-5">
-                  {brokerApiLayerSafety}. Live Trading bleibt bis V8.0 gesperrt.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-emerald-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧭 Broker API Layer Roadmap</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.3</h5>
-                  <p className="text-gray-300 mt-2">Shared API Layer</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.4</h5>
-                  <p className="text-gray-300 mt-2">Demo Auth Test</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.5</h5>
-                  <p className="text-gray-300 mt-2">Market Data Bridge</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.6</h5>
-                  <p className="text-gray-300 mt-2">Broker Account Sync</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Live Execution</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="demo-auth-center" className="bg-gray-900 p-6 rounded-2xl border border-yellow-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🔐 Demo Authentication Center V7.4</h3>
-                <p className="text-gray-400 mt-2">
-                  Vorbereitung für sichere Demo-Authentifizierung bei Capital.com und IC Markets. Keine echten API Keys im Code, keine Live Orders.
-                </p>
-              </div>
-
-              <div className="bg-black border border-yellow-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Demo Auth Status</p>
-                <p className="text-yellow-400 font-bold">{demoAuthStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Auth Score</h4>
-                <p className="text-5xl mt-4 text-yellow-400">{demoAuthScore}%</p>
-                <p className="text-gray-400 mt-2">Prepared only</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Capital.com Demo</h4>
-                <p className="text-2xl mt-4 text-blue-400">{capitalDemoAuthStatus}</p>
-                <p className="text-gray-400 mt-2">Credential check later</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">IC Markets Demo</h4>
-                <p className="text-2xl mt-4 text-purple-400">{icMarketsDemoAuthStatus}</p>
-                <p className="text-gray-400 mt-2">Bridge check later</p>
-              </div>
-
-              <div className="bg-black border border-emerald-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Mode</h4>
-                <p className="text-2xl mt-4 text-emerald-400">{demoAuthMode}</p>
-                <p className="text-gray-400 mt-2">No secrets stored</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Permission</h4>
-                <p className="text-2xl mt-4 text-red-400">{demoAuthPermission}</p>
-                <p className="text-gray-400 mt-2">Live locked</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔵 Capital.com Demo Auth</h4>
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">API Key: <span className="text-gray-500">{capitalDemoCredentialStatus}</span></div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Identifier: <span className="text-gray-500">{capitalDemoCredentialStatus}</span></div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Test: <span className="text-red-400">{capitalDemoTestStatus}</span></div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Später nur über .env.local verbinden.</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🌐 IC Markets Demo Auth</h4>
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Server: <span className="text-gray-500">{icMarketsDemoServerStatus}</span></div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Platform: <span className="text-purple-400">MT5 / cTrader later</span></div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Bridge: <span className="text-red-400">{icMarketsDemoBridgeStatus}</span></div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Bridge wird erst später technisch angebunden.</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Auth Safety Rules</h4>
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Keine Secrets in Git</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Demo zuerst</div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ {demoAuthSafety}</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live Auth bleibt blockiert</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-yellow-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧭 Demo Auth Roadmap</h4>
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4"><h5 className="font-bold">V7.4</h5><p className="text-gray-300 mt-2">Demo Auth Center</p></div>
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4"><h5 className="font-bold">V7.5</h5><p className="text-gray-300 mt-2">Market Data Bridge</p></div>
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4"><h5 className="font-bold">V7.6</h5><p className="text-gray-300 mt-2">Account Sync</p></div>
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4"><h5 className="font-bold">V7.7</h5><p className="text-gray-300 mt-2">Position Sync</p></div>
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4"><h5 className="font-bold">V8.0</h5><p className="text-gray-300 mt-2">Live Execution</p></div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="market-data-bridge" className="bg-gray-900 p-6 rounded-2xl border border-green-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">📈 Market Data Bridge V7.5</h3>
-                <p className="text-gray-400 mt-2">
-                  Offene Market-Data-Architektur für Broker-Preise, TradingView, Yahoo Finance, News, technische Analyse, Fundamentals und späteren AI Forward-Learning-Loop.
-                </p>
-              </div>
-
-              <div className="bg-black border border-green-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Market Data Status</p>
-                <p className="text-green-400 font-bold">{marketDataBridgeStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Bridge Score</h4>
-                <p className="text-5xl mt-4 text-green-400">{marketDataBridgeScore}%</p>
-                <p className="text-gray-400 mt-2">Architecture ready</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Provider</h4>
-                <p className="text-2xl mt-4 text-blue-400">{marketDataProviderStatus}</p>
-                <p className="text-gray-400 mt-2">Broker + external later</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Price Feed</h4>
-                <p className="text-2xl mt-4 text-purple-400">{priceFeedStatus}</p>
-                <p className="text-gray-400 mt-2">No live feed yet</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Tracked Markets</h4>
-                <p className="text-5xl mt-4 text-yellow-400">{trackedMarketCount}</p>
-                <p className="text-gray-400 mt-2">Watchlist prepared</p>
-              </div>
-
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">AI Learning</h4>
-                <p className="text-2xl mt-4 text-cyan-400">{aiLearningBridgeStatus}</p>
-                <p className="text-gray-400 mt-2">Forward testing later</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📡 Data Sources Roadmap</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">🔵 Capital.com Price + News later</div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">🌐 IC Markets Price Bridge later</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">📊 TradingView Technical Signals later</div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">🟡 Yahoo Finance Fundamentals later</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">📰 News + Macro Calendar later</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 AI Resource Pipeline</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Market Prices → GPT Trade Analyst</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">News Events → Claude Risk Analyst</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Technical Signals → Consensus Engine</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Fundamentals → Trade Quality Score</div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">Forward Results → AI Learning Memory</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧪 Feed Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Mock feed first</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ No live orders from feed</div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Provider API keys later via .env.local</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live execution remains blocked</div>
-                </div>
-
-                <div className="mt-5 border border-cyan-900 bg-cyan-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Data Freshness</p>
-                  <p className="text-cyan-400 font-bold">{dataFreshnessStatus}</p>
-                </div>
-
-                <div className="mt-3 border border-green-900 bg-green-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Cache Status</p>
-                  <p className="text-green-400 font-bold">{marketCacheStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-green-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">👁 Market Watchlist Snapshot</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold text-blue-400">NAS100</h5>
-                  <p className="text-gray-300 mt-2">Index · AI favourite</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold text-yellow-400">XAUUSD</h5>
-                  <p className="text-gray-300 mt-2">Gold · Risk sentiment</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold text-orange-400">USOIL</h5>
-                  <p className="text-gray-300 mt-2">Crude Oil · Macro driver</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold text-green-400">EURUSD</h5>
-                  <p className="text-gray-300 mt-2">Forex · ECB/Fed</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Forward Learning Connection</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V7.5 bereitet die Datenbasis vor, damit spätere AI-Agenten nicht nur Backtests lesen, sondern kommende Demo-Zeiträume planen können.
-                Preise, News, technische Signale und Fundamentals werden später mit Demo-Trades, Ergebnissen und Strategie-Performance verbunden.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.5</h5>
-                  <p className="text-gray-300 mt-2">Market Data</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.6</h5>
-                  <p className="text-gray-300 mt-2">News Resources</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.7</h5>
-                  <p className="text-gray-300 mt-2">Forward Testing</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.8</h5>
-                  <p className="text-gray-300 mt-2">AI Memory</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Demo Agent</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="intelligence-layer" className="bg-gray-900 p-6 rounded-2xl border border-red-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">📰 News & Intelligence Resource Layer V7.6</h3>
-                <p className="text-gray-400 mt-2">
-                  Vorbereitung für professionelle Nachrichten-, Macro-, Sentiment- und Analysequellen. Später greifen GPT, Claude und AI-Agenten auf diese Ressourcen zu.
-                </p>
-              </div>
-
-              <div className="bg-black border border-red-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Intelligence Status</p>
-                <p className="text-red-400 font-bold">{intelligenceLayerStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Layer Score</h4>
-                <p className="text-5xl mt-4 text-red-400">{intelligenceLayerScore}%</p>
-                <p className="text-gray-400 mt-2">Resource architecture</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">News Feed</h4>
-                <p className="text-2xl mt-4 text-blue-400">{newsFeedStatus}</p>
-                <p className="text-gray-400 mt-2">Real providers later</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Macro Calendar</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{macroCalendarStatus}</p>
-                <p className="text-gray-400 mt-2">CPI · NFP · FOMC</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Sentiment</h4>
-                <p className="text-2xl mt-4 text-purple-400">{sentimentEngineStatus}</p>
-                <p className="text-gray-400 mt-2">AI scoring later</p>
-              </div>
-
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">High Impact</h4>
-                <p className="text-5xl mt-4 text-cyan-400">{highImpactEventCount}</p>
-                <p className="text-gray-400 mt-2">Events tracked</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🌍 Professional Sources Roadmap</h4>
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">🔵 Yahoo Finance News + Fundamentals later</div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">📊 Capital.com News + Analysis later</div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">📅 Economic Calendar later</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">📰 Reuters / Bloomberg / FT style sources later</div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">📈 TradingView Ideas + Technical context later</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 AI Intelligence Pipeline</h4>
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">News → Event Impact Score</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Macro → Risk Regime Detection</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Sentiment → Market Bias</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Fundamentals → Trade Quality Filter</div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">Results → AI Learning Memory</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Intelligence Safety Rules</h4>
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Mock intelligence first</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Source attribution later</div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ API keys only via .env.local</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 News cannot trigger live orders alone</div>
-                </div>
-
-                <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">AI Intelligence</p>
-                  <p className="text-red-400 font-bold">{aiIntelligenceStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-yellow-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">📅 Macro Event Snapshot</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">FOMC</h5>
-                  <p className="text-gray-300 mt-2">USD rate risk</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">CPI</h5>
-                  <p className="text-gray-300 mt-2">Inflation shock</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">NFP</h5>
-                  <p className="text-gray-300 mt-2">Labor market</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">ECB</h5>
-                  <p className="text-gray-300 mt-2">EUR risk</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">Oil Inventories</h5>
-                  <p className="text-gray-300 mt-2">USOIL driver</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Connection to Forward Learning</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V7.6 verbindet Nachrichten, Macro Events, Sentiment und externe Analysequellen mit der späteren Forward Testing Engine.
-                Die AI soll dadurch lernen, welche News- und Macro-Bedingungen bestimmte Strategien verbessern oder blockieren.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.6</h5>
-                  <p className="text-gray-300 mt-2">Intelligence</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.7</h5>
-                  <p className="text-gray-300 mt-2">Forward Testing</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.8</h5>
-                  <p className="text-gray-300 mt-2">AI Memory</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.9</h5>
-                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Demo Agent</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="forward-testing-engine" className="bg-gray-900 p-6 rounded-2xl border border-fuchsia-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🚀 Forward Testing Engine V7.7</h3>
-                <p className="text-gray-400 mt-2">
-                  Vorbereitung für AI-Forward-Tests: kommende Tage, Wochen oder Monate planen, Demo-Trades später auswerten und erfolgreiche Strategien für zukünftige Entscheidungen speichern.
-                </p>
-              </div>
-
-              <div className="bg-black border border-fuchsia-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Forward Testing Status</p>
-                <p className="text-fuchsia-400 font-bold">{forwardTestingStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-fuchsia-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Engine Score</h4>
-                <p className="text-5xl mt-4 text-fuchsia-400">{forwardTestingScore}%</p>
-                <p className="text-gray-400 mt-2">Forward architecture</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Mode</h4>
-                <p className="text-2xl mt-4 text-blue-400">{forwardTestingMode}</p>
-                <p className="text-gray-400 mt-2">Demo execution later</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Planned Tests</h4>
-                <p className="text-5xl mt-4 text-yellow-400">{plannedForwardTests}</p>
-                <p className="text-gray-400 mt-2">Mock plans ready</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Completed</h4>
-                <p className="text-5xl mt-4 text-green-400">{completedForwardTests}</p>
-                <p className="text-gray-400 mt-2">Results later</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Demo Execution</h4>
-                <p className="text-2xl mt-4 text-red-400">{demoExecutionStatus}</p>
-                <p className="text-gray-400 mt-2">No real orders</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📋 Forward Test Plans</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    NAS100 · Momentum Breakout · LONG · 83% Confidence
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    XAUUSD · Risk-Off Trend · LONG · 78% Confidence
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    USOIL · Inventory Reaction · SHORT · 71% Confidence
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Planung für morgen, nächste Woche oder nächsten Monat später möglich.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 Learning Loop Logic</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">AI plant Setup</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Trade wird später ausgeführt</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Resultat wird analysiert</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Strategie-Score wird aktualisiert</div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">Beste Logiken gehen in AI Memory</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Forward Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Nur Planung in V7.7</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Keine Live Orders</div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Demo Execution erst später</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live Execution bleibt blockiert</div>
-                </div>
-
-                <div className="mt-5 border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Strategy Learning</p>
-                  <p className="text-purple-400 font-bold">{strategyLearningStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-fuchsia-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">📊 Strategy Score Preview</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">Momentum Breakout</h5>
-                  <p className="text-gray-300 mt-2">Score later · NAS100</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">Risk-Off Trend</h5>
-                  <p className="text-gray-300 mt-2">Score later · XAUUSD</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">Inventory Reaction</h5>
-                  <p className="text-gray-300 mt-2">Score later · USOIL</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">Macro Momentum</h5>
-                  <p className="text-gray-300 mt-2">Score later · Forex</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Roadmap to AI Learning</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V7.7 erstellt die Grundlage, damit AI-Agenten nicht nur alte Daten auswerten, sondern zukünftige Demo-Zeiträume planen können.
-                Später werden Ergebnisse, Marktbedingungen, News, technische Signale und Fundamentals gespeichert und in Strategy Evolution genutzt.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.7</h5>
-                  <p className="text-gray-300 mt-2">Forward Testing</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.8</h5>
-                  <p className="text-gray-300 mt-2">AI Memory</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.9</h5>
-                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Demo Agent</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.0</h5>
-                  <p className="text-gray-300 mt-2">Controlled Live</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="ai-learning-memory" className="bg-gray-900 p-6 rounded-2xl border border-cyan-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🧠 AI Learning Memory V7.8</h3>
-                <p className="text-gray-400 mt-2">
-                  Vorbereitung für den Lernspeicher: Trade-Ergebnisse, Strategie-Performance, Marktverhalten und erfolgreiche AI-Logiken werden später gespeichert und für zukünftige Entscheidungen genutzt.
-                </p>
-              </div>
-
-              <div className="bg-black border border-cyan-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Memory Status</p>
-                <p className="text-cyan-400 font-bold">{aiMemoryStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Memory Score</h4>
-                <p className="text-5xl mt-4 text-cyan-400">{aiMemoryScore}%</p>
-                <p className="text-gray-400 mt-2">Learning architecture</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Trade Memory</h4>
-                <p className="text-2xl mt-4 text-green-400">{tradeMemoryStatus}</p>
-                <p className="text-gray-400 mt-2">Results later</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Strategy Memory</h4>
-                <p className="text-2xl mt-4 text-purple-400">{strategyMemoryStatus}</p>
-                <p className="text-gray-400 mt-2">Ranking later</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Market Memory</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{marketMemoryStatus}</p>
-                <p className="text-gray-400 mt-2">Behavior later</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Entries</h4>
-                <p className="text-5xl mt-4 text-blue-400">{memoryEntriesCount}</p>
-                <p className="text-gray-400 mt-2">Empty for now</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📚 Memory Types</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Trade Memory · Entry, Result, Market, Strategy
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Strategy Memory · Winrate, Average Return, Confidence
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Market Memory · Best Strategy, Market Behavior, Conditions
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Learning Manager · verbindet alles für AI Decisions
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔁 Learning Feedback Loop</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Forward Test wird geplant</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Demo Resultat wird gespeichert</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Strategie wird bewertet</div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">Marktverhalten wird dokumentiert</div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">AI nutzt Memory für nächste Planung</div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Memory Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Memory Layer vorbereitet</div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">✅ Keine automatischen Live Orders</div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">⚠️ Persistente DB später</div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">🔒 Live Execution bleibt blockiert</div>
-                </div>
-
-                <div className="mt-5 border border-cyan-900 bg-cyan-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Learning Loop</p>
-                  <p className="text-cyan-400 font-bold">{learningLoopStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧩 Memory Example Preview</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">NAS100</h5>
-                  <p className="text-gray-300 mt-2">Momentum Breakout · result later</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">XAUUSD</h5>
-                  <p className="text-gray-300 mt-2">Risk-Off Trend · result later</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">USOIL</h5>
-                  <p className="text-gray-300 mt-2">Inventory Reaction · result later</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">EURUSD</h5>
-                  <p className="text-gray-300 mt-2">Macro Momentum · result later</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Strategy Evolution</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V7.8 bereitet den Speicher vor, damit spätere Forward-Test-Ergebnisse dauerhaft genutzt werden können.
-                Gewinner-Strategien werden später höher gewichtet, schwache Setups werden reduziert und neue Marktbedingungen werden automatisch dokumentiert.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.8</h5>
-                  <p className="text-gray-300 mt-2">AI Memory</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.9</h5>
-                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Demo Agent</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.5</h5>
-                  <p className="text-gray-300 mt-2">Learning Reports</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.0</h5>
-                  <p className="text-gray-300 mt-2">Controlled Live</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="strategy-evolution-engine" className="bg-gray-900 p-6 rounded-2xl border border-lime-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🧬 Strategy Evolution Engine V7.9</h3>
-                <p className="text-gray-400 mt-2">
-                  Vorbereitung für dynamisches Strategie-Ranking: Gewinner-Strategien werden höher gewichtet, schwache Setups zurückgestuft und Marktbedingungen später automatisch angepasst.
-                </p>
-              </div>
-
-              <div className="bg-black border border-lime-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Evolution Status</p>
-                <p className="text-lime-400 font-bold">{strategyEvolutionStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-lime-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Evolution Score</h4>
-                <p className="text-5xl mt-4 text-lime-400">{strategyEvolutionScore}%</p>
-                <p className="text-gray-400 mt-2">Ranking architecture</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Top Strategy</h4>
-                <p className="text-2xl mt-4 text-purple-400">{topEvolvingStrategy}</p>
-                <p className="text-gray-400 mt-2">Mock leader</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Ranking</h4>
-                <p className="text-2xl mt-4 text-blue-400">{strategyRankingStatus}</p>
-                <p className="text-gray-400 mt-2">Leaderboard later</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Confidence</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{confidenceEngineStatus}</p>
-                <p className="text-gray-400 mt-2">Score adjustment</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Agent</h4>
-                <p className="text-2xl mt-4 text-red-400">{autonomousAgentStatus}</p>
-                <p className="text-gray-400 mt-2">V8.0 later</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🏆 Strategy Leaderboard Preview</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
-                    1. Risk-Off Trend · 86 Evolution Score · XAUUSD
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    2. Momentum Breakout · 78 Evolution Score · NAS100
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    3. Inventory Reaction · 69 Evolution Score · USOIL
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Dynamic ranking wird später aus echten Forward-Test-Resultaten berechnet.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🌍 Market Adaptation</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    NAS100 → Momentum Breakout
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    XAUUSD → Risk-Off Trend
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    USOIL → Inventory Reaction
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    EURUSD → Macro Momentum
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Market Adaptation: {marketAdaptationStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Evolution Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Nur Ranking in V7.9
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Keine autonomen Orders
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Demo Agent kommt erst V8.0
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live Execution bleibt blockiert
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Evolution Mode</p>
-                  <p className="text-lime-400 font-bold">{evolutionMode}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-purple-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧠 Confidence Engine Preview</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <h5 className="font-bold">Winrate</h5>
-                  <p className="text-gray-300 mt-2">höhere Gewichtung bei stabilen Ergebnissen</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">Average Return</h5>
-                  <p className="text-gray-300 mt-2">Strategien mit besserem Return steigen</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">Market Fit</h5>
-                  <p className="text-gray-300 mt-2">Strategie wird pro Markt angepasst</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Risk Filter</h5>
-                  <p className="text-gray-300 mt-2">schwache Setups werden reduziert</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Demo Trading Agent</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V7.9 bildet die Entscheidungslogik für V8.0. Der spätere Demo Trading Agent soll nicht zufällig handeln,
-                sondern anhand von Strategie-Ranking, Marktanpassung, Confidence Score, News, Fundamentals und Risk-Filter entscheiden.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V7.9</h5>
-                  <p className="text-gray-300 mt-2">Strategy Evolution</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Demo Agent</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.1</h5>
-                  <p className="text-gray-300 mt-2">Demo Execution</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.5</h5>
-                  <p className="text-gray-300 mt-2">Learning Reports</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.0</h5>
-                  <p className="text-gray-300 mt-2">Controlled Live</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="demo-trading-agent" className="bg-gray-900 p-6 rounded-2xl border border-indigo-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🤖 Demo Trading Agent V8.0</h3>
-                <p className="text-gray-400 mt-2">
-                  Zentraler AI-Agent-Kern: verbindet GPT Analyst, Claude Risk, Consensus Engine, Forward Testing, AI Memory und Strategy Evolution zu einem Demo-Trading-Planer.
-                </p>
-              </div>
-
-              <div className="bg-black border border-indigo-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Agent Status</p>
-                <p className="text-indigo-400 font-bold">{demoAgentStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-indigo-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Agent Score</h4>
-                <p className="text-5xl mt-4 text-indigo-400">{demoAgentScore}%</p>
-                <p className="text-gray-400 mt-2">AI brain architecture</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Mode</h4>
-                <p className="text-2xl mt-4 text-blue-400">{agentMode}</p>
-                <p className="text-gray-400 mt-2">No execution yet</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Decision</h4>
-                <p className="text-2xl mt-4 text-purple-400">{agentDecisionStatus}</p>
-                <p className="text-gray-400 mt-2">AI plan later</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Consensus</h4>
-                <p className="text-2xl mt-4 text-green-400">{agentConsensusStatus}</p>
-                <p className="text-gray-400 mt-2">GPT + Claude</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Live Execution</h4>
-                <p className="text-2xl mt-4 text-red-400">{agentLiveExecutionStatus}</p>
-                <p className="text-gray-400 mt-2">Safety first</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 Agent Brain</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Market: NAS100
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Strategy: Momentum Breakout
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Direction: LONG
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Confidence: 83%
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    AI decision is mock/planning only in V8.0.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">⚡ Agent Consensus</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    GPT Vote: LONG
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Claude Risk Vote: LONG
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Agreement: 100%
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Result: APPROVED
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Execution still locked until V8.1+.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Agent Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Planning only in V8.0
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No broker order placement
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Demo execution starts later
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live trading remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Next Phase</p>
-                  <p className="text-indigo-400 font-bold">{agentNextPhase}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-indigo-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">📋 Demo Trade Plans Preview</h4>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">PLAN-001 · NAS100</h5>
-                  <p className="text-gray-300 mt-2">Momentum Breakout · LONG · 83%</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">PLAN-002 · XAUUSD</h5>
-                  <p className="text-gray-300 mt-2">Risk-Off Trend · LONG · 78%</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">PLAN-003 · USOIL</h5>
-                  <p className="text-gray-300 mt-2">Inventory Reaction · SHORT · 71%</p>
-                </div>
-              </div>
-
-              <div className="mt-5 border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                <p className="text-gray-400 text-sm">Planned Agent Trades</p>
-                <p className="text-indigo-400 text-3xl font-bold">{agentTradePlans}</p>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Full AI Agent Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.0 verbindet alle bisherigen Module zu einem zentralen Agenten. Der Agent kann Märkte, Strategien, Memory, Intelligence, Consensus und Risk-Status lesen,
-                aber in dieser Version noch keine Orders ausführen. Demo-Ausführung kommt erst mit V8.1.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">GPT</h5>
-                  <p className="text-gray-300 mt-2">Trade Analyst</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Claude</h5>
-                  <p className="text-gray-300 mt-2">Risk Analyst</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">Memory</h5>
-                  <p className="text-gray-300 mt-2">Learning Data</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">Evolution</h5>
-                  <p className="text-gray-300 mt-2">Strategy Ranking</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">Agent</h5>
-                  <p className="text-gray-300 mt-2">Demo Planner</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="demo-execution-engine" className="bg-gray-900 p-6 rounded-2xl border border-orange-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">⚡ Demo Execution Engine V8.1</h3>
-                <p className="text-gray-400 mt-2">
-                  Sichere Demo-Ausführungsschicht: Agent-Pläne werden in Paper/Demo Orders übersetzt. Keine Live Orders, keine echten Broker-Trades.
-                </p>
-              </div>
-
-              <div className="bg-black border border-orange-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Execution Status</p>
-                <p className="text-orange-400 font-bold">{demoExecutionEngineStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-orange-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Execution Score</h4>
-                <p className="text-5xl mt-4 text-orange-400">{demoExecutionEngineScore}%</p>
-                <p className="text-gray-400 mt-2">Demo architecture</p>
-              </div>
-
-              <div className="bg-black border border-cyan-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Mode</h4>
-                <p className="text-2xl mt-4 text-cyan-400">{executionMode}</p>
-                <p className="text-gray-400 mt-2">Paper engine only</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Generated Orders</h4>
-                <p className="text-5xl mt-4 text-blue-400">{generatedDemoOrders}</p>
-                <p className="text-gray-400 mt-2">Mock execution plans</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Open Executions</h4>
-                <p className="text-5xl mt-4 text-green-400">{openDemoExecutions}</p>
-                <p className="text-gray-400 mt-2">Execution later</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Live Firewall</h4>
-                <p className="text-2xl mt-4 text-red-400">{liveOrderFirewallStatus}</p>
-                <p className="text-gray-400 mt-2">Broker orders blocked</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📦 Demo Order Generator</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    NAS100 · LONG · Momentum Breakout · Confidence 83%
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    XAUUSD · LONG · Risk-Off Trend · Confidence 78%
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    USOIL · SHORT · Inventory Reaction · Confidence 71%
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Orders are generated for demo/paper mode only.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔗 Paper Order Bridge</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Agent Plan → Demo Order
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Demo Order → Paper Engine
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Paper Engine → Position Manager
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Result → AI Learning Memory
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Bridge Status: {paperOrderBridgeStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Execution Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Demo/Paper only
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No broker execution
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Real broker bridge stays disconnected
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live order placement blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Execution Safety</p>
-                  <p className="text-orange-400 font-bold">{executionSafetyStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-orange-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧾 Execution Ticket Preview</h4>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">DEMO-001 · NAS100</h5>
-                  <p className="text-gray-300 mt-2">LONG · SL 120 pts · TP 300 pts · Paper only</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">DEMO-002 · XAUUSD</h5>
-                  <p className="text-gray-300 mt-2">LONG · SL 25 pts · TP 60 pts · Paper only</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">DEMO-003 · USOIL</h5>
-                  <p className="text-gray-300 mt-2">SHORT · SL 1.2 · TP 2.8 · Paper only</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Execution Learning Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.1 verbindet den Demo Agent mit einer sicheren Paper-Execution-Schicht. Später werden Demo-Orders ausgeführt,
-                Positionen verfolgt, Ergebnisse analysiert und zurück in AI Memory sowie Strategy Evolution geschrieben.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.0</h5>
-                  <p className="text-gray-300 mt-2">Demo Agent</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.1</h5>
-                  <p className="text-gray-300 mt-2">Demo Execution</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.2</h5>
-                  <p className="text-gray-300 mt-2">Performance Tracker</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.3</h5>
-                  <p className="text-gray-300 mt-2">Feedback Engine</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.5</h5>
-                  <p className="text-gray-300 mt-2">Learning Reports</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="performance-tracker" className="bg-gray-900 p-6 rounded-2xl border border-teal-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">📊 Performance Tracker V8.2</h3>
-                <p className="text-gray-400 mt-2">
-                  Performance-Schicht für Demo-Trades: bewertet Winrate, Profit Factor, Average Return, Drawdown und Strategie-Qualität für den AI-Lernkreislauf.
-                </p>
-              </div>
-
-              <div className="bg-black border border-teal-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Performance Status</p>
-                <p className="text-teal-400 font-bold">{performanceTrackerStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-teal-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Tracker Score</h4>
-                <p className="text-5xl mt-4 text-teal-400">{performanceTrackerScore}%</p>
-                <p className="text-gray-400 mt-2">Performance architecture</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Tracked Trades</h4>
-                <p className="text-5xl mt-4 text-blue-400">{trackedTradesCount}</p>
-                <p className="text-gray-400 mt-2">Mock results</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Winrate</h4>
-                <p className="text-5xl mt-4 text-green-400">{performanceWinrate}%</p>
-                <p className="text-gray-400 mt-2">Demo sample</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Profit Factor</h4>
-                <p className="text-5xl mt-4 text-purple-400">{performanceProfitFactor}</p>
-                <p className="text-gray-400 mt-2">Mock performance</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Drawdown</h4>
-                <p className="text-5xl mt-4 text-red-400">{performanceDrawdown}%</p>
-                <p className="text-gray-400 mt-2">Risk tracking</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📈 Trade Performance</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    NAS100 · LONG · Momentum Breakout · +4.2R · WIN
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    XAUUSD · LONG · Risk-Off Trend · +1.8R · WIN
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    USOIL · SHORT · Inventory Reaction · -1.0R · LOSS
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Results are mock values until real demo execution is connected.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🏆 Strategy Performance</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Best Strategy: {bestPerformanceStrategy}
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Momentum Breakout · +4.2R · Strong
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Risk-Off Trend · +1.8R · Developing
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    Inventory Reaction · -1.0R · Needs Review
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Learning Status: {performanceLearningStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Performance Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Tracking only in V8.2
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No live execution
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Mock performance until demo executions run
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Broker trading remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-teal-900 bg-teal-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Performance Learning</p>
-                  <p className="text-teal-400 font-bold">{performanceLearningStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-teal-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">📉 Equity Performance Preview</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">Average Return</h5>
-                  <p className="text-gray-300 mt-2">+1.67R per demo trade</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">Profit Factor</h5>
-                  <p className="text-gray-300 mt-2">2.15 mock sample</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Max Drawdown</h5>
-                  <p className="text-gray-300 mt-2">3.2% risk sample</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">Consistency</h5>
-                  <p className="text-gray-300 mt-2">2 wins / 1 loss</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Performance to Learning Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.2 bereitet die Performance-Auswertung vor. Demo-Trade-Ergebnisse werden später gemessen,
-                in AI Memory gespeichert, an Strategy Evolution übergeben und zur Verbesserung zukünftiger Agent-Pläne genutzt.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.1</h5>
-                  <p className="text-gray-300 mt-2">Demo Execution</p>
-                </div>
-
-                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.2</h5>
-                  <p className="text-gray-300 mt-2">Performance Tracker</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.3</h5>
-                  <p className="text-gray-300 mt-2">Feedback Engine</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.4</h5>
-                  <p className="text-gray-300 mt-2">Adaptive Confidence</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.5</h5>
-                  <p className="text-gray-300 mt-2">Learning Reports</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="feedback-engine" className="bg-gray-900 p-6 rounded-2xl border border-pink-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🧠 Feedback Engine V8.3</h3>
-                <p className="text-gray-400 mt-2">
-                  Feedback-Schicht für den AI-Lernkreislauf: Demo-Performance wird in Trade-Feedback, Strategie-Feedback und Confidence-Anpassungen übersetzt.
-                </p>
-              </div>
-
-              <div className="bg-black border border-pink-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Feedback Status</p>
-                <p className="text-pink-400 font-bold">{feedbackEngineStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-pink-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Feedback Score</h4>
-                <p className="text-5xl mt-4 text-pink-400">{feedbackEngineScore}%</p>
-                <p className="text-gray-400 mt-2">Learning loop architecture</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Trade Feedback</h4>
-                <p className="text-2xl mt-4 text-green-400">{tradeFeedbackStatus}</p>
-                <p className="text-gray-400 mt-2">Win/Loss feedback</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Strategy Feedback</h4>
-                <p className="text-2xl mt-4 text-purple-400">{strategyFeedbackStatus}</p>
-                <p className="text-gray-400 mt-2">Ranking updates</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Confidence</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{confidenceFeedbackStatus}</p>
-                <p className="text-gray-400 mt-2">Score adjustment</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Feedback Items</h4>
-                <p className="text-5xl mt-4 text-blue-400">{generatedFeedbackItems}</p>
-                <p className="text-gray-400 mt-2">Mock sample</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">✅ Trade Feedback</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    NAS100 WIN · Momentum Breakout → Increase confidence
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    XAUUSD WIN · Risk-Off Trend → Keep strategy active
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    USOIL LOSS · Inventory Reaction → Review conditions
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Feedback uses mock performance until demo execution is connected.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧬 Strategy Feedback</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Momentum Breakout → Rank Up
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Risk-Off Trend → Stable
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    Inventory Reaction → Reduce weight
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Memory Update: {memoryUpdateStatus}
-                  </div>
-                  <div className="border border-pink-900 bg-pink-950 rounded-lg p-3">
-                    Evolution Update: {evolutionUpdateStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Feedback Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Feedback only in V8.3
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No automatic live orders
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Confidence changes are simulated
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Broker execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-pink-900 bg-pink-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Feedback Engine</p>
-                  <p className="text-pink-400 font-bold">{feedbackEngineStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-pink-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Feedback to Learning Pipeline</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
-                  <h5 className="font-bold">Performance</h5>
-                  <p className="text-gray-300 mt-2">Winrate · R-Multiple · Drawdown</p>
-                </div>
-
-                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
-                  <h5 className="font-bold">Feedback</h5>
-                  <p className="text-gray-300 mt-2">Trade + Strategy review</p>
-                </div>
-
-                <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-4">
-                  <h5 className="font-bold">Memory</h5>
-                  <p className="text-gray-300 mt-2">Store lessons</p>
-                </div>
-
-                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <h5 className="font-bold">Evolution</h5>
-                  <p className="text-gray-300 mt-2">Update ranking</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">Agent</h5>
-                  <p className="text-gray-300 mt-2">Better next plan</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Adaptive Confidence</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.3 erzeugt Feedback aus Performance-Ergebnissen. V8.4 nutzt dieses Feedback, um Confidence Scores dynamisch anzupassen,
-                Gewinner-Setups höher zu bewerten und schwache Setups kontrolliert zurückzustufen.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.2</h5>
-                  <p className="text-gray-300 mt-2">Performance</p>
-                </div>
-
-                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.3</h5>
-                  <p className="text-gray-300 mt-2">Feedback Engine</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.4</h5>
-                  <p className="text-gray-300 mt-2">Adaptive Confidence</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V8.5</h5>
-                  <p className="text-gray-300 mt-2">Learning Reports</p>
-                </div>
-
-                <div className="border border-gray-800 bg-gray-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.0</h5>
-                  <p className="text-gray-300 mt-2">Controlled Live</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="adaptive-confidence-system" className="bg-gray-900 p-6 rounded-2xl border border-violet-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🎯 Adaptive Confidence System V8.4</h3>
-                <p className="text-gray-400 mt-2">
-                  Confidence-Anpassung für den AI-Lernkreislauf: Gewinner-Strategien erhalten höhere Confidence, schwache Setups werden kontrolliert reduziert.
-                </p>
-              </div>
-
-              <div className="bg-black border border-violet-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Confidence Status</p>
-                <p className="text-violet-400 font-bold">{adaptiveConfidenceStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-violet-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Confidence Score</h4>
-                <p className="text-5xl mt-4 text-violet-400">{adaptiveConfidenceScore}%</p>
-                <p className="text-gray-400 mt-2">Adaptive architecture</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Mode</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{confidenceAdjustmentMode}</p>
-                <p className="text-gray-400 mt-2">No live changes yet</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Adjusted</h4>
-                <p className="text-5xl mt-4 text-blue-400">{adjustedStrategiesCount}</p>
-                <p className="text-gray-400 mt-2">Mock strategies</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Top Confidence</h4>
-                <p className="text-2xl mt-4 text-green-400">{topConfidenceStrategy}</p>
-                <p className="text-gray-400 mt-2">Current leader</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Risk Filter</h4>
-                <p className="text-2xl mt-4 text-red-400">{confidenceRiskFilterStatus}</p>
-                <p className="text-gray-400 mt-2">Safety layer</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📈 Confidence Adjustments</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Momentum Breakout · 83% → 86% · Rank Up
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Risk-Off Trend · 78% → 79% · Stable
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Inventory Reaction · 71% → 67% · Reduce
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Adjustments are simulated until real demo performance is connected.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 Confidence Logic</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Wins → Confidence increase
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Losses → Confidence reduction
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Drawdown → Risk penalty
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Consistency → Stability boost
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    History Status: {confidenceHistoryStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Confidence Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Confidence changes are bounded
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No live orders from confidence alone
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Requires performance + feedback confirmation
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Broker execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-violet-900 bg-violet-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Adaptive Learning</p>
-                  <p className="text-violet-400 font-bold">{adaptiveLearningStatus}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-violet-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">📜 Confidence History Preview</h4>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">Momentum Breakout</h5>
-                  <p className="text-gray-300 mt-2">83 → 86 · +3 confidence points</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">Risk-Off Trend</h5>
-                  <p className="text-gray-300 mt-2">78 → 79 · +1 confidence point</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Inventory Reaction</h5>
-                  <p className="text-gray-300 mt-2">71 → 67 · -4 confidence points</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Adaptive Confidence Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.4 übersetzt Feedback in adaptive Confidence-Werte. Diese Werte fließen später zurück in Agent-Entscheidungen,
-                Strategy Evolution und AI Memory, damit erfolgreiche Setups stärker und schwache Setups vorsichtiger bewertet werden.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
-                  <h5 className="font-bold">Performance</h5>
-                  <p className="text-gray-300 mt-2">Trade results</p>
-                </div>
-
-                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
-                  <h5 className="font-bold">Feedback</h5>
-                  <p className="text-gray-300 mt-2">Strategy review</p>
-                </div>
-
-                <div className="border border-violet-900 bg-violet-950 rounded-lg p-4">
-                  <h5 className="font-bold">Confidence</h5>
-                  <p className="text-gray-300 mt-2">Adaptive scores</p>
-                </div>
-
-                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <h5 className="font-bold">Evolution</h5>
-                  <p className="text-gray-300 mt-2">Ranking update</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">Agent</h5>
-                  <p className="text-gray-300 mt-2">Better decision</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="multi-ai-learning-reports" className="bg-gray-900 p-6 rounded-2xl border border-sky-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">📑 Multi-AI Learning Reports Center V8.5</h3>
-                <p className="text-gray-400 mt-2">
-                  Gemeinsames Review-System: GPT, Claude und der AI Agent kontrollieren Performance, Risiko, Ausführung und Strategie-Entwicklung gemeinsam, um Fehlanalysen zu reduzieren.
-                </p>
-              </div>
-
-              <div className="bg-black border border-sky-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Reports Status</p>
-                <p className="text-sky-400 font-bold">{learningReportsStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-sky-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Reports Score</h4>
-                <p className="text-5xl mt-4 text-sky-400">{learningReportsScore}%</p>
-                <p className="text-gray-400 mt-2">Review architecture</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">GPT Review</h4>
-                <p className="text-2xl mt-4 text-green-400">{gptReviewStatus}</p>
-                <p className="text-gray-400 mt-2">Trade quality</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Claude Review</h4>
-                <p className="text-2xl mt-4 text-red-400">{claudeReviewStatus}</p>
-                <p className="text-gray-400 mt-2">Risk control</p>
-              </div>
-
-              <div className="bg-black border border-indigo-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Agent Review</h4>
-                <p className="text-2xl mt-4 text-indigo-400">{agentReviewStatus}</p>
-                <p className="text-gray-400 mt-2">Execution logic</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Consensus</h4>
-                <p className="text-5xl mt-4 text-purple-400">{consensusReviewScore}</p>
-                <p className="text-gray-400 mt-2">Agreement score</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-4 gap-6 mb-6">
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🟢 GPT Trade Review</h4>
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Trade Quality Score: 89/100
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Technical Structure: Strong
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Setup Logic: Momentum confirmed
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    GPT checks setup quality and market structure.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔴 Claude Risk Review</h4>
-                <div className="space-y-3">
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Risk Score: 82/100
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    News Risk: Medium
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    Drawdown Risk: Controlled
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Claude checks risk, volatility and macro exposure.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-indigo-900 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🤖 Agent Execution Review</h4>
-                <div className="space-y-3">
-                  <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-3">
-                    Agent Score: 91/100
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Plan Followed: Yes
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Confidence Match: Good
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Agent reviews execution quality and plan discipline.
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">⚖️ Consensus Review</h4>
-                <div className="space-y-3">
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    GPT + Claude + Agent = {consensusReviewScore}/100
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Validation: Approved
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Multi-AI Check: {multiAiValidationStatus}
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Consensus reduces single-model misjudgment.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📅 Daily Report</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Status: {dailyReportStatus}
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Trades: 3 · Winrate: 67%
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Best Strategy: Momentum Breakout
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Needs Review: Inventory Reaction
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📆 Weekly Report</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Status: {weeklyReportStatus}
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Confidence Changes: 3 strategies
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Market Behavior: stored later
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Agent Development: tracked later
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🗓 Monthly Report</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Status: {monthlyReportStatus}
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Total Performance: aggregated later
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Evolution Ranking: summarized later
-                  </div>
-                  <div className="border border-sky-900 bg-sky-950 rounded-lg p-3">
-                    AI Improvement: measured later
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-sky-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Multi-AI Learning Report Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.5 erstellt die Grundlage für tägliche, wöchentliche und monatliche Lernberichte. GPT bewertet Trade-Qualität,
-                Claude kontrolliert Risiko, der AI Agent prüft Ausführung und die Consensus Review validiert die Ergebnisse gemeinsam.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">GPT</h5>
-                  <p className="text-gray-300 mt-2">Trade Review</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Claude</h5>
-                  <p className="text-gray-300 mt-2">Risk Review</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">Agent</h5>
-                  <p className="text-gray-300 mt-2">Execution Review</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">Consensus</h5>
-                  <p className="text-gray-300 mt-2">Validation</p>
-                </div>
-
-                <div className="border border-sky-900 bg-sky-950 rounded-lg p-4">
-                  <h5 className="font-bold">Report</h5>
-                  <p className="text-gray-300 mt-2">Learning Output</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="autonomous-learning-scheduler" className="bg-gray-900 p-6 rounded-2xl border border-amber-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">⏱️ Autonomous Learning Scheduler V8.6</h3>
-                <p className="text-gray-400 mt-2">
-                  Automatischer Lernplaner: koordiniert tägliche, wöchentliche und monatliche AI-Lernzyklen für Performance, Feedback, Confidence, Memory, Evolution und Multi-AI Reports.
-                </p>
-              </div>
-
-              <div className="bg-black border border-amber-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Scheduler Status</p>
-                <p className="text-amber-400 font-bold">{learningSchedulerStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-amber-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Scheduler Score</h4>
-                <p className="text-5xl mt-4 text-amber-400">{learningSchedulerScore}%</p>
-                <p className="text-gray-400 mt-2">Autonomous cycle architecture</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Daily Cycle</h4>
-                <p className="text-2xl mt-4 text-green-400">{dailySchedulerStatus}</p>
-                <p className="text-gray-400 mt-2">End-of-day review</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Weekly Cycle</h4>
-                <p className="text-2xl mt-4 text-blue-400">{weeklySchedulerStatus}</p>
-                <p className="text-gray-400 mt-2">Strategy review</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Monthly Cycle</h4>
-                <p className="text-2xl mt-4 text-purple-400">{monthlySchedulerStatus}</p>
-                <p className="text-gray-400 mt-2">Full AI review</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Automation</h4>
-                <p className="text-2xl mt-4 text-red-400">{schedulerAutomationMode}</p>
-                <p className="text-gray-400 mt-2">Manual trigger first</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🌙 Daily Learning Cycle</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-teal-900 bg-teal-950 rounded-lg p-3">
-                    23:59 → Performance Review
-                  </div>
-                  <div className="border border-pink-900 bg-pink-950 rounded-lg p-3">
-                    Feedback Update
-                  </div>
-                  <div className="border border-violet-900 bg-violet-950 rounded-lg p-3">
-                    Confidence Adjustment
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Memory Update
-                  </div>
-                  <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-3">
-                    Next Day Plan: {nextPlanStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📆 Weekly Learning Cycle</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
-                    Strategy Evolution Review
-                  </div>
-                  <div className="border border-sky-900 bg-sky-950 rounded-lg p-3">
-                    Multi-AI Weekly Report
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Market Behavior Review
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Best/Worst Strategy Ranking
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    New Week Forward Plan
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🗓 Monthly Learning Cycle</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Full AI Performance Review
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Strategy Ranking Reset/Update
-                  </div>
-                  <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-3">
-                    Memory Growth Review
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    Risk & Drawdown Analysis
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Controlled Live Readiness later
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-amber-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Full Autonomous Learning Cycle</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
-                  <h5 className="font-bold">1. Performance</h5>
-                  <p className="text-gray-300 mt-2">Evaluate demo results</p>
-                </div>
-
-                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
-                  <h5 className="font-bold">2. Feedback</h5>
-                  <p className="text-gray-300 mt-2">Generate lessons</p>
-                </div>
-
-                <div className="border border-violet-900 bg-violet-950 rounded-lg p-4">
-                  <h5 className="font-bold">3. Confidence</h5>
-                  <p className="text-gray-300 mt-2">Adjust scores</p>
-                </div>
-
-                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <h5 className="font-bold">4. Evolution</h5>
-                  <p className="text-gray-300 mt-2">Update ranking</p>
-                </div>
-
-                <div className="border border-sky-900 bg-sky-950 rounded-lg p-4">
-                  <h5 className="font-bold">5. Reports</h5>
-                  <p className="text-gray-300 mt-2">Multi-AI review</p>
-                </div>
-
-                <div className="border border-cyan-900 bg-cyan-950 rounded-lg p-4">
-                  <h5 className="font-bold">6. Memory</h5>
-                  <p className="text-gray-300 mt-2">Store learning</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">7. Agent</h5>
-                  <p className="text-gray-300 mt-2">Improve decisions</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">8. Forward Plan</h5>
-                  <p className="text-gray-300 mt-2">Plan next tests</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">9. Scheduler</h5>
-                  <p className="text-gray-300 mt-2">Organize timing</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">10. Safety</h5>
-                  <p className="text-gray-300 mt-2">Block live risk</p>
-                </div>
-              </div>
-
-              <div className="mt-5 border border-amber-900 bg-amber-950 rounded-lg p-4">
-                <p className="text-gray-400 text-sm">Learning Cycle Steps</p>
-                <p className="text-amber-400 text-3xl font-bold">{learningCycleSteps}</p>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-red-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🛡 Scheduler Safety Rules</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">Manual First</h5>
-                  <p className="text-gray-300 mt-2">Automation prepared, not active yet</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">Reports Only</h5>
-                  <p className="text-gray-300 mt-2">Scheduler cannot place orders</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">Demo Bound</h5>
-                  <p className="text-gray-300 mt-2">Demo/Paper data only</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Live Locked</h5>
-                  <p className="text-gray-300 mt-2">Broker execution remains blocked</p>
-                </div>
-              </div>
-
-              <div className="mt-5 border border-amber-900 bg-amber-950 rounded-lg p-4">
-                <p className="text-gray-400 text-sm">Autonomous Loop</p>
-                <p className="text-amber-400 font-bold">{autonomousLoopStatus}</p>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="consensus-intelligence-core" className="bg-gray-900 p-6 rounded-2xl border border-emerald-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🧩 Consensus Intelligence Core V8.7</h3>
-                <p className="text-gray-400 mt-2">
-                  Zentrale Entscheidungsprüfung: GPT, Claude und AI Agent müssen gemeinsam validieren. Bei Konflikten wird ein Trade blockiert oder zur manuellen Prüfung markiert.
-                </p>
-              </div>
-
-              <div className="bg-black border border-emerald-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Consensus Status</p>
-                <p className="text-emerald-400 font-bold">{consensusCoreStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-emerald-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Consensus Score</h4>
-                <p className="text-5xl mt-4 text-emerald-400">{consensusCoreScore}%</p>
-                <p className="text-gray-400 mt-2">Decision architecture</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">GPT Signal</h4>
-                <p className="text-2xl mt-4 text-green-400">{gptSignalStatus}</p>
-                <p className="text-gray-400 mt-2">Opportunity analysis</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Claude Risk</h4>
-                <p className="text-2xl mt-4 text-red-400">{claudeRiskSignalStatus}</p>
-                <p className="text-gray-400 mt-2">Risk validation</p>
-              </div>
-
-              <div className="bg-black border border-indigo-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Agent Signal</h4>
-                <p className="text-2xl mt-4 text-indigo-400">{agentSignalStatus}</p>
-                <p className="text-gray-400 mt-2">Execution logic</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Conflict Check</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{conflictDetectionStatus}</p>
-                <p className="text-gray-400 mt-2">Safety validation</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🟢 Approved Scenario</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    GPT: LONG · Confidence 84%
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Claude: LONG · Risk acceptable
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Agent: LONG · Execution plan valid
-                  </div>
-                  <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-3">
-                    Final Decision: APPROVED
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔴 Conflict Scenario</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    GPT: LONG · Opportunity detected
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Claude: SHORT / BLOCK · High risk
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Agent: WAIT · Execution not clean
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Final Decision: BLOCKED
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Consensus Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No single-model decision
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Claude can block high-risk trades
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Manual review on disagreement
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Safety Mode</p>
-                  <p className="text-emerald-400 font-bold">{consensusSafetyMode}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-emerald-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">⚖️ Final Decision Matrix</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">All Agree</h5>
-                  <p className="text-gray-300 mt-2">Approve demo plan</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">Minor Conflict</h5>
-                  <p className="text-gray-300 mt-2">Reduce confidence</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">Risk Conflict</h5>
-                  <p className="text-gray-300 mt-2">Manual review</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Major Conflict</h5>
-                  <p className="text-gray-300 mt-2">Block trade</p>
-                </div>
-              </div>
-
-              <div className="mt-5 border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                <p className="text-gray-400 text-sm">Final Decision Mode</p>
-                <p className="text-emerald-400 font-bold">{finalDecisionStatus}</p>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Consensus to Execution Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.7 stellt sicher, dass GPT, Claude und der AI Agent gemeinsam entscheiden. Der Consensus Core ist die letzte Kontrollinstanz,
-                bevor ein Demo-Trade später an Demo Execution, Performance Tracking und den Learning Loop übergeben wird.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">GPT</h5>
-                  <p className="text-gray-300 mt-2">Opportunity</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Claude</h5>
-                  <p className="text-gray-300 mt-2">Risk</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">Agent</h5>
-                  <p className="text-gray-300 mt-2">Execution</p>
-                </div>
-
-                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <h5 className="font-bold">Consensus</h5>
-                  <p className="text-gray-300 mt-2">Final gate</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">Demo</h5>
-                  <p className="text-gray-300 mt-2">Execution later</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="market-regime-engine" className="bg-gray-900 p-6 rounded-2xl border border-lime-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🌍 Market Regime Engine V8.8</h3>
-                <p className="text-gray-400 mt-2">
-                  Marktregime-Erkennung: Das System prüft zuerst, ob der Markt trending, ranging, volatil, risk-on, risk-off oder news-driven ist, bevor Strategien bewertet werden.
-                </p>
-              </div>
-
-              <div className="bg-black border border-lime-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Regime Status</p>
-                <p className="text-lime-400 font-bold">{marketRegimeStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-lime-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Regime Score</h4>
-                <p className="text-5xl mt-4 text-lime-400">{marketRegimeScore}%</p>
-                <p className="text-gray-400 mt-2">Condition architecture</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Trend Regime</h4>
-                <p className="text-2xl mt-4 text-green-400">{trendRegimeStatus}</p>
-                <p className="text-gray-400 mt-2">Trend / range logic</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Volatility</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{volatilityRegimeStatus}</p>
-                <p className="text-gray-400 mt-2">ATR / volatility later</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Risk Regime</h4>
-                <p className="text-2xl mt-4 text-blue-400">{riskRegimeStatus}</p>
-                <p className="text-gray-400 mt-2">Risk-on / risk-off</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">News Driven</h4>
-                <p className="text-2xl mt-4 text-red-400">{newsDrivenRegimeStatus}</p>
-                <p className="text-gray-400 mt-2">Macro event filter</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📈 Regime Detection Preview</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    NAS100 → TRENDING · Momentum favored
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    EURUSD → RANGING · Mean reversion later
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    XAUUSD → RISK-OFF · Safe-haven logic
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    USOIL → NEWS-DRIVEN · Inventory/macro filter
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 Strategy Filter Logic</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Trending → Momentum Breakout
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Ranging → Mean Reversion later
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Risk-Off → Gold / defensive setups
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    News-Driven → Reduce size / wait for confirmation
-                  </div>
-                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
-                    Preferred Strategy: {preferredRegimeStrategy}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Regime Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Regime filters strategy selection
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No trade from regime alone
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ News-driven markets require extra review
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Regime Safety Mode</p>
-                  <p className="text-lime-400 font-bold">{regimeSafetyMode}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-lime-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧭 Market Regime Matrix</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">TRENDING</h5>
-                  <p className="text-gray-300 mt-2">Breakout / momentum bias</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">RANGING</h5>
-                  <p className="text-gray-300 mt-2">Mean reversion later</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">VOLATILE</h5>
-                  <p className="text-gray-300 mt-2">Reduce size / wider risk</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">RISK-OFF</h5>
-                  <p className="text-gray-300 mt-2">Gold / safe-haven focus</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">NEWS-DRIVEN</h5>
-                  <p className="text-gray-300 mt-2">Event filter required</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Regime to Consensus Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.8 prüft das Marktregime vor der endgültigen AI-Entscheidung. Der Agent soll später nicht nur fragen, welche Strategie gut ist,
-                sondern ob die Strategie zum aktuellen Marktumfeld passt.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <h5 className="font-bold">Regime</h5>
-                  <p className="text-gray-300 mt-2">Market condition</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">Strategy</h5>
-                  <p className="text-gray-300 mt-2">Filter best setup</p>
-                </div>
-
-                <div className="border border-violet-900 bg-violet-950 rounded-lg p-4">
-                  <h5 className="font-bold">Confidence</h5>
-                  <p className="text-gray-300 mt-2">Adjust score</p>
-                </div>
-
-                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <h5 className="font-bold">Consensus</h5>
-                  <p className="text-gray-300 mt-2">Final validation</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">Demo</h5>
-                  <p className="text-gray-300 mt-2">Execution later</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="portfolio-intelligence" className="bg-gray-900 p-6 rounded-2xl border border-blue-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">📊 Portfolio Intelligence V8.9</h3>
-                <p className="text-gray-400 mt-2">
-                  Portfolio-Analyse: Das System bewertet nicht nur einzelne Trades, sondern Gesamt-Exposure, Korrelationen, Risiko, Diversifikation und AI Allocation.
-                </p>
-              </div>
-
-              <div className="bg-black border border-blue-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Portfolio Status</p>
-                <p className="text-blue-400 font-bold">{portfolioIntelligenceStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Portfolio Score</h4>
-                <p className="text-5xl mt-4 text-blue-400">{portfolioIntelligenceScore}%</p>
-                <p className="text-gray-400 mt-2">Portfolio architecture</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Portfolio Risk</h4>
-                <p className="text-2xl mt-4 text-red-400">{portfolioRiskStatus}</p>
-                <p className="text-gray-400 mt-2">Risk model later</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Correlation</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{correlationRiskStatus}</p>
-                <p className="text-gray-400 mt-2">Overlap filter</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Exposure</h4>
-                <p className="text-2xl mt-4 text-green-400">{exposureStatus}</p>
-                <p className="text-gray-400 mt-2">Asset/currency exposure</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Allocation</h4>
-                <p className="text-2xl mt-4 text-purple-400">{allocationStatus}</p>
-                <p className="text-gray-400 mt-2">Demo sizing later</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🌍 Portfolio Exposure Preview</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    NAS100 LONG → Equity / Tech Exposure
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    XAUUSD LONG → Gold / Risk-Off Hedge
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    USOIL SHORT → Commodity Exposure
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    EURUSD LONG → Currency / USD Exposure
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔗 Correlation Risk Logic</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    NAS100 + SPX500 + DAX LONG → High equity correlation
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Gold + Oil + Forex → Better diversification
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    USD-sensitive pairs → Currency overlap risk
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    AI checks portfolio conflict before new demo plan
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Diversification Score: {portfolioDiversificationScore}/100
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Portfolio Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Portfolio filter before execution
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No single overexposed market cluster
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ High correlation reduces confidence
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Safety Mode</p>
-                  <p className="text-blue-400 font-bold">{portfolioSafetyMode}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-blue-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">📌 AI Allocation Preview</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">NAS100</h5>
-                  <p className="text-gray-300 mt-2">30% demo focus · Momentum</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">XAUUSD</h5>
-                  <p className="text-gray-300 mt-2">25% demo focus · Hedge</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">USOIL</h5>
-                  <p className="text-gray-300 mt-2">15% demo focus · Macro</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">EURUSD</h5>
-                  <p className="text-gray-300 mt-2">20% demo focus · Forex</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">Reserve</h5>
-                  <p className="text-gray-300 mt-2">10% no-trade buffer</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Portfolio to AI Brain Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V8.9 prüft Portfolio-Risiko, bevor ein neuer Demo-Trade geplant wird. Dadurch soll der AI Agent später nicht nur den besten Einzeltrade wählen,
-                sondern auch kontrollieren, ob dieser Trade zum gesamten Portfolio passt.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <h5 className="font-bold">Regime</h5>
-                  <p className="text-gray-300 mt-2">Market condition</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">Portfolio</h5>
-                  <p className="text-gray-300 mt-2">Exposure control</p>
-                </div>
-
-                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <h5 className="font-bold">Consensus</h5>
-                  <p className="text-gray-300 mt-2">Final validation</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">Agent</h5>
-                  <p className="text-gray-300 mt-2">Demo planner</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">Execution</h5>
-                  <p className="text-gray-300 mt-2">Paper only</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="autonomous-portfolio-brain" className="bg-gray-900 p-6 rounded-2xl border border-fuchsia-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🧠 Autonomous Portfolio Brain V9.0</h3>
-                <p className="text-gray-400 mt-2">
-                  Zentrales AI-Entscheidungszentrum: verbindet Market Data, News, Regime, Portfolio, Consensus, Agent, Memory, Evolution, Feedback und Reports zu einem gemeinsamen Portfolio-Brain.
-                </p>
-              </div>
-
-              <div className="bg-black border border-fuchsia-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Brain Status</p>
-                <p className="text-fuchsia-400 font-bold">{portfolioBrainStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-fuchsia-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Brain Score</h4>
-                <p className="text-5xl mt-4 text-fuchsia-400">{portfolioBrainScore}%</p>
-                <p className="text-gray-400 mt-2">Central brain architecture</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Inputs</h4>
-                <p className="text-2xl mt-4 text-blue-400">{brainInputStatus}</p>
-                <p className="text-gray-400 mt-2">All modules prepared</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Decision Mode</h4>
-                <p className="text-2xl mt-4 text-purple-400">{brainDecisionMode}</p>
-                <p className="text-gray-400 mt-2">No real AI calls yet</p>
-              </div>
-
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Output</h4>
-                <p className="text-2xl mt-4 text-green-400">{brainOutputStatus}</p>
-                <p className="text-gray-400 mt-2">Paper/Demo only</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Safety</h4>
-                <p className="text-2xl mt-4 text-red-400">{brainSafetyStatus}</p>
-                <p className="text-gray-400 mt-2">Broker firewall active</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔌 Brain Input Engines</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Market Data + Watchlist
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    News Intelligence + Macro Events
-                  </div>
-                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
-                    Market Regime Detection
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Portfolio Intelligence + Exposure
-                  </div>
-                  <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-3">
-                    Consensus Intelligence Core
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">⚙️ Brain Decision Logic</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    GPT Opportunity Review later
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Claude Risk Review later
-                  </div>
-                  <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-3">
-                    Agent Execution Review
-                  </div>
-                  <div className="border border-violet-900 bg-violet-950 rounded-lg p-3">
-                    Adaptive Confidence + Strategy Evolution
-                  </div>
-                  <div className="border border-fuchsia-900 bg-fuchsia-950 rounded-lg p-3">
-                    Consensus Required: {brainConsensusStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Brain Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ No single engine can execute
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Consensus required before demo plan
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Real OpenAI/Claude calls start later
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live broker execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-fuchsia-900 bg-fuchsia-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Next Phase</p>
-                  <p className="text-fuchsia-400 font-bold">{brainNextPhase}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-fuchsia-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧭 Autonomous Decision Flow</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">1. Data</h5>
-                  <p className="text-gray-300 mt-2">Prices, watchlist, market context</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">2. Intelligence</h5>
-                  <p className="text-gray-300 mt-2">News, macro, sentiment</p>
-                </div>
-
-                <div className="border border-lime-900 bg-lime-950 rounded-lg p-4">
-                  <h5 className="font-bold">3. Regime</h5>
-                  <p className="text-gray-300 mt-2">Trend, range, risk-on/off</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">4. Portfolio</h5>
-                  <p className="text-gray-300 mt-2">Exposure, allocation, correlation</p>
-                </div>
-
-                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <h5 className="font-bold">5. Consensus</h5>
-                  <p className="text-gray-300 mt-2">Approve, review, block</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">6. Agent</h5>
-                  <p className="text-gray-300 mt-2">Demo trade planning</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">7. Execution</h5>
-                  <p className="text-gray-300 mt-2">Paper execution only</p>
-                </div>
-
-                <div className="border border-teal-900 bg-teal-950 rounded-lg p-4">
-                  <h5 className="font-bold">8. Performance</h5>
-                  <p className="text-gray-300 mt-2">Winrate, PF, drawdown</p>
-                </div>
-
-                <div className="border border-pink-900 bg-pink-950 rounded-lg p-4">
-                  <h5 className="font-bold">9. Feedback</h5>
-                  <p className="text-gray-300 mt-2">Lessons, updates</p>
-                </div>
-
-                <div className="border border-sky-900 bg-sky-950 rounded-lg p-4">
-                  <h5 className="font-bold">10. Learning</h5>
-                  <p className="text-gray-300 mt-2">Reports and scheduler</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Real AI Providers</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V9.0 verbindet die Architektur zu einem zentralen Portfolio Brain. Ab V9.1 werden echte AI Provider vorbereitet:
-                OpenAI für Opportunity-Analyse, Claude für Risk Review und später TradingView, Yahoo Finance, News APIs und Economic Calendar als Ressourcen.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-fuchsia-900 bg-fuchsia-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.0</h5>
-                  <p className="text-gray-300 mt-2">Portfolio Brain</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.1</h5>
-                  <p className="text-gray-300 mt-2">OpenAI Integration</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.2</h5>
-                  <p className="text-gray-300 mt-2">Claude Integration</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.3</h5>
-                  <p className="text-gray-300 mt-2">TradingView</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.5</h5>
-                  <p className="text-gray-300 mt-2">Forward Learning Live</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="openai-integration-layer" className="bg-gray-900 p-6 rounded-2xl border border-green-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🤖 OpenAI Integration Layer V9.1</h3>
-                <p className="text-gray-400 mt-2">
-                  Serverseitige OpenAI-Schicht: GPT wird später als Market Analyst, Strategy Reviewer und Learning Reviewer in das Portfolio Brain eingebunden.
-                </p>
-              </div>
-
-              <div className="bg-black border border-green-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">OpenAI Status</p>
-                <p className="text-green-400 font-bold">{openAiIntegrationStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-green-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">OpenAI Score</h4>
-                <p className="text-5xl mt-4 text-green-400">{openAiIntegrationScore}%</p>
-                <p className="text-gray-400 mt-2">Provider architecture</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Client</h4>
-                <p className="text-2xl mt-4 text-blue-400">{openAiClientStatus}</p>
-                <p className="text-gray-400 mt-2">npm openai later</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">GPT Market</h4>
-                <p className="text-2xl mt-4 text-purple-400">{gptMarketAnalystStatus}</p>
-                <p className="text-gray-400 mt-2">Opportunity review</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">GPT Strategy</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{gptStrategyReviewStatus}</p>
-                <p className="text-gray-400 mt-2">Setup quality</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Safety</h4>
-                <p className="text-2xl mt-4 text-red-400">{openAiSafetyStatus}</p>
-                <p className="text-gray-400 mt-2">No browser keys</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🧠 GPT Market Analyst</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Input: Market Data + Watchlist
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Input: News + Macro + Sentiment
-                  </div>
-                  <div className="border border-lime-900 bg-lime-950 rounded-lg p-3">
-                    Input: Market Regime
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Output: LONG / SHORT / WAIT / BLOCK
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Status: {gptMarketAnalystStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📈 GPT Strategy Review</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    Reviews setup quality
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Compares strategy with regime
-                  </div>
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Checks portfolio fit
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Returns confidence + reasoning
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Status: {gptStrategyReviewStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 OpenAI Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ API key only via .env.local
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Server-side calls only
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ GPT cannot execute trades alone
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live broker execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-green-900 bg-green-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Next Phase</p>
-                  <p className="text-green-400 font-bold">{openAiNextPhase}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-green-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔌 OpenAI Provider Pipeline</h4>
-
-              <div className="grid grid-cols-5 gap-4">
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">1. Context</h5>
-                  <p className="text-gray-300 mt-2">Market + News + Regime</p>
-                </div>
-
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">2. Prompt</h5>
-                  <p className="text-gray-300 mt-2">Structured GPT request</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">3. GPT</h5>
-                  <p className="text-gray-300 mt-2">Opportunity analysis</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">4. Output</h5>
-                  <p className="text-gray-300 mt-2">Signal + confidence</p>
-                </div>
-
-                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <h5 className="font-bold">5. Consensus</h5>
-                  <p className="text-gray-300 mt-2">Final validation</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🚀 Roadmap to Real Multi-AI</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V9.1 bereitet die OpenAI-Verbindung vor. GPT wird später echte Marktanalysen liefern, aber Entscheidungen laufen weiterhin durch Claude Risk Review,
-                AI Agent Review, Consensus Intelligence, Market Regime und Portfolio Brain.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.1</h5>
-                  <p className="text-gray-300 mt-2">OpenAI Layer</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.2</h5>
-                  <p className="text-gray-300 mt-2">Claude Layer</p>
-                </div>
-
-                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.3</h5>
-                  <p className="text-gray-300 mt-2">Real Consensus</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.4</h5>
-                  <p className="text-gray-300 mt-2">TradingView</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">V9.5</h5>
-                  <p className="text-gray-300 mt-2">Live Demo Learning</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-
-          <div id="claude-integration-layer" className="bg-gray-900 p-6 rounded-2xl border border-red-900 mb-8">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-3xl font-bold">🛡 Claude Integration Layer V9.2</h3>
-                <p className="text-gray-400 mt-2">
-                  Serverseitige Claude-Schicht: Claude wird später als Risk Analyst, Portfolio Risk Reviewer und Drawdown Reviewer in das Portfolio Brain eingebunden.
-                </p>
-              </div>
-
-              <div className="bg-black border border-red-800 rounded-xl px-5 py-3">
-                <p className="text-sm text-gray-400">Claude Status</p>
-                <p className="text-red-400 font-bold">{claudeIntegrationStatus}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-6 mb-6">
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Claude Score</h4>
-                <p className="text-5xl mt-4 text-red-400">{claudeIntegrationScore}%</p>
-                <p className="text-gray-400 mt-2">Risk provider architecture</p>
-              </div>
-
-              <div className="bg-black border border-blue-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Client</h4>
-                <p className="text-2xl mt-4 text-blue-400">{claudeClientStatus}</p>
-                <p className="text-gray-400 mt-2">Anthropic SDK later</p>
-              </div>
-
-              <div className="bg-black border border-yellow-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Risk Review</h4>
-                <p className="text-2xl mt-4 text-yellow-400">{claudeRiskReviewStatus}</p>
-                <p className="text-gray-400 mt-2">Trade risk</p>
-              </div>
-
-              <div className="bg-black border border-purple-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Portfolio Review</h4>
-                <p className="text-2xl mt-4 text-purple-400">{claudePortfolioReviewStatus}</p>
-                <p className="text-gray-400 mt-2">Exposure risk</p>
-              </div>
-
-              <div className="bg-black border border-red-900 rounded-xl p-5">
-                <h4 className="font-bold text-lg">Safety</h4>
-                <p className="text-2xl mt-4 text-red-400">{claudeSafetyStatus}</p>
-                <p className="text-gray-400 mt-2">No browser keys</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🛡 Claude Risk Analyst</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Input: GPT Opportunity Signal
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Input: News + Macro Risk
-                  </div>
-                  <div className="border border-orange-900 bg-orange-950 rounded-lg p-3">
-                    Input: Volatility + Drawdown
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Output: ACCEPT / REVIEW / BLOCK
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Status: {claudeRiskReviewStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📊 Claude Portfolio Review</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-blue-900 bg-blue-950 rounded-lg p-3">
-                    Checks portfolio exposure
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    Detects correlation concentration
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    Reviews max drawdown risk
-                  </div>
-                  <div className="border border-purple-900 bg-purple-950 rounded-lg p-3">
-                    Validates position sizing later
-                  </div>
-                  <div className="border border-gray-800 bg-gray-950 rounded-lg p-3">
-                    Status: {claudePortfolioReviewStatus}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">🔒 Claude Safety Rules</h4>
-
-                <div className="space-y-3">
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ API key only via .env.local
-                  </div>
-                  <div className="border border-green-900 bg-green-950 rounded-lg p-3">
-                    ✅ Server-side calls only
-                  </div>
-                  <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-3">
-                    ⚠️ Claude can block high-risk demo plans
-                  </div>
-                  <div className="border border-red-900 bg-red-950 rounded-lg p-3">
-                    🔒 Live broker execution remains blocked
-                  </div>
-                </div>
-
-                <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Next Phase</p>
-                  <p className="text-red-400 font-bold">{claudeNextPhase}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-red-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🧯 Drawdown & Risk Review Preview</h4>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Drawdown Review</h5>
-                  <p className="text-gray-300 mt-2">Max DD, loss streak, recovery risk</p>
-                </div>
-
-                <div className="border border-yellow-900 bg-yellow-950 rounded-lg p-4">
-                  <h5 className="font-bold">Macro Review</h5>
-                  <p className="text-gray-300 mt-2">CPI, FOMC, NFP, rate risk</p>
-                </div>
-
-                <div className="border border-blue-900 bg-blue-950 rounded-lg p-4">
-                  <h5 className="font-bold">Portfolio Review</h5>
-                  <p className="text-gray-300 mt-2">Exposure + correlation concentration</p>
-                </div>
-
-                <div className="border border-purple-900 bg-purple-950 rounded-lg p-4">
-                  <h5 className="font-bold">Sizing Review</h5>
-                  <p className="text-gray-300 mt-2">Risk per trade validation later</p>
-                </div>
-              </div>
-
-              <div className="mt-5 border border-red-900 bg-red-950 rounded-lg p-4">
-                <p className="text-gray-400 text-sm">Drawdown Review Status</p>
-                <p className="text-red-400 font-bold">{claudeDrawdownReviewStatus}</p>
-              </div>
-            </div>
-
-            <div className="mt-6 bg-black border border-cyan-900 rounded-xl p-5">
-              <h4 className="text-xl font-bold mb-4">🔁 Claude Provider Pipeline</h4>
-              <p className="text-gray-300 leading-relaxed">
-                V9.2 bereitet Claude als zweiten echten AI-Provider vor. GPT sucht Chancen, Claude kontrolliert Risiko,
-                der AI Agent prüft Ausführung und der Consensus Core entscheidet gemeinsam.
-              </p>
-
-              <div className="grid grid-cols-5 gap-4 mt-5">
-                <div className="border border-green-900 bg-green-950 rounded-lg p-4">
-                  <h5 className="font-bold">GPT</h5>
-                  <p className="text-gray-300 mt-2">Opportunity</p>
-                </div>
-
-                <div className="border border-red-900 bg-red-950 rounded-lg p-4">
-                  <h5 className="font-bold">Claude</h5>
-                  <p className="text-gray-300 mt-2">Risk</p>
-                </div>
-
-                <div className="border border-indigo-900 bg-indigo-950 rounded-lg p-4">
-                  <h5 className="font-bold">Agent</h5>
-                  <p className="text-gray-300 mt-2">Execution</p>
-                </div>
-
-                <div className="border border-emerald-900 bg-emerald-950 rounded-lg p-4">
-                  <h5 className="font-bold">Consensus</h5>
-                  <p className="text-gray-300 mt-2">Final gate</p>
-                </div>
-
-                <div className="border border-orange-900 bg-orange-950 rounded-lg p-4">
-                  <h5 className="font-bold">Demo</h5>
-                  <p className="text-gray-300 mt-2">Paper only</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div id="execution-overview" className="grid grid-cols-3 gap-6 mb-8">
-            <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900">
-              <h3 className="text-2xl font-bold mb-3">🧠 Execution Core</h3>
-              <p className="text-purple-400 text-2xl font-bold">Simulation Only</p>
-              <p className="text-gray-400 mt-3">Live execution remains locked.</p>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900">
-              <h3 className="text-2xl font-bold mb-3">📝 Paper Trading</h3>
-              <p className="text-cyan-400 text-2xl font-bold">Active</p>
-              <p className="text-gray-400 mt-3">Orders, positions and equity engine active.</p>
-            </div>
-
-            <div className="bg-gray-900 p-6 rounded-2xl border border-orange-900">
-              <h3 className="text-2xl font-bold mb-3">🔌 Broker Hub</h3>
-              <p className="text-orange-400 text-2xl font-bold">API Layer Prepared</p>
-              <p className="text-gray-400 mt-3">Capital.com · IC Markets · Shared broker interface ready.</p>
-            </div>
-          </div>
-
-          <details id="paper-trading" className="bg-gray-900 p-6 rounded-2xl mb-8 border border-cyan-900 open:pb-8">
-            <summary className="cursor-pointer text-2xl font-bold">
-              📝 Paper Trading Engine V6.6 · Details öffnen
-            </summary>
-
-            <div className="mt-6 grid grid-cols-3 gap-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📌 Virtual Order Ticket</h4>
-
-                <div className="space-y-3">
-                  <input
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-gray-400"
-                    value="NAS100"
-                    readOnly
-                  />
-                  <select className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-gray-400" disabled>
-                    <option>BUY</option>
-                    <option>SELL</option>
-                  </select>
-                  <input
-                    className="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-gray-400"
-                    value="Liquidity Sweep"
-                    readOnly
-                  />
-                  <button
-                    onClick={simulatePaperOrder}
-                    disabled={isSimulatingOrder}
-                    className="w-full bg-cyan-700 hover:bg-cyan-800 px-4 py-3 rounded-xl font-bold disabled:opacity-50"
-                  >
-                    {isSimulatingOrder ? "Simulating..." : "Simulate Order"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">📂 Position Manager</h4>
-
-                <div className="space-y-3">
-                  {openPaperOrders.length === 0 && (
-                    <p className="text-gray-500">Keine offenen Paper Positionen.</p>
-                  )}
-
-                  {openPaperOrders.slice(0, 5).map((order) => (
-                    <div key={order.id} className="border border-cyan-900 bg-cyan-950 rounded-lg p-4">
-                      <p className="font-bold">#{order.id} {order.market} {order.direction}</p>
-                      <p className="text-gray-300 text-sm">{order.strategy}</p>
-
-                      <div className="flex gap-2 mt-4">
-                        <button
-                          onClick={() => closePaperOrder(order.id, "WIN")}
-                          className="bg-green-700 hover:bg-green-800 px-3 py-1 rounded text-sm"
-                        >
-                          Take Profit
-                        </button>
-                        <button
-                          onClick={() => closePaperOrder(order.id, "LOSS")}
-                          className="bg-red-700 hover:bg-red-800 px-3 py-1 rounded text-sm"
-                        >
-                          Stop Loss
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold mb-4">✅ Closed Trades</h4>
-
-                <div className="space-y-3">
-                  {closedPaperOrders.length === 0 && (
-                    <p className="text-gray-500">Noch keine geschlossenen Paper Trades.</p>
-                  )}
-
-                  {closedPaperOrders.slice(0, 5).map((order) => (
-                    <div
-                      key={order.id}
-                      className={
-                        order.profitLoss >= 0
-                          ? "border border-green-900 bg-green-950 rounded-lg p-3"
-                          : "border border-red-900 bg-red-950 rounded-lg p-3"
-                      }
-                    >
-                      <p className="font-bold">#{order.id} {order.market} {order.direction}</p>
-                      <p className="text-gray-300 text-sm">{order.profitLoss} CHF · {order.result}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  onClick={resetPaperOrders}
-                  className="mt-5 w-full bg-red-900 hover:bg-red-950 px-4 py-3 rounded-xl font-bold"
-                >
-                  Reset Paper Orders
-                </button>
-              </div>
-            </div>
-          </details>
-
-          <details id="broker-hub" className="bg-gray-900 p-6 rounded-2xl mb-8 border border-orange-900">
-            <summary className="cursor-pointer text-2xl font-bold">
-              🔌 Broker Integration Layer V6.0 · Details öffnen
-            </summary>
-
-            <div className="grid grid-cols-3 gap-6 mt-6">
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold">Capital.com</h4>
-                <p className="text-red-400 mt-4 font-bold">Disconnected</p>
-                <p className="text-gray-500 mt-2">API Key: Not configured</p>
-                <p className="text-blue-400 mt-2">Connector UI V7.1 ready</p>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold">IC Markets</h4>
-                <p className="text-red-400 mt-4 font-bold">Disconnected</p>
-                <p className="text-gray-500 mt-2">Server: Not configured</p>
-                <p className="text-orange-400 mt-2">Coming Soon</p>
-              </div>
-
-              <div className="bg-black border border-gray-800 rounded-xl p-5">
-                <h4 className="text-xl font-bold">MetaTrader 5</h4>
-                <p className="text-red-400 mt-4 font-bold">Disconnected</p>
-                <p className="text-gray-500 mt-2">Bridge: Not installed</p>
-                <p className="text-orange-400 mt-2">Coming Soon</p>
-              </div>
-            </div>
-          </details>
-
-          <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
-            <h3 className="text-2xl font-bold mb-4">🏆 Market Ranking</h3>
-
-            <div className="space-y-3">
-              {rankingMarkets.map((market, index) => (
-                <Link
-                  key={market.name}
-                  href={`/market-intelligence/${createSlug(market.name)}`}
-                  className="flex justify-between items-center border border-gray-800 rounded-lg p-4 hover:border-blue-500 transition"
-                >
-                  <div>
-                    <p className="font-bold">
-                      #{index + 1} {market.name}
-                    </p>
-                    <p className="text-gray-400 text-sm">
-                      {market.category} · {market.timeframe} · {market.risk}
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <p className="font-bold">{market.score}</p>
-                    <p
-                      className={
-                        market.direction === "BUY"
-                          ? "text-green-400 text-sm"
-                          : market.direction === "SELL"
-                          ? "text-red-400 text-sm"
-                          : "text-yellow-400 text-sm"
-                      }
-                    >
-                      {market.direction}
-                    </p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
+                <div className="bg-black border border-orange-800 rounded-xl p-4">
+                  <p className="text-gray-400">Visible</p>
+                  <p className="text-orange-400 text-2xl font-bold">ON</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-5 gap-4 mt-6">
+                {[
+                  "V7 Broker Layer",
+                  "V7.5 Market Data",
+                  "V7.6 Intelligence",
+                  "V7.7 Forward Testing",
+                  "V7.8 AI Memory",
+                  "V7.9 Evolution",
+                  "V8.0 Demo Agent",
+                  "V8.5 Reports",
+                  "V8.7 Consensus",
+                  "V8.8 Regime",
+                  "V8.9 Portfolio",
+                  "V9.0 Brain",
+                  "V9.1 OpenAI",
+                  "V9.2 Claude",
+                  "V9.3 Refactor",
+                ].map((item) => (
+                  <div key={item} className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="font-bold">{item}</p>
+                    <p className="text-green-400 mt-2">Prepared</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+
+            </>
+          )}
+
+          {activeView !== "dashboard" && renderActiveCenter(activeView, activeLabel)}
+
+          {(activeView === "dashboard" || activeView === "live-prep") && (
+          <section className="bg-gray-900 border border-green-900 rounded-2xl p-7 mb-8" id="live-prep">
+            <h3 className="text-3xl font-bold">🚀 Live Trading Preparation</h3>
+            <p className="text-gray-400 mt-2">
+              Status bleibt sicher: Paper/Demo Only. Keine Live Orders ohne spätere Freigabe.
+            </p>
+
+            <div className="grid grid-cols-4 gap-5 mt-6">
+              <StatusPill label="OpenAI Layer" value="Prepared" accent="text-green-400" />
+              <StatusPill label="Claude Layer" value="Prepared" accent="text-red-400" />
+              <StatusPill label="Broker API" value="Disconnected" accent="text-yellow-400" />
+              <StatusPill label="Live Execution" value="Blocked" accent="text-red-400" />
+            </div>
+          </section>
+          )}
         </section>
       </div>
     </main>
