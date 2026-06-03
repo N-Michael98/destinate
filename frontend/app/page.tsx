@@ -1030,6 +1030,58 @@ function BrokerCenter() {
           </div>
         </div>
       </div>
+      <div className="mt-8 bg-black border border-cyan-900 rounded-2xl p-6">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🔌 IC Markets Connector V9.4</h3>
+            <p className="text-gray-400 mt-2">
+              Sichere Broker-Schicht für IC Markets Demo/Read-Only: Account Snapshot, Balance Preview, Position Sync und Order Firewall.
+            </p>
+          </div>
+          <div className="bg-gray-950 border border-cyan-800 rounded-xl p-4 min-w-[180px]">
+            <p className="text-gray-400">Connector Mode</p>
+            <p className="text-cyan-400 text-2xl font-bold">Read Only</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5">
+          <StatCard title="Connection" value="Prepared" subtitle="IC Markets module" accent="text-cyan-400" border="border-cyan-900" />
+          <StatCard title="Account" value="Demo" subtitle="No live account actions" accent="text-green-400" border="border-green-900" />
+          <StatCard title="Balance Sync" value="Later" subtitle="Read-only snapshot" accent="text-blue-400" border="border-blue-900" />
+          <StatCard title="Positions" value="Later" subtitle="Read-only positions" accent="text-yellow-400" border="border-yellow-900" />
+          <StatCard title="Live Orders" value="Blocked" subtitle="Execution firewall" accent="text-red-400" border="border-red-900" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5 mt-6">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">📡 Read-Only Data</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="Account Info" value="Prepared" accent="text-cyan-400" />
+              <StatusPill label="Open Positions" value="Prepared" accent="text-blue-400" />
+              <StatusPill label="Margin / Equity" value="Prepared" accent="text-green-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧪 Demo Bridge</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="Demo Mode" value="Enabled" accent="text-green-400" />
+              <StatusPill label="Paper Sync" value="Prepared" accent="text-yellow-400" />
+              <StatusPill label="Order Simulation" value="Internal only" accent="text-purple-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🔒 Safety Rules</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="API Keys" value=".env.local" accent="text-green-400" />
+              <StatusPill label="Browser Exposure" value="Blocked" accent="text-red-400" />
+              <StatusPill label="Live Execution" value="Disabled" accent="text-red-400" />
+            </div>
+          </div>
+        </div>
+      </div>
+
     </section>
   );
 }
@@ -1218,7 +1270,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.7</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.4</p>
           </div>
 
           <nav className="space-y-7">
@@ -1275,7 +1327,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.3.7 Interactive Centers
+                AI Trading Mission Control · V9.4 Interactive Centers
               </p>
             </div>
 
