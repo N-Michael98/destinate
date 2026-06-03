@@ -1403,6 +1403,158 @@ function SettingsCenter() {
 }
 
 
+
+function TradingViewDashboardCenter() {
+  const tradingViewSymbols = [
+    {
+      label: "Gold",
+      symbol: "OANDA:XAUUSD",
+      market: "Commodities",
+      purpose: "Risk sentiment / safe haven",
+      accent: "text-yellow-400",
+      border: "border-yellow-900",
+    },
+    {
+      label: "Oil",
+      symbol: "TVC:USOIL",
+      market: "Commodities",
+      purpose: "Inventory / macro driver",
+      accent: "text-orange-400",
+      border: "border-orange-900",
+    },
+    {
+      label: "EURUSD",
+      symbol: "FX:EURUSD",
+      market: "Forex",
+      purpose: "ECB / Fed / USD risk",
+      accent: "text-green-400",
+      border: "border-green-900",
+    },
+    {
+      label: "BTCUSD",
+      symbol: "BINANCE:BTCUSDT",
+      market: "Crypto",
+      purpose: "Risk appetite",
+      accent: "text-purple-400",
+      border: "border-purple-900",
+    },
+  ];
+
+  return (
+    <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">📈 TradingView Dashboard Center V9.5.1</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Chart- und Analyse-Layer für TradingView Widgets, sichere Symbol-Mappings und spätere eigene Datafeeds über Capital.com / IC Markets.
+          </p>
+        </div>
+
+        <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">TradingView Status</p>
+          <p className="text-blue-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Chart Mode" value="Widget" subtitle="No private API dependency" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Default Symbol" value="XAUUSD" subtitle="Gold focus" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Timeframes" value="Ready" subtitle="1H / 4H / Daily later" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Datafeed" value="Own Feed Later" subtitle="Broker/API powered" accent="text-green-400" border="border-green-900" />
+        <StatCard title="API Risk" value="Safe" subtitle="No scraping / no unofficial API" accent="text-red-400" border="border-red-900" />
+      </div>
+
+      <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-center justify-between gap-6 mb-5">
+          <div>
+            <h3 className="text-3xl font-bold">📊 Chart Preview Workspace</h3>
+            <p className="text-gray-400 mt-2">
+              In V9.5.1 vorbereitet als Dashboard-Workspace. Echte TradingView Widgets können später in eigene Komponenten geladen werden.
+            </p>
+          </div>
+
+          <a
+            href="https://www.tradingview.com/chart/?symbol=OANDA:XAUUSD"
+            target="_blank"
+            rel="noreferrer"
+            className="bg-blue-950 border border-blue-800 rounded-xl px-5 py-3 font-bold text-blue-300 hover:bg-blue-900 transition"
+          >
+            Open TradingView ↗
+          </a>
+        </div>
+
+        <div className="grid grid-cols-4 gap-5">
+          {tradingViewSymbols.map((item) => (
+            <a
+              key={item.symbol}
+              href={`https://www.tradingview.com/chart/?symbol=${item.symbol}`}
+              target="_blank"
+              rel="noreferrer"
+              className={`bg-gray-950 border ${item.border} rounded-2xl p-5 hover:bg-gray-900 transition`}
+            >
+              <p className="text-gray-400">{item.market}</p>
+              <h4 className={`text-3xl font-black mt-3 ${item.accent}`}>{item.label}</h4>
+              <p className="text-gray-300 mt-3">{item.symbol}</p>
+              <p className="text-gray-500 mt-3">{item.purpose}</p>
+            </a>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🧭 Symbol Mapper</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="GOLD" value="OANDA:XAUUSD" accent="text-yellow-400" />
+            <StatusPill label="USOIL" value="TVC:USOIL" accent="text-orange-400" />
+            <StatusPill label="EURUSD" value="FX:EURUSD" accent="text-green-400" />
+            <StatusPill label="BTCUSD" value="BINANCE:BTCUSDT" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔌 Datafeed Plan</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Phase 1" value="TradingView Widget" accent="text-blue-400" />
+            <StatusPill label="Phase 2" value="Capital.com API" accent="text-cyan-400" />
+            <StatusPill label="Phase 3" value="IC Markets Data" accent="text-green-400" />
+            <StatusPill label="Phase 4" value="Unified Feed" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Integration Safety</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Unofficial API" value="Avoided" accent="text-green-400" />
+            <StatusPill label="Scraping" value="No" accent="text-red-400" />
+            <StatusPill label="Private Charting Library" value="Approval later" accent="text-yellow-400" />
+            <StatusPill label="Broker Feed" value="Preferred" accent="text-cyan-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-cyan-900 rounded-2xl p-6">
+        <h3 className="text-2xl font-bold">🤖 AI Connection Plan</h3>
+        <p className="text-gray-300 mt-4 leading-relaxed">
+          TradingView bleibt der visuelle Chart-Layer. Die AI-Entscheidungen werden später über eigene Marktdaten,
+          Brokerdaten, News, Regime und Portfolio Intelligence gespeist. Dadurch vermeiden wir Lizenz- und API-Probleme
+          und behalten die Kontrolle über den Datafeed.
+        </p>
+
+        <div className="grid grid-cols-5 gap-4 mt-6">
+          {["TradingView Chart", "Market Data", "GPT Analyst", "Claude Risk", "Consensus"].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-green-400 mt-2">Prepared</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-journal") return <TradingJournalCenter />;
   if (activeView === "trading-desk") return <TradingDeskCenter />;
@@ -1410,7 +1562,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "strategy-builder") return <StrategyBuilderCenter />;
   if (activeView === "gpt-analyst") return <GPTAnalystCenter />;
   if (activeView === "claude-risk") return <ClaudeRiskCenter />;
-  if (activeView === "market-data") return <MarketDataCenter />;
+  if (activeView === "market-data") return <TradingViewDashboardCenter />;
   if (activeView === "news-layer") return <NewsLayerCenter />;
   if (activeView === "market-regime") return <MarketRegimeCenter />;
   if (activeView === "portfolio-intelligence") return <PortfolioIntelligenceCenter />;
@@ -1477,7 +1629,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.4.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.5.1</p>
           </div>
 
           <nav className="space-y-7">
@@ -1534,7 +1686,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.4.2 Interactive Centers
+                AI Trading Mission Control · V9.5.1 Interactive Centers
               </p>
             </div>
 
