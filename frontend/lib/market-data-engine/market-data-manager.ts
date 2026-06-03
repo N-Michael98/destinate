@@ -10,10 +10,17 @@ export class MarketDataManager {
     return priceCache.getAll();
   }
 
+  getPrice(symbol: string) {
+    return priceCache.get(symbol);
+  }
+
+  refreshPrices() {
+    return priceCache.refreshMockPrices();
+  }
+
   isReady() {
     return true;
   }
 }
 
-export const marketDataManager =
-  new MarketDataManager();
+export const marketDataManager = new MarketDataManager();
