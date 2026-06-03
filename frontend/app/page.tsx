@@ -407,7 +407,213 @@ function PortfolioBrainCenter() {
   );
 }
 
+
+function TradingJournalCenter() {
+  return (
+    <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">📒 Trading Journal Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Zentrale Übersicht für Trades, Journal-Qualität, Equity, Performance und spätere AI-Auswertung.
+          </p>
+        </div>
+        <div className="bg-black border border-green-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Journal Status</p>
+          <p className="text-green-400 text-2xl font-bold">Active</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Total Trades" value="3" subtitle="Paper sample" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Winrate" value="67%" subtitle="Mock performance" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Profit Factor" value="2.15" subtitle="Performance sample" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Max DD" value="0.73%" subtitle="Risk tracking" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Journal Score" value="A-" subtitle="Discipline rating" accent="text-cyan-400" border="border-cyan-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📝 Latest Trades</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="NAS100 Long" value="+4.2R" accent="text-green-400" />
+            <StatusPill label="XAUUSD Long" value="+1.8R" accent="text-green-400" />
+            <StatusPill label="USOIL Short" value="-1.0R" accent="text-red-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📊 Journal Analytics</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Best Strategy" value="Momentum" accent="text-green-400" />
+            <StatusPill label="Weak Setup" value="Inventory" accent="text-yellow-400" />
+            <StatusPill label="Review Status" value="Prepared" accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🧠 AI Journal Link</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Performance Tracker" value="Connected" accent="text-green-400" />
+            <StatusPill label="Feedback Engine" value="Connected" accent="text-green-400" />
+            <StatusPill label="Learning Reports" value="Ready" accent="text-cyan-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TradingDeskCenter() {
+  return (
+    <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">📈 Trading Desk Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Professioneller Desk für Watchlist, Top Opportunity, Trade Setup, Risk/Reward und Demo-Trade-Planung.
+          </p>
+        </div>
+        <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Desk Status</p>
+          <p className="text-blue-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Top Market" value="Gold" subtitle="Risk sentiment" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Bias" value="SELL" subtitle="Demo signal" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Confidence" value="91%" subtitle="AI score" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="R/R" value="1:2.8" subtitle="Risk reward" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Execution" value="Paper" subtitle="Live blocked" accent="text-purple-400" border="border-purple-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🎯 Setup Preview</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Market" value="XAUUSD" accent="text-yellow-400" />
+            <StatusPill label="Direction" value="SELL" accent="text-red-400" />
+            <StatusPill label="Strategy" value="Risk-Off Reaction" accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Risk Plan</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Risk per Trade" value="1%" accent="text-green-400" />
+            <StatusPill label="Stop Loss" value="Defined" accent="text-yellow-400" />
+            <StatusPill label="Take Profit" value="Defined" accent="text-cyan-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🤖 AI Gate</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="GPT" value="WAIT" accent="text-yellow-400" />
+            <StatusPill label="Claude" value="REVIEW" accent="text-orange-400" />
+            <StatusPill label="Consensus" value="Required" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SignalEngineCenter() {
+  return (
+    <section className="bg-gray-900 border border-purple-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🎯 Signal Engine Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Signalzentrale für technische, fundamentale, sentiment- und AI-basierte Signale.
+          </p>
+        </div>
+        <div className="bg-black border border-purple-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Signal Status</p>
+          <p className="text-purple-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Technical" value="Ready" subtitle="TA signals" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Fundamental" value="Ready" subtitle="Macro signals" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Sentiment" value="Ready" subtitle="News mood" accent="text-green-400" border="border-green-900" />
+        <StatCard title="AI Signal" value="WAIT" subtitle="GPT/Claude later" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Final Gate" value="Consensus" subtitle="No single signal" accent="text-red-400" border="border-red-900" />
+      </div>
+
+      <div className="grid grid-cols-4 gap-6">
+        <div className="bg-black border border-blue-900 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📉 Technical</h3>
+          <p className="text-gray-400 mt-4">Trend, breakout, momentum, structure.</p>
+        </div>
+        <div className="bg-black border border-yellow-900 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🌍 Macro</h3>
+          <p className="text-gray-400 mt-4">Economic calendar, rates, inflation, jobs.</p>
+        </div>
+        <div className="bg-black border border-green-900 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📰 News</h3>
+          <p className="text-gray-400 mt-4">Market-moving headlines and sentiment.</p>
+        </div>
+        <div className="bg-black border border-purple-900 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🤖 AI</h3>
+          <p className="text-gray-400 mt-4">GPT opportunity + Claude risk validation.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StrategyBuilderCenter() {
+  return (
+    <section className="bg-gray-900 border border-orange-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🧩 Strategy Builder Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Builder für Strategien, Regeln, Risk-Filter, Regime-Fit und spätere AI-Optimierung.
+          </p>
+        </div>
+        <div className="bg-black border border-orange-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Builder Status</p>
+          <p className="text-orange-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Strategies" value="4" subtitle="Mock library" accent="text-orange-400" border="border-orange-900" />
+        <StatCard title="Best Setup" value="Momentum" subtitle="Current leader" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Weak Setup" value="Inventory" subtitle="Needs review" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Regime Fit" value="Ready" subtitle="V8.8 connected" accent="text-lime-400" border="border-lime-900" />
+        <StatCard title="Evolution" value="Ready" subtitle="V7.9 connected" accent="text-purple-400" border="border-purple-900" />
+      </div>
+
+      <div className="grid grid-cols-4 gap-6">
+        {[
+          ["Momentum Breakout", "Trending markets", "Strong"],
+          ["Risk-Off Trend", "Gold / safe haven", "Stable"],
+          ["Inventory Reaction", "Oil events", "Review"],
+          ["Macro Momentum", "Forex + USD", "Prepared"],
+        ].map(([name, note, status]) => (
+          <div key={name} className="bg-black border border-gray-800 rounded-2xl p-6">
+            <h3 className="text-2xl font-bold">{name}</h3>
+            <p className="text-gray-400 mt-4">{note}</p>
+            <p className="text-cyan-400 mt-5 font-bold">{status}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+
 function renderActiveCenter(activeView: string, activeLabel: string) {
+  if (activeView === "trading-journal") return <TradingJournalCenter />;
+  if (activeView === "trading-desk") return <TradingDeskCenter />;
+  if (activeView === "signal-engine") return <SignalEngineCenter />;
+  if (activeView === "strategy-builder") return <StrategyBuilderCenter />;
   if (activeView === "gpt-analyst") return <GPTAnalystCenter />;
   if (activeView === "claude-risk") return <ClaudeRiskCenter />;
   if (activeView === "market-data") return <MarketDataCenter />;
@@ -460,7 +666,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.4</p>
           </div>
 
           <nav className="space-y-7">
@@ -517,7 +723,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.3.2 Interactive Centers
+                AI Trading Mission Control · V9.3.4 Interactive Centers
               </p>
             </div>
 
