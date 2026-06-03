@@ -1407,6 +1407,27 @@ function SettingsCenter() {
 
 
 
+
+type ClaudeRiskAssessment = {
+  symbol: string;
+  drawdownRisk: string;
+  exposureRisk: string;
+  positionRisk: string;
+  volatilityRisk: string;
+  overallRisk: string;
+  approved: boolean;
+  confidence: number;
+  reasoning: string;
+  createdAt: string;
+};
+
+type ClaudeRiskApiResponse = {
+  success: boolean;
+  risks: ClaudeRiskAssessment[];
+  count: number;
+  updatedAt: string;
+};
+
 type GPTAnalysisApiItem = {
   symbol: string;
   bias: string;
@@ -1513,6 +1534,246 @@ function getBiasColor(bias: string) {
   if (bias === "BEARISH") return "text-red-400";
   return "text-yellow-400";
 }
+
+
+function getRiskColor(risk: string) {
+  if (risk === "LOW") return "text-green-400";
+  if (risk === "MEDIUM") return "text-yellow-400";
+  if (risk === "HIGH") return "text-orange-400";
+  if (risk === "EXTREME") return "text-red-500";
+  return "text-gray-300";
+}
+
+function ClaudeRiskLiveCenter() {
+  const [risks, setRisks] = useState<ClaudeRiskAssessment[]>([]);
+  const [riskLoading, setRiskLoading] = useState(true);
+  const [riskError, setRiskError] = useState<string | null>(null);
+  const [lastRiskUpdate, setLastRiskUpdate] = useState("");
+
+  async function loadClaudeRisks() {
+    try {
+      setRiskLoading(true);
+      setRiskError(null);
+
+      const response = await fetch("/api/claude-risk/assess", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Claude risk request failed: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as ClaudeRiskApiResponse;
+      setRisks(payload.risks);
+      setLastRiskUpdate(payload.updatedAt);
+    } catch (caughtError) {
+      setRiskError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown Claude risk error"
+      );
+    } finally {
+      setRiskLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadClaudeRisks();
+
+    const interval = window.setInterval(() => {
+      loadClaudeRisks();
+    }, 20000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const approvedCount = risks.filter((item) => item.approved).length;
+  const blockedCount = risks.filter((item) => !item.approved).length;
+  const highRiskCount = risks.filter(
+    (item) =>
+      item.drawdownRisk === "HIGH" ||
+      item.exposureRisk === "HIGH" ||
+      item.positionRisk === "HIGH" ||
+      item.volatilityRisk === "HIGH" ||
+      item.drawdownRisk === "EXTREME" ||
+      item.exposureRisk === "EXTREME" ||
+      item.positionRisk === "EXTREME" ||
+      item.volatilityRisk === "EXTREME"
+  ).length;
+
+  const averageConfidence =
+    risks.length > 0
+      ? Math.round(
+          risks.reduce((sum, item) => sum + item.confidence, 0) / risks.length
+        )
+      : 0;
+
+  return (
+    <section className="bg-gray-900 border border-red-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🛡 Claude Risk Dashboard Center V9.9.2</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Live-Risk-Review aus der Claude Risk API: Drawdown, Exposure, Position Size, Volatility, Approval und Risk Reasoning.
+          </p>
+        </div>
+
+        <div className="bg-black border border-red-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Claude Risk Status</p>
+          <p className="text-red-400 text-2xl font-bold">Live</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Engine" value="Online" subtitle="Claude risk core" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Assessments" value={`${risks.length}`} subtitle="Risk reviews" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Approved" value={`${approvedCount}`} subtitle="Allowed ideas" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Blocked" value={`${blockedCount}`} subtitle="Rejected ideas" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Confidence" value={`${averageConfidence}%`} subtitle="Average score" accent="text-cyan-400" border="border-cyan-900" />
+      </div>
+
+      <div className="bg-black border border-red-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🛡 Live Claude Risk Review</h3>
+            <p className="text-gray-400 mt-2">
+              Daten aus <span className="text-red-400">/api/claude-risk/assess</span>. Auto-Refresh alle 20 Sekunden.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadClaudeRisks}
+            className="bg-red-950 border border-red-800 rounded-xl px-5 py-3 font-bold text-red-300 hover:bg-red-900 transition"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {riskLoading && <p className="text-gray-400">Loading Claude risk assessments...</p>}
+        {riskError && <p className="text-red-400">{riskError}</p>}
+
+        {!riskLoading && !riskError && (
+          <div className="grid grid-cols-2 gap-6">
+            {risks.map((item) => (
+              <div key={item.symbol} className="bg-gray-950 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between gap-4 mb-5">
+                  <div>
+                    <h4 className="text-3xl font-black">{item.symbol}</h4>
+                    <p className={`${item.approved ? "text-green-400" : "text-red-400"} text-2xl font-bold mt-2`}>
+                      {item.approved ? "APPROVED" : "BLOCKED"}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4 text-right min-w-[140px]">
+                    <p className="text-gray-400">Overall Risk</p>
+                    <p className={`${getRiskColor(item.overallRisk)} text-2xl font-black`}>
+                      {item.overallRisk}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Drawdown Risk</p>
+                    <p className={`${getRiskColor(item.drawdownRisk)} text-xl font-bold mt-2`}>
+                      {item.drawdownRisk}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Exposure Risk</p>
+                    <p className={`${getRiskColor(item.exposureRisk)} text-xl font-bold mt-2`}>
+                      {item.exposureRisk}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Position Risk</p>
+                    <p className={`${getRiskColor(item.positionRisk)} text-xl font-bold mt-2`}>
+                      {item.positionRisk}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Volatility Risk</p>
+                    <p className={`${getRiskColor(item.volatilityRisk)} text-xl font-bold mt-2`}>
+                      {item.volatilityRisk}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400 mb-2">Risk Reasoning</p>
+                  <pre className="text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">
+                    {item.reasoning}
+                  </pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {lastRiskUpdate && (
+          <p className="text-gray-500 mt-5 text-sm">
+            Last update: {new Date(lastRiskUpdate).toLocaleString()}
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔥 Risk Heatmap</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Approved Ideas" value={`${approvedCount}`} accent="text-green-400" />
+            <StatusPill label="Blocked Ideas" value={`${blockedCount}`} accent="text-red-400" />
+            <StatusPill label="High Risk Flags" value={`${highRiskCount}`} accent="text-orange-400" />
+            <StatusPill label="Average Confidence" value={`${averageConfidence}%`} accent="text-cyan-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🧠 Claude Risk Logic</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Drawdown Checker" value="Active" accent="text-red-400" />
+            <StatusPill label="Exposure Checker" value="Active" accent="text-yellow-400" />
+            <StatusPill label="Position Sizing" value="Active" accent="text-orange-400" />
+            <StatusPill label="Volatility Filter" value="Active" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔁 AI Pipeline</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
+            <StatusPill label="Regime Engine" value="Connected" accent="text-lime-400" />
+            <StatusPill label="GPT Analyst" value="Connected" accent="text-cyan-400" />
+            <StatusPill label="Claude Risk" value="Active" accent="text-red-400" />
+            <StatusPill label="Consensus" value="Next" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-purple-900 rounded-2xl p-6">
+        <h3 className="text-2xl font-bold">🚦 Next Gate: Consensus Engine</h3>
+        <p className="text-gray-300 mt-4 leading-relaxed">
+          Claude Risk kann Trade-Ideen genehmigen oder blockieren, aber die finale Entscheidung kommt erst im Consensus Gate.
+          Dort werden GPT Bias, Claude Risk, Regime, Market Data und Portfolio Safety gemeinsam bewertet.
+        </p>
+
+        <div className="grid grid-cols-5 gap-4 mt-6">
+          {["Market Data", "Regime", "GPT Analyst", "Claude Risk", "Consensus"].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-red-400 mt-2">Prepared</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function GPTAnalystLiveCenter() {
   const [analyses, setAnalyses] = useState<GPTAnalysisApiItem[]>([]);
@@ -2310,7 +2571,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "signal-engine") return <SignalEngineCenter />;
   if (activeView === "strategy-builder") return <StrategyBuilderCenter />;
   if (activeView === "gpt-analyst") return <GPTAnalystLiveCenter />;
-  if (activeView === "claude-risk") return <ClaudeRiskCenter />;
+  if (activeView === "claude-risk") return <ClaudeRiskLiveCenter />;
   if (activeView === "market-data") return <MarketDataEngineCenter />;
   if (activeView === "news-layer") return <NewsLayerCenter />;
   if (activeView === "market-regime") return <MarketRegimeLiveCenter />;
@@ -2378,7 +2639,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.8.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.9.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -2435,7 +2696,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.8.2 Interactive Centers
+                AI Trading Mission Control · V9.9.2 Interactive Centers
               </p>
             </div>
 
