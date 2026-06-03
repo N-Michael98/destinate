@@ -1404,6 +1404,43 @@ function SettingsCenter() {
 
 
 
+function TradingViewWidget({
+  symbol,
+  interval,
+}: {
+  symbol: string;
+  interval: string;
+}) {
+  const widgetUrl =
+    "https://s.tradingview.com/widgetembed/?" +
+    new URLSearchParams({
+      symbol,
+      interval,
+      theme: "dark",
+      style: "1",
+      timezone: "Europe/Zurich",
+      locale: "de_DE",
+      toolbar_bg: "#0b1220",
+      hide_side_toolbar: "0",
+      allow_symbol_change: "1",
+      save_image: "0",
+      studies: "[]",
+      withdateranges: "1",
+      hideideas: "1",
+    }).toString();
+
+  return (
+    <div className="bg-black border border-gray-800 rounded-2xl overflow-hidden h-[520px]">
+      <iframe
+        title={`TradingView chart ${symbol}`}
+        src={widgetUrl}
+        className="w-full h-full"
+        loading="lazy"
+      />
+    </div>
+  );
+}
+
 function TradingViewDashboardCenter() {
   const tradingViewSymbols = [
     {
@@ -1440,65 +1477,127 @@ function TradingViewDashboardCenter() {
     },
   ];
 
+  const timeframes = [
+    { label: "15m", value: "15" },
+    { label: "1H", value: "60" },
+    { label: "4H", value: "240" },
+    { label: "1D", value: "D" },
+  ];
+
+  const [selectedSymbol, setSelectedSymbol] = useState("OANDA:XAUUSD");
+  const [selectedInterval, setSelectedInterval] = useState("60");
+  const [multiChartMode, setMultiChartMode] = useState(false);
+
+  const selectedMarket =
+    tradingViewSymbols.find((item) => item.symbol === selectedSymbol) ??
+    tradingViewSymbols[0];
+
   return (
     <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">📈 TradingView Dashboard Center V9.5.1</h2>
+          <h2 className="text-4xl font-black">📈 TradingView Widget Engine V9.5.2</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Chart- und Analyse-Layer für TradingView Widgets, sichere Symbol-Mappings und spätere eigene Datafeeds über Capital.com / IC Markets.
+            Offizieller Widget-Chart-Layer ohne API-Key: Symbol-Auswahl, Timeframes, Multi-Chart-Layout und sichere Datenfeed-Trennung.
           </p>
         </div>
 
         <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
-          <p className="text-gray-400">TradingView Status</p>
-          <p className="text-blue-400 text-2xl font-bold">Prepared</p>
+          <p className="text-gray-400">Widget Status</p>
+          <p className="text-blue-400 text-2xl font-bold">Active</p>
         </div>
       </div>
 
       <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="Chart Mode" value="Widget" subtitle="No private API dependency" accent="text-blue-400" border="border-blue-900" />
-        <StatCard title="Default Symbol" value="XAUUSD" subtitle="Gold focus" accent="text-yellow-400" border="border-yellow-900" />
-        <StatCard title="Timeframes" value="Ready" subtitle="1H / 4H / Daily later" accent="text-cyan-400" border="border-cyan-900" />
-        <StatCard title="Datafeed" value="Own Feed Later" subtitle="Broker/API powered" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Chart Mode" value="Embedded" subtitle="TradingView widget" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Selected" value={selectedMarket.label} subtitle={selectedMarket.symbol} accent={selectedMarket.accent} border={selectedMarket.border} />
+        <StatCard title="Timeframe" value={timeframes.find((timeframe) => timeframe.value === selectedInterval)?.label ?? selectedInterval} subtitle="Selectable" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Layout" value={multiChartMode ? "Multi" : "Single"} subtitle="Single / 4-chart" accent="text-green-400" border="border-green-900" />
         <StatCard title="API Risk" value="Safe" subtitle="No scraping / no unofficial API" accent="text-red-400" border="border-red-900" />
       </div>
 
       <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
-        <div className="flex items-center justify-between gap-6 mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">📊 Chart Preview Workspace</h3>
+            <h3 className="text-3xl font-bold">📊 TradingView Chart Workspace</h3>
             <p className="text-gray-400 mt-2">
-              In V9.5.1 vorbereitet als Dashboard-Workspace. Echte TradingView Widgets können später in eigene Komponenten geladen werden.
+              Wechsel zwischen Gold, Oil, EURUSD und BTCUSD. Die echten AI-Daten kommen später trotzdem aus eigenen Broker-/Market-Feeds.
             </p>
           </div>
 
-          <a
-            href="https://www.tradingview.com/chart/?symbol=OANDA:XAUUSD"
-            target="_blank"
-            rel="noreferrer"
-            className="bg-blue-950 border border-blue-800 rounded-xl px-5 py-3 font-bold text-blue-300 hover:bg-blue-900 transition"
-          >
-            Open TradingView ↗
-          </a>
-        </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setMultiChartMode((value) => !value)}
+              className="bg-purple-950 border border-purple-800 rounded-xl px-5 py-3 font-bold text-purple-300 hover:bg-purple-900 transition"
+            >
+              {multiChartMode ? "Single Chart" : "Multi Chart"}
+            </button>
 
-        <div className="grid grid-cols-4 gap-5">
-          {tradingViewSymbols.map((item) => (
             <a
-              key={item.symbol}
-              href={`https://www.tradingview.com/chart/?symbol=${item.symbol}`}
+              href={`https://www.tradingview.com/chart/?symbol=${selectedSymbol}`}
               target="_blank"
               rel="noreferrer"
-              className={`bg-gray-950 border ${item.border} rounded-2xl p-5 hover:bg-gray-900 transition`}
+              className="bg-blue-950 border border-blue-800 rounded-xl px-5 py-3 font-bold text-blue-300 hover:bg-blue-900 transition"
+            >
+              Open TradingView ↗
+            </a>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-4 mb-5">
+          {tradingViewSymbols.map((item) => (
+            <button
+              key={item.symbol}
+              type="button"
+              onClick={() => {
+                setSelectedSymbol(item.symbol);
+                setMultiChartMode(false);
+              }}
+              className={`text-left bg-gray-950 border rounded-2xl p-5 hover:bg-gray-900 transition ${
+                selectedSymbol === item.symbol ? item.border : "border-gray-800"
+              }`}
             >
               <p className="text-gray-400">{item.market}</p>
               <h4 className={`text-3xl font-black mt-3 ${item.accent}`}>{item.label}</h4>
               <p className="text-gray-300 mt-3">{item.symbol}</p>
               <p className="text-gray-500 mt-3">{item.purpose}</p>
-            </a>
+            </button>
           ))}
         </div>
+
+        <div className="flex flex-wrap gap-3 mb-6">
+          {timeframes.map((timeframe) => (
+            <button
+              key={timeframe.value}
+              type="button"
+              onClick={() => setSelectedInterval(timeframe.value)}
+              className={`rounded-xl px-5 py-3 font-bold border transition ${
+                selectedInterval === timeframe.value
+                  ? "bg-cyan-950 border-cyan-700 text-cyan-300"
+                  : "bg-gray-950 border-gray-800 text-gray-300 hover:bg-gray-900"
+              }`}
+            >
+              {timeframe.label}
+            </button>
+          ))}
+        </div>
+
+        {multiChartMode ? (
+          <div className="grid grid-cols-2 gap-5">
+            {tradingViewSymbols.map((item) => (
+              <div key={item.symbol}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className={`text-xl font-bold ${item.accent}`}>{item.label}</h4>
+                  <p className="text-gray-500">{item.symbol}</p>
+                </div>
+                <TradingViewWidget symbol={item.symbol} interval={selectedInterval} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <TradingViewWidget symbol={selectedSymbol} interval={selectedInterval} />
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-6 mb-8">
@@ -1553,7 +1652,6 @@ function TradingViewDashboardCenter() {
     </section>
   );
 }
-
 
 function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-journal") return <TradingJournalCenter />;
@@ -1629,7 +1727,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.5.1</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.5.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -1686,7 +1784,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.5.1 Interactive Centers
+                AI Trading Mission Control · V9.5.2 Interactive Centers
               </p>
             </div>
 
