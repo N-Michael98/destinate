@@ -1404,6 +1404,25 @@ function SettingsCenter() {
 
 
 
+
+type MarketPriceApiItem = {
+  symbol: string;
+  bid: number;
+  ask: number;
+  spread: number;
+  timestamp: string;
+  source: string;
+};
+
+type MarketPricesApiResponse = {
+  success: boolean;
+  prices: MarketPriceApiItem[];
+  count: number;
+  source: string;
+  message: string;
+  updatedAt: string;
+};
+
 function TradingViewWidget({
   symbol,
   interval,
@@ -1441,7 +1460,7 @@ function TradingViewWidget({
   );
 }
 
-function TradingViewDashboardCenter() {
+function MarketDataEngineCenter() {
   const tradingViewSymbols = [
     {
       label: "Gold",
@@ -1492,28 +1511,80 @@ function TradingViewDashboardCenter() {
     tradingViewSymbols.find((item) => item.symbol === selectedSymbol) ??
     tradingViewSymbols[0];
 
+  const [marketPrices, setMarketPrices] = useState<MarketPriceApiItem[]>([]);
+  const [pricesLoading, setPricesLoading] = useState(true);
+  const [pricesError, setPricesError] = useState<string | null>(null);
+  const [lastPriceUpdate, setLastPriceUpdate] = useState<string>("");
+
+  async function loadMarketPrices() {
+    try {
+      setPricesLoading(true);
+      setPricesError(null);
+
+      const response = await fetch("/api/market-data/prices", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Market price request failed: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as MarketPricesApiResponse;
+      setMarketPrices(payload.prices);
+      setLastPriceUpdate(payload.updatedAt);
+    } catch (caughtError) {
+      setPricesError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown market data error"
+      );
+    } finally {
+      setPricesLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadMarketPrices();
+
+    const interval = window.setInterval(() => {
+      loadMarketPrices();
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const selectedCleanSymbol =
+    selectedSymbol.includes(":") ? selectedSymbol.split(":")[1] : selectedSymbol;
+
+  const selectedPrice =
+    marketPrices.find((price) => price.symbol === "XAUUSD" && selectedSymbol.includes("XAUUSD")) ??
+    marketPrices.find((price) => price.symbol === "USOIL" && selectedSymbol.includes("USOIL")) ??
+    marketPrices.find((price) => price.symbol === "EURUSD" && selectedSymbol.includes("EURUSD")) ??
+    marketPrices.find((price) => price.symbol === "BTCUSD" && selectedSymbol.includes("BTC")) ??
+    marketPrices[0];
+
   return (
     <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">📈 TradingView Widget Engine V9.5.2</h2>
+          <h2 className="text-4xl font-black">📊 Market Data Engine V9.6.4</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Offizieller Widget-Chart-Layer ohne API-Key: Symbol-Auswahl, Timeframes, Multi-Chart-Layout und sichere Datenfeed-Trennung.
+            Live verbundene Marktdaten-Schicht: Price Cache API, Mock-Live-Preise, TradingView Chart Layer, Feed Router und AI Data Pipeline.
           </p>
         </div>
 
         <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
-          <p className="text-gray-400">Widget Status</p>
-          <p className="text-blue-400 text-2xl font-bold">Active</p>
+          <p className="text-gray-400">Market Data Status</p>
+          <p className="text-blue-400 text-2xl font-bold">Online</p>
         </div>
       </div>
 
       <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="Chart Mode" value="Embedded" subtitle="TradingView widget" accent="text-blue-400" border="border-blue-900" />
-        <StatCard title="Selected" value={selectedMarket.label} subtitle={selectedMarket.symbol} accent={selectedMarket.accent} border={selectedMarket.border} />
+        <StatCard title="Engine" value="Online" subtitle="Market data core" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Selected" value={selectedMarket.label} subtitle={selectedPrice ? `${selectedPrice.bid}` : selectedMarket.symbol} accent={selectedMarket.accent} border={selectedMarket.border} />
         <StatCard title="Timeframe" value={timeframes.find((timeframe) => timeframe.value === selectedInterval)?.label ?? selectedInterval} subtitle="Selectable" accent="text-cyan-400" border="border-cyan-900" />
-        <StatCard title="Layout" value={multiChartMode ? "Multi" : "Single"} subtitle="Single / 4-chart" accent="text-green-400" border="border-green-900" />
-        <StatCard title="API Risk" value="Safe" subtitle="No scraping / no unofficial API" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Feed Priority" value="Ready" subtitle="Capital / IC / TV" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Safety" value="Safe" subtitle="No unofficial API" accent="text-red-400" border="border-red-900" />
       </div>
 
       <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
@@ -1632,6 +1703,137 @@ function TradingViewDashboardCenter() {
         </div>
       </div>
 
+
+      <div className="bg-black border border-green-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🧠 Market Data Engine Core</h3>
+            <p className="text-gray-400 mt-2">
+              V9.6 verbindet Symbol Registry, Feed Router, Price Cache und Health Monitor zu einer zentralen AI-Datenversorgung.
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-green-800 rounded-xl p-4 min-w-[180px]">
+            <p className="text-gray-400">Engine Health</p>
+            <p className="text-green-400 text-2xl font-bold">Ready</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5">
+          <StatCard title="Symbols" value="4" subtitle="Registry ready" accent="text-blue-400" border="border-blue-900" />
+          <StatCard title="Price Cache" value={marketPrices.length ? `${marketPrices.length}` : "0"} subtitle="Live mock prices" accent="text-green-400" border="border-green-900" />
+          <StatCard title="Feed Router" value="Ready" subtitle="Priority logic" accent="text-purple-400" border="border-purple-900" />
+          <StatCard title="Health Check" value="Active" subtitle="Feed monitoring" accent="text-cyan-400" border="border-cyan-900" />
+          <StatCard title="AI Pipeline" value="Prepared" subtitle="GPT/Claude/Consensus" accent="text-yellow-400" border="border-yellow-900" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📡 Feed Health</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="TradingView" value="Online" accent="text-green-400" />
+            <StatusPill label="Capital.com" value="Planned" accent="text-yellow-400" />
+            <StatusPill label="IC Markets" value="Prepared" accent="text-cyan-400" />
+            <StatusPill label="Unified Feed" value="Later" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🗂 Symbol Registry</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="GOLD" value="XAUUSD" accent="text-yellow-400" />
+            <StatusPill label="USOIL" value="USOIL" accent="text-orange-400" />
+            <StatusPill label="EURUSD" value="EURUSD" accent="text-green-400" />
+            <StatusPill label="BTCUSD" value="BTCUSD" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">⚙️ Feed Priority</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Priority 1" value="Capital.com" accent="text-blue-400" />
+            <StatusPill label="Priority 2" value="IC Markets" accent="text-cyan-400" />
+            <StatusPill label="Priority 3" value="TradingView" accent="text-green-400" />
+            <StatusPill label="Fallback" value="Cache" accent="text-yellow-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-2xl font-bold">💾 Live Price Cache</h3>
+              <p className="text-gray-500 mt-2">
+                Preise aus <span className="text-cyan-400">/api/market-data/prices</span>.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={loadMarketPrices}
+              className="bg-cyan-950 border border-cyan-800 rounded-xl px-4 py-2 font-bold text-cyan-300 hover:bg-cyan-900 transition"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {pricesLoading && (
+            <p className="text-gray-400 mt-6">Loading market prices...</p>
+          )}
+
+          {pricesError && (
+            <p className="text-red-400 mt-6">{pricesError}</p>
+          )}
+
+          {!pricesLoading && !pricesError && (
+            <div className="grid grid-cols-2 gap-4 mt-5">
+              {marketPrices.map((price) => (
+                <div key={price.symbol} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-bold">{price.symbol}</p>
+                    <p className="text-xs text-gray-500">{price.source}</p>
+                  </div>
+
+                  <p className="text-green-400 text-2xl font-black mt-3">
+                    {price.bid}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+                    <div>
+                      <p className="text-gray-500">Ask</p>
+                      <p className="text-cyan-400 font-bold">{price.ask}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Spread</p>
+                      <p className="text-yellow-400 font-bold">{price.spread}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {lastPriceUpdate && (
+            <p className="text-gray-500 mt-5 text-sm">
+              Last update: {new Date(lastPriceUpdate).toLocaleString()}
+            </p>
+          )}
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔁 AI Data Pipeline</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Market Data" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="Market Regime" value="Prepared" accent="text-lime-400" />
+            <StatusPill label="GPT Analyst" value="Prepared" accent="text-cyan-400" />
+            <StatusPill label="Claude Risk" value="Prepared" accent="text-red-400" />
+            <StatusPill label="Consensus" value="Required" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+
       <div className="bg-black border border-cyan-900 rounded-2xl p-6">
         <h3 className="text-2xl font-bold">🤖 AI Connection Plan</h3>
         <p className="text-gray-300 mt-4 leading-relaxed">
@@ -1660,7 +1862,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "strategy-builder") return <StrategyBuilderCenter />;
   if (activeView === "gpt-analyst") return <GPTAnalystCenter />;
   if (activeView === "claude-risk") return <ClaudeRiskCenter />;
-  if (activeView === "market-data") return <TradingViewDashboardCenter />;
+  if (activeView === "market-data") return <MarketDataEngineCenter />;
   if (activeView === "news-layer") return <NewsLayerCenter />;
   if (activeView === "market-regime") return <MarketRegimeCenter />;
   if (activeView === "portfolio-intelligence") return <PortfolioIntelligenceCenter />;
@@ -1727,7 +1929,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.5.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.6.4</p>
           </div>
 
           <nav className="space-y-7">
@@ -1784,7 +1986,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.5.2 Interactive Centers
+                AI Trading Mission Control · V9.6.4 Interactive Centers
               </p>
             </div>
 
