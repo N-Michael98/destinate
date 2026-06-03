@@ -609,6 +609,201 @@ function StrategyBuilderCenter() {
 }
 
 
+
+function ConsensusCenter() {
+  return (
+    <section className="bg-gray-900 border border-emerald-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">⚡ Consensus Intelligence Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Zentrale Entscheidungsprüfung: GPT, Claude und AI Agent werden gemeinsam validiert, bevor ein Demo-Plan freigegeben wird.
+          </p>
+        </div>
+        <div className="bg-black border border-emerald-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Consensus Status</p>
+          <p className="text-emerald-400 text-2xl font-bold">Active</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="GPT Signal" value="WAIT" subtitle="Opportunity check" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Claude Risk" value="REVIEW" subtitle="Risk validation" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Agent Review" value="WAIT" subtitle="Execution logic" accent="text-indigo-400" border="border-indigo-900" />
+        <StatCard title="Agreement" value="82%" subtitle="Consensus score" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Decision" value="REVIEW" subtitle="No auto execution" accent="text-yellow-400" border="border-yellow-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🟢 Approved Scenario</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="GPT" value="LONG" accent="text-green-400" />
+            <StatusPill label="Claude" value="LONG" accent="text-green-400" />
+            <StatusPill label="Agent" value="LONG" accent="text-green-400" />
+            <StatusPill label="Final" value="APPROVED" accent="text-emerald-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔴 Conflict Scenario</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="GPT" value="LONG" accent="text-green-400" />
+            <StatusPill label="Claude" value="BLOCK" accent="text-red-400" />
+            <StatusPill label="Agent" value="WAIT" accent="text-yellow-400" />
+            <StatusPill label="Final" value="BLOCKED" accent="text-red-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Safety Gate</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Single AI Decision" value="Blocked" accent="text-red-400" />
+            <StatusPill label="Conflict Detection" value="Active" accent="text-green-400" />
+            <StatusPill label="Live Execution" value="Locked" accent="text-red-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ExecutionCenter() {
+  return (
+    <section className="bg-gray-900 border border-yellow-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">⚡ Execution Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Verbindet Demo Agent, Demo Execution, Paper Orders, Performance Tracker, Feedback Engine und Adaptive Confidence.
+          </p>
+        </div>
+        <div className="bg-black border border-yellow-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Execution Status</p>
+          <p className="text-yellow-400 text-2xl font-bold">Paper Only</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Demo Agent" value="Ready" subtitle="Planning only" accent="text-indigo-400" border="border-indigo-900" />
+        <StatCard title="Demo Orders" value="3" subtitle="Mock tickets" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Open Exec." value="0" subtitle="No active positions" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Performance" value="Ready" subtitle="Tracker connected" accent="text-teal-400" border="border-teal-900" />
+        <StatCard title="Live Firewall" value="ON" subtitle="Broker blocked" accent="text-red-400" border="border-red-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📦 Demo Order Flow</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Agent Plan" value="Prepared" accent="text-indigo-400" />
+            <StatusPill label="Order Generator" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="Paper Engine" value="Connected" accent="text-green-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📊 Performance Loop</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Winrate" value="67%" accent="text-green-400" />
+            <StatusPill label="Profit Factor" value="2.15" accent="text-purple-400" />
+            <StatusPill label="Drawdown" value="0.73%" accent="text-yellow-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔒 Execution Safety</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Paper Mode" value="Enabled" accent="text-green-400" />
+            <StatusPill label="Broker Orders" value="Blocked" accent="text-red-400" />
+            <StatusPill label="Manual Approval" value="Required later" accent="text-yellow-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LearningCenter() {
+  return (
+    <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🧠 Learning Center</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Der Lernkreislauf: Forward Testing, AI Memory, Strategy Evolution, Feedback, Reports und Scheduler arbeiten zusammen.
+          </p>
+        </div>
+        <div className="bg-black border border-green-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Learning Status</p>
+          <p className="text-green-400 text-2xl font-bold">Loop Ready</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Forward Tests" value="Ready" subtitle="Planning engine" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="AI Memory" value="Ready" subtitle="Store lessons" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Evolution" value="Ready" subtitle="Strategy ranking" accent="text-lime-400" border="border-lime-900" />
+        <StatCard title="Reports" value="Ready" subtitle="Multi-AI review" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Scheduler" value="Ready" subtitle="Daily/weekly/monthly" accent="text-yellow-400" border="border-yellow-900" />
+      </div>
+
+      <div className="bg-black border border-gray-800 rounded-2xl p-6 mb-6">
+        <h3 className="text-2xl font-bold">🔁 Learning Pipeline</h3>
+        <div className="grid grid-cols-5 gap-4 mt-5">
+          {[
+            "Demo Trade",
+            "Performance",
+            "Feedback",
+            "Confidence",
+            "Memory",
+            "Evolution",
+            "GPT Review",
+            "Claude Review",
+            "Consensus",
+            "Next Plan",
+          ].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-green-400 mt-2">Prepared</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🏆 Strategy Learning</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Best" value="Momentum" accent="text-green-400" />
+            <StatusPill label="Stable" value="Risk-Off" accent="text-blue-400" />
+            <StatusPill label="Review" value="Inventory" accent="text-yellow-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📑 Reports</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Daily" value="Prepared" accent="text-green-400" />
+            <StatusPill label="Weekly" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="Monthly" value="Prepared" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">⏱ Scheduler</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Daily Cycle" value="Ready" accent="text-green-400" />
+            <StatusPill label="Weekly Cycle" value="Ready" accent="text-blue-400" />
+            <StatusPill label="Monthly Cycle" value="Ready" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
 function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-journal") return <TradingJournalCenter />;
   if (activeView === "trading-desk") return <TradingDeskCenter />;
@@ -618,6 +813,17 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "claude-risk") return <ClaudeRiskCenter />;
   if (activeView === "market-data") return <MarketDataCenter />;
   if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
+  if (activeView === "ai-consensus") return <ConsensusCenter />;
+  if (activeView === "execution-center") return <ExecutionCenter />;
+  if (
+    activeView === "forward-testing" ||
+    activeView === "ai-memory" ||
+    activeView === "strategy-evolution" ||
+    activeView === "learning-reports" ||
+    activeView === "scheduler"
+  ) {
+    return <LearningCenter />;
+  }
 
   return (
     <CenterPlaceholder
@@ -666,7 +872,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.4</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.3.5</p>
           </div>
 
           <nav className="space-y-7">
@@ -723,7 +929,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.3.4 Interactive Centers
+                AI Trading Mission Control · V9.3.5 Interactive Centers
               </p>
             </div>
 
