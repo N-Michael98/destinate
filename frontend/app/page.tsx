@@ -1,6 +1,6 @@
  "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type NavItem = {
   label: string;
@@ -12,6 +12,53 @@ type NavGroup = {
   title: string;
   items: NavItem[];
 };
+
+type ICMarketsApiData = {
+  success: boolean;
+  broker: string;
+  status: {
+    broker: string;
+    status: string;
+    config: {
+      enabled: boolean;
+      mode: string;
+      readOnly: boolean;
+      allowLiveOrders: boolean;
+    };
+  };
+  account: {
+    broker: string;
+    mode: string;
+    balance: number;
+    equity: number;
+    margin: number;
+    freeMargin: number;
+    currency: string;
+    status: string;
+    updatedAt: string;
+  };
+  health: {
+    broker: string;
+    mode: string;
+    currency: string;
+    balance: number;
+    equity: number;
+    freeMargin: number;
+    status: string;
+    healthy: boolean;
+    updatedAt: string;
+  };
+  exposure: {
+    openPositions: number;
+    totalFloatingPnL: number;
+    totalVolume: number;
+    positions: unknown[];
+    updatedAt: string;
+  };
+  liveTradingEnabled: boolean;
+  message: string;
+};
+
 
 const navGroups: NavGroup[] = [
   {
@@ -978,6 +1025,164 @@ function PortfolioIntelligenceCenter() {
 
 
 
+
+function BrokerLiveStatusPanel() {
+  const [data, setData] = useState<ICMarketsApiData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadBrokerStatus() {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch("/api/icmarkets/status", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Status request failed: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as ICMarketsApiData;
+      setData(payload);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown broker status error"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadBrokerStatus();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="mt-8 bg-black border border-cyan-900 rounded-2xl p-6">
+        <h3 className="text-3xl font-bold">📡 IC Markets Live Status</h3>
+        <p className="text-gray-400 mt-3">Loading connector status...</p>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="mt-8 bg-black border border-red-900 rounded-2xl p-6">
+        <h3 className="text-3xl font-bold">📡 IC Markets Live Status</h3>
+        <p className="text-red-400 mt-3">{error ?? "No broker data available."}</p>
+        <button
+          type="button"
+          onClick={loadBrokerStatus}
+          className="mt-5 bg-red-950 border border-red-800 rounded-xl px-5 py-3 font-bold text-red-300"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const updatedAt = new Date(data.account.updatedAt).toLocaleString();
+
+  return (
+    <div className="mt-8 bg-black border border-cyan-900 rounded-2xl p-6">
+      <div className="flex items-start justify-between gap-6 mb-6">
+        <div>
+          <h3 className="text-3xl font-bold">📡 IC Markets Live Status</h3>
+          <p className="text-gray-400 mt-2">
+            Live aus deiner Next.js API Route <span className="text-cyan-400">/api/icmarkets/status</span>.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={loadBrokerStatus}
+          className="bg-cyan-950 border border-cyan-800 rounded-xl px-5 py-3 font-bold text-cyan-300 hover:bg-cyan-900 transition"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-5 gap-5 mb-6">
+        <StatCard
+          title="Broker"
+          value={data.broker}
+          subtitle="IC Markets connector"
+          accent="text-cyan-400"
+          border="border-cyan-900"
+        />
+        <StatCard
+          title="Mode"
+          value={data.account.mode}
+          subtitle="Demo/read-only"
+          accent="text-green-400"
+          border="border-green-900"
+        />
+        <StatCard
+          title="Status"
+          value={data.account.status}
+          subtitle="Connector state"
+          accent="text-blue-400"
+          border="border-blue-900"
+        />
+        <StatCard
+          title="Health"
+          value={data.health.healthy ? "Healthy" : "Check"}
+          subtitle="API health check"
+          accent={data.health.healthy ? "text-green-400" : "text-red-400"}
+          border={data.health.healthy ? "border-green-900" : "border-red-900"}
+        />
+        <StatCard
+          title="Live Trading"
+          value={data.liveTradingEnabled ? "Enabled" : "Blocked"}
+          subtitle="Safety firewall"
+          accent={data.liveTradingEnabled ? "text-green-400" : "text-red-400"}
+          border={data.liveTradingEnabled ? "border-green-900" : "border-red-900"}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-5">
+        <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+          <h4 className="text-xl font-bold">💰 Account Snapshot</h4>
+          <div className="space-y-3 mt-4">
+            <StatusPill label="Balance" value={`${data.account.balance} ${data.account.currency}`} accent="text-green-400" />
+            <StatusPill label="Equity" value={`${data.account.equity} ${data.account.currency}`} accent="text-cyan-400" />
+            <StatusPill label="Free Margin" value={`${data.account.freeMargin} ${data.account.currency}`} accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+          <h4 className="text-xl font-bold">📊 Exposure</h4>
+          <div className="space-y-3 mt-4">
+            <StatusPill label="Open Positions" value={`${data.exposure.openPositions}`} accent="text-yellow-400" />
+            <StatusPill label="Floating P/L" value={`${data.exposure.totalFloatingPnL} ${data.account.currency}`} accent="text-green-400" />
+            <StatusPill label="Total Volume" value={`${data.exposure.totalVolume}`} accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+          <h4 className="text-xl font-bold">🔒 Safety Config</h4>
+          <div className="space-y-3 mt-4">
+            <StatusPill label="Read Only" value={data.status.config.readOnly ? "True" : "False"} accent="text-green-400" />
+            <StatusPill label="Allow Live Orders" value={data.status.config.allowLiveOrders ? "True" : "False"} accent="text-red-400" />
+            <StatusPill label="Last Update" value={updatedAt} accent="text-gray-300" />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 bg-gray-950 border border-gray-800 rounded-2xl p-5">
+        <p className="text-gray-400">Connector Message</p>
+        <p className="text-cyan-300 font-bold mt-2">{data.message}</p>
+      </div>
+    </div>
+  );
+}
+
+
 function BrokerCenter() {
   return (
     <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
@@ -1082,6 +1287,8 @@ function BrokerCenter() {
         </div>
       </div>
 
+
+      <BrokerLiveStatusPanel />
     </section>
   );
 }
@@ -1270,7 +1477,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.4</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.4.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -1327,7 +1534,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.4 Interactive Centers
+                AI Trading Mission Control · V9.4.2 Interactive Centers
               </p>
             </div>
 
