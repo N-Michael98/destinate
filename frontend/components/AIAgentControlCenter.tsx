@@ -16,6 +16,8 @@ type AIAgentRunResult = {
       takeProfit1: number;
       takeProfit2: number;
       confidence: number;
+      baseConfidence?: number;
+      adaptiveConfidenceApplied?: boolean;
       reason: string;
     };
     risk?: {
@@ -270,9 +272,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.5</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.7</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory und AI Learning.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, AI Learning und Adaptive Confidence.
           </p>
         </div>
 
@@ -292,7 +294,7 @@ export default function AIAgentControlCenter() {
         <StatCard
           title="GPT Analyst"
           value={idea ? idea.direction : "Ready"}
-          subtitle={idea ? `${idea.symbol} · ${idea.confidence}%` : "Mock signal engine"}
+          subtitle={idea ? `${idea.symbol} · adaptive ${idea.confidence}%` : "Mock signal engine"}
           accent="text-cyan-400"
           border="border-cyan-900"
         />
@@ -443,6 +445,109 @@ export default function AIAgentControlCenter() {
             </p>
             <p className="text-gray-500 mt-4 text-sm">
               Updated: {learning?.updatedAt ?? "N/A"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-cyan-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🎛 Adaptive Confidence Badge V10.3.7</h3>
+            <p className="text-gray-400 mt-2">
+              Zeigt, ob der GPT Analyst bereits die Empfehlung der Learning Engine für neue Trades verwendet.
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-cyan-800 rounded-xl p-4 min-w-[220px]">
+            <p className="text-gray-400">Adaptive Status</p>
+            <p
+              className={
+                idea?.adaptiveConfidenceApplied
+                  ? "text-green-400 text-2xl font-bold"
+                  : "text-yellow-400 text-2xl font-bold"
+              }
+            >
+              {idea?.adaptiveConfidenceApplied ? "Applied" : "Waiting"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Base Confidence"
+            value={`${idea?.baseConfidence ?? 82}%`}
+            subtitle="Original GPT score"
+            accent="text-blue-400"
+            border="border-blue-900"
+          />
+          <StatCard
+            title="Adaptive Confidence"
+            value={`${idea?.confidence ?? learning?.recommendedConfidence ?? 0}%`}
+            subtitle="Used for next decision"
+            accent="text-cyan-400"
+            border="border-cyan-900"
+          />
+          <StatCard
+            title="Adaptive Applied"
+            value={idea?.adaptiveConfidenceApplied ? "Yes" : "No"}
+            subtitle="Learning feedback used"
+            accent={idea?.adaptiveConfidenceApplied ? "text-green-400" : "text-yellow-400"}
+            border={idea?.adaptiveConfidenceApplied ? "border-green-900" : "border-yellow-900"}
+          />
+          <StatCard
+            title="Recommended"
+            value={`${learning?.recommendedConfidence ?? 0}%`}
+            subtitle="Learning engine target"
+            accent="text-lime-400"
+            border="border-lime-900"
+          />
+          <StatCard
+            title="Confidence Gap"
+            value={`${learning?.confidenceGap ?? 0}`}
+            subtitle="Confidence vs consensus"
+            accent="text-orange-400"
+            border="border-orange-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧠 Learning Feedback</h4>
+            <p className="text-gray-400 mt-4 leading-relaxed">
+              {learning?.recommendation ?? "No learning recommendation available yet."}
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">📈 Confidence Movement</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill
+                label="Base"
+                value={`${idea?.baseConfidence ?? 82}%`}
+                accent="text-blue-400"
+              />
+              <StatusPill
+                label="Current"
+                value={`${idea?.confidence ?? 0}%`}
+                accent="text-cyan-400"
+              />
+              <StatusPill
+                label="Delta"
+                value={`${(idea?.confidence ?? 0) - (idea?.baseConfidence ?? 82)}`}
+                accent={
+                  ((idea?.confidence ?? 0) - (idea?.baseConfidence ?? 82)) >= 0
+                    ? "text-green-400"
+                    : "text-red-400"
+                }
+              />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🔒 Safety Note</h4>
+            <p className="text-gray-400 mt-4 leading-relaxed">
+              Adaptive Confidence verändert nur Paper-Trading-Entscheidungen. Live Execution bleibt weiterhin blockiert.
             </p>
           </div>
         </div>
@@ -635,6 +740,11 @@ export default function AIAgentControlCenter() {
                 {idea.symbol} {idea.direction}
               </p>
               <p className="text-gray-400 mt-3">Entry: {idea.entry}</p>
+              <p className="text-gray-400">Base Confidence: {idea.baseConfidence ?? 82}%</p>
+              <p className="text-gray-400">Adaptive Confidence: {idea.confidence}%</p>
+              <p className={idea.adaptiveConfidenceApplied ? "text-green-400 font-bold" : "text-yellow-400 font-bold"}>
+                Adaptive Applied: {idea.adaptiveConfidenceApplied ? "Yes" : "No"}
+              </p>
               <p className="text-gray-400">SL: {idea.stopLoss}</p>
               <p className="text-gray-400">TP1: {idea.takeProfit1}</p>
               <p className="text-gray-400">TP2: {idea.takeProfit2}</p>
