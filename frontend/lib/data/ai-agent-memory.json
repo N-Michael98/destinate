@@ -1,0 +1,80 @@
+[
+  {
+    "id": "ai-memory-1780575680215-f0mzvs",
+    "createdAt": "2026-06-04T12:21:20.215Z",
+    "type": "AI_TRADE_EXECUTED",
+    "symbol": "EURUSD",
+    "direction": "LONG",
+    "confidence": 82,
+    "approved": true,
+    "executed": true,
+    "consensusScore": 80,
+    "riskScore": 78,
+    "reason": "AI paper trade executed and stored in memory.",
+    "payload": {
+      "idea": {
+        "source": "GPT_ANALYST",
+        "symbol": "EURUSD",
+        "direction": "LONG",
+        "entry": 1.085,
+        "stopLoss": 1.08,
+        "takeProfit1": 1.09,
+        "takeProfit2": 1.095,
+        "confidence": 82,
+        "reason": "Mock GPT trade idea for V10.3.0: EURUSD long based on structured demo momentum setup."
+      },
+      "risk": {
+        "source": "CLAUDE_RISK",
+        "approved": true,
+        "riskScore": 78,
+        "maxRiskPercent": 1,
+        "reason": "Mock Claude risk approval: confidence and reward/risk are acceptable."
+      },
+      "consensus": {
+        "source": "CONSENSUS_ENGINE",
+        "approved": true,
+        "score": 80,
+        "reason": "Mock consensus approved: GPT idea and Claude risk check agree."
+      },
+      "execution": {
+        "order": {
+          "id": "paper-order-1780575680206-02b6wu",
+          "symbol": "EURUSD",
+          "direction": "LONG",
+          "entry": 1.085,
+          "stopLoss": 1.08,
+          "takeProfit1": 1.09,
+          "takeProfit2": 1.095,
+          "confidence": 82,
+          "status": "FILLED",
+          "reason": "Mock GPT trade idea for V10.3.0: EURUSD long based on structured demo momentum setup. | Mock Claude risk approval: confidence and reward/risk are acceptable. | Mock consensus approved: GPT idea and Claude risk check agree.",
+          "createdAt": "2026-06-04T12:21:20.206Z"
+        },
+        "position": {
+          "id": "paper-position-1780575680212-fswk8o",
+          "orderId": "paper-order-1780575680206-02b6wu",
+          "symbol": "EURUSD",
+          "direction": "LONG",
+          "entry": 1.085,
+          "currentPrice": 1.085,
+          "stopLoss": 1.08,
+          "takeProfit1": 1.09,
+          "takeProfit2": 1.095,
+          "size": 1,
+          "unrealizedPnL": 0,
+          "status": "OPEN",
+          "openedAt": "2026-06-04T12:21:20.212Z"
+        },
+        "account": {
+          "balance": 30000,
+          "equity": 30000,
+          "realizedPnL": 0,
+          "unrealizedPnL": 0,
+          "openPositions": 1,
+          "currency": "CHF",
+          "updatedAt": "2026-06-04T12:21:20.214Z"
+        }
+      }
+    }
+  }
+]
