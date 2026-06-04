@@ -1409,6 +1409,34 @@ function SettingsCenter() {
 
 
 
+
+type ExecutionTicket = {
+  symbol: string;
+  direction: "BUY" | "SELL";
+  entry: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  confidence: number;
+  approved: boolean;
+  reason: string;
+  createdAt: string;
+};
+
+type ExecutionTicketsApiResponse = {
+  success: boolean;
+  tickets: ExecutionTicket[];
+  count: number;
+  updatedAt: string;
+};
+
+type ExecutionQueueApiResponse = {
+  success: boolean;
+  queue: ExecutionTicket[];
+  count: number;
+  updatedAt: string;
+};
+
 type ConsensusDecision = {
   symbol: string;
   marketDataVote: string;
@@ -1573,6 +1601,270 @@ function getVoteColor(vote: string) {
   if (vote === "REJECT") return "text-red-500";
   return "text-gray-300";
 }
+
+
+function getExecutionColor(value: string) {
+  if (value === "BUY") return "text-green-400";
+  if (value === "SELL") return "text-red-400";
+  if (value === "APPROVED") return "text-green-400";
+  if (value === "BLOCKED") return "text-red-400";
+  if (value === "READY") return "text-cyan-400";
+  return "text-gray-300";
+}
+
+function ExecutionLiveCenter() {
+  const [tickets, setTickets] = useState<ExecutionTicket[]>([]);
+  const [queue, setQueue] = useState<ExecutionTicket[]>([]);
+  const [executionLoading, setExecutionLoading] = useState(true);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [lastExecutionUpdate, setLastExecutionUpdate] = useState("");
+
+  async function loadExecutionData() {
+    try {
+      setExecutionLoading(true);
+      setExecutionError(null);
+
+      const [ticketsResponse, queueResponse] = await Promise.all([
+        fetch("/api/execution/tickets", { cache: "no-store" }),
+        fetch("/api/execution/queue", { cache: "no-store" }),
+      ]);
+
+      if (!ticketsResponse.ok) {
+        throw new Error(`Execution tickets request failed: ${ticketsResponse.status}`);
+      }
+
+      if (!queueResponse.ok) {
+        throw new Error(`Execution queue request failed: ${queueResponse.status}`);
+      }
+
+      const ticketsPayload =
+        (await ticketsResponse.json()) as ExecutionTicketsApiResponse;
+
+      const queuePayload =
+        (await queueResponse.json()) as ExecutionQueueApiResponse;
+
+      setTickets(ticketsPayload.tickets);
+      setQueue(queuePayload.queue);
+      setLastExecutionUpdate(ticketsPayload.updatedAt);
+    } catch (caughtError) {
+      setExecutionError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown execution error"
+      );
+    } finally {
+      setExecutionLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadExecutionData();
+
+    const interval = window.setInterval(() => {
+      loadExecutionData();
+    }, 20000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const approvedTickets = tickets.filter((ticket) => ticket.approved).length;
+  const blockedTickets = tickets.filter((ticket) => !ticket.approved).length;
+  const buyTickets = tickets.filter((ticket) => ticket.direction === "BUY").length;
+  const sellTickets = tickets.filter((ticket) => ticket.direction === "SELL").length;
+
+  const averageConfidence =
+    tickets.length > 0
+      ? Math.round(
+          tickets.reduce((sum, item) => sum + item.confidence, 0) / tickets.length
+        )
+      : 0;
+
+  return (
+    <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🚀 Execution Dashboard Center V10.1.2</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Execution Preparation Layer: Trade Tickets, Risk Lock, Order Validator, Queue Monitor und Broker Safety Lock.
+          </p>
+        </div>
+
+        <div className="bg-black border border-green-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Execution Status</p>
+          <p className="text-green-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Engine" value="Online" subtitle="Execution prep" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Tickets" value={`${tickets.length}`} subtitle="Trade tickets" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Approved" value={`${approvedTickets}`} subtitle="Ready tickets" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Blocked" value={`${blockedTickets}`} subtitle="Safety blocked" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Queue" value={`${queue.length}`} subtitle="Pending orders" accent="text-yellow-400" border="border-yellow-900" />
+      </div>
+
+      <div className="bg-black border border-green-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">📄 Live Execution Tickets</h3>
+            <p className="text-gray-400 mt-2">
+              Daten aus <span className="text-green-400">/api/execution/tickets</span>. Auto-Refresh alle 20 Sekunden.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadExecutionData}
+            className="bg-green-950 border border-green-800 rounded-xl px-5 py-3 font-bold text-green-300 hover:bg-green-900 transition"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {executionLoading && <p className="text-gray-400">Loading execution tickets...</p>}
+        {executionError && <p className="text-red-400">{executionError}</p>}
+
+        {!executionLoading && !executionError && (
+          <div className="grid grid-cols-2 gap-6">
+            {tickets.map((ticket) => (
+              <div key={`${ticket.symbol}-${ticket.direction}`} className="bg-gray-950 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between gap-4 mb-5">
+                  <div>
+                    <h4 className="text-3xl font-black">{ticket.symbol}</h4>
+                    <p className={`${getExecutionColor(ticket.direction)} text-3xl font-black mt-2`}>
+                      {ticket.direction}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4 text-right min-w-[160px]">
+                    <p className="text-gray-400">Ticket Status</p>
+                    <p className={`${ticket.approved ? "text-green-400" : "text-red-400"} text-2xl font-black`}>
+                      {ticket.approved ? "APPROVED" : "BLOCKED"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Entry</p>
+                    <p className="text-cyan-400 text-xl font-bold mt-2">{ticket.entry}</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Stop Loss</p>
+                    <p className="text-red-400 text-xl font-bold mt-2">{ticket.stopLoss}</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Take Profit 1</p>
+                    <p className="text-green-400 text-xl font-bold mt-2">{ticket.takeProfit1}</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Take Profit 2</p>
+                    <p className="text-green-400 text-xl font-bold mt-2">{ticket.takeProfit2}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Confidence</p>
+                    <p className="text-cyan-400 text-2xl font-black mt-2">{ticket.confidence}%</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Broker Lock</p>
+                    <p className="text-red-400 text-2xl font-black mt-2">LOCKED</p>
+                  </div>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400 mb-2">Execution Reason</p>
+                  <p className="text-gray-200 leading-relaxed">{ticket.reason}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {lastExecutionUpdate && (
+          <p className="text-gray-500 mt-5 text-sm">
+            Last update: {new Date(lastExecutionUpdate).toLocaleString()}
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📦 Execution Summary</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="BUY Tickets" value={`${buyTickets}`} accent="text-green-400" />
+            <StatusPill label="SELL Tickets" value={`${sellTickets}`} accent="text-red-400" />
+            <StatusPill label="Approved Tickets" value={`${approvedTickets}`} accent="text-cyan-400" />
+            <StatusPill label="Average Confidence" value={`${averageConfidence}%`} accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🛡 Execution Safety</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Order Validator" value="Active" accent="text-green-400" />
+            <StatusPill label="Risk Lock" value="Active" accent="text-yellow-400" />
+            <StatusPill label="Live Execution" value="Disabled" accent="text-red-400" />
+            <StatusPill label="Broker Firewall" value="Locked" accent="text-red-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🧾 Queue Monitor</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Execution Queue" value={`${queue.length}`} accent="text-yellow-400" />
+            <StatusPill label="Pending Orders" value={`${queue.length}`} accent="text-cyan-400" />
+            <StatusPill label="Paper Orders" value="Prepared" accent="text-green-400" />
+            <StatusPill label="Live Orders" value="Blocked" accent="text-red-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
+        <h3 className="text-2xl font-bold">🔁 Full AI Execution Pipeline</h3>
+        <div className="grid grid-cols-6 gap-4 mt-6">
+          {[
+            ["Market Data", "Connected", "text-blue-400"],
+            ["Regime", "Connected", "text-lime-400"],
+            ["GPT Analyst", "Connected", "text-cyan-400"],
+            ["Claude Risk", "Connected", "text-red-400"],
+            ["Consensus", "Connected", "text-purple-400"],
+            ["Execution", "Prepared", "text-green-400"],
+          ].map(([label, value, accent]) => (
+            <div key={label} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{label}</p>
+              <p className={`${accent} mt-2 font-bold`}>{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-black border border-red-900 rounded-2xl p-6">
+        <h3 className="text-2xl font-bold">🔒 Live Trading Safety Lock</h3>
+        <p className="text-gray-300 mt-4 leading-relaxed">
+          Execution Preparation erstellt nur vorbereitete Trade Tickets. Live Broker Orders bleiben gesperrt.
+          Der nächste Schritt ist Paper Trading, damit die gesamte AI-Pipeline zuerst in einem sicheren Demo-Loop getestet werden kann.
+        </p>
+
+        <div className="grid grid-cols-5 gap-4 mt-6">
+          {["Trade Ticket", "Risk Lock", "Queue", "Paper Mode", "Live Blocked"].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-red-400 mt-2">Protected</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function ConsensusLiveCenter() {
   const [decisions, setDecisions] = useState<ConsensusDecision[]>([]);
@@ -2848,7 +3140,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "settings") return <SettingsCenter />;
   if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
   if (activeView === "ai-consensus") return <ConsensusCenter />;
-  if (activeView === "execution-center") return <ExecutionCenter />;
+  if (activeView === "execution-center") return <ExecutionLiveCenter />;
   if (
     activeView === "forward-testing" ||
     activeView === "ai-memory" ||
@@ -2906,7 +3198,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V10.0.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V10.1.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -2963,7 +3255,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V10.0.2 Interactive Centers
+                AI Trading Mission Control · V10.1.2 Interactive Centers
               </p>
             </div>
 
