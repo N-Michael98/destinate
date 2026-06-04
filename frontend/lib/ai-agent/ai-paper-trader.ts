@@ -5,37 +5,94 @@ import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
 import { AgentMemory } from "./memory/agent-memory";
 import { AILearningEngine } from "./learning-engine";
 import { StrategyEvolutionEngine } from "./strategy-evolution";
+import { generateEconomicCalendarReport } from "@/lib/economic-calendar";
+
+function getEconomicConfidencePenalty(tradingAction: string): number {
+  if (tradingAction === "NEWS_LOCKDOWN") return 100;
+  if (tradingAction === "AVOID_NEW_POSITIONS") return 10;
+  if (tradingAction === "REDUCE_RISK") return 5;
+  return 0;
+}
 
 export class AIPaperTrader {
   static run() {
-    const learning =
-      AILearningEngine.analyze();
+    const learning = AILearningEngine.analyze();
 
-    const strategyEvolution =
-      StrategyEvolutionEngine.analyze();
+    const strategyEvolution = StrategyEvolutionEngine.analyze();
 
-    const bestStrategy =
-      strategyEvolution.bestStrategy;
+    const economicCalendar = generateEconomicCalendarReport();
 
-    const idea =
-      GPTAnalyst.generateTradeIdea(
-        learning.recommendedConfidence,
-        {
-          id: bestStrategy.id,
-          name: bestStrategy.name,
-          type: bestStrategy.type,
-          score: bestStrategy.score,
-          confidenceBoost:
-            bestStrategy.confidenceBoost,
-          status: bestStrategy.status,
-        }
-      );
+    const economicPenalty = getEconomicConfidencePenalty(
+      economicCalendar.tradingAction
+    );
 
-    const risk =
-      ClaudeRisk.validateTrade(idea);
+    const bestStrategy = strategyEvolution.bestStrategy;
 
-    const consensus =
-      ConsensusEngine.decide(idea, risk);
+    const idea = GPTAnalyst.generateTradeIdea(
+      Math.max(0, learning.recommendedConfidence - economicPenalty),
+      {
+        id: bestStrategy.id,
+        name: bestStrategy.name,
+        type: bestStrategy.type,
+        score: bestStrategy.score,
+        confidenceBoost: bestStrategy.confidenceBoost,
+        status: bestStrategy.status,
+      }
+    );
+
+    const economicRiskNote = `Economic Risk: ${economicCalendar.riskLevel} | Action: ${economicCalendar.tradingAction} | Score: ${economicCalendar.riskScore}`;
+
+    if (economicCalendar.tradingAction === "NEWS_LOCKDOWN") {
+      const memory = AgentMemory.add({
+        type: "AI_TRADE_REJECTED",
+        symbol: idea.symbol,
+        direction: idea.direction,
+        confidence: idea.confidence,
+        approved: false,
+        executed: false,
+        consensusScore: 0,
+        riskScore: economicCalendar.riskScore,
+        reason:
+          "AI paper trade blocked by Economic Calendar NEWS_LOCKDOWN.",
+        payload: {
+          idea,
+          learning,
+          strategyEvolution,
+          economicCalendar,
+        },
+      });
+
+      return {
+        ok: true,
+        executed: false,
+        idea,
+        risk: {
+          source: "Economic Calendar Risk Layer",
+          approved: false,
+          riskScore: economicCalendar.riskScore,
+          maxRiskPercent: 0,
+          reason:
+            "Trade blocked because economic calendar risk is EXTREME / NEWS_LOCKDOWN.",
+        },
+        consensus: {
+          source: "Economic Calendar Risk Layer",
+          approved: false,
+          score: 0,
+          reason:
+            "Consensus blocked before execution due to NEWS_LOCKDOWN.",
+        },
+        learning,
+        strategyEvolution,
+        economicCalendar,
+        memory,
+        message:
+          "AI paper trade blocked by Economic Calendar NEWS_LOCKDOWN.",
+      };
+    }
+
+    const risk = ClaudeRisk.validateTrade(idea);
+
+    const consensus = ConsensusEngine.decide(idea, risk);
 
     if (!consensus.approved) {
       const memory = AgentMemory.add({
@@ -46,14 +103,15 @@ export class AIPaperTrader {
         approved: false,
         executed: false,
         consensusScore: consensus.score,
-        riskScore: risk.riskScore,
-        reason: consensus.reason,
+        riskScore: Math.max(risk.riskScore, economicCalendar.riskScore),
+        reason: `${consensus.reason} | ${economicRiskNote}`,
         payload: {
           idea,
           risk,
           consensus,
           learning,
           strategyEvolution,
+          economicCalendar,
         },
       });
 
@@ -65,24 +123,31 @@ export class AIPaperTrader {
         consensus,
         learning,
         strategyEvolution,
+        economicCalendar,
         memory,
         message:
-          "AI paper trade rejected by consensus.",
+          "AI paper trade rejected by consensus with economic calendar risk included.",
       };
     }
 
-    const execution =
-      paperTradingManager.createAndFillPaperOrder(
-        idea.symbol,
-        idea.direction,
-        idea.entry,
-        idea.stopLoss,
-        idea.takeProfit1,
-        idea.takeProfit2,
-        idea.confidence,
-        `${idea.reason} | ${risk.reason} | ${consensus.reason}`,
-        1
-      );
+    const orderSize =
+      economicCalendar.tradingAction === "AVOID_NEW_POSITIONS"
+        ? 0.25
+        : economicCalendar.tradingAction === "REDUCE_RISK"
+          ? 0.5
+          : 1;
+
+    const execution = paperTradingManager.createAndFillPaperOrder(
+      idea.symbol,
+      idea.direction,
+      idea.entry,
+      idea.stopLoss,
+      idea.takeProfit1,
+      idea.takeProfit2,
+      idea.confidence,
+      `${idea.reason} | ${risk.reason} | ${consensus.reason} | ${economicRiskNote}`,
+      orderSize
+    );
 
     const memory = AgentMemory.add({
       type: "AI_TRADE_EXECUTED",
@@ -92,15 +157,16 @@ export class AIPaperTrader {
       approved: true,
       executed: true,
       consensusScore: consensus.score,
-      riskScore: risk.riskScore,
+      riskScore: Math.max(risk.riskScore, economicCalendar.riskScore),
       reason:
-        "AI paper trade executed with strategy selection, adaptive confidence and stored in memory.",
+        "AI paper trade executed with strategy selection, adaptive confidence, economic risk layer and stored in memory.",
       payload: {
         idea,
         risk,
         consensus,
         learning,
         strategyEvolution,
+        economicCalendar,
         execution,
       },
     });
@@ -113,10 +179,11 @@ export class AIPaperTrader {
       consensus,
       learning,
       strategyEvolution,
+      economicCalendar,
       execution,
       memory,
       message:
-        "AI paper trade executed successfully with strategy selection.",
+        "AI paper trade executed successfully with strategy selection and economic risk integration.",
     };
   }
 }
