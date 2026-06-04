@@ -83,6 +83,12 @@ type AgentMemoryStats = {
   totalMemories: number;
   executedTrades: number;
   rejectedTrades: number;
+  economicRiskMemories?: number;
+  economicRiskBlocks?: number;
+  economicRiskReduced?: number;
+  economicRiskElevated?: number;
+  economicRiskNormal?: number;
+  averageEconomicRisk?: number;
   averageConfidence: number;
   averageConsensus: number;
   updatedAt: string;
@@ -482,7 +488,7 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.0.5</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.0.8</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
             Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection, News Intelligence und Economic Calendar.
           </p>
@@ -1791,6 +1797,103 @@ export default function AIAgentControlCenter() {
           {latestMemory.length === 0 && (
             <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-3">
               <p className="text-gray-500">No AI memory stored yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-black border border-red-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🚨 Economic Risk Memory Panel V11.0.8</h3>
+            <p className="text-gray-400 mt-2">
+              Speichert alle Economic-Risk-Entscheidungen des AI-Agenten und zeigt, wann Trades durch Kalender-Risiko blockiert, reduziert oder normal freigegeben wurden.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshData}
+            disabled={loading}
+            className="bg-red-950 border border-red-800 rounded-xl px-5 py-3 font-bold text-red-300 hover:bg-red-900 transition disabled:opacity-60"
+          >
+            {loading ? "Refreshing..." : "Refresh Risk Memory"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Risk Memories"
+            value={`${memoryStats?.economicRiskMemories ?? 0}`}
+            subtitle="Economic risk records"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+          <StatCard
+            title="Blocks"
+            value={`${memoryStats?.economicRiskBlocks ?? 0}`}
+            subtitle="NEWS_LOCKDOWN events"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+          <StatCard
+            title="Reduced"
+            value={`${memoryStats?.economicRiskReduced ?? 0}`}
+            subtitle="Risk reduction events"
+            accent="text-yellow-400"
+            border="border-yellow-900"
+          />
+          <StatCard
+            title="Elevated"
+            value={`${memoryStats?.economicRiskElevated ?? 0}`}
+            subtitle="Avoid new positions"
+            accent="text-orange-400"
+            border="border-orange-900"
+          />
+          <StatCard
+            title="Avg Risk"
+            value={`${memoryStats?.averageEconomicRisk ?? 0}`}
+            subtitle="Average economic risk"
+            accent="text-fuchsia-400"
+            border="border-fuchsia-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          {latestMemory
+            .filter((item) => String(item.type).startsWith("ECONOMIC_RISK"))
+            .slice(0, 3)
+            .map((item) => (
+              <div
+                key={item.id}
+                className="bg-gray-950 border border-red-900 rounded-2xl p-5"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <h4 className="text-lg font-bold text-white">{item.type}</h4>
+                  <span className="text-red-400 font-bold">
+                    Risk {item.riskScore ?? 0}
+                  </span>
+                </div>
+
+                <p className="text-gray-400 mt-3">
+                  {item.symbol ?? "SYSTEM"} · {item.direction ?? "N/A"}
+                </p>
+
+                <p className="text-gray-500 mt-3 text-sm leading-relaxed">
+                  {item.reason}
+                </p>
+
+                <p className="text-gray-600 text-xs mt-4">
+                  {item.createdAt}
+                </p>
+              </div>
+            ))}
+
+          {latestMemory.filter((item) =>
+            String(item.type).startsWith("ECONOMIC_RISK")
+          ).length === 0 && (
+            <div className="bg-gray-950 border border-red-900 rounded-2xl p-5 col-span-3">
+              <p className="text-gray-500">No economic risk memories available yet.</p>
             </div>
           )}
         </div>
