@@ -202,6 +202,39 @@ type MarketRegimeResponse = {
   timestamp: string;
 };
 
+type NewsItem = {
+  id: string;
+  title: string;
+  category: string;
+  impact: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  sentiment: string;
+  affectedMarkets: string[];
+  source: string;
+  summary: string;
+  timestamp: string;
+};
+
+type NewsIntelligenceReport = {
+  version: string;
+  totalNews: number;
+  highImpactNews: number;
+  geopoliticalRisk: string;
+  macroRisk: string;
+  overallSentiment: string;
+  marketRiskScore: number;
+  affectedMarkets: string[];
+  recommendation: string;
+  news: NewsItem[];
+  updatedAt: string;
+};
+
+type NewsIntelligenceResponse = {
+  ok: boolean;
+  report: NewsIntelligenceReport;
+  timestamp: string;
+};
+
+
 
 
 
@@ -255,6 +288,7 @@ export default function AIAgentControlCenter() {
   const [outcomes, setOutcomes] = useState<AIOutcomes | null>(null);
   const [strategy, setStrategy] = useState<StrategyEvolution | null>(null);
   const [marketRegime, setMarketRegime] = useState<MarketRegimeData | null>(null);
+  const [newsIntelligence, setNewsIntelligence] = useState<NewsIntelligenceReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -271,6 +305,7 @@ export default function AIAgentControlCenter() {
         outcomesResponse,
         strategyResponse,
         marketRegimeResponse,
+        newsIntelligenceResponse,
       ] = await Promise.all([
         fetch("/api/paper/history", { cache: "no-store" }),
         fetch("/api/paper/performance", { cache: "no-store" }),
@@ -279,6 +314,7 @@ export default function AIAgentControlCenter() {
         fetch("/api/ai-paper-trader/outcomes", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/strategy", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/market-regime", { cache: "no-store" }),
+        fetch("/api/news-intelligence", { cache: "no-store" }),
       ]);
 
       const historyPayload = await historyResponse.json();
@@ -288,6 +324,7 @@ export default function AIAgentControlCenter() {
       const outcomesPayload = (await outcomesResponse.json()) as AIOutcomesResponse;
       const strategyPayload = (await strategyResponse.json()) as StrategyEvolutionResponse;
       const marketRegimePayload = (await marketRegimeResponse.json()) as MarketRegimeResponse;
+      const newsIntelligencePayload = (await newsIntelligenceResponse.json()) as NewsIntelligenceResponse;
 
       setHistory(historyPayload.history ?? []);
       setPerformance(performancePayload.performance ?? null);
@@ -298,6 +335,7 @@ export default function AIAgentControlCenter() {
       setOutcomes(outcomesPayload.outcomes ?? null);
       setStrategy(strategyPayload.strategy ?? null);
       setMarketRegime(marketRegimePayload.regime ?? null);
+      setNewsIntelligence(newsIntelligencePayload.report ?? null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -371,9 +409,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.5.3</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.0.1</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime und Regime-Aware Strategy Selection.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection und News Intelligence.
           </p>
         </div>
 
@@ -425,6 +463,186 @@ export default function AIAgentControlCenter() {
           accent="text-fuchsia-400"
           border="border-fuchsia-900"
         />
+      </div>
+
+      <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">📰 News Intelligence Panel V11.0.1</h3>
+            <p className="text-gray-400 mt-2">
+              Live News Foundation aus <span className="text-blue-400">/api/news-intelligence</span>. Später docken hier echte Geopolitik-, Makro- und Wirtschaftskalenderquellen an.
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-blue-800 rounded-xl p-4 min-w-[240px]">
+            <p className="text-gray-400">Overall Sentiment</p>
+            <p
+              className={
+                newsIntelligence?.overallSentiment === "RISK_OFF"
+                  ? "text-red-400 text-3xl font-bold"
+                  : newsIntelligence?.overallSentiment === "RISK_ON"
+                    ? "text-green-400 text-3xl font-bold"
+                    : "text-yellow-400 text-3xl font-bold"
+              }
+            >
+              {newsIntelligence?.overallSentiment ?? "WAITING"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Total News"
+            value={`${newsIntelligence?.totalNews ?? 0}`}
+            subtitle="Tracked news items"
+            accent="text-blue-400"
+            border="border-blue-900"
+          />
+          <StatCard
+            title="High Impact"
+            value={`${newsIntelligence?.highImpactNews ?? 0}`}
+            subtitle="High or critical events"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+          <StatCard
+            title="Geopolitical Risk"
+            value={newsIntelligence?.geopoliticalRisk ?? "N/A"}
+            subtitle="World risk layer"
+            accent={
+              newsIntelligence?.geopoliticalRisk === "HIGH" ||
+              newsIntelligence?.geopoliticalRisk === "CRITICAL"
+                ? "text-red-400"
+                : newsIntelligence?.geopoliticalRisk === "MEDIUM"
+                  ? "text-yellow-400"
+                  : "text-green-400"
+            }
+            border={
+              newsIntelligence?.geopoliticalRisk === "HIGH" ||
+              newsIntelligence?.geopoliticalRisk === "CRITICAL"
+                ? "border-red-900"
+                : newsIntelligence?.geopoliticalRisk === "MEDIUM"
+                  ? "border-yellow-900"
+                  : "border-green-900"
+            }
+          />
+          <StatCard
+            title="Macro Risk"
+            value={newsIntelligence?.macroRisk ?? "N/A"}
+            subtitle="Central bank / macro layer"
+            accent={
+              newsIntelligence?.macroRisk === "HIGH" ||
+              newsIntelligence?.macroRisk === "CRITICAL"
+                ? "text-red-400"
+                : newsIntelligence?.macroRisk === "MEDIUM"
+                  ? "text-yellow-400"
+                  : "text-green-400"
+            }
+            border={
+              newsIntelligence?.macroRisk === "HIGH" ||
+              newsIntelligence?.macroRisk === "CRITICAL"
+                ? "border-red-900"
+                : newsIntelligence?.macroRisk === "MEDIUM"
+                  ? "border-yellow-900"
+                  : "border-green-900"
+            }
+          />
+          <StatCard
+            title="Market Risk"
+            value={`${newsIntelligence?.marketRiskScore ?? 0}`}
+            subtitle="News impact score"
+            accent={
+              (newsIntelligence?.marketRiskScore ?? 0) >= 75
+                ? "text-red-400"
+                : (newsIntelligence?.marketRiskScore ?? 0) >= 45
+                  ? "text-yellow-400"
+                  : "text-green-400"
+            }
+            border={
+              (newsIntelligence?.marketRiskScore ?? 0) >= 75
+                ? "border-red-900"
+                : (newsIntelligence?.marketRiskScore ?? 0) >= 45
+                  ? "border-yellow-900"
+                  : "border-green-900"
+            }
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5 mb-6">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🌍 Affected Markets</h4>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              {(newsIntelligence?.affectedMarkets ?? []).map((market) => (
+                <div
+                  key={market}
+                  className="bg-black border border-blue-800 rounded-xl p-3"
+                >
+                  <p className="text-blue-300 font-bold">{market}</p>
+                </div>
+              ))}
+
+              {(newsIntelligence?.affectedMarkets ?? []).length === 0 && (
+                <p className="text-gray-500 col-span-2">No affected markets yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧭 News Risk Logic</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="LOW" value="Normal trading" accent="text-green-400" />
+              <StatusPill label="MEDIUM" value="Avoid overconfidence" accent="text-yellow-400" />
+              <StatusPill label="HIGH" value="Reduce risk" accent="text-orange-400" />
+              <StatusPill label="CRITICAL" value="Block / wait" accent="text-red-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-blue-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">💡 News Recommendation</h4>
+            <p className="text-blue-300 font-bold mt-4 leading-relaxed">
+              {newsIntelligence?.recommendation ?? "No news intelligence recommendation available yet."}
+            </p>
+            <p className="text-gray-500 mt-4 text-sm">
+              Updated: {newsIntelligence?.updatedAt ?? "N/A"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          {(newsIntelligence?.news ?? []).slice(0, 3).map((item) => (
+            <div
+              key={item.id}
+              className="bg-gray-950 border border-gray-800 rounded-2xl p-5"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <h4 className="text-xl font-bold">{item.category}</h4>
+                <span
+                  className={
+                    item.impact === "CRITICAL" || item.impact === "HIGH"
+                      ? "text-red-400 font-bold"
+                      : item.impact === "MEDIUM"
+                        ? "text-yellow-400 font-bold"
+                        : "text-green-400 font-bold"
+                  }
+                >
+                  {item.impact}
+                </span>
+              </div>
+
+              <p className="text-blue-400 font-bold text-lg mt-4">{item.title}</p>
+              <p className="text-gray-400 mt-3 leading-relaxed">{item.summary}</p>
+              <p className="text-gray-500 mt-4 text-sm">
+                {item.source} · {item.timestamp}
+              </p>
+            </div>
+          ))}
+
+          {(newsIntelligence?.news ?? []).length === 0 && (
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-3">
+              <p className="text-gray-500">No news intelligence items available yet.</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-black border border-sky-900 rounded-2xl p-6 mb-8">
