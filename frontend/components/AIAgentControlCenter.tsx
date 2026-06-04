@@ -173,6 +173,25 @@ type StrategyEvolutionResponse = {
   timestamp: string;
 };
 
+type MarketRegimeData = {
+  version: string;
+  regime: "TRENDING" | "RANGING" | "VOLATILE" | "NEWS";
+  score: number;
+  recommendation: string;
+  memoryConfidence: number;
+  learningScore: number;
+  winRate: number;
+  totalMemories: number;
+  updatedAt: string;
+};
+
+type MarketRegimeResponse = {
+  ok: boolean;
+  regime: MarketRegimeData;
+  timestamp: string;
+};
+
+
 
 
 function StatCard({
@@ -224,6 +243,7 @@ export default function AIAgentControlCenter() {
   const [learning, setLearning] = useState<AILearning | null>(null);
   const [outcomes, setOutcomes] = useState<AIOutcomes | null>(null);
   const [strategy, setStrategy] = useState<StrategyEvolution | null>(null);
+  const [marketRegime, setMarketRegime] = useState<MarketRegimeData | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -239,6 +259,7 @@ export default function AIAgentControlCenter() {
         learningResponse,
         outcomesResponse,
         strategyResponse,
+        marketRegimeResponse,
       ] = await Promise.all([
         fetch("/api/paper/history", { cache: "no-store" }),
         fetch("/api/paper/performance", { cache: "no-store" }),
@@ -246,6 +267,7 @@ export default function AIAgentControlCenter() {
         fetch("/api/ai-paper-trader/learning", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/outcomes", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/strategy", { cache: "no-store" }),
+        fetch("/api/ai-paper-trader/market-regime", { cache: "no-store" }),
       ]);
 
       const historyPayload = await historyResponse.json();
@@ -254,6 +276,7 @@ export default function AIAgentControlCenter() {
       const learningPayload = (await learningResponse.json()) as AILearningResponse;
       const outcomesPayload = (await outcomesResponse.json()) as AIOutcomesResponse;
       const strategyPayload = (await strategyResponse.json()) as StrategyEvolutionResponse;
+      const marketRegimePayload = (await marketRegimeResponse.json()) as MarketRegimeResponse;
 
       setHistory(historyPayload.history ?? []);
       setPerformance(performancePayload.performance ?? null);
@@ -263,6 +286,7 @@ export default function AIAgentControlCenter() {
       setLearning(learningPayload.learning ?? null);
       setOutcomes(outcomesPayload.outcomes ?? null);
       setStrategy(strategyPayload.strategy ?? null);
+      setMarketRegime(marketRegimePayload.regime ?? null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -336,9 +360,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.4.1</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.5.1</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes und Strategy Evolution.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Strategy Evolution und Market Regime.
           </p>
         </div>
 
@@ -390,6 +414,120 @@ export default function AIAgentControlCenter() {
           accent="text-fuchsia-400"
           border="border-fuchsia-900"
         />
+      </div>
+
+      <div className="bg-black border border-sky-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🌍 Market Regime Panel V10.5.1</h3>
+            <p className="text-gray-400 mt-2">
+              Live Marktzustand aus <span className="text-sky-400">/api/ai-paper-trader/market-regime</span>.
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-sky-800 rounded-xl p-4 min-w-[240px]">
+            <p className="text-gray-400">Current Regime</p>
+            <p
+              className={
+                marketRegime?.regime === "TRENDING"
+                  ? "text-green-400 text-3xl font-bold"
+                  : marketRegime?.regime === "VOLATILE"
+                    ? "text-orange-400 text-3xl font-bold"
+                    : marketRegime?.regime === "NEWS"
+                      ? "text-red-400 text-3xl font-bold"
+                      : "text-yellow-400 text-3xl font-bold"
+              }
+            >
+              {marketRegime?.regime ?? "WAITING"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Regime"
+            value={marketRegime?.regime ?? "N/A"}
+            subtitle="Current market state"
+            accent={
+              marketRegime?.regime === "TRENDING"
+                ? "text-green-400"
+                : marketRegime?.regime === "VOLATILE"
+                  ? "text-orange-400"
+                  : marketRegime?.regime === "NEWS"
+                    ? "text-red-400"
+                    : "text-yellow-400"
+            }
+            border={
+              marketRegime?.regime === "TRENDING"
+                ? "border-green-900"
+                : marketRegime?.regime === "VOLATILE"
+                  ? "border-orange-900"
+                  : marketRegime?.regime === "NEWS"
+                    ? "border-red-900"
+                    : "border-yellow-900"
+            }
+          />
+          <StatCard
+            title="Regime Score"
+            value={`${marketRegime?.score ?? 0}`}
+            subtitle="Market regime confidence"
+            accent="text-sky-400"
+            border="border-sky-900"
+          />
+          <StatCard
+            title="Memory Confidence"
+            value={`${marketRegime?.memoryConfidence ?? 0}%`}
+            subtitle="AI memory confidence"
+            accent="text-fuchsia-400"
+            border="border-fuchsia-900"
+          />
+          <StatCard
+            title="Learning Score"
+            value={`${marketRegime?.learningScore ?? 0}`}
+            subtitle="Learning engine input"
+            accent="text-lime-400"
+            border="border-lime-900"
+          />
+          <StatCard
+            title="Win Rate"
+            value={`${marketRegime?.winRate ?? 0}%`}
+            subtitle="Outcome input"
+            accent="text-emerald-400"
+            border="border-emerald-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧭 Regime Logic</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="TRENDING" value="Trend / Momentum" accent="text-green-400" />
+              <StatusPill label="RANGING" value="Mean Reversion" accent="text-yellow-400" />
+              <StatusPill label="VOLATILE" value="Breakout" accent="text-orange-400" />
+              <StatusPill label="NEWS" value="Risk Reduction" accent="text-red-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">📊 Regime Inputs</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="Total Memories" value={`${marketRegime?.totalMemories ?? 0}`} accent="text-fuchsia-400" />
+              <StatusPill label="Learning Score" value={`${marketRegime?.learningScore ?? 0}`} accent="text-lime-400" />
+              <StatusPill label="Memory Confidence" value={`${marketRegime?.memoryConfidence ?? 0}%`} accent="text-cyan-400" />
+              <StatusPill label="Win Rate" value={`${marketRegime?.winRate ?? 0}%`} accent="text-emerald-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-sky-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">💡 Regime Recommendation</h4>
+            <p className="text-sky-300 font-bold mt-4 leading-relaxed">
+              {marketRegime?.recommendation ?? "No market regime recommendation available yet."}
+            </p>
+            <p className="text-gray-500 mt-4 text-sm">
+              Updated: {marketRegime?.updatedAt ?? "N/A"}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="bg-black border border-lime-900 rounded-2xl p-6 mb-8">
