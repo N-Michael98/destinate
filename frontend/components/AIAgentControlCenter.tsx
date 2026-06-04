@@ -121,6 +121,32 @@ type AILearningResponse = {
   timestamp: string;
 };
 
+type AIOutcomes = {
+  version: string;
+  totalAIMemories: number;
+  executedTrades: number;
+  rejectedTrades: number;
+  positionUpdates: number;
+  wins: number;
+  losses: number;
+  closedTrades: number;
+  winRate: number;
+  totalUnrealizedPnL: number;
+  averagePnL: number;
+  outcomeQuality: number;
+  recommendation: string;
+  latestOutcomeEvents: PaperHistoryEvent[];
+  status: string;
+  updatedAt: string;
+};
+
+type AIOutcomesResponse = {
+  ok: boolean;
+  outcomes: AIOutcomes;
+  timestamp: string;
+};
+
+
 function StatCard({
   title,
   value,
@@ -168,6 +194,7 @@ export default function AIAgentControlCenter() {
   const [latestMemory, setLatestMemory] = useState<AgentMemoryEntry[]>([]);
   const [memoryStats, setMemoryStats] = useState<AgentMemoryStats | null>(null);
   const [learning, setLearning] = useState<AILearning | null>(null);
+  const [outcomes, setOutcomes] = useState<AIOutcomes | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -181,17 +208,20 @@ export default function AIAgentControlCenter() {
         performanceResponse,
         memoryResponse,
         learningResponse,
+        outcomesResponse,
       ] = await Promise.all([
         fetch("/api/paper/history", { cache: "no-store" }),
         fetch("/api/paper/performance", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/memory", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/learning", { cache: "no-store" }),
+        fetch("/api/ai-paper-trader/outcomes", { cache: "no-store" }),
       ]);
 
       const historyPayload = await historyResponse.json();
       const performancePayload = await performanceResponse.json();
       const memoryPayload = (await memoryResponse.json()) as AgentMemoryResponse;
       const learningPayload = (await learningResponse.json()) as AILearningResponse;
+      const outcomesPayload = (await outcomesResponse.json()) as AIOutcomesResponse;
 
       setHistory(historyPayload.history ?? []);
       setPerformance(performancePayload.performance ?? null);
@@ -199,6 +229,7 @@ export default function AIAgentControlCenter() {
       setLatestMemory(memoryPayload.latest ?? []);
       setMemoryStats(memoryPayload.stats ?? null);
       setLearning(learningPayload.learning ?? null);
+      setOutcomes(outcomesPayload.outcomes ?? null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -272,9 +303,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.7</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.9</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, AI Learning und Adaptive Confidence.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Adaptive Confidence und Trade Outcomes.
           </p>
         </div>
 
@@ -445,6 +476,121 @@ export default function AIAgentControlCenter() {
             </p>
             <p className="text-gray-500 mt-4 text-sm">
               Updated: {learning?.updatedAt ?? "N/A"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-emerald-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🏁 AI Trade Outcome Panel V10.3.9</h3>
+            <p className="text-gray-400 mt-2">
+              Live Outcome Analyse aus <span className="text-emerald-400">/api/ai-paper-trader/outcomes</span>.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshData}
+            disabled={loading}
+            className="bg-emerald-950 border border-emerald-800 rounded-xl px-5 py-3 font-bold text-emerald-300 hover:bg-emerald-900 transition disabled:opacity-60"
+          >
+            {loading ? "Refreshing..." : "Refresh Outcomes"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Wins"
+            value={`${outcomes?.wins ?? 0}`}
+            subtitle="Positive outcome updates"
+            accent="text-green-400"
+            border="border-green-900"
+          />
+          <StatCard
+            title="Losses"
+            value={`${outcomes?.losses ?? 0}`}
+            subtitle="Negative outcome updates"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+          <StatCard
+            title="Win Rate"
+            value={`${outcomes?.winRate ?? 0}%`}
+            subtitle="Outcome win rate"
+            accent="text-emerald-400"
+            border="border-emerald-900"
+          />
+          <StatCard
+            title="Total PnL"
+            value={`${outcomes?.totalUnrealizedPnL ?? 0}`}
+            subtitle="Tracked unrealized P/L"
+            accent={(outcomes?.totalUnrealizedPnL ?? 0) >= 0 ? "text-green-400" : "text-red-400"}
+            border={(outcomes?.totalUnrealizedPnL ?? 0) >= 0 ? "border-green-900" : "border-red-900"}
+          />
+          <StatCard
+            title="Outcome Quality"
+            value={`${outcomes?.outcomeQuality ?? 0}`}
+            subtitle="Outcome score"
+            accent="text-cyan-400"
+            border="border-cyan-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">📊 Outcome Metrics</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill
+                label="Executed Trades"
+                value={`${outcomes?.executedTrades ?? 0}`}
+                accent="text-green-400"
+              />
+              <StatusPill
+                label="Rejected Trades"
+                value={`${outcomes?.rejectedTrades ?? 0}`}
+                accent="text-red-400"
+              />
+              <StatusPill
+                label="Position Updates"
+                value={`${outcomes?.positionUpdates ?? 0}`}
+                accent="text-blue-400"
+              />
+              <StatusPill
+                label="Average PnL"
+                value={`${outcomes?.averagePnL ?? 0}`}
+                accent={(outcomes?.averagePnL ?? 0) >= 0 ? "text-green-400" : "text-red-400"}
+              />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧾 Latest Outcome Events</h4>
+            <div className="space-y-3 mt-4">
+              {(outcomes?.latestOutcomeEvents ?? []).slice(0, 3).map((event) => (
+                <div
+                  key={event.id}
+                  className="bg-black border border-gray-800 rounded-xl p-3"
+                >
+                  <p className="text-emerald-400 font-bold">{event.type}</p>
+                  <p className="text-gray-500 text-sm mt-1">{event.timestamp}</p>
+                </div>
+              ))}
+
+              {(outcomes?.latestOutcomeEvents ?? []).length === 0 && (
+                <p className="text-gray-500">No outcome events yet. Use Market Update to generate PnL updates.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-emerald-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">💡 Outcome Recommendation</h4>
+            <p className="text-emerald-300 font-bold mt-4 leading-relaxed">
+              {outcomes?.recommendation ?? "No outcome recommendation available yet."}
+            </p>
+            <p className="text-gray-500 mt-4 text-sm">
+              Updated: {outcomes?.updatedAt ?? "N/A"}
             </p>
           </div>
         </div>
