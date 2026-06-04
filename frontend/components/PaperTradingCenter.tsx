@@ -43,6 +43,28 @@ type PaperHistoryEvent = {
   payload?: unknown;
 };
 
+type PaperPerformance = {
+  version: string;
+  totalEvents: number;
+  totalTrades: number;
+  orderCreated: number;
+  orderFilled: number;
+  openPositions: number;
+  positionUpdates: number;
+  winningTrades: number;
+  losingTrades: number;
+  winRate: number;
+  realizedPnL: number;
+  unrealizedPnL: number;
+  profitFactor: number;
+  averageRR: number;
+  bestTrade: unknown;
+  worstTrade: unknown;
+  status: string;
+  updatedAt: string;
+};
+
+
 type TestTradePayload = {
   symbol: string;
   direction: "LONG" | "SHORT";
@@ -118,6 +140,7 @@ export default function PaperTradingCenter() {
   const [orders, setOrders] = useState<PaperOrder[]>([]);
   const [positions, setPositions] = useState<PaperPosition[]>([]);
   const [history, setHistory] = useState<PaperHistoryEvent[]>([]);
+  const [performance, setPerformance] = useState<PaperPerformance | null>(null);
   const [loading, setLoading] = useState(true);
   const [creatingTrade, setCreatingTrade] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,28 +151,37 @@ export default function PaperTradingCenter() {
       setLoading(true);
       setError(null);
 
-      const [accountResponse, ordersResponse, positionsResponse, historyResponse] =
-        await Promise.all([
-          fetch("/api/paper/account", { cache: "no-store" }),
-          fetch("/api/paper/orders", { cache: "no-store" }),
-          fetch("/api/paper/positions", { cache: "no-store" }),
-          fetch("/api/paper/history", { cache: "no-store" }),
-        ]);
+      const [
+        accountResponse,
+        ordersResponse,
+        positionsResponse,
+        historyResponse,
+        performanceResponse,
+      ] = await Promise.all([
+        fetch("/api/paper/account", { cache: "no-store" }),
+        fetch("/api/paper/orders", { cache: "no-store" }),
+        fetch("/api/paper/positions", { cache: "no-store" }),
+        fetch("/api/paper/history", { cache: "no-store" }),
+        fetch("/api/paper/performance", { cache: "no-store" }),
+      ]);
 
       if (!accountResponse.ok) throw new Error("Paper account request failed");
       if (!ordersResponse.ok) throw new Error("Paper orders request failed");
       if (!positionsResponse.ok) throw new Error("Paper positions request failed");
       if (!historyResponse.ok) throw new Error("Paper history request failed");
+      if (!performanceResponse.ok) throw new Error("Paper performance request failed");
 
       const accountPayload = await accountResponse.json();
       const ordersPayload = await ordersResponse.json();
       const positionsPayload = await positionsResponse.json();
       const historyPayload = await historyResponse.json();
+      const performancePayload = await performanceResponse.json();
 
       setAccount(accountPayload.account);
       setOrders(ordersPayload.orders ?? []);
       setPositions(positionsPayload.positions ?? []);
       setHistory(historyPayload.history ?? []);
+      setPerformance(performancePayload.performance ?? null);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -208,7 +240,7 @@ export default function PaperTradingCenter() {
     <section className="bg-gray-900 border border-purple-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">📄 Paper Trading Center V10.2.5</h2>
+          <h2 className="text-4xl font-black">📄 Paper Trading Center V10.2.8</h2>
           <p className="text-gray-400 text-xl mt-3">
             Eigenes Kontrollzentrum für Paper Account, Test Trades, Orders, Positions und History Events.
           </p>
@@ -355,6 +387,96 @@ export default function PaperTradingCenter() {
                 <StatusPill label="Manual Approval" value="Later" accent="text-yellow-400" />
                 <StatusPill label="AI Execution" value="Prepared" accent="text-purple-400" />
               </div>
+            </div>
+          </div>
+
+          <div className="bg-black border border-purple-900 rounded-2xl p-6 mb-8">
+            <div className="flex items-start justify-between gap-6 mb-6">
+              <div>
+                <h3 className="text-2xl font-bold">📊 Performance Analytics V10.2.8</h3>
+                <p className="text-gray-400 mt-2">
+                  Live-Auswertung aus der Paper Performance API. Diese Werte werden später vom AI Learning Loop genutzt.
+                </p>
+              </div>
+
+              <div className="bg-gray-950 border border-purple-800 rounded-xl p-4 min-w-[180px]">
+                <p className="text-gray-400">Analytics Status</p>
+                <p className="text-purple-400 text-xl font-bold">
+                  {performance?.status ?? "Waiting"}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-6 gap-5 mb-6">
+              <StatCard
+                title="Total Trades"
+                value={`${performance?.totalTrades ?? 0}`}
+                subtitle="Filled paper trades"
+                accent="text-blue-400"
+                border="border-blue-900"
+              />
+              <StatCard
+                title="Win Rate"
+                value={`${performance?.winRate ?? 0}%`}
+                subtitle="Current paper winrate"
+                accent="text-green-400"
+                border="border-green-900"
+              />
+              <StatCard
+                title="Open Pos."
+                value={`${performance?.openPositions ?? openPositions.length}`}
+                subtitle="Active exposure"
+                accent="text-yellow-400"
+                border="border-yellow-900"
+              />
+              <StatCard
+                title="Events"
+                value={`${performance?.totalEvents ?? history.length}`}
+                subtitle="History records"
+                accent="text-purple-400"
+                border="border-purple-900"
+              />
+              <StatCard
+                title="Profit Factor"
+                value={`${performance?.profitFactor ?? 0}`}
+                subtitle="Needs closed trades"
+                accent="text-cyan-400"
+                border="border-cyan-900"
+              />
+              <StatCard
+                title="Average RR"
+                value={`${performance?.averageRR ?? 0}`}
+                subtitle="Risk/reward avg"
+                accent="text-orange-400"
+                border="border-orange-900"
+              />
+            </div>
+
+            <div className="grid grid-cols-4 gap-5">
+              <StatusPill
+                label="Orders Created"
+                value={`${performance?.orderCreated ?? 0}`}
+                accent="text-blue-400"
+              />
+              <StatusPill
+                label="Orders Filled"
+                value={`${performance?.orderFilled ?? 0}`}
+                accent="text-green-400"
+              />
+              <StatusPill
+                label="Position Updates"
+                value={`${performance?.positionUpdates ?? 0}`}
+                accent="text-yellow-400"
+              />
+              <StatusPill
+                label="Updated"
+                value={
+                  performance?.updatedAt
+                    ? new Date(performance.updatedAt).toLocaleTimeString()
+                    : "Waiting"
+                }
+                accent="text-gray-300"
+              />
             </div>
           </div>
 
