@@ -235,6 +235,44 @@ type NewsIntelligenceResponse = {
 };
 
 
+type EconomicEventImpact = "LOW" | "MEDIUM" | "HIGH";
+
+type EconomicEventStatus =
+  | "UPCOMING"
+  | "RELEASED"
+  | "DELAYED"
+  | "UNKNOWN";
+
+type EconomicEvent = {
+  id: string;
+  title: string;
+  country: string;
+  currency: string;
+  impact: EconomicEventImpact;
+  status: EconomicEventStatus;
+  scheduledTime: string;
+  previous?: string;
+  forecast?: string;
+  actual?: string;
+  category: string;
+  affectedMarkets: string[];
+};
+
+type EconomicCalendarReport = {
+  version: string;
+  generatedAt: string;
+  totalEvents: number;
+  highImpactEvents: number;
+  upcomingHighImpactEvents: EconomicEvent[];
+  events: EconomicEvent[];
+};
+
+type EconomicCalendarResponse = {
+  ok: boolean;
+  report: EconomicCalendarReport;
+};
+
+
 
 
 
@@ -289,6 +327,7 @@ export default function AIAgentControlCenter() {
   const [strategy, setStrategy] = useState<StrategyEvolution | null>(null);
   const [marketRegime, setMarketRegime] = useState<MarketRegimeData | null>(null);
   const [newsIntelligence, setNewsIntelligence] = useState<NewsIntelligenceReport | null>(null);
+  const [economicCalendar, setEconomicCalendar] = useState<EconomicCalendarReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -306,6 +345,7 @@ export default function AIAgentControlCenter() {
         strategyResponse,
         marketRegimeResponse,
         newsIntelligenceResponse,
+        economicCalendarResponse,
       ] = await Promise.all([
         fetch("/api/paper/history", { cache: "no-store" }),
         fetch("/api/paper/performance", { cache: "no-store" }),
@@ -315,6 +355,7 @@ export default function AIAgentControlCenter() {
         fetch("/api/ai-paper-trader/strategy", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/market-regime", { cache: "no-store" }),
         fetch("/api/news-intelligence", { cache: "no-store" }),
+        fetch("/api/economic-calendar", { cache: "no-store" }),
       ]);
 
       const historyPayload = await historyResponse.json();
@@ -325,6 +366,7 @@ export default function AIAgentControlCenter() {
       const strategyPayload = (await strategyResponse.json()) as StrategyEvolutionResponse;
       const marketRegimePayload = (await marketRegimeResponse.json()) as MarketRegimeResponse;
       const newsIntelligencePayload = (await newsIntelligenceResponse.json()) as NewsIntelligenceResponse;
+      const economicCalendarPayload = (await economicCalendarResponse.json()) as EconomicCalendarResponse;
 
       setHistory(historyPayload.history ?? []);
       setPerformance(performancePayload.performance ?? null);
@@ -336,6 +378,7 @@ export default function AIAgentControlCenter() {
       setStrategy(strategyPayload.strategy ?? null);
       setMarketRegime(marketRegimePayload.regime ?? null);
       setNewsIntelligence(newsIntelligencePayload.report ?? null);
+      setEconomicCalendar(economicCalendarPayload.report ?? null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -409,9 +452,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.0.1</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.0.3</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection und News Intelligence.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection, News Intelligence und Economic Calendar.
           </p>
         </div>
 
@@ -640,6 +683,162 @@ export default function AIAgentControlCenter() {
           {(newsIntelligence?.news ?? []).length === 0 && (
             <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-3">
               <p className="text-gray-500">No news intelligence items available yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+
+      <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">📅 Economic Calendar Panel V11.0.3</h3>
+            <p className="text-gray-400 mt-2">
+              Macro Events aus <span className="text-blue-400">/api/economic-calendar</span>. Später docken hier echte Wirtschaftskalender-Quellen, CPI, FOMC, NFP und Zentralbank-Events an.
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-blue-800 rounded-xl p-4 min-w-[240px]">
+            <p className="text-gray-400">Calendar Version</p>
+            <p className="text-blue-400 text-3xl font-bold">
+              {economicCalendar?.version ?? "WAITING"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Total Events"
+            value={`${economicCalendar?.totalEvents ?? 0}`}
+            subtitle="Tracked macro events"
+            accent="text-blue-400"
+            border="border-blue-900"
+          />
+          <StatCard
+            title="High Impact"
+            value={`${economicCalendar?.highImpactEvents ?? 0}`}
+            subtitle="Major risk events"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+          <StatCard
+            title="Upcoming High"
+            value={`${economicCalendar?.upcomingHighImpactEvents?.length ?? 0}`}
+            subtitle="Upcoming high-impact releases"
+            accent="text-orange-400"
+            border="border-orange-900"
+          />
+          <StatCard
+            title="Next Event"
+            value={economicCalendar?.events?.[0]?.currency ?? "N/A"}
+            subtitle={economicCalendar?.events?.[0]?.title ?? "No calendar event"}
+            accent="text-cyan-400"
+            border="border-cyan-900"
+          />
+          <StatCard
+            title="Generated"
+            value={economicCalendar?.generatedAt ? "Live" : "N/A"}
+            subtitle={economicCalendar?.generatedAt ?? "Waiting for API"}
+            accent="text-green-400"
+            border="border-green-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5 mb-6">
+          <div className="bg-gray-950 border border-red-900 rounded-2xl p-5 col-span-2">
+            <h4 className="text-xl font-bold">🔥 Upcoming High Impact Events</h4>
+
+            <div className="space-y-4 mt-4">
+              {(economicCalendar?.upcomingHighImpactEvents ?? []).map((event) => (
+                <div
+                  key={event.id}
+                  className="bg-black border border-red-900 rounded-xl p-4"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-red-300 font-bold text-lg">{event.title}</p>
+                      <p className="text-gray-400 mt-1">
+                        {event.country} · {event.currency} · {event.category}
+                      </p>
+                    </div>
+
+                    <span className="text-red-400 font-bold">{event.impact}</span>
+                  </div>
+
+                  <p className="text-gray-500 mt-3 text-sm">
+                    Scheduled: {new Date(event.scheduledTime).toLocaleString()}
+                  </p>
+
+                  <p className="text-gray-400 mt-2">
+                    Markets: {event.affectedMarkets.join(", ")}
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-3 mt-4">
+                    <StatusPill label="Previous" value={event.previous ?? "N/A"} accent="text-gray-300" />
+                    <StatusPill label="Forecast" value={event.forecast ?? "N/A"} accent="text-yellow-400" />
+                    <StatusPill label="Actual" value={event.actual ?? "Pending"} accent="text-green-400" />
+                  </div>
+                </div>
+              ))}
+
+              {(economicCalendar?.upcomingHighImpactEvents ?? []).length === 0 && (
+                <p className="text-gray-500">No upcoming high-impact economic events available yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-blue-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧭 Calendar Risk Logic</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="LOW" value="Normal trading" accent="text-green-400" />
+              <StatusPill label="MEDIUM" value="Reduce size" accent="text-yellow-400" />
+              <StatusPill label="HIGH" value="Avoid entries" accent="text-orange-400" />
+              <StatusPill label="RELEASE" value="Wait for spread" accent="text-red-400" />
+            </div>
+
+            <p className="text-gray-500 mt-5 text-sm leading-relaxed">
+              Economic Calendar wird später mit News Intelligence, Market Regime und Risk Engine verbunden, damit der Agent vor CPI, NFP oder FOMC automatisch vorsichtiger wird.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          {(economicCalendar?.events ?? []).map((event) => (
+            <div
+              key={event.id}
+              className="bg-gray-950 border border-gray-800 rounded-2xl p-5"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <h4 className="text-xl font-bold">{event.currency}</h4>
+                <span
+                  className={
+                    event.impact === "HIGH"
+                      ? "text-red-400 font-bold"
+                      : event.impact === "MEDIUM"
+                        ? "text-yellow-400 font-bold"
+                        : "text-green-400 font-bold"
+                  }
+                >
+                  {event.impact}
+                </span>
+              </div>
+
+              <p className="text-blue-400 font-bold text-lg mt-4">{event.title}</p>
+              <p className="text-gray-400 mt-2">
+                {event.country} · {event.category} · {event.status}
+              </p>
+              <p className="text-gray-500 mt-3 text-sm">
+                {new Date(event.scheduledTime).toLocaleString()}
+              </p>
+              <p className="text-gray-400 mt-4">
+                Markets: {event.affectedMarkets.join(", ")}
+              </p>
+            </div>
+          ))}
+
+          {(economicCalendar?.events ?? []).length === 0 && (
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-3">
+              <p className="text-gray-500">No economic calendar events available yet.</p>
             </div>
           )}
         </div>
