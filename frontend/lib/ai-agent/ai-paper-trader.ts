@@ -3,10 +3,16 @@ import { ClaudeRisk } from "./claude-risk";
 import { ConsensusEngine } from "./consensus-engine";
 import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
 import { AgentMemory } from "./memory/agent-memory";
+import { AILearningEngine } from "./learning-engine";
 
 export class AIPaperTrader {
   static run() {
-    const idea = GPTAnalyst.generateTradeIdea();
+    const learning = AILearningEngine.analyze();
+
+    const idea = GPTAnalyst.generateTradeIdea(
+      learning.recommendedConfidence
+    );
+
     const risk = ClaudeRisk.validateTrade(idea);
     const consensus = ConsensusEngine.decide(idea, risk);
 
@@ -25,6 +31,7 @@ export class AIPaperTrader {
           idea,
           risk,
           consensus,
+          learning,
         },
       });
 
@@ -34,6 +41,7 @@ export class AIPaperTrader {
         idea,
         risk,
         consensus,
+        learning,
         memory,
         message: "AI paper trade rejected by consensus.",
       };
@@ -61,11 +69,13 @@ export class AIPaperTrader {
       executed: true,
       consensusScore: consensus.score,
       riskScore: risk.riskScore,
-      reason: "AI paper trade executed and stored in memory.",
+      reason:
+        "AI paper trade executed with adaptive confidence and stored in memory.",
       payload: {
         idea,
         risk,
         consensus,
+        learning,
         execution,
       },
     });
@@ -76,9 +86,11 @@ export class AIPaperTrader {
       idea,
       risk,
       consensus,
+      learning,
       execution,
       memory,
-      message: "AI paper trade executed successfully.",
+      message:
+        "AI paper trade executed successfully with adaptive confidence.",
     };
   }
 }
