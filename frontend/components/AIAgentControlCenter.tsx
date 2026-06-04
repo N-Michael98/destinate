@@ -150,18 +150,29 @@ type StrategyProfile = {
   id: string;
   name: string;
   type: string;
+  category?: string;
   status: string;
   baseScore: number;
   score: number;
   confidenceBoost: number;
+  riskLevel?: string;
+  complexity?: string;
+  markets?: string[];
+  timeframes?: string[];
+  regimeFit?: string;
   reason: string;
 };
 
 type StrategyEvolution = {
   version: string;
+  totalStrategies?: number;
+  selectableStrategies?: number;
+  marketRegime?: MarketRegimeData;
+  preferredCategories?: string[];
   adaptiveFactor: number;
   bestStrategy: StrategyProfile;
   strategies: StrategyProfile[];
+  regimeMatchedStrategies?: StrategyProfile[];
   recommendation: string;
   status: string;
   updatedAt: string;
@@ -360,9 +371,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.5.1</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.5.3</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Strategy Evolution und Market Regime.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime und Regime-Aware Strategy Selection.
           </p>
         </div>
 
@@ -527,6 +538,154 @@ export default function AIAgentControlCenter() {
               Updated: {marketRegime?.updatedAt ?? "N/A"}
             </p>
           </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-indigo-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🧭 Regime-Aware Strategy Panel V10.5.3</h3>
+            <p className="text-gray-400 mt-2">
+              Zeigt, welche Strategien zur aktuellen Market-Regime-Logik passen und welche Strategie aktiv bevorzugt wird.
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-indigo-800 rounded-xl p-4 min-w-[260px]">
+            <p className="text-gray-400">Best Strategy for Regime</p>
+            <p className="text-indigo-400 text-2xl font-bold">
+              {strategy?.bestStrategy?.name ?? "Waiting"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Current Regime"
+            value={strategy?.marketRegime?.regime ?? marketRegime?.regime ?? "N/A"}
+            subtitle="Strategy selection context"
+            accent="text-sky-400"
+            border="border-sky-900"
+          />
+          <StatCard
+            title="Best Strategy"
+            value={strategy?.bestStrategy?.type ?? "N/A"}
+            subtitle={strategy?.bestStrategy?.name ?? "No strategy selected"}
+            accent="text-indigo-400"
+            border="border-indigo-900"
+          />
+          <StatCard
+            title="Regime Fit"
+            value={strategy?.bestStrategy?.regimeFit ?? "N/A"}
+            subtitle="Match against current regime"
+            accent={
+              strategy?.bestStrategy?.regimeFit?.startsWith("MATCH")
+                ? "text-green-400"
+                : "text-yellow-400"
+            }
+            border={
+              strategy?.bestStrategy?.regimeFit?.startsWith("MATCH")
+                ? "border-green-900"
+                : "border-yellow-900"
+            }
+          />
+          <StatCard
+            title="Matched Strategies"
+            value={`${strategy?.regimeMatchedStrategies?.length ?? 0}`}
+            subtitle="Strategies fitting regime"
+            accent="text-green-400"
+            border="border-green-900"
+          />
+          <StatCard
+            title="Selectable"
+            value={`${strategy?.selectableStrategies ?? 0}`}
+            subtitle="Universe candidates"
+            accent="text-purple-400"
+            border="border-purple-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5 mb-6">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🎯 Preferred Categories</h4>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              {(strategy?.preferredCategories ?? []).map((category) => (
+                <div
+                  key={category}
+                  className="bg-black border border-indigo-800 rounded-xl p-3"
+                >
+                  <p className="text-indigo-300 font-bold">{category}</p>
+                </div>
+              ))}
+
+              {(strategy?.preferredCategories ?? []).length === 0 && (
+                <p className="text-gray-500 col-span-2">No preferred categories available.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🏆 Selected Strategy Details</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill
+                label="Score"
+                value={`${strategy?.bestStrategy?.score ?? 0}`}
+                accent="text-green-400"
+              />
+              <StatusPill
+                label="Boost"
+                value={`+${strategy?.bestStrategy?.confidenceBoost ?? 0}`}
+                accent="text-cyan-400"
+              />
+              <StatusPill
+                label="Risk"
+                value={strategy?.bestStrategy?.riskLevel ?? "N/A"}
+                accent="text-yellow-400"
+              />
+              <StatusPill
+                label="Complexity"
+                value={strategy?.bestStrategy?.complexity ?? "N/A"}
+                accent="text-purple-400"
+              />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-indigo-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">💡 Regime Strategy Recommendation</h4>
+            <p className="text-indigo-300 font-bold mt-4 leading-relaxed">
+              {strategy?.recommendation ?? "No regime-aware strategy recommendation available yet."}
+            </p>
+            <p className="text-gray-500 mt-4 text-sm">
+              Updated: {strategy?.updatedAt ?? "N/A"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-5">
+          {(strategy?.regimeMatchedStrategies ?? []).slice(0, 4).map((item, index) => (
+            <div
+              key={item.id}
+              className="bg-gray-950 border border-gray-800 rounded-2xl p-5"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <h4 className="text-xl font-bold">Match #{index + 1}</h4>
+                <span className="text-green-400 font-bold">
+                  {item.regimeFit ?? "MATCH"}
+                </span>
+              </div>
+              <p className="text-indigo-400 font-bold text-xl mt-4">{item.name}</p>
+              <p className="text-gray-400 mt-2">{item.type}</p>
+              <p className="text-4xl font-black text-white mt-4">{item.score}</p>
+              <p className="text-gray-500 mt-2">
+                Base {item.baseScore} · Boost +{item.confidenceBoost}
+              </p>
+            </div>
+          ))}
+
+          {(strategy?.regimeMatchedStrategies ?? []).length === 0 && (
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-4">
+              <p className="text-gray-500">No regime-matched strategies available yet.</p>
+            </div>
+          )}
         </div>
       </div>
 
