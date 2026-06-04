@@ -1,0 +1,64 @@
+[
+  {
+    "id": "paper-history-1780573212260-gd06uh",
+    "type": "ORDER_CREATED",
+    "entity": "ORDER",
+    "event": "ORDER_CREATED",
+    "timestamp": "2026-06-04T11:40:12.260Z",
+    "payload": {
+      "id": "paper-order-1780573212259-vebfe1",
+      "symbol": "EURUSD",
+      "direction": "LONG",
+      "entry": 1.085,
+      "stopLoss": 1.08,
+      "takeProfit1": 1.09,
+      "takeProfit2": 1.095,
+      "confidence": 82,
+      "status": "PENDING",
+      "reason": "V10.2.5 Paper Trading Center LONG test",
+      "createdAt": "2026-06-04T11:40:12.259Z"
+    }
+  },
+  {
+    "id": "paper-history-1780573212261-nv46e9",
+    "type": "ORDER_FILLED",
+    "entity": "ORDER",
+    "event": "ORDER_FILLED",
+    "timestamp": "2026-06-04T11:40:12.261Z",
+    "payload": {
+      "id": "paper-order-1780573212259-vebfe1",
+      "symbol": "EURUSD",
+      "direction": "LONG",
+      "entry": 1.085,
+      "stopLoss": 1.08,
+      "takeProfit1": 1.09,
+      "takeProfit2": 1.095,
+      "confidence": 82,
+      "status": "FILLED",
+      "reason": "V10.2.5 Paper Trading Center LONG test",
+      "createdAt": "2026-06-04T11:40:12.259Z"
+    }
+  },
+  {
+    "id": "paper-history-1780573212263-enw19e",
+    "type": "POSITION_OPENED",
+    "entity": "POSITION",
+    "event": "POSITION_OPENED",
+    "timestamp": "2026-06-04T11:40:12.263Z",
+    "payload": {
+      "id": "paper-position-1780573212263-w2lzde",
+      "orderId": "paper-order-1780573212259-vebfe1",
+      "symbol": "EURUSD",
+      "direction": "LONG",
+      "entry": 1.085,
+      "currentPrice": 1.085,
+      "stopLoss": 1.08,
+      "takeProfit1": 1.09,
+      "takeProfit2": 1.095,
+      "size": 1,
+      "unrealizedPnL": 0,
+      "status": "OPEN",
+      "openedAt": "2026-06-04T11:40:12.263Z"
+    }
+  }
+]
