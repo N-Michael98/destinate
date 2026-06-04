@@ -4,17 +4,38 @@ import { ConsensusEngine } from "./consensus-engine";
 import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
 import { AgentMemory } from "./memory/agent-memory";
 import { AILearningEngine } from "./learning-engine";
+import { StrategyEvolutionEngine } from "./strategy-evolution";
 
 export class AIPaperTrader {
   static run() {
-    const learning = AILearningEngine.analyze();
+    const learning =
+      AILearningEngine.analyze();
 
-    const idea = GPTAnalyst.generateTradeIdea(
-      learning.recommendedConfidence
-    );
+    const strategyEvolution =
+      StrategyEvolutionEngine.analyze();
 
-    const risk = ClaudeRisk.validateTrade(idea);
-    const consensus = ConsensusEngine.decide(idea, risk);
+    const bestStrategy =
+      strategyEvolution.bestStrategy;
+
+    const idea =
+      GPTAnalyst.generateTradeIdea(
+        learning.recommendedConfidence,
+        {
+          id: bestStrategy.id,
+          name: bestStrategy.name,
+          type: bestStrategy.type,
+          score: bestStrategy.score,
+          confidenceBoost:
+            bestStrategy.confidenceBoost,
+          status: bestStrategy.status,
+        }
+      );
+
+    const risk =
+      ClaudeRisk.validateTrade(idea);
+
+    const consensus =
+      ConsensusEngine.decide(idea, risk);
 
     if (!consensus.approved) {
       const memory = AgentMemory.add({
@@ -32,6 +53,7 @@ export class AIPaperTrader {
           risk,
           consensus,
           learning,
+          strategyEvolution,
         },
       });
 
@@ -42,8 +64,10 @@ export class AIPaperTrader {
         risk,
         consensus,
         learning,
+        strategyEvolution,
         memory,
-        message: "AI paper trade rejected by consensus.",
+        message:
+          "AI paper trade rejected by consensus.",
       };
     }
 
@@ -70,12 +94,13 @@ export class AIPaperTrader {
       consensusScore: consensus.score,
       riskScore: risk.riskScore,
       reason:
-        "AI paper trade executed with adaptive confidence and stored in memory.",
+        "AI paper trade executed with strategy selection, adaptive confidence and stored in memory.",
       payload: {
         idea,
         risk,
         consensus,
         learning,
+        strategyEvolution,
         execution,
       },
     });
@@ -87,10 +112,11 @@ export class AIPaperTrader {
       risk,
       consensus,
       learning,
+      strategyEvolution,
       execution,
       memory,
       message:
-        "AI paper trade executed successfully with adaptive confidence.",
+        "AI paper trade executed successfully with strategy selection.",
     };
   }
 }

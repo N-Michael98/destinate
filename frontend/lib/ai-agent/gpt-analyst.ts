@@ -1,5 +1,14 @@
 import { PaperDirection } from "@/lib/paper-trading/paper-types";
 
+export type GPTStrategyContext = {
+  id: string;
+  name: string;
+  type: string;
+  score: number;
+  confidenceBoost: number;
+  status: string;
+};
+
 export type GPTTradeIdea = {
   source: "GPT_ANALYST";
   symbol: string;
@@ -11,20 +20,36 @@ export type GPTTradeIdea = {
   confidence: number;
   baseConfidence: number;
   adaptiveConfidenceApplied: boolean;
+  strategy?: GPTStrategyContext;
+  strategyApplied: boolean;
   reason: string;
 };
 
 export class GPTAnalyst {
   static generateTradeIdea(
-    adaptiveConfidence?: number
+    adaptiveConfidence?: number,
+    strategy?: GPTStrategyContext
   ): GPTTradeIdea {
     const baseConfidence = 82;
 
-    const confidence =
+    const adaptiveBaseConfidence =
       typeof adaptiveConfidence === "number" &&
       Number.isFinite(adaptiveConfidence)
         ? Math.min(95, Math.max(60, adaptiveConfidence))
         : baseConfidence;
+
+    const strategyBoost =
+      strategy?.confidenceBoost ?? 0;
+
+    const confidence = Math.min(
+      95,
+      Math.max(
+        60,
+        adaptiveBaseConfidence + strategyBoost
+      )
+    );
+
+    const strategyApplied = !!strategy;
 
     return {
       source: "GPT_ANALYST",
@@ -36,11 +61,15 @@ export class GPTAnalyst {
       takeProfit2: 1.095,
       confidence,
       baseConfidence,
-      adaptiveConfidenceApplied: confidence !== baseConfidence,
-      reason:
-        confidence !== baseConfidence
-          ? `Adaptive GPT trade idea for V10.3.6: confidence adjusted from ${baseConfidence} to ${confidence} based on AI Learning Engine.`
-          : "Mock GPT trade idea for V10.3.6: EURUSD long based on structured demo momentum setup.",
+      adaptiveConfidenceApplied:
+        confidence !== baseConfidence,
+      strategy,
+      strategyApplied,
+      reason: strategyApplied
+        ? `Strategy-selected GPT trade idea for V10.4.2: ${strategy.name} selected with score ${strategy.score}. Confidence adjusted from ${baseConfidence} to ${confidence}.`
+        : confidence !== baseConfidence
+          ? `Adaptive GPT trade idea for V10.4.2: confidence adjusted from ${baseConfidence} to ${confidence} based on AI Learning Engine.`
+          : "Mock GPT trade idea for V10.4.2: EURUSD long based on structured demo momentum setup.",
     };
   }
 }
