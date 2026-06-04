@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import PaperTradingDashboardPanel from "@/components/PaperTradingDashboardPanel";
 import PaperTradingCenter from "@/components/PaperTradingCenter";
+import AIAgentControlCenter from "@/components/AIAgentControlCenter";
 
 type NavItem = {
   label: string;
@@ -83,6 +84,7 @@ const navGroups: NavGroup[] = [
     title: "AI Center",
     items: [
       { label: "GPT Analyst", icon: "🧠", view: "gpt-analyst" },
+      { label: "AI Agent", icon: "🤖", view: "ai-agent" },
       { label: "Claude Risk", icon: "🛡", view: "claude-risk" },
       { label: "Consensus", icon: "⚡", view: "ai-consensus" },
       { label: "Portfolio Brain", icon: "🤖", view: "portfolio-brain" },
@@ -3133,6 +3135,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-desk") return <TradingDeskCenter />;
   if (activeView === "signal-engine") return <SignalEngineCenter />;
   if (activeView === "strategy-builder") return <StrategyBuilderCenter />;
+  if (activeView === "ai-agent") return <AIAgentControlCenter />;
   if (activeView === "gpt-analyst") return <GPTAnalystLiveCenter />;
   if (activeView === "claude-risk") return <ClaudeRiskLiveCenter />;
   if (activeView === "market-data") return <MarketDataEngineCenter />;
