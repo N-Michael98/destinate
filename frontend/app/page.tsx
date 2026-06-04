@@ -1408,6 +1408,27 @@ function SettingsCenter() {
 
 
 
+
+type ConsensusDecision = {
+  symbol: string;
+  marketDataVote: string;
+  regimeVote: string;
+  gptVote: string;
+  claudeVote: string;
+  finalVote: string;
+  confidence: number;
+  reasoning: string;
+  approved: boolean;
+  createdAt: string;
+};
+
+type ConsensusApiResponse = {
+  success: boolean;
+  decisions: ConsensusDecision[];
+  count: number;
+  updatedAt: string;
+};
+
 type ClaudeRiskAssessment = {
   symbol: string;
   drawdownRisk: string;
@@ -1543,6 +1564,252 @@ function getRiskColor(risk: string) {
   if (risk === "EXTREME") return "text-red-500";
   return "text-gray-300";
 }
+
+
+function getVoteColor(vote: string) {
+  if (vote === "BUY") return "text-green-400";
+  if (vote === "SELL") return "text-red-400";
+  if (vote === "WAIT") return "text-yellow-400";
+  if (vote === "REJECT") return "text-red-500";
+  return "text-gray-300";
+}
+
+function ConsensusLiveCenter() {
+  const [decisions, setDecisions] = useState<ConsensusDecision[]>([]);
+  const [consensusLoading, setConsensusLoading] = useState(true);
+  const [consensusError, setConsensusError] = useState<string | null>(null);
+  const [lastConsensusUpdate, setLastConsensusUpdate] = useState("");
+
+  async function loadConsensusDecisions() {
+    try {
+      setConsensusLoading(true);
+      setConsensusError(null);
+
+      const response = await fetch("/api/consensus/decision", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Consensus request failed: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as ConsensusApiResponse;
+      setDecisions(payload.decisions);
+      setLastConsensusUpdate(payload.updatedAt);
+    } catch (caughtError) {
+      setConsensusError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown consensus error"
+      );
+    } finally {
+      setConsensusLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadConsensusDecisions();
+
+    const interval = window.setInterval(() => {
+      loadConsensusDecisions();
+    }, 20000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const approvedCount = decisions.filter((item) => item.approved).length;
+  const waitingCount = decisions.filter((item) => item.finalVote === "WAIT").length;
+  const buyCount = decisions.filter((item) => item.finalVote === "BUY").length;
+  const sellCount = decisions.filter((item) => item.finalVote === "SELL").length;
+
+  const averageConfidence =
+    decisions.length > 0
+      ? Math.round(
+          decisions.reduce((sum, item) => sum + item.confidence, 0) /
+            decisions.length
+        )
+      : 0;
+
+  return (
+    <section className="bg-gray-900 border border-purple-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black">🚦 Consensus Dashboard Center V10.0.2</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Live Decision Gate: Market Data Vote, Regime Vote, GPT Vote, Claude Risk Vote und finale AI-Entscheidung.
+          </p>
+        </div>
+
+        <div className="bg-black border border-purple-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Consensus Status</p>
+          <p className="text-purple-400 text-2xl font-bold">Live</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-6 mb-8">
+        <StatCard title="Engine" value="Online" subtitle="Decision gate" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Decisions" value={`${decisions.length}`} subtitle="AI outputs" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Approved" value={`${approvedCount}`} subtitle="Trade allowed" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Waiting" value={`${waitingCount}`} subtitle="No trade yet" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Confidence" value={`${averageConfidence}%`} subtitle="Average score" accent="text-cyan-400" border="border-cyan-900" />
+      </div>
+
+      <div className="bg-black border border-purple-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🧠 Live Consensus Decisions</h3>
+            <p className="text-gray-400 mt-2">
+              Daten aus <span className="text-purple-400">/api/consensus/decision</span>. Auto-Refresh alle 20 Sekunden.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadConsensusDecisions}
+            className="bg-purple-950 border border-purple-800 rounded-xl px-5 py-3 font-bold text-purple-300 hover:bg-purple-900 transition"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {consensusLoading && <p className="text-gray-400">Loading consensus decisions...</p>}
+        {consensusError && <p className="text-red-400">{consensusError}</p>}
+
+        {!consensusLoading && !consensusError && (
+          <div className="grid grid-cols-2 gap-6">
+            {decisions.map((item) => (
+              <div key={item.symbol} className="bg-gray-950 border border-gray-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between gap-4 mb-5">
+                  <div>
+                    <h4 className="text-3xl font-black">{item.symbol}</h4>
+                    <p className={`${getVoteColor(item.finalVote)} text-3xl font-black mt-2`}>
+                      {item.finalVote}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4 text-right min-w-[150px]">
+                    <p className="text-gray-400">Final Status</p>
+                    <p className={`${item.approved ? "text-green-400" : "text-yellow-400"} text-2xl font-black`}>
+                      {item.approved ? "APPROVED" : "WAIT"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-4 mb-5">
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400 text-sm">Market Data</p>
+                    <p className={`${getVoteColor(item.marketDataVote)} text-xl font-bold mt-2`}>
+                      {item.marketDataVote}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400 text-sm">Regime</p>
+                    <p className={`${getVoteColor(item.regimeVote)} text-xl font-bold mt-2`}>
+                      {item.regimeVote}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400 text-sm">GPT</p>
+                    <p className={`${getVoteColor(item.gptVote)} text-xl font-bold mt-2`}>
+                      {item.gptVote}
+                    </p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400 text-sm">Claude</p>
+                    <p className={`${getVoteColor(item.claudeVote)} text-xl font-bold mt-2`}>
+                      {item.claudeVote}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Confidence</p>
+                    <p className="text-cyan-400 text-2xl font-black mt-2">{item.confidence}%</p>
+                  </div>
+
+                  <div className="bg-black border border-gray-800 rounded-xl p-4">
+                    <p className="text-gray-400">Execution Permission</p>
+                    <p className={`${item.approved ? "text-green-400" : "text-red-400"} text-2xl font-black mt-2`}>
+                      {item.approved ? "ALLOWED" : "BLOCKED"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-black border border-gray-800 rounded-xl p-4">
+                  <p className="text-gray-400 mb-2">Consensus Reasoning</p>
+                  <pre className="text-gray-200 whitespace-pre-wrap font-sans leading-relaxed">
+                    {item.reasoning}
+                  </pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {lastConsensusUpdate && (
+          <p className="text-gray-500 mt-5 text-sm">
+            Last update: {new Date(lastConsensusUpdate).toLocaleString()}
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">📊 Decision Summary</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="BUY Decisions" value={`${buyCount}`} accent="text-green-400" />
+            <StatusPill label="SELL Decisions" value={`${sellCount}`} accent="text-red-400" />
+            <StatusPill label="WAIT Decisions" value={`${waitingCount}`} accent="text-yellow-400" />
+            <StatusPill label="Approved Trades" value={`${approvedCount}`} accent="text-cyan-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🧩 Consensus Logic</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Vote Calculator" value="Active" accent="text-purple-400" />
+            <StatusPill label="Confidence Engine" value="Active" accent="text-cyan-400" />
+            <StatusPill label="Trade Validator" value="Active" accent="text-green-400" />
+            <StatusPill label="Decision Builder" value="Active" accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-800 rounded-2xl p-6">
+          <h3 className="text-2xl font-bold">🔁 Full AI Pipeline</h3>
+          <div className="space-y-3 mt-5">
+            <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
+            <StatusPill label="Regime Engine" value="Connected" accent="text-lime-400" />
+            <StatusPill label="GPT Analyst" value="Connected" accent="text-cyan-400" />
+            <StatusPill label="Claude Risk" value="Connected" accent="text-red-400" />
+            <StatusPill label="Consensus" value="Active" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-green-900 rounded-2xl p-6">
+        <h3 className="text-2xl font-bold">🚀 Next Gate: Execution Preparation</h3>
+        <p className="text-gray-300 mt-4 leading-relaxed">
+          Die Consensus Engine erzeugt jetzt finale Trade-Entscheidungen. Live Execution bleibt weiterhin gesperrt.
+          Im nächsten Schritt wird das Execution Preparation Center diese Entscheidungen prüfen, protokollieren und nur für Paper/Demo-Flows vorbereiten.
+        </p>
+
+        <div className="grid grid-cols-5 gap-4 mt-6">
+          {["Consensus", "Risk Firewall", "Paper Order", "Execution Prep", "Broker Lock"].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold">{step}</p>
+              <p className="text-green-400 mt-2">Prepared</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 
 function ClaudeRiskLiveCenter() {
   const [risks, setRisks] = useState<ClaudeRiskAssessment[]>([]);
@@ -2639,7 +2906,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control · V9.9.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V10.0.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -2696,7 +2963,7 @@ export default function Home() {
             <div>
               <h2 className="text-5xl font-black">Willkommen Michael 👊</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control · V9.9.2 Interactive Centers
+                AI Trading Mission Control · V10.0.2 Interactive Centers
               </p>
             </div>
 
