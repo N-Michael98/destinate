@@ -94,6 +94,31 @@ type AgentMemoryResponse = {
   timestamp: string;
 };
 
+type AILearning = {
+  version: string;
+  totalMemories: number;
+  executedTrades: number;
+  rejectedTrades: number;
+  executionRate: number;
+  rejectionRate: number;
+  averageConfidence: number;
+  averageConsensus: number;
+  averageRiskScore: number;
+  confidenceGap: number;
+  learningScore: number;
+  agentAccuracy: number;
+  recommendedConfidence: number;
+  recommendation: string;
+  status: string;
+  updatedAt: string;
+};
+
+type AILearningResponse = {
+  ok: boolean;
+  learning: AILearning;
+  timestamp: string;
+};
+
 function StatCard({
   title,
   value,
@@ -140,6 +165,7 @@ export default function AIAgentControlCenter() {
   const [memory, setMemory] = useState<AgentMemoryEntry[]>([]);
   const [latestMemory, setLatestMemory] = useState<AgentMemoryEntry[]>([]);
   const [memoryStats, setMemoryStats] = useState<AgentMemoryStats | null>(null);
+  const [learning, setLearning] = useState<AILearning | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -148,22 +174,29 @@ export default function AIAgentControlCenter() {
     try {
       setLoading(true);
 
-      const [historyResponse, performanceResponse, memoryResponse] =
-        await Promise.all([
-          fetch("/api/paper/history", { cache: "no-store" }),
-          fetch("/api/paper/performance", { cache: "no-store" }),
-          fetch("/api/ai-paper-trader/memory", { cache: "no-store" }),
-        ]);
+      const [
+        historyResponse,
+        performanceResponse,
+        memoryResponse,
+        learningResponse,
+      ] = await Promise.all([
+        fetch("/api/paper/history", { cache: "no-store" }),
+        fetch("/api/paper/performance", { cache: "no-store" }),
+        fetch("/api/ai-paper-trader/memory", { cache: "no-store" }),
+        fetch("/api/ai-paper-trader/learning", { cache: "no-store" }),
+      ]);
 
       const historyPayload = await historyResponse.json();
       const performancePayload = await performanceResponse.json();
       const memoryPayload = (await memoryResponse.json()) as AgentMemoryResponse;
+      const learningPayload = (await learningResponse.json()) as AILearningResponse;
 
       setHistory(historyPayload.history ?? []);
       setPerformance(performancePayload.performance ?? null);
       setMemory(memoryPayload.memory ?? []);
       setLatestMemory(memoryPayload.latest ?? []);
       setMemoryStats(memoryPayload.stats ?? null);
+      setLearning(learningPayload.learning ?? null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -194,8 +227,8 @@ export default function AIAgentControlCenter() {
       setLastRun(payload);
       setMessage(
         payload.result?.executed
-          ? "AI Agent created a new paper trade and stored it in memory."
-          : "AI Agent completed review without execution and stored the decision."
+          ? "AI Agent created a new paper trade, stored it in memory, and updated learning metrics."
+          : "AI Agent completed review, stored the decision, and updated learning metrics."
       );
 
       await refreshData();
@@ -237,9 +270,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.3</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.5</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, automatische Paper-Trading-Ausführung und AI Agent Memory.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory und AI Learning.
           </p>
         </div>
 
@@ -278,11 +311,11 @@ export default function AIAgentControlCenter() {
           border={consensus?.approved ? "border-green-900" : "border-yellow-900"}
         />
         <StatCard
-          title="Execution"
-          value={executed ? "Executed" : "Waiting"}
-          subtitle="Paper only"
-          accent={executed ? "text-green-400" : "text-purple-400"}
-          border={executed ? "border-green-900" : "border-purple-900"}
+          title="Learning Score"
+          value={`${learning?.learningScore ?? 0}`}
+          subtitle="Adaptive learning"
+          accent="text-lime-400"
+          border="border-lime-900"
         />
         <StatCard
           title="Memory"
@@ -293,10 +326,132 @@ export default function AIAgentControlCenter() {
         />
       </div>
 
+      <div className="bg-black border border-lime-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🧠 AI Learning Panel V10.3.5</h3>
+            <p className="text-gray-400 mt-2">
+              Live Analyse aus <span className="text-lime-400">/api/ai-paper-trader/learning</span>.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshData}
+            disabled={loading}
+            className="bg-lime-950 border border-lime-800 rounded-xl px-5 py-3 font-bold text-lime-300 hover:bg-lime-900 transition disabled:opacity-60"
+          >
+            {loading ? "Refreshing..." : "Refresh Learning"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Learning Score"
+            value={`${learning?.learningScore ?? 0}`}
+            subtitle="Overall learning health"
+            accent="text-lime-400"
+            border="border-lime-900"
+          />
+          <StatCard
+            title="Agent Accuracy"
+            value={`${learning?.agentAccuracy ?? 0}%`}
+            subtitle="Decision quality"
+            accent="text-green-400"
+            border="border-green-900"
+          />
+          <StatCard
+            title="Recommended Conf."
+            value={`${learning?.recommendedConfidence ?? 0}%`}
+            subtitle="Next confidence target"
+            accent="text-cyan-400"
+            border="border-cyan-900"
+          />
+          <StatCard
+            title="Execution Rate"
+            value={`${learning?.executionRate ?? 0}%`}
+            subtitle="Approved actions"
+            accent="text-blue-400"
+            border="border-blue-900"
+          />
+          <StatCard
+            title="Rejection Rate"
+            value={`${learning?.rejectionRate ?? 0}%`}
+            subtitle="Blocked decisions"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">📊 Learning Metrics</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill
+                label="Avg Confidence"
+                value={`${learning?.averageConfidence ?? 0}%`}
+                accent="text-cyan-400"
+              />
+              <StatusPill
+                label="Avg Consensus"
+                value={`${learning?.averageConsensus ?? 0}`}
+                accent="text-purple-400"
+              />
+              <StatusPill
+                label="Avg Risk Score"
+                value={`${learning?.averageRiskScore ?? 0}`}
+                accent="text-yellow-400"
+              />
+              <StatusPill
+                label="Confidence Gap"
+                value={`${learning?.confidenceGap ?? 0}`}
+                accent="text-orange-400"
+              />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧬 Learning State</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill
+                label="Total Memories"
+                value={`${learning?.totalMemories ?? 0}`}
+                accent="text-fuchsia-400"
+              />
+              <StatusPill
+                label="Executed"
+                value={`${learning?.executedTrades ?? 0}`}
+                accent="text-green-400"
+              />
+              <StatusPill
+                label="Rejected"
+                value={`${learning?.rejectedTrades ?? 0}`}
+                accent="text-red-400"
+              />
+              <StatusPill
+                label="Status"
+                value={learning?.status ?? "waiting"}
+                accent="text-lime-400"
+              />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-lime-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">💡 Recommendation</h4>
+            <p className="text-lime-300 font-bold mt-4 leading-relaxed">
+              {learning?.recommendation ?? "No learning recommendation available yet."}
+            </p>
+            <p className="text-gray-500 mt-4 text-sm">
+              Updated: {learning?.updatedAt ?? "N/A"}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-black border border-fuchsia-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">🧠 AI Agent Memory Panel V10.3.3</h3>
+            <h3 className="text-3xl font-bold">🧠 AI Agent Memory Panel</h3>
             <p className="text-gray-400 mt-2">
               Live Memory Layer aus <span className="text-fuchsia-400">/api/ai-paper-trader/memory</span>.
             </p>
@@ -391,7 +546,7 @@ export default function AIAgentControlCenter() {
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
           <h3 className="text-3xl font-bold mb-5">🚀 Run AI Agent</h3>
           <p className="text-gray-400 leading-relaxed mb-6">
-            Startet einen vollständigen Mock-Agent-Zyklus: GPT Trade Idea → Claude Risk → Consensus → Paper Order → Memory.
+            Startet einen vollständigen Mock-Agent-Zyklus: GPT Trade Idea → Claude Risk → Consensus → Paper Order → Memory → Learning.
           </p>
 
           <button
