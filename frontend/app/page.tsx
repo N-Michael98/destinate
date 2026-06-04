@@ -1,6 +1,7 @@
- "use client";
+"use client";
 
 import React, { useEffect, useState } from "react";
+import PaperTradingDashboardPanel from "@/components/PaperTradingDashboardPanel";
 
 type NavItem = {
   label: string;
@@ -3265,6 +3266,8 @@ export default function Home() {
               <p className="text-gray-500 mt-2 text-sm">Paper/Demo only</p>
             </div>
           </div>
+
+          <PaperTradingDashboardPanel />
 
           <div className="grid grid-cols-5 gap-6 mb-8">
             <StatCard
