@@ -14,6 +14,13 @@ function getEconomicConfidencePenalty(tradingAction: string): number {
   return 0;
 }
 
+function getEconomicMemoryType(tradingAction: string) {
+  if (tradingAction === "NEWS_LOCKDOWN") return "ECONOMIC_RISK_BLOCK";
+  if (tradingAction === "AVOID_NEW_POSITIONS") return "ECONOMIC_RISK_ELEVATED";
+  if (tradingAction === "REDUCE_RISK") return "ECONOMIC_RISK_REDUCED";
+  return "ECONOMIC_RISK_NORMAL";
+}
+
 export class AIPaperTrader {
   static run() {
     const learning = AILearningEngine.analyze();
@@ -40,11 +47,15 @@ export class AIPaperTrader {
       }
     );
 
+    const economicMemoryType = getEconomicMemoryType(
+      economicCalendar.tradingAction
+    );
+
     const economicRiskNote = `Economic Risk: ${economicCalendar.riskLevel} | Action: ${economicCalendar.tradingAction} | Score: ${economicCalendar.riskScore}`;
 
     if (economicCalendar.tradingAction === "NEWS_LOCKDOWN") {
       const memory = AgentMemory.add({
-        type: "AI_TRADE_REJECTED",
+        type: economicMemoryType,
         symbol: idea.symbol,
         direction: idea.direction,
         confidence: idea.confidence,
@@ -137,6 +148,27 @@ export class AIPaperTrader {
           ? 0.5
           : 1;
 
+    const economicMemory = AgentMemory.add({
+      type: economicMemoryType,
+      symbol: idea.symbol,
+      direction: idea.direction,
+      confidence: idea.confidence,
+      approved: true,
+      executed: false,
+      consensusScore: consensus.score,
+      riskScore: economicCalendar.riskScore,
+      reason: `Economic calendar risk processed before execution: ${economicCalendar.riskLevel} / ${economicCalendar.tradingAction}.`,
+      payload: {
+        idea,
+        risk,
+        consensus,
+        learning,
+        strategyEvolution,
+        economicCalendar,
+        orderSize,
+      },
+    });
+
     const execution = paperTradingManager.createAndFillPaperOrder(
       idea.symbol,
       idea.direction,
@@ -167,6 +199,7 @@ export class AIPaperTrader {
         learning,
         strategyEvolution,
         economicCalendar,
+        economicMemory,
         execution,
       },
     });
@@ -180,6 +213,7 @@ export class AIPaperTrader {
       learning,
       strategyEvolution,
       economicCalendar,
+      economicMemory,
       execution,
       memory,
       message:

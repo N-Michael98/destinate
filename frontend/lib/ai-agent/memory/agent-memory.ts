@@ -1,13 +1,19 @@
 import fs from "fs";
 import path from "path";
 
+export type AgentMemoryType =
+  | "AI_TRADE_EXECUTED"
+  | "AI_TRADE_REJECTED"
+  | "AI_REVIEW"
+  | "SYSTEM"
+  | "ECONOMIC_RISK_BLOCK"
+  | "ECONOMIC_RISK_REDUCED"
+  | "ECONOMIC_RISK_ELEVATED"
+  | "ECONOMIC_RISK_NORMAL";
+
 export type AgentMemoryEntry = {
   id: string;
-  type:
-    | "AI_TRADE_EXECUTED"
-    | "AI_TRADE_REJECTED"
-    | "AI_REVIEW"
-    | "SYSTEM";
+  type: AgentMemoryType;
   symbol?: string;
   direction?: string;
   confidence?: number;
@@ -86,6 +92,13 @@ export class AgentMemory {
     return readMemory().slice(-limit).reverse();
   }
 
+  static getEconomicRiskMemories(limit = 20) {
+    return readMemory()
+      .filter((item) => item.type.startsWith("ECONOMIC_RISK"))
+      .slice(-limit)
+      .reverse();
+  }
+
   static clear() {
     writeMemory([]);
   }
@@ -99,6 +112,26 @@ export class AgentMemory {
 
     const rejected = memory.filter(
       (item) => item.type === "AI_TRADE_REJECTED"
+    );
+
+    const economicRiskMemories = memory.filter((item) =>
+      item.type.startsWith("ECONOMIC_RISK")
+    );
+
+    const economicRiskBlocks = memory.filter(
+      (item) => item.type === "ECONOMIC_RISK_BLOCK"
+    );
+
+    const economicRiskReduced = memory.filter(
+      (item) => item.type === "ECONOMIC_RISK_REDUCED"
+    );
+
+    const economicRiskElevated = memory.filter(
+      (item) => item.type === "ECONOMIC_RISK_ELEVATED"
+    );
+
+    const economicRiskNormal = memory.filter(
+      (item) => item.type === "ECONOMIC_RISK_NORMAL"
     );
 
     const averageConfidence =
@@ -125,12 +158,30 @@ export class AgentMemory {
           )
         : 0;
 
+    const averageEconomicRisk =
+      economicRiskMemories.length > 0
+        ? Number(
+            (
+              economicRiskMemories.reduce(
+                (sum, item) => sum + Number(item.riskScore ?? 0),
+                0
+              ) / economicRiskMemories.length
+            ).toFixed(2)
+          )
+        : 0;
+
     return {
       totalMemories: memory.length,
       executedTrades: executed.length,
       rejectedTrades: rejected.length,
+      economicRiskMemories: economicRiskMemories.length,
+      economicRiskBlocks: economicRiskBlocks.length,
+      economicRiskReduced: economicRiskReduced.length,
+      economicRiskElevated: economicRiskElevated.length,
+      economicRiskNormal: economicRiskNormal.length,
       averageConfidence,
       averageConsensus,
+      averageEconomicRisk,
       updatedAt: new Date().toISOString(),
     };
   }
