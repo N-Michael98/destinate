@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import PaperTradingDashboardPanel from "@/components/PaperTradingDashboardPanel";
+import PaperTradingCenter from "@/components/PaperTradingCenter";
 
 type NavItem = {
   label: string;
@@ -72,6 +73,7 @@ const navGroups: NavGroup[] = [
     title: "Trading",
     items: [
       { label: "Trading Journal", icon: "📒", view: "trading-journal" },
+      { label: "Paper Trading", icon: "📄", view: "paper-trading" },
       { label: "Trading Desk", icon: "📈", view: "trading-desk" },
       { label: "Signal Engine", icon: "🎯", view: "signal-engine" },
       { label: "Strategy Builder", icon: "🧩", view: "strategy-builder" },
@@ -3127,6 +3129,7 @@ function MarketDataEngineCenter() {
 
 function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "trading-journal") return <TradingJournalCenter />;
+  if (activeView === "paper-trading") return <PaperTradingCenter />;
   if (activeView === "trading-desk") return <TradingDeskCenter />;
   if (activeView === "signal-engine") return <SignalEngineCenter />;
   if (activeView === "strategy-builder") return <StrategyBuilderCenter />;
