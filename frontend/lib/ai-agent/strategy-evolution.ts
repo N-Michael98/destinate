@@ -1,15 +1,22 @@
 import { AgentMemory } from "./memory/agent-memory";
 import { AILearningEngine } from "./learning-engine";
 import { AITradeOutcomeTracker } from "./trade-outcome-tracker";
+import { StrategyLibrary } from "./strategy-library";
 
 type StrategyProfile = {
   id: string;
   name: string;
-  type: "MOMENTUM" | "BREAKOUT" | "TREND" | "MEAN_REVERSION";
-  status: "ACTIVE" | "WATCH" | "REVIEW";
+  type: string;
+  category: string;
+  status: "ACTIVE" | "WATCH" | "REVIEW" | "RESEARCH" | "DISABLED";
+  source: string;
   baseScore: number;
   score: number;
   confidenceBoost: number;
+  riskLevel: string;
+  complexity: string;
+  markets: string[];
+  timeframes: string[];
   reason: string;
 };
 
@@ -18,6 +25,17 @@ export class StrategyEvolutionEngine {
     const memoryStats = AgentMemory.getStats();
     const learning = AILearningEngine.analyze();
     const outcomes = AITradeOutcomeTracker.analyze();
+
+    const strategyUniverse =
+      StrategyLibrary.getAll();
+
+    const selectableStrategies =
+      strategyUniverse.filter(
+        (strategy) =>
+          strategy.status === "ACTIVE" ||
+          strategy.status === "WATCH" ||
+          strategy.status === "RESEARCH"
+      );
 
     const memoryStrength = Math.min(
       100,
@@ -38,67 +56,72 @@ export class StrategyEvolutionEngine {
         learningStrength * 0.4
     );
 
-    const strategies: StrategyProfile[] = [
-      {
-        id: "strategy-momentum-v1",
-        name: "Momentum Continuation",
-        type: "MOMENTUM",
-        status: "ACTIVE",
-        baseScore: 78,
-        score: Math.min(
+    const statusBoost: Record<string, number> = {
+      ACTIVE: 6,
+      WATCH: 3,
+      RESEARCH: -4,
+      REVIEW: -8,
+      DISABLED: -100,
+    };
+
+    const riskPenalty: Record<string, number> = {
+      LOW: 2,
+      MEDIUM: 0,
+      HIGH: -4,
+    };
+
+    const complexityPenalty: Record<string, number> = {
+      BASIC: 2,
+      INTERMEDIATE: 0,
+      ADVANCED: -2,
+    };
+
+    const strategies: StrategyProfile[] =
+      selectableStrategies.map((strategy) => {
+        const adaptiveScore =
+          strategy.baseScore +
+          adaptiveFactor * 0.1 +
+          (statusBoost[strategy.status] ?? 0) +
+          (riskPenalty[strategy.riskLevel] ?? 0) +
+          (complexityPenalty[strategy.complexity] ?? 0);
+
+        const score = Math.min(
           100,
-          Math.round(78 + adaptiveFactor * 0.12)
-        ),
-        confidenceBoost: 3,
-        reason:
-          "Momentum remains the primary mock strategy for EURUSD AI paper trades.",
-      },
-      {
-        id: "strategy-breakout-v1",
-        name: "Breakout Expansion",
-        type: "BREAKOUT",
-        status: "WATCH",
-        baseScore: 72,
-        score: Math.min(
-          100,
-          Math.round(72 + adaptiveFactor * 0.08)
-        ),
-        confidenceBoost: 1,
-        reason:
-          "Breakout logic is prepared but needs more outcome data before priority increase.",
-      },
-      {
-        id: "strategy-trend-v1",
-        name: "Trend Following",
-        type: "TREND",
-        status: "WATCH",
-        baseScore: 74,
-        score: Math.min(
-          100,
-          Math.round(74 + adaptiveFactor * 0.1)
-        ),
-        confidenceBoost: 2,
-        reason:
-          "Trend following benefits from stable consensus and improving learning score.",
-      },
-      {
-        id: "strategy-mean-reversion-v1",
-        name: "Mean Reversion",
-        type: "MEAN_REVERSION",
-        status:
-          learning.rejectionRate > 30
+          Math.max(0, Math.round(adaptiveScore))
+        );
+
+        const shouldReview =
+          score < 60 ||
+          learning.rejectionRate > 40;
+
+        return {
+          id: strategy.id,
+          name: strategy.name,
+          type: strategy.category,
+          category: strategy.category,
+          status: shouldReview
             ? "REVIEW"
-            : "WATCH",
-        baseScore: 64,
-        score: Math.min(
-          100,
-          Math.round(64 + adaptiveFactor * 0.05)
-        ),
-        confidenceBoost: 0,
-        reason:
-          "Mean reversion is lower priority until market regime and outcome history improve.",
-      },
-    ];
+            : strategy.status,
+          source: strategy.source,
+          baseScore: strategy.baseScore,
+          score,
+          confidenceBoost:
+            score >= 85
+              ? Math.max(
+                  strategy.confidenceBoost,
+                  3
+                )
+              : score >= 75
+                ? strategy.confidenceBoost
+                : 0,
+          riskLevel: strategy.riskLevel,
+          complexity: strategy.complexity,
+          markets: strategy.markets,
+          timeframes: strategy.timeframes,
+          reason:
+            `${strategy.name} scored ${score} from Strategy Library using memory, learning, outcomes, risk and complexity filters.`,
+        };
+      });
 
     const rankedStrategies =
       strategies.sort((a, b) => b.score - a.score);
@@ -108,13 +131,17 @@ export class StrategyEvolutionEngine {
 
     const recommendation =
       bestStrategy.score >= 85
-        ? `Prioritize ${bestStrategy.name}. Strategy confidence is strong.`
+        ? `Prioritize ${bestStrategy.name}. It is currently the strongest strategy in the Strategy Universe.`
         : bestStrategy.score >= 75
-          ? `Use ${bestStrategy.name} as preferred strategy, but keep collecting outcome data.`
+          ? `Use ${bestStrategy.name} as preferred paper strategy, but continue testing the full Strategy Universe.`
           : "No strategy has strong evidence yet. Continue paper testing and keep risk small.";
 
     return {
-      version: "V10.4.0",
+      version: "V10.4.4",
+      totalStrategies:
+        strategyUniverse.length,
+      selectableStrategies:
+        selectableStrategies.length,
       memory: memoryStats,
       learning,
       outcomes,
