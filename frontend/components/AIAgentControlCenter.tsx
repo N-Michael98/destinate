@@ -62,6 +62,38 @@ type PaperPerformance = {
   updatedAt: string;
 };
 
+type AgentMemoryEntry = {
+  id: string;
+  type: string;
+  symbol?: string;
+  direction?: string;
+  confidence?: number;
+  approved?: boolean;
+  executed?: boolean;
+  consensusScore?: number;
+  riskScore?: number;
+  reason: string;
+  payload: unknown;
+  createdAt: string;
+};
+
+type AgentMemoryStats = {
+  totalMemories: number;
+  executedTrades: number;
+  rejectedTrades: number;
+  averageConfidence: number;
+  averageConsensus: number;
+  updatedAt: string;
+};
+
+type AgentMemoryResponse = {
+  ok: boolean;
+  memory: AgentMemoryEntry[];
+  latest: AgentMemoryEntry[];
+  stats: AgentMemoryStats;
+  timestamp: string;
+};
+
 function StatCard({
   title,
   value,
@@ -105,6 +137,9 @@ export default function AIAgentControlCenter() {
   const [lastRun, setLastRun] = useState<AIAgentRunResult | null>(null);
   const [history, setHistory] = useState<PaperHistoryEvent[]>([]);
   const [performance, setPerformance] = useState<PaperPerformance | null>(null);
+  const [memory, setMemory] = useState<AgentMemoryEntry[]>([]);
+  const [latestMemory, setLatestMemory] = useState<AgentMemoryEntry[]>([]);
+  const [memoryStats, setMemoryStats] = useState<AgentMemoryStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -113,16 +148,22 @@ export default function AIAgentControlCenter() {
     try {
       setLoading(true);
 
-      const [historyResponse, performanceResponse] = await Promise.all([
-        fetch("/api/paper/history", { cache: "no-store" }),
-        fetch("/api/paper/performance", { cache: "no-store" }),
-      ]);
+      const [historyResponse, performanceResponse, memoryResponse] =
+        await Promise.all([
+          fetch("/api/paper/history", { cache: "no-store" }),
+          fetch("/api/paper/performance", { cache: "no-store" }),
+          fetch("/api/ai-paper-trader/memory", { cache: "no-store" }),
+        ]);
 
       const historyPayload = await historyResponse.json();
       const performancePayload = await performanceResponse.json();
+      const memoryPayload = (await memoryResponse.json()) as AgentMemoryResponse;
 
       setHistory(historyPayload.history ?? []);
       setPerformance(performancePayload.performance ?? null);
+      setMemory(memoryPayload.memory ?? []);
+      setLatestMemory(memoryPayload.latest ?? []);
+      setMemoryStats(memoryPayload.stats ?? null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -153,8 +194,8 @@ export default function AIAgentControlCenter() {
       setLastRun(payload);
       setMessage(
         payload.result?.executed
-          ? "AI Agent created a new paper trade."
-          : "AI Agent completed review without execution."
+          ? "AI Agent created a new paper trade and stored it in memory."
+          : "AI Agent completed review without execution and stored the decision."
       );
 
       await refreshData();
@@ -185,14 +226,20 @@ export default function AIAgentControlCenter() {
   const risk = lastRun?.result?.risk;
   const consensus = lastRun?.result?.consensus;
   const executed = lastRun?.result?.executed ?? false;
+  const executedMemories =
+    memoryStats?.executedTrades ??
+    memory.filter((item) => item.type === "AI_TRADE_EXECUTED").length;
+  const rejectedMemories =
+    memoryStats?.rejectedTrades ??
+    memory.filter((item) => item.type === "AI_TRADE_REJECTED").length;
 
   return (
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.1</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.3</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine und automatische Paper-Trading-Ausführung.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, automatische Paper-Trading-Ausführung und AI Agent Memory.
           </p>
         </div>
 
@@ -238,19 +285,113 @@ export default function AIAgentControlCenter() {
           border={executed ? "border-green-900" : "border-purple-900"}
         />
         <StatCard
-          title="Total Trades"
-          value={`${performance?.totalTrades ?? 0}`}
-          subtitle="Paper performance"
-          accent="text-blue-400"
-          border="border-blue-900"
+          title="Memory"
+          value={`${memoryStats?.totalMemories ?? memory.length}`}
+          subtitle="Stored AI decisions"
+          accent="text-fuchsia-400"
+          border="border-fuchsia-900"
         />
+      </div>
+
+      <div className="bg-black border border-fuchsia-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🧠 AI Agent Memory Panel V10.3.3</h3>
+            <p className="text-gray-400 mt-2">
+              Live Memory Layer aus <span className="text-fuchsia-400">/api/ai-paper-trader/memory</span>.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshData}
+            disabled={loading}
+            className="bg-fuchsia-950 border border-fuchsia-800 rounded-xl px-5 py-3 font-bold text-fuchsia-300 hover:bg-fuchsia-900 transition disabled:opacity-60"
+          >
+            {loading ? "Refreshing..." : "Refresh Memory"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Total Memories"
+            value={`${memoryStats?.totalMemories ?? memory.length}`}
+            subtitle="All stored decisions"
+            accent="text-fuchsia-400"
+            border="border-fuchsia-900"
+          />
+          <StatCard
+            title="Executed"
+            value={`${executedMemories}`}
+            subtitle="AI paper trades"
+            accent="text-green-400"
+            border="border-green-900"
+          />
+          <StatCard
+            title="Rejected"
+            value={`${rejectedMemories}`}
+            subtitle="Blocked decisions"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+          <StatCard
+            title="Avg Confidence"
+            value={`${memoryStats?.averageConfidence ?? 0}%`}
+            subtitle="GPT idea score"
+            accent="text-cyan-400"
+            border="border-cyan-900"
+          />
+          <StatCard
+            title="Avg Consensus"
+            value={`${memoryStats?.averageConsensus ?? 0}`}
+            subtitle="Consensus score"
+            accent="text-purple-400"
+            border="border-purple-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5">
+          {latestMemory.slice(0, 3).map((item) => (
+            <div
+              key={item.id}
+              className="bg-gray-950 border border-gray-800 rounded-2xl p-5"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <h4 className="text-xl font-bold">{item.symbol ?? "SYSTEM"}</h4>
+                <span
+                  className={
+                    item.executed
+                      ? "text-green-400 font-bold"
+                      : "text-red-400 font-bold"
+                  }
+                >
+                  {item.executed ? "EXECUTED" : "REJECTED"}
+                </span>
+              </div>
+
+              <p className="text-gray-400 mt-3">
+                {item.direction ?? "N/A"} · Confidence {item.confidence ?? 0}%
+              </p>
+              <p className="text-gray-500 mt-2">
+                Consensus {item.consensusScore ?? 0} · Risk {item.riskScore ?? 0}
+              </p>
+              <p className="text-gray-500 mt-3 text-sm">{item.createdAt}</p>
+            </div>
+          ))}
+
+          {latestMemory.length === 0 && (
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-3">
+              <p className="text-gray-500">No AI memory stored yet.</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
           <h3 className="text-3xl font-bold mb-5">🚀 Run AI Agent</h3>
           <p className="text-gray-400 leading-relaxed mb-6">
-            Startet einen vollständigen Mock-Agent-Zyklus: GPT Trade Idea → Claude Risk → Consensus → Paper Order.
+            Startet einen vollständigen Mock-Agent-Zyklus: GPT Trade Idea → Claude Risk → Consensus → Paper Order → Memory.
           </p>
 
           <button
