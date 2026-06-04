@@ -146,6 +146,34 @@ type AIOutcomesResponse = {
   timestamp: string;
 };
 
+type StrategyProfile = {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  baseScore: number;
+  score: number;
+  confidenceBoost: number;
+  reason: string;
+};
+
+type StrategyEvolution = {
+  version: string;
+  adaptiveFactor: number;
+  bestStrategy: StrategyProfile;
+  strategies: StrategyProfile[];
+  recommendation: string;
+  status: string;
+  updatedAt: string;
+};
+
+type StrategyEvolutionResponse = {
+  ok: boolean;
+  strategy: StrategyEvolution;
+  timestamp: string;
+};
+
+
 
 function StatCard({
   title,
@@ -195,6 +223,7 @@ export default function AIAgentControlCenter() {
   const [memoryStats, setMemoryStats] = useState<AgentMemoryStats | null>(null);
   const [learning, setLearning] = useState<AILearning | null>(null);
   const [outcomes, setOutcomes] = useState<AIOutcomes | null>(null);
+  const [strategy, setStrategy] = useState<StrategyEvolution | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -209,12 +238,14 @@ export default function AIAgentControlCenter() {
         memoryResponse,
         learningResponse,
         outcomesResponse,
+        strategyResponse,
       ] = await Promise.all([
         fetch("/api/paper/history", { cache: "no-store" }),
         fetch("/api/paper/performance", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/memory", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/learning", { cache: "no-store" }),
         fetch("/api/ai-paper-trader/outcomes", { cache: "no-store" }),
+        fetch("/api/ai-paper-trader/strategy", { cache: "no-store" }),
       ]);
 
       const historyPayload = await historyResponse.json();
@@ -222,6 +253,7 @@ export default function AIAgentControlCenter() {
       const memoryPayload = (await memoryResponse.json()) as AgentMemoryResponse;
       const learningPayload = (await learningResponse.json()) as AILearningResponse;
       const outcomesPayload = (await outcomesResponse.json()) as AIOutcomesResponse;
+      const strategyPayload = (await strategyResponse.json()) as StrategyEvolutionResponse;
 
       setHistory(historyPayload.history ?? []);
       setPerformance(performancePayload.performance ?? null);
@@ -230,6 +262,7 @@ export default function AIAgentControlCenter() {
       setMemoryStats(memoryPayload.stats ?? null);
       setLearning(learningPayload.learning ?? null);
       setOutcomes(outcomesPayload.outcomes ?? null);
+      setStrategy(strategyPayload.strategy ?? null);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -303,9 +336,9 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.3.9</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V10.4.1</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
-            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Adaptive Confidence und Trade Outcomes.
+            Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes und Strategy Evolution.
           </p>
         </div>
 
@@ -478,6 +511,124 @@ export default function AIAgentControlCenter() {
               Updated: {learning?.updatedAt ?? "N/A"}
             </p>
           </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-orange-900 rounded-2xl p-6 mb-8">
+        <div className="flex items-start justify-between gap-6 mb-6">
+          <div>
+            <h3 className="text-3xl font-bold">🧬 Strategy Evolution Panel V10.4.1</h3>
+            <p className="text-gray-400 mt-2">
+              Live Strategie-Ranking aus <span className="text-orange-400">/api/ai-paper-trader/strategy</span>.
+            </p>
+          </div>
+
+          <div className="bg-gray-950 border border-orange-800 rounded-xl p-4 min-w-[240px]">
+            <p className="text-gray-400">Best Strategy</p>
+            <p className="text-orange-400 text-2xl font-bold">
+              {strategy?.bestStrategy?.name ?? "Waiting"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Best Strategy"
+            value={strategy?.bestStrategy?.type ?? "N/A"}
+            subtitle={strategy?.bestStrategy?.name ?? "No strategy selected"}
+            accent="text-orange-400"
+            border="border-orange-900"
+          />
+          <StatCard
+            title="Best Score"
+            value={`${strategy?.bestStrategy?.score ?? 0}`}
+            subtitle="Highest ranked strategy"
+            accent="text-green-400"
+            border="border-green-900"
+          />
+          <StatCard
+            title="Confidence Boost"
+            value={`+${strategy?.bestStrategy?.confidenceBoost ?? 0}`}
+            subtitle="Suggested boost"
+            accent="text-cyan-400"
+            border="border-cyan-900"
+          />
+          <StatCard
+            title="Adaptive Factor"
+            value={`${strategy?.adaptiveFactor ?? 0}`}
+            subtitle="Memory + learning + outcomes"
+            accent="text-purple-400"
+            border="border-purple-900"
+          />
+          <StatCard
+            title="Strategy Status"
+            value={strategy?.bestStrategy?.status ?? "N/A"}
+            subtitle="Current priority"
+            accent={
+              strategy?.bestStrategy?.status === "ACTIVE"
+                ? "text-green-400"
+                : "text-yellow-400"
+            }
+            border={
+              strategy?.bestStrategy?.status === "ACTIVE"
+                ? "border-green-900"
+                : "border-yellow-900"
+            }
+          />
+        </div>
+
+        <div className="grid grid-cols-4 gap-5 mb-6">
+          {(strategy?.strategies ?? []).map((item, index) => (
+            <div
+              key={item.id}
+              className="bg-gray-950 border border-gray-800 rounded-2xl p-5"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <h4 className="text-xl font-bold">#{index + 1}</h4>
+                <span
+                  className={
+                    item.status === "ACTIVE"
+                      ? "text-green-400 font-bold"
+                      : item.status === "REVIEW"
+                        ? "text-red-400 font-bold"
+                        : "text-yellow-400 font-bold"
+                  }
+                >
+                  {item.status}
+                </span>
+              </div>
+
+              <p className="text-orange-400 font-bold text-xl mt-4">
+                {item.name}
+              </p>
+              <p className="text-gray-400 mt-2">{item.type}</p>
+              <p className="text-4xl font-black text-white mt-4">
+                {item.score}
+              </p>
+              <p className="text-gray-500 mt-2">
+                Base {item.baseScore} · Boost +{item.confidenceBoost}
+              </p>
+              <p className="text-gray-500 text-sm mt-4 leading-relaxed">
+                {item.reason}
+              </p>
+            </div>
+          ))}
+
+          {(strategy?.strategies ?? []).length === 0 && (
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-4">
+              <p className="text-gray-500">No strategy ranking available yet.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-gray-950 border border-orange-900 rounded-2xl p-5">
+          <h4 className="text-xl font-bold">💡 Strategy Recommendation</h4>
+          <p className="text-orange-300 font-bold mt-4 leading-relaxed">
+            {strategy?.recommendation ?? "No strategy recommendation available yet."}
+          </p>
+          <p className="text-gray-500 mt-4 text-sm">
+            Updated: {strategy?.updatedAt ?? "N/A"}
+          </p>
         </div>
       </div>
 
