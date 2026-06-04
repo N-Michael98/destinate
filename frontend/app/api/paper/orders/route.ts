@@ -1,33 +1,47 @@
 import { NextResponse } from "next/server";
-
-const paperOrders: any[] = [];
+import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
+import { PaperDirection } from "@/lib/paper-trading/paper-types";
 
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    orders: paperOrders,
+    orders: paperTradingManager.getOrders(),
   });
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  try {
+    const body = await request.json();
 
-  const order = {
-    id: crypto.randomUUID(),
-    symbol: body.symbol,
-    side: body.side,
-    type: body.type ?? "market",
-    quantity: Number(body.quantity),
-    price: body.price ? Number(body.price) : null,
-    status: "created",
-    createdAt: new Date().toISOString(),
-  };
+    const result =
+      paperTradingManager.createAndFillPaperOrder(
+        body.symbol,
+        body.direction as PaperDirection,
+        Number(body.entry),
+        Number(body.stopLoss),
+        Number(body.takeProfit1),
+        Number(body.takeProfit2),
+        Number(body.confidence),
+        body.reason ?? "Manual paper order",
+        Number(body.size ?? 1)
+      );
 
-  paperOrders.push(order);
-
-  return NextResponse.json({
-    ok: true,
-    message: "Paper order created",
-    order,
-  });
+    return NextResponse.json({
+      ok: true,
+      message: "Paper order created and filled",
+      result,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Failed to create paper order",
+        details:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      },
+      { status: 500 }
+    );
+  }
 }

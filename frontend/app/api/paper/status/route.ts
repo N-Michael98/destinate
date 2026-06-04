@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
+import { paperTradingManager } from "@/lib/paper-trading/paper-singleton";
 
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    module: "Paper Trading API",
-    version: "V10.2.1",
     status: "online",
-    mode: "paper",
+    paperTrading: !!paperTradingManager,
     timestamp: new Date().toISOString(),
   });
 }
