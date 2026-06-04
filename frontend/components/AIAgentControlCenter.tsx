@@ -243,6 +243,18 @@ type EconomicEventStatus =
   | "DELAYED"
   | "UNKNOWN";
 
+type EconomicCalendarRiskLevel =
+  | "NORMAL"
+  | "ELEVATED"
+  | "HIGH"
+  | "EXTREME";
+
+type EconomicCalendarTradingAction =
+  | "NORMAL_TRADING"
+  | "REDUCE_RISK"
+  | "AVOID_NEW_POSITIONS"
+  | "NEWS_LOCKDOWN";
+
 type EconomicEvent = {
   id: string;
   title: string;
@@ -258,12 +270,30 @@ type EconomicEvent = {
   affectedMarkets: string[];
 };
 
+type EconomicRiskAlert = {
+  id: string;
+  eventId: string;
+  title: string;
+  currency: string;
+  impact: EconomicEventImpact;
+  riskLevel: EconomicCalendarRiskLevel;
+  tradingAction: EconomicCalendarTradingAction;
+  minutesUntilEvent: number;
+  reason: string;
+  affectedMarkets: string[];
+};
+
 type EconomicCalendarReport = {
   version: string;
   generatedAt: string;
   totalEvents: number;
   highImpactEvents: number;
   upcomingHighImpactEvents: EconomicEvent[];
+  riskScore: number;
+  riskLevel: EconomicCalendarRiskLevel;
+  tradingAction: EconomicCalendarTradingAction;
+  riskAlerts: EconomicRiskAlert[];
+  recommendation: string;
   events: EconomicEvent[];
 };
 
@@ -452,7 +482,7 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.0.3</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.0.5</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
             Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection, News Intelligence und Economic Calendar.
           </p>
@@ -692,9 +722,9 @@ export default function AIAgentControlCenter() {
       <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">📅 Economic Calendar Panel V11.0.3</h3>
+            <h3 className="text-3xl font-bold">📅 Economic Risk Panel V11.0.5</h3>
             <p className="text-gray-400 mt-2">
-              Macro Events aus <span className="text-blue-400">/api/economic-calendar</span>. Später docken hier echte Wirtschaftskalender-Quellen, CPI, FOMC, NFP und Zentralbank-Events an.
+              Macro Risk Alerts aus <span className="text-blue-400">/api/economic-calendar</span>. Erkennt CPI, NFP, FOMC, Zentralbank-Events und leitet daraus Risk Score, Trading Action und Alerts ab.
             </p>
           </div>
 
@@ -708,40 +738,148 @@ export default function AIAgentControlCenter() {
 
         <div className="grid grid-cols-5 gap-5 mb-6">
           <StatCard
-            title="Total Events"
-            value={`${economicCalendar?.totalEvents ?? 0}`}
-            subtitle="Tracked macro events"
-            accent="text-blue-400"
-            border="border-blue-900"
+            title="Risk Score"
+            value={`${economicCalendar?.riskScore ?? 0}`}
+            subtitle="Calendar risk score"
+            accent={
+              (economicCalendar?.riskScore ?? 0) >= 85
+                ? "text-red-400"
+                : (economicCalendar?.riskScore ?? 0) >= 65
+                  ? "text-orange-400"
+                  : (economicCalendar?.riskScore ?? 0) >= 35
+                    ? "text-yellow-400"
+                    : "text-green-400"
+            }
+            border={
+              (economicCalendar?.riskScore ?? 0) >= 85
+                ? "border-red-900"
+                : (economicCalendar?.riskScore ?? 0) >= 65
+                  ? "border-orange-900"
+                  : (economicCalendar?.riskScore ?? 0) >= 35
+                    ? "border-yellow-900"
+                    : "border-green-900"
+            }
           />
+
           <StatCard
-            title="High Impact"
-            value={`${economicCalendar?.highImpactEvents ?? 0}`}
-            subtitle="Major risk events"
+            title="Risk Level"
+            value={economicCalendar?.riskLevel ?? "N/A"}
+            subtitle="Economic risk state"
+            accent={
+              economicCalendar?.riskLevel === "EXTREME"
+                ? "text-red-400"
+                : economicCalendar?.riskLevel === "HIGH"
+                  ? "text-orange-400"
+                  : economicCalendar?.riskLevel === "ELEVATED"
+                    ? "text-yellow-400"
+                    : "text-green-400"
+            }
+            border={
+              economicCalendar?.riskLevel === "EXTREME"
+                ? "border-red-900"
+                : economicCalendar?.riskLevel === "HIGH"
+                  ? "border-orange-900"
+                  : economicCalendar?.riskLevel === "ELEVATED"
+                    ? "border-yellow-900"
+                    : "border-green-900"
+            }
+          />
+
+          <StatCard
+            title="Trading Action"
+            value={economicCalendar?.tradingAction ?? "N/A"}
+            subtitle="Suggested execution mode"
+            accent={
+              economicCalendar?.tradingAction === "NEWS_LOCKDOWN"
+                ? "text-red-400"
+                : economicCalendar?.tradingAction === "AVOID_NEW_POSITIONS"
+                  ? "text-orange-400"
+                  : economicCalendar?.tradingAction === "REDUCE_RISK"
+                    ? "text-yellow-400"
+                    : "text-green-400"
+            }
+            border={
+              economicCalendar?.tradingAction === "NEWS_LOCKDOWN"
+                ? "border-red-900"
+                : economicCalendar?.tradingAction === "AVOID_NEW_POSITIONS"
+                  ? "border-orange-900"
+                  : economicCalendar?.tradingAction === "REDUCE_RISK"
+                    ? "border-yellow-900"
+                    : "border-green-900"
+            }
+          />
+
+          <StatCard
+            title="Risk Alerts"
+            value={`${economicCalendar?.riskAlerts?.length ?? 0}`}
+            subtitle="Active macro alerts"
             accent="text-red-400"
             border="border-red-900"
           />
+
           <StatCard
-            title="Upcoming High"
-            value={`${economicCalendar?.upcomingHighImpactEvents?.length ?? 0}`}
-            subtitle="Upcoming high-impact releases"
-            accent="text-orange-400"
-            border="border-orange-900"
+            title="High Impact"
+            value={`${economicCalendar?.highImpactEvents ?? 0}`}
+            subtitle="High-impact events"
+            accent="text-blue-400"
+            border="border-blue-900"
           />
-          <StatCard
-            title="Next Event"
-            value={economicCalendar?.events?.[0]?.currency ?? "N/A"}
-            subtitle={economicCalendar?.events?.[0]?.title ?? "No calendar event"}
-            accent="text-cyan-400"
-            border="border-cyan-900"
-          />
-          <StatCard
-            title="Generated"
-            value={economicCalendar?.generatedAt ? "Live" : "N/A"}
-            subtitle={economicCalendar?.generatedAt ?? "Waiting for API"}
-            accent="text-green-400"
-            border="border-green-900"
-          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-5 mb-6">
+          <div className="bg-gray-950 border border-red-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🚨 Active Risk Alerts</h4>
+
+            <div className="space-y-3 mt-4">
+              {(economicCalendar?.riskAlerts ?? []).slice(0, 4).map((alert) => (
+                <div
+                  key={alert.id}
+                  className="bg-black border border-red-900 rounded-xl p-4"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-red-300 font-bold">{alert.title}</p>
+                    <span className="text-red-400 font-bold">{alert.riskLevel}</span>
+                  </div>
+
+                  <p className="text-gray-400 mt-2 text-sm">
+                    {alert.currency} · {alert.impact} · in {alert.minutesUntilEvent} min
+                  </p>
+
+                  <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+                    {alert.reason}
+                  </p>
+                </div>
+              ))}
+
+              {(economicCalendar?.riskAlerts ?? []).length === 0 && (
+                <p className="text-gray-500">No active economic risk alerts.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧭 Risk Action Logic</h4>
+
+            <div className="space-y-3 mt-4">
+              <StatusPill label="NORMAL" value="Normal trading" accent="text-green-400" />
+              <StatusPill label="ELEVATED" value="Reduce risk" accent="text-yellow-400" />
+              <StatusPill label="HIGH" value="Avoid new positions" accent="text-orange-400" />
+              <StatusPill label="EXTREME" value="News lockdown" accent="text-red-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-yellow-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">💡 Calendar Recommendation</h4>
+
+            <p className="text-yellow-300 font-bold mt-4 leading-relaxed">
+              {economicCalendar?.recommendation ??
+                "No economic calendar recommendation available yet."}
+            </p>
+
+            <p className="text-gray-500 mt-4 text-sm">
+              Generated: {economicCalendar?.generatedAt ?? "N/A"}
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-5 mb-6">
