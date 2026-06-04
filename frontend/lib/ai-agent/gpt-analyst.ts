@@ -1,7 +1,9 @@
+import { PaperDirection } from "@/lib/paper-trading/paper-types";
+
 export type GPTTradeIdea = {
   source: "GPT_ANALYST";
   symbol: string;
-  direction: "LONG" | "SHORT";
+  direction: PaperDirection;
   entry: number;
   stopLoss: number;
   takeProfit1: number;
@@ -15,7 +17,7 @@ export class GPTAnalyst {
     return {
       source: "GPT_ANALYST",
       symbol: "EURUSD",
-      direction: "LONG",
+      direction: "LONG" as PaperDirection,
       entry: 1.085,
       stopLoss: 1.08,
       takeProfit1: 1.09,
