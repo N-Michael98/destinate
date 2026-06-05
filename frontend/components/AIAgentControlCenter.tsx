@@ -585,71 +585,71 @@ export default function AIAgentControlCenter() {
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function refreshData() {
-    try {
-      setLoading(true);
+ async function refreshData() {
+  try {
+    setLoading(true);
 
-      const [
-        historyResponse,
-        performanceResponse,
-        memoryResponse,
-        learningResponse,
-        outcomesResponse,
-        strategyResponse,
-        marketRegimeResponse,
-        newsIntelligenceResponse,
-        economicCalendarResponse,
-        portfolioIntelligenceResponse,
-        portfolioBrainResponse,
-      ] = await Promise.all(
-        fetch("/api/paper/history", { cache: "no-store" }),
-        fetch("/api/paper/performance", { cache: "no-store" }),
-        fetch("/api/ai-paper-trader/memory", { cache: "no-store" }),
-        fetch("/api/ai-paper-trader/learning", { cache: "no-store" }),
-        fetch("/api/ai-paper-trader/outcomes", { cache: "no-store" }),
-        fetch("/api/ai-paper-trader/strategy", { cache: "no-store" }),
-        fetch("/api/ai-paper-trader/market-regime", { cache: "no-store" }),
-        fetch("/api/news-intelligence", { cache: "no-store" }),
-        fetch("/api/economic-calendar", { cache: "no-store" }),
-        fetch("/api/portfolio-intelligence", { cache: "no-store" }),
-        fetch("/api/portfolio-brain", { cache: "no-store" }),
-      ]);
+    const [
+      historyResponse,
+      performanceResponse,
+      memoryResponse,
+      learningResponse,
+      outcomesResponse,
+      strategyResponse,
+      marketRegimeResponse,
+      newsIntelligenceResponse,
+      economicCalendarResponse,
+      portfolioIntelligenceResponse,
+      portfolioBrainResponse,
+    ] = await Promise.all([
+      fetch("/api/paper/history", { cache: "no-store" }),
+      fetch("/api/paper/performance", { cache: "no-store" }),
+      fetch("/api/ai-paper-trader/memory", { cache: "no-store" }),
+      fetch("/api/ai-paper-trader/learning", { cache: "no-store" }),
+      fetch("/api/ai-paper-trader/outcomes", { cache: "no-store" }),
+      fetch("/api/ai-paper-trader/strategy", { cache: "no-store" }),
+      fetch("/api/ai-paper-trader/market-regime", { cache: "no-store" }),
+      fetch("/api/news-intelligence", { cache: "no-store" }),
+      fetch("/api/economic-calendar", { cache: "no-store" }),
+      fetch("/api/portfolio-intelligence", { cache: "no-store" }),
+      fetch("/api/portfolio-brain", { cache: "no-store" }),
+    ]);
 
-      const historyPayload = await historyResponse.json();
-      const performancePayload = await performanceResponse.json();
-      const memoryPayload = (await memoryResponse.json()) as AgentMemoryResponse;
-      const learningPayload = (await learningResponse.json()) as AILearningResponse;
-      const outcomesPayload = (await outcomesResponse.json()) as AIOutcomesResponse;
-      const strategyPayload = (await strategyResponse.json()) as StrategyEvolutionResponse;
-      const marketRegimePayload = (await marketRegimeResponse.json()) as MarketRegimeResponse;
-      const newsIntelligencePayload = (await newsIntelligenceResponse.json()) as NewsIntelligenceResponse;
-      const economicCalendarPayload = (await economicCalendarResponse.json()) as EconomicCalendarResponse;
-      const portfolioIntelligencePayload = (await portfolioIntelligenceResponse.json()) as PortfolioIntelligenceResponse;
-      const portfolioBrainPayload = (await portfolioBrainResponse.json()) as PortfolioBrainResponse;
+    const historyPayload = await historyResponse.json();
+    const performancePayload = await performanceResponse.json();
+    const memoryPayload = (await memoryResponse.json()) as AgentMemoryResponse;
+    const learningPayload = (await learningResponse.json()) as AILearningResponse;
+    const outcomesPayload = (await outcomesResponse.json()) as AIOutcomesResponse;
+    const strategyPayload = (await strategyResponse.json()) as StrategyEvolutionResponse;
+    const marketRegimePayload = (await marketRegimeResponse.json()) as MarketRegimeResponse;
+    const newsIntelligencePayload = (await newsIntelligenceResponse.json()) as NewsIntelligenceResponse;
+    const economicCalendarPayload = (await economicCalendarResponse.json()) as EconomicCalendarResponse;
+    const portfolioIntelligencePayload = (await portfolioIntelligenceResponse.json()) as PortfolioIntelligenceResponse;
+    const portfolioBrainPayload = (await portfolioBrainResponse.json()) as PortfolioBrainResponse;
 
-      setHistory(historyPayload.history ?? []);
-      setPerformance(performancePayload.performance ?? null);
-      setMemory(memoryPayload.memory ?? []);
-      setLatestMemory(memoryPayload.latest ?? []);
-      setMemoryStats(memoryPayload.stats ?? null);
-      setLearning(learningPayload.learning ?? null);
-      setOutcomes(outcomesPayload.outcomes ?? null);
-      setStrategy(strategyPayload.strategy ?? null);
-      setMarketRegime(marketRegimePayload.regime ?? null);
-      setNewsIntelligence(newsIntelligencePayload.report ?? null);
-      setEconomicCalendar(economicCalendarPayload.report ?? null);
-      setPortfolioIntelligence(portfolioIntelligencePayload.report ?? null);
-      setPortfolioBrain(portfolioBrainPayload.report ?? null);
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Failed to refresh AI Agent data."
-      );
-    } finally {
-      setLoading(false);
-    }
+    setHistory(historyPayload.history ?? []);
+    setPerformance(performancePayload.performance ?? null);
+    setMemory(memoryPayload.memory ?? []);
+    setLatestMemory(memoryPayload.latest ?? []);
+    setMemoryStats(memoryPayload.stats ?? null);
+    setLearning(learningPayload.learning ?? null);
+    setOutcomes(outcomesPayload.outcomes ?? null);
+    setStrategy(strategyPayload.strategy ?? null);
+    setMarketRegime(marketRegimePayload.regime ?? null);
+    setNewsIntelligence(newsIntelligencePayload.report ?? null);
+    setEconomicCalendar(economicCalendarPayload.report ?? null);
+    setPortfolioIntelligence(portfolioIntelligencePayload.report ?? null);
+    setPortfolioBrain(portfolioBrainPayload.report ?? null);
+  } catch (error) {
+    setMessage(
+      error instanceof Error
+        ? error.message
+        : "Failed to refresh AI Agent data."
+    );
+  } finally {
+    setLoading(false);
   }
+} 
 
   async function runAIAgentTrade() {
     try {
