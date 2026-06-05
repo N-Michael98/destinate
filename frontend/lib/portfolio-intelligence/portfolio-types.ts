@@ -6,7 +6,15 @@ export type PortfolioAssetClass =
   | "STOCK"
   | "CASH";
 
-export type PortfolioDirection = "LONG" | "SHORT" | "NEUTRAL";
+export type PortfolioDirection =
+  | "LONG"
+  | "SHORT"
+  | "NEUTRAL";
+
+export type PortfolioRiskLevel =
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH";
 
 export type PortfolioPosition = {
   id: string;
@@ -20,12 +28,12 @@ export type PortfolioPosition = {
 export type PortfolioExposure = {
   assetClass: PortfolioAssetClass;
   exposurePercent: number;
-  riskLevel: "LOW" | "MEDIUM" | "HIGH";
+  riskLevel: PortfolioRiskLevel;
 };
 
 export type PortfolioCorrelation = {
   pair: string;
-  correlationRisk: "LOW" | "MEDIUM" | "HIGH";
+  correlationRisk: PortfolioRiskLevel;
   reason: string;
 };
 
@@ -36,8 +44,36 @@ export type PortfolioAllocation = {
 };
 
 export type PortfolioSummary = {
+  version: string;
   totalPositions: number;
   diversificationScore: number;
-  portfolioRisk: "LOW" | "MEDIUM" | "HIGH";
+  portfolioRisk: PortfolioRiskLevel;
+  portfolioRiskScore: number;
+  concentrationScore: number;
+  portfolioHealth: number;
+  highestExposureAssetClass: PortfolioAssetClass | null;
+  highestExposurePercent: number;
+  highCorrelationPairs: number;
+  mediumCorrelationPairs: number;
+  totalSuggestedAllocation: number;
+  aiRecommendation: string;
   liveTradingEnabled: false;
+  updatedAt: string;
+};
+
+export type PortfolioIntelligenceReport = {
+  version: string;
+  status: "READY";
+  portfolioFilterEnabled: boolean;
+  liveTradingEnabled: false;
+  positions: PortfolioPosition[];
+  exposure: PortfolioExposure[];
+  correlationRisk: PortfolioCorrelation[];
+  allocationPlan: PortfolioAllocation[];
+  summary: PortfolioSummary;
+  roadmap: {
+    currentPhase: string;
+    nextSteps: string[];
+  };
+  generatedAt: string;
 };
