@@ -20,19 +20,20 @@ export function savePortfolioBrainMemory(
   const reportAny = report as any;
 
   const decision =
+    reportAny.decision?.finalDecision ??
     reportAny.finalDecision?.signal ??
     reportAny.decision?.signal ??
-    reportAny.decision ??
     reportAny.signal ??
     "UNKNOWN";
 
   const confidence =
-    reportAny.finalDecision?.confidence ??
     reportAny.decision?.confidence ??
+    reportAny.finalDecision?.confidence ??
     reportAny.confidence ??
     0;
 
   const riskScore =
+    reportAny.decision?.averageRiskScore ??
     reportAny.finalDecision?.riskScore ??
     reportAny.decision?.riskScore ??
     reportAny.riskScore ??

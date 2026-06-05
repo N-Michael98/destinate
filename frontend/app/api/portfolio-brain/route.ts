@@ -16,7 +16,9 @@ export async function GET() {
       ok: true,
       report,
       memoryEntry,
+      memory,
       memoryCount: memory.length,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     return NextResponse.json(
