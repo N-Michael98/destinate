@@ -1,24 +1,31 @@
 import { NextResponse } from "next/server";
-import { runPortfolioBrain } from "@/lib/portfolio-brain";
+import { runPortfolioBrain } from "@/lib/portfolio-brain/brain-manager";
+import {
+  savePortfolioBrainMemory,
+  getPortfolioBrainMemory,
+} from "@/lib/portfolio-brain/portfolio-brain-memory";
 
 export async function GET() {
   try {
     const report = runPortfolioBrain();
 
+    const memoryEntry = savePortfolioBrainMemory(report);
+    const memory = getPortfolioBrainMemory();
+
     return NextResponse.json({
       ok: true,
       report,
-      timestamp: new Date().toISOString(),
+      memoryEntry,
+      memoryCount: memory.length,
     });
   } catch (error) {
     return NextResponse.json(
       {
         ok: false,
-        error: "Failed to run portfolio brain",
-        details:
+        error:
           error instanceof Error
             ? error.message
-            : String(error),
+            : "Unknown Portfolio Brain API error",
       },
       { status: 500 }
     );
