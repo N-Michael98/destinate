@@ -8,6 +8,7 @@ import { StrategyEvolutionEngine } from "./strategy-evolution";
 import { AdaptiveConfidenceEngine } from "./adaptive-confidence-engine";
 import { generateEconomicCalendarReport } from "@/lib/economic-calendar";
 import { NewsIntelligenceEngine } from "@/lib/news-intelligence/news-intelligence-engine";
+import { getPortfolioIntelligenceReport } from "@/lib/portfolio-intelligence";
 
 function getEconomicMemoryType(tradingAction: string) {
   if (tradingAction === "NEWS_LOCKDOWN") return "ECONOMIC_RISK_BLOCK";
@@ -23,10 +24,37 @@ function getNewsMemoryType(tradingAction: string) {
   return "NEWS_RISK_NORMAL";
 }
 
+function getPortfolioMemoryType(portfolioRiskScore: number) {
+  if (portfolioRiskScore >= 85) return "PORTFOLIO_RISK_BLOCK";
+  if (portfolioRiskScore >= 70) return "PORTFOLIO_RISK_ELEVATED";
+  if (portfolioRiskScore >= 45) return "PORTFOLIO_RISK_REDUCED";
+  return "PORTFOLIO_RISK_NORMAL";
+}
+
 function getNewsTradingAction(marketRiskScore: number) {
   if (marketRiskScore >= 85) return "NEWS_LOCKDOWN";
   if (marketRiskScore >= 75) return "AVOID_NEW_POSITIONS";
   if (marketRiskScore >= 45) return "REDUCE_RISK";
+  return "NORMAL_TRADING";
+}
+
+function getPortfolioTradingAction(
+  portfolioRiskScore: number,
+  portfolioHealth: number,
+  concentrationScore: number
+) {
+  if (portfolioRiskScore >= 85 || portfolioHealth <= 35) {
+    return "PORTFOLIO_LOCKDOWN";
+  }
+
+  if (portfolioRiskScore >= 70 || concentrationScore >= 75) {
+    return "AVOID_NEW_POSITIONS";
+  }
+
+  if (portfolioRiskScore >= 45 || concentrationScore >= 55) {
+    return "REDUCE_RISK";
+  }
+
   return "NORMAL_TRADING";
 }
 
@@ -36,11 +64,18 @@ export class AIPaperTrader {
     const strategyEvolution = StrategyEvolutionEngine.analyze();
     const economicCalendar = generateEconomicCalendarReport();
     const newsIntelligence = NewsIntelligenceEngine.analyze();
+    const portfolioIntelligence = getPortfolioIntelligenceReport();
 
     const bestStrategy = strategyEvolution.bestStrategy;
 
     const newsTradingAction = getNewsTradingAction(
       newsIntelligence.marketRiskScore
+    );
+
+    const portfolioTradingAction = getPortfolioTradingAction(
+      portfolioIntelligence.summary.portfolioRiskScore,
+      portfolioIntelligence.summary.portfolioHealth,
+      portfolioIntelligence.summary.concentrationScore
     );
 
     const adaptiveConfidence = AdaptiveConfidenceEngine.calculate({
@@ -56,8 +91,27 @@ export class AIPaperTrader {
       macroNewsAccuracy: learning.macroNewsAccuracy ?? 0,
     });
 
+    const portfolioConfidencePenalty =
+      portfolioTradingAction === "PORTFOLIO_LOCKDOWN"
+        ? 100
+        : portfolioTradingAction === "AVOID_NEW_POSITIONS"
+          ? 15
+          : portfolioTradingAction === "REDUCE_RISK"
+            ? 8
+            : 0;
+
+    const portfolioAdjustedConfidence = Math.max(
+      0,
+      Number(
+        (
+          adaptiveConfidence.adaptiveConfidence -
+          portfolioConfidencePenalty
+        ).toFixed(2)
+      )
+    );
+
     const idea = GPTAnalyst.generateTradeIdea(
-      adaptiveConfidence.adaptiveConfidence,
+      portfolioAdjustedConfidence,
       {
         id: bestStrategy.id,
         name: bestStrategy.name,
@@ -74,14 +128,21 @@ export class AIPaperTrader {
 
     const newsMemoryType = getNewsMemoryType(newsTradingAction);
 
+    const portfolioMemoryType = getPortfolioMemoryType(
+      portfolioIntelligence.summary.portfolioRiskScore
+    );
+
     const economicRiskNote = `Economic Risk: ${economicCalendar.riskLevel} | Action: ${economicCalendar.tradingAction} | Score: ${economicCalendar.riskScore}`;
 
     const newsRiskNote = `News Risk: ${newsIntelligence.overallSentiment} | Action: ${newsTradingAction} | Score: ${newsIntelligence.marketRiskScore}`;
 
+    const portfolioRiskNote = `Portfolio Risk: ${portfolioIntelligence.summary.portfolioRisk} | Action: ${portfolioTradingAction} | Score: ${portfolioIntelligence.summary.portfolioRiskScore} | Health: ${portfolioIntelligence.summary.portfolioHealth} | Concentration: ${portfolioIntelligence.summary.concentrationScore}`;
+
     const hardBlock =
       economicCalendar.tradingAction === "NEWS_LOCKDOWN" ||
       newsTradingAction === "NEWS_LOCKDOWN" ||
-      adaptiveConfidence.adaptiveConfidence <= 0;
+      portfolioTradingAction === "PORTFOLIO_LOCKDOWN" ||
+      portfolioAdjustedConfidence <= 0;
 
     if (hardBlock) {
       const economicMemory = AgentMemory.add({
@@ -101,8 +162,12 @@ export class AIPaperTrader {
           strategyEvolution,
           economicCalendar,
           newsIntelligence,
+          portfolioIntelligence,
           newsTradingAction,
+          portfolioTradingAction,
           adaptiveConfidence,
+          portfolioConfidencePenalty,
+          portfolioAdjustedConfidence,
         },
       });
 
@@ -123,8 +188,38 @@ export class AIPaperTrader {
           strategyEvolution,
           economicCalendar,
           newsIntelligence,
+          portfolioIntelligence,
           newsTradingAction,
+          portfolioTradingAction,
           adaptiveConfidence,
+          portfolioConfidencePenalty,
+          portfolioAdjustedConfidence,
+        },
+      });
+
+      const portfolioMemory = AgentMemory.add({
+        type: portfolioMemoryType,
+        symbol: idea.symbol,
+        direction: idea.direction,
+        confidence: idea.confidence,
+        approved: false,
+        executed: false,
+        consensusScore: 0,
+        riskScore: portfolioIntelligence.summary.portfolioRiskScore,
+        reason:
+          "AI paper trade blocked or reduced by Portfolio Intelligence risk layer.",
+        payload: {
+          idea,
+          learning,
+          strategyEvolution,
+          economicCalendar,
+          newsIntelligence,
+          portfolioIntelligence,
+          newsTradingAction,
+          portfolioTradingAction,
+          adaptiveConfidence,
+          portfolioConfidencePenalty,
+          portfolioAdjustedConfidence,
         },
       });
 
@@ -138,20 +233,26 @@ export class AIPaperTrader {
         consensusScore: 0,
         riskScore: Math.max(
           economicCalendar.riskScore,
-          newsIntelligence.marketRiskScore
+          newsIntelligence.marketRiskScore,
+          portfolioIntelligence.summary.portfolioRiskScore
         ),
         reason:
-          "AI paper trade blocked by Adaptive Confidence Engine and combined Economic Calendar / News Intelligence risk layer.",
+          "AI paper trade blocked by Adaptive Confidence Engine, Economic Calendar, News Intelligence and Portfolio Intelligence risk layers.",
         payload: {
           idea,
           learning,
           strategyEvolution,
           economicCalendar,
           newsIntelligence,
+          portfolioIntelligence,
           newsTradingAction,
+          portfolioTradingAction,
           economicMemory,
           newsMemory,
+          portfolioMemory,
           adaptiveConfidence,
+          portfolioConfidencePenalty,
+          portfolioAdjustedConfidence,
         },
       });
 
@@ -160,34 +261,42 @@ export class AIPaperTrader {
         executed: false,
         idea,
         risk: {
-          source: "Adaptive Confidence + Combined Risk Layer",
+          source:
+            "Adaptive Confidence + Economic + News + Portfolio Risk Layer",
           approved: false,
           riskScore: Math.max(
             economicCalendar.riskScore,
-            newsIntelligence.marketRiskScore
+            newsIntelligence.marketRiskScore,
+            portfolioIntelligence.summary.portfolioRiskScore
           ),
           maxRiskPercent: 0,
           reason:
-            "Trade blocked because adaptive confidence or combined macro/news risk requires protection.",
+            "Trade blocked because adaptive confidence, macro/news risk or portfolio risk requires protection.",
         },
         consensus: {
-          source: "Adaptive Confidence + Combined Risk Layer",
+          source:
+            "Adaptive Confidence + Economic + News + Portfolio Risk Layer",
           approved: false,
           score: 0,
           reason:
-            "Consensus blocked before execution due to adaptive confidence and combined macro/news risk.",
+            "Consensus blocked before execution due to adaptive confidence, macro/news and portfolio protection.",
         },
         learning,
         strategyEvolution,
         economicCalendar,
         newsIntelligence,
+        portfolioIntelligence,
         newsTradingAction,
+        portfolioTradingAction,
         adaptiveConfidence,
+        portfolioConfidencePenalty,
+        portfolioAdjustedConfidence,
         economicMemory,
         newsMemory,
+        portfolioMemory,
         memory,
         message:
-          "AI paper trade blocked by Adaptive Confidence Engine and combined Economic Calendar / News Intelligence risk.",
+          "AI paper trade blocked by Portfolio-aware Adaptive Confidence and combined risk layers.",
       };
     }
 
@@ -213,8 +322,39 @@ export class AIPaperTrader {
           strategyEvolution,
           economicCalendar,
           newsIntelligence,
+          portfolioIntelligence,
           newsTradingAction,
+          portfolioTradingAction,
           adaptiveConfidence,
+          portfolioConfidencePenalty,
+          portfolioAdjustedConfidence,
+        },
+      });
+
+      const portfolioMemory = AgentMemory.add({
+        type: portfolioMemoryType,
+        symbol: idea.symbol,
+        direction: idea.direction,
+        confidence: idea.confidence,
+        approved: false,
+        executed: false,
+        consensusScore: consensus.score,
+        riskScore: portfolioIntelligence.summary.portfolioRiskScore,
+        reason: `Portfolio intelligence risk processed before rejected decision: ${portfolioIntelligence.summary.portfolioRisk} / ${portfolioTradingAction}.`,
+        payload: {
+          idea,
+          risk,
+          consensus,
+          learning,
+          strategyEvolution,
+          economicCalendar,
+          newsIntelligence,
+          portfolioIntelligence,
+          newsTradingAction,
+          portfolioTradingAction,
+          adaptiveConfidence,
+          portfolioConfidencePenalty,
+          portfolioAdjustedConfidence,
         },
       });
 
@@ -229,9 +369,10 @@ export class AIPaperTrader {
         riskScore: Math.max(
           risk.riskScore,
           economicCalendar.riskScore,
-          newsIntelligence.marketRiskScore
+          newsIntelligence.marketRiskScore,
+          portfolioIntelligence.summary.portfolioRiskScore
         ),
-        reason: `${consensus.reason} | ${economicRiskNote} | ${newsRiskNote} | ${adaptiveConfidence.reason}`,
+        reason: `${consensus.reason} | ${economicRiskNote} | ${newsRiskNote} | ${portfolioRiskNote} | ${adaptiveConfidence.reason}`,
         payload: {
           idea,
           risk,
@@ -240,9 +381,14 @@ export class AIPaperTrader {
           strategyEvolution,
           economicCalendar,
           newsIntelligence,
+          portfolioIntelligence,
           newsTradingAction,
+          portfolioTradingAction,
           newsMemory,
+          portfolioMemory,
           adaptiveConfidence,
+          portfolioConfidencePenalty,
+          portfolioAdjustedConfidence,
         },
       });
 
@@ -256,21 +402,28 @@ export class AIPaperTrader {
         strategyEvolution,
         economicCalendar,
         newsIntelligence,
+        portfolioIntelligence,
         newsTradingAction,
+        portfolioTradingAction,
         adaptiveConfidence,
+        portfolioConfidencePenalty,
+        portfolioAdjustedConfidence,
         newsMemory,
+        portfolioMemory,
         memory,
         message:
-          "AI paper trade rejected by consensus with adaptive confidence, economic risk and news risk included.",
+          "AI paper trade rejected by consensus with adaptive confidence, economic risk, news risk and portfolio risk included.",
       };
     }
 
     const orderSize =
       economicCalendar.tradingAction === "AVOID_NEW_POSITIONS" ||
-      newsTradingAction === "AVOID_NEW_POSITIONS"
+      newsTradingAction === "AVOID_NEW_POSITIONS" ||
+      portfolioTradingAction === "AVOID_NEW_POSITIONS"
         ? 0.25
         : economicCalendar.tradingAction === "REDUCE_RISK" ||
-            newsTradingAction === "REDUCE_RISK"
+            newsTradingAction === "REDUCE_RISK" ||
+            portfolioTradingAction === "REDUCE_RISK"
           ? 0.5
           : 1;
 
@@ -292,8 +445,12 @@ export class AIPaperTrader {
         strategyEvolution,
         economicCalendar,
         newsIntelligence,
+        portfolioIntelligence,
         newsTradingAction,
+        portfolioTradingAction,
         adaptiveConfidence,
+        portfolioConfidencePenalty,
+        portfolioAdjustedConfidence,
         orderSize,
       },
     });
@@ -316,8 +473,40 @@ export class AIPaperTrader {
         strategyEvolution,
         economicCalendar,
         newsIntelligence,
+        portfolioIntelligence,
         newsTradingAction,
+        portfolioTradingAction,
         adaptiveConfidence,
+        portfolioConfidencePenalty,
+        portfolioAdjustedConfidence,
+        orderSize,
+      },
+    });
+
+    const portfolioMemory = AgentMemory.add({
+      type: portfolioMemoryType,
+      symbol: idea.symbol,
+      direction: idea.direction,
+      confidence: idea.confidence,
+      approved: true,
+      executed: false,
+      consensusScore: consensus.score,
+      riskScore: portfolioIntelligence.summary.portfolioRiskScore,
+      reason: `Portfolio intelligence risk processed before execution: ${portfolioIntelligence.summary.portfolioRisk} / ${portfolioTradingAction}.`,
+      payload: {
+        idea,
+        risk,
+        consensus,
+        learning,
+        strategyEvolution,
+        economicCalendar,
+        newsIntelligence,
+        portfolioIntelligence,
+        newsTradingAction,
+        portfolioTradingAction,
+        adaptiveConfidence,
+        portfolioConfidencePenalty,
+        portfolioAdjustedConfidence,
         orderSize,
       },
     });
@@ -330,7 +519,7 @@ export class AIPaperTrader {
       idea.takeProfit1,
       idea.takeProfit2,
       idea.confidence,
-      `${idea.reason} | ${risk.reason} | ${consensus.reason} | ${economicRiskNote} | ${newsRiskNote} | ${adaptiveConfidence.reason}`,
+      `${idea.reason} | ${risk.reason} | ${consensus.reason} | ${economicRiskNote} | ${newsRiskNote} | ${portfolioRiskNote} | ${adaptiveConfidence.reason}`,
       orderSize
     );
 
@@ -345,10 +534,11 @@ export class AIPaperTrader {
       riskScore: Math.max(
         risk.riskScore,
         economicCalendar.riskScore,
-        newsIntelligence.marketRiskScore
+        newsIntelligence.marketRiskScore,
+        portfolioIntelligence.summary.portfolioRiskScore
       ),
       reason:
-        "AI paper trade executed with Adaptive Confidence Engine, strategy selection, economic risk layer, news intelligence layer and stored in memory.",
+        "AI paper trade executed with Adaptive Confidence Engine, strategy selection, economic risk layer, news intelligence layer, portfolio intelligence layer and stored in memory.",
       payload: {
         idea,
         risk,
@@ -357,10 +547,15 @@ export class AIPaperTrader {
         strategyEvolution,
         economicCalendar,
         newsIntelligence,
+        portfolioIntelligence,
         newsTradingAction,
+        portfolioTradingAction,
         adaptiveConfidence,
+        portfolioConfidencePenalty,
+        portfolioAdjustedConfidence,
         economicMemory,
         newsMemory,
+        portfolioMemory,
         execution,
       },
     });
@@ -375,14 +570,19 @@ export class AIPaperTrader {
       strategyEvolution,
       economicCalendar,
       newsIntelligence,
+      portfolioIntelligence,
       newsTradingAction,
+      portfolioTradingAction,
       adaptiveConfidence,
+      portfolioConfidencePenalty,
+      portfolioAdjustedConfidence,
       economicMemory,
       newsMemory,
+      portfolioMemory,
       execution,
       memory,
       message:
-        "AI paper trade executed successfully with Adaptive Confidence Engine, economic risk and news risk integration.",
+        "AI paper trade executed successfully with Portfolio-aware Adaptive Confidence, economic risk and news risk integration.",
     };
   }
 }

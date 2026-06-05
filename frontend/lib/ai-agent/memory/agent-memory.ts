@@ -13,7 +13,11 @@ export type AgentMemoryType =
   | "NEWS_RISK_BLOCK"
   | "NEWS_RISK_REDUCED"
   | "NEWS_RISK_ELEVATED"
-  | "NEWS_RISK_NORMAL";
+  | "NEWS_RISK_NORMAL"
+  | "PORTFOLIO_RISK_BLOCK"
+  | "PORTFOLIO_RISK_REDUCED"
+  | "PORTFOLIO_RISK_ELEVATED"
+  | "PORTFOLIO_RISK_NORMAL";
 
 export type AgentMemoryEntry = {
   id: string;
@@ -110,6 +114,13 @@ export class AgentMemory {
       .reverse();
   }
 
+  static getPortfolioRiskMemories(limit = 20) {
+    return readMemory()
+      .filter((item) => item.type.startsWith("PORTFOLIO_RISK"))
+      .slice(-limit)
+      .reverse();
+  }
+
   static clear() {
     writeMemory([]);
   }
@@ -165,6 +176,26 @@ export class AgentMemory {
       (item) => item.type === "NEWS_RISK_NORMAL"
     );
 
+    const portfolioRiskMemories = memory.filter((item) =>
+      item.type.startsWith("PORTFOLIO_RISK")
+    );
+
+    const portfolioRiskBlocks = memory.filter(
+      (item) => item.type === "PORTFOLIO_RISK_BLOCK"
+    );
+
+    const portfolioRiskReduced = memory.filter(
+      (item) => item.type === "PORTFOLIO_RISK_REDUCED"
+    );
+
+    const portfolioRiskElevated = memory.filter(
+      (item) => item.type === "PORTFOLIO_RISK_ELEVATED"
+    );
+
+    const portfolioRiskNormal = memory.filter(
+      (item) => item.type === "PORTFOLIO_RISK_NORMAL"
+    );
+
     const averageConfidence =
       memory.length > 0
         ? Number(
@@ -213,6 +244,18 @@ export class AgentMemory {
           )
         : 0;
 
+    const averagePortfolioRisk =
+      portfolioRiskMemories.length > 0
+        ? Number(
+            (
+              portfolioRiskMemories.reduce(
+                (sum, item) => sum + Number(item.riskScore ?? 0),
+                0
+              ) / portfolioRiskMemories.length
+            ).toFixed(2)
+          )
+        : 0;
+
     return {
       totalMemories: memory.length,
       executedTrades: executed.length,
@@ -230,10 +273,17 @@ export class AgentMemory {
       newsRiskElevated: newsRiskElevated.length,
       newsRiskNormal: newsRiskNormal.length,
 
+      portfolioRiskMemories: portfolioRiskMemories.length,
+      portfolioRiskBlocks: portfolioRiskBlocks.length,
+      portfolioRiskReduced: portfolioRiskReduced.length,
+      portfolioRiskElevated: portfolioRiskElevated.length,
+      portfolioRiskNormal: portfolioRiskNormal.length,
+
       averageConfidence,
       averageConsensus,
       averageEconomicRisk,
       averageNewsRisk,
+      averagePortfolioRisk,
 
       updatedAt: new Date().toISOString(),
     };
