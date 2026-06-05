@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import PortfolioBrainPanel from "./portfolio-brain/PortfolioBrainPanel";
 import PortfolioBrainMemoryPanel from "./portfolio-brain/PortfolioBrainMemoryPanel";
 import PortfolioBrainLearningPanel from "./portfolio-brain/PortfolioBrainLearningPanel";
+import PortfolioBrainOutcomePanel from "./portfolio-brain/PortfolioBrainOutcomePanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -575,6 +576,43 @@ type PortfolioBrainLearningResponse = {
 };
 
 
+type PortfolioBrainOutcomeEntry = {
+  id: string;
+  memoryId: string;
+  createdAt: string;
+  decision: string;
+  confidence: number;
+  riskScore: number;
+  outcome: "WIN" | "LOSS" | "BREAKEVEN" | "OPEN";
+  pnlPercent: number;
+  reason: string;
+};
+
+type PortfolioBrainOutcomeReport = {
+  version: string;
+  status: "READY";
+  totalOutcomes: number;
+  wins: number;
+  losses: number;
+  breakevens: number;
+  openOutcomes: number;
+  winRate: number;
+  averagePnlPercent: number;
+  bestDecisionType: string;
+  worstDecisionType: string;
+  outcomeQualityScore: number;
+  recommendation: string;
+  outcomes: PortfolioBrainOutcomeEntry[];
+  updatedAt: string;
+};
+
+type PortfolioBrainOutcomesResponse = {
+  ok: boolean;
+  outcomes: PortfolioBrainOutcomeReport;
+  timestamp: string;
+};
+
+
 
 
 
@@ -635,6 +673,7 @@ export default function AIAgentControlCenter() {
   const [portfolioBrainMemory, setPortfolioBrainMemory] = useState<PortfolioBrainMemoryEntry[]>([]);
   const [portfolioBrainMemoryCount, setPortfolioBrainMemoryCount] = useState(0);
   const [portfolioBrainLearning, setPortfolioBrainLearning] = useState<PortfolioBrainLearningReport | null>(null);
+  const [portfolioBrainOutcomes, setPortfolioBrainOutcomes] = useState<PortfolioBrainOutcomeReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -656,6 +695,7 @@ export default function AIAgentControlCenter() {
       portfolioIntelligenceResponse,
       portfolioBrainResponse,
       portfolioBrainLearningResponse,
+      portfolioBrainOutcomesResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -669,6 +709,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/portfolio-intelligence", { cache: "no-store" }),
       fetch("/api/portfolio-brain", { cache: "no-store" }),
       fetch("/api/portfolio-brain-learning", { cache: "no-store" }),
+      fetch("/api/portfolio-brain-outcomes", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -683,6 +724,7 @@ export default function AIAgentControlCenter() {
     const portfolioIntelligencePayload = (await portfolioIntelligenceResponse.json()) as PortfolioIntelligenceResponse;
     const portfolioBrainPayload = (await portfolioBrainResponse.json()) as PortfolioBrainResponse;
     const portfolioBrainLearningPayload = (await portfolioBrainLearningResponse.json()) as PortfolioBrainLearningResponse;
+    const portfolioBrainOutcomesPayload = (await portfolioBrainOutcomesResponse.json()) as PortfolioBrainOutcomesResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -707,6 +749,7 @@ export default function AIAgentControlCenter() {
         (portfolioBrainPayload.memoryEntry ? 1 : 0)
     );
     setPortfolioBrainLearning(portfolioBrainLearningPayload.learning ?? null);
+    setPortfolioBrainOutcomes(portfolioBrainOutcomesPayload.outcomes ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -845,6 +888,8 @@ export default function AIAgentControlCenter() {
       />
 
       <PortfolioBrainLearningPanel learning={portfolioBrainLearning} />
+
+      <PortfolioBrainOutcomePanel outcomes={portfolioBrainOutcomes} />
 
       <PortfolioIntelligencePanel portfolioIntelligence={portfolioIntelligence} />
 
