@@ -120,6 +120,13 @@ type AgentMemoryStats = {
   newsRiskNormal?: number;
   averageNewsRisk?: number;
 
+  portfolioRiskMemories?: number;
+  portfolioRiskBlocks?: number;
+  portfolioRiskReduced?: number;
+  portfolioRiskElevated?: number;
+  portfolioRiskNormal?: number;
+  averagePortfolioRisk?: number;
+
   averageConfidence: number;
   averageConsensus: number;
   updatedAt: string;
@@ -160,11 +167,22 @@ type AILearning = {
   newsRiskAccuracy?: number;
   newsRiskScore?: number;
 
+  portfolioRiskMemories?: number;
+  portfolioRiskBlocks?: number;
+  portfolioRiskReduced?: number;
+  portfolioRiskElevated?: number;
+  portfolioRiskNormal?: number;
+  portfolioRiskAccuracy?: number;
+  portfolioRiskScore?: number;
+
   averageNewsRisk?: number;
   averageEconomicRisk?: number;
+  averagePortfolioRisk?: number;
 
   combinedMacroNewsScore?: number;
   macroNewsAccuracy?: number;
+  combinedPortfolioMacroScore?: number;
+  portfolioLearningScore?: number;
 
   averageConfidence: number;
   averageConsensus: number;
@@ -642,7 +660,7 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.2.1</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.2.5</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
             Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection, News Intelligence und Economic Calendar.
           </p>
@@ -1713,9 +1731,9 @@ export default function AIAgentControlCenter() {
       <div className="bg-black border border-lime-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">🧠 AI Learning Panel V11.1.4</h3>
+            <h3 className="text-3xl font-bold">🧠 AI Learning Panel V11.2.5</h3>
             <p className="text-gray-400 mt-2">
-              Macro-News Learning Brain aus <span className="text-lime-400">/api/ai-paper-trader/learning</span>. Verbindet Economic Risk, News Risk, Memory und adaptive Confidence.
+              Portfolio-Macro Learning Brain aus <span className="text-lime-400">/api/ai-paper-trader/learning</span>. Verbindet Economic Risk, News Risk, Portfolio Risk, Memory und adaptive Confidence.
             </p>
           </div>
 
@@ -1821,6 +1839,68 @@ export default function AIAgentControlCenter() {
           />
         </div>
 
+        <div className="grid grid-cols-5 gap-5 mb-6">
+          <StatCard
+            title="Portfolio Score"
+            value={`${learning?.portfolioRiskScore ?? 0}`}
+            subtitle="Average portfolio risk"
+            accent={
+              (learning?.portfolioRiskScore ?? 0) >= 70
+                ? "text-red-400"
+                : (learning?.portfolioRiskScore ?? 0) >= 45
+                  ? "text-yellow-400"
+                  : "text-green-400"
+            }
+            border={
+              (learning?.portfolioRiskScore ?? 0) >= 70
+                ? "border-red-900"
+                : (learning?.portfolioRiskScore ?? 0) >= 45
+                  ? "border-yellow-900"
+                  : "border-green-900"
+            }
+          />
+          <StatCard
+            title="Portfolio Accuracy"
+            value={`${learning?.portfolioRiskAccuracy ?? 0}%`}
+            subtitle="Portfolio risk learning"
+            accent="text-green-400"
+            border="border-green-900"
+          />
+          <StatCard
+            title="Portfolio Learning"
+            value={`${learning?.portfolioLearningScore ?? 0}`}
+            subtitle="Portfolio intelligence score"
+            accent="text-purple-400"
+            border="border-purple-900"
+          />
+          <StatCard
+            title="Portfolio Macro"
+            value={`${learning?.combinedPortfolioMacroScore ?? 0}`}
+            subtitle="Portfolio + macro blend"
+            accent={
+              (learning?.combinedPortfolioMacroScore ?? 0) >= 80
+                ? "text-red-400"
+                : (learning?.combinedPortfolioMacroScore ?? 0) >= 60
+                  ? "text-orange-400"
+                  : "text-cyan-400"
+            }
+            border={
+              (learning?.combinedPortfolioMacroScore ?? 0) >= 80
+                ? "border-red-900"
+                : (learning?.combinedPortfolioMacroScore ?? 0) >= 60
+                  ? "border-orange-900"
+                  : "border-cyan-900"
+            }
+          />
+          <StatCard
+            title="Avg Portfolio Risk"
+            value={`${learning?.averagePortfolioRisk ?? 0}`}
+            subtitle="Memory portfolio average"
+            accent="text-fuchsia-400"
+            border="border-fuchsia-900"
+          />
+        </div>
+
         <div className="grid grid-cols-3 gap-5 mb-6">
           <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
             <h4 className="text-xl font-bold">📊 Learning Metrics</h4>
@@ -1871,6 +1951,16 @@ export default function AIAgentControlCenter() {
                 value={`${learning?.averageNewsRisk ?? 0}`}
                 accent="text-sky-400"
               />
+              <StatusPill
+                label="Portfolio Memories"
+                value={`${learning?.portfolioRiskMemories ?? 0}`}
+                accent="text-purple-400"
+              />
+              <StatusPill
+                label="Avg Portfolio Risk"
+                value={`${learning?.averagePortfolioRisk ?? 0}`}
+                accent="text-purple-300"
+              />
             </div>
           </div>
 
@@ -1885,7 +1975,7 @@ export default function AIAgentControlCenter() {
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-5">
+        <div className="grid grid-cols-5 gap-5">
           <div className="bg-gray-950 border border-red-900 rounded-2xl p-5">
             <h4 className="text-xl font-bold">📅 Economic Risk Learning</h4>
             <div className="space-y-3 mt-4">
@@ -1906,6 +1996,16 @@ export default function AIAgentControlCenter() {
             </div>
           </div>
 
+          <div className="bg-gray-950 border border-purple-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">📊 Portfolio Risk Learning</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="Blocks" value={`${learning?.portfolioRiskBlocks ?? 0}`} accent="text-red-400" />
+              <StatusPill label="Reduced" value={`${learning?.portfolioRiskReduced ?? 0}`} accent="text-yellow-400" />
+              <StatusPill label="Elevated" value={`${learning?.portfolioRiskElevated ?? 0}`} accent="text-orange-400" />
+              <StatusPill label="Normal" value={`${learning?.portfolioRiskNormal ?? 0}`} accent="text-green-400" />
+            </div>
+          </div>
+
           <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
             <h4 className="text-xl font-bold">🧪 Decision Rates</h4>
             <div className="space-y-3 mt-4">
@@ -1919,7 +2019,7 @@ export default function AIAgentControlCenter() {
           <div className="bg-gray-950 border border-lime-900 rounded-2xl p-5">
             <h4 className="text-xl font-bold">🧠 Learning Brain</h4>
             <p className="text-gray-400 mt-4 leading-relaxed">
-              Economic Calendar und News Intelligence fließen jetzt gemeinsam in Learning Score, Agent Accuracy und Adaptive Confidence ein.
+              Economic Calendar, News Intelligence und Portfolio Intelligence fließen jetzt gemeinsam in Learning Score, Portfolio Learning Score, Agent Accuracy und Adaptive Confidence ein.
             </p>
             <p className="text-lime-300 font-bold mt-4">
               Version: {learning?.version ?? "waiting"}
