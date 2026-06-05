@@ -1,6 +1,10 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState } from "react";
+import PortfolioBrainPanel from "./portfolio-brain/PortfolioBrainPanel";
+import PortfolioBrainMemoryPanel from "./portfolio-brain/PortfolioBrainMemoryPanel";
+import PortfolioBrainLearningPanel from "./portfolio-brain/PortfolioBrainLearningPanel";
+import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
   ok: boolean;
@@ -538,6 +542,38 @@ type PortfolioBrainResponse = {
   timestamp: string;
 };
 
+type PortfolioBrainLearningDecisionStat = {
+  decision: string;
+  count: number;
+  averageConfidence: number;
+  averageRiskScore: number;
+};
+
+type PortfolioBrainLearningReport = {
+  version: string;
+  status: "READY";
+  totalMemories: number;
+  totalDecisions: number;
+  waitDecisions: number;
+  longDecisions: number;
+  shortDecisions: number;
+  blockDecisions: number;
+  averageConfidence: number;
+  averageRiskScore: number;
+  bestDecisionType: string;
+  worstDecisionType: string;
+  learningScore: number;
+  recommendation: string;
+  decisionStats: PortfolioBrainLearningDecisionStat[];
+  updatedAt: string;
+};
+
+type PortfolioBrainLearningResponse = {
+  ok: boolean;
+  learning: PortfolioBrainLearningReport;
+  timestamp: string;
+};
+
 
 
 
@@ -598,6 +634,7 @@ export default function AIAgentControlCenter() {
   const [portfolioBrain, setPortfolioBrain] = useState<PortfolioBrainReport | null>(null);
   const [portfolioBrainMemory, setPortfolioBrainMemory] = useState<PortfolioBrainMemoryEntry[]>([]);
   const [portfolioBrainMemoryCount, setPortfolioBrainMemoryCount] = useState(0);
+  const [portfolioBrainLearning, setPortfolioBrainLearning] = useState<PortfolioBrainLearningReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -618,6 +655,7 @@ export default function AIAgentControlCenter() {
       economicCalendarResponse,
       portfolioIntelligenceResponse,
       portfolioBrainResponse,
+      portfolioBrainLearningResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -630,6 +668,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/economic-calendar", { cache: "no-store" }),
       fetch("/api/portfolio-intelligence", { cache: "no-store" }),
       fetch("/api/portfolio-brain", { cache: "no-store" }),
+      fetch("/api/portfolio-brain-learning", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -643,6 +682,7 @@ export default function AIAgentControlCenter() {
     const economicCalendarPayload = (await economicCalendarResponse.json()) as EconomicCalendarResponse;
     const portfolioIntelligencePayload = (await portfolioIntelligenceResponse.json()) as PortfolioIntelligenceResponse;
     const portfolioBrainPayload = (await portfolioBrainResponse.json()) as PortfolioBrainResponse;
+    const portfolioBrainLearningPayload = (await portfolioBrainLearningResponse.json()) as PortfolioBrainLearningResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -666,6 +706,7 @@ export default function AIAgentControlCenter() {
         portfolioBrainPayload.memory?.length ??
         (portfolioBrainPayload.memoryEntry ? 1 : 0)
     );
+    setPortfolioBrainLearning(portfolioBrainLearningPayload.learning ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -740,7 +781,7 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.3.3</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.4.1</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
             Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection, News Intelligence, Economic Calendar, Portfolio Intelligence und Portfolio Brain.
           </p>
@@ -796,612 +837,16 @@ export default function AIAgentControlCenter() {
         />
       </div>
 
-      <div className="bg-black border border-emerald-900 rounded-2xl p-6 mb-8">
-        <div className="flex items-start justify-between gap-6 mb-6">
-          <div>
-            <h3 className="text-3xl font-bold">🧠 Portfolio Brain Panel V11.3.1</h3>
-            <p className="text-gray-400 mt-2">
-              Live Portfolio Brain aus <span className="text-emerald-400">/api/portfolio-brain</span>. Kombiniert GPT, Claude, Agent, Market Regime und Portfolio Intelligence zu einer finalen Safety-Entscheidung.
-            </p>
-          </div>
+      <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
-          <div className="bg-gray-950 border border-emerald-800 rounded-xl p-4 min-w-[260px]">
-            <p className="text-gray-400">Brain Decision</p>
-            <p
-              className={
-                portfolioBrain?.decision?.finalDecision === "LONG"
-                  ? "text-green-400 text-3xl font-bold"
-                  : portfolioBrain?.decision?.finalDecision === "SHORT"
-                    ? "text-red-400 text-3xl font-bold"
-                    : portfolioBrain?.decision?.finalDecision === "BLOCK"
-                      ? "text-red-400 text-3xl font-bold"
-                      : "text-yellow-400 text-3xl font-bold"
-              }
-            >
-              {portfolioBrain?.decision?.finalDecision ?? "WAITING"}
-            </p>
-          </div>
-        </div>
+      <PortfolioBrainMemoryPanel
+        portfolioBrainMemory={portfolioBrainMemory}
+        portfolioBrainMemoryCount={portfolioBrainMemoryCount}
+      />
 
-        <div className="grid grid-cols-5 gap-5 mb-6">
-          <StatCard
-            title="Brain Confidence"
-            value={`${portfolioBrain?.decision?.confidence ?? 0}`}
-            subtitle="Final brain confidence"
-            accent={
-              (portfolioBrain?.decision?.confidence ?? 0) >= 75
-                ? "text-green-400"
-                : (portfolioBrain?.decision?.confidence ?? 0) >= 50
-                  ? "text-yellow-400"
-                  : "text-red-400"
-            }
-            border={
-              (portfolioBrain?.decision?.confidence ?? 0) >= 75
-                ? "border-green-900"
-                : (portfolioBrain?.decision?.confidence ?? 0) >= 50
-                  ? "border-yellow-900"
-                  : "border-red-900"
-            }
-          />
-          <StatCard
-            title="Agreement"
-            value={`${portfolioBrain?.decision?.agreementScore ?? 0}%`}
-            subtitle="Source agreement"
-            accent="text-cyan-400"
-            border="border-cyan-900"
-          />
-          <StatCard
-            title="Average Risk"
-            value={`${portfolioBrain?.decision?.averageRiskScore ?? 0}`}
-            subtitle="Brain risk average"
-            accent={
-              (portfolioBrain?.decision?.averageRiskScore ?? 0) >= 65
-                ? "text-red-400"
-                : (portfolioBrain?.decision?.averageRiskScore ?? 0) >= 35
-                  ? "text-yellow-400"
-                  : "text-green-400"
-            }
-            border={
-              (portfolioBrain?.decision?.averageRiskScore ?? 0) >= 65
-                ? "border-red-900"
-                : (portfolioBrain?.decision?.averageRiskScore ?? 0) >= 35
-                  ? "border-yellow-900"
-                  : "border-green-900"
-            }
-          />
-          <StatCard
-            title="Risk Level"
-            value={portfolioBrain?.decision?.riskLevel ?? "N/A"}
-            subtitle="Brain risk state"
-            accent={
-              portfolioBrain?.decision?.riskLevel === "EXTREME" ||
-              portfolioBrain?.decision?.riskLevel === "HIGH"
-                ? "text-red-400"
-                : portfolioBrain?.decision?.riskLevel === "MEDIUM"
-                  ? "text-yellow-400"
-                  : "text-green-400"
-            }
-            border={
-              portfolioBrain?.decision?.riskLevel === "EXTREME" ||
-              portfolioBrain?.decision?.riskLevel === "HIGH"
-                ? "border-red-900"
-                : portfolioBrain?.decision?.riskLevel === "MEDIUM"
-                  ? "border-yellow-900"
-                  : "border-green-900"
-            }
-          />
-          <StatCard
-            title="Safety"
-            value={portfolioBrain?.safety?.safe ? "SAFE" : "BLOCKED"}
-            subtitle={`Safety score ${portfolioBrain?.safety?.safetyScore ?? 0}`}
-            accent={portfolioBrain?.safety?.safe ? "text-green-400" : "text-red-400"}
-            border={portfolioBrain?.safety?.safe ? "border-green-900" : "border-red-900"}
-          />
-        </div>
+      <PortfolioBrainLearningPanel learning={portfolioBrainLearning} />
 
-        <div className="grid grid-cols-5 gap-5 mb-6">
-          <StatCard
-            title="Average Conf."
-            value={`${portfolioBrain?.decision?.averageConfidence ?? 0}`}
-            subtitle="Source confidence average"
-            accent="text-emerald-400"
-            border="border-emerald-900"
-          />
-          <StatCard
-            title="Max Risk"
-            value={`${portfolioBrain?.safety?.maxRiskAllowed ?? 0}%`}
-            subtitle="Allowed simulation risk"
-            accent="text-orange-400"
-            border="border-orange-900"
-          />
-          <StatCard
-            title="Mode"
-            value={portfolioBrain?.mode ?? "SIMULATION"}
-            subtitle="Brain operating mode"
-            accent="text-purple-400"
-            border="border-purple-900"
-          />
-          <StatCard
-            title="Sources"
-            value={`${portfolioBrain?.inputs?.length ?? 0}`}
-            subtitle="Brain input sources"
-            accent="text-blue-400"
-            border="border-blue-900"
-          />
-          <StatCard
-            title="Live Trading"
-            value={portfolioBrain?.liveTradingEnabled ? "ON" : "OFF"}
-            subtitle="Safety locked"
-            accent={portfolioBrain?.liveTradingEnabled ? "text-green-400" : "text-red-400"}
-            border={portfolioBrain?.liveTradingEnabled ? "border-green-900" : "border-red-900"}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-5 mb-6">
-          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🗳 Brain Inputs</h4>
-            <div className="space-y-3 mt-4">
-              {(portfolioBrain?.inputs ?? []).map((item) => (
-                <div
-                  key={item.source}
-                  className="bg-black border border-gray-800 rounded-xl p-4"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-emerald-300 font-bold">{item.source}</p>
-                    <span
-                      className={
-                        item.signal === "LONG"
-                          ? "text-green-400 font-bold"
-                          : item.signal === "SHORT"
-                            ? "text-red-400 font-bold"
-                            : item.signal === "BLOCK"
-                              ? "text-red-400 font-bold"
-                              : "text-yellow-400 font-bold"
-                      }
-                    >
-                      {item.signal}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 mt-3">
-                    <StatusPill
-                      label="Confidence"
-                      value={`${item.confidence}%`}
-                      accent="text-cyan-400"
-                    />
-                    <StatusPill
-                      label="Risk"
-                      value={`${item.riskScore}`}
-                      accent={
-                        item.riskScore >= 65
-                          ? "text-red-400"
-                          : item.riskScore >= 35
-                            ? "text-yellow-400"
-                            : "text-green-400"
-                      }
-                    />
-                  </div>
-
-                  <p className="text-gray-500 mt-3 text-sm leading-relaxed">
-                    {item.reason}
-                  </p>
-                </div>
-              ))}
-
-              {(portfolioBrain?.inputs ?? []).length === 0 && (
-                <p className="text-gray-500">No portfolio brain inputs available yet.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-gray-950 border border-emerald-900 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🎯 Brain Recommendation</h4>
-            <p className="text-emerald-300 font-bold mt-4 leading-relaxed">
-              {portfolioBrain?.recommendation ?? "No portfolio brain recommendation available yet."}
-            </p>
-
-            <div className="space-y-3 mt-5">
-              <StatusPill
-                label="Approved"
-                value={portfolioBrain?.decision?.approved ? "YES" : "NO"}
-                accent={portfolioBrain?.decision?.approved ? "text-green-400" : "text-red-400"}
-              />
-              <StatusPill
-                label="Safety"
-                value={portfolioBrain?.safety?.safe ? "SAFE" : "BLOCKED"}
-                accent={portfolioBrain?.safety?.safe ? "text-green-400" : "text-red-400"}
-              />
-              <StatusPill
-                label="Block Reason"
-                value={portfolioBrain?.safety?.blockReason ?? "None"}
-                accent={portfolioBrain?.safety?.blockReason ? "text-red-400" : "text-green-400"}
-              />
-            </div>
-
-            <p className="text-gray-500 mt-5 leading-relaxed">
-              {portfolioBrain?.decision?.explanation ?? "No brain decision explanation available yet."}
-            </p>
-
-            <p className="text-gray-500 mt-4 text-sm">
-              Generated: {portfolioBrain?.generatedAt ?? "N/A"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-black border border-emerald-900 rounded-2xl p-6 mb-8">
-        <div className="flex items-start justify-between gap-6 mb-6">
-          <div>
-            <h3 className="text-3xl font-bold">Portfolio Brain Memory Panel V11.3.3</h3>
-            <p className="text-gray-400 mt-2">
-              Sichtbare Historie der gespeicherten Portfolio-Brain-Entscheidungen aus{" "}
-              <span className="text-emerald-400">/api/portfolio-brain</span>.
-            </p>
-          </div>
-
-          <div className="bg-gray-950 border border-emerald-800 rounded-xl p-4 min-w-[240px]">
-            <p className="text-gray-400">Memory Count</p>
-            <p className="text-emerald-400 text-3xl font-bold">
-              {portfolioBrainMemoryCount}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-5">
-          {portfolioBrainMemory.slice(0, 4).map((entry, index) => (
-            <div
-              key={entry.id}
-              className="bg-gray-950 border border-gray-800 rounded-2xl p-5"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <h4 className="text-xl font-bold">Memory #{index + 1}</h4>
-                <span
-                  className={
-                    entry.decision === "LONG"
-                      ? "text-green-400 font-bold"
-                      : entry.decision === "SHORT"
-                        ? "text-red-400 font-bold"
-                        : entry.decision === "BLOCK"
-                          ? "text-red-400 font-bold"
-                          : "text-yellow-400 font-bold"
-                  }
-                >
-                  {entry.decision}
-                </span>
-              </div>
-
-              <p className="text-emerald-400 font-bold text-3xl mt-4">
-                {entry.confidence}%
-              </p>
-
-              <p className="text-gray-400 mt-2">
-                Risk Score: {entry.riskScore}
-              </p>
-
-              <p className="text-gray-500 mt-2">
-                Mode: {entry.mode} � Status: {entry.status}
-              </p>
-
-              <p className="text-gray-500 mt-4 text-sm">
-                {new Date(entry.createdAt).toLocaleString()}
-              </p>
-            </div>
-          ))}
-
-          {portfolioBrainMemory.length === 0 && (
-            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-4">
-              <p className="text-gray-500">
-                No Portfolio Brain memory entries available yet.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="bg-black border border-purple-900 rounded-2xl p-6 mb-8">
-        <div className="flex items-start justify-between gap-6 mb-6">
-          <div>
-            <h3 className="text-3xl font-bold">📊 Portfolio Intelligence Panel V11.2.1</h3>
-            <p className="text-gray-400 mt-2">
-              Live Portfolio Brain aus <span className="text-purple-400">/api/portfolio-intelligence</span>. Überwacht Exposure, Konzentration, Korrelation, Allocation und Portfolio Health.
-            </p>
-          </div>
-
-          <div className="bg-gray-950 border border-purple-800 rounded-xl p-4 min-w-[260px]">
-            <p className="text-gray-400">Portfolio Version</p>
-            <p className="text-purple-400 text-3xl font-bold">
-              {portfolioIntelligence?.version ?? "WAITING"}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-5 gap-5 mb-6">
-          <StatCard
-            title="Risk Score"
-            value={`${portfolioIntelligence?.summary?.portfolioRiskScore ?? 0}`}
-            subtitle="Total portfolio risk"
-            accent={
-              (portfolioIntelligence?.summary?.portfolioRiskScore ?? 0) >= 70
-                ? "text-red-400"
-                : (portfolioIntelligence?.summary?.portfolioRiskScore ?? 0) >= 40
-                  ? "text-yellow-400"
-                  : "text-green-400"
-            }
-            border={
-              (portfolioIntelligence?.summary?.portfolioRiskScore ?? 0) >= 70
-                ? "border-red-900"
-                : (portfolioIntelligence?.summary?.portfolioRiskScore ?? 0) >= 40
-                  ? "border-yellow-900"
-                  : "border-green-900"
-            }
-          />
-          <StatCard
-            title="Portfolio Health"
-            value={`${portfolioIntelligence?.summary?.portfolioHealth ?? 0}`}
-            subtitle="Diversification and safety"
-            accent={
-              (portfolioIntelligence?.summary?.portfolioHealth ?? 0) >= 75
-                ? "text-green-400"
-                : (portfolioIntelligence?.summary?.portfolioHealth ?? 0) >= 50
-                  ? "text-yellow-400"
-                  : "text-red-400"
-            }
-            border={
-              (portfolioIntelligence?.summary?.portfolioHealth ?? 0) >= 75
-                ? "border-green-900"
-                : (portfolioIntelligence?.summary?.portfolioHealth ?? 0) >= 50
-                  ? "border-yellow-900"
-                  : "border-red-900"
-            }
-          />
-          <StatCard
-            title="Concentration"
-            value={`${portfolioIntelligence?.summary?.concentrationScore ?? 0}`}
-            subtitle="Largest exposure pressure"
-            accent={
-              (portfolioIntelligence?.summary?.concentrationScore ?? 0) >= 70
-                ? "text-red-400"
-                : (portfolioIntelligence?.summary?.concentrationScore ?? 0) >= 50
-                  ? "text-yellow-400"
-                  : "text-green-400"
-            }
-            border={
-              (portfolioIntelligence?.summary?.concentrationScore ?? 0) >= 70
-                ? "border-red-900"
-                : (portfolioIntelligence?.summary?.concentrationScore ?? 0) >= 50
-                  ? "border-yellow-900"
-                  : "border-green-900"
-            }
-          />
-          <StatCard
-            title="Portfolio Risk"
-            value={portfolioIntelligence?.summary?.portfolioRisk ?? "N/A"}
-            subtitle="Risk level"
-            accent={
-              portfolioIntelligence?.summary?.portfolioRisk === "HIGH"
-                ? "text-red-400"
-                : portfolioIntelligence?.summary?.portfolioRisk === "MEDIUM"
-                  ? "text-yellow-400"
-                  : "text-green-400"
-            }
-            border={
-              portfolioIntelligence?.summary?.portfolioRisk === "HIGH"
-                ? "border-red-900"
-                : portfolioIntelligence?.summary?.portfolioRisk === "MEDIUM"
-                  ? "border-yellow-900"
-                  : "border-green-900"
-            }
-          />
-          <StatCard
-            title="Positions"
-            value={`${portfolioIntelligence?.summary?.totalPositions ?? 0}`}
-            subtitle="Portfolio positions"
-            accent="text-purple-400"
-            border="border-purple-900"
-          />
-        </div>
-
-        <div className="grid grid-cols-5 gap-5 mb-6">
-          <StatCard
-            title="Diversification"
-            value={`${portfolioIntelligence?.summary?.diversificationScore ?? 0}`}
-            subtitle="Asset spread score"
-            accent="text-emerald-400"
-            border="border-emerald-900"
-          />
-          <StatCard
-            title="Highest Exposure"
-            value={portfolioIntelligence?.summary?.highestExposureAssetClass ?? "N/A"}
-            subtitle={`${portfolioIntelligence?.summary?.highestExposurePercent ?? 0}% largest class`}
-            accent="text-orange-400"
-            border="border-orange-900"
-          />
-          <StatCard
-            title="High Corr."
-            value={`${portfolioIntelligence?.summary?.highCorrelationPairs ?? 0}`}
-            subtitle="High correlation pairs"
-            accent="text-red-400"
-            border="border-red-900"
-          />
-          <StatCard
-            title="Medium Corr."
-            value={`${portfolioIntelligence?.summary?.mediumCorrelationPairs ?? 0}`}
-            subtitle="Medium correlation pairs"
-            accent="text-yellow-400"
-            border="border-yellow-900"
-          />
-          <StatCard
-            title="Allocation Total"
-            value={`${portfolioIntelligence?.summary?.totalSuggestedAllocation ?? 0}%`}
-            subtitle="Suggested allocation sum"
-            accent="text-cyan-400"
-            border="border-cyan-900"
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-5 mb-6">
-          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🌍 Exposure Breakdown</h4>
-            <div className="space-y-3 mt-4">
-              {(portfolioIntelligence?.exposure ?? []).map((item) => (
-                <StatusPill
-                  key={item.assetClass}
-                  label={item.assetClass}
-                  value={`${item.exposurePercent}% · ${item.riskLevel}`}
-                  accent={
-                    item.riskLevel === "HIGH"
-                      ? "text-red-400"
-                      : item.riskLevel === "MEDIUM"
-                        ? "text-yellow-400"
-                        : "text-green-400"
-                  }
-                />
-              ))}
-
-              {(portfolioIntelligence?.exposure ?? []).length === 0 && (
-                <p className="text-gray-500">No portfolio exposure available yet.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🔗 Correlation Risk</h4>
-            <div className="space-y-3 mt-4">
-              {(portfolioIntelligence?.correlationRisk ?? []).map((item) => (
-                <div
-                  key={item.pair}
-                  className="bg-black border border-gray-800 rounded-xl p-4"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-purple-300 font-bold">{item.pair}</p>
-                    <span
-                      className={
-                        item.correlationRisk === "HIGH"
-                          ? "text-red-400 font-bold"
-                          : item.correlationRisk === "MEDIUM"
-                            ? "text-yellow-400 font-bold"
-                            : "text-green-400 font-bold"
-                      }
-                    >
-                      {item.correlationRisk}
-                    </span>
-                  </div>
-                  <p className="text-gray-500 mt-2 text-sm leading-relaxed">
-                    {item.reason}
-                  </p>
-                </div>
-              ))}
-
-              {(portfolioIntelligence?.correlationRisk ?? []).length === 0 && (
-                <p className="text-gray-500">No correlation risk available yet.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-gray-950 border border-purple-900 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🤖 AI Portfolio Recommendation</h4>
-            <p className="text-purple-300 font-bold mt-4 leading-relaxed">
-              {portfolioIntelligence?.summary?.aiRecommendation ??
-                "No portfolio recommendation available yet."}
-            </p>
-            <p className="text-gray-500 mt-4 text-sm">
-              Updated: {portfolioIntelligence?.summary?.updatedAt ?? "N/A"}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-5 mb-6">
-          {(portfolioIntelligence?.positions ?? []).map((position) => (
-            <div
-              key={position.id}
-              className="bg-gray-950 border border-gray-800 rounded-2xl p-5"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <h4 className="text-xl font-bold">{position.market}</h4>
-                <span
-                  className={
-                    position.direction === "LONG"
-                      ? "text-green-400 font-bold"
-                      : position.direction === "SHORT"
-                        ? "text-red-400 font-bold"
-                        : "text-gray-400 font-bold"
-                  }
-                >
-                  {position.direction}
-                </span>
-              </div>
-
-              <p className="text-purple-400 font-bold mt-4">{position.assetClass}</p>
-              <p className="text-4xl font-black text-white mt-4">
-                {position.allocationPercent}%
-              </p>
-              <p className="text-gray-500 mt-2">
-                Risk {position.riskPercent}% · {position.id}
-              </p>
-            </div>
-          ))}
-
-          {(portfolioIntelligence?.positions ?? []).length === 0 && (
-            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5 col-span-4">
-              <p className="text-gray-500">No portfolio positions available yet.</p>
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-5">
-          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">📈 Allocation Plan</h4>
-            <div className="space-y-3 mt-4">
-              {(portfolioIntelligence?.allocationPlan ?? []).map((item) => (
-                <div
-                  key={item.market}
-                  className="bg-black border border-gray-800 rounded-xl p-4"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-cyan-300 font-bold">{item.market}</p>
-                    <span className="text-cyan-400 font-bold">
-                      {item.suggestedAllocationPercent}%
-                    </span>
-                  </div>
-                  <p className="text-gray-500 mt-2 text-sm leading-relaxed">
-                    {item.reason}
-                  </p>
-                </div>
-              ))}
-
-              {(portfolioIntelligence?.allocationPlan ?? []).length === 0 && (
-                <p className="text-gray-500">No allocation plan available yet.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-gray-950 border border-purple-900 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🧭 Portfolio Roadmap</h4>
-            <p className="text-purple-300 font-bold mt-4">
-              {portfolioIntelligence?.roadmap?.currentPhase ?? "Waiting"}
-            </p>
-
-            <div className="space-y-3 mt-4">
-              {(portfolioIntelligence?.roadmap?.nextSteps ?? []).map((step) => (
-                <StatusPill
-                  key={step}
-                  label="Next"
-                  value={step}
-                  accent="text-purple-400"
-                />
-              ))}
-
-              {(portfolioIntelligence?.roadmap?.nextSteps ?? []).length === 0 && (
-                <p className="text-gray-500">No portfolio roadmap available yet.</p>
-              )}
-            </div>
-
-            <p className="text-gray-500 mt-5 text-sm">
-              Generated: {portfolioIntelligence?.generatedAt ?? "N/A"}
-            </p>
-          </div>
-        </div>
-      </div>
-
+      <PortfolioIntelligencePanel portfolioIntelligence={portfolioIntelligence} />
 
       <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
@@ -3263,6 +2708,7 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
 
 
 
