@@ -74,38 +74,57 @@ export class AdaptiveConfidenceEngine {
           ? 1
           : 0;
 
-    const rawConfidence =
-      input.recommendedConfidence +
+    const totalBoost =
       learningBoost +
       accuracyBoost +
       strategyBoost +
-      macroAccuracyBoost -
-      macroPenalty -
-      economicPenalty -
-      newsPenalty;
+      macroAccuracyBoost;
+
+    const totalPenalty =
+      macroPenalty + economicPenalty + newsPenalty;
+
+    const rawConfidence =
+      input.recommendedConfidence + totalBoost - totalPenalty;
 
     const adaptiveConfidence = Math.min(
       95,
       Math.max(0, Number(rawConfidence.toFixed(2)))
     );
 
+    const confidenceDelta = Number(
+      (adaptiveConfidence - input.recommendedConfidence).toFixed(2)
+    );
+
+    const confidenceState =
+      adaptiveConfidence >= 75
+        ? "AGGRESSIVE"
+        : adaptiveConfidence >= 50
+          ? "BALANCED"
+          : adaptiveConfidence >= 25
+            ? "DEFENSIVE"
+            : "LOCKDOWN";
+
     return {
-      version: "V11.1.5",
+      version: "V11.1.6",
       baseConfidence: input.baseConfidence,
       recommendedConfidence: input.recommendedConfidence,
       adaptiveConfidence,
+      rawConfidence: Number(rawConfidence.toFixed(2)),
+      confidenceDelta,
+      confidenceState,
       learningBoost,
       accuracyBoost,
       strategyBoost,
       macroAccuracyBoost,
+      totalBoost,
       macroPenalty,
       economicPenalty,
       newsPenalty,
-      totalPenalty: macroPenalty + economicPenalty + newsPenalty,
+      totalPenalty,
       combinedMacroNewsScore: input.combinedMacroNewsScore,
       macroNewsAccuracy: input.macroNewsAccuracy,
       reason:
-        `Adaptive confidence calculated from learning, strategy strength, economic risk and news risk. Final confidence: ${adaptiveConfidence}.`,
+        `Adaptive confidence calculated from learning, strategy strength, economic risk and news risk. State: ${confidenceState}. Final confidence: ${adaptiveConfidence}.`,
       updatedAt: new Date().toISOString(),
     };
   }

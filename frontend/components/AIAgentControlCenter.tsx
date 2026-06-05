@@ -33,6 +33,28 @@ type AIAgentRunResult = {
       score: number;
       reason: string;
     };
+    adaptiveConfidence?: {
+      version: string;
+      baseConfidence: number;
+      recommendedConfidence: number;
+      adaptiveConfidence: number;
+      learningBoost: number;
+      accuracyBoost: number;
+      strategyBoost: number;
+      macroAccuracyBoost: number;
+      macroPenalty: number;
+      economicPenalty: number;
+      newsPenalty: number;
+      totalPenalty: number;
+      totalBoost?: number;
+      rawConfidence?: number;
+      confidenceDelta?: number;
+      confidenceState?: string;
+      combinedMacroNewsScore: number;
+      macroNewsAccuracy: number;
+      reason: string;
+      updatedAt: string;
+    };
     message: string;
   };
   timestamp?: string;
@@ -516,6 +538,7 @@ export default function AIAgentControlCenter() {
   const idea = lastRun?.result?.idea;
   const risk = lastRun?.result?.risk;
   const consensus = lastRun?.result?.consensus;
+  const adaptiveConfidence = lastRun?.result?.adaptiveConfidence;
   const executed = lastRun?.result?.executed ?? false;
   const executedMemories =
     memoryStats?.executedTrades ??
@@ -528,7 +551,7 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.1.4</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.1.6</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
             Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection, News Intelligence und Economic Calendar.
           </p>
@@ -1744,22 +1767,16 @@ export default function AIAgentControlCenter() {
       <div className="bg-black border border-cyan-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">🎛 Adaptive Confidence Badge V10.3.7</h3>
+            <h3 className="text-3xl font-bold">🧠 Adaptive Confidence Engine V11.1.6</h3>
             <p className="text-gray-400 mt-2">
-              Zeigt, ob der GPT Analyst bereits die Empfehlung der Learning Engine für neue Trades verwendet.
+              Live Confidence Breakdown aus <span className="text-cyan-400">/api/ai-paper-trader/run</span>. Zeigt, wie Learning, Strategy, Economic Risk und News Risk die finale Trade-Confidence verändern.
             </p>
           </div>
 
-          <div className="bg-gray-950 border border-cyan-800 rounded-xl p-4 min-w-[220px]">
-            <p className="text-gray-400">Adaptive Status</p>
-            <p
-              className={
-                idea?.adaptiveConfidenceApplied
-                  ? "text-green-400 text-2xl font-bold"
-                  : "text-yellow-400 text-2xl font-bold"
-              }
-            >
-              {idea?.adaptiveConfidenceApplied ? "Applied" : "Waiting"}
+          <div className="bg-gray-950 border border-cyan-800 rounded-xl p-4 min-w-[260px]">
+            <p className="text-gray-400">Engine Version</p>
+            <p className="text-cyan-400 text-3xl font-bold">
+              {adaptiveConfidence?.version ?? "WAITING"}
             </p>
           </div>
         </div>
@@ -1767,78 +1784,167 @@ export default function AIAgentControlCenter() {
         <div className="grid grid-cols-5 gap-5 mb-6">
           <StatCard
             title="Base Confidence"
-            value={`${idea?.baseConfidence ?? 82}%`}
-            subtitle="Original GPT score"
+            value={`${adaptiveConfidence?.baseConfidence ?? idea?.baseConfidence ?? 82}%`}
+            subtitle="Original GPT baseline"
             accent="text-blue-400"
             border="border-blue-900"
           />
           <StatCard
-            title="Adaptive Confidence"
-            value={`${idea?.confidence ?? learning?.recommendedConfidence ?? 0}%`}
-            subtitle="Used for next decision"
-            accent="text-cyan-400"
-            border="border-cyan-900"
-          />
-          <StatCard
-            title="Adaptive Applied"
-            value={idea?.adaptiveConfidenceApplied ? "Yes" : "No"}
-            subtitle="Learning feedback used"
-            accent={idea?.adaptiveConfidenceApplied ? "text-green-400" : "text-yellow-400"}
-            border={idea?.adaptiveConfidenceApplied ? "border-green-900" : "border-yellow-900"}
-          />
-          <StatCard
             title="Recommended"
-            value={`${learning?.recommendedConfidence ?? 0}%`}
+            value={`${adaptiveConfidence?.recommendedConfidence ?? learning?.recommendedConfidence ?? 0}%`}
             subtitle="Learning engine target"
             accent="text-lime-400"
             border="border-lime-900"
           />
           <StatCard
-            title="Confidence Gap"
-            value={`${learning?.confidenceGap ?? 0}`}
-            subtitle="Confidence vs consensus"
+            title="Final Confidence"
+            value={`${adaptiveConfidence?.adaptiveConfidence ?? idea?.confidence ?? 0}%`}
+            subtitle="Used by AI paper trader"
+            accent={
+              (adaptiveConfidence?.adaptiveConfidence ?? idea?.confidence ?? 0) >= 75
+                ? "text-green-400"
+                : (adaptiveConfidence?.adaptiveConfidence ?? idea?.confidence ?? 0) >= 50
+                  ? "text-yellow-400"
+                  : "text-red-400"
+            }
+            border={
+              (adaptiveConfidence?.adaptiveConfidence ?? idea?.confidence ?? 0) >= 75
+                ? "border-green-900"
+                : (adaptiveConfidence?.adaptiveConfidence ?? idea?.confidence ?? 0) >= 50
+                  ? "border-yellow-900"
+                  : "border-red-900"
+            }
+          />
+          <StatCard
+            title="Confidence Delta"
+            value={`${adaptiveConfidence?.confidenceDelta ?? ((adaptiveConfidence?.adaptiveConfidence ?? idea?.confidence ?? 0) - (adaptiveConfidence?.recommendedConfidence ?? learning?.recommendedConfidence ?? 0))}`}
+            subtitle="Final minus recommended"
+            accent={
+              (adaptiveConfidence?.confidenceDelta ?? 0) >= 0
+                ? "text-green-400"
+                : "text-red-400"
+            }
+            border={
+              (adaptiveConfidence?.confidenceDelta ?? 0) >= 0
+                ? "border-green-900"
+                : "border-red-900"
+            }
+          />
+          <StatCard
+            title="State"
+            value={adaptiveConfidence?.confidenceState ?? "WAITING"}
+            subtitle="Engine decision state"
+            accent={
+              adaptiveConfidence?.confidenceState === "AGGRESSIVE"
+                ? "text-green-400"
+                : adaptiveConfidence?.confidenceState === "BALANCED"
+                  ? "text-yellow-400"
+                  : adaptiveConfidence?.confidenceState === "DEFENSIVE"
+                    ? "text-orange-400"
+                    : "text-red-400"
+            }
+            border={
+              adaptiveConfidence?.confidenceState === "AGGRESSIVE"
+                ? "border-green-900"
+                : adaptiveConfidence?.confidenceState === "BALANCED"
+                  ? "border-yellow-900"
+                  : adaptiveConfidence?.confidenceState === "DEFENSIVE"
+                    ? "border-orange-900"
+                    : "border-red-900"
+            }
+          />
+        </div>
+
+        <div className="grid grid-cols-4 gap-5 mb-6">
+          <StatCard
+            title="Learning Boost"
+            value={`${adaptiveConfidence?.learningBoost ?? 0}`}
+            subtitle="Learning score adjustment"
+            accent={(adaptiveConfidence?.learningBoost ?? 0) >= 0 ? "text-green-400" : "text-red-400"}
+            border={(adaptiveConfidence?.learningBoost ?? 0) >= 0 ? "border-green-900" : "border-red-900"}
+          />
+          <StatCard
+            title="Accuracy Boost"
+            value={`${adaptiveConfidence?.accuracyBoost ?? 0}`}
+            subtitle="Agent accuracy adjustment"
+            accent={(adaptiveConfidence?.accuracyBoost ?? 0) >= 0 ? "text-green-400" : "text-red-400"}
+            border={(adaptiveConfidence?.accuracyBoost ?? 0) >= 0 ? "border-green-900" : "border-red-900"}
+          />
+          <StatCard
+            title="Strategy Boost"
+            value={`${adaptiveConfidence?.strategyBoost ?? 0}`}
+            subtitle="Best strategy strength"
+            accent={(adaptiveConfidence?.strategyBoost ?? 0) >= 0 ? "text-green-400" : "text-red-400"}
+            border={(adaptiveConfidence?.strategyBoost ?? 0) >= 0 ? "border-green-900" : "border-red-900"}
+          />
+          <StatCard
+            title="Macro Accuracy Boost"
+            value={`${adaptiveConfidence?.macroAccuracyBoost ?? 0}`}
+            subtitle="Macro-news accuracy"
+            accent="text-cyan-400"
+            border="border-cyan-900"
+          />
+        </div>
+
+        <div className="grid grid-cols-4 gap-5 mb-6">
+          <StatCard
+            title="Macro Penalty"
+            value={`-${adaptiveConfidence?.macroPenalty ?? 0}`}
+            subtitle="Combined macro/news risk"
             accent="text-orange-400"
             border="border-orange-900"
+          />
+          <StatCard
+            title="Economic Penalty"
+            value={`-${adaptiveConfidence?.economicPenalty ?? 0}`}
+            subtitle="Calendar risk penalty"
+            accent="text-red-400"
+            border="border-red-900"
+          />
+          <StatCard
+            title="News Penalty"
+            value={`-${adaptiveConfidence?.newsPenalty ?? 0}`}
+            subtitle="News intelligence penalty"
+            accent="text-blue-400"
+            border="border-blue-900"
+          />
+          <StatCard
+            title="Total Penalty"
+            value={`-${adaptiveConfidence?.totalPenalty ?? 0}`}
+            subtitle="Risk protection impact"
+            accent="text-red-400"
+            border="border-red-900"
           />
         </div>
 
         <div className="grid grid-cols-3 gap-5">
-          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🧠 Learning Feedback</h4>
-            <p className="text-gray-400 mt-4 leading-relaxed">
-              {learning?.recommendation ?? "No learning recommendation available yet."}
-            </p>
-          </div>
-
-          <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">📈 Confidence Movement</h4>
+          <div className="bg-gray-950 border border-cyan-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">🧮 Confidence Formula</h4>
             <div className="space-y-3 mt-4">
-              <StatusPill
-                label="Base"
-                value={`${idea?.baseConfidence ?? 82}%`}
-                accent="text-blue-400"
-              />
-              <StatusPill
-                label="Current"
-                value={`${idea?.confidence ?? 0}%`}
-                accent="text-cyan-400"
-              />
-              <StatusPill
-                label="Delta"
-                value={`${(idea?.confidence ?? 0) - (idea?.baseConfidence ?? 82)}`}
-                accent={
-                  ((idea?.confidence ?? 0) - (idea?.baseConfidence ?? 82)) >= 0
-                    ? "text-green-400"
-                    : "text-red-400"
-                }
-              />
+              <StatusPill label="Recommended" value={`${adaptiveConfidence?.recommendedConfidence ?? learning?.recommendedConfidence ?? 0}`} accent="text-lime-400" />
+              <StatusPill label="Total Boost" value={`+${adaptiveConfidence?.totalBoost ?? ((adaptiveConfidence?.learningBoost ?? 0) + (adaptiveConfidence?.accuracyBoost ?? 0) + (adaptiveConfidence?.strategyBoost ?? 0) + (adaptiveConfidence?.macroAccuracyBoost ?? 0))}`} accent="text-green-400" />
+              <StatusPill label="Total Penalty" value={`-${adaptiveConfidence?.totalPenalty ?? 0}`} accent="text-red-400" />
+              <StatusPill label="Raw Confidence" value={`${adaptiveConfidence?.rawConfidence ?? adaptiveConfidence?.adaptiveConfidence ?? 0}`} accent="text-cyan-400" />
             </div>
           </div>
 
           <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">🔒 Safety Note</h4>
-            <p className="text-gray-400 mt-4 leading-relaxed">
-              Adaptive Confidence verändert nur Paper-Trading-Entscheidungen. Live Execution bleibt weiterhin blockiert.
+            <h4 className="text-xl font-bold">🌍 Macro Inputs</h4>
+            <div className="space-y-3 mt-4">
+              <StatusPill label="Combined Macro News" value={`${adaptiveConfidence?.combinedMacroNewsScore ?? learning?.combinedMacroNewsScore ?? 0}`} accent="text-orange-400" />
+              <StatusPill label="Macro Accuracy" value={`${adaptiveConfidence?.macroNewsAccuracy ?? learning?.macroNewsAccuracy ?? 0}%`} accent="text-green-400" />
+              <StatusPill label="Economic Risk" value={`${economicCalendar?.riskScore ?? 0}`} accent="text-red-400" />
+              <StatusPill label="News Risk" value={`${newsIntelligence?.marketRiskScore ?? 0}`} accent="text-blue-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-950 border border-cyan-900 rounded-2xl p-5">
+            <h4 className="text-xl font-bold">💡 Engine Reason</h4>
+            <p className="text-cyan-300 font-bold mt-4 leading-relaxed">
+              {adaptiveConfidence?.reason ?? "Run the AI Agent once to generate an adaptive confidence breakdown."}
+            </p>
+            <p className="text-gray-500 mt-4 text-sm">
+              Updated: {adaptiveConfidence?.updatedAt ?? "N/A"}
             </p>
           </div>
         </div>
