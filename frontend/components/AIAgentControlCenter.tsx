@@ -1032,7 +1032,7 @@ export default function AIAgentControlCenter() {
       <div className="bg-black border border-emerald-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">?? Portfolio Brain Memory Panel V11.3.3</h3>
+            <h3 className="text-3xl font-bold">Portfolio Brain Memory Panel V11.3.3</h3>
             <p className="text-gray-400 mt-2">
               Sichtbare Historie der gespeicherten Portfolio-Brain-Entscheidungen aus{" "}
               <span className="text-emerald-400">/api/portfolio-brain</span>.
@@ -3263,5 +3263,6 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
 
 
