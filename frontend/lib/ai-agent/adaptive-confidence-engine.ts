@@ -9,6 +9,13 @@ type AdaptiveConfidenceInput = {
   newsRiskScore: number;
   combinedMacroNewsScore: number;
   macroNewsAccuracy: number;
+
+  portfolioRiskScore?: number;
+  portfolioRiskAccuracy?: number;
+  portfolioLearningScore?: number;
+  portfolioHealth?: number;
+  diversificationScore?: number;
+  concentrationScore?: number;
 };
 
 export class AdaptiveConfidenceEngine {
@@ -74,14 +81,72 @@ export class AdaptiveConfidenceEngine {
           ? 1
           : 0;
 
+    const portfolioRiskPenalty =
+      Number(input.portfolioRiskScore ?? 0) >= 85
+        ? 25
+        : Number(input.portfolioRiskScore ?? 0) >= 70
+          ? 15
+          : Number(input.portfolioRiskScore ?? 0) >= 45
+            ? 8
+            : 0;
+
+    const portfolioHealthBoost =
+      Number(input.portfolioHealth ?? 0) >= 80
+        ? 4
+        : Number(input.portfolioHealth ?? 0) >= 65
+          ? 2
+          : Number(input.portfolioHealth ?? 0) < 45
+            ? -4
+            : 0;
+
+    const portfolioLearningBoost =
+      Number(input.portfolioLearningScore ?? 0) >= 80
+        ? 3
+        : Number(input.portfolioLearningScore ?? 0) >= 65
+          ? 1
+          : Number(input.portfolioLearningScore ?? 0) < 45
+            ? -3
+            : 0;
+
+    const portfolioDiversificationBonus =
+      Number(input.diversificationScore ?? 0) >= 80
+        ? 3
+        : Number(input.diversificationScore ?? 0) >= 65
+          ? 1
+          : 0;
+
+    const portfolioConcentrationPenalty =
+      Number(input.concentrationScore ?? 0) >= 80
+        ? 15
+        : Number(input.concentrationScore ?? 0) >= 65
+          ? 8
+          : Number(input.concentrationScore ?? 0) >= 50
+            ? 4
+            : 0;
+
+    const portfolioAccuracyBoost =
+      Number(input.portfolioRiskAccuracy ?? 0) >= 80
+        ? 2
+        : Number(input.portfolioRiskAccuracy ?? 0) >= 60
+          ? 1
+          : 0;
+
     const totalBoost =
       learningBoost +
       accuracyBoost +
       strategyBoost +
-      macroAccuracyBoost;
+      macroAccuracyBoost +
+      portfolioHealthBoost +
+      portfolioLearningBoost +
+      portfolioDiversificationBonus +
+      portfolioAccuracyBoost;
 
     const totalPenalty =
-      macroPenalty + economicPenalty + newsPenalty;
+      macroPenalty +
+      economicPenalty +
+      newsPenalty +
+      portfolioRiskPenalty +
+      portfolioConcentrationPenalty;
 
     const rawConfidence =
       input.recommendedConfidence + totalBoost - totalPenalty;
@@ -105,26 +170,46 @@ export class AdaptiveConfidenceEngine {
             : "LOCKDOWN";
 
     return {
-      version: "V11.1.6",
+      version: "V11.2.6",
       baseConfidence: input.baseConfidence,
       recommendedConfidence: input.recommendedConfidence,
       adaptiveConfidence,
       rawConfidence: Number(rawConfidence.toFixed(2)),
       confidenceDelta,
       confidenceState,
+
       learningBoost,
       accuracyBoost,
       strategyBoost,
       macroAccuracyBoost,
+
+      portfolioHealthBoost,
+      portfolioLearningBoost,
+      portfolioDiversificationBonus,
+      portfolioAccuracyBoost,
+
       totalBoost,
+
       macroPenalty,
       economicPenalty,
       newsPenalty,
+      portfolioRiskPenalty,
+      portfolioConcentrationPenalty,
+
       totalPenalty,
+
       combinedMacroNewsScore: input.combinedMacroNewsScore,
       macroNewsAccuracy: input.macroNewsAccuracy,
+
+      portfolioRiskScore: input.portfolioRiskScore ?? 0,
+      portfolioRiskAccuracy: input.portfolioRiskAccuracy ?? 0,
+      portfolioLearningScore: input.portfolioLearningScore ?? 0,
+      portfolioHealth: input.portfolioHealth ?? 0,
+      diversificationScore: input.diversificationScore ?? 0,
+      concentrationScore: input.concentrationScore ?? 0,
+
       reason:
-        `Adaptive confidence calculated from learning, strategy strength, economic risk and news risk. State: ${confidenceState}. Final confidence: ${adaptiveConfidence}.`,
+        `Adaptive confidence calculated from learning, strategy strength, macro/news risk and portfolio intelligence. State: ${confidenceState}. Final confidence: ${adaptiveConfidence}.`,
       updatedAt: new Date().toISOString(),
     };
   }

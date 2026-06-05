@@ -89,6 +89,15 @@ export class AIPaperTrader {
       newsRiskScore: newsIntelligence.marketRiskScore,
       combinedMacroNewsScore: learning.combinedMacroNewsScore ?? 0,
       macroNewsAccuracy: learning.macroNewsAccuracy ?? 0,
+
+      portfolioRiskScore: portfolioIntelligence.summary.portfolioRiskScore,
+      portfolioRiskAccuracy: learning.portfolioRiskAccuracy ?? 0,
+      portfolioLearningScore: learning.portfolioLearningScore ?? 0,
+      portfolioHealth: portfolioIntelligence.summary.portfolioHealth,
+      diversificationScore:
+        portfolioIntelligence.summary.diversificationScore,
+      concentrationScore:
+        portfolioIntelligence.summary.concentrationScore,
     });
 
     const portfolioConfidencePenalty =
@@ -205,7 +214,8 @@ export class AIPaperTrader {
         approved: false,
         executed: false,
         consensusScore: 0,
-        riskScore: portfolioIntelligence.summary.portfolioRiskScore,
+        riskScore:
+          portfolioIntelligence.summary.portfolioRiskScore,
         reason:
           "AI paper trade blocked or reduced by Portfolio Intelligence risk layer.",
         payload: {
@@ -339,7 +349,8 @@ export class AIPaperTrader {
         approved: false,
         executed: false,
         consensusScore: consensus.score,
-        riskScore: portfolioIntelligence.summary.portfolioRiskScore,
+        riskScore:
+          portfolioIntelligence.summary.portfolioRiskScore,
         reason: `Portfolio intelligence risk processed before rejected decision: ${portfolioIntelligence.summary.portfolioRisk} / ${portfolioTradingAction}.`,
         payload: {
           idea,
@@ -491,7 +502,8 @@ export class AIPaperTrader {
       approved: true,
       executed: false,
       consensusScore: consensus.score,
-      riskScore: portfolioIntelligence.summary.portfolioRiskScore,
+      riskScore:
+        portfolioIntelligence.summary.portfolioRiskScore,
       reason: `Portfolio intelligence risk processed before execution: ${portfolioIntelligence.summary.portfolioRisk} / ${portfolioTradingAction}.`,
       payload: {
         idea,
@@ -511,17 +523,18 @@ export class AIPaperTrader {
       },
     });
 
-    const execution = paperTradingManager.createAndFillPaperOrder(
-      idea.symbol,
-      idea.direction,
-      idea.entry,
-      idea.stopLoss,
-      idea.takeProfit1,
-      idea.takeProfit2,
-      idea.confidence,
-      `${idea.reason} | ${risk.reason} | ${consensus.reason} | ${economicRiskNote} | ${newsRiskNote} | ${portfolioRiskNote} | ${adaptiveConfidence.reason}`,
-      orderSize
-    );
+    const execution =
+      paperTradingManager.createAndFillPaperOrder(
+        idea.symbol,
+        idea.direction,
+        idea.entry,
+        idea.stopLoss,
+        idea.takeProfit1,
+        idea.takeProfit2,
+        idea.confidence,
+        `${idea.reason} | ${risk.reason} | ${consensus.reason} | ${economicRiskNote} | ${newsRiskNote} | ${portfolioRiskNote} | ${adaptiveConfidence.reason}`,
+        orderSize
+      );
 
     const memory = AgentMemory.add({
       type: "AI_TRADE_EXECUTED",
