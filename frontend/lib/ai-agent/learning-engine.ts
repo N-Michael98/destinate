@@ -11,8 +11,7 @@ type LearningMemoryEntry = {
 
 export class AILearningEngine {
   static analyze() {
-    const memory =
-      AgentMemory.getAll() as LearningMemoryEntry[];
+    const memory = AgentMemory.getAll() as LearningMemoryEntry[];
 
     const stats = AgentMemory.getStats();
 
@@ -24,12 +23,8 @@ export class AILearningEngine {
       (item) => item.type === "AI_TRADE_REJECTED"
     );
 
-    const economicRiskMemories = memory.filter(
-      (item) =>
-        item.type === "ECONOMIC_RISK_BLOCK" ||
-        item.type === "ECONOMIC_RISK_REDUCED" ||
-        item.type === "ECONOMIC_RISK_ELEVATED" ||
-        item.type === "ECONOMIC_RISK_NORMAL"
+    const economicRiskMemories = memory.filter((item) =>
+      item.type.startsWith("ECONOMIC_RISK")
     );
 
     const economicRiskBlocks = memory.filter(
@@ -46,6 +41,26 @@ export class AILearningEngine {
 
     const economicRiskNormal = memory.filter(
       (item) => item.type === "ECONOMIC_RISK_NORMAL"
+    );
+
+    const newsRiskMemories = memory.filter((item) =>
+      item.type.startsWith("NEWS_RISK")
+    );
+
+    const newsRiskBlocks = memory.filter(
+      (item) => item.type === "NEWS_RISK_BLOCK"
+    );
+
+    const newsRiskReduced = memory.filter(
+      (item) => item.type === "NEWS_RISK_REDUCED"
+    );
+
+    const newsRiskElevated = memory.filter(
+      (item) => item.type === "NEWS_RISK_ELEVATED"
+    );
+
+    const newsRiskNormal = memory.filter(
+      (item) => item.type === "NEWS_RISK_NORMAL"
     );
 
     const total = memory.length;
@@ -90,10 +105,54 @@ export class AILearningEngine {
         ? Number(
             (
               economicRiskMemories.reduce(
-                (sum, item) =>
-                  sum + Number(item.riskScore ?? 0),
+                (sum, item) => sum + Number(item.riskScore ?? 0),
                 0
               ) / economicRiskMemories.length
+            ).toFixed(2)
+          )
+        : 0;
+
+    const newsRiskAccuracy =
+      newsRiskMemories.length > 0
+        ? Number(
+            (
+              ((newsRiskBlocks.length +
+                newsRiskReduced.length +
+                newsRiskElevated.length) /
+                newsRiskMemories.length) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
+
+    const newsRiskScore =
+      newsRiskMemories.length > 0
+        ? Number(
+            (
+              newsRiskMemories.reduce(
+                (sum, item) => sum + Number(item.riskScore ?? 0),
+                0
+              ) / newsRiskMemories.length
+            ).toFixed(2)
+          )
+        : 0;
+
+    const combinedMacroNewsScore =
+      economicRiskMemories.length > 0 || newsRiskMemories.length > 0
+        ? Number(
+            (
+              (economicRiskScore * 0.55) +
+              (newsRiskScore * 0.45)
+            ).toFixed(2)
+          )
+        : 0;
+
+    const macroNewsAccuracy =
+      economicRiskMemories.length > 0 || newsRiskMemories.length > 0
+        ? Number(
+            (
+              (economicRiskAccuracy * 0.55) +
+              (newsRiskAccuracy * 0.45)
             ).toFixed(2)
           )
         : 0;
@@ -110,10 +169,11 @@ export class AILearningEngine {
       Math.max(
         0,
         Math.round(
-          Number(stats.averageConsensus ?? 0) * 0.35 +
-            Number(stats.averageConfidence ?? 0) * 0.25 +
+          Number(stats.averageConsensus ?? 0) * 0.3 +
+            Number(stats.averageConfidence ?? 0) * 0.2 +
             averageRiskScore * 0.15 +
-            economicRiskAccuracy * 0.25
+            economicRiskAccuracy * 0.2 +
+            newsRiskAccuracy * 0.15
         )
       )
     );
@@ -125,62 +185,60 @@ export class AILearningEngine {
             Math.max(
               0,
               Math.round(
-                executionRate * 0.35 +
-                  Number(stats.averageConsensus ?? 0) * 0.35 +
+                executionRate * 0.3 +
+                  Number(stats.averageConsensus ?? 0) * 0.3 +
                   averageRiskScore * 0.15 +
-                  economicRiskAccuracy * 0.15
+                  economicRiskAccuracy * 0.15 +
+                  newsRiskAccuracy * 0.1
               )
             )
           )
         : 0;
 
-    let recommendedConfidence =
-      Number(stats.averageConfidence ?? 0);
+    let recommendedConfidence = Number(stats.averageConfidence ?? 0);
 
     if (
       learningScore >= 80 &&
       rejectionRate < 25 &&
-      economicRiskAccuracy >= 70
+      economicRiskAccuracy >= 70 &&
+      newsRiskAccuracy >= 70
     ) {
-      recommendedConfidence = Math.min(
-        95,
-        recommendedConfidence + 3
-      );
+      recommendedConfidence = Math.min(95, recommendedConfidence + 3);
     }
 
     if (
       learningScore < 60 ||
       rejectionRate > 40 ||
-      economicRiskAccuracy < 40
+      economicRiskAccuracy < 40 ||
+      newsRiskAccuracy < 40
     ) {
-      recommendedConfidence = Math.max(
-        60,
-        recommendedConfidence - 5
-      );
+      recommendedConfidence = Math.max(60, recommendedConfidence - 5);
     }
 
     let recommendation =
-      "Agent behavior needs additional learning.";
+      "Agent behavior needs additional macro and news learning.";
 
     if (
       learningScore >= 85 &&
-      economicRiskAccuracy >= 75
+      economicRiskAccuracy >= 75 &&
+      newsRiskAccuracy >= 75
     ) {
       recommendation =
-        "Economic risk decisions are performing well. Agent confidence may gradually increase.";
+        "Economic and news risk decisions are performing well. Agent confidence may gradually increase.";
     } else if (
       learningScore >= 65 &&
-      economicRiskAccuracy >= 50
+      economicRiskAccuracy >= 50 &&
+      newsRiskAccuracy >= 50
     ) {
       recommendation =
-        "Economic risk integration is stable. Continue collecting memory and validating decisions.";
+        "Macro and news risk integration is stable. Continue collecting memory and validating decisions.";
     } else {
       recommendation =
-        "Economic risk behavior requires more observations before increasing confidence.";
+        "Macro/news risk behavior requires more observations before increasing confidence.";
     }
 
     return {
-      version: "V11.0.9",
+      version: "V11.1.3",
 
       totalMemories: total,
 
@@ -190,30 +248,30 @@ export class AILearningEngine {
       executionRate,
       rejectionRate,
 
-      economicRiskMemories:
-        economicRiskMemories.length,
-
-      economicRiskBlocks:
-        economicRiskBlocks.length,
-
-      economicRiskReduced:
-        economicRiskReduced.length,
-
-      economicRiskElevated:
-        economicRiskElevated.length,
-
-      economicRiskNormal:
-        economicRiskNormal.length,
-
+      economicRiskMemories: economicRiskMemories.length,
+      economicRiskBlocks: economicRiskBlocks.length,
+      economicRiskReduced: economicRiskReduced.length,
+      economicRiskElevated: economicRiskElevated.length,
+      economicRiskNormal: economicRiskNormal.length,
       economicRiskAccuracy,
       economicRiskScore,
 
-      averageConfidence:
-        stats.averageConfidence,
+      newsRiskMemories: newsRiskMemories.length,
+      newsRiskBlocks: newsRiskBlocks.length,
+      newsRiskReduced: newsRiskReduced.length,
+      newsRiskElevated: newsRiskElevated.length,
+      newsRiskNormal: newsRiskNormal.length,
+      newsRiskAccuracy,
+      newsRiskScore,
 
-      averageConsensus:
-        stats.averageConsensus,
+      averageNewsRisk: stats.averageNewsRisk ?? 0,
+      averageEconomicRisk: stats.averageEconomicRisk ?? 0,
 
+      combinedMacroNewsScore,
+      macroNewsAccuracy,
+
+      averageConfidence: stats.averageConfidence,
+      averageConsensus: stats.averageConsensus,
       averageRiskScore,
 
       confidenceGap,
