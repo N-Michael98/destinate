@@ -9,7 +9,11 @@ export type AgentMemoryType =
   | "ECONOMIC_RISK_BLOCK"
   | "ECONOMIC_RISK_REDUCED"
   | "ECONOMIC_RISK_ELEVATED"
-  | "ECONOMIC_RISK_NORMAL";
+  | "ECONOMIC_RISK_NORMAL"
+  | "NEWS_RISK_BLOCK"
+  | "NEWS_RISK_REDUCED"
+  | "NEWS_RISK_ELEVATED"
+  | "NEWS_RISK_NORMAL";
 
 export type AgentMemoryEntry = {
   id: string;
@@ -99,6 +103,13 @@ export class AgentMemory {
       .reverse();
   }
 
+  static getNewsRiskMemories(limit = 20) {
+    return readMemory()
+      .filter((item) => item.type.startsWith("NEWS_RISK"))
+      .slice(-limit)
+      .reverse();
+  }
+
   static clear() {
     writeMemory([]);
   }
@@ -132,6 +143,26 @@ export class AgentMemory {
 
     const economicRiskNormal = memory.filter(
       (item) => item.type === "ECONOMIC_RISK_NORMAL"
+    );
+
+    const newsRiskMemories = memory.filter((item) =>
+      item.type.startsWith("NEWS_RISK")
+    );
+
+    const newsRiskBlocks = memory.filter(
+      (item) => item.type === "NEWS_RISK_BLOCK"
+    );
+
+    const newsRiskReduced = memory.filter(
+      (item) => item.type === "NEWS_RISK_REDUCED"
+    );
+
+    const newsRiskElevated = memory.filter(
+      (item) => item.type === "NEWS_RISK_ELEVATED"
+    );
+
+    const newsRiskNormal = memory.filter(
+      (item) => item.type === "NEWS_RISK_NORMAL"
     );
 
     const averageConfidence =
@@ -170,18 +201,40 @@ export class AgentMemory {
           )
         : 0;
 
+    const averageNewsRisk =
+      newsRiskMemories.length > 0
+        ? Number(
+            (
+              newsRiskMemories.reduce(
+                (sum, item) => sum + Number(item.riskScore ?? 0),
+                0
+              ) / newsRiskMemories.length
+            ).toFixed(2)
+          )
+        : 0;
+
     return {
       totalMemories: memory.length,
       executedTrades: executed.length,
       rejectedTrades: rejected.length,
+
       economicRiskMemories: economicRiskMemories.length,
       economicRiskBlocks: economicRiskBlocks.length,
       economicRiskReduced: economicRiskReduced.length,
       economicRiskElevated: economicRiskElevated.length,
       economicRiskNormal: economicRiskNormal.length,
+
+      newsRiskMemories: newsRiskMemories.length,
+      newsRiskBlocks: newsRiskBlocks.length,
+      newsRiskReduced: newsRiskReduced.length,
+      newsRiskElevated: newsRiskElevated.length,
+      newsRiskNormal: newsRiskNormal.length,
+
       averageConfidence,
       averageConsensus,
       averageEconomicRisk,
+      averageNewsRisk,
+
       updatedAt: new Date().toISOString(),
     };
   }
