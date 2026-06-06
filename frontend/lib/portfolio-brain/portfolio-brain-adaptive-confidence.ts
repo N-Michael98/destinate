@@ -1,4 +1,4 @@
-import { buildPortfolioBrainStrategySyncReport } from "./portfolio-brain-strategy-sync";
+﻿import { buildPortfolioBrainStrategySyncReport } from "./portfolio-brain-strategy-sync";
 import { buildPortfolioBrainOutcomeLearningSyncReport } from "./portfolio-brain-outcome-learning-sync";
 
 export type PortfolioBrainAdaptiveConfidenceItem = {
@@ -56,7 +56,7 @@ export function buildPortfolioBrainAdaptiveConfidenceReport(): PortfolioBrainAda
     const confidenceAdjustment =
       learningItem?.confidenceAdjustment ?? 0;
 
-    const learningImpact =
+    const learningImpact: "BOOST" | "PENALTY" | "NEUTRAL" | "NONE" =
       learningItem?.learningImpact ?? "NONE";
 
     const adaptiveConfidence = clamp(
