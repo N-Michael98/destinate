@@ -6,6 +6,7 @@ import PortfolioBrainMemoryPanel from "./portfolio-brain/PortfolioBrainMemoryPan
 import PortfolioBrainLearningPanel from "./portfolio-brain/PortfolioBrainLearningPanel";
 import PortfolioBrainOutcomePanel from "./portfolio-brain/PortfolioBrainOutcomePanel";
 import OpportunityDashboardPanel from "./portfolio-brain/OpportunityDashboardPanel";
+import StrategyOpportunityPanel from "./portfolio-brain/StrategyOpportunityPanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -653,6 +654,41 @@ type OpportunityScannerResponse = {
   timestamp: string;
 };
 
+type StrategyOpportunityMatch = {
+  rank: number;
+  symbol: string;
+  displayName: string;
+  direction: string;
+  regime: string;
+  confidence: number;
+  riskScore: number;
+  opportunityScore: number;
+  strategyScore: number;
+  selectedStrategy: string;
+  strategyCategory: string;
+  strategyConfidenceBoost: number;
+  executionBias: "AGGRESSIVE" | "NORMAL" | "CAUTIOUS" | "WAIT";
+  reason: string;
+};
+
+type StrategyOpportunitySyncReport = {
+  version: string;
+  status: "READY";
+  totalOpportunities: number;
+  tradableOpportunities: number;
+  bestMatch: StrategyOpportunityMatch | null;
+  matches: StrategyOpportunityMatch[];
+  recommendation: string;
+  updatedAt: string;
+};
+
+type StrategyOpportunitySyncResponse = {
+  ok: boolean;
+  strategyOpportunitySync: StrategyOpportunitySyncReport;
+  timestamp: string;
+};
+
+
 
 
 
@@ -716,6 +752,7 @@ export default function AIAgentControlCenter() {
   const [portfolioBrainLearning, setPortfolioBrainLearning] = useState<PortfolioBrainLearningReport | null>(null);
   const [portfolioBrainOutcomes, setPortfolioBrainOutcomes] = useState<PortfolioBrainOutcomeReport | null>(null);
   const [opportunityScanner, setOpportunityScanner] = useState<OpportunityScannerReport | null>(null);
+  const [strategyOpportunitySync, setStrategyOpportunitySync] = useState<StrategyOpportunitySyncReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -739,6 +776,7 @@ export default function AIAgentControlCenter() {
       portfolioBrainLearningResponse,
       portfolioBrainOutcomesResponse,
       opportunityScannerResponse,
+      strategyOpportunitySyncResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -754,6 +792,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/portfolio-brain-learning", { cache: "no-store" }),
       fetch("/api/portfolio-brain-outcomes", { cache: "no-store" }),
       fetch("/api/opportunity-scanner", { cache: "no-store" }),
+      fetch("/api/strategy-opportunity-sync", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -770,6 +809,7 @@ export default function AIAgentControlCenter() {
     const portfolioBrainLearningPayload = (await portfolioBrainLearningResponse.json()) as PortfolioBrainLearningResponse;
     const portfolioBrainOutcomesPayload = (await portfolioBrainOutcomesResponse.json()) as PortfolioBrainOutcomesResponse;
     const opportunityScannerPayload = (await opportunityScannerResponse.json()) as OpportunityScannerResponse;
+    const strategyOpportunitySyncPayload = (await strategyOpportunitySyncResponse.json()) as StrategyOpportunitySyncResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -796,6 +836,7 @@ export default function AIAgentControlCenter() {
     setPortfolioBrainLearning(portfolioBrainLearningPayload.learning ?? null);
     setPortfolioBrainOutcomes(portfolioBrainOutcomesPayload.outcomes ?? null);
     setOpportunityScanner(opportunityScannerPayload.scanner ?? null);
+    setStrategyOpportunitySync(strategyOpportunitySyncPayload.strategyOpportunitySync ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -870,7 +911,7 @@ export default function AIAgentControlCenter() {
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.4.8</h2>
+          <h2 className="text-5xl font-black">🤖 AI Agent Control Center V11.4.10</h2>
           <p className="text-gray-400 text-xl mt-4 leading-relaxed">
             Kontrollzentrum für GPT Analyst, Claude Risk, Consensus Engine, Paper Trading, Memory, Learning, Outcomes, Market Regime, Strategy Selection, News Intelligence, Economic Calendar, Portfolio Intelligence und Portfolio Brain.
           </p>
@@ -927,6 +968,8 @@ export default function AIAgentControlCenter() {
       </div>
 
       <OpportunityDashboardPanel scanner={opportunityScanner} />
+
+      <StrategyOpportunityPanel strategyOpportunitySync={strategyOpportunitySync} />
 
       <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
