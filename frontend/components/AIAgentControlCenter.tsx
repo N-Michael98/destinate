@@ -717,6 +717,37 @@ type PortfolioBrainStrategySyncResponse = {
   report: PortfolioBrainStrategySyncReport;
   timestamp: string;
 };
+type DecisionMemoryEntry = {
+  id: string;
+  createdAt: string;
+  version: string;
+  symbol: string;
+  strategy: string;
+  direction: string;
+  confidence: number;
+  executionBias: string;
+  approved: boolean;
+  reason: string;
+};
+
+type DecisionMemoryReport = {
+  version: string;
+  status: "READY";
+  totalDecisionMemories: number;
+  approvedMemories: number;
+  rejectedMemories: number;
+  latestMemory: DecisionMemoryEntry | null;
+  memory: DecisionMemoryEntry[];
+  recommendation: string;
+  updatedAt: string;
+};
+
+type DecisionMemoryResponse = {
+  ok: boolean;
+  memory: DecisionMemoryReport;
+  timestamp: string;
+};
+
 
 
 
@@ -2890,6 +2921,7 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
 
 
 
