@@ -9,6 +9,7 @@ import OpportunityDashboardPanel from "./portfolio-brain/OpportunityDashboardPan
 import StrategyOpportunityPanel from "./portfolio-brain/StrategyOpportunityPanel";
 import PortfolioBrainStrategyDecisionPanel from "./portfolio-brain/PortfolioBrainStrategyDecisionPanel";
 import DecisionMemoryPanel from "./portfolio-brain/DecisionMemoryPanel";
+import OutcomeLearningPanel from "./portfolio-brain/OutcomeLearningPanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -747,6 +748,47 @@ type DecisionMemoryResponse = {
   memory: DecisionMemoryReport;
   timestamp: string;
 };
+type OutcomeLearningItem = {
+  id: string;
+  symbol: string;
+  strategy: string;
+  direction: string;
+  confidence: number;
+  approved: boolean;
+  simulatedOutcome: "WIN" | "LOSS" | "BREAKEVEN" | "NO_TRADE";
+  simulatedPnlPercent: number;
+  learningImpact: "BOOST" | "PENALTY" | "NEUTRAL";
+  confidenceAdjustment: number;
+  reason: string;
+};
+
+type OutcomeLearningSyncReport = {
+  version: string;
+  status: "READY";
+  totalMemories: number;
+  approvedMemories: number;
+  rejectedMemories: number;
+  wins: number;
+  losses: number;
+  breakevens: number;
+  noTrades: number;
+  winRate: number;
+  averagePnlPercent: number;
+  totalConfidenceAdjustment: number;
+  learningState: "IMPROVING" | "CAUTIOUS" | "NEUTRAL";
+  bestLearningItem: OutcomeLearningItem | null;
+  worstLearningItem: OutcomeLearningItem | null;
+  items: OutcomeLearningItem[];
+  recommendation: string;
+  updatedAt: string;
+};
+
+type OutcomeLearningSyncResponse = {
+  ok: boolean;
+  outcomeLearningSync: OutcomeLearningSyncReport;
+  timestamp: string;
+};
+
 
 
 
@@ -816,6 +858,7 @@ export default function AIAgentControlCenter() {
   const [strategyOpportunitySync, setStrategyOpportunitySync] = useState<StrategyOpportunitySyncReport | null>(null);
   const [portfolioBrainStrategySync, setPortfolioBrainStrategySync] = useState<PortfolioBrainStrategySyncReport | null>(null);
   const [decisionMemory, setDecisionMemory] = useState<DecisionMemoryReport | null>(null);
+  const [outcomeLearningSync, setOutcomeLearningSync] = useState<OutcomeLearningSyncReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -842,6 +885,7 @@ export default function AIAgentControlCenter() {
       strategyOpportunitySyncResponse,
       portfolioBrainStrategySyncResponse,
       decisionMemoryResponse,
+      outcomeLearningSyncResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -860,6 +904,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/strategy-opportunity-sync", { cache: "no-store" }),
       fetch("/api/portfolio-brain-strategy-sync", { cache: "no-store" }),
       fetch("/api/portfolio-brain-decision-memory", { cache: "no-store" }),
+      fetch("/api/portfolio-brain-outcome-learning-sync", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -879,6 +924,7 @@ export default function AIAgentControlCenter() {
     const strategyOpportunitySyncPayload = (await strategyOpportunitySyncResponse.json()) as StrategyOpportunitySyncResponse;
     const portfolioBrainStrategySyncPayload = (await portfolioBrainStrategySyncResponse.json()) as PortfolioBrainStrategySyncResponse;
     const decisionMemoryPayload = (await decisionMemoryResponse.json()) as DecisionMemoryResponse;
+    const outcomeLearningSyncPayload = (await outcomeLearningSyncResponse.json()) as OutcomeLearningSyncResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -908,6 +954,7 @@ export default function AIAgentControlCenter() {
     setStrategyOpportunitySync(strategyOpportunitySyncPayload.strategyOpportunitySync ?? null);
     setPortfolioBrainStrategySync(portfolioBrainStrategySyncPayload.report ?? null);
     setDecisionMemory(decisionMemoryPayload.memory ?? null);
+    setOutcomeLearningSync(outcomeLearningSyncPayload.outcomeLearningSync ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -1047,6 +1094,8 @@ export default function AIAgentControlCenter() {
       />
 
       <DecisionMemoryPanel decisionMemory={decisionMemory} />
+
+      <OutcomeLearningPanel outcomeLearningSync={outcomeLearningSync} />
 
       <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
@@ -2921,6 +2970,12 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
+
+
+
+
+
 
 
 
