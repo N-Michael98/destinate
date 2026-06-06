@@ -8,6 +8,7 @@ import PortfolioBrainOutcomePanel from "./portfolio-brain/PortfolioBrainOutcomeP
 import OpportunityDashboardPanel from "./portfolio-brain/OpportunityDashboardPanel";
 import StrategyOpportunityPanel from "./portfolio-brain/StrategyOpportunityPanel";
 import PortfolioBrainStrategyDecisionPanel from "./portfolio-brain/PortfolioBrainStrategyDecisionPanel";
+import DecisionMemoryPanel from "./portfolio-brain/DecisionMemoryPanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -783,6 +784,7 @@ export default function AIAgentControlCenter() {
   const [opportunityScanner, setOpportunityScanner] = useState<OpportunityScannerReport | null>(null);
   const [strategyOpportunitySync, setStrategyOpportunitySync] = useState<StrategyOpportunitySyncReport | null>(null);
   const [portfolioBrainStrategySync, setPortfolioBrainStrategySync] = useState<PortfolioBrainStrategySyncReport | null>(null);
+  const [decisionMemory, setDecisionMemory] = useState<DecisionMemoryReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -808,6 +810,7 @@ export default function AIAgentControlCenter() {
       opportunityScannerResponse,
       strategyOpportunitySyncResponse,
       portfolioBrainStrategySyncResponse,
+      decisionMemoryResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -825,6 +828,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/opportunity-scanner", { cache: "no-store" }),
       fetch("/api/strategy-opportunity-sync", { cache: "no-store" }),
       fetch("/api/portfolio-brain-strategy-sync", { cache: "no-store" }),
+      fetch("/api/portfolio-brain-decision-memory", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -843,6 +847,7 @@ export default function AIAgentControlCenter() {
     const opportunityScannerPayload = (await opportunityScannerResponse.json()) as OpportunityScannerResponse;
     const strategyOpportunitySyncPayload = (await strategyOpportunitySyncResponse.json()) as StrategyOpportunitySyncResponse;
     const portfolioBrainStrategySyncPayload = (await portfolioBrainStrategySyncResponse.json()) as PortfolioBrainStrategySyncResponse;
+    const decisionMemoryPayload = (await decisionMemoryResponse.json()) as DecisionMemoryResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -871,6 +876,7 @@ export default function AIAgentControlCenter() {
     setOpportunityScanner(opportunityScannerPayload.scanner ?? null);
     setStrategyOpportunitySync(strategyOpportunitySyncPayload.strategyOpportunitySync ?? null);
     setPortfolioBrainStrategySync(portfolioBrainStrategySyncPayload.report ?? null);
+    setDecisionMemory(decisionMemoryPayload.memory ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -1008,6 +1014,8 @@ export default function AIAgentControlCenter() {
       <PortfolioBrainStrategyDecisionPanel
         portfolioBrainStrategySync={portfolioBrainStrategySync}
       />
+
+      <DecisionMemoryPanel decisionMemory={decisionMemory} />
 
       <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
@@ -2882,6 +2890,12 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
+
+
+
+
+
 
 
 
