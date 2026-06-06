@@ -10,6 +10,7 @@ import StrategyOpportunityPanel from "./portfolio-brain/StrategyOpportunityPanel
 import PortfolioBrainStrategyDecisionPanel from "./portfolio-brain/PortfolioBrainStrategyDecisionPanel";
 import DecisionMemoryPanel from "./portfolio-brain/DecisionMemoryPanel";
 import OutcomeLearningPanel from "./portfolio-brain/OutcomeLearningPanel";
+import AdaptiveConfidencePanel from "./portfolio-brain/AdaptiveConfidencePanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -788,6 +789,40 @@ type OutcomeLearningSyncResponse = {
   outcomeLearningSync: OutcomeLearningSyncReport;
   timestamp: string;
 };
+type AdaptiveConfidenceItem = {
+  symbol: string;
+  strategy: string;
+  direction: string;
+  baseConfidence: number;
+  learningImpact: "BOOST" | "PENALTY" | "NEUTRAL" | "NONE";
+  confidenceAdjustment: number;
+  adaptiveConfidence: number;
+  confidenceState: "AGGRESSIVE" | "NORMAL" | "CAUTIOUS" | "WAIT";
+  approved: boolean;
+  reason: string;
+};
+
+type AdaptiveConfidenceReport = {
+  version: string;
+  status: "READY";
+  totalItems: number;
+  approvedItems: number;
+  averageBaseConfidence: number;
+  averageAdaptiveConfidence: number;
+  totalAdjustment: number;
+  bestAdaptiveItem: AdaptiveConfidenceItem | null;
+  weakestAdaptiveItem: AdaptiveConfidenceItem | null;
+  items: AdaptiveConfidenceItem[];
+  recommendation: string;
+  updatedAt: string;
+};
+
+type AdaptiveConfidenceResponse = {
+  ok: boolean;
+  adaptiveConfidence: AdaptiveConfidenceReport;
+  timestamp: string;
+};
+
 
 
 
@@ -859,6 +894,7 @@ export default function AIAgentControlCenter() {
   const [portfolioBrainStrategySync, setPortfolioBrainStrategySync] = useState<PortfolioBrainStrategySyncReport | null>(null);
   const [decisionMemory, setDecisionMemory] = useState<DecisionMemoryReport | null>(null);
   const [outcomeLearningSync, setOutcomeLearningSync] = useState<OutcomeLearningSyncReport | null>(null);
+  const [adaptiveConfidence, setAdaptiveConfidence] = useState<AdaptiveConfidenceReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -886,6 +922,7 @@ export default function AIAgentControlCenter() {
       portfolioBrainStrategySyncResponse,
       decisionMemoryResponse,
       outcomeLearningSyncResponse,
+      adaptiveConfidenceResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -905,6 +942,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/portfolio-brain-strategy-sync", { cache: "no-store" }),
       fetch("/api/portfolio-brain-decision-memory", { cache: "no-store" }),
       fetch("/api/portfolio-brain-outcome-learning-sync", { cache: "no-store" }),
+      fetch("/api/portfolio-brain-adaptive-confidence", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -925,6 +963,7 @@ export default function AIAgentControlCenter() {
     const portfolioBrainStrategySyncPayload = (await portfolioBrainStrategySyncResponse.json()) as PortfolioBrainStrategySyncResponse;
     const decisionMemoryPayload = (await decisionMemoryResponse.json()) as DecisionMemoryResponse;
     const outcomeLearningSyncPayload = (await outcomeLearningSyncResponse.json()) as OutcomeLearningSyncResponse;
+    const adaptiveConfidencePayload = (await adaptiveConfidenceResponse.json()) as AdaptiveConfidenceResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -955,6 +994,7 @@ export default function AIAgentControlCenter() {
     setPortfolioBrainStrategySync(portfolioBrainStrategySyncPayload.report ?? null);
     setDecisionMemory(decisionMemoryPayload.memory ?? null);
     setOutcomeLearningSync(outcomeLearningSyncPayload.outcomeLearningSync ?? null);
+    setAdaptiveConfidence(adaptiveConfidencePayload.adaptiveConfidence ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -1096,6 +1136,8 @@ export default function AIAgentControlCenter() {
       <DecisionMemoryPanel decisionMemory={decisionMemory} />
 
       <OutcomeLearningPanel outcomeLearningSync={outcomeLearningSync} />
+
+      <AdaptiveConfidencePanel adaptiveConfidence={adaptiveConfidence} />
 
       <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
@@ -2970,6 +3012,12 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
+
+
+
+
+
 
 
 
