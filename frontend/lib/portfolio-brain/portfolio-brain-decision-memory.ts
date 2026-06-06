@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { buildPortfolioBrainStrategySyncReport } from "./portfolio-brain-strategy-sync";
 
 export type PortfolioBrainDecisionMemoryEntry = {
@@ -25,7 +27,46 @@ export type PortfolioBrainDecisionMemoryReport = {
   updatedAt: string;
 };
 
-const portfolioBrainDecisionMemory: PortfolioBrainDecisionMemoryEntry[] = [];
+const memoryFilePath = path.join(
+  process.cwd(),
+  "lib",
+  "data",
+  "portfolio-brain-decision-memory.json"
+);
+
+function ensureMemoryFile() {
+  const directory = path.dirname(memoryFilePath);
+
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  if (!fs.existsSync(memoryFilePath)) {
+    fs.writeFileSync(memoryFilePath, "[]", "utf8");
+  }
+}
+
+function readMemoryFile(): PortfolioBrainDecisionMemoryEntry[] {
+  ensureMemoryFile();
+
+  try {
+    const raw = fs.readFileSync(memoryFilePath, "utf8");
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+function writeMemoryFile(memory: PortfolioBrainDecisionMemoryEntry[]) {
+  ensureMemoryFile();
+  fs.writeFileSync(memoryFilePath, JSON.stringify(memory, null, 2), "utf8");
+}
 
 function createMemoryId(symbol: string): string {
   return `portfolio-brain-decision-${symbol.toLowerCase()}-${Date.now()}`;
@@ -33,11 +74,12 @@ function createMemoryId(symbol: string): string {
 
 export function savePortfolioBrainDecisionMemory(): PortfolioBrainDecisionMemoryReport {
   const strategySync = buildPortfolioBrainStrategySyncReport();
+  const existingMemory = readMemoryFile();
 
   const entries = strategySync.decisions.map((decision) => ({
     id: createMemoryId(decision.symbol),
     createdAt: new Date().toISOString(),
-    version: "V11.5.3",
+    version: "V11.5.6",
     symbol: decision.symbol,
     strategy: decision.strategy,
     direction: decision.direction,
@@ -47,13 +89,15 @@ export function savePortfolioBrainDecisionMemory(): PortfolioBrainDecisionMemory
     reason: decision.reason,
   }));
 
-  portfolioBrainDecisionMemory.unshift(...entries);
+  const nextMemory = [...entries, ...existingMemory].slice(0, 100);
+
+  writeMemoryFile(nextMemory);
 
   return buildPortfolioBrainDecisionMemoryReport();
 }
 
 export function getPortfolioBrainDecisionMemory(): PortfolioBrainDecisionMemoryEntry[] {
-  return portfolioBrainDecisionMemory;
+  return readMemoryFile();
 }
 
 export function buildPortfolioBrainDecisionMemoryReport(): PortfolioBrainDecisionMemoryReport {
@@ -68,11 +112,11 @@ export function buildPortfolioBrainDecisionMemoryReport(): PortfolioBrainDecisio
     memory.length === 0
       ? "No Portfolio Brain decision memory stored yet."
       : approvedMemories > 0
-        ? "Portfolio Brain decision memory is active. Approved strategy decisions are now available for outcome and adaptive learning."
-        : "Portfolio Brain decision memory is active, but no approved strategy decisions were stored yet.";
+        ? "Portfolio Brain decision memory is active and persisted. Approved strategy decisions are available for outcome and adaptive learning."
+        : "Portfolio Brain decision memory is persisted, but no approved strategy decisions were stored yet.";
 
   return {
-    version: "V11.5.3",
+    version: "V11.5.6",
     status: "READY",
     totalDecisionMemories: memory.length,
     approvedMemories,

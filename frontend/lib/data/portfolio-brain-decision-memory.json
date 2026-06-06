@@ -1,0 +1,62 @@
+[
+  {
+    "id": "portfolio-brain-decision-spx500-1780767952562",
+    "createdAt": "2026-06-06T17:45:52.562Z",
+    "version": "V11.5.6",
+    "symbol": "SPX500",
+    "strategy": "Trend Continuation Strategy",
+    "direction": "LONG",
+    "confidence": 69,
+    "executionBias": "NORMAL",
+    "approved": true,
+    "reason": "SPX500 approved by Portfolio Brain using Trend Continuation Strategy."
+  },
+  {
+    "id": "portfolio-brain-decision-nas100-1780767952562",
+    "createdAt": "2026-06-06T17:45:52.562Z",
+    "version": "V11.5.6",
+    "symbol": "NAS100",
+    "strategy": "Trend Continuation Strategy",
+    "direction": "LONG",
+    "confidence": 67,
+    "executionBias": "NORMAL",
+    "approved": true,
+    "reason": "NAS100 approved by Portfolio Brain using Trend Continuation Strategy."
+  },
+  {
+    "id": "portfolio-brain-decision-xauusd-1780767952562",
+    "createdAt": "2026-06-06T17:45:52.562Z",
+    "version": "V11.5.6",
+    "symbol": "XAUUSD",
+    "strategy": "Bearish Reversal Strategy",
+    "direction": "SHORT",
+    "confidence": 56,
+    "executionBias": "NORMAL",
+    "approved": true,
+    "reason": "XAUUSD approved by Portfolio Brain using Bearish Reversal Strategy."
+  },
+  {
+    "id": "portfolio-brain-decision-eurusd-1780767952562",
+    "createdAt": "2026-06-06T17:45:52.562Z",
+    "version": "V11.5.6",
+    "symbol": "EURUSD",
+    "strategy": "No Trade / Observation Mode",
+    "direction": "WAIT",
+    "confidence": 45,
+    "executionBias": "WAIT",
+    "approved": false,
+    "reason": "EURUSD rejected because confidence/execution requirements were not met."
+  },
+  {
+    "id": "portfolio-brain-decision-gbpusd-1780767952562",
+    "createdAt": "2026-06-06T17:45:52.562Z",
+    "version": "V11.5.6",
+    "symbol": "GBPUSD",
+    "strategy": "No Trade / Observation Mode",
+    "direction": "WAIT",
+    "confidence": 41,
+    "executionBias": "WAIT",
+    "approved": false,
+    "reason": "GBPUSD rejected because confidence/execution requirements were not met."
+  }
+]
