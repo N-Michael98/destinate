@@ -2,6 +2,8 @@
 
 
 
+
+import InstitutionalIntelligenceDashboardPanel from "./InstitutionalIntelligenceDashboardPanel";
 import LearningFeedbackDashboardPanel from "./LearningFeedbackDashboardPanel";
 import TradeOutcomeFeedbackDashboardPanel from "./TradeOutcomeFeedbackDashboardPanel";
 import React, { useEffect, useState } from "react";
@@ -3189,10 +3191,13 @@ export default function AIAgentControlCenter() {
       <TradeOutcomeFeedbackDashboardPanel />
 
       <LearningFeedbackDashboardPanel />
+
+      <InstitutionalIntelligenceDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
