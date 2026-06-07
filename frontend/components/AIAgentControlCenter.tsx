@@ -11,6 +11,7 @@ import PortfolioBrainStrategyDecisionPanel from "./portfolio-brain/PortfolioBrai
 import DecisionMemoryPanel from "./portfolio-brain/DecisionMemoryPanel";
 import OutcomeLearningPanel from "./portfolio-brain/OutcomeLearningPanel";
 import AdaptiveConfidencePanel from "./portfolio-brain/AdaptiveConfidencePanel";
+import PortfolioRiskManagementPanel from "./portfolio-brain/PortfolioRiskManagementPanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -822,6 +823,60 @@ type AdaptiveConfidenceResponse = {
   adaptiveConfidence: AdaptiveConfidenceReport;
   timestamp: string;
 };
+type PortfolioRiskState =
+  | "SAFE"
+  | "NORMAL"
+  | "CAUTIOUS"
+  | "DEFENSIVE"
+  | "LOCKDOWN";
+
+type PortfolioRiskManagementReport = {
+  version: string;
+  status: "READY";
+  account: {
+    currency: string;
+    startEquityToday: number;
+    currentEquity: number;
+    dailyPnl: number;
+    dailyLossPercent: number;
+    dailyWarningLimitPercent: number;
+    dailyHardStopLimitPercent: number;
+  };
+  risk: {
+    riskState: PortfolioRiskState;
+    tradingAllowed: boolean;
+    newTradesAllowed: boolean;
+    manageOpenPositionsAllowed: boolean;
+    riskPerTradePercent: number;
+    maxRiskPerTradeAmount: number;
+    maxPortfolioExposurePercent: number;
+    dailyLossLimitReached: boolean;
+    dailyHardStopReached: boolean;
+  };
+  adaptiveInputs: {
+    averageAdaptiveConfidence: number;
+    totalConfidenceAdjustment: number;
+    bestStrategyWeight: number;
+    promotedStrategies: number;
+    reducedStrategies: number;
+  };
+  executionRules: {
+    unlimitedTradesUntilDailyLimit: boolean;
+    requiresAnalysisGo: boolean;
+    requiresPositiveRiskState: boolean;
+    requiresExposureRoom: boolean;
+    requiresDailyLossBelowHardStop: boolean;
+  };
+  recommendation: string;
+  updatedAt: string;
+};
+
+type PortfolioRiskManagementResponse = {
+  ok: boolean;
+  portfolioRiskManagement: PortfolioRiskManagementReport;
+  timestamp: string;
+};
+
 
 
 
@@ -895,6 +950,7 @@ export default function AIAgentControlCenter() {
   const [decisionMemory, setDecisionMemory] = useState<DecisionMemoryReport | null>(null);
   const [outcomeLearningSync, setOutcomeLearningSync] = useState<OutcomeLearningSyncReport | null>(null);
   const [portfolioAdaptiveConfidence, setPortfolioAdaptiveConfidence] = useState<AdaptiveConfidenceReport | null>(null);
+  const [portfolioRiskManagement, setPortfolioRiskManagement] = useState<PortfolioRiskManagementReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -923,6 +979,7 @@ export default function AIAgentControlCenter() {
       decisionMemoryResponse,
       outcomeLearningSyncResponse,
       adaptiveConfidenceResponse,
+      portfolioRiskManagementResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -943,6 +1000,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/portfolio-brain-decision-memory", { cache: "no-store" }),
       fetch("/api/portfolio-brain-outcome-learning-sync", { cache: "no-store" }),
       fetch("/api/portfolio-brain-adaptive-confidence", { cache: "no-store" }),
+      fetch("/api/portfolio-risk-management", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -964,6 +1022,7 @@ export default function AIAgentControlCenter() {
     const decisionMemoryPayload = (await decisionMemoryResponse.json()) as DecisionMemoryResponse;
     const outcomeLearningSyncPayload = (await outcomeLearningSyncResponse.json()) as OutcomeLearningSyncResponse;
     const adaptiveConfidencePayload = (await adaptiveConfidenceResponse.json()) as AdaptiveConfidenceResponse;
+    const portfolioRiskManagementPayload = (await portfolioRiskManagementResponse.json()) as PortfolioRiskManagementResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -995,6 +1054,7 @@ export default function AIAgentControlCenter() {
     setDecisionMemory(decisionMemoryPayload.memory ?? null);
     setOutcomeLearningSync(outcomeLearningSyncPayload.outcomeLearningSync ?? null);
     setPortfolioAdaptiveConfidence(adaptiveConfidencePayload.adaptiveConfidence ?? null);
+    setPortfolioRiskManagement(portfolioRiskManagementPayload.portfolioRiskManagement ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -1138,6 +1198,10 @@ export default function AIAgentControlCenter() {
       <OutcomeLearningPanel outcomeLearningSync={outcomeLearningSync} />
 
       <AdaptiveConfidencePanel adaptiveConfidence={portfolioAdaptiveConfidence} />
+
+      <PortfolioRiskManagementPanel portfolioRiskManagement={portfolioRiskManagement} />
+
+      <PortfolioRiskManagementPanel portfolioRiskManagement={portfolioRiskManagement} />
 
       <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
@@ -3012,6 +3076,13 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
+
+
+
+
+
+
 
 
 
