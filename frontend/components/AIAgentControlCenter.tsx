@@ -9,6 +9,8 @@
 
 
 
+
+import MultiTimeframeTradingStyleDashboardPanel from "./MultiTimeframeTradingStyleDashboardPanel";
 import TradeApprovalExecutionQueueDashboardPanel from "./TradeApprovalExecutionQueueDashboardPanel";
 import UnifiedDecisionTradeApprovalDashboardPanel from "./UnifiedDecisionTradeApprovalDashboardPanel";
 import PortfolioBrainUnifiedDecisionDashboardPanel from "./PortfolioBrainUnifiedDecisionDashboardPanel";
@@ -3217,10 +3219,13 @@ export default function AIAgentControlCenter() {
       <UnifiedDecisionTradeApprovalDashboardPanel />
 
       <TradeApprovalExecutionQueueDashboardPanel />
+
+      <MultiTimeframeTradingStyleDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
