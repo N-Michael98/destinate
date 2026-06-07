@@ -12,6 +12,8 @@
 
 
 
+
+import AIExecutionSchedulerDashboardPanel from "./AIExecutionSchedulerDashboardPanel";
 import TradingStylePriorityDashboardPanel from "./TradingStylePriorityDashboardPanel";
 import MultiTimeframeTradeApprovalDashboardPanel from "./MultiTimeframeTradeApprovalDashboardPanel";
 import MultiTimeframeTradingStyleDashboardPanel from "./MultiTimeframeTradingStyleDashboardPanel";
@@ -3229,10 +3231,13 @@ export default function AIAgentControlCenter() {
       <MultiTimeframeTradeApprovalDashboardPanel />
 
       <TradingStylePriorityDashboardPanel />
+
+      <AIExecutionSchedulerDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
