@@ -225,8 +225,8 @@ function buildSymbolResult(
   inputs: StylePriorityInput[],
 ): SymbolStylePriorityResult {
   const candidates = getPriorityCandidates(inputs);
-  const primaryStyle = candidates[0]?.style ?? "NONE";
-  const secondaryStyle = candidates[1]?.style ?? "NONE";
+  const primaryStyle: TradingStyle | "NONE" = candidates[0]?.style ?? "NONE";
+  const secondaryStyle: TradingStyle | "NONE" = candidates[1]?.style ?? "NONE";
 
   const activeDirection = resolveActiveDirection(primaryStyle, inputs);
   const primaryInput = inputs.find((input) => input.style === primaryStyle);
@@ -326,3 +326,4 @@ export function getTradingStylePriorityEngineReport(): TradingStylePriorityEngin
     updatedAt: new Date().toISOString(),
   };
 }
+
