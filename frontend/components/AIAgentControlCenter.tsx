@@ -8,6 +8,8 @@
 
 
 
+
+import TradeApprovalExecutionQueueDashboardPanel from "./TradeApprovalExecutionQueueDashboardPanel";
 import UnifiedDecisionTradeApprovalDashboardPanel from "./UnifiedDecisionTradeApprovalDashboardPanel";
 import PortfolioBrainUnifiedDecisionDashboardPanel from "./PortfolioBrainUnifiedDecisionDashboardPanel";
 import StrategyWeightPortfolioBrainSyncDashboardPanel from "./StrategyWeightPortfolioBrainSyncDashboardPanel";
@@ -3213,10 +3215,13 @@ export default function AIAgentControlCenter() {
       <PortfolioBrainUnifiedDecisionDashboardPanel />
 
       <UnifiedDecisionTradeApprovalDashboardPanel />
+
+      <TradeApprovalExecutionQueueDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
