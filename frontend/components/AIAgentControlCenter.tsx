@@ -16,6 +16,7 @@
 
 import BrokerHealthDashboardPanel from "./BrokerHealthDashboardPanel";
 import SmartBrokerSelectionPanel from "./SmartBrokerSelectionPanel";
+import SmartBrokerExecutionSyncPanel from "./SmartBrokerExecutionSyncPanel";
 import AIExecutionSchedulerDashboardPanel from "./AIExecutionSchedulerDashboardPanel";
 import BrokerRoutingDashboardPanel from "./BrokerRoutingDashboardPanel";
 import TradingStylePriorityDashboardPanel from "./TradingStylePriorityDashboardPanel";
@@ -3243,10 +3244,13 @@ export default function AIAgentControlCenter() {
       <BrokerHealthDashboardPanel />
 
       <SmartBrokerSelectionPanel />
+
+      <SmartBrokerExecutionSyncPanel />
 </div>
     </section>
   );
 }
+
 
 
 
