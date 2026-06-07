@@ -7,6 +7,8 @@
 
 
 
+
+import UnifiedDecisionTradeApprovalDashboardPanel from "./UnifiedDecisionTradeApprovalDashboardPanel";
 import PortfolioBrainUnifiedDecisionDashboardPanel from "./PortfolioBrainUnifiedDecisionDashboardPanel";
 import StrategyWeightPortfolioBrainSyncDashboardPanel from "./StrategyWeightPortfolioBrainSyncDashboardPanel";
 import StrategyWeightAutoRebalancingDashboardPanel from "./StrategyWeightAutoRebalancingDashboardPanel";
@@ -3209,10 +3211,13 @@ export default function AIAgentControlCenter() {
       <StrategyWeightPortfolioBrainSyncDashboardPanel />
 
       <PortfolioBrainUnifiedDecisionDashboardPanel />
+
+      <UnifiedDecisionTradeApprovalDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
