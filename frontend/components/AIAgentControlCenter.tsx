@@ -3,6 +3,8 @@
 
 
 
+
+import InstitutionalPortfolioBrainSyncDashboardPanel from "./InstitutionalPortfolioBrainSyncDashboardPanel";
 import InstitutionalIntelligenceDashboardPanel from "./InstitutionalIntelligenceDashboardPanel";
 import LearningFeedbackDashboardPanel from "./LearningFeedbackDashboardPanel";
 import TradeOutcomeFeedbackDashboardPanel from "./TradeOutcomeFeedbackDashboardPanel";
@@ -3193,10 +3195,13 @@ export default function AIAgentControlCenter() {
       <LearningFeedbackDashboardPanel />
 
       <InstitutionalIntelligenceDashboardPanel />
+
+      <InstitutionalPortfolioBrainSyncDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
