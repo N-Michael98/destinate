@@ -12,6 +12,7 @@ import DecisionMemoryPanel from "./portfolio-brain/DecisionMemoryPanel";
 import OutcomeLearningPanel from "./portfolio-brain/OutcomeLearningPanel";
 import AdaptiveConfidencePanel from "./portfolio-brain/AdaptiveConfidencePanel";
 import PortfolioRiskManagementPanel from "./portfolio-brain/PortfolioRiskManagementPanel";
+import ExecutionQueuePanel from "./portfolio-brain/ExecutionQueuePanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -876,6 +877,44 @@ type PortfolioRiskManagementResponse = {
   portfolioRiskManagement: PortfolioRiskManagementReport;
   timestamp: string;
 };
+type ExecutionQueueItem = {
+  id: string;
+  rank: number;
+  symbol: string;
+  strategy: string;
+  direction: string;
+  adaptiveConfidence: number;
+  strategyWeight: number;
+  riskState: string;
+  riskPerTradePercent: number;
+  maxRiskAmount: number;
+  priorityScore: number;
+  status: "QUEUED" | "BLOCKED";
+  brokerTarget: "PAPER" | "CAPITAL_COM" | "IC_MARKETS";
+  executionMode: "SIMULATION" | "DEMO" | "LIVE_BLOCKED";
+  reason: string;
+};
+
+type ExecutionQueueReport = {
+  version: string;
+  status: "READY";
+  totalApprovedTrades: number;
+  queuedTrades: number;
+  blockedTrades: number;
+  bestQueueItem: ExecutionQueueItem | null;
+  queue: ExecutionQueueItem[];
+  brokerMode: "PAPER";
+  liveTradingEnabled: boolean;
+  recommendation: string;
+  updatedAt: string;
+};
+
+type ExecutionQueueResponse = {
+  ok: boolean;
+  executionQueue: ExecutionQueueReport;
+  timestamp: string;
+};
+
 
 
 
@@ -951,6 +990,7 @@ export default function AIAgentControlCenter() {
   const [outcomeLearningSync, setOutcomeLearningSync] = useState<OutcomeLearningSyncReport | null>(null);
   const [portfolioAdaptiveConfidence, setPortfolioAdaptiveConfidence] = useState<AdaptiveConfidenceReport | null>(null);
   const [portfolioRiskManagement, setPortfolioRiskManagement] = useState<PortfolioRiskManagementReport | null>(null);
+  const [executionQueue, setExecutionQueue] = useState<ExecutionQueueReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -980,6 +1020,7 @@ export default function AIAgentControlCenter() {
       outcomeLearningSyncResponse,
       adaptiveConfidenceResponse,
       portfolioRiskManagementResponse,
+      executionQueueResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -1001,6 +1042,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/portfolio-brain-outcome-learning-sync", { cache: "no-store" }),
       fetch("/api/portfolio-brain-adaptive-confidence", { cache: "no-store" }),
       fetch("/api/portfolio-risk-management", { cache: "no-store" }),
+      fetch("/api/execution-queue-engine", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -1023,6 +1065,7 @@ export default function AIAgentControlCenter() {
     const outcomeLearningSyncPayload = (await outcomeLearningSyncResponse.json()) as OutcomeLearningSyncResponse;
     const adaptiveConfidencePayload = (await adaptiveConfidenceResponse.json()) as AdaptiveConfidenceResponse;
     const portfolioRiskManagementPayload = (await portfolioRiskManagementResponse.json()) as PortfolioRiskManagementResponse;
+    const executionQueuePayload = (await executionQueueResponse.json()) as ExecutionQueueResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -1055,6 +1098,7 @@ export default function AIAgentControlCenter() {
     setOutcomeLearningSync(outcomeLearningSyncPayload.outcomeLearningSync ?? null);
     setPortfolioAdaptiveConfidence(adaptiveConfidencePayload.adaptiveConfidence ?? null);
     setPortfolioRiskManagement(portfolioRiskManagementPayload.portfolioRiskManagement ?? null);
+    setExecutionQueue(executionQueuePayload.executionQueue ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -1201,7 +1245,11 @@ export default function AIAgentControlCenter() {
 
       <PortfolioRiskManagementPanel portfolioRiskManagement={portfolioRiskManagement} />
 
+      <ExecutionQueuePanel executionQueue={executionQueue} />
+
       <PortfolioRiskManagementPanel portfolioRiskManagement={portfolioRiskManagement} />
+
+      <ExecutionQueuePanel executionQueue={executionQueue} />
 
       <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
@@ -3076,6 +3124,12 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
+
+
+
+
+
 
 
 
