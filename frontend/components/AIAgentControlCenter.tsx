@@ -1,6 +1,8 @@
 ﻿"use client";
 
 
+
+import LearningFeedbackDashboardPanel from "./LearningFeedbackDashboardPanel";
 import TradeOutcomeFeedbackDashboardPanel from "./TradeOutcomeFeedbackDashboardPanel";
 import React, { useEffect, useState } from "react";
 import PortfolioBrainPanel from "./portfolio-brain/PortfolioBrainPanel";
@@ -3185,10 +3187,13 @@ export default function AIAgentControlCenter() {
         </div>
       
       <TradeOutcomeFeedbackDashboardPanel />
+
+      <LearningFeedbackDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
