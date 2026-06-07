@@ -13,6 +13,7 @@ import OutcomeLearningPanel from "./portfolio-brain/OutcomeLearningPanel";
 import AdaptiveConfidencePanel from "./portfolio-brain/AdaptiveConfidencePanel";
 import PortfolioRiskManagementPanel from "./portfolio-brain/PortfolioRiskManagementPanel";
 import ExecutionQueuePanel from "./portfolio-brain/ExecutionQueuePanel";
+import PaperExecutionPanel from "./portfolio-brain/PaperExecutionPanel";
 import PortfolioIntelligencePanel from "./portfolio-brain/PortfolioIntelligencePanel";
 
 type AIAgentRunResult = {
@@ -914,6 +915,57 @@ type ExecutionQueueResponse = {
   executionQueue: ExecutionQueueReport;
   timestamp: string;
 };
+type PaperExecutionStatus =
+  | "SIMULATED_OPEN"
+  | "SIMULATED_CLOSED"
+  | "SKIPPED";
+
+type PaperTradeExecution = {
+  id: string;
+  queueId: string;
+  symbol: string;
+  strategy: string;
+  direction: string;
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskPerTradePercent: number;
+  maxRiskAmount: number;
+  simulatedPositionSize: number;
+  simulatedOutcome: "WIN" | "LOSS" | "BREAKEVEN" | "OPEN";
+  simulatedPnlAmount: number;
+  simulatedPnlPercent: number;
+  status: PaperExecutionStatus;
+  reason: string;
+  createdAt: string;
+};
+
+type PaperExecutionReport = {
+  version: string;
+  status: "READY";
+  mode: "PAPER_SIMULATION";
+  totalQueueItems: number;
+  executedTrades: number;
+  skippedTrades: number;
+  wins: number;
+  losses: number;
+  breakevens: number;
+  openTrades: number;
+  totalSimulatedPnlAmount: number;
+  averageSimulatedPnlPercent: number;
+  bestTrade: PaperTradeExecution | null;
+  worstTrade: PaperTradeExecution | null;
+  executions: PaperTradeExecution[];
+  recommendation: string;
+  updatedAt: string;
+};
+
+type PaperExecutionResponse = {
+  ok: boolean;
+  paperExecution: PaperExecutionReport;
+  timestamp: string;
+};
+
 
 
 
@@ -991,6 +1043,7 @@ export default function AIAgentControlCenter() {
   const [portfolioAdaptiveConfidence, setPortfolioAdaptiveConfidence] = useState<AdaptiveConfidenceReport | null>(null);
   const [portfolioRiskManagement, setPortfolioRiskManagement] = useState<PortfolioRiskManagementReport | null>(null);
   const [executionQueue, setExecutionQueue] = useState<ExecutionQueueReport | null>(null);
+  const [paperExecution, setPaperExecution] = useState<PaperExecutionReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -1021,6 +1074,7 @@ export default function AIAgentControlCenter() {
       adaptiveConfidenceResponse,
       portfolioRiskManagementResponse,
       executionQueueResponse,
+      paperExecutionResponse,
     ] = await Promise.all([
       fetch("/api/paper/history", { cache: "no-store" }),
       fetch("/api/paper/performance", { cache: "no-store" }),
@@ -1043,6 +1097,7 @@ export default function AIAgentControlCenter() {
       fetch("/api/portfolio-brain-adaptive-confidence", { cache: "no-store" }),
       fetch("/api/portfolio-risk-management", { cache: "no-store" }),
       fetch("/api/execution-queue-engine", { cache: "no-store" }),
+      fetch("/api/paper-trading-execution-engine", { cache: "no-store" }),
     ]);
 
     const historyPayload = await historyResponse.json();
@@ -1066,6 +1121,7 @@ export default function AIAgentControlCenter() {
     const adaptiveConfidencePayload = (await adaptiveConfidenceResponse.json()) as AdaptiveConfidenceResponse;
     const portfolioRiskManagementPayload = (await portfolioRiskManagementResponse.json()) as PortfolioRiskManagementResponse;
     const executionQueuePayload = (await executionQueueResponse.json()) as ExecutionQueueResponse;
+    const paperExecutionPayload = (await paperExecutionResponse.json()) as PaperExecutionResponse;
 
     setHistory(historyPayload.history ?? []);
     setPerformance(performancePayload.performance ?? null);
@@ -1099,6 +1155,7 @@ export default function AIAgentControlCenter() {
     setPortfolioAdaptiveConfidence(adaptiveConfidencePayload.adaptiveConfidence ?? null);
     setPortfolioRiskManagement(portfolioRiskManagementPayload.portfolioRiskManagement ?? null);
     setExecutionQueue(executionQueuePayload.executionQueue ?? null);
+    setPaperExecution(paperExecutionPayload.paperExecution ?? null);
   } catch (error) {
     setMessage(
       error instanceof Error
@@ -1247,9 +1304,13 @@ export default function AIAgentControlCenter() {
 
       <ExecutionQueuePanel executionQueue={executionQueue} />
 
+      <PaperExecutionPanel paperExecution={paperExecution} />
+
       <PortfolioRiskManagementPanel portfolioRiskManagement={portfolioRiskManagement} />
 
       <ExecutionQueuePanel executionQueue={executionQueue} />
+
+      <PaperExecutionPanel paperExecution={paperExecution} />
 
       <PortfolioBrainPanel portfolioBrain={portfolioBrain} />
 
@@ -3124,6 +3185,12 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
+
+
+
+
+
 
 
 
