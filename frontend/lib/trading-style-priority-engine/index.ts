@@ -225,11 +225,11 @@ function buildSymbolResult(
   inputs: StylePriorityInput[],
 ): SymbolStylePriorityResult {
   const candidates = getPriorityCandidates(inputs);
-  const primaryStyle: TradingStyle | "NONE" = candidates[0]?.style ?? "NONE";
-  const secondaryStyle: TradingStyle | "NONE" = candidates[1]?.style ?? "NONE";
+  const primaryStyle = candidates.length > 0 ? candidates[0].style : "NONE";
+  const secondaryStyle = candidates.length > 1 ? candidates[1].style : "NONE";
 
   const activeDirection = resolveActiveDirection(primaryStyle, inputs);
-  const primaryInput = inputs.find((input) => input.style === primaryStyle);
+  const hasPrimaryStyle = candidates.length > 0; const primaryInput = hasPrimaryStyle ? candidates[0] : undefined;
 
   const rankedInputs = [...inputs].sort(
     (a, b) => calculatePriorityScore(b) - calculatePriorityScore(a),
@@ -251,7 +251,7 @@ function buildSymbolResult(
     .filter((input) => input.status === "REJECTED")
     .map((input) => input.style);
 
-  const tradeAllowed = primaryStyle !== "NONE";
+  const tradeAllowed = hasPrimaryStyle;
 
   const recommendation =
     tradeAllowed
@@ -326,4 +326,7 @@ export function getTradingStylePriorityEngineReport(): TradingStylePriorityEngin
     updatedAt: new Date().toISOString(),
   };
 }
+
+
+
 
