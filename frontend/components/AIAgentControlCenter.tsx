@@ -19,6 +19,7 @@ import SmartBrokerSelectionPanel from "./SmartBrokerSelectionPanel";
 import SmartBrokerExecutionSyncPanel from "./SmartBrokerExecutionSyncPanel";
 import DynamicPositionAllocationPanel from "./DynamicPositionAllocationPanel";
 import BrokerExecutionQualityLearningPanel from "./BrokerExecutionQualityLearningPanel";
+import AdaptiveBrokerWeightingPanel from "./AdaptiveBrokerWeightingPanel";
 import AIExecutionSchedulerDashboardPanel from "./AIExecutionSchedulerDashboardPanel";
 import BrokerRoutingDashboardPanel from "./BrokerRoutingDashboardPanel";
 import TradingStylePriorityDashboardPanel from "./TradingStylePriorityDashboardPanel";
@@ -3252,10 +3253,13 @@ export default function AIAgentControlCenter() {
       <DynamicPositionAllocationPanel />
 
       <BrokerExecutionQualityLearningPanel />
+
+      <AdaptiveBrokerWeightingPanel />
 </div>
     </section>
   );
 }
+
 
 
 
