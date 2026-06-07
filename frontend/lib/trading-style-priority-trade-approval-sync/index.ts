@@ -2,7 +2,7 @@
   StyleApprovalGateStatus,
   StylePriorityTradeApprovalDecision,
   StylePriorityTradeApprovalInput,
-  StylePriorityTradeApprovalSyncReport,
+  TradingStylePriorityTradeApprovalSyncReport,
   StyleTradeApprovalGate,
 } from "./trading-style-priority-trade-approval-types";
 
@@ -265,3 +265,6 @@ export function getTradingStylePriorityTradeApprovalSyncReport(): TradingStylePr
     updatedAt: new Date().toISOString(),
   };
 }
+
+
+
