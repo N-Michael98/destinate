@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import PaperTradingDashboardPanel from "@/components/PaperTradingDashboardPanel";
 import PaperTradingCenter from "@/components/PaperTradingCenter";
 import AIAgentControlCenter from "@/components/AIAgentControlCenter";
+import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 
 type NavItem = {
   label: string;
@@ -3547,4 +3548,5 @@ export default function Home() {
     </main>
   );
 }
+
 
