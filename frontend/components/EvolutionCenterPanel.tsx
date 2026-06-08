@@ -1,5 +1,11 @@
 ﻿"use client";
 
+import {
+  AllocationDonutChart,
+  MetricBarChart,
+  PerformanceLineChart,
+} from "./charts";
+
 const evolutionMetrics = [
   { label: "Evolution Modules", value: "18", detail: "Active Species Pipeline" },
   { label: "Total Allocation", value: "100%", detail: "Normalized Allocation" },
@@ -10,12 +16,34 @@ const evolutionMetrics = [
 ];
 
 const speciesAllocation = [
-  { species: "HYBRID", allocation: 39, role: "Primary adaptive core" },
-  { species: "LIQUIDITY", allocation: 19, role: "Defensive liquidity layer" },
-  { species: "TREND", allocation: 19, role: "Directional trend layer" },
-  { species: "INSTITUTIONAL", allocation: 19, role: "Institutional confirmation" },
-  { species: "BREAKOUT", allocation: 4, role: "Tactical breakout layer" },
-  { species: "MEAN_REVERSION", allocation: 0, role: "Currently blocked" },
+  { label: "HYBRID", value: 39 },
+  { label: "LIQUIDITY", value: 19 },
+  { label: "TREND", value: 19 },
+  { label: "INSTITUTIONAL", value: 19 },
+  { label: "BREAKOUT", value: 4 },
+  { label: "MEAN_REVERSION", value: 0 },
+];
+
+const capitalAllocation = [
+  { label: "HYBRID", value: 39000 },
+  { label: "LIQUIDITY", value: 19000 },
+  { label: "TREND", value: 19000 },
+  { label: "INSTITUTIONAL", value: 19000 },
+  { label: "BREAKOUT", value: 4000 },
+  { label: "MEAN_REV", value: 0 },
+];
+
+const brokerDistribution = [
+  { label: "DUAL_BROKER", value: 6 },
+  { label: "CAPITAL_COM", value: 2 },
+  { label: "IC_MARKETS", value: 3 },
+];
+
+const readinessData = [
+  { label: "Queue", value: 10 },
+  { label: "Bridge", value: 10 },
+  { label: "Dispatch", value: 10 },
+  { label: "Limited", value: 1 },
 ];
 
 const pipelineStages = [
@@ -40,13 +68,13 @@ export default function EvolutionCenterPanel() {
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-400">
-            V15.A.4 Evolution Center
+            V15.A.7 Evolution Charts
           </p>
           <h2 className="mt-2 text-2xl font-bold text-white">
             Evolution Species Intelligence Dashboard
           </h2>
           <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-            Central overview for the complete Evolution → Species → Execution → Broker Sync pipeline.
+            Professional visual overview for the complete Evolution → Species → Execution → Broker Sync pipeline.
           </p>
         </div>
 
@@ -69,61 +97,57 @@ export default function EvolutionCenterPanel() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4">
-          <h3 className="text-sm font-bold text-purple-300">
-            Species Allocation
-          </h3>
-          <p className="mt-1 text-xs text-zinc-500">
-            Current normalized allocation from Evolution Allocation Engine.
-          </p>
+        <AllocationDonutChart
+          title="Species Allocation"
+          subtitle="Normalized Evolution allocation by Species."
+          data={speciesAllocation}
+          footer="HYBRID remains the primary adaptive allocation core."
+        />
 
-          <div className="mt-4 space-y-3">
-            {speciesAllocation.map((item) => (
-              <div key={item.species}>
-                <div className="mb-1 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {item.species}
-                    </p>
-                    <p className="text-xs text-zinc-500">{item.role}</p>
-                  </div>
-                  <p className="text-sm font-bold text-purple-300">
-                    {item.allocation}%
-                  </p>
-                </div>
+        <MetricBarChart
+          title="Capital Allocation"
+          subtitle="Simulated capital assignment by Species."
+          data={capitalAllocation}
+          footer="Capital base: 100,000 USD simulation."
+        />
+      </div>
 
-                <div className="h-2 overflow-hidden rounded-full bg-zinc-900">
-                  <div
-                    className="h-full rounded-full bg-purple-400"
-                    style={{ width: `${item.allocation}%` }}
-                  />
-                </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <MetricBarChart
+          title="Broker Distribution"
+          subtitle="Execution routing distribution across broker targets."
+          data={brokerDistribution}
+          footer="Dual broker routing remains dominant for Hybrid and Institutional tickets."
+        />
+
+        <PerformanceLineChart
+          title="Execution Readiness"
+          subtitle="Queue, bridge and broker dispatch readiness."
+          data={readinessData}
+          footer="10 of 11 tickets are fully ready. 1 tactical ticket remains limited."
+        />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-zinc-800 bg-black/40 p-4">
+        <h3 className="text-sm font-bold text-cyan-300">
+          Evolution Pipeline Flow
+        </h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Clean overview of how Species intelligence flows toward execution.
+        </p>
+
+        <div className="mt-4 grid gap-2">
+          {pipelineStages.map((stage, index) => (
+            <div key={stage} className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full border border-cyan-500/40 bg-cyan-500/10 text-xs font-bold text-cyan-300">
+                {index + 1}
               </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4">
-          <h3 className="text-sm font-bold text-cyan-300">
-            Evolution Pipeline Flow
-          </h3>
-          <p className="mt-1 text-xs text-zinc-500">
-            Clean overview of how Species intelligence flows toward execution.
-          </p>
-
-          <div className="mt-4 grid gap-2">
-            {pipelineStages.map((stage, index) => (
-              <div key={stage} className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full border border-cyan-500/40 bg-cyan-500/10 text-xs font-bold text-cyan-300">
-                  {index + 1}
-                </div>
-                <div className="flex-1 rounded-xl bg-zinc-900/70 px-3 py-2 text-sm text-zinc-300">
-                  {stage}
-                </div>
-                <div className="text-xs text-emerald-300">ACTIVE</div>
+              <div className="flex-1 rounded-xl bg-zinc-900/70 px-3 py-2 text-sm text-zinc-300">
+                {stage}
               </div>
-            ))}
-          </div>
+              <div className="text-xs text-emerald-300">ACTIVE</div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -157,7 +181,7 @@ export default function EvolutionCenterPanel() {
             Next Upgrade
           </h3>
           <p className="mt-3 text-sm text-zinc-300">
-            Add professional charts: Species allocation donut, capital allocation stacked bar, broker distribution chart and execution readiness visual flow.
+            Extend chart system into Broker Center, Portfolio Brain Center and Learning Center.
           </p>
         </div>
       </div>
