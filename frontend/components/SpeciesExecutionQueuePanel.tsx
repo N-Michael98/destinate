@@ -3,32 +3,44 @@
 import { useEffect, useState } from "react";
 
 type QueueTicket = {
-  ticketId: string;
+  queueTicketId: string;
   species: string;
-  slotNumber: number;
+  queueStatus: string;
   queuePriority: string;
-  executionPermission: string;
-  ticketStatus: string;
-  capitalPerTradeUsd: number;
-  positionSizePerTradeUsd: number;
-  lotSizePerTrade: number;
-  executionRank: number;
-  routingHint: string;
-  ticketRole: string;
+  queuePosition: number;
+  executionWindow: string;
+  scheduledBroker: string;
+  backupBroker: string;
+  capitalUsd: number;
+  positionSizeUsd: number;
+  lotSize: number;
+  estimatedFillQuality: number;
+  estimatedLatencyMs: number;
+  queueReady: boolean;
+  queueTarget: string;
 };
 
 type QueueReport = {
   version: string;
   status: string;
   mode: string;
-  baseSymbol: string;
   totalQueueTickets: number;
-  readyTickets: number;
-  limitedTickets: number;
-  blockedTickets: number;
-  primarySpecies: string;
+  queueReadyTickets: number;
+  queueLimitedTickets: number;
+  queueBlockedTickets: number;
+  immediateWindowTickets: number;
+  standardWindowTickets: number;
+  tacticalWindowTickets: number;
+  capitalComQueueTickets: number;
+  icMarketsQueueTickets: number;
+  dualBrokerQueueTickets: number;
+  totalQueueCapitalUsd: number;
+  totalQueuePositionSizeUsd: number;
+  totalQueueLotSize: number;
+  averageQueueFillQuality: number;
+  averageQueueLatencyMs: number;
+  primaryQueueSpecies: string;
   queueTickets: QueueTicket[];
-  blockedSpecies: string[];
   summary: string;
 };
 
@@ -44,35 +56,35 @@ export default function SpeciesExecutionQueuePanel() {
   const [report, setReport] = useState<QueueReport | null>(null);
 
   useEffect(() => {
-    fetch("/api/species-execution-queue")
+    fetch("/api/species-execution-queue-integration")
       .then((res) => res.json())
       .then((data) => setReport(data.report))
       .catch(() => setReport(null));
   }, []);
 
   return (
-    <section className="rounded-2xl border border-rose-500/30 bg-black/40 p-5 shadow-lg shadow-rose-500/10">
+    <section className="rounded-2xl border border-cyan-500/30 bg-black/40 p-5 shadow-lg shadow-cyan-500/10">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-rose-300">
+          <h2 className="text-lg font-bold text-cyan-300">
             Species Execution Queue
           </h2>
           <p className="text-sm text-zinc-400">
-            V14.7.1 Dashboard Panel · Queue Tickets & Execution Routing
+            V15.2.1 Dashboard Panel · Execution Queue Integration
           </p>
         </div>
 
-        <div className="rounded-full border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-300">
+        <div className="rounded-full border border-cyan-500/40 px-3 py-1 text-xs font-semibold text-cyan-300">
           {report?.status ?? "LOADING"}
         </div>
       </div>
 
       {!report ? (
-        <p className="text-zinc-400">Loading execution queue...</p>
+        <p className="text-zinc-400">Loading queue integration...</p>
       ) : (
         <div className="space-y-4">
 
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
             <div className="rounded-xl bg-zinc-900/80 p-3">
               <p className="text-xs text-zinc-500">Queue Tickets</p>
               <p className="text-lg font-bold text-white">
@@ -83,28 +95,81 @@ export default function SpeciesExecutionQueuePanel() {
             <div className="rounded-xl bg-zinc-900/80 p-3">
               <p className="text-xs text-zinc-500">Ready</p>
               <p className="text-lg font-bold text-green-400">
-                {report.readyTickets}
+                {report.queueReadyTickets}
               </p>
             </div>
 
             <div className="rounded-xl bg-zinc-900/80 p-3">
               <p className="text-xs text-zinc-500">Limited</p>
               <p className="text-lg font-bold text-yellow-400">
-                {report.limitedTickets}
+                {report.queueLimitedTickets}
               </p>
             </div>
 
             <div className="rounded-xl bg-zinc-900/80 p-3">
-              <p className="text-xs text-zinc-500">Blocked</p>
-              <p className="text-lg font-bold text-red-400">
-                {report.blockedTickets}
+              <p className="text-xs text-zinc-500">Fill Quality</p>
+              <p className="text-lg font-bold text-cyan-300">
+                {report.averageQueueFillQuality}%
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-zinc-900/80 p-3">
+              <p className="text-xs text-zinc-500">Latency</p>
+              <p className="text-lg font-bold text-white">
+                {report.averageQueueLatencyMs} ms
               </p>
             </div>
 
             <div className="rounded-xl bg-zinc-900/80 p-3">
               <p className="text-xs text-zinc-500">Primary</p>
-              <p className="text-lg font-bold text-rose-300">
-                {report.primarySpecies}
+              <p className="text-lg font-bold text-cyan-300">
+                {report.primaryQueueSpecies}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-zinc-900/80 p-3">
+              <p className="text-xs text-zinc-500">Immediate</p>
+              <p className="text-lg font-bold text-green-400">
+                {report.immediateWindowTickets}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-zinc-900/80 p-3">
+              <p className="text-xs text-zinc-500">Standard</p>
+              <p className="text-lg font-bold text-white">
+                {report.standardWindowTickets}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-zinc-900/80 p-3">
+              <p className="text-xs text-zinc-500">Tactical</p>
+              <p className="text-lg font-bold text-yellow-400">
+                {report.tacticalWindowTickets}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-zinc-900/80 p-3">
+              <p className="text-xs text-zinc-500">Dual Broker</p>
+              <p className="text-lg font-bold text-cyan-300">
+                {report.dualBrokerQueueTickets}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-zinc-900/80 p-3">
+              <p className="text-xs text-zinc-500">Capital.com</p>
+              <p className="text-lg font-bold text-white">
+                {report.capitalComQueueTickets}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-zinc-900/80 p-3">
+              <p className="text-xs text-zinc-500">IC Markets</p>
+              <p className="text-lg font-bold text-white">
+                {report.icMarketsQueueTickets}
               </p>
             </div>
           </div>
@@ -112,64 +177,69 @@ export default function SpeciesExecutionQueuePanel() {
           <div className="space-y-2">
             {report.queueTickets.map((ticket) => (
               <div
-                key={ticket.ticketId}
+                key={ticket.queueTicketId}
                 className="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3"
               >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold text-white">
-                      #{ticket.executionRank} · {ticket.ticketId}
+                      #{ticket.queuePosition} · {ticket.queueTicketId}
                     </p>
-
                     <p className="text-xs text-zinc-500">
-                      {ticket.ticketRole}
+                      {ticket.species}
                     </p>
                   </div>
 
                   <div className="text-right">
-                    <p className="font-bold text-rose-300">
-                      {ticket.species}
+                    <p className="font-bold text-cyan-300">
+                      {ticket.scheduledBroker}
                     </p>
-
                     <p className="text-xs text-zinc-500">
                       {ticket.queuePriority}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-3 grid gap-2 md:grid-cols-5">
+                <div className="mt-3 grid gap-2 md:grid-cols-6">
+                  <div className="rounded bg-zinc-900 p-2">
+                    <p className="text-xs text-zinc-500">Window</p>
+                    <p className="font-semibold text-white">
+                      {ticket.executionWindow}
+                    </p>
+                  </div>
+
                   <div className="rounded bg-zinc-900 p-2">
                     <p className="text-xs text-zinc-500">Status</p>
                     <p className="font-semibold text-white">
-                      {ticket.ticketStatus}
+                      {ticket.queueStatus}
                     </p>
                   </div>
 
                   <div className="rounded bg-zinc-900 p-2">
                     <p className="text-xs text-zinc-500">Capital</p>
                     <p className="font-semibold text-white">
-                      {usd(ticket.capitalPerTradeUsd)}
+                      {usd(ticket.capitalUsd)}
                     </p>
                   </div>
 
                   <div className="rounded bg-zinc-900 p-2">
-                    <p className="text-xs text-zinc-500">Position</p>
+                    <p className="text-xs text-zinc-500">Fill</p>
                     <p className="font-semibold text-white">
-                      {usd(ticket.positionSizePerTradeUsd)}
+                      {ticket.estimatedFillQuality}%
                     </p>
                   </div>
 
                   <div className="rounded bg-zinc-900 p-2">
-                    <p className="text-xs text-zinc-500">Lot</p>
+                    <p className="text-xs text-zinc-500">Latency</p>
                     <p className="font-semibold text-white">
-                      {ticket.lotSizePerTrade}
+                      {ticket.estimatedLatencyMs} ms
                     </p>
                   </div>
 
                   <div className="rounded bg-zinc-900 p-2">
-                    <p className="text-xs text-zinc-500">Route</p>
+                    <p className="text-xs text-zinc-500">Ready</p>
                     <p className="font-semibold text-white">
-                      {ticket.routingHint}
+                      {ticket.queueReady ? "YES" : "LIMITED"}
                     </p>
                   </div>
                 </div>
@@ -177,7 +247,7 @@ export default function SpeciesExecutionQueuePanel() {
             ))}
           </div>
 
-          <div className="rounded-xl bg-rose-950/30 p-3 text-sm text-rose-200">
+          <div className="rounded-xl bg-cyan-950/30 p-3 text-sm text-cyan-200">
             {report.summary}
           </div>
         </div>
