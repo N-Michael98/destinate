@@ -1,6 +1,8 @@
 ﻿"use client";
 
 
+
+import BrokerCenterPanel from "./BrokerCenterPanel";
 import EvolutionCenterPanel from "./EvolutionCenterPanel";
 type CenterCard = {
   title: string;
@@ -184,6 +186,7 @@ export default function AIAgentControlCenter() {
 
       
       <EvolutionCenterPanel />
+      <BrokerCenterPanel />
       <div className="mt-6 rounded-2xl border border-yellow-500/20 bg-yellow-950/20 p-4">
         <h2 className="text-sm font-bold text-yellow-300">
           Refactor Safety Rule
@@ -195,4 +198,5 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
 
