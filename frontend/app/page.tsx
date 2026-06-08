@@ -71,61 +71,61 @@ const navGroups: NavGroup[] = [
   {
     title: "Dashboard",
     items: [
-      { label: "Mission Control", icon: "ðŸ ", view: "dashboard" },
+      { label: "Mission Control", icon: "MODULE", view: "dashboard" },
     ],
   },
   {
     title: "Trading",
     items: [
-      { label: "Trading Journal", icon: "ðŸ“’", view: "trading-journal" },
-      { label: "Paper Trading", icon: "ðŸ“„", view: "paper-trading" },
-      { label: "Trading Desk", icon: "ðŸ“ˆ", view: "trading-desk" },
-      { label: "Signal Engine", icon: "ðŸŽ¯", view: "signal-engine" },
-      { label: "Strategy Builder", icon: "ðŸ§©", view: "strategy-builder" },
+      { label: "Trading Journal", icon: "MODULE", view: "trading-journal" },
+      { label: "Paper Trading", icon: "MODULE", view: "paper-trading" },
+      { label: "Trading Desk", icon: "MODULE", view: "trading-desk" },
+      { label: "Signal Engine", icon: "MODULE", view: "signal-engine" },
+      { label: "Strategy Builder", icon: "MODULE", view: "strategy-builder" },
     ],
   },
   {
     title: "AI Center",
     items: [
-      { label: "GPT Analyst", icon: "ðŸ§ ", view: "gpt-analyst" },
-      { label: "AI Agent", icon: "ðŸ¤–", view: "ai-agent" },
-      { label: "Claude Risk", icon: "ðŸ›¡", view: "claude-risk" },
-      { label: "Consensus", icon: "âš¡", view: "ai-consensus" },
-      { label: "Portfolio Brain", icon: "ðŸ¤–", view: "portfolio-brain" },
+      { label: "GPT Analyst", icon: "MODULE", view: "gpt-analyst" },
+      { label: "AI Agent", icon: "MODULE", view: "ai-agent" },
+      { label: "Claude Risk", icon: "MODULE", view: "claude-risk" },
+      { label: "Consensus", icon: "MODULE", view: "ai-consensus" },
+      { label: "Portfolio Brain", icon: "MODULE", view: "portfolio-brain" },
     ],
   },
   {
     title: "Intelligence",
     items: [
-      { label: "Market Data", icon: "ðŸ“Š", view: "market-data" },
-      { label: "News Layer", icon: "ðŸ“°", view: "news-layer" },
-      { label: "Market Regime", icon: "ðŸŒ", view: "market-regime" },
-      { label: "Portfolio Intelligence", icon: "ðŸ“Œ", view: "portfolio-intelligence" },
+      { label: "Market Data", icon: "MODULE", view: "market-data" },
+      { label: "News Layer", icon: "MODULE", view: "news-layer" },
+      { label: "Market Regime", icon: "MODULE", view: "market-regime" },
+      { label: "Portfolio Intelligence", icon: "MODULE", view: "portfolio-intelligence" },
     ],
   },
   {
     title: "Execution",
     items: [
-      { label: "Execution Center", icon: "âš¡", view: "execution-center" },
-      { label: "Broker Center", icon: "ðŸ”Œ", view: "broker-center" },
-      { label: "Live Prep", icon: "ðŸš€", view: "live-prep" },
+      { label: "Execution Center", icon: "MODULE", view: "execution-center" },
+      { label: "Broker Center", icon: "MODULE", view: "broker-center" },
+      { label: "Live Prep", icon: "MODULE", view: "live-prep" },
     ],
   },
   {
     title: "Learning",
     items: [
-      { label: "Forward Testing", icon: "ðŸš€", view: "forward-testing" },
-      { label: "AI Memory", icon: "ðŸ§ ", view: "ai-memory" },
-      { label: "Strategy Evolution", icon: "ðŸ§¬", view: "strategy-evolution" },
-      { label: "Learning Reports", icon: "ðŸ“‘", view: "learning-reports" },
-      { label: "Scheduler", icon: "â±ï¸", view: "scheduler" },
+      { label: "Forward Testing", icon: "MODULE", view: "forward-testing" },
+      { label: "AI Memory", icon: "MODULE", view: "ai-memory" },
+      { label: "Strategy Evolution", icon: "MODULE", view: "strategy-evolution" },
+      { label: "Learning Reports", icon: "MODULE", view: "learning-reports" },
+      { label: "Scheduler", icon: "MODULE", view: "scheduler" },
     ],
   },
   {
     title: "System",
     items: [
-      { label: "Security Center", icon: "ðŸ”", view: "security" },
-      { label: "Settings", icon: "âš™ï¸", view: "settings" },
+      { label: "Security Center", icon: "MODULE", view: "security" },
+      { label: "Settings", icon: "MODULE", view: "settings" },
     ],
   },
 ];
@@ -237,9 +237,9 @@ function CenterPlaceholder({
       </div>
 
       <div className="bg-black border border-gray-800 rounded-2xl p-6 mt-8">
-        <h3 className="text-2xl font-bold">ðŸš§ Module Page Prepared</h3>
+        <h3 className="text-2xl font-bold">Ÿš§ Module Page Prepared</h3>
         <p className="text-gray-400 mt-3 leading-relaxed">
-          Dieser Bereich ist jetzt sauber vom Hauptdashboard getrennt. Als nÃ¤chster Schritt bauen wir fÃ¼r dieses Center eine eigene professionelle Detailseite oder Komponente.
+          Dieser Bereich ist jetzt sauber vom Hauptdashboard getrennt. Als nchster Schritt bauen wir fr dieses Center eine eigene professionelle Detailseite oder Komponente.
         </p>
       </div>
     </section>
@@ -254,9 +254,9 @@ function GPTAnalystCenter() {
       <BrokerCenterPanel />
 <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ§  GPT Analyst Center</h2>
+          <h2 className="text-4xl font-black">Ÿ§  GPT Analyst Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            OpenAI/GPT wird hier spÃ¤ter Marktchancen, Setups, Strategien und Learning Reports analysieren.
+            OpenAI/GPT wird hier spter Marktchancen, Setups, Strategien und Learning Reports analysieren.
           </p>
         </div>
         <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">
@@ -274,7 +274,7 @@ function GPTAnalystCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“ˆ Market Context</h3>
+          <h3 className="text-2xl font-bold">Ÿ“ˆ Market Context</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Market Data" value="Prepared" accent="text-cyan-400" />
             <StatusPill label="News Intelligence" value="Prepared" accent="text-blue-400" />
@@ -283,7 +283,7 @@ function GPTAnalystCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŽ¯ GPT Output Preview</h3>
+          <h3 className="text-2xl font-bold">ŸŽ¯ GPT Output Preview</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Signal" value="WAIT" accent="text-yellow-400" />
             <StatusPill label="Confidence" value="70%" accent="text-cyan-400" />
@@ -292,7 +292,7 @@ function GPTAnalystCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Safety</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Safety</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="API Key" value=".env only" accent="text-green-400" />
             <StatusPill label="Calls" value="Server only" accent="text-green-400" />
@@ -309,9 +309,9 @@ function ClaudeRiskCenter() {
     <section className="bg-gray-900 border border-red-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ›¡ Claude Risk Center</h2>
+          <h2 className="text-4xl font-black">Ÿ›¡ Claude Risk Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Claude wird hier Risiko, Drawdown, Portfolio-Exposure, VolatilitÃ¤t und Makro-Risiken kontrollieren.
+            Claude wird hier Risiko, Drawdown, Portfolio-Exposure, Volatilitt und Makro-Risiken kontrollieren.
           </p>
         </div>
         <div className="bg-black border border-red-800 rounded-2xl p-5 min-w-[190px]">
@@ -329,7 +329,7 @@ function ClaudeRiskCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">âš ï¸ Risk Checks</h3>
+          <h3 className="text-2xl font-bold">š  Risk Checks</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Volatility Risk" value="Medium" accent="text-yellow-400" />
             <StatusPill label="Macro Risk" value="Watched" accent="text-orange-400" />
@@ -338,7 +338,7 @@ function ClaudeRiskCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“‰ Drawdown</h3>
+          <h3 className="text-2xl font-bold">Ÿ“‰ Drawdown</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Current DD" value="0.73%" accent="text-green-400" />
             <StatusPill label="Max DD Limit" value="5%" accent="text-yellow-400" />
@@ -347,7 +347,7 @@ function ClaudeRiskCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”’ Permission</h3>
+          <h3 className="text-2xl font-bold">Ÿ”’ Permission</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Can Approve" value="Yes" accent="text-green-400" />
             <StatusPill label="Can Review" value="Yes" accent="text-yellow-400" />
@@ -364,9 +364,9 @@ function MarketDataCenter() {
     <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ“Š Market Data Center</h2>
+          <h2 className="text-4xl font-black">Ÿ“Š Market Data Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale Daten-Schicht fÃ¼r Watchlist, Preise, News, Regime, Fundamentals und spÃ¤tere TradingView/Yahoo/Capital.com Feeds.
+            Zentrale Daten-Schicht fr Watchlist, Preise, News, Regime, Fundamentals und sptere TradingView/Yahoo/Capital.com Feeds.
           </p>
         </div>
         <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
@@ -385,7 +385,7 @@ function MarketDataCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”Œ Data Providers</h3>
+          <h3 className="text-2xl font-bold">Ÿ”Œ Data Providers</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Capital.com" value="Prepared" accent="text-cyan-400" />
             <StatusPill label="IC Markets" value="Prepared" accent="text-blue-400" />
@@ -394,7 +394,7 @@ function MarketDataCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“° Intelligence Feeds</h3>
+          <h3 className="text-2xl font-bold">Ÿ“° Intelligence Feeds</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="News Layer" value="Prepared" accent="text-blue-400" />
             <StatusPill label="Economic Calendar" value="Later" accent="text-yellow-400" />
@@ -403,7 +403,7 @@ function MarketDataCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŒ Regime Input</h3>
+          <h3 className="text-2xl font-bold">ŸŒ Regime Input</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Trend / Range" value="Prepared" accent="text-lime-400" />
             <StatusPill label="Volatility" value="Prepared" accent="text-orange-400" />
@@ -422,9 +422,9 @@ function PortfolioBrainCenter() {
       <PortfolioBrainCenterPanel />
 <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ¤– Portfolio Brain Center</h2>
+          <h2 className="text-4xl font-black">Ÿ¤– Portfolio Brain Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Das zentrale Gehirn: Market Data, GPT, Claude, Agent, Regime, Portfolio Intelligence und Consensus werden hier zusammengefÃ¼hrt.
+            Das zentrale Gehirn: Market Data, GPT, Claude, Agent, Regime, Portfolio Intelligence und Consensus werden hier zusammengefhrt.
           </p>
         </div>
         <div className="bg-black border border-fuchsia-800 rounded-2xl p-5 min-w-[190px]">
@@ -442,7 +442,7 @@ function PortfolioBrainCenter() {
       </div>
 
       <div className="bg-black border border-gray-800 rounded-2xl p-6">
-        <h3 className="text-2xl font-bold">ðŸ§­ Brain Flow</h3>
+        <h3 className="text-2xl font-bold">Ÿ§­ Brain Flow</h3>
         <div className="grid grid-cols-5 gap-4 mt-5">
           {[
             "Market Data",
@@ -475,9 +475,9 @@ function TradingJournalCenter() {
       <ExecutionCenterPanel />
 <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ“’ Trading Journal Center</h2>
+          <h2 className="text-4xl font-black">Ÿ“’ Trading Journal Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale Ãœbersicht fÃ¼r Trades, Journal-QualitÃ¤t, Equity, Performance und spÃ¤tere AI-Auswertung.
+            Zentrale œbersicht fr Trades, Journal-Qualitt, Equity, Performance und sptere AI-Auswertung.
           </p>
         </div>
         <div className="bg-black border border-green-800 rounded-2xl p-5 min-w-[190px]">
@@ -496,7 +496,7 @@ function TradingJournalCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“ Latest Trades</h3>
+          <h3 className="text-2xl font-bold">Ÿ“ Latest Trades</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="NAS100 Long" value="+4.2R" accent="text-green-400" />
             <StatusPill label="XAUUSD Long" value="+1.8R" accent="text-green-400" />
@@ -505,7 +505,7 @@ function TradingJournalCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“Š Journal Analytics</h3>
+          <h3 className="text-2xl font-bold">Ÿ“Š Journal Analytics</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Best Strategy" value="Momentum" accent="text-green-400" />
             <StatusPill label="Weak Setup" value="Inventory" accent="text-yellow-400" />
@@ -514,7 +514,7 @@ function TradingJournalCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ§  AI Journal Link</h3>
+          <h3 className="text-2xl font-bold">Ÿ§  AI Journal Link</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Performance Tracker" value="Connected" accent="text-green-400" />
             <StatusPill label="Feedback Engine" value="Connected" accent="text-green-400" />
@@ -531,9 +531,9 @@ function TradingDeskCenter() {
     <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ“ˆ Trading Desk Center</h2>
+          <h2 className="text-4xl font-black">Ÿ“ˆ Trading Desk Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Professioneller Desk fÃ¼r Watchlist, Top Opportunity, Trade Setup, Risk/Reward und Demo-Trade-Planung.
+            Professioneller Desk fr Watchlist, Top Opportunity, Trade Setup, Risk/Reward und Demo-Trade-Planung.
           </p>
         </div>
         <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
@@ -552,7 +552,7 @@ function TradingDeskCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŽ¯ Setup Preview</h3>
+          <h3 className="text-2xl font-bold">ŸŽ¯ Setup Preview</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Market" value="XAUUSD" accent="text-yellow-400" />
             <StatusPill label="Direction" value="SELL" accent="text-red-400" />
@@ -561,7 +561,7 @@ function TradingDeskCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Risk Plan</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Risk Plan</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Risk per Trade" value="1%" accent="text-green-400" />
             <StatusPill label="Stop Loss" value="Defined" accent="text-yellow-400" />
@@ -570,7 +570,7 @@ function TradingDeskCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ¤– AI Gate</h3>
+          <h3 className="text-2xl font-bold">Ÿ¤– AI Gate</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="GPT" value="WAIT" accent="text-yellow-400" />
             <StatusPill label="Claude" value="REVIEW" accent="text-orange-400" />
@@ -587,9 +587,9 @@ function SignalEngineCenter() {
     <section className="bg-gray-900 border border-purple-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸŽ¯ Signal Engine Center</h2>
+          <h2 className="text-4xl font-black">ŸŽ¯ Signal Engine Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Signalzentrale fÃ¼r technische, fundamentale, sentiment- und AI-basierte Signale.
+            Signalzentrale fr technische, fundamentale, sentiment- und AI-basierte Signale.
           </p>
         </div>
         <div className="bg-black border border-purple-800 rounded-2xl p-5 min-w-[190px]">
@@ -608,19 +608,19 @@ function SignalEngineCenter() {
 
       <div className="grid grid-cols-4 gap-6">
         <div className="bg-black border border-blue-900 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“‰ Technical</h3>
+          <h3 className="text-2xl font-bold">Ÿ“‰ Technical</h3>
           <p className="text-gray-400 mt-4">Trend, breakout, momentum, structure.</p>
         </div>
         <div className="bg-black border border-yellow-900 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŒ Macro</h3>
+          <h3 className="text-2xl font-bold">ŸŒ Macro</h3>
           <p className="text-gray-400 mt-4">Economic calendar, rates, inflation, jobs.</p>
         </div>
         <div className="bg-black border border-green-900 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“° News</h3>
+          <h3 className="text-2xl font-bold">Ÿ“° News</h3>
           <p className="text-gray-400 mt-4">Market-moving headlines and sentiment.</p>
         </div>
         <div className="bg-black border border-purple-900 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ¤– AI</h3>
+          <h3 className="text-2xl font-bold">Ÿ¤– AI</h3>
           <p className="text-gray-400 mt-4">GPT opportunity + Claude risk validation.</p>
         </div>
       </div>
@@ -633,9 +633,9 @@ function StrategyBuilderCenter() {
     <section className="bg-gray-900 border border-orange-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ§© Strategy Builder Center</h2>
+          <h2 className="text-4xl font-black">Ÿ§© Strategy Builder Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Builder fÃ¼r Strategien, Regeln, Risk-Filter, Regime-Fit und spÃ¤tere AI-Optimierung.
+            Builder fr Strategien, Regeln, Risk-Filter, Regime-Fit und sptere AI-Optimierung.
           </p>
         </div>
         <div className="bg-black border border-orange-800 rounded-2xl p-5 min-w-[190px]">
@@ -677,9 +677,9 @@ function ConsensusCenter() {
     <section className="bg-gray-900 border border-emerald-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">âš¡ Consensus Intelligence Center</h2>
+          <h2 className="text-4xl font-black">š¡ Consensus Intelligence Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale EntscheidungsprÃ¼fung: GPT, Claude und AI Agent werden gemeinsam validiert, bevor ein Demo-Plan freigegeben wird.
+            Zentrale Entscheidungsprfung: GPT, Claude und AI Agent werden gemeinsam validiert, bevor ein Demo-Plan freigegeben wird.
           </p>
         </div>
         <div className="bg-black border border-emerald-800 rounded-2xl p-5 min-w-[190px]">
@@ -698,7 +698,7 @@ function ConsensusCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŸ¢ Approved Scenario</h3>
+          <h3 className="text-2xl font-bold">ŸŸ¢ Approved Scenario</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="GPT" value="LONG" accent="text-green-400" />
             <StatusPill label="Claude" value="LONG" accent="text-green-400" />
@@ -708,7 +708,7 @@ function ConsensusCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”´ Conflict Scenario</h3>
+          <h3 className="text-2xl font-bold">Ÿ”´ Conflict Scenario</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="GPT" value="LONG" accent="text-green-400" />
             <StatusPill label="Claude" value="BLOCK" accent="text-red-400" />
@@ -718,7 +718,7 @@ function ConsensusCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Safety Gate</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Safety Gate</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Single AI Decision" value="Blocked" accent="text-red-400" />
             <StatusPill label="Conflict Detection" value="Active" accent="text-green-400" />
@@ -735,7 +735,7 @@ function ExecutionCenter() {
     <section className="bg-gray-900 border border-yellow-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">âš¡ Execution Center</h2>
+          <h2 className="text-4xl font-black">š¡ Execution Center</h2>
           <p className="text-gray-400 text-xl mt-3">
             Verbindet Demo Agent, Demo Execution, Paper Orders, Performance Tracker, Feedback Engine und Adaptive Confidence.
           </p>
@@ -756,7 +756,7 @@ function ExecutionCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“¦ Demo Order Flow</h3>
+          <h3 className="text-2xl font-bold">Ÿ“¦ Demo Order Flow</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Agent Plan" value="Prepared" accent="text-indigo-400" />
             <StatusPill label="Order Generator" value="Prepared" accent="text-blue-400" />
@@ -765,7 +765,7 @@ function ExecutionCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“Š Performance Loop</h3>
+          <h3 className="text-2xl font-bold">Ÿ“Š Performance Loop</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Winrate" value="67%" accent="text-green-400" />
             <StatusPill label="Profit Factor" value="2.15" accent="text-purple-400" />
@@ -774,7 +774,7 @@ function ExecutionCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”’ Execution Safety</h3>
+          <h3 className="text-2xl font-bold">Ÿ”’ Execution Safety</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Paper Mode" value="Enabled" accent="text-green-400" />
             <StatusPill label="Broker Orders" value="Blocked" accent="text-red-400" />
@@ -793,7 +793,7 @@ function LearningCenter() {
       <ExecutionCenterPanel />
 <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ§  Learning Center</h2>
+          <h2 className="text-4xl font-black">Ÿ§  Learning Center</h2>
           <p className="text-gray-400 text-xl mt-3">
             Der Lernkreislauf: Forward Testing, AI Memory, Strategy Evolution, Feedback, Reports und Scheduler arbeiten zusammen.
           </p>
@@ -813,7 +813,7 @@ function LearningCenter() {
       </div>
 
       <div className="bg-black border border-gray-800 rounded-2xl p-6 mb-6">
-        <h3 className="text-2xl font-bold">ðŸ” Learning Pipeline</h3>
+        <h3 className="text-2xl font-bold">Ÿ” Learning Pipeline</h3>
         <div className="grid grid-cols-5 gap-4 mt-5">
           {[
             "Demo Trade",
@@ -837,7 +837,7 @@ function LearningCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ† Strategy Learning</h3>
+          <h3 className="text-2xl font-bold">Ÿ† Strategy Learning</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Best" value="Momentum" accent="text-green-400" />
             <StatusPill label="Stable" value="Risk-Off" accent="text-blue-400" />
@@ -846,7 +846,7 @@ function LearningCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“‘ Reports</h3>
+          <h3 className="text-2xl font-bold">Ÿ“‘ Reports</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Daily" value="Prepared" accent="text-green-400" />
             <StatusPill label="Weekly" value="Prepared" accent="text-blue-400" />
@@ -855,7 +855,7 @@ function LearningCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">â± Scheduler</h3>
+          <h3 className="text-2xl font-bold"> Scheduler</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Daily Cycle" value="Ready" accent="text-green-400" />
             <StatusPill label="Weekly Cycle" value="Ready" accent="text-blue-400" />
@@ -874,9 +874,9 @@ function NewsLayerCenter() {
     <section className="bg-gray-900 border border-sky-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ“° News Layer Center</h2>
+          <h2 className="text-4xl font-black">Ÿ“° News Layer Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale News- und Sentiment-Schicht fÃ¼r Macro Events, Breaking News, Market Impact und spÃ¤tere AI-Zusammenfassungen.
+            Zentrale News- und Sentiment-Schicht fr Macro Events, Breaking News, Market Impact und sptere AI-Zusammenfassungen.
           </p>
         </div>
         <div className="bg-black border border-sky-800 rounded-2xl p-5 min-w-[190px]">
@@ -895,7 +895,7 @@ function NewsLayerCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŒ Source Pipeline</h3>
+          <h3 className="text-2xl font-bold">ŸŒ Source Pipeline</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Yahoo Finance" value="Later" accent="text-purple-400" />
             <StatusPill label="Capital.com News" value="Later" accent="text-blue-400" />
@@ -905,7 +905,7 @@ function NewsLayerCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">âš¡ Market Impact</h3>
+          <h3 className="text-2xl font-bold">š¡ Market Impact</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="CPI / Inflation" value="High" accent="text-red-400" />
             <StatusPill label="FOMC / Rates" value="High" accent="text-red-400" />
@@ -915,7 +915,7 @@ function NewsLayerCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ¤– AI News Review</h3>
+          <h3 className="text-2xl font-bold">Ÿ¤– AI News Review</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="GPT Summary" value="Prepared" accent="text-green-400" />
             <StatusPill label="Claude Risk Impact" value="Prepared" accent="text-red-400" />
@@ -932,7 +932,7 @@ function MarketRegimeCenter() {
     <section className="bg-gray-900 border border-lime-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸŒ Market Regime Center</h2>
+          <h2 className="text-4xl font-black">ŸŒ Market Regime Center</h2>
           <p className="text-gray-400 text-xl mt-3">
             Erkennt Marktumfeld und filtert Strategien: trending, ranging, volatile, risk-on, risk-off oder news-driven.
           </p>
@@ -953,7 +953,7 @@ function MarketRegimeCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“ˆ Trend Logic</h3>
+          <h3 className="text-2xl font-bold">Ÿ“ˆ Trend Logic</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Trending" value="Momentum" accent="text-green-400" />
             <StatusPill label="Ranging" value="Mean Rev." accent="text-yellow-400" />
@@ -962,7 +962,7 @@ function MarketRegimeCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">âš ï¸ Risk Regime</h3>
+          <h3 className="text-2xl font-bold">š  Risk Regime</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Risk-On" value="Growth Assets" accent="text-green-400" />
             <StatusPill label="Risk-Off" value="Gold / USD" accent="text-blue-400" />
@@ -971,7 +971,7 @@ function MarketRegimeCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Strategy Filter</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Strategy Filter</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Regime Fit" value="Required" accent="text-lime-400" />
             <StatusPill label="Wrong Regime" value="Reduce" accent="text-yellow-400" />
@@ -988,9 +988,9 @@ function PortfolioIntelligenceCenter() {
     <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ“Œ Portfolio Intelligence Center</h2>
+          <h2 className="text-4xl font-black">Ÿ“Œ Portfolio Intelligence Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            PrÃ¼ft Exposure, Korrelationen, Diversifikation, Allocation und Portfolio-Risiko vor jedem neuen Demo-Trade.
+            Prft Exposure, Korrelationen, Diversifikation, Allocation und Portfolio-Risiko vor jedem neuen Demo-Trade.
           </p>
         </div>
         <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
@@ -1009,7 +1009,7 @@ function PortfolioIntelligenceCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŒ Exposure Preview</h3>
+          <h3 className="text-2xl font-bold">ŸŒ Exposure Preview</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Indexes" value="30%" accent="text-blue-400" />
             <StatusPill label="Commodities" value="40%" accent="text-yellow-400" />
@@ -1019,7 +1019,7 @@ function PortfolioIntelligenceCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”— Correlation Risk</h3>
+          <h3 className="text-2xl font-bold">Ÿ”— Correlation Risk</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="NAS100 / SPX" value="High" accent="text-red-400" />
             <StatusPill label="EURUSD / GBPUSD" value="Medium" accent="text-yellow-400" />
@@ -1028,7 +1028,7 @@ function PortfolioIntelligenceCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“Š Allocation Plan</h3>
+          <h3 className="text-2xl font-bold">Ÿ“Š Allocation Plan</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="NAS100" value="30%" accent="text-blue-400" />
             <StatusPill label="XAUUSD" value="25%" accent="text-yellow-400" />
@@ -1081,7 +1081,7 @@ function BrokerLiveStatusPanel() {
   if (loading) {
     return (
       <div className="mt-8 bg-black border border-cyan-900 rounded-2xl p-6">
-        <h3 className="text-3xl font-bold">ðŸ“¡ IC Markets Live Status</h3>
+        <h3 className="text-3xl font-bold">Ÿ“¡ IC Markets Live Status</h3>
         <p className="text-gray-400 mt-3">Loading connector status...</p>
       </div>
     );
@@ -1090,7 +1090,7 @@ function BrokerLiveStatusPanel() {
   if (error || !data) {
     return (
       <div className="mt-8 bg-black border border-red-900 rounded-2xl p-6">
-        <h3 className="text-3xl font-bold">ðŸ“¡ IC Markets Live Status</h3>
+        <h3 className="text-3xl font-bold">Ÿ“¡ IC Markets Live Status</h3>
         <p className="text-red-400 mt-3">{error ?? "No broker data available."}</p>
         <button
           type="button"
@@ -1109,7 +1109,7 @@ function BrokerLiveStatusPanel() {
     <div className="mt-8 bg-black border border-cyan-900 rounded-2xl p-6">
       <div className="flex items-start justify-between gap-6 mb-6">
         <div>
-          <h3 className="text-3xl font-bold">ðŸ“¡ IC Markets Live Status</h3>
+          <h3 className="text-3xl font-bold">Ÿ“¡ IC Markets Live Status</h3>
           <p className="text-gray-400 mt-2">
             Live aus deiner Next.js API Route <span className="text-cyan-400">/api/icmarkets/status</span>.
           </p>
@@ -1164,7 +1164,7 @@ function BrokerLiveStatusPanel() {
 
       <div className="grid grid-cols-3 gap-5">
         <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-          <h4 className="text-xl font-bold">ðŸ’° Account Snapshot</h4>
+          <h4 className="text-xl font-bold">Ÿ’° Account Snapshot</h4>
           <div className="space-y-3 mt-4">
             <StatusPill label="Balance" value={`${data.account.balance} ${data.account.currency}`} accent="text-green-400" />
             <StatusPill label="Equity" value={`${data.account.equity} ${data.account.currency}`} accent="text-cyan-400" />
@@ -1173,7 +1173,7 @@ function BrokerLiveStatusPanel() {
         </div>
 
         <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-          <h4 className="text-xl font-bold">ðŸ“Š Exposure</h4>
+          <h4 className="text-xl font-bold">Ÿ“Š Exposure</h4>
           <div className="space-y-3 mt-4">
             <StatusPill label="Open Positions" value={`${data.exposure.openPositions}`} accent="text-yellow-400" />
             <StatusPill label="Floating P/L" value={`${data.exposure.totalFloatingPnL} ${data.account.currency}`} accent="text-green-400" />
@@ -1182,7 +1182,7 @@ function BrokerLiveStatusPanel() {
         </div>
 
         <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-          <h4 className="text-xl font-bold">ðŸ”’ Safety Config</h4>
+          <h4 className="text-xl font-bold">Ÿ”’ Safety Config</h4>
           <div className="space-y-3 mt-4">
             <StatusPill label="Read Only" value={data.status.config.readOnly ? "True" : "False"} accent="text-green-400" />
             <StatusPill label="Allow Live Orders" value={data.status.config.allowLiveOrders ? "True" : "False"} accent="text-red-400" />
@@ -1207,9 +1207,9 @@ function BrokerCenter() {
       <BrokerCenterPanel />
 <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ”Œ Broker Center</h2>
+          <h2 className="text-4xl font-black">Ÿ”Œ Broker Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale Broker-Infrastruktur fÃ¼r Capital.com, IC Markets, Demo Auth, Account Sync und spÃ¤tere kontrollierte Execution Gateways.
+            Zentrale Broker-Infrastruktur fr Capital.com, IC Markets, Demo Auth, Account Sync und sptere kontrollierte Execution Gateways.
           </p>
         </div>
         <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">
@@ -1228,7 +1228,7 @@ function BrokerCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ¦ Broker Connections</h3>
+          <h3 className="text-2xl font-bold">Ÿ¦ Broker Connections</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Capital.com Demo" value="Prepared" accent="text-blue-400" />
             <StatusPill label="IC Markets Demo" value="Prepared" accent="text-cyan-400" />
@@ -1237,7 +1237,7 @@ function BrokerCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">âš¡ Execution Gateway</h3>
+          <h3 className="text-2xl font-bold">š¡ Execution Gateway</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Paper Orders" value="Enabled" accent="text-green-400" />
             <StatusPill label="Demo Execution" value="Prepared" accent="text-yellow-400" />
@@ -1246,7 +1246,7 @@ function BrokerCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“¡ Account Sync</h3>
+          <h3 className="text-2xl font-bold">Ÿ“¡ Account Sync</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Balance Sync" value="Later" accent="text-yellow-400" />
             <StatusPill label="Margin Sync" value="Later" accent="text-yellow-400" />
@@ -1257,9 +1257,9 @@ function BrokerCenter() {
       <div className="mt-8 bg-black border border-cyan-900 rounded-2xl p-6">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ”Œ IC Markets Connector V9.4</h3>
+            <h3 className="text-3xl font-bold">Ÿ”Œ IC Markets Connector V9.4</h3>
             <p className="text-gray-400 mt-2">
-              Sichere Broker-Schicht fÃ¼r IC Markets Demo/Read-Only: Account Snapshot, Balance Preview, Position Sync und Order Firewall.
+              Sichere Broker-Schicht fr IC Markets Demo/Read-Only: Account Snapshot, Balance Preview, Position Sync und Order Firewall.
             </p>
           </div>
           <div className="bg-gray-950 border border-cyan-800 rounded-xl p-4 min-w-[180px]">
@@ -1278,7 +1278,7 @@ function BrokerCenter() {
 
         <div className="grid grid-cols-3 gap-5 mt-6">
           <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">ðŸ“¡ Read-Only Data</h4>
+            <h4 className="text-xl font-bold">Ÿ“¡ Read-Only Data</h4>
             <div className="space-y-3 mt-4">
               <StatusPill label="Account Info" value="Prepared" accent="text-cyan-400" />
               <StatusPill label="Open Positions" value="Prepared" accent="text-blue-400" />
@@ -1287,7 +1287,7 @@ function BrokerCenter() {
           </div>
 
           <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">ðŸ§ª Demo Bridge</h4>
+            <h4 className="text-xl font-bold">Ÿ§ª Demo Bridge</h4>
             <div className="space-y-3 mt-4">
               <StatusPill label="Demo Mode" value="Enabled" accent="text-green-400" />
               <StatusPill label="Paper Sync" value="Prepared" accent="text-yellow-400" />
@@ -1296,7 +1296,7 @@ function BrokerCenter() {
           </div>
 
           <div className="bg-gray-950 border border-gray-800 rounded-2xl p-5">
-            <h4 className="text-xl font-bold">ðŸ”’ Safety Rules</h4>
+            <h4 className="text-xl font-bold">Ÿ”’ Safety Rules</h4>
             <div className="space-y-3 mt-4">
               <StatusPill label="API Keys" value=".env.local" accent="text-green-400" />
               <StatusPill label="Browser Exposure" value="Blocked" accent="text-red-400" />
@@ -1317,9 +1317,9 @@ function SecurityCenter() {
     <section className="bg-gray-900 border border-red-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ”’ Security Center</h2>
+          <h2 className="text-4xl font-black">Ÿ”’ Security Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Sicherheitszentrale fÃ¼r API Keys, Berechtigungen, Execution Firewall, Risk Limits, Approval Gates und spÃ¤tere Audit Logs.
+            Sicherheitszentrale fr API Keys, Berechtigungen, Execution Firewall, Risk Limits, Approval Gates und sptere Audit Logs.
           </p>
         </div>
         <div className="bg-black border border-red-800 rounded-2xl p-5 min-w-[190px]">
@@ -1338,7 +1338,7 @@ function SecurityCenter() {
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”‘ API Security</h3>
+          <h3 className="text-2xl font-bold">Ÿ”‘ API Security</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="OpenAI Key" value=".env.local" accent="text-green-400" />
             <StatusPill label="Claude Key" value=".env.local" accent="text-green-400" />
@@ -1347,7 +1347,7 @@ function SecurityCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Permission Layer</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Permission Layer</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Demo Trading" value="Allowed" accent="text-green-400" />
             <StatusPill label="Live Trading" value="Blocked" accent="text-red-400" />
@@ -1356,7 +1356,7 @@ function SecurityCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“‹ Audit & Monitoring</h3>
+          <h3 className="text-2xl font-bold">Ÿ“‹ Audit & Monitoring</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Trade Logs" value="Prepared" accent="text-blue-400" />
             <StatusPill label="AI Decisions" value="Tracked later" accent="text-purple-400" />
@@ -1373,9 +1373,9 @@ function SettingsCenter() {
     <section className="bg-gray-900 border border-gray-700 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">âš™ï¸ Settings Center</h2>
+          <h2 className="text-4xl font-black">š™ Settings Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale Konfiguration fÃ¼r AI-Profile, Broker-Profile, Trading Rules, Risk Settings, Dashboard und System-Versionen.
+            Zentrale Konfiguration fr AI-Profile, Broker-Profile, Trading Rules, Risk Settings, Dashboard und System-Versionen.
           </p>
         </div>
         <div className="bg-black border border-gray-700 rounded-2xl p-5 min-w-[190px]">
@@ -1394,25 +1394,25 @@ function SettingsCenter() {
 
       <div className="grid grid-cols-4 gap-6">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ¤– AI Settings</h3>
+          <h3 className="text-2xl font-bold">Ÿ¤– AI Settings</h3>
           <p className="text-gray-400 mt-4">Model choice, temperature, provider routing, prompt profiles.</p>
           <p className="text-purple-400 font-bold mt-5">Prepared</p>
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”Œ Broker Settings</h3>
+          <h3 className="text-2xl font-bold">Ÿ”Œ Broker Settings</h3>
           <p className="text-gray-400 mt-4">Capital.com, IC Markets, demo accounts, future live gateway.</p>
           <p className="text-cyan-400 font-bold mt-5">Prepared</p>
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“ˆ Trading Rules</h3>
+          <h3 className="text-2xl font-bold">Ÿ“ˆ Trading Rules</h3>
           <p className="text-gray-400 mt-4">Risk per trade, max drawdown, max exposure, confirmation rules.</p>
           <p className="text-green-400 font-bold mt-5">Prepared</p>
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸŽ¨ UI Settings</h3>
+          <h3 className="text-2xl font-bold">ŸŽ¨ UI Settings</h3>
           <p className="text-gray-400 mt-4">Dashboard layout, developer mode, theme and module visibility.</p>
           <p className="text-blue-400 font-bold mt-5">Prepared</p>
         </div>
@@ -1704,7 +1704,7 @@ function ExecutionLiveCenter() {
       <ExecutionCenterPanel />
 <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸš€ Execution Dashboard Center V10.1.2</h2>
+          <h2 className="text-4xl font-black">Ÿš€ Execution Dashboard Center V10.1.2</h2>
           <p className="text-gray-400 text-xl mt-3">
             Execution Preparation Layer: Trade Tickets, Risk Lock, Order Validator, Queue Monitor und Broker Safety Lock.
           </p>
@@ -1727,7 +1727,7 @@ function ExecutionLiveCenter() {
       <div className="bg-black border border-green-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ“„ Live Execution Tickets</h3>
+            <h3 className="text-3xl font-bold">Ÿ“„ Live Execution Tickets</h3>
             <p className="text-gray-400 mt-2">
               Daten aus <span className="text-green-400">/api/execution/tickets</span>. Auto-Refresh alle 20 Sekunden.
             </p>
@@ -1817,7 +1817,7 @@ function ExecutionLiveCenter() {
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“¦ Execution Summary</h3>
+          <h3 className="text-2xl font-bold">Ÿ“¦ Execution Summary</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="BUY Tickets" value={`${buyTickets}`} accent="text-green-400" />
             <StatusPill label="SELL Tickets" value={`${sellTickets}`} accent="text-red-400" />
@@ -1827,7 +1827,7 @@ function ExecutionLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Execution Safety</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Execution Safety</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Order Validator" value="Active" accent="text-green-400" />
             <StatusPill label="Risk Lock" value="Active" accent="text-yellow-400" />
@@ -1837,7 +1837,7 @@ function ExecutionLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ§¾ Queue Monitor</h3>
+          <h3 className="text-2xl font-bold">Ÿ§¾ Queue Monitor</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Execution Queue" value={`${queue.length}`} accent="text-yellow-400" />
             <StatusPill label="Pending Orders" value={`${queue.length}`} accent="text-cyan-400" />
@@ -1848,7 +1848,7 @@ function ExecutionLiveCenter() {
       </div>
 
       <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
-        <h3 className="text-2xl font-bold">ðŸ” Full AI Execution Pipeline</h3>
+        <h3 className="text-2xl font-bold">Ÿ” Full AI Execution Pipeline</h3>
         <div className="grid grid-cols-6 gap-4 mt-6">
           {[
             ["Market Data", "Connected", "text-blue-400"],
@@ -1867,10 +1867,10 @@ function ExecutionLiveCenter() {
       </div>
 
       <div className="bg-black border border-red-900 rounded-2xl p-6">
-        <h3 className="text-2xl font-bold">ðŸ”’ Live Trading Safety Lock</h3>
+        <h3 className="text-2xl font-bold">Ÿ”’ Live Trading Safety Lock</h3>
         <p className="text-gray-300 mt-4 leading-relaxed">
           Execution Preparation erstellt nur vorbereitete Trade Tickets. Live Broker Orders bleiben gesperrt.
-          Der nÃ¤chste Schritt ist Paper Trading, damit die gesamte AI-Pipeline zuerst in einem sicheren Demo-Loop getestet werden kann.
+          Der nchste Schritt ist Paper Trading, damit die gesamte AI-Pipeline zuerst in einem sicheren Demo-Loop getestet werden kann.
         </p>
 
         <div className="grid grid-cols-5 gap-4 mt-6">
@@ -1947,7 +1947,7 @@ function ConsensusLiveCenter() {
     <section className="bg-gray-900 border border-purple-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸš¦ Consensus Dashboard Center V10.0.2</h2>
+          <h2 className="text-4xl font-black">Ÿš¦ Consensus Dashboard Center V10.0.2</h2>
           <p className="text-gray-400 text-xl mt-3">
             Live Decision Gate: Market Data Vote, Regime Vote, GPT Vote, Claude Risk Vote und finale AI-Entscheidung.
           </p>
@@ -1970,7 +1970,7 @@ function ConsensusLiveCenter() {
       <div className="bg-black border border-purple-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ§  Live Consensus Decisions</h3>
+            <h3 className="text-3xl font-bold">Ÿ§  Live Consensus Decisions</h3>
             <p className="text-gray-400 mt-2">
               Daten aus <span className="text-purple-400">/api/consensus/decision</span>. Auto-Refresh alle 20 Sekunden.
             </p>
@@ -2072,7 +2072,7 @@ function ConsensusLiveCenter() {
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“Š Decision Summary</h3>
+          <h3 className="text-2xl font-bold">Ÿ“Š Decision Summary</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="BUY Decisions" value={`${buyCount}`} accent="text-green-400" />
             <StatusPill label="SELL Decisions" value={`${sellCount}`} accent="text-red-400" />
@@ -2082,7 +2082,7 @@ function ConsensusLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ§© Consensus Logic</h3>
+          <h3 className="text-2xl font-bold">Ÿ§© Consensus Logic</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Vote Calculator" value="Active" accent="text-purple-400" />
             <StatusPill label="Confidence Engine" value="Active" accent="text-cyan-400" />
@@ -2092,7 +2092,7 @@ function ConsensusLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ” Full AI Pipeline</h3>
+          <h3 className="text-2xl font-bold">Ÿ” Full AI Pipeline</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
             <StatusPill label="Regime Engine" value="Connected" accent="text-lime-400" />
@@ -2104,10 +2104,10 @@ function ConsensusLiveCenter() {
       </div>
 
       <div className="bg-black border border-green-900 rounded-2xl p-6">
-        <h3 className="text-2xl font-bold">ðŸš€ Next Gate: Execution Preparation</h3>
+        <h3 className="text-2xl font-bold">Ÿš€ Next Gate: Execution Preparation</h3>
         <p className="text-gray-300 mt-4 leading-relaxed">
           Die Consensus Engine erzeugt jetzt finale Trade-Entscheidungen. Live Execution bleibt weiterhin gesperrt.
-          Im nÃ¤chsten Schritt wird das Execution Preparation Center diese Entscheidungen prÃ¼fen, protokollieren und nur fÃ¼r Paper/Demo-Flows vorbereiten.
+          Im nchsten Schritt wird das Execution Preparation Center diese Entscheidungen prfen, protokollieren und nur fr Paper/Demo-Flows vorbereiten.
         </p>
 
         <div className="grid grid-cols-5 gap-4 mt-6">
@@ -2192,7 +2192,7 @@ function ClaudeRiskLiveCenter() {
     <section className="bg-gray-900 border border-red-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ›¡ Claude Risk Dashboard Center V9.9.2</h2>
+          <h2 className="text-4xl font-black">Ÿ›¡ Claude Risk Dashboard Center V9.9.2</h2>
           <p className="text-gray-400 text-xl mt-3">
             Live-Risk-Review aus der Claude Risk API: Drawdown, Exposure, Position Size, Volatility, Approval und Risk Reasoning.
           </p>
@@ -2215,7 +2215,7 @@ function ClaudeRiskLiveCenter() {
       <div className="bg-black border border-red-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ›¡ Live Claude Risk Review</h3>
+            <h3 className="text-3xl font-bold">Ÿ›¡ Live Claude Risk Review</h3>
             <p className="text-gray-400 mt-2">
               Daten aus <span className="text-red-400">/api/claude-risk/assess</span>. Auto-Refresh alle 20 Sekunden.
             </p>
@@ -2303,7 +2303,7 @@ function ClaudeRiskLiveCenter() {
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”¥ Risk Heatmap</h3>
+          <h3 className="text-2xl font-bold">Ÿ”¥ Risk Heatmap</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Approved Ideas" value={`${approvedCount}`} accent="text-green-400" />
             <StatusPill label="Blocked Ideas" value={`${blockedCount}`} accent="text-red-400" />
@@ -2313,7 +2313,7 @@ function ClaudeRiskLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ§  Claude Risk Logic</h3>
+          <h3 className="text-2xl font-bold">Ÿ§  Claude Risk Logic</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Drawdown Checker" value="Active" accent="text-red-400" />
             <StatusPill label="Exposure Checker" value="Active" accent="text-yellow-400" />
@@ -2323,7 +2323,7 @@ function ClaudeRiskLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ” AI Pipeline</h3>
+          <h3 className="text-2xl font-bold">Ÿ” AI Pipeline</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
             <StatusPill label="Regime Engine" value="Connected" accent="text-lime-400" />
@@ -2335,7 +2335,7 @@ function ClaudeRiskLiveCenter() {
       </div>
 
       <div className="bg-black border border-purple-900 rounded-2xl p-6">
-        <h3 className="text-2xl font-bold">ðŸš¦ Next Gate: Consensus Engine</h3>
+        <h3 className="text-2xl font-bold">Ÿš¦ Next Gate: Consensus Engine</h3>
         <p className="text-gray-300 mt-4 leading-relaxed">
           Claude Risk kann Trade-Ideen genehmigen oder blockieren, aber die finale Entscheidung kommt erst im Consensus Gate.
           Dort werden GPT Bias, Claude Risk, Regime, Market Data und Portfolio Safety gemeinsam bewertet.
@@ -2415,7 +2415,7 @@ function GPTAnalystLiveCenter() {
       <BrokerCenterPanel />
 <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ§  GPT Analyst Dashboard Center V9.8.2</h2>
+          <h2 className="text-4xl font-black">Ÿ§  GPT Analyst Dashboard Center V9.8.2</h2>
           <p className="text-gray-400 text-xl mt-3">
             Live-AI-Analyse aus der GPT Analyst API: Bias, Entry Zone, Stop Loss, Take Profits, Confidence und Reasoning.
           </p>
@@ -2438,7 +2438,7 @@ function GPTAnalystLiveCenter() {
       <div className="bg-black border border-cyan-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ¤– Live GPT Trade Analysis</h3>
+            <h3 className="text-3xl font-bold">Ÿ¤– Live GPT Trade Analysis</h3>
             <p className="text-gray-400 mt-2">
               Daten aus <span className="text-cyan-400">/api/gpt-analyst/analyze</span>. Auto-Refresh alle 20 Sekunden.
             </p>
@@ -2518,7 +2518,7 @@ function GPTAnalystLiveCenter() {
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“Š Bias Overview</h3>
+          <h3 className="text-2xl font-bold">Ÿ“Š Bias Overview</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Bullish Ideas" value={`${bullishCount}`} accent="text-green-400" />
             <StatusPill label="Bearish Ideas" value={`${bearishCount}`} accent="text-red-400" />
@@ -2528,7 +2528,7 @@ function GPTAnalystLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ§  Analyst Logic</h3>
+          <h3 className="text-2xl font-bold">Ÿ§  Analyst Logic</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Bias Detector" value="Active" accent="text-cyan-400" />
             <StatusPill label="Entry Planner" value="Active" accent="text-blue-400" />
@@ -2538,7 +2538,7 @@ function GPTAnalystLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ” AI Pipeline</h3>
+          <h3 className="text-2xl font-bold">Ÿ” AI Pipeline</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
             <StatusPill label="Regime Engine" value="Connected" accent="text-lime-400" />
@@ -2550,10 +2550,10 @@ function GPTAnalystLiveCenter() {
       </div>
 
       <div className="bg-black border border-purple-900 rounded-2xl p-6">
-        <h3 className="text-2xl font-bold">ðŸš¦ Next Gate: Claude Risk Review</h3>
+        <h3 className="text-2xl font-bold">Ÿš¦ Next Gate: Claude Risk Review</h3>
         <p className="text-gray-300 mt-4 leading-relaxed">
           GPT erzeugt nur eine Analyse und Trade-Idee. Kein Trade wird allein durch GPT erlaubt.
-          Als nÃ¤chstes prÃ¼ft Claude Risk Engine Drawdown, VolatilitÃ¤t, Exposure, PositionsgrÃ¶ÃŸe und Safety Rules.
+          Als nchstes prft Claude Risk Engine Drawdown, Volatilitt, Exposure, PositionsgrŸe und Safety Rules.
         </p>
 
         <div className="grid grid-cols-5 gap-4 mt-6">
@@ -2631,9 +2631,9 @@ function MarketRegimeLiveCenter() {
     <section className="bg-gray-900 border border-lime-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸŒ Market Regime Dashboard Center V9.7.2</h2>
+          <h2 className="text-4xl font-black">ŸŒ Market Regime Dashboard Center V9.7.2</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Live-Regime-Erkennung aus der Market Regime API: Trend, VolatilitÃ¤t, Risk-On/Risk-Off und Confidence fÃ¼r AI-Entscheidungen.
+            Live-Regime-Erkennung aus der Market Regime API: Trend, Volatilitt, Risk-On/Risk-Off und Confidence fr AI-Entscheidungen.
           </p>
         </div>
 
@@ -2654,7 +2654,7 @@ function MarketRegimeLiveCenter() {
       <div className="bg-black border border-lime-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ“¡ Live Regime Classification</h3>
+            <h3 className="text-3xl font-bold">Ÿ“¡ Live Regime Classification</h3>
             <p className="text-gray-400 mt-2">
               Daten aus <span className="text-lime-400">/api/market-regime/classify</span>. Auto-Refresh alle 20 Sekunden.
             </p>
@@ -2700,7 +2700,7 @@ function MarketRegimeLiveCenter() {
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”¥ Regime Heatmap</h3>
+          <h3 className="text-2xl font-bold">Ÿ”¥ Regime Heatmap</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Bullish Markets" value={`${bullishCount}`} accent="text-green-400" />
             <StatusPill label="Bearish Markets" value={`${bearishCount}`} accent="text-red-400" />
@@ -2710,7 +2710,7 @@ function MarketRegimeLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Regime Safety Logic</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Regime Safety Logic</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="News-driven" value="Extra review later" accent="text-yellow-400" />
             <StatusPill label="Volatile" value="Reduce size" accent="text-purple-400" />
@@ -2720,7 +2720,7 @@ function MarketRegimeLiveCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ” AI Pipeline Connection</h3>
+          <h3 className="text-2xl font-bold">Ÿ” AI Pipeline Connection</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Market Data" value="Connected" accent="text-blue-400" />
             <StatusPill label="Regime Engine" value="Active" accent="text-lime-400" />
@@ -2732,10 +2732,10 @@ function MarketRegimeLiveCenter() {
       </div>
 
       <div className="bg-black border border-cyan-900 rounded-2xl p-6">
-        <h3 className="text-2xl font-bold">ðŸ§  Regime Decision Impact</h3>
+        <h3 className="text-2xl font-bold">Ÿ§  Regime Decision Impact</h3>
         <p className="text-gray-300 mt-4 leading-relaxed">
-          Die Regime Engine wird spÃ¤ter jede AI-Entscheidung filtern: Momentum-Strategien nur bei Trend,
-          Mean-Reversion eher bei Range, PositionsgrÃ¶ÃŸe kleiner bei VolatilitÃ¤t und zusÃ¤tzliche PrÃ¼fung bei Risk-Off.
+          Die Regime Engine wird spter jede AI-Entscheidung filtern: Momentum-Strategien nur bei Trend,
+          Mean-Reversion eher bei Range, PositionsgrŸe kleiner bei Volatilitt und zustzliche Prfung bei Risk-Off.
         </p>
 
         <div className="grid grid-cols-5 gap-4 mt-6">
@@ -2859,7 +2859,7 @@ function MarketDataEngineCenter() {
     <section className="bg-gray-900 border border-blue-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black">ðŸ“Š Market Data Engine V9.6.4</h2>
+          <h2 className="text-4xl font-black">Ÿ“Š Market Data Engine V9.6.4</h2>
           <p className="text-gray-400 text-xl mt-3">
             Live verbundene Marktdaten-Schicht: Price Cache API, Mock-Live-Preise, TradingView Chart Layer, Feed Router und AI Data Pipeline.
           </p>
@@ -2882,9 +2882,9 @@ function MarketDataEngineCenter() {
       <div className="bg-black border border-blue-900 rounded-2xl p-6 mb-8">
         <div className="flex flex-wrap items-center justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ“Š TradingView Chart Workspace</h3>
+            <h3 className="text-3xl font-bold">Ÿ“Š TradingView Chart Workspace</h3>
             <p className="text-gray-400 mt-2">
-              Wechsel zwischen Gold, Oil, EURUSD und BTCUSD. Die echten AI-Daten kommen spÃ¤ter trotzdem aus eigenen Broker-/Market-Feeds.
+              Wechsel zwischen Gold, Oil, EURUSD und BTCUSD. Die echten AI-Daten kommen spter trotzdem aus eigenen Broker-/Market-Feeds.
             </p>
           </div>
 
@@ -2903,7 +2903,7 @@ function MarketDataEngineCenter() {
               rel="noreferrer"
               className="bg-blue-950 border border-blue-800 rounded-xl px-5 py-3 font-bold text-blue-300 hover:bg-blue-900 transition"
             >
-              Open TradingView â†—
+              Open TradingView †—
             </a>
           </div>
         </div>
@@ -2965,7 +2965,7 @@ function MarketDataEngineCenter() {
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ§­ Symbol Mapper</h3>
+          <h3 className="text-2xl font-bold">Ÿ§­ Symbol Mapper</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="GOLD" value="OANDA:XAUUSD" accent="text-yellow-400" />
             <StatusPill label="USOIL" value="TVC:USOIL" accent="text-orange-400" />
@@ -2975,7 +2975,7 @@ function MarketDataEngineCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ”Œ Datafeed Plan</h3>
+          <h3 className="text-2xl font-bold">Ÿ”Œ Datafeed Plan</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Phase 1" value="TradingView Widget" accent="text-blue-400" />
             <StatusPill label="Phase 2" value="Capital.com API" accent="text-cyan-400" />
@@ -2985,7 +2985,7 @@ function MarketDataEngineCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ›¡ Integration Safety</h3>
+          <h3 className="text-2xl font-bold">Ÿ›¡ Integration Safety</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Unofficial API" value="Avoided" accent="text-green-400" />
             <StatusPill label="Scraping" value="No" accent="text-red-400" />
@@ -2999,7 +2999,7 @@ function MarketDataEngineCenter() {
       <div className="bg-black border border-green-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold">ðŸ§  Market Data Engine Core</h3>
+            <h3 className="text-3xl font-bold">Ÿ§  Market Data Engine Core</h3>
             <p className="text-gray-400 mt-2">
               V9.6 verbindet Symbol Registry, Feed Router, Price Cache und Health Monitor zu einer zentralen AI-Datenversorgung.
             </p>
@@ -3022,7 +3022,7 @@ function MarketDataEngineCenter() {
 
       <div className="grid grid-cols-3 gap-6 mb-8">
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ“¡ Feed Health</h3>
+          <h3 className="text-2xl font-bold">Ÿ“¡ Feed Health</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="TradingView" value="Online" accent="text-green-400" />
             <StatusPill label="Capital.com" value="Planned" accent="text-yellow-400" />
@@ -3032,7 +3032,7 @@ function MarketDataEngineCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ—‚ Symbol Registry</h3>
+          <h3 className="text-2xl font-bold">Ÿ—‚ Symbol Registry</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="GOLD" value="XAUUSD" accent="text-yellow-400" />
             <StatusPill label="USOIL" value="USOIL" accent="text-orange-400" />
@@ -3042,7 +3042,7 @@ function MarketDataEngineCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">âš™ï¸ Feed Priority</h3>
+          <h3 className="text-2xl font-bold">š™ Feed Priority</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Priority 1" value="Capital.com" accent="text-blue-400" />
             <StatusPill label="Priority 2" value="IC Markets" accent="text-cyan-400" />
@@ -3056,7 +3056,7 @@ function MarketDataEngineCenter() {
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-2xl font-bold">ðŸ’¾ Live Price Cache</h3>
+              <h3 className="text-2xl font-bold">Ÿ’¾ Live Price Cache</h3>
               <p className="text-gray-500 mt-2">
                 Preise aus <span className="text-cyan-400">/api/market-data/prices</span>.
               </p>
@@ -3115,7 +3115,7 @@ function MarketDataEngineCenter() {
         </div>
 
         <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold">ðŸ” AI Data Pipeline</h3>
+          <h3 className="text-2xl font-bold">Ÿ” AI Data Pipeline</h3>
           <div className="space-y-3 mt-5">
             <StatusPill label="Market Data" value="Prepared" accent="text-blue-400" />
             <StatusPill label="Market Regime" value="Prepared" accent="text-lime-400" />
@@ -3127,11 +3127,11 @@ function MarketDataEngineCenter() {
       </div>
 
       <div className="bg-black border border-cyan-900 rounded-2xl p-6">
-        <h3 className="text-2xl font-bold">ðŸ¤– AI Connection Plan</h3>
+        <h3 className="text-2xl font-bold">Ÿ¤– AI Connection Plan</h3>
         <p className="text-gray-300 mt-4 leading-relaxed">
-          TradingView bleibt der visuelle Chart-Layer. Die AI-Entscheidungen werden spÃ¤ter Ã¼ber eigene Marktdaten,
+          TradingView bleibt der visuelle Chart-Layer. Die AI-Entscheidungen werden spter ber eigene Marktdaten,
           Brokerdaten, News, Regime und Portfolio Intelligence gespeist. Dadurch vermeiden wir Lizenz- und API-Probleme
-          und behalten die Kontrolle Ã¼ber den Datafeed.
+          und behalten die Kontrolle ber den Datafeed.
         </p>
 
         <div className="grid grid-cols-5 gap-4 mt-6">
@@ -3224,7 +3224,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control Â· V10.1.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control · V10.1.2</p>
           </div>
 
           <nav className="space-y-7">
@@ -3279,9 +3279,9 @@ export default function Home() {
             <>
           <div className="flex items-start justify-between gap-8 mb-10">
             <div>
-              <h2 className="text-5xl font-black">Willkommen Michael ðŸ‘Š</h2>
+              <h2 className="text-5xl font-black">Willkommen MichaelŸ‘Š</h2>
               <p className="text-gray-400 text-xl mt-4">
-                AI Trading Mission Control Â· V10.1.2 Interactive Centers
+                AI Trading Mission Control · V10.1.2 Interactive Centers
               </p>
             </div>
 
@@ -3296,35 +3296,35 @@ export default function Home() {
 
           <div className="grid grid-cols-5 gap-6 mb-8">
             <StatCard
-              title="ðŸ’° Balance"
+              title="Ÿ’° Balance"
               value="30'000 CHF"
               subtitle="Paper Account"
               accent="text-green-400"
               border="border-green-900"
             />
             <StatCard
-              title="ðŸ“ˆ Equity"
+              title="Ÿ“ˆ Equity"
               value="30'120 CHF"
               subtitle="Floating Equity"
               accent="text-cyan-400"
               border="border-cyan-900"
             />
             <StatCard
-              title="ðŸ“Š Closed P/L"
+              title="Ÿ“Š Closed P/L"
               value="120 CHF"
               subtitle="Closed paper trades"
               accent="text-green-400"
               border="border-blue-900"
             />
             <StatCard
-              title="âš¡ Open P/L"
+              title="š¡ Open P/L"
               value="0 CHF"
               subtitle="No open exposure"
               accent="text-yellow-400"
               border="border-yellow-900"
             />
             <StatCard
-              title="ðŸ§  Engine Health"
+              title="Ÿ§  Engine Health"
               value="Strong"
               subtitle="Core architecture"
               accent="text-purple-400"
@@ -3334,9 +3334,9 @@ export default function Home() {
 
           <div className="grid grid-cols-3 gap-8 mb-8">
             <section className="bg-gray-900 border border-blue-900 rounded-2xl p-7">
-              <h3 className="text-3xl font-bold">ðŸŽ¯ Top Opportunity</h3>
+              <h3 className="text-3xl font-bold">ŸŽ¯ Top Opportunity</h3>
               <p className="text-blue-400 text-5xl mt-6 font-black">Gold</p>
-              <p className="text-gray-400 mt-2">Commodities Â· Risk sentiment</p>
+              <p className="text-gray-400 mt-2">Commodities  Risk sentiment</p>
 
               <div className="grid grid-cols-2 gap-4 mt-6">
                 <div className="bg-black border border-gray-800 rounded-xl p-4">
@@ -3358,12 +3358,12 @@ export default function Home() {
               </div>
 
               <a className="inline-block text-blue-400 font-bold mt-6" href="#trading-desk">
-                Analyse Ã¶ffnen â†’
+                Analyse ffnen †’
               </a>
             </section>
 
             <section className="bg-gray-900 border border-purple-900 rounded-2xl p-7" id="ai-consensus">
-              <h3 className="text-3xl font-bold">ðŸ¤– AI Consensus</h3>
+              <h3 className="text-3xl font-bold">Ÿ¤– AI Consensus</h3>
 
               <div className="space-y-4 mt-6">
                 <StatusPill label="GPT Analyst" value="WAIT" accent="text-yellow-400" />
@@ -3389,7 +3389,7 @@ export default function Home() {
             </section>
 
             <section className="bg-gray-900 border border-red-900 rounded-2xl p-7">
-              <h3 className="text-3xl font-bold">ðŸ›¡ Risk Monitor</h3>
+              <h3 className="text-3xl font-bold">Ÿ›¡ Risk Monitor</h3>
 
               <div className="mt-6 space-y-5">
                 <div>
@@ -3422,15 +3422,15 @@ export default function Home() {
 
           <div className="grid grid-cols-2 gap-8 mb-8">
             <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-7">
-              <h3 className="text-3xl font-bold">ðŸ“‚ Open Positions</h3>
+              <h3 className="text-3xl font-bold">Ÿ“‚ Open Positions</h3>
               <p className="text-gray-500 mt-8">Keine offenen Paper Positionen.</p>
               <a className="inline-block text-cyan-400 font-bold mt-6" href="#execution-center">
-                Paper Trading Ã¶ffnen â†’
+                Paper Trading ffnen †’
               </a>
             </section>
 
             <section className="bg-gray-900 border border-blue-900 rounded-2xl p-7">
-              <h3 className="text-3xl font-bold">ðŸ“ˆ Equity Curve Snapshot</h3>
+              <h3 className="text-3xl font-bold">Ÿ“ˆ Equity Curve Snapshot</h3>
               <div className="bg-black border border-gray-800 rounded-2xl h-56 mt-6 flex items-end justify-around px-8 pb-8">
                 <div className="w-16 bg-blue-950 rounded-t-xl h-16 border border-blue-900" />
                 <div className="w-16 bg-blue-950 rounded-t-xl h-28 border border-blue-900" />
@@ -3455,9 +3455,9 @@ export default function Home() {
           </div>
 
           <section className="bg-gray-900 border border-gray-800 rounded-2xl p-7 mb-8">
-            <h3 className="text-3xl font-bold">ðŸ§­ Core Centers</h3>
+            <h3 className="text-3xl font-bold">Ÿ§­ Core Centers</h3>
             <p className="text-gray-400 mt-2">
-              Die groÃŸen ArchitekturblÃ¶cke sind jetzt als professionelle Center vorbereitet, statt alle Details im Dashboard zu zeigen.
+              Die groŸen Architekturblcke sind jetzt als professionelle Center vorbereitet, statt alle Details im Dashboard zu zeigen.
             </p>
 
             <div className="grid grid-cols-4 gap-5 mt-6">
@@ -3500,9 +3500,9 @@ export default function Home() {
             <section className="bg-gray-900 border border-orange-900 rounded-2xl p-7 mb-8">
               <div className="flex items-start justify-between gap-6">
                 <div>
-                  <h3 className="text-3xl font-bold">ðŸ›  Developer Architecture Mode</h3>
+                  <h3 className="text-3xl font-bold">Ÿ›  Developer Architecture Mode</h3>
                   <p className="text-gray-400 mt-2">
-                    Technische Roadmap- und Architektur-Ãœbersicht. StandardmÃ¤ÃŸig versteckt, damit das Dashboard professionell clean bleibt.
+                    Technische Roadmap- und Architektur-œbersicht. StandardmŸig versteckt, damit das Dashboard professionell clean bleibt.
                   </p>
                 </div>
 
@@ -3547,9 +3547,9 @@ export default function Home() {
 
           {(activeView === "dashboard" || activeView === "live-prep") && (
           <section className="bg-gray-900 border border-green-900 rounded-2xl p-7 mb-8" id="live-prep">
-            <h3 className="text-3xl font-bold">ðŸš€ Live Trading Preparation</h3>
+            <h3 className="text-3xl font-bold">Ÿš€ Live Trading Preparation</h3>
             <p className="text-gray-400 mt-2">
-              Status bleibt sicher: Paper/Demo Only. Keine Live Orders ohne spÃ¤tere Freigabe.
+              Status bleibt sicher: Paper/Demo Only. Keine Live Orders ohne sptere Freigabe.
             </p>
 
             <div className="grid grid-cols-4 gap-5 mt-6">
