@@ -20,6 +20,8 @@
 
 
 
+
+import SpeciesTradeApprovalPanel from "./SpeciesTradeApprovalPanel";
 import SpeciesExecutionCenterSyncPanel from "./SpeciesExecutionCenterSyncPanel";
 import SpeciesExecutionQueuePanel from "./SpeciesExecutionQueuePanel";
 import SpeciesTradeAllocationPanel from "./SpeciesTradeAllocationPanel";
@@ -3320,6 +3322,7 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
 
 
 
