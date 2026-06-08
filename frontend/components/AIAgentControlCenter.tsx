@@ -18,6 +18,8 @@
 
 
 
+
+import SpeciesExecutionQueuePanel from "./SpeciesExecutionQueuePanel";
 import SpeciesTradeAllocationPanel from "./SpeciesTradeAllocationPanel";
 import SpeciesPositionSizingPanel from "./SpeciesPositionSizingPanel";
 import SpeciesCapitalAllocationPanel from "./SpeciesCapitalAllocationPanel";
@@ -3316,6 +3318,7 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
 
 
 
