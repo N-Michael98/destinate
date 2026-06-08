@@ -1,5 +1,11 @@
 ﻿"use client";
 
+import {
+  AllocationDonutChart,
+  MetricBarChart,
+  PerformanceLineChart,
+} from "./charts";
+
 const portfolioMetrics = [
   { label: "Decision Layer", value: "ACTIVE", detail: "Portfolio Brain online" },
   { label: "AI Inputs", value: "3", detail: "GPT, Claude, Consensus" },
@@ -7,6 +13,38 @@ const portfolioMetrics = [
   { label: "Risk Layer", value: "ACTIVE", detail: "Portfolio risk management" },
   { label: "Learning Loop", value: "READY", detail: "Outcome feedback prepared" },
   { label: "Telegram Ready", value: "YES", detail: "Future alert foundation" },
+];
+
+const aiConfidenceData = [
+  { label: "GPT", value: 84 },
+  { label: "Claude", value: 80 },
+  { label: "Consensus", value: 82 },
+  { label: "Portfolio", value: 86 },
+  { label: "Evolution", value: 88 },
+];
+
+const decisionScoreData = [
+  { label: "Signal", value: 84 },
+  { label: "Risk", value: 32 },
+  { label: "Consensus", value: 82 },
+  { label: "Evolution", value: 88 },
+  { label: "Execution", value: 91 },
+];
+
+const portfolioInfluenceData = [
+  { label: "AI Analysis", value: 30 },
+  { label: "Risk Review", value: 20 },
+  { label: "Consensus", value: 20 },
+  { label: "Evolution", value: 20 },
+  { label: "Learning", value: 10 },
+];
+
+const confidenceTrend = [
+  { label: "GPT", value: 84 },
+  { label: "Claude", value: 80 },
+  { label: "Consensus", value: 82 },
+  { label: "Portfolio", value: 86 },
+  { label: "Execution", value: 91 },
 ];
 
 const decisionFlow = [
@@ -60,13 +98,13 @@ export default function PortfolioBrainCenterPanel() {
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-400">
-            V15.A.9 Portfolio Brain Center
+            V15.A.10 Portfolio Brain Charts
           </p>
           <h2 className="mt-2 text-2xl font-bold text-white">
             Portfolio Brain Decision Intelligence Dashboard
           </h2>
           <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-            Central decision hub connecting GPT, Claude, Consensus, Evolution, Risk and future execution decisions.
+            Visual decision hub connecting GPT, Claude, Consensus, Evolution, Risk and future execution decisions.
           </p>
         </div>
 
@@ -89,12 +127,44 @@ export default function PortfolioBrainCenterPanel() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
+        <MetricBarChart
+          title="AI Confidence Stack"
+          subtitle="Current simulated AI decision confidence by layer."
+          data={aiConfidenceData}
+          footer="Portfolio Brain currently has the strongest decision confidence."
+        />
+
+        <MetricBarChart
+          title="Decision Score Matrix"
+          subtitle="Signal, risk, consensus, evolution and execution readiness."
+          data={decisionScoreData}
+          footer="Risk is intentionally lower because lower risk score is better."
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <AllocationDonutChart
+          title="Portfolio Decision Influence"
+          subtitle="Simulated contribution weights for final portfolio decision."
+          data={portfolioInfluenceData}
+          footer="AI analysis and Evolution are core contributors to final decisions."
+        />
+
+        <PerformanceLineChart
+          title="Decision Confidence Flow"
+          subtitle="Confidence flow from AI analysis to execution readiness."
+          data={confidenceTrend}
+          footer="Execution readiness is strongest after Portfolio Brain and Evolution alignment."
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4">
           <h3 className="text-sm font-bold text-emerald-300">
             AI Decision Input Stack
           </h3>
           <p className="mt-1 text-xs text-zinc-500">
-            Portfolio Brain will combine GPT analysis, Claude risk and Consensus signals.
+            Portfolio Brain combines GPT analysis, Claude risk and Consensus signals.
           </p>
 
           <div className="mt-4 space-y-3">
