@@ -62,7 +62,7 @@ function getMarketData(marketName: string) {
     "WTI Crude Oil": {
       confidence: 94,
       risk: "Medium",
-      news: ["lnachfrage steigt", "Angebotsrisiken untersttzen Preise"],
+      news: ["Ölnachfrage steigt", "Angebotsrisiken unterstützen Preise"],
       setup: {
         entry: "58.20",
         stopLoss: "57.40",
@@ -84,7 +84,7 @@ function getMarketData(marketName: string) {
     EURUSD: {
       confidence: 64,
       risk: "High",
-      news: ["Wichtige Zentralbankdaten erwartet", "Hohe Volatilitt mglich"],
+      news: ["Wichtige Zentralbankdaten erwartet", "Hohe Volatilität möglich"],
       setup: {
         entry: "-",
         stopLoss: "-",
@@ -108,7 +108,7 @@ function isLocalTradingPrompt(input: string) {
     prompt.includes("verkaufschancen") ||
     prompt.includes("sell") ||
     prompt.includes("ranking") ||
-    prompt.includes("strkste") ||
+    prompt.includes("stärkste") ||
     prompt.includes("beste chance") ||
     prompt.includes("top opportunity") ||
     prompt.includes("vergleich") ||
@@ -160,7 +160,7 @@ function parseTradeInput(input: string): Omit<CapturedTrade, "id" | "status"> | 
 }
 
 function formatCapturedTrade(trade: CapturedTrade) {
-  return ` Trade erkannt und in dieser Session gespeichert
+  return `✅ Trade erkannt und in dieser Session gespeichert
 
 #${trade.id} ${trade.direction} ${trade.market}
 
@@ -170,7 +170,7 @@ Take Profit: ${trade.takeProfit}
 Status: ${trade.status}
 
 Hinweis:
-Aktuell ist dieser Trade nur im Browser-State gespeichert. Dauerhafte Speicherung bauen wir spter mit Journal-Synchronisierung.`;
+Aktuell ist dieser Trade nur im Browser-State gespeichert. Dauerhafte Speicherung bauen wir später mit Journal-Synchronisierung.`;
 }
 
 function showSessionTrades(trades: CapturedTrade[]) {
@@ -178,7 +178,7 @@ function showSessionTrades(trades: CapturedTrade[]) {
     return "In dieser Session wurden noch keine neuen Trades erfasst.";
   }
 
-  return ` Neue Trades in dieser Session
+  return `🧾 Neue Trades in dieser Session
 
 ${trades
   .map(
@@ -198,7 +198,7 @@ export default function AIAssistant() {
     {
       sender: "AI Assistant",
       text:
-        "Hallo Michael \nIch bin bereit fr Marktanalysen, Trading-Setups und AI-Auswertungen.",
+        "Hallo Michael 👋\nIch bin bereit für Marktanalysen, Trading-Setups und AI-Auswertungen.",
     },
     {
       sender: "AI Assistant",
@@ -293,7 +293,7 @@ export default function AIAssistant() {
     } else if (prompt.includes("news") && lastMarket && contextData) {
       aiResponse = `${lastMarket} News
 
-${contextData.news.map((item: string) => ` ${item}`).join("\n")}`;
+${contextData.news.map((item: string) => `• ${item}`).join("\n")}`;
     } else if (prompt.includes("setup") && lastMarket && contextData) {
       aiResponse = `${lastMarket} Trading Setup
 
@@ -330,11 +330,11 @@ Take Profit: ${contextData.setup.takeProfit}`;
         href="/"
         className="inline-block mb-8 text-blue-400 hover:text-blue-300"
       >
-         Zurck zum Dashboard
+        ← Zurück zum Dashboard
       </a>
 
       <h1 className="text-4xl font-bold mb-4">
-         AI Trading Assistant
+        🤖 AI Trading Assistant
       </h1>
 
       <p className="text-gray-400 mb-8">
@@ -366,7 +366,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
       </div>
 
       <div className="bg-gray-900 rounded-xl p-6 mb-8">
-        <h2 className="text-2xl font-bold mb-4"> AI Chat</h2>
+        <h2 className="text-2xl font-bold mb-4">💬 AI Chat</h2>
 
         <div className="bg-black border border-gray-800 rounded-xl p-4 h-96 overflow-y-auto whitespace-pre-line">
           {messages.map((message, index) => (
@@ -421,7 +421,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
 
       <div className="grid grid-cols-2 gap-6">
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-4"> Quick Actions</h2>
+          <h2 className="text-xl font-bold mb-4">⚡ Quick Actions</h2>
 
           <div className="space-y-3">
             <button
@@ -430,7 +430,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
-               AI Journal Analyse
+              🤖 AI Journal Analyse
             </button>
 
             <button
@@ -439,7 +439,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-purple-500"
             >
-               Session Trades
+              🧾 Session Trades
             </button>
 
             <button
@@ -448,7 +448,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-cyan-500"
             >
-               Offene Trades
+              📈 Offene Trades
             </button>
 
             <button
@@ -457,7 +457,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-green-500"
             >
-               Trade Summary
+              📊 Trade Summary
             </button>
 
             <button
@@ -465,7 +465,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               disabled={isLoading}
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-green-500 disabled:opacity-50"
             >
-               API Verbindung testen
+              🧪 API Verbindung testen
             </button>
 
             <button
@@ -474,7 +474,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-cyan-500"
             >
-               Daily Market Briefing
+              📊 Daily Market Briefing
             </button>
 
             <button
@@ -483,7 +483,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-pink-500"
             >
-               AI Watchlist
+              ⭐ AI Watchlist
             </button>
 
             <button
@@ -492,7 +492,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-orange-500"
             >
-               Zeige Kaufchancen
+              🔥 Zeige Kaufchancen
             </button>
 
             <button
@@ -501,7 +501,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-red-500"
             >
-               Zeige Verkaufschancen
+              🚨 Zeige Verkaufschancen
             </button>
 
             <button
@@ -510,16 +510,16 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-red-500"
             >
-               Warum ist Gold bearish?
+              🧠 Warum ist Gold bearish?
             </button>
 
             <button
               onClick={() =>
-                addMessage("Zeige mir die strksten Mrkte", showMarketRanking())
+                addMessage("Zeige mir die stärksten Märkte", showMarketRanking())
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-yellow-500"
             >
-               Zeige strkste Mrkte
+              🏅 Zeige stärkste Märkte
             </button>
 
             <button
@@ -528,7 +528,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-green-500"
             >
-               Beste Trading Chance heute
+              🏆 Beste Trading Chance heute
             </button>
 
             <button
@@ -540,7 +540,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-purple-500"
             >
-               Vergleiche Gold vs WTI
+              ⚔️ Vergleiche Gold vs WTI
             </button>
 
             <button
@@ -549,7 +549,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
-               Analysiere Gold
+              📊 Analysiere Gold
             </button>
 
             <button
@@ -562,7 +562,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
-               Analysiere WTI Crude Oil
+              🛢️ Analysiere WTI Crude Oil
             </button>
 
             <button
@@ -571,7 +571,7 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
-               Analysiere NAS100
+              📈 Analysiere NAS100
             </button>
 
             <button
@@ -580,19 +580,19 @@ Take Profit: ${contextData.setup.takeProfit}`;
               }
               className="w-full text-left bg-black p-3 rounded-lg border border-gray-800 hover:border-blue-500"
             >
-               Analysiere EURUSD
+              🌍 Analysiere EURUSD
             </button>
           </div>
         </div>
 
         <div className="bg-gray-900 p-6 rounded-xl">
-          <h2 className="text-xl font-bold mb-4"> V3.6 Journal Analytics Tests</h2>
+          <h2 className="text-xl font-bold mb-4">📘 V3.6 Journal Analytics Tests</h2>
 
           <ul className="space-y-3 text-gray-300">
             <li>1. Klicke: AI Journal Analyse</li>
             <li>2. Oder schreibe: journal analyse</li>
             <li>3. Oder schreibe: performance analyse</li>
-            <li>4. ndere Trades im Trading Journal und teste erneut.</li>
+            <li>4. Ändere Trades im Trading Journal und teste erneut.</li>
             <li>5. Die Analyse liest deine gespeicherten Browser-Daten.</li>
           </ul>
 

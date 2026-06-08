@@ -392,7 +392,7 @@ function getBotReadinessResult(input: {
       ? "System ist nahe an Bot-Bereitschaft. Broker-Integration kann vorbereitet werden."
       : phase === "Validation Phase"
         ? "System ist in der Validierungsphase. Mehr Daten und stabile Kennzahlen sammeln."
-        : "Noch nicht bereit fr Live Auto Trading. Erst mehr Trades und stabile Performance sammeln.";
+        : "Noch nicht bereit für Live Auto Trading. Erst mehr Trades und stabile Performance sammeln.";
 
   return {
     score,
@@ -1095,7 +1095,7 @@ function getWeekKey(dateValue: string) {
 }
 
 function getWeekLabel(weekKey: string) {
-  return weekKey.replace("-W", "  Woche ");
+  return weekKey.replace("-W", " · Woche ");
 }
 
 function buildWeeklyPerformance(data: Trade[]) {
@@ -1611,7 +1611,7 @@ export default function TradingJournal() {
 
   async function createTrade() {
     if (!market || !strategy || !entry || !stopLoss || !takeProfit || !accountSize || !riskPercent) {
-      alert("Bitte Market, Strategy, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfllen.");
+      alert("Bitte Market, Strategy, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
       return;
     }
 
@@ -1702,7 +1702,7 @@ export default function TradingJournal() {
       !editAccountSize ||
       !editRiskPercent
     ) {
-      alert("Bitte Market, Strategy, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfllen.");
+      alert("Bitte Market, Strategy, Entry, Stop Loss, Take Profit, Account Size und Risk % ausfüllen.");
       return;
     }
 
@@ -1754,7 +1754,7 @@ export default function TradingJournal() {
     const value = Number(input);
 
     if (Number.isNaN(value)) {
-      alert("Bitte eine gltige Zahl eingeben.");
+      alert("Bitte eine gültige Zahl eingeben.");
       return;
     }
 
@@ -1783,7 +1783,7 @@ export default function TradingJournal() {
       await loadTrades();
     } catch (error) {
       console.error(error);
-      alert("Fehler beim Schlieen des Trades.");
+      alert("Fehler beim Schließen des Trades.");
     }
   }
 
@@ -1804,19 +1804,19 @@ export default function TradingJournal() {
       const data = await response.json();
 
       if (!data.success) {
-        alert("Trade konnte nicht wieder geffnet werden.");
+        alert("Trade konnte nicht wieder geöffnet werden.");
         return;
       }
 
       await loadTrades();
     } catch (error) {
       console.error(error);
-      alert("Fehler beim Wiederffnen des Trades.");
+      alert("Fehler beim Wiederöffnen des Trades.");
     }
   }
 
   async function deleteTrade(tradeId: number) {
-    const confirmed = window.confirm("Diesen Trade wirklich lschen?");
+    const confirmed = window.confirm("Diesen Trade wirklich löschen?");
     if (!confirmed) return;
 
     try {
@@ -1827,20 +1827,20 @@ export default function TradingJournal() {
       const data = await response.json();
 
       if (!data.success) {
-        alert("Trade konnte nicht gelscht werden.");
+        alert("Trade konnte nicht gelöscht werden.");
         return;
       }
 
       await loadTrades();
     } catch (error) {
       console.error(error);
-      alert("Fehler beim Lschen des Trades.");
+      alert("Fehler beim Löschen des Trades.");
     }
   }
 
   async function resetJournal() {
     const confirmed = window.confirm(
-      "Wirklich ALLE Trades aus der SQLite-Datenbank lschen?"
+      "Wirklich ALLE Trades aus der SQLite-Datenbank löschen?"
     );
 
     if (!confirmed) return;
@@ -1853,16 +1853,16 @@ export default function TradingJournal() {
       const data = await response.json();
 
       if (!data.success) {
-        alert("Datenbank konnte nicht zurckgesetzt werden.");
+        alert("Datenbank konnte nicht zurückgesetzt werden.");
         return;
       }
 
       setSelectedMarket("All");
       await loadTrades();
-      alert("Alle Trades wurden gelscht.");
+      alert("Alle Trades wurden gelöscht.");
     } catch (error) {
       console.error(error);
-      alert("Fehler beim Zurcksetzen der Datenbank.");
+      alert("Fehler beim Zurücksetzen der Datenbank.");
     }
   }
 
@@ -2093,12 +2093,12 @@ export default function TradingJournal() {
   return (
     <main className="min-h-screen bg-black text-white p-10">
       <a href="/" className="inline-block mb-8 text-blue-400 hover:text-blue-300">
-         Zurck zum Dashboard
+        ← Zurück zum Dashboard
       </a>
 
       <div className="flex justify-between items-start mb-8">
         <div>
-          <h1 className="text-4xl font-bold mb-4"> Trading Journal</h1>
+          <h1 className="text-4xl font-bold mb-4">📈 Trading Journal</h1>
           <p className="text-gray-400">
             V5.9: Trading Journal mit Bot Readiness Center, Signal Engine, Strategy Builder und AI Trade Review.
           </p>
@@ -2108,24 +2108,24 @@ export default function TradingJournal() {
           onClick={exportYearlyReportPDF}
           className="bg-blue-600 hover:bg-blue-700 px-5 py-3 rounded-xl font-bold"
         >
-           Jahresreport PDF exportieren
+          📄 Jahresreport PDF exportieren
         </button>
       </div>
 
       <div className="mb-8 bg-gray-950 border border-gray-800 rounded-2xl p-4 sticky top-0 z-20">
         <div className="flex flex-wrap gap-3">
           {[
-            { id: "overview", label: " Overview" },
-            { id: "trading", label: " Neuer Trade" },
-            { id: "reports", label: " Reports & Time" },
-            { id: "performance", label: " Performance Analytics" },
-            { id: "intelligence", label: " Journal Intelligence" },
-            { id: "strategy", label: " Strategy Builder" },
-            { id: "tradeReview", label: " AI Trade Review" },
-            { id: "signal", label: " Signal Engine" },
-            { id: "bot", label: " Bot Readiness" },
-            { id: "charts", label: " Charts Center" },
-            { id: "history", label: " Trade History" },
+            { id: "overview", label: "📊 Overview" },
+            { id: "trading", label: "➕ Neuer Trade" },
+            { id: "reports", label: "📄 Reports & Time" },
+            { id: "performance", label: "🧠 Performance Analytics" },
+            { id: "intelligence", label: "🤖 Journal Intelligence" },
+            { id: "strategy", label: "🧩 Strategy Builder" },
+            { id: "tradeReview", label: "⭐ AI Trade Review" },
+            { id: "signal", label: "🎯 Signal Engine" },
+            { id: "bot", label: "🤖 Bot Readiness" },
+            { id: "charts", label: "📈 Charts Center" },
+            { id: "history", label: "🧾 Trade History" },
           ].map((item) => (
             <button
               key={item.id}
@@ -2146,7 +2146,7 @@ export default function TradingJournal() {
         {activeSection === "overview" && (
           <div className="space-y-8">
             <div className="bg-gray-900 p-6 rounded-xl border border-blue-800">
-              <h2 className="text-2xl font-bold mb-2"> Overview Dashboard V5.3.2</h2>
+              <h2 className="text-2xl font-bold mb-2">📊 Overview Dashboard V5.3.2</h2>
               <p className="text-gray-400">
                 Wichtigste Trading- und Risk-Kennzahlen auf einen Blick.
               </p>
@@ -2218,10 +2218,10 @@ export default function TradingJournal() {
                   }
                 >
                   {propFirmStats.status === "PASS"
-                    ? "PASS "
+                    ? "PASS ✅"
                     : propFirmStats.status === "WARNING"
-                      ? "WARNING "
-                      : "VIOLATION "}
+                      ? "WARNING ⚠️"
+                      : "VIOLATION ❌"}
                 </p>
               </div>
             </div>
@@ -2232,7 +2232,7 @@ export default function TradingJournal() {
           <div className="space-y-8">
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-xl border border-green-800">
-                <h2 className="text-2xl font-bold mb-4"> Account Settings V5.3.2</h2>
+                <h2 className="text-2xl font-bold mb-4">💼 Account Settings V5.3.2</h2>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -2270,7 +2270,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-xl border border-yellow-800">
-                <h2 className="text-2xl font-bold mb-4"> Prop Firm Settings V5.3.2</h2>
+                <h2 className="text-2xl font-bold mb-4">⚙️ Prop Firm Settings V5.3.2</h2>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -2314,7 +2314,7 @@ export default function TradingJournal() {
 
             {editingTrade && (
               <div className="bg-gray-900 p-6 rounded-xl border border-blue-700">
-                <h2 className="text-2xl font-bold mb-4"> Trade bearbeiten #{editingTrade.id}</h2>
+                <h2 className="text-2xl font-bold mb-4">✏️ Trade bearbeiten #{editingTrade.id}</h2>
 
                 <div className="grid grid-cols-4 gap-4">
                   <input placeholder="Market" value={editMarket} onChange={(event) => setEditMarket(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
@@ -2339,7 +2339,7 @@ export default function TradingJournal() {
 
                 <div className="flex gap-4 mt-4">
                   <button onClick={saveEditedTrade} disabled={isEditing} className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold">
-                    {isEditing ? "Speichert..." : " nderungen speichern"}
+                    {isEditing ? "Speichert..." : "💾 Änderungen speichern"}
                   </button>
                   <button onClick={cancelEditTrade} className="bg-gray-700 hover:bg-gray-800 px-5 py-3 rounded-xl font-bold">
                     Abbrechen
@@ -2349,7 +2349,7 @@ export default function TradingJournal() {
             )}
 
             <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-              <h2 className="text-2xl font-bold mb-4"> Neuer Trade</h2>
+              <h2 className="text-2xl font-bold mb-4">➕ Neuer Trade</h2>
 
               <div className="grid grid-cols-4 gap-4">
                 <input placeholder="Market, z.B. Gold" value={market} onChange={(event) => setMarket(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
@@ -2373,13 +2373,13 @@ export default function TradingJournal() {
               </div>
 
               <button onClick={createTrade} disabled={isSaving} className="mt-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 px-5 py-3 rounded-xl font-bold">
-                {isSaving ? "Speichert..." : " Trade speichern"}
+                {isSaving ? "Speichert..." : "💾 Trade speichern"}
               </button>
             </div>
 
             <div className="flex gap-4 items-end">
               <div>
-                <label className="block mb-2 text-gray-400">Market auswhlen</label>
+                <label className="block mb-2 text-gray-400">Market auswählen</label>
                 <select value={selectedMarket} onChange={(event) => setSelectedMarket(event.target.value)} className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
                   {markets.map((marketItem) => (
                     <option key={marketItem}>{marketItem}</option>
@@ -2388,7 +2388,7 @@ export default function TradingJournal() {
               </div>
 
               <button onClick={resetJournal} className="bg-red-700 hover:bg-red-800 px-4 py-3 rounded-xl">
-                Datenbank zurcksetzen
+                Datenbank zurücksetzen
               </button>
 
               <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
@@ -2401,7 +2401,7 @@ export default function TradingJournal() {
         {activeSection === "reports" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-indigo-800">
-              <h2 className="text-3xl font-bold mb-2"> Reports & Time Analytics V5.4.2</h2>
+              <h2 className="text-3xl font-bold mb-2">📄 Reports & Time Analytics V5.4.2</h2>
               <p className="text-gray-400">
                 Zeitliche Performance im professionellen Dashboard-Stil: Daily, Weekly, Monthly und Jahresreport.
               </p>
@@ -2457,7 +2457,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
-                <h2 className="text-xl font-bold mb-4"> Daily Performance Board</h2>
+                <h2 className="text-xl font-bold mb-4">📆 Daily Performance Board</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={buildDailyPerformance(filteredTrades)}>
@@ -2472,7 +2472,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900">
-                <h2 className="text-xl font-bold mb-4"> Weekly Performance Board</h2>
+                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance Board</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={weeklyStats.weeklyPerformance}>
@@ -2487,7 +2487,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-indigo-900">
-                <h2 className="text-xl font-bold mb-4"> Monthly Performance Board</h2>
+                <h2 className="text-xl font-bold mb-4">📆 Monthly Performance Board</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyStats.monthlyPerformance}>
@@ -2502,7 +2502,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
-                <h2 className="text-xl font-bold mb-4"> Zeitraum Performance Board</h2>
+                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance Board</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={periodData}>
@@ -2523,7 +2523,7 @@ export default function TradingJournal() {
         {activeSection === "performance" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-purple-800">
-              <h2 className="text-3xl font-bold mb-2"> Performance Analytics V5.4.2</h2>
+              <h2 className="text-3xl font-bold mb-2">🧠 Performance Analytics V5.4.2</h2>
               <p className="text-gray-400">
                 Professionelles Performance-Board mit Expectancy, Score, R-Multiple, Streaks und Market-Analyse.
               </p>
@@ -2596,7 +2596,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
-                <h2 className="text-xl font-bold mb-4"> Performance nach Market</h2>
+                <h2 className="text-xl font-bold mb-4">🎯 Performance nach Market</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={marketPerformanceData}>
@@ -2611,7 +2611,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
-                <h2 className="text-xl font-bold mb-4"> Daily Performance</h2>
+                <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={buildDailyPerformance(filteredTrades)}>
@@ -2632,9 +2632,9 @@ export default function TradingJournal() {
         {activeSection === "intelligence" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-cyan-800">
-              <h2 className="text-3xl font-bold mb-2"> Journal Intelligence V5.5</h2>
+              <h2 className="text-3xl font-bold mb-2">🤖 Journal Intelligence V5.5</h2>
               <p className="text-gray-400">
-                Erste echte Intelligenz-Schicht: beste Mrkte, schlechteste Mrkte, Richtungsvorteil, Wochentage und Strategy Edge Score.
+                Erste echte Intelligenz-Schicht: beste Märkte, schlechteste Märkte, Richtungsvorteil, Wochentage und Strategy Edge Score.
               </p>
             </div>
 
@@ -2671,7 +2671,7 @@ export default function TradingJournal() {
                 <h2 className="font-bold">Best Market</h2>
                 <p className="text-3xl mt-6 text-green-400">{marketIntelligence.bestMarket.market}</p>
                 <p className="text-gray-400 mt-2">
-                  {marketIntelligence.bestMarket.profitLoss} CHF  {marketIntelligence.bestMarket.winrate}% WR
+                  {marketIntelligence.bestMarket.profitLoss} CHF · {marketIntelligence.bestMarket.winrate}% WR
                 </p>
               </div>
 
@@ -2679,7 +2679,7 @@ export default function TradingJournal() {
                 <h2 className="font-bold">Worst Market</h2>
                 <p className="text-3xl mt-6 text-red-400">{marketIntelligence.worstMarket.market}</p>
                 <p className="text-gray-400 mt-2">
-                  {marketIntelligence.worstMarket.profitLoss} CHF  {marketIntelligence.worstMarket.winrate}% WR
+                  {marketIntelligence.worstMarket.profitLoss} CHF · {marketIntelligence.worstMarket.winrate}% WR
                 </p>
               </div>
             </div>
@@ -2689,7 +2689,7 @@ export default function TradingJournal() {
                 <h2 className="font-bold">Best Direction</h2>
                 <p className="text-3xl mt-6 text-green-400">{directionStats.bestDirection}</p>
                 <p className="text-gray-400 mt-2">
-                  LONG {directionStats.longWinrate}%  SHORT {directionStats.shortWinrate}%
+                  LONG {directionStats.longWinrate}% · SHORT {directionStats.shortWinrate}%
                 </p>
               </div>
 
@@ -2713,14 +2713,14 @@ export default function TradingJournal() {
                 <h2 className="font-bold">Best Weekday</h2>
                 <p className="text-3xl mt-6 text-yellow-400">{weekdayIntelligence.bestWeekday.weekday}</p>
                 <p className="text-gray-400 mt-2">
-                  {weekdayIntelligence.bestWeekday.profitLoss} CHF  {weekdayIntelligence.bestWeekday.winrate}% WR
+                  {weekdayIntelligence.bestWeekday.profitLoss} CHF · {weekdayIntelligence.bestWeekday.winrate}% WR
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
-                <h2 className="text-xl font-bold mb-4"> Market Intelligence</h2>
+                <h2 className="text-xl font-bold mb-4">🎯 Market Intelligence</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={marketIntelligence.marketStats}>
@@ -2735,7 +2735,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-yellow-900">
-                <h2 className="text-xl font-bold mb-4"> Weekday Intelligence</h2>
+                <h2 className="text-xl font-bold mb-4">📅 Weekday Intelligence</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={weekdayIntelligence.weekdayStats}>
@@ -2751,12 +2751,12 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
-              <h2 className="text-xl font-bold mb-4"> Intelligence Notes</h2>
+              <h2 className="text-xl font-bold mb-4">🧠 Intelligence Notes</h2>
               <div className="grid grid-cols-2 gap-6 text-gray-300">
                 <div className="bg-black border border-gray-800 rounded-xl p-5">
                   <h3 className="font-bold text-green-400 mb-2">What works best</h3>
                   <p>
-                    Aktuell performt <span className="text-green-400">{marketIntelligence.bestMarket.market}</span> am strksten.
+                    Aktuell performt <span className="text-green-400">{marketIntelligence.bestMarket.market}</span> am stärksten.
                     Die beste Richtung ist <span className="text-green-400">{directionStats.bestDirection}</span>.
                   </p>
                 </div>
@@ -2764,8 +2764,8 @@ export default function TradingJournal() {
                 <div className="bg-black border border-gray-800 rounded-xl p-5">
                   <h3 className="font-bold text-red-400 mb-2">What needs attention</h3>
                   <p>
-                    Schwchster Markt ist <span className="text-red-400">{marketIntelligence.worstMarket.market}</span>.
-                    Beobachte Drawdown, Profit Factor und Expectancy bevor du Risiko erhhst.
+                    Schwächster Markt ist <span className="text-red-400">{marketIntelligence.worstMarket.market}</span>.
+                    Beobachte Drawdown, Profit Factor und Expectancy bevor du Risiko erhöhst.
                   </p>
                 </div>
               </div>
@@ -2776,9 +2776,9 @@ export default function TradingJournal() {
         {activeSection === "strategy" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-green-800">
-              <h2 className="text-3xl font-bold mb-2"> Strategy Builder V5.7</h2>
+              <h2 className="text-3xl font-bold mb-2">🧩 Strategy Builder V5.7</h2>
               <p className="text-gray-400">
-                Strategie-Analyse als Grundlage fr den spteren AI Trading Bot: Welche Setups funktionieren wirklich?
+                Strategie-Analyse als Grundlage für den späteren AI Trading Bot: Welche Setups funktionieren wirklich?
               </p>
             </div>
 
@@ -2787,7 +2787,7 @@ export default function TradingJournal() {
                 <h2 className="font-bold">Best Strategy</h2>
                 <p className="text-3xl mt-6 text-green-400">{strategyStats.bestStrategy.strategy}</p>
                 <p className="text-gray-400 mt-2">
-                  {strategyStats.bestStrategy.profitLoss} CHF  {strategyStats.bestStrategy.winrate}% WR
+                  {strategyStats.bestStrategy.profitLoss} CHF · {strategyStats.bestStrategy.winrate}% WR
                 </p>
               </div>
 
@@ -2795,7 +2795,7 @@ export default function TradingJournal() {
                 <h2 className="font-bold">Worst Strategy</h2>
                 <p className="text-3xl mt-6 text-red-400">{strategyStats.worstStrategy.strategy}</p>
                 <p className="text-gray-400 mt-2">
-                  {strategyStats.worstStrategy.profitLoss} CHF  {strategyStats.worstStrategy.winrate}% WR
+                  {strategyStats.worstStrategy.profitLoss} CHF · {strategyStats.worstStrategy.winrate}% WR
                 </p>
               </div>
 
@@ -2820,7 +2820,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900">
-                <h2 className="text-xl font-bold mb-4"> Strategy Performance</h2>
+                <h2 className="text-xl font-bold mb-4">📊 Strategy Performance</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={strategyStats.strategyStats}>
@@ -2835,7 +2835,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
-                <h2 className="text-xl font-bold mb-4"> Strategy Winrate</h2>
+                <h2 className="text-xl font-bold mb-4">🎯 Strategy Winrate</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={strategyStats.strategyStats}>
@@ -2851,7 +2851,7 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl overflow-x-auto border border-gray-800">
-              <h2 className="text-xl font-bold mb-4"> Strategy Table</h2>
+              <h2 className="text-xl font-bold mb-4">🧩 Strategy Table</h2>
               <div className="min-w-[1000px]">
                 <div className="grid grid-cols-6 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
                   <div>Strategy</div>
@@ -2881,11 +2881,11 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-green-800">
-              <h2 className="text-xl font-bold mb-4"> Bot Logic Preview</h2>
+              <h2 className="text-xl font-bold mb-4">🤖 Bot Logic Preview</h2>
               <p className="text-gray-300">
-                Spter kann der Bot neue Setups mit deinen besten Strategien vergleichen.
+                Später kann der Bot neue Setups mit deinen besten Strategien vergleichen.
                 Beispiel: Wenn ein Setup zu <span className="text-green-400">{strategyStats.bestStrategy.strategy}</span> passt,
-                kann GPT/Claude eine hhere Confidence geben.
+                kann GPT/Claude eine höhere Confidence geben.
               </p>
             </div>
           </div>
@@ -2894,9 +2894,9 @@ export default function TradingJournal() {
         {activeSection === "tradeReview" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-yellow-800">
-              <h2 className="text-3xl font-bold mb-2"> AI Trade Review V5.6</h2>
+              <h2 className="text-3xl font-bold mb-2">⭐ AI Trade Review V5.6</h2>
               <p className="text-gray-400">
-                Automatische Trade-Bewertung als Grundlage fr den spteren AI Trading Bot.
+                Automatische Trade-Bewertung als Grundlage für den späteren AI Trading Bot.
               </p>
             </div>
 
@@ -2928,7 +2928,7 @@ export default function TradingJournal() {
                 </p>
                 <p className="text-gray-400 mt-3">
                   {aiTradeReviewStats.bestReview
-                    ? `#${aiTradeReviewStats.bestReview.tradeId}  ${aiTradeReviewStats.bestReview.market}`
+                    ? `#${aiTradeReviewStats.bestReview.tradeId} · ${aiTradeReviewStats.bestReview.market}`
                     : "Keine Trades"}
                 </p>
               </div>
@@ -2940,7 +2940,7 @@ export default function TradingJournal() {
                 </p>
                 <p className="text-gray-400 mt-3">
                   {aiTradeReviewStats.worstReview
-                    ? `#${aiTradeReviewStats.worstReview.tradeId}  ${aiTradeReviewStats.worstReview.market}`
+                    ? `#${aiTradeReviewStats.worstReview.tradeId} · ${aiTradeReviewStats.worstReview.market}`
                     : "Keine Trades"}
                 </p>
               </div>
@@ -2948,7 +2948,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-yellow-900">
-                <h2 className="text-xl font-bold mb-4"> Trade Quality Distribution</h2>
+                <h2 className="text-xl font-bold mb-4">📊 Trade Quality Distribution</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={aiTradeReviewStats.distribution}>
@@ -2963,7 +2963,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900">
-                <h2 className="text-xl font-bold mb-4"> Trade Score Development</h2>
+                <h2 className="text-xl font-bold mb-4">📈 Trade Score Development</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={aiTradeReviewStats.scoreHistory}>
@@ -2987,10 +2987,10 @@ export default function TradingJournal() {
                   <div className="flex justify-between items-start gap-6">
                     <div>
                       <h2 className="text-2xl font-bold">
-                        Trade #{review.tradeId}  {review.market}
+                        Trade #{review.tradeId} · {review.market}
                       </h2>
                       <p className="text-gray-400 mt-2">
-                        {review.direction}  P/L {review.profitLoss} CHF  R/R {review.riskReward}
+                        {review.direction} · P/L {review.profitLoss} CHF · R/R {review.riskReward}
                       </p>
                     </div>
 
@@ -3026,7 +3026,7 @@ export default function TradingJournal() {
                     <div className="bg-black border border-gray-800 rounded-xl p-4">
                       <h3 className="font-bold text-purple-400">Bot Relevance</h3>
                       <p className="text-gray-300 mt-2">
-                        Spter kann dieser Score mit GPT/Claude als Entscheidungsfilter genutzt werden.
+                        Später kann dieser Score mit GPT/Claude als Entscheidungsfilter genutzt werden.
                       </p>
                     </div>
                   </div>
@@ -3045,10 +3045,10 @@ export default function TradingJournal() {
                       >
                         <p className="font-bold">
                           {check.status === "PASS"
-                            ? " "
+                            ? "✅ "
                             : check.status === "WARNING"
-                              ? " "
-                              : " "}
+                              ? "⚠️ "
+                              : "❌ "}
                           {check.label}
                         </p>
                       </div>
@@ -3060,7 +3060,7 @@ export default function TradingJournal() {
               {aiTradeReviewStats.reviews.length === 0 && (
                 <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
                   <p className="text-gray-400">
-                    Noch keine geschlossenen Trades fr AI Trade Review vorhanden.
+                    Noch keine geschlossenen Trades für AI Trade Review vorhanden.
                   </p>
                 </div>
               )}
@@ -3071,14 +3071,14 @@ export default function TradingJournal() {
         {activeSection === "signal" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-orange-800">
-              <h2 className="text-3xl font-bold mb-2"> Signal Engine V5.8</h2>
+              <h2 className="text-3xl font-bold mb-2">🎯 Signal Engine V5.8</h2>
               <p className="text-gray-400">
                 Erste Entscheidungslogik: Confidence Score, Trade Recommendation, Risk Validation und Bot-Signal-Vorschau.
               </p>
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
-              <h2 className="text-xl font-bold mb-4"> Signal Input</h2>
+              <h2 className="text-xl font-bold mb-4">⚙️ Signal Input</h2>
 
               <div className="grid grid-cols-4 gap-4">
                 <div>
@@ -3232,7 +3232,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-orange-900">
-                <h2 className="text-xl font-bold mb-4"> Signal Distribution</h2>
+                <h2 className="text-xl font-bold mb-4">📊 Signal Distribution</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={signalEngineResult.distribution}>
@@ -3247,7 +3247,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-800">
-                <h2 className="text-xl font-bold mb-4"> Signal Validation Checklist</h2>
+                <h2 className="text-xl font-bold mb-4">✅ Signal Validation Checklist</h2>
 
                 <div className="grid grid-cols-1 gap-3">
                   {signalEngineResult.checks.map((check) => (
@@ -3263,10 +3263,10 @@ export default function TradingJournal() {
                     >
                       <p className="font-bold">
                         {check.status === "PASS"
-                          ? " "
+                          ? "✅ "
                           : check.status === "WARNING"
-                            ? " "
-                            : " "}
+                            ? "⚠️ "
+                            : "❌ "}
                         {check.label}
                       </p>
                     </div>
@@ -3276,7 +3276,7 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-orange-800">
-              <h2 className="text-xl font-bold mb-4"> AI Signal Panel</h2>
+              <h2 className="text-xl font-bold mb-4">🤖 AI Signal Panel</h2>
               <div className="grid grid-cols-2 gap-6 text-gray-300">
                 <div className="bg-black border border-gray-800 rounded-xl p-5">
                   <h3 className="font-bold text-orange-400 mb-2">Signal Summary</h3>
@@ -3294,8 +3294,8 @@ export default function TradingJournal() {
                 <div className="bg-black border border-gray-800 rounded-xl p-5">
                   <h3 className="font-bold text-purple-400 mb-2">Bot Preparation</h3>
                   <p>
-                    Diese Engine luft aktuell im Simulationsmodus. Spter kann sie als Filter vor
-                    OpenAI/Claude und Broker-Ausfhrung ber Capital.com oder IC Markets genutzt werden.
+                    Diese Engine läuft aktuell im Simulationsmodus. Später kann sie als Filter vor
+                    OpenAI/Claude und Broker-Ausführung über Capital.com oder IC Markets genutzt werden.
                   </p>
                 </div>
               </div>
@@ -3306,9 +3306,9 @@ export default function TradingJournal() {
         {activeSection === "bot" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-purple-800">
-              <h2 className="text-3xl font-bold mb-2"> Bot Readiness Center V5.9</h2>
+              <h2 className="text-3xl font-bold mb-2">🤖 Bot Readiness Center V5.9</h2>
               <p className="text-gray-400">
-                Brcke vom Trading Journal zum professionellen Trading Bot: System Score, Deployment Status und zuknftige API-Verbindungen.
+                Brücke vom Trading Journal zum professionellen Trading Bot: System Score, Deployment Status und zukünftige API-Verbindungen.
               </p>
             </div>
 
@@ -3365,7 +3365,7 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
-              <h2 className="text-xl font-bold mb-4"> AI Readiness Verdict</h2>
+              <h2 className="text-xl font-bold mb-4">🧠 AI Readiness Verdict</h2>
               <div className="bg-black border border-gray-800 rounded-xl p-5">
                 <p className="text-gray-300 text-lg">{botReadinessResult.verdict}</p>
               </div>
@@ -3398,7 +3398,7 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-gray-800">
-              <h2 className="text-xl font-bold mb-4"> Deployment Status</h2>
+              <h2 className="text-xl font-bold mb-4">🚦 Deployment Status</h2>
 
               <div className="grid grid-cols-3 gap-4">
                 {botReadinessResult.checklist.map((item) => (
@@ -3414,10 +3414,10 @@ export default function TradingJournal() {
                   >
                     <h3 className="font-bold">
                       {item.status === "READY"
-                        ? " "
+                        ? "✅ "
                         : item.status === "BUILDING"
-                          ? " "
-                          : " "}
+                          ? "⚠️ "
+                          : "🔒 "}
                       {item.label}
                     </h3>
                     <p className="text-gray-400 mt-2">{item.value}</p>
@@ -3428,7 +3428,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
-                <h2 className="text-xl font-bold mb-4"> Bot Readiness Progress</h2>
+                <h2 className="text-xl font-bold mb-4">📈 Bot Readiness Progress</h2>
                 <div className="space-y-5 mt-8">
                   <div>
                     <div className="flex justify-between text-sm mb-2">
@@ -3473,7 +3473,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
-                <h2 className="text-xl font-bold mb-4"> Future Connections</h2>
+                <h2 className="text-xl font-bold mb-4">🔌 Future Connections</h2>
                 <div className="grid grid-cols-2 gap-4">
                   {botReadinessResult.connections.map((connection) => (
                     <div
@@ -3483,7 +3483,7 @@ export default function TradingJournal() {
                       <h3 className="font-bold text-blue-400">{connection.name}</h3>
                       <p className="text-gray-400 mt-2">
                         {connection.status === "Coming Soon"
-                          ? " Coming Soon"
+                          ? "🔒 Coming Soon"
                           : connection.status}
                       </p>
                     </div>
@@ -3493,7 +3493,7 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
-              <h2 className="text-xl font-bold mb-4"> Next Bot Steps</h2>
+              <h2 className="text-xl font-bold mb-4">🧭 Next Bot Steps</h2>
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-black border border-gray-800 rounded-xl p-5">
                   <h3 className="font-bold text-cyan-400">V6.0</h3>
@@ -3515,7 +3515,7 @@ export default function TradingJournal() {
         {activeSection === "charts" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-cyan-800">
-              <h2 className="text-3xl font-bold mb-2"> Professional Charts Center V5.4.2</h2>
+              <h2 className="text-3xl font-bold mb-2">📈 Professional Charts Center V5.4.2</h2>
               <p className="text-gray-400">
                 Kompakte Analytics-Zentrale im Dashboard-Stil: Gauges, Equity, Drawdown, Daily, Weekly, Monthly und Market Performance.
               </p>
@@ -3635,7 +3635,7 @@ export default function TradingJournal() {
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-green-900 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold"> Equity Curve</h2>
+                  <h2 className="text-xl font-bold">📈 Equity Curve</h2>
                   <span className="text-sm text-green-400">{totalProfit} CHF</span>
                 </div>
 
@@ -3654,7 +3654,7 @@ export default function TradingJournal() {
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-cyan-900 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold"> Account Equity Curve</h2>
+                  <h2 className="text-xl font-bold">💼 Account Equity Curve</h2>
                   <span className="text-sm text-cyan-400">{accountStats.currentEquity} CHF</span>
                 </div>
 
@@ -3673,7 +3673,7 @@ export default function TradingJournal() {
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold"> Profit / Loss pro Trade</h2>
+                  <h2 className="text-xl font-bold">📊 Profit / Loss pro Trade</h2>
                   <span className="text-sm text-blue-400">{closedTrades.length} Closed</span>
                 </div>
 
@@ -3692,7 +3692,7 @@ export default function TradingJournal() {
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-red-900 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold"> Max Drawdown Curve</h2>
+                  <h2 className="text-xl font-bold">📉 Max Drawdown Curve</h2>
                   <span className="text-sm text-red-400">{accountStats.maxDrawdown} CHF</span>
                 </div>
 
@@ -3712,7 +3712,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-3 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl border border-green-900 shadow-lg">
-                <h2 className="text-xl font-bold mb-4"> Daily Performance</h2>
+                <h2 className="text-xl font-bold mb-4">📆 Daily Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={buildDailyPerformance(filteredTrades)}>
@@ -3727,7 +3727,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900 shadow-lg">
-                <h2 className="text-xl font-bold mb-4"> Weekly Performance</h2>
+                <h2 className="text-xl font-bold mb-4">📅 Weekly Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={weeklyStats.weeklyPerformance}>
@@ -3742,7 +3742,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-indigo-900 shadow-lg">
-                <h2 className="text-xl font-bold mb-4"> Monthly Performance</h2>
+                <h2 className="text-xl font-bold mb-4">📆 Monthly Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyStats.monthlyPerformance}>
@@ -3757,7 +3757,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-purple-900 shadow-lg">
-                <h2 className="text-xl font-bold mb-4"> Market Performance</h2>
+                <h2 className="text-xl font-bold mb-4">🎯 Market Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={marketPerformanceData}>
@@ -3772,7 +3772,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-cyan-900 shadow-lg">
-                <h2 className="text-xl font-bold mb-4"> Zeitraum Performance</h2>
+                <h2 className="text-xl font-bold mb-4">📅 Zeitraum Performance</h2>
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={periodData}>
@@ -3787,7 +3787,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-yellow-900 shadow-lg">
-                <h2 className="text-xl font-bold mb-4"> Risk Usage</h2>
+                <h2 className="text-xl font-bold mb-4">⚡ Risk Usage</h2>
                 <div className="space-y-5 mt-6">
                   <div>
                     <div className="flex justify-between text-sm mb-2">
@@ -3827,9 +3827,9 @@ export default function TradingJournal() {
         {activeSection === "history" && (
           <div className="space-y-8">
             <div className="bg-gradient-to-br from-gray-900 via-gray-950 to-black p-8 rounded-2xl border border-gray-700">
-              <h2 className="text-3xl font-bold mb-2"> Trade History Analytics V5.4.2</h2>
+              <h2 className="text-3xl font-bold mb-2">🧾 Trade History Analytics V5.4.2</h2>
               <p className="text-gray-400">
-                Trade-Historie mit Best/Worst Trade, Trade-Verteilung und Profit/Loss bersicht.
+                Trade-Historie mit Best/Worst Trade, Trade-Verteilung und Profit/Loss Übersicht.
               </p>
             </div>
 
@@ -3873,7 +3873,7 @@ export default function TradingJournal() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-blue-900">
-                <h2 className="text-xl font-bold mb-4"> Profit / Loss pro Trade</h2>
+                <h2 className="text-xl font-bold mb-4">📊 Profit / Loss pro Trade</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={equityData}>
@@ -3888,7 +3888,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl min-h-96 border border-purple-900">
-                <h2 className="text-xl font-bold mb-4"> Trades nach Market</h2>
+                <h2 className="text-xl font-bold mb-4">🎯 Trades nach Market</h2>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={marketPerformanceData}>
@@ -3904,7 +3904,7 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl overflow-x-auto border border-gray-800">
-              <h2 className="text-xl font-bold mb-4"> Trade Historie</h2>
+              <h2 className="text-xl font-bold mb-4">🧾 Trade Historie</h2>
               <div className="min-w-[1700px]">
                 <div className="grid grid-cols-17 gap-4 p-4 bg-gray-800 font-bold rounded-t-xl">
                   <div>Date</div><div>Market</div><div>Direction</div><div>Strategy</div><div>Entry</div><div>SL</div><div>TP</div><div>Risk</div><div>R/R</div><div>Size</div><div>Status</div><div>P/L</div><div>Actions</div><div>Edit</div><div>Delete</div><div>Entry Account</div><div>Entry Risk %</div>
@@ -3935,7 +3935,7 @@ export default function TradingJournal() {
                       )}
                     </div>
                     <button onClick={() => startEditTrade(trade)} className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm">Edit</button>
-                    <button onClick={() => deleteTrade(trade.id)} className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm">Lschen</button>
+                    <button onClick={() => deleteTrade(trade.id)} className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm">Löschen</button>
                     <div>{trade.accountSize ?? 30000}</div>
                     <div>{trade.riskPercent ?? 1}%</div>
                   </div>
