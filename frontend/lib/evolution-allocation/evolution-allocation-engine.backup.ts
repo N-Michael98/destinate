@@ -79,4 +79,3 @@ export function getEvolutionAllocationReport(): EvolutionAllocationReport {
     createdAt: new Date().toISOString(),
   };
 }
-
