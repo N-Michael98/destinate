@@ -26,6 +26,7 @@ import BrokerPerformanceMemoryPanel from "./BrokerPerformanceMemoryPanel";
 import StrategyBrokerIntelligencePanel from "./StrategyBrokerIntelligencePanel";
 import StrategyRankingDashboardPanel from "./StrategyRankingDashboardPanel";
 import MultiStrategyCompetitionDashboardPanel from "./MultiStrategyCompetitionDashboardPanel";
+import StrategyLifecycleDashboardPanel from "./StrategyLifecycleDashboardPanel";
 import AIExecutionSchedulerDashboardPanel from "./AIExecutionSchedulerDashboardPanel";
 import BrokerRoutingDashboardPanel from "./BrokerRoutingDashboardPanel";
 import TradingStylePriorityDashboardPanel from "./TradingStylePriorityDashboardPanel";
@@ -3271,10 +3272,13 @@ export default function AIAgentControlCenter() {
       <StrategyBrokerIntelligencePanel />`r`n`r`n      <StrategyRankingDashboardPanel />
 
       <MultiStrategyCompetitionDashboardPanel />
+
+      <StrategyLifecycleDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
