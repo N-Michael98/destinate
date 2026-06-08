@@ -32,6 +32,7 @@ import StrategyMutationDashboardPanel from "./StrategyMutationDashboardPanel";
 import MutationCompetitionDashboardPanel from "./MutationCompetitionDashboardPanel";
 import StrategyBreedingDashboardPanel from "./StrategyBreedingDashboardPanel";
 import StrategySpeciesClassificationDashboardPanel from "./StrategySpeciesClassificationDashboardPanel";
+import SpeciesSurvivalDashboardPanel from "./SpeciesSurvivalDashboardPanel";
 import AIExecutionSchedulerDashboardPanel from "./AIExecutionSchedulerDashboardPanel";
 import BrokerRoutingDashboardPanel from "./BrokerRoutingDashboardPanel";
 import TradingStylePriorityDashboardPanel from "./TradingStylePriorityDashboardPanel";
@@ -3289,10 +3290,13 @@ export default function AIAgentControlCenter() {
       <StrategyBreedingDashboardPanel />
 
       <StrategySpeciesClassificationDashboardPanel />
+
+      <SpeciesSurvivalDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
