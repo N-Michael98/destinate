@@ -5,6 +5,7 @@ import PaperTradingDashboardPanel from "@/components/PaperTradingDashboardPanel"
 import PaperTradingCenter from "@/components/PaperTradingCenter";
 import AIAgentControlCenter from "@/components/AIAgentControlCenter";
 import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
+import BrokerCenterPanel from "@/components/BrokerCenterPanel";
 
 type NavItem = {
   label: string;
@@ -247,7 +248,9 @@ function CenterPlaceholder({
 function GPTAnalystCenter() {
   return (
     <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
-      <div className="flex items-start justify-between gap-6 mb-8">
+      
+      <BrokerCenterPanel />
+<div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black">ðŸ§  GPT Analyst Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -1192,7 +1195,9 @@ function BrokerLiveStatusPanel() {
 function BrokerCenter() {
   return (
     <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
-      <div className="flex items-start justify-between gap-6 mb-8">
+      
+      <BrokerCenterPanel />
+<div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black">ðŸ”Œ Broker Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -2396,7 +2401,9 @@ function GPTAnalystLiveCenter() {
 
   return (
     <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
-      <div className="flex items-start justify-between gap-6 mb-8">
+      
+      <BrokerCenterPanel />
+<div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black">ðŸ§  GPT Analyst Dashboard Center V9.8.2</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -3548,5 +3555,6 @@ export default function Home() {
     </main>
   );
 }
+
 
 
