@@ -6,6 +6,7 @@ import PaperTradingCenter from "@/components/PaperTradingCenter";
 import AIAgentControlCenter from "@/components/AIAgentControlCenter";
 import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 import BrokerCenterPanel from "@/components/BrokerCenterPanel";
+import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
 
 type NavItem = {
   label: string;
@@ -416,7 +417,9 @@ function MarketDataCenter() {
 function PortfolioBrainCenter() {
   return (
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
-      <div className="flex items-start justify-between gap-6 mb-8">
+      
+      <PortfolioBrainCenterPanel />
+<div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black">ðŸ¤– Portfolio Brain Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -3555,6 +3558,7 @@ export default function Home() {
     </main>
   );
 }
+
 
 
 
