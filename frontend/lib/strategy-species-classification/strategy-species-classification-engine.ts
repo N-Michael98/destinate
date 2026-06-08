@@ -12,6 +12,18 @@ function classifyStrategy(
     strategyName.toLowerCase();
 
   if (
+    name.includes(" x ")
+  ) {
+    return {
+      strategyName,
+      species: "HYBRID",
+      confidence: 97,
+      reason:
+        "Breeding hybrid detected",
+    };
+  }
+
+  if (
     name.includes("liquidity")
   ) {
     return {
@@ -167,3 +179,4 @@ export function generateStrategySpeciesClassificationReport():
       new Date().toISOString(),
   };
 }
+
