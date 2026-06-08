@@ -29,6 +29,7 @@ import MultiStrategyCompetitionDashboardPanel from "./MultiStrategyCompetitionDa
 import StrategyLifecycleDashboardPanel from "./StrategyLifecycleDashboardPanel";
 import StrategyEvolutionDashboardPanel from "./StrategyEvolutionDashboardPanel";
 import StrategyMutationDashboardPanel from "./StrategyMutationDashboardPanel";
+import MutationCompetitionDashboardPanel from "./MutationCompetitionDashboardPanel";
 import AIExecutionSchedulerDashboardPanel from "./AIExecutionSchedulerDashboardPanel";
 import BrokerRoutingDashboardPanel from "./BrokerRoutingDashboardPanel";
 import TradingStylePriorityDashboardPanel from "./TradingStylePriorityDashboardPanel";
@@ -3280,10 +3281,13 @@ export default function AIAgentControlCenter() {
       <StrategyEvolutionDashboardPanel />
 
       <StrategyMutationDashboardPanel />
+
+      <MutationCompetitionDashboardPanel />
 </div>
     </section>
   );
 }
+
 
 
 
