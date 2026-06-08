@@ -7,6 +7,7 @@ import AIAgentControlCenter from "@/components/AIAgentControlCenter";
 import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 import BrokerCenterPanel from "@/components/BrokerCenterPanel";
 import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
+import ExecutionCenterPanel from "@/components/ExecutionCenterPanel";
 
 type NavItem = {
   label: string;
@@ -470,7 +471,9 @@ function PortfolioBrainCenter() {
 function TradingJournalCenter() {
   return (
     <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
-      <div className="flex items-start justify-between gap-6 mb-8">
+      
+      <ExecutionCenterPanel />
+<div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black">ðŸ“’ Trading Journal Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -786,7 +789,9 @@ function ExecutionCenter() {
 function LearningCenter() {
   return (
     <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
-      <div className="flex items-start justify-between gap-6 mb-8">
+      
+      <ExecutionCenterPanel />
+<div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black">ðŸ§  Learning Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -1695,7 +1700,9 @@ function ExecutionLiveCenter() {
 
   return (
     <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
-      <div className="flex items-start justify-between gap-6 mb-8">
+      
+      <ExecutionCenterPanel />
+<div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black">ðŸš€ Execution Dashboard Center V10.1.2</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -3558,6 +3565,7 @@ export default function Home() {
     </main>
   );
 }
+
 
 
 
