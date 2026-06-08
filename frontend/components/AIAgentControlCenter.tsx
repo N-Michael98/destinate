@@ -15,6 +15,8 @@
 
 
 
+
+import SpeciesCapitalAllocationPanel from "./SpeciesCapitalAllocationPanel";
 import EvolutionAllocationPortfolioSyncPanel from "./EvolutionAllocationPortfolioSyncPanel";
 import BrokerHealthDashboardPanel from "./BrokerHealthDashboardPanel";
 import SmartBrokerSelectionPanel from "./SmartBrokerSelectionPanel";
@@ -3310,6 +3312,7 @@ export default function AIAgentControlCenter() {
     </section>
   );
 }
+
 
 
 
