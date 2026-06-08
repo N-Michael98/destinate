@@ -1,116 +1,55 @@
 ﻿"use client";
 
-
-
-
-
-import ExecutionCenterPanel from "./ExecutionCenterPanel";
-import PortfolioBrainCenterPanel from "./PortfolioBrainCenterPanel";
-import BrokerCenterPanel from "./BrokerCenterPanel";
-import EvolutionCenterPanel from "./EvolutionCenterPanel";
 type CenterCard = {
   title: string;
   subtitle: string;
   status: string;
   modules: string[];
-  nextStep: string;
+  routeTarget: string;
 };
 
 const centers: CenterCard[] = [
   {
-    title: "AI Center",
-    subtitle: "GPT, Claude, Consensus & Portfolio Brain",
+    title: "AI Command Center",
+    subtitle: "GPT, Claude, Consensus, Portfolio Brain and AI Agent overview.",
     status: "ACTIVE",
-    modules: ["GPT Analyst", "Claude Risk", "Consensus", "Portfolio Brain"],
-    nextStep: "Connect analysis outputs into unified AI decision flow.",
+    routeTarget: "AI Center sidebar group",
+    modules: ["GPT Analyst", "Claude Risk", "Consensus", "Portfolio Brain", "AI Agent"],
   },
   {
     title: "Evolution Center",
-    subtitle: "Species, allocation, sizing and evolution pipeline",
-    status: "ACTIVE",
-    modules: [
-      "Mutation Competition",
-      "Strategy Breeding",
-      "Species Classification",
-      "Evolution Allocation",
-      "Capital Allocation",
-      "Position Sizing",
-      "Trade Allocation",
-    ],
-    nextStep: "Add professional Species allocation and capital charts.",
+    subtitle: "Species, mutation, allocation, sizing and strategy evolution.",
+    status: "MOVE TO STRATEGY EVOLUTION",
+    routeTarget: "Strategy Evolution",
+    modules: ["Mutation", "Breeding", "Species", "Governance", "Allocation"],
   },
   {
     title: "Execution Center",
-    subtitle: "Execution tickets, queue, bridge and dispatch layer",
-    status: "ACTIVE",
-    modules: [
-      "Execution Queue",
-      "Execution Tickets",
-      "Live Execution Bridge",
-      "Broker Execution Sync",
-    ],
-    nextStep: "Connect queue integration into execution confirmation flow.",
+    subtitle: "Trade approval, execution tickets, live bridge and dispatch.",
+    status: "MOVE TO EXECUTION CENTER",
+    routeTarget: "Execution Center",
+    modules: ["Trade Approval", "Execution Queue", "Tickets", "Live Bridge"],
   },
   {
     title: "Broker Center",
-    subtitle: "Capital.com, IC Markets, routing and broker health",
-    status: "ACTIVE",
-    modules: [
-      "Broker Routing",
-      "Smart Broker Selection",
-      "Broker Health",
-      "Broker Performance Memory",
-    ],
-    nextStep: "Prepare broker execution confirmation layer.",
-  },
-  {
-    title: "Learning Center",
-    subtitle: "AI memory, outcomes, learning feedback and strategy evolution",
-    status: "ACTIVE",
-    modules: [
-      "AI Memory",
-      "Outcome Learning",
-      "Trade Feedback",
-      "Strategy Evolution",
-    ],
-    nextStep: "Build feedback loop into GPT, Claude and Portfolio Brain.",
-  },
-  {
-    title: "Market Intelligence Center",
-    subtitle: "Market data, news, regime, calendar and institutional context",
-    status: "ACTIVE",
-    modules: [
-      "Market Data",
-      "News Intelligence",
-      "Economic Calendar",
-      "Market Regime",
-      "Institutional Intelligence",
-    ],
-    nextStep: "Feed market intelligence into GPT and Consensus.",
+    subtitle: "Capital.com, IC Markets, routing, broker health and sync.",
+    status: "MOVE TO BROKER CENTER",
+    routeTarget: "Broker Center",
+    modules: ["Broker Routing", "Capital.com", "IC Markets", "Broker Health"],
   },
   {
     title: "Portfolio Brain Center",
-    subtitle: "Portfolio decisions, risk, memory and adaptive confidence",
-    status: "MERGE TARGET",
-    modules: [
-      "Portfolio Brain",
-      "Adaptive Confidence",
-      "Decision Memory",
-      "Portfolio Risk",
-    ],
-    nextStep: "Merge old Portfolio Brain panels into tabbed center.",
+    subtitle: "Portfolio decisions, risk, memory and adaptive confidence.",
+    status: "MOVE TO PORTFOLIO BRAIN",
+    routeTarget: "Portfolio Brain",
+    modules: ["Portfolio Brain", "Risk", "Decision Memory", "Adaptive Confidence"],
   },
   {
-    title: "Legacy Review",
-    subtitle: "Older modules waiting for dependency check before archive",
-    status: "REVIEW",
-    modules: [
-      "Dynamic Position Allocation",
-      "Trading Style Priority",
-      "Multi Timeframe Sync",
-      "Unified Decision Sync",
-    ],
-    nextStep: "Verify dependencies before hiding or archiving old panels.",
+    title: "Learning Center",
+    subtitle: "AI memory, outcome learning, feedback loop and reports.",
+    status: "MOVE TO LEARNING",
+    routeTarget: "AI Memory / Learning Reports",
+    modules: ["AI Memory", "Outcome Learning", "Feedback", "Reports"],
   },
 ];
 
@@ -120,18 +59,18 @@ export default function AIAgentControlCenter() {
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-400">
-            V15.A.3 Center Shell Refactor
+            V15.B.0 AI Agent Cleanup
           </p>
           <h1 className="mt-2 text-2xl font-bold text-white">
-            AI Trading System Control Centers
+            AI Agent Command Overview
           </h1>
           <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-            Clean dashboard structure. Engines, APIs and existing functionality remain active in the background.
+            This page is now only the AI command overview. Detailed dashboards belong to their own sidebar centers.
           </p>
         </div>
 
         <div className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-semibold text-emerald-300">
-          SYSTEM ORGANIZED
+          CLEAN OVERVIEW
         </div>
       </div>
 
@@ -140,11 +79,11 @@ export default function AIAgentControlCenter() {
           Final Intelligence Flow
         </h2>
         <p className="mt-2 text-sm text-zinc-300">
-          Market Intelligence → GPT / OpenAI → Claude Risk → Consensus → Portfolio Brain → Evolution Species → Execution Queue → Broker Routing → Capital.com / IC Markets → Outcome Learning → AI Memory
+          Market Intelligence → GPT / OpenAI → Claude Risk → Consensus → Portfolio Brain → Evolution Species → Execution Queue → Broker Routing → Outcome Learning → AI Memory
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {centers.map((center) => (
           <div
             key={center.title}
@@ -178,33 +117,24 @@ export default function AIAgentControlCenter() {
 
             <div className="mt-4 rounded-xl bg-zinc-900/60 p-3">
               <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                Next
+                Target page
               </p>
               <p className="mt-1 text-xs text-zinc-300">
-                {center.nextStep}
+                {center.routeTarget}
               </p>
             </div>
           </div>
         ))}
       </div>
 
-      
-      <EvolutionCenterPanel />
-      <BrokerCenterPanel />
-      <PortfolioBrainCenterPanel />
-      <ExecutionCenterPanel />
       <div className="mt-6 rounded-2xl border border-yellow-500/20 bg-yellow-950/20 p-4">
         <h2 className="text-sm font-bold text-yellow-300">
-          Refactor Safety Rule
+          Cleanup Rule
         </h2>
         <p className="mt-2 text-sm text-zinc-300">
-          No engine deleted. No API removed. No trading logic changed. This version only replaces the overloaded AI Agent Center with clean center shells.
+          No detailed center dashboards should be stacked inside AI Agent. Each detailed dashboard must move to its correct sidebar page.
         </p>
       </div>
     </section>
   );
 }
-
-
-
-
