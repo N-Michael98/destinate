@@ -61,7 +61,7 @@ export function generateStrategyBreedingReport():
           b.strategyName,
 
         hybridName:
-          `${a.strategyName} × ${b.strategyName}`,
+          `${a.strategyName} x ${b.strategyName}`,
 
         parentAScore:
           a.competitionScore,
@@ -125,3 +125,5 @@ export function generateStrategyBreedingReport():
       new Date().toISOString(),
   };
 }
+
+
