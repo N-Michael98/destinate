@@ -5,6 +5,7 @@ import { HealthBar, MiniDonut } from "./mission-control-health-charts";
 import { MissionControlAlertLayer } from "./MissionControlAlertLayer";
 import { missionControlEndpointRegistry } from "@/lib/mission-control-endpoint-registry";
 import { MissionControlRegistryGroupDashboard } from "./MissionControlRegistryGroupDashboard";
+import { MissionControlAuditPanel } from "./MissionControlAuditPanel";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
@@ -78,6 +79,7 @@ export default function UnifiedMissionControlDashboard() {
   const [results, setResults] = useState<EndpointResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState("");
+  const [auditChecks, setAuditChecks] = useState([]);
 
   async function loadMissionControl() {
     setLoading(true);
@@ -92,6 +94,15 @@ export default function UnifiedMissionControlDashboard() {
       }
 
       const report = (await response.json()) as MissionControlHealthReport;
+
+      const auditResponse = await fetch("/api/mission-control/audit", {
+        cache: "no-store",
+      });
+      const auditReport = await auditResponse.json().catch(() => null);
+
+      if (auditReport && Array.isArray(auditReport.checks)) {
+        setAuditChecks(auditReport.checks);
+      }
 
       setResults(report.endpoints);
       setLastUpdate(new Date(report.checkedAt).toLocaleTimeString());
@@ -188,6 +199,7 @@ export default function UnifiedMissionControlDashboard() {
       </div>
 
       <MissionControlAlertLayer sources={results} />
+      <MissionControlAuditPanel checks={auditChecks} />
       <MissionControlRegistryGroupDashboard endpoints={results} />
 
       <div className="mb-6 grid gap-4 xl:grid-cols-3">
@@ -371,6 +383,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
