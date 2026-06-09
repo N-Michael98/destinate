@@ -9,6 +9,7 @@ import { MissionControlAuditPanel } from "./MissionControlAuditPanel";
 import { HealthScannerMonitorPanel } from "./HealthScannerMonitorPanel";
 import { MissionControlAlertHistoryPanel } from "./MissionControlAlertHistoryPanel";
 import { MissionControlEventTimelinePanel } from "./MissionControlEventTimelinePanel";
+import { MissionControlRecoveryPanel } from "./MissionControlRecoveryPanel";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
@@ -20,6 +21,22 @@ type MissionControlEventLogEntry = {
   message: string;
   payload: unknown;
   createdAt: string;
+};
+
+type MissionControlRecoveryItem = {
+  source: string;
+  recovered: boolean;
+  recoveryTimeMs: number | null;
+};
+
+type MissionControlRecoveryReport = {
+  version: string;
+  status: string;
+  totalTrackedSources: number;
+  recoveredSources: number;
+  activeIssueSources: number;
+  averageRecoveryTimeMs: number | null;
+  recoveries: MissionControlRecoveryItem[];
 };
 
 type MissionControlHealthReport = {
@@ -127,6 +144,15 @@ export default function UnifiedMissionControlDashboard() {
         setEventTimeline(eventsReport.latest);
       }
 
+      const recoveryResponse = await fetch("/api/mission-control/recovery", {
+        cache: "no-store",
+      });
+      const recoveryData = await recoveryResponse.json().catch(() => null);
+
+      if (recoveryData && recoveryData.ok && recoveryData.recovery) {
+        setRecoveryReport(recoveryData.recovery);
+      }
+
       setResults(report.endpoints);
       setLastUpdate(new Date(report.checkedAt).toLocaleTimeString());
     } catch {
@@ -224,6 +250,7 @@ export default function UnifiedMissionControlDashboard() {
       <MissionControlAlertLayer sources={results} />
       <MissionControlAlertHistoryPanel sources={results} />
       <MissionControlEventTimelinePanel events={eventTimeline} />
+      <MissionControlRecoveryPanel recovery={recoveryReport} />
       <MissionControlAuditPanel checks={auditChecks} />
       <MissionControlRegistryGroupDashboard endpoints={results} />
       <HealthScannerMonitorPanel endpoints={results} />
@@ -409,6 +436,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
