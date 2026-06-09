@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useMemo } from "react";
+import { createTelegramAlertPayload } from "@/lib/mission-control-telegram-alerts";
 
 type AlertStatus = "CRITICAL" | "REVIEW" | "HEALTHY";
 
@@ -46,6 +47,14 @@ export function MissionControlAlertLayer({
     return [...critical, ...review];
   }, [sources]);
 
+  const telegramPayloadPreview = alerts.map((alert) =>
+    createTelegramAlertPayload({
+      level: alert.level,
+      title: alert.title,
+      message: alert.message,
+    })
+  );
+
   return (
     <div className="mb-6 rounded-2xl border border-red-500/20 bg-black/40 p-5">
       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -81,6 +90,15 @@ export function MissionControlAlertLayer({
           </div>
         ))}
       </div>
+
+      <div className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+        <p className="text-xs font-black uppercase tracking-wide text-cyan-300">
+          Telegram Payload Preview
+        </p>
+        <p className="mt-2 text-sm text-zinc-400">
+          Prepared alert payloads: {telegramPayloadPreview.length}. Sending remains disabled until Telegram bridge is explicitly added.
+        </p>
+      </div>
     </div>
   );
 }
@@ -96,3 +114,4 @@ function getAlertStyle(level: AlertStatus) {
 
   return "border-green-500/40 bg-green-950/30 text-green-300";
 }
+
