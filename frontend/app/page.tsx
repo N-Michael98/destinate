@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState } from "react";
 import PaperTradingDashboardPanel from "@/components/PaperTradingDashboardPanel";
 import PaperTradingCenter from "@/components/PaperTradingCenter";
 import AIAgentControlCenter from "@/components/AIAgentControlCenter";
+import { SidebarIcon } from "@/components/SidebarIcon";
 import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 import BrokerCenterPanel from "@/components/BrokerCenterPanel";
 import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
@@ -3245,7 +3246,7 @@ export default function Home() {
                           : "text-gray-200 hover:bg-gray-900 hover:text-white"
                       }`}
                     >
-                      <span>{item.icon}</span>
+                      <SidebarIcon code={item.icon} />
                       <span>{item.label}</span>
                     </button>
                   ))}
@@ -3565,6 +3566,8 @@ export default function Home() {
     </main>
   );
 }
+
+
 
 
 
