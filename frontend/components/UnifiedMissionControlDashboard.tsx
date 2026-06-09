@@ -166,6 +166,7 @@ export default function UnifiedMissionControlDashboard() {
             {endpoints.length} endpoints registered
           </div>
         </div>
+        </div>
 
         <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
           <h2 className="text-sm font-bold text-cyan-300">Telegram readiness</h2>
@@ -366,6 +367,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
