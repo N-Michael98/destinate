@@ -1,18 +1,40 @@
-import { NextResponse } from "next/server";
-import { regimeManager } from "../../../../lib/market-regime-engine";
+﻿import { NextResponse } from "next/server";
+import { marketDataManager } from "@/lib/market-data-engine";
+import { regimeManager } from "@/lib/market-regime-engine";
 
 export async function GET() {
-  const regimes = [
-    regimeManager.getRegime("XAUUSD", 3372, 0.3),
-    regimeManager.getRegime("USOIL", 78, 0.05),
-    regimeManager.getRegime("EURUSD", 1.08, 0.0002),
-    regimeManager.getRegime("BTCUSD", 68300, 30),
-  ];
+  try {
+    const prices = marketDataManager.refreshPrices();
 
-  return NextResponse.json({
-    success: true,
-    regimes,
-    count: regimes.length,
-    updatedAt: new Date().toISOString(),
-  });
+    const regimes = prices.map((price) =>
+      regimeManager.getRegime(
+        price.symbol,
+        Number(((price.bid + price.ask) / 2).toFixed(5)),
+        price.spread
+      )
+    );
+
+    return NextResponse.json({
+      success: true,
+      regimes,
+      prices,
+      count: regimes.length,
+      source: "MOCK_LIVE_MARKET_DATA_ENGINE",
+      message:
+        "Market Regime now classifies from dynamic Market Data Engine prices. Real broker feeds can be connected later.",
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to classify live market regimes",
+        details:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      },
+      { status: 500 }
+    );
+  }
 }
