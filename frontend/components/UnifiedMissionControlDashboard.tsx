@@ -118,6 +118,15 @@ export default function UnifiedMissionControlDashboard() {
         setAuditChecks(auditReport.checks);
       }
 
+      const eventsResponse = await fetch("/api/mission-control/events", {
+        cache: "no-store",
+      });
+      const eventsReport = await eventsResponse.json().catch(() => null);
+
+      if (eventsReport && Array.isArray(eventsReport.latest)) {
+        setEventTimeline(eventsReport.latest);
+      }
+
       setResults(report.endpoints);
       setLastUpdate(new Date(report.checkedAt).toLocaleTimeString());
     } catch {
@@ -400,6 +409,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
