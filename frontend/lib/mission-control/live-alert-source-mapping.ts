@@ -1,7 +1,7 @@
 ﻿import { createTelegramAlertPayload } from "@/lib/mission-control-telegram-alerts";
 
 export type LiveAlertSource = {
-  key: string;
+  key?: string;
   label: string;
   endpoint: string;
   group?: string;
@@ -22,3 +22,4 @@ export function mapHealthScannerToAlertSources(sources: LiveAlertSource[]) {
       })
     );
 }
+
