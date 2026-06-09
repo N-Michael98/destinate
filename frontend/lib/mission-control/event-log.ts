@@ -101,6 +101,37 @@ export class MissionControlEventLog {
     return newEvent;
   }
 
+  static addDeduped(
+    entry: {
+      type: string;
+      severity: MissionControlEventSeverity;
+      source: string;
+      message: string;
+      payload?: unknown;
+    },
+    dedupeWindowMs = 5 * 60 * 1000
+  ) {
+    const events = readEventLog();
+    const now = Date.now();
+
+    const duplicate = events.find((event) => {
+      const eventTime = new Date(event.createdAt).getTime();
+
+      return (
+        event.type === entry.type &&
+        event.source === entry.source &&
+        event.severity === entry.severity &&
+        now - eventTime <= dedupeWindowMs
+      );
+    });
+
+    if (duplicate) {
+      return duplicate;
+    }
+
+    return this.add(entry);
+  }
+
   static getAll() {
     return readEventLog();
   }
@@ -132,3 +163,4 @@ export class MissionControlEventLog {
     writeEventLog([]);
   }
 }
+
