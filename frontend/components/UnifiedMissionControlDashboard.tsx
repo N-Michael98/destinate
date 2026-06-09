@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { HealthBar, MiniDonut } from "./mission-control-health-charts";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
@@ -160,6 +161,36 @@ export default function UnifiedMissionControlDashboard() {
         <MetricCard title="Errors" value={`${stats.errors}`} note="Failed requests" accent="text-red-400" />
       </div>
 
+      <div className="mb-6 grid gap-4 xl:grid-cols-3">
+        <div className="rounded-2xl border border-cyan-500/20 bg-black/40 p-5">
+          <h2 className="text-lg font-bold text-white">Health distribution</h2>
+          <p className="mt-1 text-sm text-zinc-500">Ready, warning and error ratio.</p>
+          <div className="mt-5">
+            <MiniDonut ready={stats.ready} warning={stats.warnings} error={stats.errors} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-500/20 bg-black/40 p-5">
+          <h2 className="text-lg font-bold text-white">Endpoint readiness</h2>
+          <div className="mt-5 space-y-3">
+            <HealthBar label="System health" value={stats.health} />
+            <HealthBar label="Ready modules" value={stats.ready} max={Math.max(stats.total, 1)} />
+            <HealthBar label="Warnings" value={stats.warnings} max={Math.max(stats.total, 1)} />
+            <HealthBar label="Errors" value={stats.errors} max={Math.max(stats.total, 1)} />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-500/20 bg-black/40 p-5">
+          <h2 className="text-lg font-bold text-white">Control readiness</h2>
+          <div className="mt-5 space-y-3">
+            <HealthBar label="Execution lock" value={100} />
+            <HealthBar label="Paper safety" value={100} />
+            <HealthBar label="Broker protection" value={85} />
+            <HealthBar label="Telegram alerts" value={25} />
+          </div>
+        </div>
+      </div>
+
       <div className="mb-6 rounded-2xl border border-zinc-800 bg-black/40 p-5">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
@@ -308,3 +339,4 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
