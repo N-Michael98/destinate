@@ -1,0 +1,310 @@
+﻿"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
+
+type EndpointResult = {
+  key: string;
+  label: string;
+  endpoint: string;
+  status: ApiStatus;
+  summary: string;
+  updatedAt: string;
+};
+
+const endpoints = [
+  { key: "dependency", label: "Dependency Scanner", endpoint: "/api/dependency-scanner" },
+  { key: "portfolio", label: "Portfolio Brain", endpoint: "/api/portfolio-brain" },
+  { key: "consensus", label: "Consensus Engine", endpoint: "/api/consensus/status" },
+  { key: "executionTickets", label: "Execution Tickets", endpoint: "/api/execution/tickets" },
+  { key: "executionQueue", label: "Execution Queue", endpoint: "/api/execution/queue" },
+  { key: "brokerHealth", label: "Broker Health", endpoint: "/api/broker-health-monitor" },
+  { key: "marketData", label: "Market Data", endpoint: "/api/market-data/status" },
+  { key: "marketRegime", label: "Market Regime", endpoint: "/api/market-regime/status" },
+  { key: "opportunity", label: "Opportunity Scanner", endpoint: "/api/opportunity-scanner" },
+];
+
+function getSummary(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "No payload";
+
+  const data = payload as Record<string, unknown>;
+
+  if (typeof data.status === "string") return data.status;
+  if (typeof data.mode === "string") return data.mode;
+  if (typeof data.message === "string") return data.message;
+  if (typeof data.updatedAt === "string") return "Updated";
+
+  if (Array.isArray(data.tickets)) return `${data.tickets.length} tickets`;
+  if (Array.isArray(data.queue)) return `${data.queue.length} queued`;
+  if (Array.isArray(data.opportunities)) return `${data.opportunities.length} opportunities`;
+
+  if (data.report && typeof data.report === "object") {
+    const report = data.report as Record<string, unknown>;
+    if (typeof report.status === "string") return report.status;
+    if (typeof report.version === "string") return report.version;
+  }
+
+  return "Online";
+}
+
+function statusFromResponse(ok: boolean, payload: unknown): ApiStatus {
+  if (!ok) return "ERROR";
+
+  if (payload && typeof payload === "object") {
+    const data = payload as Record<string, unknown>;
+    if (data.ok === false) return "WARNING";
+    if (typeof data.status === "string" && data.status.toLowerCase().includes("error")) {
+      return "ERROR";
+    }
+  }
+
+  return "READY";
+}
+
+export default function UnifiedMissionControlDashboard() {
+  const [results, setResults] = useState<EndpointResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState("");
+
+  async function loadMissionControl() {
+    setLoading(true);
+
+    const loaded = await Promise.all(
+      endpoints.map(async (item) => {
+        try {
+          const response = await fetch(item.endpoint, { cache: "no-store" });
+          const payload = await response.json().catch(() => null);
+
+          return {
+            key: item.key,
+            label: item.label,
+            endpoint: item.endpoint,
+            status: statusFromResponse(response.ok, payload),
+            summary: getSummary(payload),
+            updatedAt: new Date().toLocaleTimeString(),
+          } satisfies EndpointResult;
+        } catch {
+          return {
+            key: item.key,
+            label: item.label,
+            endpoint: item.endpoint,
+            status: "ERROR",
+            summary: "Request failed",
+            updatedAt: new Date().toLocaleTimeString(),
+          } satisfies EndpointResult;
+        }
+      })
+    );
+
+    setResults(loaded);
+    setLastUpdate(new Date().toLocaleTimeString());
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadMissionControl();
+
+    const interval = window.setInterval(() => {
+      loadMissionControl();
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const stats = useMemo(() => {
+    const ready = results.filter((item) => item.status === "READY").length;
+    const warnings = results.filter((item) => item.status === "WARNING").length;
+    const errors = results.filter((item) => item.status === "ERROR").length;
+
+    return {
+      total: results.length,
+      ready,
+      warnings,
+      errors,
+      health:
+        results.length === 0
+          ? 0
+          : Math.round((ready / results.length) * 100),
+    };
+  }, [results]);
+
+  return (
+    <section className="rounded-3xl border border-cyan-500/20 bg-zinc-950/80 p-6 shadow-2xl shadow-black/50">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-400">
+            V15.B.8 Unified Mission Control
+          </p>
+          <h1 className="mt-2 text-3xl font-black text-white">
+            AI Trading System Command Center
+          </h1>
+          <p className="mt-2 max-w-4xl text-sm text-zinc-400">
+            Unified overview for system health, AI decision flow, execution readiness, broker health, market status and dependency monitoring.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={loadMissionControl}
+          className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3 text-sm font-bold text-cyan-200 transition hover:bg-cyan-500/20"
+        >
+          Refresh Mission Control
+        </button>
+      </div>
+
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard title="System Health" value={`${stats.health}%`} note="Online endpoint ratio" accent="text-green-400" />
+        <MetricCard title="Ready Modules" value={`${stats.ready}/${stats.total}`} note="Healthy endpoints" accent="text-cyan-400" />
+        <MetricCard title="Warnings" value={`${stats.warnings}`} note="Needs review" accent="text-yellow-400" />
+        <MetricCard title="Errors" value={`${stats.errors}`} note="Failed requests" accent="text-red-400" />
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-zinc-800 bg-black/40 p-5">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-white">
+              Live System Matrix
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Auto-refresh every 30 seconds. Last update: {lastUpdate || "pending"}
+            </p>
+          </div>
+
+          <span className="rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-xs font-bold text-green-300">
+            {loading ? "LOADING" : "MONITORING"}
+          </span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {results.map((item) => (
+            <div
+              key={item.key}
+              className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">{item.label}</h3>
+                  <p className="mt-1 text-xs text-zinc-500">{item.endpoint}</p>
+                </div>
+                <StatusBadge status={item.status} />
+              </div>
+
+              <p className="mt-4 text-lg font-black text-zinc-100">
+                {item.summary}
+              </p>
+              <p className="mt-2 text-xs text-zinc-500">
+                Updated: {item.updatedAt}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="rounded-2xl border border-purple-500/20 bg-black/40 p-5">
+          <h2 className="text-lg font-bold text-white">
+            AI Decision Flow
+          </h2>
+          <div className="mt-4 space-y-3">
+            {[
+              "Market Intelligence",
+              "GPT Analyst",
+              "Claude Risk",
+              "Consensus",
+              "Portfolio Brain",
+              "Execution Queue",
+              "Broker Routing",
+              "Outcome Learning",
+            ].map((step, index) => (
+              <div
+                key={step}
+                className="flex items-center gap-3 rounded-xl bg-zinc-900/70 px-3 py-2"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-purple-500/30 text-xs font-bold text-purple-300">
+                  {index + 1}
+                </span>
+                <span className="text-sm text-zinc-300">{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-yellow-500/20 bg-black/40 p-5">
+          <h2 className="text-lg font-bold text-white">
+            Safety Locks
+          </h2>
+          <div className="mt-4 space-y-3 text-sm">
+            <SafetyRow label="Live Orders" value="Blocked" />
+            <SafetyRow label="Execution Mode" value="Paper Only" />
+            <SafetyRow label="Broker Dispatch" value="Protected" />
+            <SafetyRow label="Telegram Alerts" value="Planned" />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-500/20 bg-black/40 p-5">
+          <h2 className="text-lg font-bold text-white">
+            Next Control Upgrades
+          </h2>
+          <div className="mt-4 space-y-3 text-sm text-zinc-300">
+            <p className="rounded-xl bg-zinc-900/70 p-3">
+              Add visual charts for health, execution load and broker status.
+            </p>
+            <p className="rounded-xl bg-zinc-900/70 p-3">
+              Add Telegram alert bridge after dependency scanner validation.
+            </p>
+            <p className="rounded-xl bg-zinc-900/70 p-3">
+              Add AI decision summary from GPT, Claude and Consensus.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  note,
+  accent,
+}: {
+  title: string;
+  value: string;
+  note: string;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-black/40 p-5">
+      <p className="text-sm font-bold text-white">{title}</p>
+      <p className={`mt-4 text-4xl font-black ${accent}`}>{value}</p>
+      <p className="mt-2 text-xs text-zinc-500">{note}</p>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: ApiStatus }) {
+  const style =
+    status === "READY"
+      ? "border-green-500/30 bg-green-500/10 text-green-300"
+      : status === "WARNING"
+        ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-300"
+        : status === "ERROR"
+          ? "border-red-500/30 bg-red-500/10 text-red-300"
+          : "border-zinc-500/30 bg-zinc-500/10 text-zinc-300";
+
+  return (
+    <span className={`rounded-full border px-2 py-1 text-[10px] font-bold ${style}`}>
+      {status}
+    </span>
+  );
+}
+
+function SafetyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl bg-zinc-900/70 px-3 py-2">
+      <span className="text-zinc-400">{label}</span>
+      <span className="font-bold text-yellow-300">{value}</span>
+    </div>
+  );
+}

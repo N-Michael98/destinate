@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import PaperTradingDashboardPanel from "@/components/PaperTradingDashboardPanel";
 import PaperTradingCenter from "@/components/PaperTradingCenter";
 import AIAgentControlCenter from "@/components/AIAgentControlCenter";
+import UnifiedMissionControlDashboard from "@/components/UnifiedMissionControlDashboard";
 import { SidebarIcon } from "@/components/SidebarIcon";
 import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 import BrokerCenterPanel from "@/components/BrokerCenterPanel";
@@ -3566,6 +3567,7 @@ export default function Home() {
     </main>
   );
 }
+
 
 
 
