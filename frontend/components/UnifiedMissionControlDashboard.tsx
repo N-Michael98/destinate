@@ -8,8 +8,19 @@ import { MissionControlRegistryGroupDashboard } from "./MissionControlRegistryGr
 import { MissionControlAuditPanel } from "./MissionControlAuditPanel";
 import { HealthScannerMonitorPanel } from "./HealthScannerMonitorPanel";
 import { MissionControlAlertHistoryPanel } from "./MissionControlAlertHistoryPanel";
+import { MissionControlEventTimelinePanel } from "./MissionControlEventTimelinePanel";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
+
+type MissionControlEventLogEntry = {
+  id: string;
+  type: string;
+  severity: "INFO" | "WARNING" | "CRITICAL";
+  source: string;
+  message: string;
+  payload: unknown;
+  createdAt: string;
+};
 
 type MissionControlHealthReport = {
   ok: boolean;
@@ -202,6 +213,7 @@ export default function UnifiedMissionControlDashboard() {
 
       <MissionControlAlertLayer sources={results} />
       <MissionControlAlertHistoryPanel sources={results} />
+      <MissionControlEventTimelinePanel events={eventTimeline} />
       <MissionControlAuditPanel checks={auditChecks} />
       <MissionControlRegistryGroupDashboard endpoints={results} />
       <HealthScannerMonitorPanel endpoints={results} />
@@ -387,6 +399,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
