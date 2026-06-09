@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { HealthBar, MiniDonut } from "./mission-control-health-charts";
@@ -111,6 +111,7 @@ export default function UnifiedMissionControlDashboard() {
   const [lastUpdate, setLastUpdate] = useState("");
   const [auditChecks, setAuditChecks] = useState([]);
   const [eventTimeline, setEventTimeline] = useState<MissionControlEventLogEntry[]>([]);
+  const [recoveryReport, setRecoveryReport] = useState<MissionControlRecoveryReport | null>(null);
 
   async function loadMissionControl() {
     setLoading(true);
@@ -436,6 +437,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
