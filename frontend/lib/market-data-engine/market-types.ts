@@ -1,4 +1,4 @@
-export type FeedSource =
+﻿export type FeedSource =
   | "TRADINGVIEW"
   | "CAPITAL_COM"
   | "IC_MARKETS";
@@ -8,6 +8,8 @@ export interface MarketPrice {
   bid: number;
   ask: number;
   spread: number;
+  previousBid?: number;
+  previousAsk?: number;
   timestamp: string;
   source: FeedSource;
 }

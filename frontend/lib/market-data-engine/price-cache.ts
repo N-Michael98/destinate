@@ -1,4 +1,4 @@
-import { MarketPrice } from "./market-types";
+﻿import { MarketPrice } from "./market-types";
 
 export class PriceCache {
   private prices = new Map<string, MarketPrice>();
@@ -64,12 +64,24 @@ export class PriceCache {
     const now = new Date().toISOString();
 
     const updated = this.getAll().map((price) => {
-      const movement = (Math.random() - 0.5) * price.spread * 4;
+      const midpoint = (price.bid + price.ask) / 2;
+      const movementPower =
+        price.symbol === "BTCUSD"
+          ? price.spread * 2.8
+          : price.symbol === "XAUUSD"
+            ? price.spread * 7
+            : price.symbol === "USOIL"
+              ? price.spread * 8
+              : price.spread * 12;
+
+      const movement = (Math.random() - 0.5) * movementPower;
       const bid = Number((price.bid + movement).toFixed(5));
       const ask = Number((bid + price.spread).toFixed(5));
 
       return {
         ...price,
+        previousBid: price.bid,
+        previousAsk: price.ask,
         bid,
         ask,
         timestamp: now,

@@ -6,22 +6,29 @@ export async function GET() {
   try {
     const prices = marketDataManager.refreshPrices();
 
-    const regimes = prices.map((price) =>
-      regimeManager.getRegime(
+    const regimes = prices.map((price) => {
+      const midpoint = Number(((price.bid + price.ask) / 2).toFixed(5));
+      const previousMidpoint =
+        price.previousBid !== undefined && price.previousAsk !== undefined
+          ? Number(((price.previousBid + price.previousAsk) / 2).toFixed(5))
+          : null;
+
+      return regimeManager.getRegime(
         price.symbol,
-        Number(((price.bid + price.ask) / 2).toFixed(5)),
-        price.spread
-      )
-    );
+        midpoint,
+        price.spread,
+        previousMidpoint
+      );
+    });
 
     return NextResponse.json({
       success: true,
       regimes,
       prices,
       count: regimes.length,
-      source: "MOCK_LIVE_MARKET_DATA_ENGINE",
+      source: "MOCK_LIVE_REAL_REGIME_ENGINE",
       message:
-        "Market Regime now classifies from dynamic Market Data Engine prices. Real broker feeds can be connected later.",
+        "Real Market Regime Engine uses dynamic price movement, momentum, volatility and risk classification.",
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {
