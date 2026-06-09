@@ -1,4 +1,4 @@
-﻿import { generateStrategyRankingReport } from "@/lib/strategy-ranking";
+import { generateStrategyRankingReport } from "@/lib/strategy-ranking";
 import { generateStrategyMutationReport } from "@/lib/strategy-mutation";
 import { generateStrategyBreedingReport } from "@/lib/strategy-breeding";
 import { generateSpeciesSurvivalReport } from "@/lib/species-survival";
@@ -22,7 +22,7 @@ function buildCycleId() {
 
 function getTopStrategyName(ranking: ReturnType<typeof generateStrategyRankingReport>) {
   const top =
-    [...ranking.profiles].sort(
+    [...ranking.rankingProfiles].sort(
       (a, b) => b.finalStrategyScore - a.finalStrategyScore
     )[0];
 
@@ -31,7 +31,7 @@ function getTopStrategyName(ranking: ReturnType<typeof generateStrategyRankingRe
 
 function getTopStrategyScore(ranking: ReturnType<typeof generateStrategyRankingReport>) {
   const top =
-    [...ranking.profiles].sort(
+    [...ranking.rankingProfiles].sort(
       (a, b) => b.finalStrategyScore - a.finalStrategyScore
     )[0];
 
@@ -166,7 +166,7 @@ export function generateAutonomousTradingEvolutionReport(): AutonomousTradingEvo
     breedingVersion: breeding.version,
     survivalVersion: survival.version,
     governanceVersion: governance.version,
-    totalRankedStrategies: ranking.profiles.length,
+    totalRankedStrategies: ranking.rankingProfiles.length,
     totalMutations: mutation.totalMutations,
     totalHybrids: breeding.totalHybrids,
     totalSpecies: survival.totalSpecies,
@@ -182,3 +182,4 @@ export function generateAutonomousTradingEvolutionReport(): AutonomousTradingEvo
     createdAt: new Date().toISOString(),
   };
 }
+
