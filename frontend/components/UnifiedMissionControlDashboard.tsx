@@ -6,6 +6,7 @@ import { MissionControlAlertLayer } from "./MissionControlAlertLayer";
 import { missionControlEndpointRegistry } from "@/lib/mission-control-endpoint-registry";
 import { MissionControlRegistryGroupDashboard } from "./MissionControlRegistryGroupDashboard";
 import { MissionControlAuditPanel } from "./MissionControlAuditPanel";
+import { HealthScannerMonitorPanel } from "./HealthScannerMonitorPanel";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
@@ -201,6 +202,7 @@ export default function UnifiedMissionControlDashboard() {
       <MissionControlAlertLayer sources={results} />
       <MissionControlAuditPanel checks={auditChecks} />
       <MissionControlRegistryGroupDashboard endpoints={results} />
+      <HealthScannerMonitorPanel endpoints={results} />
 
       <div className="mb-6 grid gap-4 xl:grid-cols-3">
         <div className="rounded-2xl border border-cyan-500/20 bg-black/40 p-5">
@@ -383,6 +385,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
