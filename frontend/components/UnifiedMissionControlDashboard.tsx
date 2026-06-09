@@ -93,6 +93,7 @@ export default function UnifiedMissionControlDashboard() {
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState("");
   const [auditChecks, setAuditChecks] = useState([]);
+  const [eventTimeline, setEventTimeline] = useState<MissionControlEventLogEntry[]>([]);
 
   async function loadMissionControl() {
     setLoading(true);
@@ -399,6 +400,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
