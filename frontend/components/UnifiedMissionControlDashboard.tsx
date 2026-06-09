@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { HealthBar, MiniDonut } from "./mission-control-health-charts";
+import { MissionControlAlertLayer } from "./MissionControlAlertLayer";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
@@ -160,6 +161,8 @@ export default function UnifiedMissionControlDashboard() {
         <MetricCard title="Warnings" value={`${stats.warnings}`} note="Needs review" accent="text-yellow-400" />
         <MetricCard title="Errors" value={`${stats.errors}`} note="Failed requests" accent="text-red-400" />
       </div>
+
+      <MissionControlAlertLayer sources={results} />
 
       <div className="mb-6 grid gap-4 xl:grid-cols-3">
         <div className="rounded-2xl border border-cyan-500/20 bg-black/40 p-5">
@@ -339,4 +342,5 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
