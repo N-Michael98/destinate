@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HealthBar, MiniDonut } from "./mission-control-health-charts";
 import { MissionControlAlertLayer } from "./MissionControlAlertLayer";
 import { missionControlEndpointRegistry } from "@/lib/mission-control-endpoint-registry";
+import { MissionControlRegistryGroupDashboard } from "./MissionControlRegistryGroupDashboard";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
@@ -152,7 +153,8 @@ export default function UnifiedMissionControlDashboard() {
         </button>
       </div>
 
-      <div className="mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+      <div className="mb-6 grid gap-4 xl:grid-cols-3">
+        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4 xl:col-span-2">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-sm font-bold text-cyan-300">Registry coverage</h2>
@@ -162,6 +164,16 @@ export default function UnifiedMissionControlDashboard() {
           </div>
           <div className="rounded-full border border-cyan-500/30 px-3 py-1 text-xs font-bold text-cyan-200">
             {endpoints.length} endpoints registered
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+          <h2 className="text-sm font-bold text-cyan-300">Telegram readiness</h2>
+          <p className="mt-2 text-sm text-zinc-400">
+            Alert payloads are prepared. Real Telegram sending remains disabled until bot token, chat id and approval rules are added.
+          </p>
+          <div className="mt-4 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-center text-xs font-black text-yellow-300">
+            PAYLOAD ONLY
           </div>
         </div>
       </div>
@@ -174,6 +186,7 @@ export default function UnifiedMissionControlDashboard() {
       </div>
 
       <MissionControlAlertLayer sources={results} />
+      <MissionControlRegistryGroupDashboard endpoints={results} />
 
       <div className="mb-6 grid gap-4 xl:grid-cols-3">
         <div className="rounded-2xl border border-cyan-500/20 bg-black/40 p-5">
@@ -353,6 +366,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
