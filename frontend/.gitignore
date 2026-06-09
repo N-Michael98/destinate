@@ -44,3 +44,6 @@ next-env.d.ts
 
 # Mission Control runtime logs
 lib/data/mission-control-event-log.json
+
+# Autonomous Trading Evolution runtime memory
+lib/data/autonomous-trading-evolution-memory.json
