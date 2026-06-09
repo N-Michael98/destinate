@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { createTelegramAlertPayload } from "@/lib/mission-control-telegram-alerts";
+import { mapHealthScannerToAlertSources } from "@/lib/mission-control/live-alert-source-mapping";
 
 type AlertStatus = "CRITICAL" | "REVIEW" | "HEALTHY";
 
@@ -47,13 +48,18 @@ export function MissionControlAlertLayer({
     return [...critical, ...review];
   }, [sources]);
 
-  const telegramPayloadPreview = alerts.map((alert) =>
-    createTelegramAlertPayload({
-      level: alert.level,
-      title: alert.title,
-      message: alert.message,
-    })
-  );
+  const liveMappedPayloads = mapHealthScannerToAlertSources(sources);
+
+  const telegramPayloadPreview =
+    liveMappedPayloads.length > 0
+      ? liveMappedPayloads
+      : alerts.map((alert) =>
+          createTelegramAlertPayload({
+            level: alert.level,
+            title: alert.title,
+            message: alert.message,
+          })
+        );
 
   return (
     <div className="mb-6 rounded-2xl border border-red-500/20 bg-black/40 p-5">
@@ -96,7 +102,7 @@ export function MissionControlAlertLayer({
           Telegram Payload Preview
         </p>
         <p className="mt-2 text-sm text-zinc-400">
-          Prepared alert payloads: {telegramPayloadPreview.length}. Sending remains disabled until Telegram bridge is explicitly added.
+          Prepared alert payloads: {telegramPayloadPreview.length}. Live scanner mapping active. Sending remains disabled until Telegram bridge is explicitly added.
         </p>
       </div>
     </div>
@@ -114,4 +120,5 @@ function getAlertStyle(level: AlertStatus) {
 
   return "border-green-500/40 bg-green-950/30 text-green-300";
 }
+
 
