@@ -8,6 +8,19 @@ import { MissionControlRegistryGroupDashboard } from "./MissionControlRegistryGr
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
+type MissionControlHealthReport = {
+  ok: boolean;
+  version: string;
+  checkedAt: string;
+  totalEndpoints: number;
+  ready: number;
+  warnings: number;
+  errors: number;
+  criticalErrors: number;
+  healthScore: number;
+  endpoints: EndpointResult[];
+};
+
 type EndpointResult = {
   key: string;
   label: string;
@@ -16,7 +29,12 @@ type EndpointResult = {
   critical?: boolean;
   status: ApiStatus;
   summary: string;
-  updatedAt: string;
+  updatedAt?: string;
+  checkedAt?: string;
+  responseTimeMs?: number;
+  group?: string;
+  critical?: boolean;
+  description?: string;
 };
 
 const endpoints = missionControlEndpointRegistry;
@@ -66,40 +84,25 @@ export default function UnifiedMissionControlDashboard() {
   async function loadMissionControl() {
     setLoading(true);
 
-    const loaded = await Promise.all(
-      endpoints.map(async (item) => {
-        try {
-          const response = await fetch(item.endpoint, { cache: "no-store" });
-          const payload = await response.json().catch(() => null);
+    try {
+      const response = await fetch("/api/mission-control/health", {
+        cache: "no-store",
+      });
 
-          return {
-            key: item.key,
-            label: item.label,
-            endpoint: item.endpoint,
-            group: item.group,
-            critical: item.critical,
-            status: statusFromResponse(response.ok, payload),
-            summary: getSummary(payload),
-            updatedAt: new Date().toLocaleTimeString(),
-          } satisfies EndpointResult;
-        } catch {
-          return {
-            key: item.key,
-            label: item.label,
-            endpoint: item.endpoint,
-            group: item.group,
-            critical: item.critical,
-            status: "ERROR",
-            summary: "Request failed",
-            updatedAt: new Date().toLocaleTimeString(),
-          } satisfies EndpointResult;
-        }
-      })
-    );
+      if (!response.ok) {
+        throw new Error(`Mission Control health request failed: ${response.status}`);
+      }
 
-    setResults(loaded);
-    setLastUpdate(new Date().toLocaleTimeString());
-    setLoading(false);
+      const report = (await response.json()) as MissionControlHealthReport;
+
+      setResults(report.endpoints);
+      setLastUpdate(new Date(report.checkedAt).toLocaleTimeString());
+    } catch {
+      setResults([]);
+      setLastUpdate(new Date().toLocaleTimeString());
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -253,7 +256,10 @@ export default function UnifiedMissionControlDashboard() {
                 {item.summary}
               </p>
               <p className="mt-2 text-xs text-zinc-500">
-                Updated: {item.updatedAt}
+                Checked: {item.checkedAt ? new Date(item.checkedAt).toLocaleTimeString() : item.updatedAt || "pending"}
+              </p>
+              <p className="mt-1 text-xs text-zinc-600">
+                Response time: {item.responseTimeMs ?? 0} ms
               </p>
             </div>
           ))}
@@ -367,6 +373,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
