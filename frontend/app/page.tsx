@@ -3277,9 +3277,12 @@ export default function Home() {
         </aside>
 
         <section className="flex-1 p-10 max-w-[1700px] mx-auto" >
-          {activeView === "dashboard" && (
+          {activeView === "dashboard" ? (
             <UnifiedMissionControlDashboard />
+          ) : activeView === "live-prep" ? null : (
+            renderActiveCenter(activeView, activeLabel)
           )}
+
           {(activeView === "dashboard" || activeView === "live-prep") && (
           <section className="bg-gray-900 border border-green-900 rounded-2xl p-7 mb-8" id="live-prep">
             <h3 className="text-3xl font-bold"> Live Trading Preparation</h3>
@@ -3300,6 +3303,7 @@ export default function Home() {
     </main>
   );
 }
+
 
 
 
