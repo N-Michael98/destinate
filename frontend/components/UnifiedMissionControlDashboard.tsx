@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { HealthBar, MiniDonut } from "./mission-control-health-charts";
 import { MissionControlAlertLayer } from "./MissionControlAlertLayer";
+import { missionControlEndpointRegistry } from "@/lib/mission-control-endpoint-registry";
 
 type ApiStatus = "READY" | "WARNING" | "ERROR" | "LOADING";
 
@@ -10,22 +11,14 @@ type EndpointResult = {
   key: string;
   label: string;
   endpoint: string;
+  group?: string;
+  critical?: boolean;
   status: ApiStatus;
   summary: string;
   updatedAt: string;
 };
 
-const endpoints = [
-  { key: "dependency", label: "Dependency Scanner", endpoint: "/api/dependency-scanner" },
-  { key: "portfolio", label: "Portfolio Brain", endpoint: "/api/portfolio-brain" },
-  { key: "consensus", label: "Consensus Engine", endpoint: "/api/consensus/status" },
-  { key: "executionTickets", label: "Execution Tickets", endpoint: "/api/execution/tickets" },
-  { key: "executionQueue", label: "Execution Queue", endpoint: "/api/execution/queue" },
-  { key: "brokerHealth", label: "Broker Health", endpoint: "/api/broker-health-monitor" },
-  { key: "marketData", label: "Market Data", endpoint: "/api/market-data/status" },
-  { key: "marketRegime", label: "Market Regime", endpoint: "/api/market-regime/status" },
-  { key: "opportunity", label: "Opportunity Scanner", endpoint: "/api/opportunity-scanner" },
-];
+const endpoints = missionControlEndpointRegistry;
 
 function getSummary(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "No payload";
@@ -82,6 +75,8 @@ export default function UnifiedMissionControlDashboard() {
             key: item.key,
             label: item.label,
             endpoint: item.endpoint,
+            group: item.group,
+            critical: item.critical,
             status: statusFromResponse(response.ok, payload),
             summary: getSummary(payload),
             updatedAt: new Date().toLocaleTimeString(),
@@ -91,6 +86,8 @@ export default function UnifiedMissionControlDashboard() {
             key: item.key,
             label: item.label,
             endpoint: item.endpoint,
+            group: item.group,
+            critical: item.critical,
             status: "ERROR",
             summary: "Request failed",
             updatedAt: new Date().toLocaleTimeString(),
@@ -153,6 +150,20 @@ export default function UnifiedMissionControlDashboard() {
         >
           Refresh Mission Control
         </button>
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-cyan-300">Registry coverage</h2>
+            <p className="mt-1 text-sm text-zinc-400">
+              Mission Control now reads from one central endpoint registry used by health, alerts and future Telegram logic.
+            </p>
+          </div>
+          <div className="rounded-full border border-cyan-500/30 px-3 py-1 text-xs font-bold text-cyan-200">
+            {endpoints.length} endpoints registered
+          </div>
+        </div>
       </div>
 
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -342,5 +353,6 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
