@@ -32,8 +32,6 @@ type EndpointResult = {
   updatedAt?: string;
   checkedAt?: string;
   responseTimeMs?: number;
-  group?: string;
-  critical?: boolean;
   description?: string;
 };
 
@@ -373,6 +371,7 @@ function SafetyRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 
 
 
