@@ -1,11 +1,11 @@
-﻿export interface EvolutionDecision {
+﻿export type EvolutionDecision = {
   species: string;
   status: "PROTECTED" | "ACTIVE" | "REDUCED" | "ARCHIVED";
   governanceScore: number;
   reason: string;
-}
+};
 
-export interface AutonomousEvolutionPortfolioSignal {
+export type AutonomousEvolutionPortfolioSignal = {
   topStrategy: string;
   championSpecies: string;
   bestMutation: string;
@@ -18,11 +18,39 @@ export interface AutonomousEvolutionPortfolioSignal {
   allocationBias: string;
   riskMode: "EXPAND" | "NORMAL" | "REDUCE" | "PAUSE";
   portfolioAction: string;
-}
+};
 
-export interface PortfolioBrainEvolutionSyncReport {
+export type ConsensusPortfolioSignal = {
   version: string;
-  status: string;
+  totalSymbols: number;
+  eliteSymbols: number;
+  approvedSymbols: number;
+  strictSymbols: number;
+  blockedSymbols: number;
+  dualBrokerCheckSymbols: number;
+  singleBrokerCheckSymbols: number;
+  bestConsensusSymbol: string;
+  bestConsensusMode: string;
+  bestConsensusLevel: string;
+  bestConsensusScore: number;
+  bestConsensusGoCount: number;
+  bestPortfolioRoute: string;
+  bestBrokerRoutingMode: string;
+  bestExecutionPriority: number;
+  bestFinalPositionSize: number;
+  portfolioPriority: "MAXIMUM" | "HIGH" | "REDUCED" | "ZERO";
+  consensusRiskAdjustment: number;
+  consensusAllocationBias:
+    | "EXPAND_CONSENSUS_ALLOCATION"
+    | "NORMAL_CONSENSUS_ALLOCATION"
+    | "DEFENSIVE_CONSENSUS_ALLOCATION"
+    | "BLOCK_CONSENSUS_ALLOCATION";
+  recommendation: string;
+};
+
+export type PortfolioBrainEvolutionSyncReport = {
+  version: "V16.1.4";
+  status: "READY";
 
   championSpecies: string;
 
@@ -35,9 +63,10 @@ export interface PortfolioBrainEvolutionSyncReport {
   portfolioRiskAdjustment: number;
 
   autonomousEvolutionSignal: AutonomousEvolutionPortfolioSignal;
+  consensusPortfolioSignal: ConsensusPortfolioSignal;
 
   decisions: EvolutionDecision[];
 
   summary: string;
   createdAt: string;
-}
+};

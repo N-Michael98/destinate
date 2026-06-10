@@ -1,6 +1,7 @@
 ﻿import { generateEvolutionGovernanceReport } from "../evolution-governance";
 import { generateAutonomousTradingEvolutionReport } from "@/lib/autonomous-trading-evolution";
 import { buildAutonomousTradingEvolutionMemoryReport } from "@/lib/autonomous-trading-evolution-memory";
+import { generateMultiStyleConsensusUnifiedDecisionSyncReport } from "@/lib/multi-style-consensus-unified-decision-sync";
 
 import {
   AutonomousEvolutionPortfolioSignal,
@@ -16,12 +17,81 @@ function resolvePortfolioBias(championSpecies: string): string {
   return `Favor ${championSpecies} species while monitoring reduced and archived species.`;
 }
 
+function resolveConsensusPortfolioPriority(mode: string) {
+  if (mode === "CONSENSUS_ELITE") return "MAXIMUM";
+  if (mode === "CONSENSUS_APPROVED") return "HIGH";
+  if (mode === "CONSENSUS_STRICT") return "REDUCED";
+  return "ZERO";
+}
+
+function resolveConsensusRiskAdjustment(mode: string) {
+  if (mode === "CONSENSUS_ELITE") return 10;
+  if (mode === "CONSENSUS_APPROVED") return 5;
+  if (mode === "CONSENSUS_STRICT") return -10;
+  return -25;
+}
+
+function resolveConsensusAllocationBias(mode: string) {
+  if (mode === "CONSENSUS_ELITE") return "EXPAND_CONSENSUS_ALLOCATION";
+  if (mode === "CONSENSUS_APPROVED") return "NORMAL_CONSENSUS_ALLOCATION";
+  if (mode === "CONSENSUS_STRICT") return "DEFENSIVE_CONSENSUS_ALLOCATION";
+  return "BLOCK_CONSENSUS_ALLOCATION";
+}
+
+function buildConsensusPortfolioSignal() {
+  const consensus = generateMultiStyleConsensusUnifiedDecisionSyncReport();
+
+  const tradable = consensus.decisions
+    .filter((decision) => decision.executionAllowed)
+    .sort((a, b) => b.executionPriority - a.executionPriority);
+
+  const best = tradable[0] ?? null;
+
+  const blocked = consensus.decisions.filter(
+    (decision) => decision.unifiedDecisionMode === "CONSENSUS_BLOCKED"
+  ).length;
+
+  return {
+    version: consensus.version,
+    totalSymbols: consensus.totalSymbols,
+    eliteSymbols: consensus.eliteSymbols,
+    approvedSymbols: consensus.approvedSymbols,
+    strictSymbols: consensus.strictSymbols,
+    blockedSymbols: blocked,
+    dualBrokerCheckSymbols: consensus.dualBrokerCheckSymbols,
+    singleBrokerCheckSymbols: consensus.singleBrokerCheckSymbols,
+    bestConsensusSymbol: best?.symbol ?? "NONE",
+    bestConsensusMode: best?.unifiedDecisionMode ?? "CONSENSUS_BLOCKED",
+    bestConsensusLevel: best?.consensusLevel ?? "NO_CONSENSUS",
+    bestConsensusScore: best?.consensusScore ?? 0,
+    bestConsensusGoCount: best?.goCount ?? 0,
+    bestPortfolioRoute: best?.portfolioBrainRoute ?? "NO_TRADE_ROUTE",
+    bestBrokerRoutingMode: best?.brokerRoutingMode ?? "NO_BROKER_ROUTE",
+    bestExecutionPriority: best?.executionPriority ?? 0,
+    bestFinalPositionSize: best?.finalPositionSize ?? 0,
+    portfolioPriority: resolveConsensusPortfolioPriority(
+      best?.unifiedDecisionMode ?? "CONSENSUS_BLOCKED"
+    ),
+    consensusRiskAdjustment: resolveConsensusRiskAdjustment(
+      best?.unifiedDecisionMode ?? "CONSENSUS_BLOCKED"
+    ),
+    consensusAllocationBias: resolveConsensusAllocationBias(
+      best?.unifiedDecisionMode ?? "CONSENSUS_BLOCKED"
+    ),
+    recommendation:
+      best === null
+        ? "No consensus-approved symbol available for Portfolio Brain allocation."
+        : `${best.symbol} is the leading consensus Portfolio Brain candidate with ${best.unifiedDecisionMode}, priority ${best.executionPriority}, route ${best.portfolioBrainRoute}.`,
+  };
+}
+
 function resolveRiskAdjustment(params: {
   reducedSpecies: number;
   archivedSpecies: number;
   protectedSpecies: number;
   autonomousEvolutionScore: number;
   cycleDecision: string;
+  consensusRiskAdjustment: number;
 }): number {
   const governanceAdjustment =
     params.protectedSpecies * 4 -
@@ -43,8 +113,14 @@ function resolveRiskAdjustment(params: {
         : -12;
 
   return Math.max(
-    -35,
-    Math.min(35, governanceAdjustment + autonomousAdjustment + scoreAdjustment)
+    -40,
+    Math.min(
+      40,
+      governanceAdjustment +
+        autonomousAdjustment +
+        scoreAdjustment +
+        params.consensusRiskAdjustment
+    )
   );
 }
 
@@ -154,6 +230,7 @@ function buildAutonomousEvolutionSignal(): AutonomousEvolutionPortfolioSignal {
 export function generatePortfolioBrainEvolutionSyncReport(): PortfolioBrainEvolutionSyncReport {
   const governance = generateEvolutionGovernanceReport();
   const autonomousEvolutionSignal = buildAutonomousEvolutionSignal();
+  const consensusPortfolioSignal = buildConsensusPortfolioSignal();
 
   const decisions: EvolutionDecision[] = governance.decisions.map((decision) => ({
     species: decision.species,
@@ -179,7 +256,7 @@ export function generatePortfolioBrainEvolutionSyncReport(): PortfolioBrainEvolu
   ).length;
 
   return {
-    version: "V16.0.5",
+    version: "V16.1.4",
     status: "READY",
 
     championSpecies: autonomousEvolutionSignal.championSpecies,
@@ -189,7 +266,9 @@ export function generatePortfolioBrainEvolutionSyncReport(): PortfolioBrainEvolu
     reducedSpecies,
     archivedSpecies,
 
-    portfolioBias: resolvePortfolioBias(autonomousEvolutionSignal.championSpecies),
+    portfolioBias: `${resolvePortfolioBias(
+      autonomousEvolutionSignal.championSpecies
+    )} Consensus allocation bias: ${consensusPortfolioSignal.consensusAllocationBias}.`,
 
     portfolioRiskAdjustment: resolveRiskAdjustment({
       protectedSpecies,
@@ -198,14 +277,16 @@ export function generatePortfolioBrainEvolutionSyncReport(): PortfolioBrainEvolu
       autonomousEvolutionScore:
         autonomousEvolutionSignal.autonomousEvolutionScore,
       cycleDecision: autonomousEvolutionSignal.cycleDecision,
+      consensusRiskAdjustment: consensusPortfolioSignal.consensusRiskAdjustment,
     }),
 
     autonomousEvolutionSignal,
+    consensusPortfolioSignal,
 
     decisions,
 
     summary:
-      "Portfolio Brain Evolution Sync now connects Autonomous Trading Evolution, memory statistics and Evolution Governance into Portfolio Brain allocation and risk bias.",
+      "Portfolio Brain Evolution Sync now combines Autonomous Trading Evolution with Multi-Style Consensus Unified Decision routing for portfolio allocation and risk bias.",
 
     createdAt: new Date().toISOString(),
   };
