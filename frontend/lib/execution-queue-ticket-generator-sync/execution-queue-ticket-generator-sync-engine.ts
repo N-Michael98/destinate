@@ -2,7 +2,7 @@
 
 import {
   ExecutionQueueTicket,
-  ExecutionQueueTicketAction,
+  ExecutionTicketAction,
   ExecutionQueueTicketGeneratorSyncReport,
   ExecutionTicketStatus,
 } from "./execution-queue-ticket-generator-sync-types";
@@ -210,3 +210,4 @@ export function generateExecutionQueueTicketGeneratorSyncReport():
     updatedAt: new Date().toISOString(),
   };
 }
+
