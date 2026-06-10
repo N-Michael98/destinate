@@ -14,6 +14,14 @@ export type AutonomousEvolutionPortfolioSignal = {
   cycleDecision: string;
   memoryCycles: number;
   averageMemoryScore: number;
+  feedbackAdjustedAverageScore: number;
+  feedbackBoost: number;
+  adjustedAutonomousEvolutionScore: number;
+  adjustedCycleDecision: string;
+  topAdjustedStrategy: string;
+  weakestAdjustedStrategy: string;
+  mutationPressureMode: "LOW" | "NORMAL" | "HIGH" | "EXTREME";
+  autonomousRiskBias: "EXPAND" | "NORMAL" | "DEFENSIVE" | "PAUSE";
   strategyBias: string;
   allocationBias: string;
   riskMode: "EXPAND" | "NORMAL" | "REDUCE" | "PAUSE";
@@ -49,7 +57,7 @@ export type ConsensusPortfolioSignal = {
 };
 
 export type PortfolioBrainEvolutionSyncReport = {
-  version: "V16.1.4";
+  version: "V16.2.7";
   status: "READY";
 
   championSpecies: string;
@@ -70,3 +78,4 @@ export type PortfolioBrainEvolutionSyncReport = {
   summary: string;
   createdAt: string;
 };
+

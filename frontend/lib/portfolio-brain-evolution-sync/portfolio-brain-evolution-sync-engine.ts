@@ -1,5 +1,6 @@
 ﻿import { generateEvolutionGovernanceReport } from "../evolution-governance";
 import { generateAutonomousTradingEvolutionReport } from "@/lib/autonomous-trading-evolution";
+import { generateStrategyEvolutionAutonomousSyncReport } from "@/lib/strategy-evolution-autonomous-sync";
 import { buildAutonomousTradingEvolutionMemoryReport } from "@/lib/autonomous-trading-evolution-memory";
 import { generateMultiStyleConsensusUnifiedDecisionSyncReport } from "@/lib/multi-style-consensus-unified-decision-sync";
 
@@ -200,11 +201,12 @@ function resolvePortfolioAction(params: {
 
 function buildAutonomousEvolutionSignal(): AutonomousEvolutionPortfolioSignal {
   const autonomousEvolution = generateAutonomousTradingEvolutionReport();
+  const adjustedAutonomous = generateStrategyEvolutionAutonomousSyncReport();
   const memory = buildAutonomousTradingEvolutionMemoryReport();
 
   const riskMode = resolveRiskMode({
-    cycleDecision: autonomousEvolution.cycleDecision,
-    autonomousEvolutionScore: autonomousEvolution.autonomousEvolutionScore,
+    cycleDecision: adjustedAutonomous.adjustedCycleDecision,
+    autonomousEvolutionScore: adjustedAutonomous.adjustedAutonomousEvolutionScore,
   });
 
   return {
@@ -212,15 +214,23 @@ function buildAutonomousEvolutionSignal(): AutonomousEvolutionPortfolioSignal {
     championSpecies: autonomousEvolution.championSpecies,
     bestMutation: autonomousEvolution.bestMutation,
     bestHybrid: autonomousEvolution.bestHybrid,
-    autonomousEvolutionScore: autonomousEvolution.autonomousEvolutionScore,
-    cycleDecision: autonomousEvolution.cycleDecision,
+    autonomousEvolutionScore: adjustedAutonomous.adjustedAutonomousEvolutionScore,
+    cycleDecision: adjustedAutonomous.adjustedCycleDecision,
     memoryCycles: memory.stats.totalMemories,
     averageMemoryScore: memory.stats.averageEvolutionScore,
+    feedbackAdjustedAverageScore: adjustedAutonomous.feedbackAdjustedAverageScore,
+    feedbackBoost: adjustedAutonomous.feedbackBoost,
+    adjustedAutonomousEvolutionScore: adjustedAutonomous.adjustedAutonomousEvolutionScore,
+    adjustedCycleDecision: adjustedAutonomous.adjustedCycleDecision,
+    topAdjustedStrategy: adjustedAutonomous.topAdjustedStrategy,
+    weakestAdjustedStrategy: adjustedAutonomous.weakestAdjustedStrategy,
+    mutationPressureMode: adjustedAutonomous.mutationPressureMode,
+    autonomousRiskBias: adjustedAutonomous.autonomousRiskBias,
     strategyBias: resolveStrategyBias({
       topStrategy: autonomousEvolution.topStrategy,
       bestMutation: autonomousEvolution.bestMutation,
       bestHybrid: autonomousEvolution.bestHybrid,
-      cycleDecision: autonomousEvolution.cycleDecision,
+      cycleDecision: adjustedAutonomous.adjustedCycleDecision,
     }),
     allocationBias: resolveAllocationBias({
       championSpecies: autonomousEvolution.championSpecies,
@@ -264,7 +274,7 @@ export function generatePortfolioBrainEvolutionSyncReport(): PortfolioBrainEvolu
   ).length;
 
   return {
-    version: "V16.1.4",
+    version: "V16.2.7",
     status: "READY",
 
     championSpecies: autonomousEvolutionSignal.championSpecies,
@@ -294,9 +304,10 @@ export function generatePortfolioBrainEvolutionSyncReport(): PortfolioBrainEvolu
     decisions,
 
     summary:
-      "Portfolio Brain Evolution Sync now combines Autonomous Trading Evolution with Multi-Style Consensus Unified Decision routing for portfolio allocation and risk bias.",
+      "Portfolio Brain Evolution Sync now combines feedback-adjusted Autonomous Trading Evolution with Multi-Style Consensus Unified Decision routing for portfolio allocation and risk bias.",
 
     createdAt: new Date().toISOString(),
   };
 }
+
 
