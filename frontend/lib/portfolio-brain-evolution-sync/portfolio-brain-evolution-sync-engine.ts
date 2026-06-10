@@ -17,7 +17,9 @@ function resolvePortfolioBias(championSpecies: string): string {
   return `Favor ${championSpecies} species while monitoring reduced and archived species.`;
 }
 
-function resolveConsensusPortfolioPriority(mode: string) {
+function resolveConsensusPortfolioPriority(
+  mode: string
+): "MAXIMUM" | "HIGH" | "REDUCED" | "ZERO" {
   if (mode === "CONSENSUS_ELITE") return "MAXIMUM";
   if (mode === "CONSENSUS_APPROVED") return "HIGH";
   if (mode === "CONSENSUS_STRICT") return "REDUCED";
@@ -31,7 +33,13 @@ function resolveConsensusRiskAdjustment(mode: string) {
   return -25;
 }
 
-function resolveConsensusAllocationBias(mode: string) {
+function resolveConsensusAllocationBias(
+  mode: string
+):
+  | "EXPAND_CONSENSUS_ALLOCATION"
+  | "NORMAL_CONSENSUS_ALLOCATION"
+  | "DEFENSIVE_CONSENSUS_ALLOCATION"
+  | "BLOCK_CONSENSUS_ALLOCATION" {
   if (mode === "CONSENSUS_ELITE") return "EXPAND_CONSENSUS_ALLOCATION";
   if (mode === "CONSENSUS_APPROVED") return "NORMAL_CONSENSUS_ALLOCATION";
   if (mode === "CONSENSUS_STRICT") return "DEFENSIVE_CONSENSUS_ALLOCATION";
@@ -291,3 +299,4 @@ export function generatePortfolioBrainEvolutionSyncReport(): PortfolioBrainEvolu
     createdAt: new Date().toISOString(),
   };
 }
+
