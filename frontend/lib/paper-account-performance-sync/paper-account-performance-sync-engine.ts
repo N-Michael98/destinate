@@ -146,7 +146,7 @@ export function generatePaperAccountPerformanceSyncReport():
   const worstPnL = pnlSamples.length === 0 ? 0 : Math.min(...pnlSamples);
 
   const netPnL = round(account.realizedPnL + account.unrealizedPnL);
-  const returnPercent = safePercent(netPnL, account.accountBalance);
+  const returnPercent = safePercent(netPnL, account.balance);
 
   const performanceScore = calculatePerformanceScore({
     returnPercent,
@@ -207,3 +207,4 @@ export function generatePaperAccountPerformanceSyncReport():
     updatedAt: new Date().toISOString(),
   };
 }
+
