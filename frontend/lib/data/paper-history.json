@@ -60,5 +60,67 @@
       "status": "OPEN",
       "openedAt": "2026-06-04T11:40:12.263Z"
     }
+  },
+  {
+    "id": "paper-history-1781095131732-b7m9ly",
+    "type": "ORDER_CREATED",
+    "entity": "ORDER",
+    "event": "ORDER_CREATED",
+    "timestamp": "2026-06-10T12:38:51.732Z",
+    "payload": {
+      "id": "paper-order-1781095131732-1irp4j",
+      "symbol": "NAS100",
+      "direction": "BUY",
+      "entry": 19250,
+      "stopLoss": 19170,
+      "takeProfit1": 19370,
+      "takeProfit2": 19450,
+      "confidence": 89,
+      "status": "PENDING",
+      "reason": "EXEC-NAS100-001: NAS100: CREATE_PAPER_EXECUTION_TICKET generated for DUAL_BROKER paper execution.",
+      "createdAt": "2026-06-10T12:38:51.732Z"
+    }
+  },
+  {
+    "id": "paper-history-1781095131733-dvo4ev",
+    "type": "ORDER_FILLED",
+    "entity": "ORDER",
+    "event": "ORDER_FILLED",
+    "timestamp": "2026-06-10T12:38:51.733Z",
+    "payload": {
+      "id": "paper-order-1781095131732-1irp4j",
+      "symbol": "NAS100",
+      "direction": "BUY",
+      "entry": 19250,
+      "stopLoss": 19170,
+      "takeProfit1": 19370,
+      "takeProfit2": 19450,
+      "confidence": 89,
+      "status": "FILLED",
+      "reason": "EXEC-NAS100-001: NAS100: CREATE_PAPER_EXECUTION_TICKET generated for DUAL_BROKER paper execution.",
+      "createdAt": "2026-06-10T12:38:51.732Z"
+    }
+  },
+  {
+    "id": "paper-history-1781095131734-hadw6k",
+    "type": "POSITION_OPENED",
+    "entity": "POSITION",
+    "event": "POSITION_OPENED",
+    "timestamp": "2026-06-10T12:38:51.734Z",
+    "payload": {
+      "id": "paper-position-1781095131734-0q33rg",
+      "orderId": "paper-order-1781095131732-1irp4j",
+      "symbol": "NAS100",
+      "direction": "BUY",
+      "entry": 19250,
+      "currentPrice": 19250,
+      "stopLoss": 19170,
+      "takeProfit1": 19370,
+      "takeProfit2": 19450,
+      "size": 0.388,
+      "unrealizedPnL": 0,
+      "status": "OPEN",
+      "openedAt": "2026-06-10T12:38:51.734Z"
+    }
   }
 ]
