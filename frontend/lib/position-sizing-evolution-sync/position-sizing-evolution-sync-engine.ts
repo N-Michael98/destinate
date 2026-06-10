@@ -7,12 +7,50 @@ import {
 
 const VERSION = "V16.2.8" as const;
 
+let isGeneratingPositionSizingEvolution = false;
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
 function round(value: number, decimals = 2) {
   return Number(value.toFixed(decimals));
+}
+
+function buildSafeFallbackReport(): PositionSizingEvolutionSyncReport {
+  return {
+    version: VERSION,
+    status: "READY",
+    mode: "SIMULATION",
+
+    sourcePortfolioVersion: "SAFE_FALLBACK",
+    championSpecies: "UNKNOWN",
+    topStrategy: "UNKNOWN",
+    topAdjustedStrategy: "UNKNOWN",
+    weakestAdjustedStrategy: "UNKNOWN",
+
+    adjustedAutonomousEvolutionScore: 50,
+    adjustedCycleDecision: "REDUCE_RISK",
+    autonomousRiskBias: "NORMAL",
+    riskMode: "NORMAL",
+    portfolioRiskAdjustment: 0,
+    mutationPressureMode: "NORMAL",
+
+    allocationMultiplier: 1,
+    adjustedRiskPercentMultiplier: 1,
+    maxPositionMultiplier: 1,
+    evolutionPositionSizeScore: 50,
+    positionSizingMode: "NORMAL_SIZE",
+
+    liveExecutionEnabled: false,
+    orderExecutionEnabled: false,
+
+    systemRule:
+      "Position Sizing Evolution Sync returned safe fallback values to prevent recursive dependency loops during Dynamic Position Allocation.",
+    recommendation:
+      "Safe fallback active. Use normal position size until the full evolution chain is available without recursion.",
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function resolveAllocationMultiplier(params: {
@@ -116,65 +154,75 @@ function buildRecommendation(mode: PositionSizingEvolutionMode) {
 
 export function generatePositionSizingEvolutionSyncReport():
   PositionSizingEvolutionSyncReport {
-  const portfolio = generatePortfolioBrainEvolutionSyncReport();
-  const signal = portfolio.autonomousEvolutionSignal;
+  if (isGeneratingPositionSizingEvolution) {
+    return buildSafeFallbackReport();
+  }
 
-  const allocationMultiplier = resolveAllocationMultiplier({
-    autonomousRiskBias: signal.autonomousRiskBias,
-    riskMode: signal.riskMode,
-    adjustedScore: signal.adjustedAutonomousEvolutionScore,
-    portfolioRiskAdjustment: portfolio.portfolioRiskAdjustment,
-  });
+  isGeneratingPositionSizingEvolution = true;
 
-  const adjustedRiskPercentMultiplier = resolveRiskPercentMultiplier({
-    allocationMultiplier,
-    mutationPressureMode: signal.mutationPressureMode,
-  });
+  try {
+    const portfolio = generatePortfolioBrainEvolutionSyncReport();
+    const signal = portfolio.autonomousEvolutionSignal;
 
-  const maxPositionMultiplier = resolveMaxPositionMultiplier({
-    allocationMultiplier,
-    riskPercentMultiplier: adjustedRiskPercentMultiplier,
-  });
+    const allocationMultiplier = resolveAllocationMultiplier({
+      autonomousRiskBias: signal.autonomousRiskBias,
+      riskMode: signal.riskMode,
+      adjustedScore: signal.adjustedAutonomousEvolutionScore,
+      portfolioRiskAdjustment: portfolio.portfolioRiskAdjustment,
+    });
 
-  const evolutionPositionSizeScore = calculateEvolutionPositionSizeScore({
-    adjustedScore: signal.adjustedAutonomousEvolutionScore,
-    portfolioRiskAdjustment: portfolio.portfolioRiskAdjustment,
-    allocationMultiplier,
-    riskPercentMultiplier: adjustedRiskPercentMultiplier,
-  });
+    const adjustedRiskPercentMultiplier = resolveRiskPercentMultiplier({
+      allocationMultiplier,
+      mutationPressureMode: signal.mutationPressureMode,
+    });
 
-  const positionSizingMode = resolveSizingMode(evolutionPositionSizeScore);
+    const maxPositionMultiplier = resolveMaxPositionMultiplier({
+      allocationMultiplier,
+      riskPercentMultiplier: adjustedRiskPercentMultiplier,
+    });
 
-  return {
-    version: VERSION,
-    status: "READY",
-    mode: "SIMULATION",
+    const evolutionPositionSizeScore = calculateEvolutionPositionSizeScore({
+      adjustedScore: signal.adjustedAutonomousEvolutionScore,
+      portfolioRiskAdjustment: portfolio.portfolioRiskAdjustment,
+      allocationMultiplier,
+      riskPercentMultiplier: adjustedRiskPercentMultiplier,
+    });
 
-    sourcePortfolioVersion: portfolio.version,
-    championSpecies: portfolio.championSpecies,
-    topStrategy: signal.topStrategy,
-    topAdjustedStrategy: signal.topAdjustedStrategy,
-    weakestAdjustedStrategy: signal.weakestAdjustedStrategy,
+    const positionSizingMode = resolveSizingMode(evolutionPositionSizeScore);
 
-    adjustedAutonomousEvolutionScore: signal.adjustedAutonomousEvolutionScore,
-    adjustedCycleDecision: signal.adjustedCycleDecision,
-    autonomousRiskBias: signal.autonomousRiskBias,
-    riskMode: signal.riskMode,
-    portfolioRiskAdjustment: portfolio.portfolioRiskAdjustment,
-    mutationPressureMode: signal.mutationPressureMode,
+    return {
+      version: VERSION,
+      status: "READY",
+      mode: "SIMULATION",
 
-    allocationMultiplier,
-    adjustedRiskPercentMultiplier,
-    maxPositionMultiplier,
-    evolutionPositionSizeScore,
-    positionSizingMode,
+      sourcePortfolioVersion: portfolio.version,
+      championSpecies: portfolio.championSpecies,
+      topStrategy: signal.topStrategy,
+      topAdjustedStrategy: signal.topAdjustedStrategy,
+      weakestAdjustedStrategy: signal.weakestAdjustedStrategy,
 
-    liveExecutionEnabled: false,
-    orderExecutionEnabled: false,
+      adjustedAutonomousEvolutionScore: signal.adjustedAutonomousEvolutionScore,
+      adjustedCycleDecision: signal.adjustedCycleDecision,
+      autonomousRiskBias: signal.autonomousRiskBias,
+      riskMode: signal.riskMode,
+      portfolioRiskAdjustment: portfolio.portfolioRiskAdjustment,
+      mutationPressureMode: signal.mutationPressureMode,
 
-    systemRule:
-      "Position Sizing Evolution Sync converts Portfolio Brain Evolution into simulated allocation and risk multipliers. It does not execute trades.",
-    recommendation: buildRecommendation(positionSizingMode),
-    updatedAt: new Date().toISOString(),
-  };
+      allocationMultiplier,
+      adjustedRiskPercentMultiplier,
+      maxPositionMultiplier,
+      evolutionPositionSizeScore,
+      positionSizingMode,
+
+      liveExecutionEnabled: false,
+      orderExecutionEnabled: false,
+
+      systemRule:
+        "Position Sizing Evolution Sync converts Portfolio Brain Evolution into simulated allocation and risk multipliers. It does not execute trades.",
+      recommendation: buildRecommendation(positionSizingMode),
+      updatedAt: new Date().toISOString(),
+    };
+  } finally {
+    isGeneratingPositionSizingEvolution = false;
+  }
 }
