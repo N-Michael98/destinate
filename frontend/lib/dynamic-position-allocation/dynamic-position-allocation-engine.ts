@@ -1,5 +1,6 @@
 ﻿import { generateSmartBrokerExecutionSyncReport } from "../smart-broker-execution-sync";
 import { BrokerId } from "../smart-broker-selection";
+import { generatePositionSizingEvolutionSyncReport } from "@/lib/position-sizing-evolution-sync";
 
 import {
   BrokerPositionAllocation,
@@ -56,10 +57,19 @@ function normalizeRequestedLots(
   maxPositionSizeLots: number,
   confidenceScore: number
 ): number {
-  const confidenceMultiplier =
-    confidenceScore >= 85 ? 1 : confidenceScore >= 75 ? 0.9 : 0.75;
+  const evolution = generatePositionSizingEvolutionSyncReport();
 
-  const adjustedLots = totalPositionSizeLots * confidenceMultiplier;
+  const confidenceMultiplier =
+    confidenceScore >= 85
+      ? 1
+      : confidenceScore >= 75
+        ? 0.9
+        : 0.75;
+
+  const adjustedLots =
+    totalPositionSizeLots *
+    confidenceMultiplier *
+    evolution.allocationMultiplier;
 
   return roundLots(Math.min(adjustedLots, maxPositionSizeLots));
 }
@@ -145,7 +155,7 @@ function generateAllocationReason(
     return `${input.symbol} received partial allocation: ${totalAllocatedLots}/${normalizedLots} lots allocated.`;
   }
 
-  return `${input.symbol} allocated ${totalAllocatedLots} lots across selected broker routes in simulation mode.`;
+  return `${input.symbol} allocated ${totalAllocatedLots} lots across selected broker routes in simulation mode using V16.2.8 Position Sizing Evolution multiplier.`;
 }
 
 function allocatePositionForQueueItem(
@@ -281,7 +291,7 @@ export function generateDynamicPositionAllocationReport(): DynamicPositionAlloca
     totalUnallocatedLots,
     results,
     summary:
-      "Dynamic Position Allocation converted Smart Broker routing percentages into simulated broker-level lot allocations.",
+      "Dynamic Position Allocation converted Smart Broker routing percentages into simulated broker-level lot allocations using V16.2.8 Position Sizing Evolution multipliers.",
     safety: {
       liveTradingEnabled: false,
       orderExecutionEnabled: false,
