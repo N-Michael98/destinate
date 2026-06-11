@@ -1,4 +1,9 @@
+import fs from "fs";
+import path from "path";
 import type { AISettings, AIProviderConfig, TelegramSettingsConfig } from "./ai-config-types";
+
+// Persist to a JSON file in the project root so keys survive server restarts
+const PERSIST_PATH = path.join(process.cwd(), ".ai-config.json");
 
 const DEFAULT_AI_SETTINGS: AISettings = {
   openai: {
@@ -36,37 +41,85 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   updatedAt: new Date().toISOString(),
 };
 
-let _aiSettings: AISettings = JSON.parse(JSON.stringify(DEFAULT_AI_SETTINGS));
+function loadFromDisk(): AISettings {
+  try {
+    if (fs.existsSync(PERSIST_PATH)) {
+      const raw = fs.readFileSync(PERSIST_PATH, "utf-8");
+      const parsed = JSON.parse(raw) as AISettings;
+      // Merge with defaults so new fields are always present
+      return {
+        ...DEFAULT_AI_SETTINGS,
+        ...parsed,
+        openai: { ...DEFAULT_AI_SETTINGS.openai, ...parsed.openai },
+        anthropic: { ...DEFAULT_AI_SETTINGS.anthropic, ...parsed.anthropic },
+        telegram: { ...DEFAULT_AI_SETTINGS.telegram, ...parsed.telegram },
+      };
+    }
+  } catch {
+    // If file is corrupt, start fresh
+  }
+  return JSON.parse(JSON.stringify(DEFAULT_AI_SETTINGS));
+}
+
+function saveToDisk(settings: AISettings): void {
+  try {
+    fs.writeFileSync(PERSIST_PATH, JSON.stringify(settings, null, 2), "utf-8");
+  } catch {
+    // Non-fatal — log silently
+  }
+}
+
+// Load on module init (survives hot-reload via global cache)
+const GLOBAL_KEY = "__ai_config_store__";
+declare global {
+  // eslint-disable-next-line no-var
+  var __ai_config_store__: AISettings | undefined;
+}
+
+if (!global[GLOBAL_KEY]) {
+  global[GLOBAL_KEY] = loadFromDisk();
+}
+
+function getStore(): AISettings {
+  return global[GLOBAL_KEY]!;
+}
+
+function setStore(s: AISettings): void {
+  global[GLOBAL_KEY] = s;
+  saveToDisk(s);
+}
 
 export function getAISettings(): AISettings {
-  return JSON.parse(JSON.stringify(_aiSettings));
+  return JSON.parse(JSON.stringify(getStore()));
 }
 
 export function updateOpenAI(patch: Partial<AIProviderConfig>): void {
-  _aiSettings = {
-    ..._aiSettings,
-    openai: { ..._aiSettings.openai, ...patch },
+  const s = getStore();
+  setStore({
+    ...s,
+    openai: { ...s.openai, ...patch },
     updatedAt: new Date().toISOString(),
-  };
+  });
 }
 
 export function updateAnthropic(patch: Partial<AIProviderConfig>): void {
-  _aiSettings = {
-    ..._aiSettings,
-    anthropic: { ..._aiSettings.anthropic, ...patch },
+  const s = getStore();
+  setStore({
+    ...s,
+    anthropic: { ...s.anthropic, ...patch },
     updatedAt: new Date().toISOString(),
-  };
+  });
 }
 
 export function updateTelegram(patch: Partial<TelegramSettingsConfig>): void {
-  _aiSettings = {
-    ..._aiSettings,
-    telegram: { ..._aiSettings.telegram, ...patch },
+  const s = getStore();
+  setStore({
+    ...s,
+    telegram: { ...s.telegram, ...patch },
     updatedAt: new Date().toISOString(),
-  };
+  });
 }
 
-// Save key without testing (instant, no network call)
 export function saveOpenAIKey(apiKey: string, model: string): void {
   updateOpenAI({ apiKey, model, testStatus: "UNTESTED", connected: false, testError: null });
 }
@@ -75,18 +128,15 @@ export function saveAnthropicKey(apiKey: string, model: string): void {
   updateAnthropic({ apiKey, model, testStatus: "UNTESTED", connected: false, testError: null });
 }
 
-// Real API test — makes actual network call to verify key
 export async function testOpenAIConnection(apiKey: string, model: string): Promise<{ ok: boolean; error: string | null }> {
   if (!apiKey || apiKey.length < 20 || !apiKey.startsWith("sk-")) {
     updateOpenAI({ testStatus: "FAILED", testError: "Key muss mit sk- beginnen", connected: false, lastTestedAt: new Date().toISOString() });
     return { ok: false, error: "Key muss mit sk- beginnen (z.B. sk-proj-...)" };
   }
-
   try {
     const res = await fetch("https://api.openai.com/v1/models", {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
-
     if (res.status === 401) {
       updateOpenAI({ testStatus: "FAILED", testError: "Ungültiger API Key", connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: "Ungültiger API Key (401 Unauthorized)" };
@@ -96,7 +146,6 @@ export async function testOpenAIConnection(apiKey: string, model: string): Promi
       updateOpenAI({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: err };
     }
-
     updateOpenAI({ testStatus: "OK", testError: null, connected: true, apiKey, model, lastTestedAt: new Date().toISOString() });
     return { ok: true, error: null };
   } catch (err) {
@@ -111,9 +160,7 @@ export async function testAnthropicConnection(apiKey: string, model: string): Pr
     updateAnthropic({ testStatus: "FAILED", testError: "Key muss mit sk-ant- beginnen", connected: false, lastTestedAt: new Date().toISOString() });
     return { ok: false, error: "Key muss mit sk-ant- beginnen" };
   }
-
   try {
-    // Test with minimal message
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -121,13 +168,8 @@ export async function testAnthropicConnection(apiKey: string, model: string): Pr
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: 10,
-        messages: [{ role: "user", content: "ping" }],
-      }),
+      body: JSON.stringify({ model, max_tokens: 10, messages: [{ role: "user", content: "ping" }] }),
     });
-
     if (res.status === 401) {
       updateAnthropic({ testStatus: "FAILED", testError: "Ungültiger API Key", connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: "Ungültiger API Key (401 Unauthorized)" };
@@ -137,8 +179,6 @@ export async function testAnthropicConnection(apiKey: string, model: string): Pr
       updateAnthropic({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: err };
     }
-
-    // 200 or 400 both mean the key is valid (400 = model/param issue, key was accepted)
     updateAnthropic({ testStatus: "OK", testError: null, connected: true, apiKey, model, lastTestedAt: new Date().toISOString() });
     return { ok: true, error: null };
   } catch (err) {
