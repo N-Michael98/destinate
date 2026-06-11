@@ -41,9 +41,13 @@ export default function SettingsDashboard() {
   });
 
   const fetchSettings = async () => {
-    const r = await fetch("/api/settings");
-    const d = await r.json();
-    if (d.ok) setSettings(d.settings);
+    try {
+      const r = await fetch("/api/settings");
+      const d = await r.json();
+      if (d.ok) setSettings(d.settings);
+    } catch {
+      // silently handle network errors — show empty state
+    }
   };
 
   useEffect(() => { fetchSettings(); }, []);

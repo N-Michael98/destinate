@@ -153,6 +153,7 @@ export default function SecurityCenterDashboard() {
   const [killswitch, setKillswitch] = useState<KillswitchReport | null>(null);
   const [telegram, setTelegram] = useState<TelegramReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [ksConfirm, setKsConfirm] = useState(false);
   const [ksLoading, setKsLoading] = useState(false);
 
@@ -169,12 +170,13 @@ export default function SecurityCenterDashboard() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const [s, m, k, t] = await Promise.all([
-        fetch("/api/security-center").then((r) => r.json()),
-        fetch("/api/security-center/malwarebytes").then((r) => r.json()),
-        fetch("/api/security-center/killswitch").then((r) => r.json()),
-        fetch("/api/security-center/telegram").then((r) => r.json()),
+        fetch("/api/security-center").then((r) => r.json()).catch(() => ({ report: null })),
+        fetch("/api/security-center/malwarebytes").then((r) => r.json()).catch(() => ({ report: null })),
+        fetch("/api/security-center/killswitch").then((r) => r.json()).catch(() => ({ report: null })),
+        fetch("/api/security-center/telegram").then((r) => r.json()).catch(() => ({ report: null })),
       ]);
       setSecurity(s.report);
       setMalwarebytes(m.report);
@@ -192,6 +194,8 @@ export default function SecurityCenterDashboard() {
         }
         setChannelForms(forms);
       }
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "Failed to load security data");
     } finally {
       setLoading(false);
     }
@@ -312,6 +316,11 @@ export default function SecurityCenterDashboard() {
       </div>
 
       {loading && <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 text-slate-400">Lade Security Daten...</div>}
+      {!loading && fetchError && (
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300 text-sm">
+          ⚠ Verbindungsfehler: {fetchError} — API-Route nicht erreichbar. Bitte Server neu starten.
+        </div>
+      )}
 
       {/* ── OVERVIEW ── */}
       {!loading && tab === "overview" && security && (

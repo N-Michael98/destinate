@@ -650,36 +650,60 @@ function StrategyBuilderCenter() {
         <div>
           <h2 className="text-4xl font-black"> Strategy Builder Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Builder fr Strategien, Regeln, Risk-Filter, Regime-Fit und sptere AI-Optimierung.
+            Universal Strategy Registry — alle Strategien, Regime-Filter, Risk-Regeln, Mutations-Engine und Evolution verbinden.
           </p>
         </div>
         <div className="bg-black border border-orange-800 rounded-2xl p-5 min-w-[190px]">
-          <p className="text-gray-400">Builder Status</p>
-          <p className="text-orange-400 text-2xl font-bold">Prepared</p>
+          <p className="text-gray-400">Strategie Status</p>
+          <p className="text-orange-400 text-2xl font-bold">8 Aktiv</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="Strategies" value="4" subtitle="Mock library" accent="text-orange-400" border="border-orange-900" />
-        <StatCard title="Best Setup" value="Momentum" subtitle="Current leader" accent="text-green-400" border="border-green-900" />
-        <StatCard title="Weak Setup" value="Inventory" subtitle="Needs review" accent="text-red-400" border="border-red-900" />
-        <StatCard title="Regime Fit" value="Ready" subtitle="V8.8 connected" accent="text-lime-400" border="border-lime-900" />
-        <StatCard title="Evolution" value="Ready" subtitle="V7.9 connected" accent="text-purple-400" border="border-purple-900" />
+      <div className="grid grid-cols-4 gap-6 mb-8">
+        <StatCard title="Universal Registry" value="8" subtitle="Strategien gesamt" accent="text-orange-400" border="border-orange-900" />
+        <StatCard title="Evolution Loop" value="Aktiv" subtitle="→ Strategy Evolution" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Regime Fit" value="Live" subtitle="→ Market Regime" accent="text-lime-400" border="border-lime-900" />
+        <StatCard title="Beste Strategie" value="Momentum" subtitle="Aktuelle Führerin" accent="text-green-400" border="border-green-900" />
       </div>
 
-      <div className="grid grid-cols-4 gap-6">
-        {[
-          ["Momentum Breakout", "Trending markets", "Strong"],
-          ["Risk-Off Trend", "Gold / safe haven", "Stable"],
-          ["Inventory Reaction", "Oil events", "Review"],
-          ["Macro Momentum", "Forex + USD", "Prepared"],
-        ].map(([name, note, status]) => (
-          <div key={name} className="bg-black border border-gray-800 rounded-2xl p-6">
-            <h3 className="text-2xl font-bold">{name}</h3>
-            <p className="text-gray-400 mt-4">{note}</p>
-            <p className="text-cyan-400 mt-5 font-bold">{status}</p>
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="bg-black border border-orange-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-orange-400 mb-4"> Trend-Strategien</h3>
+          <div className="space-y-3">
+            <StatusPill label="Momentum Breakout" value="Strong / NAS100, XAUUSD" accent="text-green-400" />
+            <StatusPill label="Trend Following" value="Aktiv / alle Märkte" accent="text-lime-400" />
+            <StatusPill label="Risk-Off Trend" value="Gold / Safe Haven" accent="text-blue-400" />
           </div>
-        ))}
+        </div>
+
+        <div className="bg-black border border-yellow-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-yellow-400 mb-4"> Macro / Event-Strategien</h3>
+          <div className="space-y-3">
+            <StatusPill label="Macro Momentum" value="Forex / USD-Paare" accent="text-yellow-400" />
+            <StatusPill label="Inventory Reaction" value="USOIL Events" accent="text-orange-400" />
+            <StatusPill label="Risk Sentiment" value="BTC / SPX Korrelation" accent="text-purple-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="bg-black border border-purple-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-purple-400 mb-4"> Mean Reversion / Range</h3>
+          <div className="space-y-3">
+            <StatusPill label="Range Scalp" value="EURUSD Ranging" accent="text-cyan-400" />
+            <StatusPill label="Compression Breakout" value="Warten auf Bestätigung" accent="text-indigo-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-gray-700 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-gray-300 mb-4"> Evolution-Verbindung</h3>
+          <div className="space-y-3">
+            <StatusPill label="→ Strategy Evolution" value="Mutation aktiv" accent="text-purple-400" />
+            <StatusPill label="→ Market Regime" value="Regime-Filter aktiv" accent="text-lime-400" />
+            <StatusPill label="→ Consensus Gate" value="Approval required" accent="text-yellow-400" />
+            <StatusPill label="→ Forward Testing" value="Simulations-Loop" accent="text-blue-400" />
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -804,9 +828,7 @@ function ExecutionCenter() {
 function LearningCenter() {
   return (
     <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
-      
-      <ExecutionCenterPanel />
-<div className="flex items-start justify-between gap-6 mb-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black"> Learning Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -882,7 +904,129 @@ function LearningCenter() {
   );
 }
 
+function LearningReportsCenter() {
+  return (
+    <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black"> Learning Reports</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            AI-generierte Lernberichte: Performance-Analyse, Strategie-Ranking, Fehler-Review und Evolution-Empfehlungen.
+          </p>
+        </div>
+        <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Report Status</p>
+          <p className="text-cyan-400 text-2xl font-bold">Prepared</p>
+        </div>
+      </div>
 
+      <div className="grid grid-cols-4 gap-6 mb-8">
+        <StatCard title="Tages-Report" value="Ready" subtitle="Täglich nach Close" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Wochen-Report" value="Ready" subtitle="Freitag 18:00" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Monats-Report" value="Ready" subtitle="Strategie Review" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Evolution Report" value="Aktiv" subtitle="Mutations-Feedback" accent="text-green-400" border="border-green-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
+        <div className="bg-black border border-cyan-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-cyan-400 mb-4"> Tages-Analyse</h3>
+          <div className="space-y-2">
+            <StatusPill label="Trade Performance" value="PnL / Win-Rate" accent="text-cyan-400" />
+            <StatusPill label="Beste Strategie" value="Momentum" accent="text-green-400" />
+            <StatusPill label="Fehler-Review" value="Inventory short" accent="text-red-400" />
+            <StatusPill label="GPT Zusammenfassung" value="Prepared" accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-blue-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-blue-400 mb-4"> Wochen-Report</h3>
+          <div className="space-y-2">
+            <StatusPill label="Win-Rate Trend" value="67% → 71%" accent="text-green-400" />
+            <StatusPill label="Profit Factor" value="2.15" accent="text-cyan-400" />
+            <StatusPill label="Max Drawdown" value="0.73%" accent="text-yellow-400" />
+            <StatusPill label="Strategie-Ranking" value="Updated" accent="text-purple-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-purple-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-purple-400 mb-4"> Evolution Feedback</h3>
+          <div className="space-y-2">
+            <StatusPill label="Mutation Score" value="→ Strategy Evolution" accent="text-purple-400" />
+            <StatusPill label="Beste Spezies" value="Momentum v3.2" accent="text-green-400" />
+            <StatusPill label="Eliminiert" value="Inventory v1.0" accent="text-red-400" />
+            <StatusPill label="Claude Review" value="Risk check" accent="text-red-300" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SchedulerCenter() {
+  return (
+    <section className="bg-gray-900 border border-violet-900 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
+        <div>
+          <h2 className="text-4xl font-black"> AI Scheduler</h2>
+          <p className="text-gray-400 text-xl mt-3">
+            Automatisierter Ablaufplan: tägliche, wöchentliche und monatliche AI-Zyklen für Analyse, Learning und Evolution.
+          </p>
+        </div>
+        <div className="bg-black border border-violet-800 rounded-2xl p-5 min-w-[190px]">
+          <p className="text-gray-400">Scheduler Status</p>
+          <p className="text-violet-400 text-2xl font-bold">Ready</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        <div className="bg-black border border-cyan-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-cyan-400 mb-4"> Täglicher Zyklus</h3>
+          <div className="space-y-2">
+            <StatusPill label="06:00 — Market Scan" value="Regime Check" accent="text-cyan-400" />
+            <StatusPill label="08:00 — Signal Engine" value="Opportunities" accent="text-blue-400" />
+            <StatusPill label="16:00 — Performance" value="Trade Review" accent="text-green-400" />
+            <StatusPill label="18:00 — AI Report" value="GPT + Claude" accent="text-purple-400" />
+            <StatusPill label="20:00 — Memory Update" value="Learning Loop" accent="text-yellow-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-blue-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-blue-400 mb-4"> Wöchentlicher Zyklus</h3>
+          <div className="space-y-2">
+            <StatusPill label="Montag — Regime Reset" value="Neue Woche" accent="text-blue-400" />
+            <StatusPill label="Mittwoch — FOMC Check" value="Fed Calendar" accent="text-yellow-400" />
+            <StatusPill label="Freitag — Wochen-Report" value="Full Review" accent="text-cyan-400" />
+            <StatusPill label="Freitag — Evolution" value="Strategie Ranking" accent="text-purple-400" />
+            <StatusPill label="Wochenende — Backtest" value="Forward Testing" accent="text-green-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-purple-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-purple-400 mb-4"> Monatlicher Zyklus</h3>
+          <div className="space-y-2">
+            <StatusPill label="1. — Monats-Report" value="Full P&L Review" accent="text-purple-400" />
+            <StatusPill label="1. — Risk Reset" value="Drawdown Review" accent="text-red-400" />
+            <StatusPill label="Mid — Strategy Review" value="Evolution Update" accent="text-violet-400" />
+            <StatusPill label="End — Portfolio" value="Allocation Check" accent="text-blue-400" />
+            <StatusPill label="End — AI Models" value="Confidence Tuning" accent="text-cyan-400" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-black border border-gray-800 rounded-2xl p-6">
+        <h3 className="text-xl font-bold mb-4">Automation Pipeline</h3>
+        <div className="grid grid-cols-6 gap-3">
+          {["Market Scan", "Regime Check", "Signal Gen.", "Risk Filter", "AI Report", "Learning Update"].map((step) => (
+            <div key={step} className="bg-gray-950 border border-gray-800 rounded-xl p-4 text-center">
+              <p className="font-bold text-sm">{step}</p>
+              <p className="text-violet-400 mt-2 text-xs">Auto</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function NewsLayerCenter() {
   return (
@@ -891,50 +1035,78 @@ function NewsLayerCenter() {
         <div>
           <h2 className="text-4xl font-black"> News Layer Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale News- und Sentiment-Schicht fr Macro Events, Breaking News, Market Impact und sptere AI-Zusammenfassungen.
+            Alle relevanten Nachrichtenquellen: Geopolitik, Zentralbanken, Makrodaten, institutionelle Flows und Market-Moving Events.
           </p>
         </div>
         <div className="bg-black border border-sky-800 rounded-2xl p-5 min-w-[190px]">
           <p className="text-gray-400">News Status</p>
-          <p className="text-sky-400 text-2xl font-bold">Prepared</p>
+          <p className="text-sky-400 text-2xl font-bold">Monitoring</p>
         </div>
       </div>
 
       <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="Breaking News" value="Watch" subtitle="Market moving events" accent="text-red-400" border="border-red-900" />
-        <StatCard title="Sentiment" value="Ready" subtitle="News mood layer" accent="text-sky-400" border="border-sky-900" />
-        <StatCard title="Macro Events" value="Later" subtitle="Calendar API later" accent="text-yellow-400" border="border-yellow-900" />
-        <StatCard title="Impact Score" value="Prepared" subtitle="Low/medium/high" accent="text-purple-400" border="border-purple-900" />
-        <StatCard title="AI Summary" value="Ready" subtitle="GPT/Claude later" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Geopolitik" value="Watch" subtitle="Globale Risiken" accent="text-red-400" border="border-red-900" />
+        <StatCard title="Zentralbanken" value="Aktiv" subtitle="Fed / EZB / BOE / SNB" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="Makrodaten" value="Kalender" subtitle="CPI, NFP, GDP, PMI" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Institutionell" value="Flows" subtitle="COT, Dark Pools" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="AI Analyse" value="Ready" subtitle="GPT/Claude Filter" accent="text-green-400" border="border-green-900" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="bg-black border border-red-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-red-400 mb-4"> Geopolitische Quellen</h3>
+          <div className="space-y-2">
+            <StatusPill label="Reuters / AP" value="Breaking" accent="text-red-400" />
+            <StatusPill label="Bloomberg Terminal" value="Planned" accent="text-yellow-400" />
+            <StatusPill label="FT / WSJ" value="Planned" accent="text-orange-400" />
+            <StatusPill label="Geopolitical Risk Index" value="Prepared" accent="text-red-300" />
+            <StatusPill label="UN / NATO Statements" value="Watch" accent="text-red-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-yellow-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-yellow-400 mb-4"> Grosse Banken / Zentralbanken</h3>
+          <div className="space-y-2">
+            <StatusPill label="Fed (FOMC)" value="High Impact" accent="text-red-400" />
+            <StatusPill label="EZB (ECB)" value="High Impact" accent="text-red-400" />
+            <StatusPill label="Bank of England" value="Watch" accent="text-yellow-400" />
+            <StatusPill label="SNB / RBA / BOJ" value="Watch" accent="text-yellow-400" />
+            <StatusPill label="JPMorgan / GS Reports" value="Institutional" accent="text-purple-400" />
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6">
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> Source Pipeline</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="Yahoo Finance" value="Later" accent="text-purple-400" />
-            <StatusPill label="Capital.com News" value="Later" accent="text-blue-400" />
-            <StatusPill label="Economic Calendar" value="Later" accent="text-yellow-400" />
-            <StatusPill label="Professional Feeds" value="Planned" accent="text-sky-400" />
-          </div>
-        </div>
-
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> Market Impact</h3>
-          <div className="space-y-3 mt-5">
+        <div className="bg-black border border-blue-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-blue-400 mb-4"> Makrodaten Kalender</h3>
+          <div className="space-y-2">
             <StatusPill label="CPI / Inflation" value="High" accent="text-red-400" />
-            <StatusPill label="FOMC / Rates" value="High" accent="text-red-400" />
-            <StatusPill label="NFP / Jobs" value="Watched" accent="text-yellow-400" />
-            <StatusPill label="Oil Inventories" value="USOIL" accent="text-orange-400" />
+            <StatusPill label="NFP / Jobs" value="High" accent="text-red-400" />
+            <StatusPill label="FOMC Meetings" value="Critical" accent="text-red-400" />
+            <StatusPill label="GDP / PMI / ISM" value="Medium" accent="text-yellow-400" />
+            <StatusPill label="EIA Oil Inventories" value="USOIL" accent="text-orange-400" />
           </div>
         </div>
 
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> AI News Review</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="GPT Summary" value="Prepared" accent="text-green-400" />
-            <StatusPill label="Claude Risk Impact" value="Prepared" accent="text-red-400" />
-            <StatusPill label="Consensus Filter" value="Required" accent="text-purple-400" />
+        <div className="bg-black border border-purple-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-purple-400 mb-4"> Institutionelle Quellen</h3>
+          <div className="space-y-2">
+            <StatusPill label="COT Report (CFTC)" value="Weekly" accent="text-purple-400" />
+            <StatusPill label="Dark Pool Prints" value="Planned" accent="text-indigo-400" />
+            <StatusPill label="Options Flow" value="Planned" accent="text-violet-400" />
+            <StatusPill label="Hedge Fund 13F" value="Quarterly" accent="text-purple-300" />
+            <StatusPill label="Seeking Alpha / Finviz" value="Screener" accent="text-blue-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-green-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-green-400 mb-4"> AI News Filter</h3>
+          <div className="space-y-2">
+            <StatusPill label="GPT Zusammenfassung" value="Prepared" accent="text-cyan-400" />
+            <StatusPill label="Claude Risikoanalyse" value="Prepared" accent="text-red-400" />
+            <StatusPill label="Sentiment Score" value="0-100" accent="text-green-400" />
+            <StatusPill label="Impact: Gold" value="Watch" accent="text-yellow-400" />
+            <StatusPill label="Impact: Oil" value="Watch" accent="text-orange-400" />
           </div>
         </div>
       </div>
@@ -949,48 +1121,81 @@ function MarketRegimeCenter() {
         <div>
           <h2 className="text-4xl font-black"> Market Regime Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Erkennt Marktumfeld und filtert Strategien: trending, ranging, volatile, risk-on, risk-off oder news-driven.
+            Alle Märkte im Regime-Analyse-Status — wartet auf Signal. Trending, Ranging, Volatile, Risk-On/Off, News-Driven.
           </p>
         </div>
         <div className="bg-black border border-lime-800 rounded-2xl p-5 min-w-[190px]">
-          <p className="text-gray-400">Regime Status</p>
-          <p className="text-lime-400 text-2xl font-bold">Prepared</p>
+          <p className="text-gray-400">Regime Engine</p>
+          <p className="text-lime-400 text-2xl font-bold">Monitoring</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="NAS100" value="Trending" subtitle="Momentum favored" accent="text-green-400" border="border-green-900" />
-        <StatCard title="EURUSD" value="Ranging" subtitle="Mean reversion later" accent="text-yellow-400" border="border-yellow-900" />
-        <StatCard title="XAUUSD" value="Risk-Off" subtitle="Safe-haven logic" accent="text-blue-400" border="border-blue-900" />
-        <StatCard title="USOIL" value="News" subtitle="Inventory driven" accent="text-orange-400" border="border-orange-900" />
-        <StatCard title="BTCUSD" value="Volatile" subtitle="Risk appetite" accent="text-red-400" border="border-red-900" />
+      <div className="grid grid-cols-6 gap-4 mb-6">
+        <StatCard title="XAUUSD" value="Risk-Off" subtitle="Safe Haven aktiv" accent="text-yellow-400" border="border-yellow-900" />
+        <StatCard title="EURUSD" value="Ranging" subtitle="USD-Stärke beobachtet" accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="NAS100" value="Trending" subtitle="Tech-Momentum" accent="text-green-400" border="border-green-900" />
+        <StatCard title="USOIL" value="News" subtitle="EIA Inventories" accent="text-orange-400" border="border-orange-900" />
+        <StatCard title="BTCUSD" value="Volatile" subtitle="Risk Appetite" accent="text-red-400" border="border-red-900" />
+        <StatCard title="SPX500" value="Trending" subtitle="Bull-Trend aktiv" accent="text-lime-400" border="border-lime-900" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-6 mb-6">
+        <div className="bg-black border border-green-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-green-400 mb-4"> Trending Märkte</h3>
+          <div className="space-y-2">
+            <StatusPill label="NAS100" value="Bull-Trend / Long bevorzugt" accent="text-green-400" />
+            <StatusPill label="SPX500" value="Aufwärtstrend / Long" accent="text-lime-400" />
+            <StatusPill label="XAUUSD" value="Risk-Off Trend" accent="text-yellow-400" />
+            <StatusPill label="Strategie" value="Momentum Breakout" accent="text-green-300" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-yellow-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-yellow-400 mb-4"> Ranging / Seitwärts</h3>
+          <div className="space-y-2">
+            <StatusPill label="EURUSD" value="Range / USD beobachten" accent="text-yellow-400" />
+            <StatusPill label="GBPUSD" value="Ranging / warten" accent="text-yellow-300" />
+            <StatusPill label="USDJPY" value="Compression" accent="text-orange-400" />
+            <StatusPill label="Strategie" value="Range Scalp / warten" accent="text-cyan-400" />
+          </div>
+        </div>
+
+        <div className="bg-black border border-red-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-red-400 mb-4"> Volatile / News-Driven</h3>
+          <div className="space-y-2">
+            <StatusPill label="BTCUSD" value="Hochvolatil / 1:20 max" accent="text-red-400" />
+            <StatusPill label="USOIL" value="EIA Events abwarten" accent="text-orange-400" />
+            <StatusPill label="Bei FOMC" value="Alle Märkte pausiert" accent="text-red-400" />
+            <StatusPill label="Strategie" value="Reduce / Review" accent="text-yellow-400" />
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6">
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> Trend Logic</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="Trending" value="Momentum" accent="text-green-400" />
-            <StatusPill label="Ranging" value="Mean Rev." accent="text-yellow-400" />
-            <StatusPill label="Compression" value="Breakout Later" accent="text-cyan-400" />
+        <div className="bg-black border border-lime-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-lime-400 mb-4"> Risk-On Märkte</h3>
+          <div className="space-y-2">
+            <StatusPill label="NAS100 / SPX500" value="Growth Assets" accent="text-green-400" />
+            <StatusPill label="BTCUSD" value="Risk Appetite" accent="text-purple-400" />
+            <StatusPill label="AUDUSD / NZDUSD" value="Planned" accent="text-lime-400" />
           </div>
         </div>
 
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> Risk Regime</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="Risk-On" value="Growth Assets" accent="text-green-400" />
-            <StatusPill label="Risk-Off" value="Gold / USD" accent="text-blue-400" />
-            <StatusPill label="News-Driven" value="Review" accent="text-red-400" />
+        <div className="bg-black border border-blue-900 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-blue-400 mb-4"> Risk-Off Märkte</h3>
+          <div className="space-y-2">
+            <StatusPill label="XAUUSD" value="Safe Haven aktiv" accent="text-yellow-400" />
+            <StatusPill label="USD / DXY" value="Stärke bei Fear" accent="text-blue-400" />
+            <StatusPill label="USDJPY" value="Yen-Stärke beobachten" accent="text-cyan-400" />
           </div>
         </div>
 
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> Strategy Filter</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="Regime Fit" value="Required" accent="text-lime-400" />
-            <StatusPill label="Wrong Regime" value="Reduce" accent="text-yellow-400" />
-            <StatusPill label="High News Risk" value="Block/Review" accent="text-red-400" />
+        <div className="bg-black border border-gray-700 rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-gray-300 mb-4"> Regime → Strategie Filter</h3>
+          <div className="space-y-2">
+            <StatusPill label="Regime Fit" value="Pflicht vor Signal" accent="text-lime-400" />
+            <StatusPill label="Falsches Regime" value="Position reduzieren" accent="text-yellow-400" />
+            <StatusPill label="Hohe News-Zeit" value="Block / Review" accent="text-red-400" />
           </div>
         </div>
       </div>
@@ -3185,13 +3390,9 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
 
   if (activeView === "forward-testing") return <ForwardTestingCenter />;
 
-  if (
-    activeView === "ai-memory" ||
-    activeView === "learning-reports" ||
-    activeView === "scheduler"
-  ) {
-    return <LearningCenter />;
-  }
+  if (activeView === "ai-memory") return <LearningCenter />;
+  if (activeView === "learning-reports") return <LearningReportsCenter />;
+  if (activeView === "scheduler") return <SchedulerCenter />;
 
   return (
     <CenterPlaceholder

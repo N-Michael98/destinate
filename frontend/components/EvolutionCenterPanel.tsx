@@ -96,12 +96,12 @@ export default function EvolutionCenterPanel() {
 
     try {
       const [evolutionResponse, memoryResponse] = await Promise.all([
-        fetch("/api/autonomous-trading-evolution", { cache: "no-store" }),
-        fetch("/api/autonomous-trading-evolution-memory", { cache: "no-store" }),
+        fetch("/api/autonomous-trading-evolution", { cache: "no-store" }).catch(() => null),
+        fetch("/api/autonomous-trading-evolution-memory", { cache: "no-store" }).catch(() => null),
       ]);
 
-      const evolutionData = await evolutionResponse.json().catch(() => null);
-      const memoryData = await memoryResponse.json().catch(() => null);
+      const evolutionData = evolutionResponse ? await evolutionResponse.json().catch(() => null) : null;
+      const memoryData = memoryResponse ? await memoryResponse.json().catch(() => null) : null;
 
       if (evolutionData?.ok && evolutionData.report) {
         setReport(evolutionData.report);
@@ -110,6 +110,8 @@ export default function EvolutionCenterPanel() {
       if (memoryData?.ok && memoryData.memory) {
         setMemory(memoryData.memory);
       }
+    } catch {
+      // silently handle network errors — component shows empty state
     } finally {
       setLoading(false);
     }
