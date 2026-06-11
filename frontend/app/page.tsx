@@ -16,6 +16,7 @@ import SettingsDashboard from "@/components/SettingsDashboard";
 import TechnicalIndicatorsPanel from "@/components/TechnicalIndicatorsPanel";
 import SystemHealthCheck from "@/components/SystemHealthCheck";
 import LiveExecutionMonitor from "@/components/LiveExecutionMonitor";
+import MarketScannerPanel from "@/components/MarketScannerPanel";
 import {
   EquityCurveChart,
   WinLossBarChart,
@@ -111,6 +112,7 @@ const navGroups: NavGroup[] = [
   {
     title: "Intelligence",
     items: [
+      { label: "Market Scanner", icon: "SCN", view: "market-scanner" },
       { label: "Market Data", icon: "MD", view: "market-data" },
       { label: "News Layer", icon: "NL", view: "news-layer" },
       { label: "Market Regime", icon: "MR", view: "market-regime" },
@@ -3395,6 +3397,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "ai-consensus") return <ConsensusLiveCenter />;
   if (activeView === "execution-center") return <ExecutionLiveCenter />;
   if (activeView === "live-execution") return <LiveExecutionMonitor />;
+  if (activeView === "market-scanner") return <MarketScannerPanel />;
   if (activeView === "strategy-evolution") return <EvolutionCenterPanel />;
 
   if (activeView === "forward-testing") return <ForwardTestingCenter />;

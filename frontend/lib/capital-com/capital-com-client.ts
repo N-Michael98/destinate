@@ -301,6 +301,97 @@ export async function capitalClosePosition(
   }
 }
 
+export interface CapitalMarket {
+  epic: string;
+  instrumentName: string;
+  instrumentType: string;
+  symbol: string; // derived from epic
+  bid: number;
+  ask: number;
+  spread: number;
+  updateTime: string;
+}
+
+// Fetch all available markets from Capital.com (by instrument type)
+// Returns markets with current bid/ask from Capital.com snapshot
+export async function capitalGetAvailableMarkets(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  instrumentTypes: string[] = ["CURRENCIES", "INDICES", "COMMODITIES", "CRYPTOCURRENCIES"]
+): Promise<{ ok: boolean; markets?: CapitalMarket[]; error?: string }> {
+  try {
+    const all: CapitalMarket[] = [];
+
+    for (const type of instrumentTypes) {
+      const res = await fetch(
+        `${DEMO_BASE}/markets?instrumentTypes=${type}&limit=50`,
+        { headers: authHeaders(apiKey, cst, securityToken) }
+      );
+      if (!res.ok) continue;
+
+      const data = (await res.json()) as { markets: Record<string, unknown>[] };
+      for (const m of data.markets ?? []) {
+        const snap = (m.snapshot ?? {}) as Record<string, unknown>;
+        const epic = String(m.epic ?? "");
+        const bid = Number(snap.bid ?? 0);
+        const offer = Number(snap.offer ?? bid);
+        all.push({
+          epic,
+          instrumentName: String(m.instrumentName ?? epic),
+          instrumentType: type,
+          symbol: EPIC_TO_SYMBOL[epic] ?? epic,
+          bid,
+          ask: offer,
+          spread: Number((offer - bid).toFixed(5)),
+          updateTime: String(snap.updateTime ?? new Date().toISOString()),
+        });
+      }
+    }
+
+    return { ok: true, markets: all };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
+// Search markets by term (e.g. "gold", "eur", "bitcoin")
+export async function capitalSearchMarkets(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  searchTerm: string
+): Promise<{ ok: boolean; markets?: CapitalMarket[]; error?: string }> {
+  try {
+    const res = await fetch(
+      `${DEMO_BASE}/markets?searchTerm=${encodeURIComponent(searchTerm)}&limit=20`,
+      { headers: authHeaders(apiKey, cst, securityToken) }
+    );
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+    const data = (await res.json()) as { markets: Record<string, unknown>[] };
+    const markets: CapitalMarket[] = (data.markets ?? []).map((m) => {
+      const snap = (m.snapshot ?? {}) as Record<string, unknown>;
+      const epic = String(m.epic ?? "");
+      const bid = Number(snap.bid ?? 0);
+      const offer = Number(snap.offer ?? bid);
+      return {
+        epic,
+        instrumentName: String(m.instrumentName ?? epic),
+        instrumentType: String(m.instrumentType ?? ""),
+        symbol: EPIC_TO_SYMBOL[epic] ?? epic,
+        bid,
+        ask: offer,
+        spread: Number((offer - bid).toFixed(5)),
+        updateTime: String(snap.updateTime ?? new Date().toISOString()),
+      };
+    });
+    return { ok: true, markets };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
 export async function capitalDeleteSession(
   apiKey: string,
   cst: string,
