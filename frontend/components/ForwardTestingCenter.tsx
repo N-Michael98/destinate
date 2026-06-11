@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ExecutionQueuePositionSyncPanel from "./ExecutionQueuePositionSyncPanel";
 import ExecutionPositionTicketSyncPanel from "./ExecutionPositionTicketSyncPanel";
+import { ForwardTestResultsChart, WinRateTrendChart } from "./PerformanceCharts";
 
 interface ForwardTestResult {
   resultId: string;
@@ -185,6 +186,12 @@ export default function ForwardTestingCenter() {
             <KpiCard label="Completed" value={m.completedTrades} />
             <KpiCard label="EV / Trade" value={`${m.expectedValuePerTrade}%`} accent={m.expectedValuePerTrade >= 0 ? "text-teal-400" : "text-red-400"} />
             <KpiCard label="Avg Confidence" value={`${m.avgConfidenceScore}%`} accent="text-violet-400" />
+          </div>
+
+          {/* Charts */}
+          <div className="grid lg:grid-cols-2 gap-6">
+            <ForwardTestResultsChart />
+            <WinRateTrendChart />
           </div>
 
           {/* Details */}

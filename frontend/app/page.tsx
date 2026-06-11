@@ -12,6 +12,13 @@ import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
 import ExecutionCenterPanel from "@/components/ExecutionCenterPanel";
 import ForwardTestingCenter from "@/components/ForwardTestingCenter";
 import SecurityCenterDashboard from "@/components/SecurityCenterDashboard";
+import SettingsDashboard from "@/components/SettingsDashboard";
+import {
+  EquityCurveChart,
+  WinLossBarChart,
+  MonthlyPnLChart,
+  PortfolioAllocationChart,
+} from "@/components/PerformanceCharts";
 
 type NavItem = {
   label: string;
@@ -254,9 +261,7 @@ function CenterPlaceholder({
 function GPTAnalystCenter() {
   return (
     <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
-      
-      <BrokerCenterPanel />
-<div className="flex items-start justify-between gap-6 mb-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black"> GPT Analyst Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -422,9 +427,7 @@ function MarketDataCenter() {
 function PortfolioBrainCenter() {
   return (
     <section className="bg-gray-900 border border-fuchsia-900 rounded-2xl p-8">
-      
-      <PortfolioBrainCenterPanel />
-<div className="flex items-start justify-between gap-6 mb-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black"> Portfolio Brain Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -475,9 +478,7 @@ function PortfolioBrainCenter() {
 function TradingJournalCenter() {
   return (
     <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
-      
-      <ExecutionCenterPanel />
-<div className="flex items-start justify-between gap-6 mb-8">
+      <div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black"> Trading Journal Center</h2>
           <p className="text-gray-400 text-xl mt-3">
@@ -496,6 +497,16 @@ function TradingJournalCenter() {
         <StatCard title="Profit Factor" value="2.15" subtitle="Performance sample" accent="text-purple-400" border="border-purple-900" />
         <StatCard title="Max DD" value="0.73%" subtitle="Risk tracking" accent="text-yellow-400" border="border-yellow-900" />
         <StatCard title="Journal Score" value="A-" subtitle="Discipline rating" accent="text-cyan-400" border="border-cyan-900" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <EquityCurveChart />
+        <MonthlyPnLChart />
+      </div>
+
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <WinLossBarChart />
+        <PortfolioAllocationChart />
       </div>
 
       <div className="grid grid-cols-3 gap-6">
@@ -3166,9 +3177,9 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "portfolio-intelligence") return <PortfolioIntelligenceCenter />;
   if (activeView === "broker-center") return <BrokerCenter />;
   if (activeView === "security") return <SecurityCenterDashboard />;
-  if (activeView === "settings") return <SettingsCenter />;
+  if (activeView === "settings") return <SettingsDashboard />;
   if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
-  if (activeView === "ai-consensus") return <ConsensusCenter />;
+  if (activeView === "ai-consensus") return <ConsensusLiveCenter />;
   if (activeView === "execution-center") return <ExecutionLiveCenter />;
   if (activeView === "strategy-evolution") return <EvolutionCenterPanel />;
 
@@ -3229,7 +3240,7 @@ export default function Home() {
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
-            <p className="text-gray-500 mt-3 text-sm">Mission Control  V10.1.2</p>
+            <p className="text-gray-500 mt-3 text-sm">Mission Control  V17.0.0</p>
           </div>
 
           <nav className="space-y-7">
@@ -3282,24 +3293,8 @@ export default function Home() {
         <section className="flex-1 p-10 max-w-[1700px] mx-auto" >
           {activeView === "dashboard" ? (
             <UnifiedMissionControlDashboard />
-          ) : activeView === "live-prep" ? null : (
+          ) : (
             renderActiveCenter(activeView, activeLabel)
-          )}
-
-          {(activeView === "dashboard" || activeView === "live-prep") && (
-          <section className="bg-gray-900 border border-green-900 rounded-2xl p-7 mb-8" id="live-prep">
-            <h3 className="text-3xl font-bold"> Live Trading Preparation</h3>
-            <p className="text-gray-400 mt-2">
-              Status bleibt sicher: Paper/Demo Only. Keine Live Orders ohne sptere Freigabe.
-            </p>
-
-            <div className="grid grid-cols-4 gap-5 mt-6">
-              <StatusPill label="OpenAI Layer" value="Prepared" accent="text-green-400" />
-              <StatusPill label="Claude Layer" value="Prepared" accent="text-red-400" />
-              <StatusPill label="Broker API" value="Disconnected" accent="text-yellow-400" />
-              <StatusPill label="Live Execution" value="Blocked" accent="text-red-400" />
-            </div>
-          </section>
           )}
         </section>
       </div>
