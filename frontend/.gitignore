@@ -4,6 +4,7 @@
 .ai-config.json
 .capital-credentials.json
 .system-settings.json
+.users.json
 
 # dependencies
 /node_modules

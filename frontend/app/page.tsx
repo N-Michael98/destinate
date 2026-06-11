@@ -3441,6 +3441,18 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
 export default function Home() {
   const [developerMode, setDeveloperMode] = useState(false);
   const [activeView, setActiveView] = useState("dashboard");
+  const [authUser, setAuthUser] = useState<{ username: string; role: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me").then((r) => r.json()).then((d) => {
+      if (d.ok) setAuthUser({ username: d.user.username, role: d.user.role });
+    }).catch(() => {});
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  };
 
   const activeLabel =
     navGroups
@@ -3501,6 +3513,26 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {/* User badge + logout */}
+          {authUser && (
+            <div style={{ marginTop: "12px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "12px", padding: "12px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                <div>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#a5b4fc" }}>
+                    {authUser.role === "ADMIN" ? "👑" : "👤"} {authUser.username}
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#475569", marginTop: "2px" }}>{authUser.role}</div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  style={{ padding: "5px 12px", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "11px", fontFamily: "monospace", cursor: "pointer" }}
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          )}
         </aside>
 
         <section className="flex-1 p-10 max-w-[1700px] mx-auto" >
