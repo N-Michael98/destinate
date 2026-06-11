@@ -57,6 +57,8 @@ export default function SettingsDashboard() {
     IC_MARKETS: { apiKey: "", login: "", password: "", accountMode: "DEMO", loading: false, error: null, success: null },
   });
   const [capitalAccounts, setCapitalAccounts] = useState<CapitalAccountInfo[]>([]);
+  const [diagResult, setDiagResult] = useState<{ ok: boolean; steps: { step: string; ok: boolean; detail: string }[]; error?: string | null; hint?: string } | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
   const [openaiKey, setOpenaiKey] = useState("");
   const [openaiModel, setOpenaiModel] = useState("gpt-4o");
   const [anthropicKey, setAnthropicKey] = useState("");
@@ -185,6 +187,20 @@ export default function SettingsDashboard() {
         [key]: { ...f[key], loading: false, error: d.ok ? null : (d.error ?? "Connection failed"), success: d.ok ? `Connected — Account ${d.accountId}` : null },
       }));
     }
+  };
+
+  const runDiagnose = async () => {
+    const f = forms["CAPITAL_COM"];
+    setDiagLoading(true);
+    setDiagResult(null);
+    const r = await fetch("/api/capital-com/diagnose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: f.apiKey, identifier: f.login, password: f.password }),
+    }).catch(() => null);
+    const d = r ? await r.json().catch(() => null) : null;
+    setDiagResult(d ?? { ok: false, steps: [], error: "Diagnose-Endpoint nicht erreichbar" });
+    setDiagLoading(false);
   };
 
   const handleDisconnect = async (key: BrokerKey) => {
@@ -362,10 +378,23 @@ export default function SettingsDashboard() {
                             Verbindet mit demo-api-capital.backend.capital — READ ONLY, kein Trading
                           </span>
                           <button
+                            onClick={runDiagnose}
+                            disabled={diagLoading || !f.apiKey || !f.login || !f.password}
+                            style={{
+                              marginLeft: "auto", padding: "8px 16px", borderRadius: "6px",
+                              border: "1px solid rgba(245,158,11,0.4)", cursor: "pointer",
+                              background: "rgba(245,158,11,0.1)", color: "#fbbf24", fontSize: "12px",
+                              fontFamily: "monospace", fontWeight: 700,
+                              opacity: (diagLoading || !f.apiKey || !f.login || !f.password) ? 0.5 : 1,
+                            }}
+                          >
+                            {diagLoading ? "Prüfe..." : "🔍 Diagnose"}
+                          </button>
+                          <button
                             onClick={() => handleConnect(profile.key)}
                             disabled={f.loading || !f.apiKey || !f.login || !f.password}
                             style={{
-                              marginLeft: "auto", padding: "8px 24px", borderRadius: "6px", border: `1px solid ${profile.color}55`, cursor: "pointer",
+                              padding: "8px 24px", borderRadius: "6px", border: `1px solid ${profile.color}55`, cursor: "pointer",
                               background: profile.color + "33", color: profile.color, fontSize: "12px",
                               fontFamily: "monospace", fontWeight: 700,
                               opacity: (f.loading || !f.apiKey || !f.login || !f.password) ? 0.5 : 1,
@@ -424,6 +453,34 @@ export default function SettingsDashboard() {
                   >
                     Disconnect
                   </button>
+                )}
+
+                {profile.key === "CAPITAL_COM" && diagResult && (
+                  <div style={{ marginTop: "12px", background: "rgba(0,0,0,0.25)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", padding: "12px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#fbbf24", marginBottom: "8px" }}>🔍 Diagnose-Ergebnis</div>
+                    {diagResult.steps.map((s, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", fontSize: "11px" }}>
+                        <span style={{ color: s.ok ? "#10c96d" : "#f87171" }}>{s.ok ? "✓" : "✗"}</span>
+                        <span style={{ color: "#94a3b8", flex: 1 }}>{s.step}</span>
+                        <span style={{ color: s.ok ? "#6ee7b7" : "#fca5a5", fontFamily: "monospace" }}>{s.detail}</span>
+                      </div>
+                    ))}
+                    {diagResult.error && (
+                      <div style={{ marginTop: "8px", padding: "6px 10px", background: "rgba(239,68,68,0.1)", borderRadius: "6px", fontSize: "11px", color: "#f87171" }}>
+                        {diagResult.error}
+                      </div>
+                    )}
+                    {diagResult.hint && (
+                      <div style={{ marginTop: "6px", padding: "6px 10px", background: "rgba(245,158,11,0.08)", borderRadius: "6px", fontSize: "11px", color: "#fbbf24" }}>
+                        💡 {diagResult.hint}
+                      </div>
+                    )}
+                    {diagResult.ok && (
+                      <div style={{ marginTop: "8px", padding: "6px 10px", background: "rgba(16,201,109,0.08)", borderRadius: "6px", fontSize: "11px", color: "#10c96d" }}>
+                        ✓ Verbindung erfolgreich — jetzt auf Connect klicken
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {f.error && (

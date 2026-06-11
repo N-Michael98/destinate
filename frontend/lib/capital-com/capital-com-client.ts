@@ -1,5 +1,6 @@
 // Capital.com Demo REST API client — DEMO execution enabled, LIVE blocked
 const DEMO_BASE = "https://demo-api-capital.backend.capital/api/v1";
+const LIVE_BASE = "https://api-capital.backend.capital/api/v1";
 
 export interface SessionResult {
   ok: boolean;
@@ -89,19 +90,33 @@ function authHeaders(apiKey: string, cst: string, securityToken: string) {
 
 export async function capitalCreateSession(
   apiKey: string,
-  login: string,
-  password: string
+  identifier: string,   // Capital.com uses "identifier" (= email/username), NOT "login"
+  password: string,
+  useLiveApi = false    // false = DEMO, true = LIVE (blocked by safety lock)
 ): Promise<SessionResult> {
+  const base = useLiveApi ? LIVE_BASE : DEMO_BASE;
   try {
-    const res = await fetch(`${DEMO_BASE}/session`, {
+    const res = await fetch(`${base}/session`, {
       method: "POST",
-      headers: { "X-CAP-API-KEY": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ encryptedPassword: false, login, password }),
+      headers: {
+        "X-CAP-API-KEY": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        encryptedPassword: false,
+        identifier,   // ← Capital.com API uses "identifier" not "login"
+        password,
+      }),
+      // Prevent Next.js from caching this request
+      cache: "no-store",
     });
 
     if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      const errMsg: string = (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}`;
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errBody = await res.json() as Record<string, string>;
+        errMsg = errBody.errorCode ?? errBody.errorMessage ?? errMsg;
+      } catch { /* ignore parse error */ }
       return { ok: false, error: errMsg };
     }
 
@@ -119,7 +134,9 @@ export async function capitalCreateSession(
       currency: String(data.currency ?? ""),
     };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+    // "fetch failed" = network-level error (DNS, SSL, timeout)
+    const msg = err instanceof Error ? err.message : "Network error";
+    return { ok: false, error: `Network error — ${msg}` };
   }
 }
 

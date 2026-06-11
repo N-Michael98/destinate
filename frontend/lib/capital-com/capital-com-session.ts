@@ -39,7 +39,7 @@ export async function connectCapital(
     _session = null;
   }
 
-  const session: SessionResult = await capitalCreateSession(apiKey, login, password);
+  const session: SessionResult = await capitalCreateSession(apiKey, login, password, false);
   if (!session.ok) return { ok: false, error: session.error };
 
   const accountsResult = await capitalGetAccounts(apiKey, session.cst!, session.securityToken!);
