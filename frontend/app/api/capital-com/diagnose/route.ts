@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
   // Step 2: Can we reach Capital.com domain?
   try {
-    const cap = await fetch("https://demo-api-capital.backend.capital/api/v1/time", {
+    const cap = await fetch("https://demo-api-capital.backend-capital.com/api/v1/time", {
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
     });
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
   // Step 3: Session with identifier
   try {
-    const res = await fetch("https://demo-api-capital.backend.capital/api/v1/session", {
+    const res = await fetch("https://demo-api-capital.backend-capital.com/api/v1/session", {
       method: "POST",
       headers: { "X-CAP-API-KEY": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ encryptedPassword: false, identifier, password }),

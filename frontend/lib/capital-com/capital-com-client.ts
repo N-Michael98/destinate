@@ -1,6 +1,6 @@
 // Capital.com Demo REST API client — DEMO execution enabled, LIVE blocked
-const DEMO_BASE = "https://demo-api-capital.backend.capital/api/v1";
-const LIVE_BASE = "https://api-capital.backend.capital/api/v1";
+const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
+const LIVE_BASE = "https://api-capital.backend-capital.com/api/v1";
 
 export interface SessionResult {
   ok: boolean;
