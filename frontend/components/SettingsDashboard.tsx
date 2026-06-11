@@ -47,6 +47,96 @@ const TAB_LIST: { key: Tab; label: string; icon: string }[] = [
   { key: "system", label: "System", icon: "⚙️" },
 ];
 
+function ChangePasswordForm() {
+  const [form, setForm] = useState({ current: "", next: "", confirm: "" });
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const set = (k: "current" | "next" | "confirm") => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (form.next !== form.confirm) {
+      setResult({ ok: false, msg: "Neue Passwörter stimmen nicht überein" });
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    const r = await fetch("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword: form.current, newPassword: form.next }),
+    }).catch(() => null);
+    const d = r ? await r.json().catch(() => null) : null;
+    setLoading(false);
+    setResult({ ok: d?.ok ?? false, msg: d?.message ?? d?.error ?? "Fehler" });
+    if (d?.ok) setForm({ current: "", next: "", confirm: "" });
+  };
+
+  const inp = (val: string, onChange: React.ChangeEventHandler<HTMLInputElement>, placeholder: string) => (
+    <input
+      type="password"
+      value={val}
+      onChange={onChange}
+      placeholder={placeholder}
+      required
+      style={{
+        width: "100%", boxSizing: "border-box",
+        background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)",
+        borderRadius: "6px", padding: "9px 12px", color: "#f1f5f9",
+        fontSize: "12px", fontFamily: "monospace", outline: "none",
+      }}
+    />
+  );
+
+  return (
+    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.1)", padding: "24px" }}>
+      <div style={{ fontSize: "14px", fontWeight: 700, color: "#f1f5f9", marginBottom: "16px" }}>🔑 Passwort ändern</div>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div>
+          <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>AKTUELLES PASSWORT</label>
+          {inp(form.current, set("current"), "Aktuelles Passwort...")}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          <div>
+            <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>NEUES PASSWORT</label>
+            {inp(form.next, set("next"), "Mindestens 8 Zeichen...")}
+          </div>
+          <div>
+            <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>WIEDERHOLEN</label>
+            {inp(form.confirm, set("confirm"), "Passwort bestätigen...")}
+          </div>
+        </div>
+        {result && (
+          <div style={{
+            padding: "8px 12px", borderRadius: "6px", fontSize: "11px",
+            background: result.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.1)",
+            border: `1px solid ${result.ok ? "rgba(16,201,109,0.3)" : "rgba(239,68,68,0.3)"}`,
+            color: result.ok ? "#10c96d" : "#f87171",
+          }}>
+            {result.ok ? "✓" : "✗"} {result.msg}
+          </div>
+        )}
+        <div>
+          <button
+            type="submit"
+            disabled={loading || !form.current || !form.next || !form.confirm}
+            style={{
+              padding: "9px 24px", borderRadius: "6px", border: "1px solid rgba(99,102,241,0.4)",
+              background: "rgba(99,102,241,0.2)", color: "#a5b4fc",
+              fontSize: "12px", fontFamily: "monospace", fontWeight: 700, cursor: "pointer",
+              opacity: (loading || !form.current || !form.next || !form.confirm) ? 0.5 : 1,
+            }}
+          >
+            {loading ? "Speichern..." : "Passwort speichern"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function SettingsDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("brokers");
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -915,6 +1005,8 @@ export default function SettingsDashboard() {
               </div>
             ))}
           </div>
+
+          <ChangePasswordForm />
 
           <div style={{ background: "rgba(239,68,68,0.06)", borderRadius: "10px",
             border: "1px solid rgba(239,68,68,0.2)", padding: "16px" }}>
