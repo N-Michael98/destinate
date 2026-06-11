@@ -10,6 +10,7 @@ import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 import BrokerCenterPanel from "@/components/BrokerCenterPanel";
 import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
 import ExecutionCenterPanel from "@/components/ExecutionCenterPanel";
+import ForwardTestingCenter from "@/components/ForwardTestingCenter";
 
 type NavItem = {
   label: string;
@@ -3170,8 +3171,9 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "execution-center") return <ExecutionLiveCenter />;
   if (activeView === "strategy-evolution") return <EvolutionCenterPanel />;
 
+  if (activeView === "forward-testing") return <ForwardTestingCenter />;
+
   if (
-    activeView === "forward-testing" ||
     activeView === "ai-memory" ||
     activeView === "learning-reports" ||
     activeView === "scheduler"
