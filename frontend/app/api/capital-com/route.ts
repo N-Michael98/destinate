@@ -4,17 +4,25 @@ import {
   disconnectCapital,
   getCapitalSession,
   isCapitalConnected,
-  capitalGetPrices,
+  autoReconnectCapital,
+  getSavedCredentials,
 } from "../../../lib/capital-com";
+import { capitalGetPrices } from "../../../lib/capital-com/capital-com-client";
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action") ?? "status";
 
+    // Auto-reconnect on every status check if credentials are saved but session is gone
+    if (!isCapitalConnected()) {
+      await autoReconnectCapital();
+    }
+
     if (action === "status") {
       const connected = isCapitalConnected();
       const session = getCapitalSession();
+      const saved = getSavedCredentials();
       return NextResponse.json({
         ok: true,
         connected,
@@ -22,13 +30,13 @@ export async function GET(request: Request) {
         accountType: session?.accountType ?? null,
         connectedAt: session?.connectedAt ?? null,
         accounts: session?.accounts ?? [],
+        savedIdentifier: saved?.identifier ?? null, // so UI can show who was connected
       });
     }
 
     if (action === "prices") {
       const session = getCapitalSession();
       if (!session) return NextResponse.json({ ok: false, error: "Not connected" }, { status: 401 });
-
       const result = await capitalGetPrices(session.apiKey, session.cst, session.securityToken);
       return NextResponse.json({ ok: result.ok, prices: result.prices, error: result.error });
     }
