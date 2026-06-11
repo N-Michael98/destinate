@@ -1,4 +1,5 @@
-﻿import { generateExecutionQueueTicketGeneratorSyncReport } from "@/lib/execution-queue-ticket-generator-sync";
+﻿import { generateExecutionPositionTicketSyncReport } from "@/lib/execution-position-ticket-sync";
+import type { ExecutionPositionTicket } from "@/lib/execution-position-ticket-sync";
 import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
 import type { PaperDirection } from "@/lib/paper-trading/paper-types";
 
@@ -7,7 +8,7 @@ import {
   ExecutionTicketPaperOrderSyncReport,
 } from "./execution-ticket-paper-order-sync-types";
 
-const VERSION = "V16.2.0" as const;
+const VERSION = "V16.3.2" as const;
 
 function round(value: number, decimals = 2) {
   return Number(value.toFixed(decimals));
@@ -70,23 +71,10 @@ function buildRiskLevels(params: {
   };
 }
 
-function resolveConfidence(params: {
-  executionPriority: number;
-  estimatedFillQuality: number;
-}) {
-  return Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(params.executionPriority * 0.65 + params.estimatedFillQuality * 0.35)
-    )
-  );
-}
+function resolvePaperSize(evolvedAllocatedLots: number) {
+  if (evolvedAllocatedLots <= 0) return 0;
 
-function resolvePaperSize(allocatedPositionSize: number) {
-  if (allocatedPositionSize <= 0) return 0;
-
-  return Math.max(0.01, round(allocatedPositionSize / 1000, 3));
+  return Math.max(0.01, round(evolvedAllocatedLots, 2));
 }
 
 function buildBlockedDecision(params: {
@@ -126,8 +114,18 @@ function buildBlockedDecision(params: {
   };
 }
 
+function resolveConfidenceFromTicket(ticket: ExecutionPositionTicket): number {
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(ticket.confidenceScore * 0.65 + ticket.estimatedFillQuality * 0.35)
+    )
+  );
+}
+
 function buildDecision(
-  ticket: ReturnType<typeof generateExecutionQueueTicketGeneratorSyncReport>["tickets"][number]
+  ticket: ExecutionPositionTicket
 ): ExecutionTicketPaperOrderDecision {
   if (ticket.ticketStatus === "WAITING") {
     return buildBlockedDecision({
@@ -135,7 +133,7 @@ function buildDecision(
       symbol: ticket.symbol,
       side: ticket.side,
       status: "PAPER_ORDER_WAITING",
-      reason: `${ticket.symbol}: Paper order waiting because execution ticket is waiting for approval.`,
+      reason: `${ticket.symbol}: Paper order waiting — evolved execution ticket pending approval.`,
     });
   }
 
@@ -149,7 +147,7 @@ function buildDecision(
       symbol: ticket.symbol,
       side: ticket.side,
       status: "PAPER_ORDER_BLOCKED",
-      reason: `${ticket.symbol}: Paper order blocked because execution ticket is not executable.`,
+      reason: `${ticket.symbol}: Paper order blocked — evolved execution ticket not executable.`,
     });
   }
 
@@ -161,7 +159,7 @@ function buildDecision(
       symbol: ticket.symbol,
       side: ticket.side,
       status: "PAPER_ORDER_BLOCKED",
-      reason: `${ticket.symbol}: Paper order blocked because direction is missing.`,
+      reason: `${ticket.symbol}: Paper order blocked — direction missing from evolved ticket.`,
     });
   }
 
@@ -172,12 +170,12 @@ function buildDecision(
     symbol: ticket.symbol,
   });
 
-  const confidence = resolveConfidence({
-    executionPriority: ticket.executionPriority,
-    estimatedFillQuality: ticket.estimatedFillQuality,
-  });
+  const confidence = resolveConfidenceFromTicket(ticket);
+  const requestedSize = resolvePaperSize(ticket.evolvedAllocatedLots);
 
-  const requestedSize = resolvePaperSize(ticket.allocatedPositionSize);
+  const activeBroker =
+    ticket.brokerAllocations.find((a) => a.status === "ACTIVE")?.brokerName ??
+    ticket.selectedBroker;
 
   const result = paperTradingManager.createAndFillPaperOrder(
     ticket.symbol,
@@ -199,9 +197,10 @@ function buildDecision(
     status: "PAPER_ORDER_CREATED",
     orderId: result.order.id,
     positionId: result.position.id,
-    brokerTarget: ticket.brokerTarget,
-    preferredBroker: ticket.preferredBroker,
-    secondaryBroker: ticket.secondaryBroker,
+    brokerTarget: ticket.brokerAllocations.filter((a) => a.status === "ACTIVE").length > 1 ? "DUAL_BROKER" : "SINGLE_BROKER",
+    preferredBroker: activeBroker,
+    secondaryBroker:
+      ticket.brokerAllocations.find((a, i) => a.status === "ACTIVE" && i > 0)?.brokerName ?? "NO_BROKER",
     entry,
     stopLoss: riskLevels.stopLoss,
     takeProfit1: riskLevels.takeProfit1,
@@ -214,13 +213,13 @@ function buildDecision(
     accountEquity: result.account.equity,
     accountOpenPositions: result.account.openPositions,
     liveExecutionEnabled: false,
-    reason: `${ticket.symbol}: Paper order created and filled from V16 execution ticket ${ticket.ticketId}.`,
+    reason: `${ticket.symbol}: Paper order created from V16.3.1 evolved ticket ${ticket.ticketId} — ${ticket.evolvedAllocatedLots} lots via ${activeBroker}.`,
   };
 }
 
 export function generateExecutionTicketPaperOrderSyncReport():
   ExecutionTicketPaperOrderSyncReport {
-  const ticketReport = generateExecutionQueueTicketGeneratorSyncReport();
+  const ticketReport = generateExecutionPositionTicketSyncReport();
 
   const decisions = ticketReport.tickets.map(buildDecision);
 
@@ -254,7 +253,7 @@ export function generateExecutionTicketPaperOrderSyncReport():
     liveExecutionEnabled: false,
     decisions,
     systemRule:
-      "Execution Ticket Paper Order Sync creates and fills paper orders from V16 execution tickets. Live trading remains disabled.",
+      "Execution Ticket Paper Order Sync V16.3.2 creates paper orders from V16.3.1 evolved execution tickets carrying broker-level lot sizes from the full evolution chain. Live trading remains disabled.",
     recommendation,
     updatedAt: new Date().toISOString(),
   };

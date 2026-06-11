@@ -30,7 +30,7 @@ export type ExecutionTicketPaperOrderDecision = {
 };
 
 export type ExecutionTicketPaperOrderSyncReport = {
-  version: "V16.2.0";
+  version: "V16.3.2";
   status: "READY";
   mode: "SIMULATION";
   totalTickets: number;
