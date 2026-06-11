@@ -11,6 +11,7 @@ import BrokerCenterPanel from "@/components/BrokerCenterPanel";
 import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
 import ExecutionCenterPanel from "@/components/ExecutionCenterPanel";
 import ForwardTestingCenter from "@/components/ForwardTestingCenter";
+import SecurityCenterDashboard from "@/components/SecurityCenterDashboard";
 
 type NavItem = {
   label: string;
@@ -3164,7 +3165,7 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "market-regime") return <MarketRegimeLiveCenter />;
   if (activeView === "portfolio-intelligence") return <PortfolioIntelligenceCenter />;
   if (activeView === "broker-center") return <BrokerCenter />;
-  if (activeView === "security") return <SecurityCenter />;
+  if (activeView === "security") return <SecurityCenterDashboard />;
   if (activeView === "settings") return <SettingsCenter />;
   if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
   if (activeView === "ai-consensus") return <ConsensusCenter />;
