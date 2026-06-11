@@ -13,6 +13,8 @@ import ExecutionCenterPanel from "@/components/ExecutionCenterPanel";
 import ForwardTestingCenter from "@/components/ForwardTestingCenter";
 import SecurityCenterDashboard from "@/components/SecurityCenterDashboard";
 import SettingsDashboard from "@/components/SettingsDashboard";
+import TechnicalIndicatorsPanel from "@/components/TechnicalIndicatorsPanel";
+import SystemHealthCheck from "@/components/SystemHealthCheck";
 import {
   EquityCurveChart,
   WinLossBarChart,
@@ -111,6 +113,7 @@ const navGroups: NavGroup[] = [
       { label: "Market Data", icon: "MD", view: "market-data" },
       { label: "News Layer", icon: "NL", view: "news-layer" },
       { label: "Market Regime", icon: "MR", view: "market-regime" },
+      { label: "Indicators", icon: "IND", view: "indicators" },
       { label: "Portfolio Intelligence", icon: "PI", view: "portfolio-intelligence" },
     ],
   },
@@ -136,6 +139,7 @@ const navGroups: NavGroup[] = [
     title: "System",
     items: [
       { label: "Security Center", icon: "SEC", view: "security" },
+      { label: "System Check", icon: "CHK", view: "system-check" },
       { label: "Settings", icon: "SET", view: "settings" },
     ],
   },
@@ -3383,6 +3387,8 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "broker-center") return <BrokerCenter />;
   if (activeView === "security") return <SecurityCenterDashboard />;
   if (activeView === "settings") return <SettingsDashboard />;
+  if (activeView === "indicators") return <TechnicalIndicatorsPanel />;
+  if (activeView === "system-check") return <SystemHealthCheck />;
   if (activeView === "portfolio-brain") return <PortfolioBrainCenter />;
   if (activeView === "ai-consensus") return <ConsensusLiveCenter />;
   if (activeView === "execution-center") return <ExecutionLiveCenter />;

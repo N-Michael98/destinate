@@ -7,9 +7,11 @@ import {
   type AccountMode,
   type BotMode,
 } from "../lib/broker-config";
+import type { AISettings } from "../lib/ai-config";
 
 type Tab =
   | "brokers"
+  | "ai-connections"
   | "bot-mode"
   | "leverage-spreads"
   | "risk"
@@ -25,7 +27,8 @@ interface ConnectionForm {
 
 const TAB_LIST: { key: Tab; label: string; icon: string }[] = [
   { key: "brokers", label: "Broker Connections", icon: "🔗" },
-  { key: "bot-mode", label: "Bot Mode", icon: "🤖" },
+  { key: "ai-connections", label: "AI & Telegram", icon: "🤖" },
+  { key: "bot-mode", label: "Bot Mode", icon: "⚡" },
   { key: "leverage-spreads", label: "Leverage & Spreads", icon: "📊" },
   { key: "risk", label: "Risk Rules", icon: "🛡️" },
   { key: "system", label: "System", icon: "⚙️" },
@@ -34,23 +37,79 @@ const TAB_LIST: { key: Tab; label: string; icon: string }[] = [
 export default function SettingsDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("brokers");
   const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [aiSettings, setAISettings] = useState<AISettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [forms, setForms] = useState<Record<BrokerKey, ConnectionForm>>({
     CAPITAL_COM: { apiKey: "", accountMode: "DEMO", loading: false, error: null, success: null },
     IC_MARKETS: { apiKey: "", accountMode: "DEMO", loading: false, error: null, success: null },
   });
+  const [openaiKey, setOpenaiKey] = useState("");
+  const [openaiModel, setOpenaiModel] = useState("gpt-4o");
+  const [anthropicKey, setAnthropicKey] = useState("");
+  const [anthropicModel, setAnthropicModel] = useState("claude-sonnet-4-6");
+  const [tgToken, setTgToken] = useState("");
+  const [tgChannels, setTgChannels] = useState({
+    TRADES: { chatId: "", enabled: false },
+    SECURITY: { chatId: "", enabled: false },
+    AI_ANALYSIS: { chatId: "", enabled: false },
+    SYSTEM_HEALTH: { chatId: "", enabled: false },
+  });
+  const [aiTestResult, setAITestResult] = useState<Record<string, { ok: boolean; msg: string } | null>>({});
 
   const fetchSettings = async () => {
     try {
-      const r = await fetch("/api/settings");
-      const d = await r.json();
-      if (d.ok) setSettings(d.settings);
+      const [sR, aiR] = await Promise.all([
+        fetch("/api/settings").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/ai-config").then((r) => r.json()).catch(() => ({})),
+      ]);
+      if (sR.ok) setSettings(sR.settings);
+      if (aiR.ok) {
+        setAISettings(aiR.settings);
+        if (aiR.settings?.openai) {
+          setOpenaiModel(aiR.settings.openai.model);
+        }
+        if (aiR.settings?.anthropic) {
+          setAnthropicModel(aiR.settings.anthropic.model);
+        }
+        if (aiR.settings?.telegram) {
+          setTgChannels(aiR.settings.telegram.channels);
+        }
+      }
     } catch {
-      // silently handle network errors — show empty state
+      // silently handle network errors
     }
   };
 
   useEffect(() => { fetchSettings(); }, []);
+
+  const postAI = async (payload: Record<string, unknown>) => {
+    const r = await fetch("/api/ai-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => null);
+    if (!r) return null;
+    const d = await r.json().catch(() => null);
+    if (d?.settings) setAISettings(d.settings);
+    return d;
+  };
+
+  const testOpenAI = async () => {
+    setAITestResult((prev) => ({ ...prev, openai: null }));
+    const d = await postAI({ action: "test_openai", apiKey: openaiKey, model: openaiModel });
+    setAITestResult((prev) => ({ ...prev, openai: { ok: d?.ok ?? false, msg: d?.error ?? (d?.ok ? "Verbunden ✓" : "Fehler") } }));
+  };
+
+  const testAnthropic = async () => {
+    setAITestResult((prev) => ({ ...prev, anthropic: null }));
+    const d = await postAI({ action: "test_anthropic", apiKey: anthropicKey, model: anthropicModel });
+    setAITestResult((prev) => ({ ...prev, anthropic: { ok: d?.ok ?? false, msg: d?.error ?? (d?.ok ? "Verbunden ✓" : "Fehler") } }));
+  };
+
+  const saveTelegram = async () => {
+    await postAI({ action: "save_telegram", botToken: tgToken, channels: tgChannels });
+    setAITestResult((prev) => ({ ...prev, telegram: { ok: true, msg: "Gespeichert ✓" } }));
+  };
 
   const postAction = async (payload: Record<string, unknown>) => {
     setSaving(true);
@@ -294,6 +353,161 @@ export default function SettingsDashboard() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ───── AI & TELEGRAM ───── */}
+      {activeTab === "ai-connections" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+
+          {/* OpenAI */}
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(16,185,129,0.2)", padding: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "#10b981" }}>OpenAI / GPT</span>
+              {aiSettings?.openai.connected && (
+                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.15)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>● VERBUNDEN</span>
+              )}
+              {aiSettings?.openai.testStatus === "FAILED" && (
+                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}>✗ FEHLER</span>
+              )}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px", marginBottom: "10px" }}>
+              <div>
+                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY (sk-...)</label>
+                <input
+                  type="password"
+                  placeholder="sk-..."
+                  value={openaiKey}
+                  onChange={(e) => setOpenaiKey(e.target.value)}
+                  style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>MODEL</label>
+                <select value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)}
+                  style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace" }}>
+                  {["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"].map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+            <button onClick={testOpenAI}
+              style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(16,185,129,0.4)", cursor: "pointer", background: "rgba(16,185,129,0.12)", color: "#10b981", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
+              Verbindung testen
+            </button>
+            {aiTestResult.openai && (
+              <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "6px", fontSize: "11px",
+                background: aiTestResult.openai.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.1)",
+                color: aiTestResult.openai.ok ? "#10c96d" : "#f87171",
+                border: `1px solid ${aiTestResult.openai.ok ? "rgba(16,201,109,0.3)" : "rgba(239,68,68,0.2)"}` }}>
+                {aiTestResult.openai.msg}
+              </div>
+            )}
+          </div>
+
+          {/* Anthropic */}
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(168,85,247,0.2)", padding: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "#a855f7" }}>Anthropic / Claude</span>
+              {aiSettings?.anthropic.connected && (
+                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.15)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>● VERBUNDEN</span>
+              )}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px", marginBottom: "10px" }}>
+              <div>
+                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY (sk-ant-...)</label>
+                <input
+                  type="password"
+                  placeholder="sk-ant-..."
+                  value={anthropicKey}
+                  onChange={(e) => setAnthropicKey(e.target.value)}
+                  style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>MODEL</label>
+                <select value={anthropicModel} onChange={(e) => setAnthropicModel(e.target.value)}
+                  style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace" }}>
+                  {["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"].map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </div>
+            <button onClick={testAnthropic}
+              style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(168,85,247,0.4)", cursor: "pointer", background: "rgba(168,85,247,0.12)", color: "#a855f7", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
+              Verbindung testen
+            </button>
+            {aiTestResult.anthropic && (
+              <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "6px", fontSize: "11px",
+                background: aiTestResult.anthropic.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.1)",
+                color: aiTestResult.anthropic.ok ? "#10c96d" : "#f87171",
+                border: `1px solid ${aiTestResult.anthropic.ok ? "rgba(16,201,109,0.3)" : "rgba(239,68,68,0.2)"}` }}>
+                {aiTestResult.anthropic.msg}
+              </div>
+            )}
+          </div>
+
+          {/* Telegram */}
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(0,195,255,0.2)", padding: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "#00c3ff" }}>Telegram Bot</span>
+              {aiSettings?.telegram.configured && (
+                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.15)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>● KONFIGURIERT</span>
+              )}
+            </div>
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>BOT TOKEN (von @BotFather)</label>
+              <input
+                type="password"
+                placeholder="1234567890:AABBcc..."
+                value={tgToken}
+                onChange={(e) => setTgToken(e.target.value)}
+                style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
+              {(["TRADES", "SECURITY", "AI_ANALYSIS", "SYSTEM_HEALTH"] as const).map((ch) => (
+                <div key={ch} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>{ch.replace("_", " ")}</span>
+                    <button
+                      onClick={() => setTgChannels((p) => ({ ...p, [ch]: { ...p[ch], enabled: !p[ch].enabled } }))}
+                      style={{
+                        width: "36px", height: "20px", borderRadius: "10px", border: "none", cursor: "pointer",
+                        background: tgChannels[ch].enabled ? "#00c3ff" : "rgba(255,255,255,0.1)",
+                        position: "relative", transition: "background 0.15s",
+                      }}
+                    >
+                      <div style={{
+                        width: "14px", height: "14px", borderRadius: "50%", background: "#fff",
+                        position: "absolute", top: "3px",
+                        left: tgChannels[ch].enabled ? "19px" : "3px",
+                        transition: "left 0.15s",
+                      }} />
+                    </button>
+                  </div>
+                  <input
+                    placeholder="Chat ID (-100...)"
+                    value={tgChannels[ch].chatId}
+                    onChange={(e) => setTgChannels((p) => ({ ...p, [ch]: { ...p[ch], chatId: e.target.value } }))}
+                    style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", padding: "5px 8px", color: "#f1f5f9", fontSize: "11px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+              ))}
+            </div>
+            <button onClick={saveTelegram}
+              style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(0,195,255,0.4)", cursor: "pointer", background: "rgba(0,195,255,0.12)", color: "#00c3ff", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
+              Telegram speichern
+            </button>
+            {aiTestResult.telegram && (
+              <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "6px", fontSize: "11px", background: "rgba(16,201,109,0.1)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>
+                {aiTestResult.telegram.msg}
+              </div>
+            )}
+            <div style={{ marginTop: "10px", padding: "8px 12px", background: "rgba(0,195,255,0.05)", border: "1px solid rgba(0,195,255,0.15)", borderRadius: "6px", fontSize: "10px", color: "#64748b" }}>
+              ℹ Erstelle einen Bot mit @BotFather auf Telegram. Kopiere den Token hierher.
+              Chat-IDs erhältst du indem du dem Bot schreibst und dann /api/getUpdates aufrufst.
+              Alle 4 Kanäle werden auch im Security Center konfiguriert.
+            </div>
+          </div>
         </div>
       )}
 
