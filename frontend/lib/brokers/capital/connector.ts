@@ -1,45 +1,89 @@
-import type { BrokerConnector } from "../shared/broker";
+import type { BrokerConnector, BrokerOrderRequest, BrokerOrderResponse } from "../shared/broker";
+import { getCapitalSession, isCapitalConnected } from "../../capital-com/capital-com-session";
+import { capitalGetAccounts, capitalPlaceOrder, capitalGetPositions, EPIC_MAP } from "../../capital-com/capital-com-client";
 
 export const capitalComConnector: BrokerConnector = {
   name: "capital-com",
   displayName: "Capital.com",
-  status: "PREPARED",
-  tradingPermission: "LOCKED",
+  get status() {
+    return isCapitalConnected() ? ("CONNECTED" as const) : ("PREPARED" as const);
+  },
+  get tradingPermission() {
+    return isCapitalConnected() ? ("DEMO_ONLY" as const) : ("LOCKED" as const);
+  },
 
   async connect() {
     return {
-      success: false,
-      broker: "capital-com",
+      success: isCapitalConnected(),
+      broker: "capital-com" as const,
       orderId: null,
-      message:
-        "Capital.com connector is prepared, but real API connection is locked until credentials are added through environment variables.",
+      message: isCapitalConnected()
+        ? "Capital.com DEMO session active."
+        : "Not connected — use Settings → Broker Connections to connect.",
     };
   },
 
   async getAccount() {
+    const session = getCapitalSession();
+    if (!session) {
+      return { broker: "capital-com" as const, accountId: null, currency: "USD", balance: 0, equity: 0, marginUsed: 0, freeMargin: 0, mode: "SIMULATION" as const };
+    }
+    const result = await capitalGetAccounts(session.apiKey, session.cst, session.securityToken);
+    const acc = result.accounts?.[0];
     return {
-      broker: "capital-com",
-      accountId: null,
-      currency: "CHF",
-      balance: 30000,
-      equity: 30000,
+      broker: "capital-com" as const,
+      accountId: acc?.accountId ?? session.accountId,
+      currency: acc?.currency ?? "USD",
+      balance: acc?.balance ?? 0,
+      equity: acc?.balance ?? 0,
       marginUsed: 0,
-      freeMargin: 30000,
-      mode: "SIMULATION",
+      freeMargin: acc?.available ?? 0,
+      mode: "DEMO" as const,
     };
   },
 
   async getPositions() {
-    return [];
+    const session = getCapitalSession();
+    if (!session) return [];
+    const result = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
+    return (result.positions ?? []).map((p) => ({
+      id: p.dealId,
+      broker: "capital-com" as const,
+      market: p.symbol,
+      direction: p.direction,
+      size: p.size,
+      entryPrice: p.openLevel,
+      stopLoss: p.stopLevel,
+      takeProfit: p.profitLevel,
+      profitLoss: p.profitLoss,
+      status: "OPEN" as const,
+    }));
   },
 
-  async placeOrder() {
+  async placeOrder(order: BrokerOrderRequest): Promise<BrokerOrderResponse> {
+    const session = getCapitalSession();
+    if (!session) {
+      return { success: false, broker: "capital-com" as const, orderId: null, message: "Capital.com not connected" };
+    }
+
+    const epic = EPIC_MAP[order.market];
+    if (!epic) {
+      return { success: false, broker: "capital-com" as const, orderId: null, message: `Unknown market: ${order.market}` };
+    }
+
+    const result = await capitalPlaceOrder(session.apiKey, session.cst, session.securityToken, {
+      epic,
+      direction: order.direction,
+      size: order.size,
+      stopLevel: order.stopLoss,
+      guaranteedStop: false,
+    });
+
     return {
-      success: false,
-      broker: "capital-com",
-      orderId: null,
-      message:
-        "Live and demo order placement are blocked in V7.3. This connector only prepares the Broker API Layer.",
+      success: result.ok,
+      broker: "capital-com" as const,
+      orderId: result.dealId ?? null,
+      message: result.ok ? `DEMO order placed: ${result.dealId}` : (result.error ?? "Order failed"),
     };
   },
 };

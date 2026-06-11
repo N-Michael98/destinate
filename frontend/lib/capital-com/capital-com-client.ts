@@ -1,4 +1,4 @@
-// Capital.com Demo REST API client — READ ONLY, no order execution
+// Capital.com Demo REST API client — DEMO execution enabled, LIVE blocked
 const DEMO_BASE = "https://demo-api-capital.backend.capital/api/v1";
 
 export interface SessionResult {
@@ -32,6 +32,61 @@ export interface MarketPrice {
   updateTime: string;
 }
 
+export interface OrderRequest {
+  epic: string;
+  direction: "BUY" | "SELL";
+  size: number;
+  stopLevel?: number;
+  profitLevel?: number;
+  guaranteedStop?: boolean;
+}
+
+export interface OrderResult {
+  ok: boolean;
+  dealReference?: string;
+  dealId?: string;
+  status?: string;
+  error?: string;
+}
+
+export interface OpenPosition {
+  dealId: string;
+  epic: string;
+  symbol: string;
+  direction: "BUY" | "SELL";
+  size: number;
+  openLevel: number;
+  stopLevel: number | null;
+  profitLevel: number | null;
+  profitLoss: number;
+  currency: string;
+  createdDate: string;
+}
+
+// Capital.com epic names for our symbols
+export const EPIC_MAP: Record<string, string> = {
+  XAUUSD: "GOLD",
+  EURUSD: "EURUSD",
+  NAS100: "US100",
+  USOIL: "OIL_CRUDE",
+  BTCUSD: "BITCOIN",
+  SPX500: "US500",
+};
+
+// Reverse map: epic → symbol
+export const EPIC_TO_SYMBOL: Record<string, string> = Object.fromEntries(
+  Object.entries(EPIC_MAP).map(([sym, epic]) => [epic, sym])
+);
+
+function authHeaders(apiKey: string, cst: string, securityToken: string) {
+  return {
+    "X-CAP-API-KEY": apiKey,
+    CST: cst,
+    "X-SECURITY-TOKEN": securityToken,
+    "Content-Type": "application/json",
+  };
+}
+
 export async function capitalCreateSession(
   apiKey: string,
   login: string,
@@ -40,16 +95,13 @@ export async function capitalCreateSession(
   try {
     const res = await fetch(`${DEMO_BASE}/session`, {
       method: "POST",
-      headers: {
-        "X-CAP-API-KEY": apiKey,
-        "Content-Type": "application/json",
-      },
+      headers: { "X-CAP-API-KEY": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ encryptedPassword: false, login, password }),
     });
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      const errMsg: string = (errBody as Record<string,string>).errorCode ?? `HTTP ${res.status}`;
+      const errMsg: string = (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}`;
       return { ok: false, error: errMsg };
     }
 
@@ -78,11 +130,7 @@ export async function capitalGetAccounts(
 ): Promise<{ ok: boolean; accounts?: AccountInfo[]; error?: string }> {
   try {
     const res = await fetch(`${DEMO_BASE}/accounts`, {
-      headers: {
-        "X-CAP-API-KEY": apiKey,
-        CST: cst,
-        "X-SECURITY-TOKEN": securityToken,
-      },
+      headers: authHeaders(apiKey, cst, securityToken),
     });
 
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -104,16 +152,6 @@ export async function capitalGetAccounts(
   }
 }
 
-// Capital.com epic names for our symbols
-const EPIC_MAP: Record<string, string> = {
-  XAUUSD: "GOLD",
-  EURUSD: "EURUSD",
-  NAS100: "US100",
-  USOIL: "OIL_CRUDE",
-  BTCUSD: "BITCOIN",
-  SPX500: "US500",
-};
-
 export async function capitalGetPrices(
   apiKey: string,
   cst: string,
@@ -128,11 +166,7 @@ export async function capitalGetPrices(
       if (!epic) continue;
 
       const res = await fetch(`${DEMO_BASE}/markets/${epic}`, {
-        headers: {
-          "X-CAP-API-KEY": apiKey,
-          CST: cst,
-          "X-SECURITY-TOKEN": securityToken,
-        },
+        headers: authHeaders(apiKey, cst, securityToken),
       });
 
       if (!res.ok) continue;
@@ -157,6 +191,116 @@ export async function capitalGetPrices(
   }
 }
 
+// Place a market order on Capital.com DEMO
+export async function capitalPlaceOrder(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  order: OrderRequest
+): Promise<OrderResult> {
+  try {
+    const body: Record<string, unknown> = {
+      epic: order.epic,
+      direction: order.direction,
+      size: order.size,
+      guaranteedStop: order.guaranteedStop ?? false,
+    };
+    if (order.stopLevel != null) body.stopLevel = order.stopLevel;
+    if (order.profitLevel != null) body.profitLevel = order.profitLevel;
+
+    const res = await fetch(`${DEMO_BASE}/positions`, {
+      method: "POST",
+      headers: authHeaders(apiKey, cst, securityToken),
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const errMsg: string = (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}`;
+      return { ok: false, error: errMsg };
+    }
+
+    const data = (await res.json()) as Record<string, unknown>;
+    return {
+      ok: true,
+      dealReference: String(data.dealReference ?? ""),
+      dealId: String(data.dealId ?? data.dealReference ?? ""),
+      status: "OPENED",
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
+// Get all open positions
+export async function capitalGetPositions(
+  apiKey: string,
+  cst: string,
+  securityToken: string
+): Promise<{ ok: boolean; positions?: OpenPosition[]; error?: string }> {
+  try {
+    const res = await fetch(`${DEMO_BASE}/positions`, {
+      headers: authHeaders(apiKey, cst, securityToken),
+    });
+
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+    const data = (await res.json()) as { positions: Record<string, unknown>[] };
+    const positions: OpenPosition[] = (data.positions ?? []).map((p) => {
+      const pos = (p.position ?? {}) as Record<string, unknown>;
+      const market = (p.market ?? {}) as Record<string, unknown>;
+      const epic = String(market.epic ?? "");
+      return {
+        dealId: String(pos.dealId ?? ""),
+        epic,
+        symbol: EPIC_TO_SYMBOL[epic] ?? epic,
+        direction: (pos.direction as "BUY" | "SELL") ?? "BUY",
+        size: Number(pos.dealSize ?? pos.size ?? 0),
+        openLevel: Number(pos.openLevel ?? 0),
+        stopLevel: pos.stopLevel != null ? Number(pos.stopLevel) : null,
+        profitLevel: pos.limitLevel != null ? Number(pos.limitLevel) : null,
+        profitLoss: Number(pos.upl ?? 0),
+        currency: String(pos.currency ?? "USD"),
+        createdDate: String(pos.createdDate ?? new Date().toISOString()),
+      };
+    });
+
+    return { ok: true, positions };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
+// Close a specific position by dealId
+export async function capitalClosePosition(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  dealId: string
+): Promise<OrderResult> {
+  try {
+    const res = await fetch(`${DEMO_BASE}/positions/${dealId}`, {
+      method: "DELETE",
+      headers: authHeaders(apiKey, cst, securityToken),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const errMsg: string = (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}`;
+      return { ok: false, error: errMsg };
+    }
+
+    const data = (await res.json()) as Record<string, unknown>;
+    return {
+      ok: true,
+      dealReference: String(data.dealReference ?? ""),
+      status: "CLOSED",
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
 export async function capitalDeleteSession(
   apiKey: string,
   cst: string,
@@ -164,10 +308,6 @@ export async function capitalDeleteSession(
 ): Promise<void> {
   await fetch(`${DEMO_BASE}/session`, {
     method: "DELETE",
-    headers: {
-      "X-CAP-API-KEY": apiKey,
-      CST: cst,
-      "X-SECURITY-TOKEN": securityToken,
-    },
+    headers: authHeaders(apiKey, cst, securityToken),
   }).catch(() => {});
 }
