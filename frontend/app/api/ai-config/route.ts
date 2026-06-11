@@ -4,6 +4,8 @@ import {
   updateOpenAI,
   updateAnthropic,
   saveTelegramConfig,
+  saveOpenAIKey,
+  saveAnthropicKey,
   testOpenAIConnection,
   testAnthropicConnection,
 } from "../../../lib/ai-config";
@@ -28,6 +30,16 @@ export async function POST(request: Request) {
 
     if (action === "update_anthropic") {
       updateAnthropic(body.patch ?? {});
+      return NextResponse.json({ ok: true, settings: getAISettings() });
+    }
+
+    if (action === "save_openai_key") {
+      saveOpenAIKey(body.apiKey ?? "", body.model ?? "gpt-4o");
+      return NextResponse.json({ ok: true, settings: getAISettings() });
+    }
+
+    if (action === "save_anthropic_key") {
+      saveAnthropicKey(body.apiKey ?? "", body.model ?? "claude-sonnet-4-6");
       return NextResponse.json({ ok: true, settings: getAISettings() });
     }
 

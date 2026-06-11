@@ -108,16 +108,32 @@ export default function SettingsDashboard() {
     return d;
   };
 
+  const [aiTesting, setAITesting] = useState<Record<string, boolean>>({});
+
+  const saveOpenAIKey = async () => {
+    const d = await postAI({ action: "save_openai_key", apiKey: openaiKey, model: openaiModel });
+    setAITestResult((prev) => ({ ...prev, openai: { ok: d?.ok ?? false, msg: d?.ok ? "Key gespeichert ✓ — klicke Test um zu verifizieren" : "Fehler beim Speichern" } }));
+  };
+
   const testOpenAI = async () => {
+    setAITesting((p) => ({ ...p, openai: true }));
     setAITestResult((prev) => ({ ...prev, openai: null }));
     const d = await postAI({ action: "test_openai", apiKey: openaiKey, model: openaiModel });
-    setAITestResult((prev) => ({ ...prev, openai: { ok: d?.ok ?? false, msg: d?.error ?? (d?.ok ? "Verbunden ✓" : "Fehler") } }));
+    setAITestResult((prev) => ({ ...prev, openai: { ok: d?.ok ?? false, msg: d?.error ?? (d?.ok ? "✓ Verbunden — Key ist gültig" : "Fehler") } }));
+    setAITesting((p) => ({ ...p, openai: false }));
+  };
+
+  const saveAnthropicKey = async () => {
+    const d = await postAI({ action: "save_anthropic_key", apiKey: anthropicKey, model: anthropicModel });
+    setAITestResult((prev) => ({ ...prev, anthropic: { ok: d?.ok ?? false, msg: d?.ok ? "Key gespeichert ✓ — klicke Test um zu verifizieren" : "Fehler beim Speichern" } }));
   };
 
   const testAnthropic = async () => {
+    setAITesting((p) => ({ ...p, anthropic: true }));
     setAITestResult((prev) => ({ ...prev, anthropic: null }));
     const d = await postAI({ action: "test_anthropic", apiKey: anthropicKey, model: anthropicModel });
-    setAITestResult((prev) => ({ ...prev, anthropic: { ok: d?.ok ?? false, msg: d?.error ?? (d?.ok ? "Verbunden ✓" : "Fehler") } }));
+    setAITestResult((prev) => ({ ...prev, anthropic: { ok: d?.ok ?? false, msg: d?.error ?? (d?.ok ? "✓ Verbunden — Key ist gültig" : "Fehler") } }));
+    setAITesting((p) => ({ ...p, anthropic: false }));
   };
 
   const saveTelegram = async () => {
@@ -441,27 +457,39 @@ export default function SettingsDashboard() {
       {activeTab === "ai-connections" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
+          {/* Info box */}
+          <div style={{ padding: "14px 16px", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.7 }}>
+            <strong style={{ color: "#a5b4fc" }}>So verbindest du GPT und Claude:</strong><br />
+            1. API Key eingeben → <strong>Speichern</strong> klicken (Key wird sofort im System gespeichert)<br />
+            2. <strong>Verbindung testen</strong> klicken — macht einen echten API-Call zur Verifizierung<br />
+            3. Grüner Badge = aktiv → Market Scanner nutzt ab sofort echte KI-Analyse
+          </div>
+
           {/* OpenAI */}
-          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(16,185,129,0.2)", padding: "20px" }}>
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: `1px solid ${aiSettings?.openai.connected ? "rgba(16,201,109,0.4)" : "rgba(16,185,129,0.2)"}`, padding: "20px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: "#10b981" }}>OpenAI / GPT</span>
-              {aiSettings?.openai.connected && (
-                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.15)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>● VERBUNDEN</span>
-              )}
-              {aiSettings?.openai.testStatus === "FAILED" && (
-                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}>✗ FEHLER</span>
-              )}
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "#10b981" }}>① OpenAI / GPT</span>
+              {aiSettings?.openai.connected
+                ? <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.18)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.4)" }}>● VERBUNDEN</span>
+                : aiSettings?.openai.testStatus === "FAILED"
+                ? <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}>✗ FEHLER</span>
+                : aiSettings?.openai.testStatus === "UNTESTED" && aiSettings.openai.apiKey
+                ? <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(245,158,11,0.12)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.2)" }}>⏳ GESPEICHERT — noch nicht getestet</span>
+                : <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", color: "#475569" }}>○ Nicht verbunden</span>
+              }
+              {aiSettings?.openai.connected && <span style={{ fontSize: "10px", color: "#475569" }}>{aiSettings.openai.model}</span>}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px", marginBottom: "10px" }}>
+
+            <div style={{ marginBottom: "12px", padding: "10px 14px", background: "rgba(16,185,129,0.05)", border: "1px solid rgba(16,185,129,0.15)", borderRadius: "8px", fontSize: "10px", color: "#64748b" }}>
+              OpenAI API Key holen: <strong style={{ color: "#10b981" }}>platform.openai.com → API Keys → Create new secret key</strong><br />
+              Format: <code style={{ color: "#a5b4fc" }}>sk-proj-...</code> oder <code style={{ color: "#a5b4fc" }}>sk-...</code>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px", marginBottom: "12px" }}>
               <div>
-                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY (sk-...)</label>
-                <input
-                  type="password"
-                  placeholder="sk-..."
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
-                />
+                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY</label>
+                <input type="password" placeholder="sk-proj-... oder sk-..." value={openaiKey} onChange={(e) => setOpenaiKey(e.target.value)}
+                  style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>MODEL</label>
@@ -471,13 +499,21 @@ export default function SettingsDashboard() {
                 </select>
               </div>
             </div>
-            <button onClick={testOpenAI}
-              style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(16,185,129,0.4)", cursor: "pointer", background: "rgba(16,185,129,0.12)", color: "#10b981", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
-              Verbindung testen
-            </button>
+
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={saveOpenAIKey} disabled={!openaiKey}
+                style={{ padding: "8px 18px", borderRadius: "6px", border: "1px solid rgba(16,185,129,0.4)", cursor: openaiKey ? "pointer" : "not-allowed", background: "rgba(16,185,129,0.15)", color: "#10b981", fontSize: "12px", fontFamily: "monospace", fontWeight: 700, opacity: openaiKey ? 1 : 0.5 }}>
+                💾 Speichern
+              </button>
+              <button onClick={testOpenAI} disabled={!openaiKey || aiTesting.openai}
+                style={{ padding: "8px 18px", borderRadius: "6px", border: "1px solid rgba(16,185,129,0.3)", cursor: (openaiKey && !aiTesting.openai) ? "pointer" : "not-allowed", background: "rgba(16,185,129,0.08)", color: "#6ee7b7", fontSize: "12px", fontFamily: "monospace", opacity: (openaiKey && !aiTesting.openai) ? 1 : 0.5 }}>
+                {aiTesting.openai ? "Teste..." : "🔗 Verbindung testen"}
+              </button>
+            </div>
+
             {aiTestResult.openai && (
-              <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "6px", fontSize: "11px",
-                background: aiTestResult.openai.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.1)",
+              <div style={{ marginTop: "10px", padding: "10px 14px", borderRadius: "8px", fontSize: "11px",
+                background: aiTestResult.openai.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.08)",
                 color: aiTestResult.openai.ok ? "#10c96d" : "#f87171",
                 border: `1px solid ${aiTestResult.openai.ok ? "rgba(16,201,109,0.3)" : "rgba(239,68,68,0.2)"}` }}>
                 {aiTestResult.openai.msg}
@@ -486,23 +522,30 @@ export default function SettingsDashboard() {
           </div>
 
           {/* Anthropic */}
-          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(168,85,247,0.2)", padding: "20px" }}>
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: `1px solid ${aiSettings?.anthropic.connected ? "rgba(16,201,109,0.4)" : "rgba(168,85,247,0.2)"}`, padding: "20px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: "#a855f7" }}>Anthropic / Claude</span>
-              {aiSettings?.anthropic.connected && (
-                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.15)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>● VERBUNDEN</span>
-              )}
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "#a855f7" }}>② Anthropic / Claude</span>
+              {aiSettings?.anthropic.connected
+                ? <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.18)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.4)" }}>● VERBUNDEN</span>
+                : aiSettings?.anthropic.testStatus === "FAILED"
+                ? <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}>✗ FEHLER</span>
+                : aiSettings?.anthropic.testStatus === "UNTESTED" && aiSettings.anthropic.apiKey
+                ? <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(245,158,11,0.12)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.2)" }}>⏳ GESPEICHERT — noch nicht getestet</span>
+                : <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", color: "#475569" }}>○ Nicht verbunden</span>
+              }
+              {aiSettings?.anthropic.connected && <span style={{ fontSize: "10px", color: "#475569" }}>{aiSettings.anthropic.model}</span>}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px", marginBottom: "10px" }}>
+
+            <div style={{ marginBottom: "12px", padding: "10px 14px", background: "rgba(168,85,247,0.05)", border: "1px solid rgba(168,85,247,0.15)", borderRadius: "8px", fontSize: "10px", color: "#64748b" }}>
+              Anthropic API Key holen: <strong style={{ color: "#a855f7" }}>console.anthropic.com → API Keys → Create Key</strong><br />
+              Format: <code style={{ color: "#a5b4fc" }}>sk-ant-api03-...</code>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px", marginBottom: "12px" }}>
               <div>
-                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY (sk-ant-...)</label>
-                <input
-                  type="password"
-                  placeholder="sk-ant-..."
-                  value={anthropicKey}
-                  onChange={(e) => setAnthropicKey(e.target.value)}
-                  style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
-                />
+                <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY</label>
+                <input type="password" placeholder="sk-ant-api03-..." value={anthropicKey} onChange={(e) => setAnthropicKey(e.target.value)}
+                  style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
               </div>
               <div>
                 <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>MODEL</label>
@@ -512,13 +555,21 @@ export default function SettingsDashboard() {
                 </select>
               </div>
             </div>
-            <button onClick={testAnthropic}
-              style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(168,85,247,0.4)", cursor: "pointer", background: "rgba(168,85,247,0.12)", color: "#a855f7", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
-              Verbindung testen
-            </button>
+
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={saveAnthropicKey} disabled={!anthropicKey}
+                style={{ padding: "8px 18px", borderRadius: "6px", border: "1px solid rgba(168,85,247,0.4)", cursor: anthropicKey ? "pointer" : "not-allowed", background: "rgba(168,85,247,0.15)", color: "#a855f7", fontSize: "12px", fontFamily: "monospace", fontWeight: 700, opacity: anthropicKey ? 1 : 0.5 }}>
+                💾 Speichern
+              </button>
+              <button onClick={testAnthropic} disabled={!anthropicKey || aiTesting.anthropic}
+                style={{ padding: "8px 18px", borderRadius: "6px", border: "1px solid rgba(168,85,247,0.3)", cursor: (anthropicKey && !aiTesting.anthropic) ? "pointer" : "not-allowed", background: "rgba(168,85,247,0.08)", color: "#d8b4fe", fontSize: "12px", fontFamily: "monospace", opacity: (anthropicKey && !aiTesting.anthropic) ? 1 : 0.5 }}>
+                {aiTesting.anthropic ? "Teste..." : "🔗 Verbindung testen"}
+              </button>
+            </div>
+
             {aiTestResult.anthropic && (
-              <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "6px", fontSize: "11px",
-                background: aiTestResult.anthropic.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.1)",
+              <div style={{ marginTop: "10px", padding: "10px 14px", borderRadius: "8px", fontSize: "11px",
+                background: aiTestResult.anthropic.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.08)",
                 color: aiTestResult.anthropic.ok ? "#10c96d" : "#f87171",
                 border: `1px solid ${aiTestResult.anthropic.ok ? "rgba(16,201,109,0.3)" : "rgba(239,68,68,0.2)"}` }}>
                 {aiTestResult.anthropic.msg}
@@ -529,65 +580,45 @@ export default function SettingsDashboard() {
           {/* Telegram */}
           <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(0,195,255,0.2)", padding: "20px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-              <span style={{ fontSize: "15px", fontWeight: 700, color: "#00c3ff" }}>Telegram Bot</span>
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "#00c3ff" }}>③ Telegram Bot</span>
               {aiSettings?.telegram.configured && (
-                <span style={{ padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.15)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>● KONFIGURIERT</span>
+                <span style={{ padding: "2px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, background: "rgba(16,201,109,0.18)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.4)" }}>● KONFIGURIERT</span>
               )}
             </div>
+            <div style={{ marginBottom: "12px", padding: "10px 14px", background: "rgba(0,195,255,0.05)", border: "1px solid rgba(0,195,255,0.15)", borderRadius: "8px", fontSize: "10px", color: "#64748b" }}>
+              Bot erstellen: <strong style={{ color: "#00c3ff" }}>@BotFather auf Telegram → /newbot → Token kopieren</strong><br />
+              Chat-ID: dem Bot schreiben, dann <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> aufrufen
+            </div>
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>BOT TOKEN (von @BotFather)</label>
-              <input
-                type="password"
-                placeholder="1234567890:AABBcc..."
-                value={tgToken}
-                onChange={(e) => setTgToken(e.target.value)}
-                style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
-              />
+              <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>BOT TOKEN</label>
+              <input type="password" placeholder="1234567890:AABBccDDee..." value={tgToken} onChange={(e) => setTgToken(e.target.value)}
+                style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
               {(["TRADES", "SECURITY", "AI_ANALYSIS", "SYSTEM_HEALTH"] as const).map((ch) => (
                 <div key={ch} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                     <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>{ch.replace("_", " ")}</span>
-                    <button
-                      onClick={() => setTgChannels((p) => ({ ...p, [ch]: { ...p[ch], enabled: !p[ch].enabled } }))}
-                      style={{
-                        width: "36px", height: "20px", borderRadius: "10px", border: "none", cursor: "pointer",
-                        background: tgChannels[ch].enabled ? "#00c3ff" : "rgba(255,255,255,0.1)",
-                        position: "relative", transition: "background 0.15s",
-                      }}
-                    >
-                      <div style={{
-                        width: "14px", height: "14px", borderRadius: "50%", background: "#fff",
-                        position: "absolute", top: "3px",
-                        left: tgChannels[ch].enabled ? "19px" : "3px",
-                        transition: "left 0.15s",
-                      }} />
+                    <button onClick={() => setTgChannels((p) => ({ ...p, [ch]: { ...p[ch], enabled: !p[ch].enabled } }))}
+                      style={{ width: "36px", height: "20px", borderRadius: "10px", border: "none", cursor: "pointer", background: tgChannels[ch].enabled ? "#00c3ff" : "rgba(255,255,255,0.1)", position: "relative" }}>
+                      <div style={{ width: "14px", height: "14px", borderRadius: "50%", background: "#fff", position: "absolute", top: "3px", left: tgChannels[ch].enabled ? "19px" : "3px", transition: "left 0.15s" }} />
                     </button>
                   </div>
-                  <input
-                    placeholder="Chat ID (-100...)"
-                    value={tgChannels[ch].chatId}
+                  <input placeholder="Chat ID (-100...)" value={tgChannels[ch].chatId}
                     onChange={(e) => setTgChannels((p) => ({ ...p, [ch]: { ...p[ch], chatId: e.target.value } }))}
-                    style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", padding: "5px 8px", color: "#f1f5f9", fontSize: "11px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
-                  />
+                    style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", padding: "5px 8px", color: "#f1f5f9", fontSize: "11px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }} />
                 </div>
               ))}
             </div>
             <button onClick={saveTelegram}
               style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(0,195,255,0.4)", cursor: "pointer", background: "rgba(0,195,255,0.12)", color: "#00c3ff", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
-              Telegram speichern
+              💾 Telegram speichern
             </button>
             {aiTestResult.telegram && (
               <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "6px", fontSize: "11px", background: "rgba(16,201,109,0.1)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>
                 {aiTestResult.telegram.msg}
               </div>
             )}
-            <div style={{ marginTop: "10px", padding: "8px 12px", background: "rgba(0,195,255,0.05)", border: "1px solid rgba(0,195,255,0.15)", borderRadius: "6px", fontSize: "10px", color: "#64748b" }}>
-              ℹ Erstelle einen Bot mit @BotFather auf Telegram. Kopiere den Token hierher.
-              Chat-IDs erhältst du indem du dem Bot schreibst und dann /api/getUpdates aufrufst.
-              Alle 4 Kanäle werden auch im Security Center konfiguriert.
-            </div>
           </div>
         </div>
       )}
