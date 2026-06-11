@@ -19,10 +19,23 @@ type Tab =
 
 interface ConnectionForm {
   apiKey: string;
+  login: string;
+  password: string;
   accountMode: AccountMode;
   loading: boolean;
   error: string | null;
   success: string | null;
+}
+
+interface CapitalAccountInfo {
+  accountId: string;
+  accountName: string;
+  accountType: string;
+  currency: string;
+  balance: number;
+  deposit: number;
+  profitLoss: number;
+  available: number;
 }
 
 const TAB_LIST: { key: Tab; label: string; icon: string }[] = [
@@ -40,9 +53,10 @@ export default function SettingsDashboard() {
   const [aiSettings, setAISettings] = useState<AISettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [forms, setForms] = useState<Record<BrokerKey, ConnectionForm>>({
-    CAPITAL_COM: { apiKey: "", accountMode: "DEMO", loading: false, error: null, success: null },
-    IC_MARKETS: { apiKey: "", accountMode: "DEMO", loading: false, error: null, success: null },
+    CAPITAL_COM: { apiKey: "", login: "", password: "", accountMode: "DEMO", loading: false, error: null, success: null },
+    IC_MARKETS: { apiKey: "", login: "", password: "", accountMode: "DEMO", loading: false, error: null, success: null },
   });
+  const [capitalAccounts, setCapitalAccounts] = useState<CapitalAccountInfo[]>([]);
   const [openaiKey, setOpenaiKey] = useState("");
   const [openaiModel, setOpenaiModel] = useState("gpt-4o");
   const [anthropicKey, setAnthropicKey] = useState("");
@@ -127,24 +141,45 @@ export default function SettingsDashboard() {
   const handleConnect = async (key: BrokerKey) => {
     const form = forms[key];
     setForms((f) => ({ ...f, [key]: { ...f[key], loading: true, error: null, success: null } }));
-    const d = await postAction({
-      action: "broker_connect",
-      brokerKey: key,
-      apiKey: form.apiKey,
-      accountMode: form.accountMode,
-    });
-    setForms((f) => ({
-      ...f,
-      [key]: {
-        ...f[key],
-        loading: false,
-        error: d.ok ? null : (d.error ?? "Connection failed"),
-        success: d.ok ? `Connected — Account ${d.accountId}` : null,
-      },
-    }));
+
+    if (key === "CAPITAL_COM") {
+      // Real Capital.com DEMO API connection
+      const r = await fetch("/api/capital-com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "connect", apiKey: form.apiKey, login: form.login, password: form.password }),
+      }).catch(() => null);
+      const d = r ? await r.json().catch(() => ({ ok: false, error: "Parse error" })) : { ok: false, error: "Network error" };
+
+      if (d.ok) {
+        setCapitalAccounts(d.accounts ?? []);
+        // Sync to settings store for status display
+        await postAction({ action: "broker_connect", brokerKey: key, apiKey: form.apiKey, accountMode: "DEMO" });
+        const balance = d.accounts?.[0]?.balance;
+        const balanceStr = balance != null ? ` · Balance: ${d.accounts[0].currency} ${balance.toFixed(2)}` : "";
+        setForms((f) => ({ ...f, [key]: { ...f[key], loading: false, error: null, success: `Connected ✓ — ${d.accountId}${balanceStr}` } }));
+      } else {
+        setForms((f) => ({ ...f, [key]: { ...f[key], loading: false, error: d.error ?? "Connection failed", success: null } }));
+      }
+    } else {
+      // IC Markets — simulation
+      const d = await postAction({ action: "broker_connect", brokerKey: key, apiKey: form.apiKey, accountMode: form.accountMode });
+      setForms((f) => ({
+        ...f,
+        [key]: { ...f[key], loading: false, error: d.ok ? null : (d.error ?? "Connection failed"), success: d.ok ? `Connected — Account ${d.accountId}` : null },
+      }));
+    }
   };
 
   const handleDisconnect = async (key: BrokerKey) => {
+    if (key === "CAPITAL_COM") {
+      await fetch("/api/capital-com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disconnect" }),
+      }).catch(() => {});
+      setCapitalAccounts([]);
+    }
     await postAction({ action: "broker_disconnect", brokerKey: key });
     setForms((f) => ({ ...f, [key]: { ...f[key], error: null, success: null } }));
   };
@@ -241,81 +276,124 @@ export default function SettingsDashboard() {
                 </div>
 
                 {c?.connected && c.accountId && (
-                  <div style={{
-                    background: "rgba(16,201,109,0.06)", border: "1px solid rgba(16,201,109,0.2)",
-                    borderRadius: "8px", padding: "10px 14px", marginBottom: "14px",
-                    fontSize: "11px", color: "#6ee7b7",
-                  }}>
-                    Account ID: <strong>{c.accountId}</strong>
-                    {c.lastConnectedAt && (
-                      <span style={{ marginLeft: "16px", color: "#64748b" }}>
-                        Connected: {new Date(c.lastConnectedAt).toLocaleString()}
-                      </span>
+                  <div style={{ marginBottom: "14px" }}>
+                    <div style={{ background: "rgba(16,201,109,0.06)", border: "1px solid rgba(16,201,109,0.2)", borderRadius: "8px", padding: "10px 14px", fontSize: "11px", color: "#6ee7b7" }}>
+                      Account ID: <strong>{c.accountId}</strong>
+                      {c.lastConnectedAt && (
+                        <span style={{ marginLeft: "16px", color: "#64748b" }}>
+                          Connected: {new Date(c.lastConnectedAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                    {profile.key === "CAPITAL_COM" && capitalAccounts.length > 0 && (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px", marginTop: "8px" }}>
+                        {capitalAccounts.map((acc) => (
+                          <div key={acc.accountId} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "12px", border: "1px solid rgba(16,201,109,0.15)" }}>
+                            <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "4px" }}>{acc.accountName} · {acc.accountType}</div>
+                            <div style={{ fontSize: "16px", fontWeight: 700, color: "#10c96d" }}>{acc.currency} {acc.balance.toFixed(2)}</div>
+                            <div style={{ fontSize: "10px", color: "#475569", marginTop: "2px" }}>
+                              Available: {acc.available.toFixed(2)} · P&L: <span style={{ color: acc.profitLoss >= 0 ? "#10c96d" : "#f87171" }}>{acc.profitLoss.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
 
                 {!c?.connected && (
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                    <div style={{ flex: 1, minWidth: "200px" }}>
-                      <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-                        API KEY / PASSWORD
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="Enter API key or password..."
-                        value={f.apiKey}
-                        onChange={(e) =>
-                          setForms((prev) => ({
-                            ...prev,
-                            [profile.key]: { ...prev[profile.key], apiKey: e.target.value },
-                          }))
-                        }
-                        style={{
-                          width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)",
-                          borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9",
-                          fontSize: "12px", fontFamily: "monospace", outline: "none",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </div>
-                    <div style={{ minWidth: "120px" }}>
-                      <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-                        ACCOUNT MODE
-                      </label>
-                      <select
-                        value={f.accountMode}
-                        onChange={(e) =>
-                          setForms((prev) => ({
-                            ...prev,
-                            [profile.key]: { ...prev[profile.key], accountMode: e.target.value as AccountMode },
-                          }))
-                        }
-                        style={{
-                          background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)",
-                          borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9",
-                          fontSize: "12px", fontFamily: "monospace", outline: "none",
-                          width: "100%",
-                        }}
-                      >
-                        <option value="DEMO">DEMO</option>
-                        <option value="LIVE">LIVE</option>
-                      </select>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "flex-end" }}>
-                      <button
-                        onClick={() => handleConnect(profile.key)}
-                        disabled={f.loading}
-                        style={{
-                          padding: "8px 20px", borderRadius: "6px", border: `1px solid ${profile.color}55`, cursor: "pointer",
-                          background: profile.color + "33", color: profile.color, fontSize: "12px",
-                          fontFamily: "monospace", fontWeight: 700,
-                          opacity: f.loading ? 0.6 : 1,
-                        }}
-                      >
-                        {f.loading ? "Connecting..." : "Connect"}
-                      </button>
-                    </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {profile.key === "CAPITAL_COM" ? (
+                      // Capital.com: real API — needs API Key + Email + Password
+                      <>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                          <div>
+                            <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY (X-CAP-API-KEY)</label>
+                            <input
+                              type="password"
+                              placeholder="Dein Capital.com API Key..."
+                              value={f.apiKey}
+                              onChange={(e) => setForms((p) => ({ ...p, CAPITAL_COM: { ...p.CAPITAL_COM, apiKey: e.target.value } }))}
+                              style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>LOGIN E-MAIL</label>
+                            <input
+                              type="email"
+                              placeholder="deine@email.com"
+                              value={f.login}
+                              onChange={(e) => setForms((p) => ({ ...p, CAPITAL_COM: { ...p.CAPITAL_COM, login: e.target.value } }))}
+                              style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>PASSWORT</label>
+                            <input
+                              type="password"
+                              placeholder="Capital.com Passwort..."
+                              value={f.password}
+                              onChange={(e) => setForms((p) => ({ ...p, CAPITAL_COM: { ...p.CAPITAL_COM, password: e.target.value } }))}
+                              style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ padding: "3px 10px", borderRadius: "4px", fontSize: "10px", background: "rgba(99,102,241,0.15)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.3)" }}>
+                            DEMO API
+                          </span>
+                          <span style={{ fontSize: "10px", color: "#475569" }}>
+                            Verbindet mit demo-api-capital.backend.capital — READ ONLY, kein Trading
+                          </span>
+                          <button
+                            onClick={() => handleConnect(profile.key)}
+                            disabled={f.loading || !f.apiKey || !f.login || !f.password}
+                            style={{
+                              marginLeft: "auto", padding: "8px 24px", borderRadius: "6px", border: `1px solid ${profile.color}55`, cursor: "pointer",
+                              background: profile.color + "33", color: profile.color, fontSize: "12px",
+                              fontFamily: "monospace", fontWeight: 700,
+                              opacity: (f.loading || !f.apiKey || !f.login || !f.password) ? 0.5 : 1,
+                            }}
+                          >
+                            {f.loading ? "Verbinde..." : "▶ Connect"}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      // IC Markets — simulation
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: "200px" }}>
+                          <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY</label>
+                          <input
+                            type="password"
+                            placeholder="Enter API key..."
+                            value={f.apiKey}
+                            onChange={(e) => setForms((p) => ({ ...p, [profile.key]: { ...p[profile.key], apiKey: e.target.value } }))}
+                            style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                          />
+                        </div>
+                        <div style={{ minWidth: "120px" }}>
+                          <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>ACCOUNT MODE</label>
+                          <select
+                            value={f.accountMode}
+                            onChange={(e) => setForms((p) => ({ ...p, [profile.key]: { ...p[profile.key], accountMode: e.target.value as AccountMode } }))}
+                            style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", width: "100%" }}
+                          >
+                            <option value="DEMO">DEMO</option>
+                            <option value="LIVE">LIVE</option>
+                          </select>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "flex-end" }}>
+                          <button
+                            onClick={() => handleConnect(profile.key)}
+                            disabled={f.loading}
+                            style={{ padding: "8px 20px", borderRadius: "6px", border: `1px solid ${profile.color}55`, cursor: "pointer", background: profile.color + "33", color: profile.color, fontSize: "12px", fontFamily: "monospace", fontWeight: 700, opacity: f.loading ? 0.6 : 1 }}
+                          >
+                            {f.loading ? "Connecting..." : "Connect"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -345,10 +423,13 @@ export default function SettingsDashboard() {
                   </div>
                 )}
 
-                <div style={{ marginTop: "12px", padding: "8px 12px", background: "rgba(245,158,11,0.06)",
-                  border: "1px solid rgba(245,158,11,0.2)", borderRadius: "6px", fontSize: "10px", color: "#78716c" }}>
-                  ⚠ Simulation Mode — no real broker connection is made. All orders remain paper trades.
-                  Live trading requires explicit system unlock.
+                <div style={{ marginTop: "12px", padding: "8px 12px",
+                  background: profile.key === "CAPITAL_COM" ? "rgba(99,102,241,0.06)" : "rgba(245,158,11,0.06)",
+                  border: `1px solid ${profile.key === "CAPITAL_COM" ? "rgba(99,102,241,0.2)" : "rgba(245,158,11,0.2)"}`,
+                  borderRadius: "6px", fontSize: "10px", color: "#78716c" }}>
+                  {profile.key === "CAPITAL_COM"
+                    ? "🔗 Echte API-Verbindung (DEMO) — Marktpreise werden live geladen. Kein Trading, nur READ ONLY. Safety Lock aktiv."
+                    : "⚠ Simulation Mode — no real broker connection is made. All orders remain paper trades."}
                 </div>
               </div>
             );
