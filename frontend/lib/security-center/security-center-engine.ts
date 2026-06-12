@@ -23,14 +23,7 @@ const PERMISSIONS: SystemPermission[] = [
   { id: "telegram_send", name: "Telegram Notifications", status: "ALLOWED", description: "Send status messages to Telegram" },
 ];
 
-const STATIC_AUDIT: AuditEvent[] = [
-  buildEvent("SYSTEM_START", "INFO", "Security Center", "Security Center V17.0.0 initialized."),
-  buildEvent("BROKER_CONNECTED", "INFO", "IC Markets", "IC Markets demo session opened — read-only mode."),
-  buildEvent("BROKER_CONNECTED", "INFO", "Capital.com", "Capital.com demo session opened — read-only mode."),
-  buildEvent("MALWAREBYTES_SCAN", "INFO", "Malwarebytes", "Scheduled scan completed — 0 threats found."),
-];
-
-let _counter = STATIC_AUDIT.length;
+let _counter = 0;
 
 function buildEvent(
   type: AuditEventType,
@@ -49,6 +42,13 @@ function buildEvent(
     metadata,
   };
 }
+
+const STATIC_AUDIT: AuditEvent[] = [
+  buildEvent("SYSTEM_START", "INFO", "Security Center", "Security Center V17.0.0 initialized."),
+  buildEvent("BROKER_CONNECTED", "INFO", "IC Markets", "IC Markets demo session opened — read-only mode."),
+  buildEvent("BROKER_CONNECTED", "INFO", "Capital.com", "Capital.com demo session opened — read-only mode."),
+  buildEvent("MALWAREBYTES_SCAN", "INFO", "Malwarebytes", "Scheduled scan completed — 0 threats found."),
+];
 
 function resolveSecurityStatus(
   mwConnected: boolean,
