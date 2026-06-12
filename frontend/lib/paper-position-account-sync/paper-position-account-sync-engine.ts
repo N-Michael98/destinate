@@ -1,4 +1,4 @@
-﻿import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
+﻿import { paperTradingManager } from "@/lib/paper-trading/paper-singleton";
 
 import {
   PaperAccountRiskMode,
@@ -157,3 +157,4 @@ export function generatePaperPositionAccountSyncReport():
     updatedAt: new Date().toISOString(),
   };
 }
+

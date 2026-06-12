@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import LiveMarketWidget from "./LiveMarketWidget";
+import BacktestingPanel from "./BacktestingPanel";
+import LearningFeedbackPanel from "./LearningFeedbackPanel";
 import { HealthBar, MiniDonut } from "./mission-control-health-charts";
 import { MissionControlAlertLayer } from "./MissionControlAlertLayer";
 import { missionControlEndpointRegistry } from "@/lib/mission-control-endpoint-registry";
@@ -199,7 +202,7 @@ export default function UnifiedMissionControlDashboard() {
             V15.B.8 Unified Mission Control
           </p>
           <h1 className="mt-2 text-3xl font-black text-white">
-            AI Trading System Command Center
+            Destinate Command Center
           </h1>
           <p className="mt-2 max-w-4xl text-sm text-zinc-400">
             Unified overview for system health, AI decision flow, execution readiness, broker health, market status and dependency monitoring.
@@ -213,6 +216,18 @@ export default function UnifiedMissionControlDashboard() {
         >
           Refresh Mission Control
         </button>
+      </div>
+
+      <div className="mb-6">
+        <LiveMarketWidget />
+      </div>
+
+      <div className="mb-6">
+        <BacktestingPanel />
+      </div>
+
+      <div className="mb-6">
+        <LearningFeedbackPanel />
       </div>
 
       <div className="mb-6 grid gap-4 xl:grid-cols-3">

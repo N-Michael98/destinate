@@ -4,75 +4,108 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  email         String   @unique
+  passwordHash  String
+  role          String   @default("USER")
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  trades        Trade[]
+  paperOrders   PaperOrder[]
 }
 
 model Trade {
   id            Int      @id @default(autoincrement())
-
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
   date          DateTime @default(now())
-
   market        String
   direction     String
   strategy      String   @default("Unclassified")
-
   entry         Float
   stopLoss      Float
   takeProfit    Float
-
   status        String   @default("OPEN")
   result        String   @default("OPEN")
-
   profitLoss    Float    @default(0)
-
-  // ===== Risk Management V4.5 =====
-
   accountSize   Float    @default(30000)
-
   riskPercent   Float    @default(1)
-
   riskAmount    Float    @default(300)
-
   riskReward    Float    @default(0)
-
   positionSize  Float    @default(0)
-
-  // ===============================
-
   notes         String?
-
   createdAt     DateTime @default(now())
-
   updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([market])
+  @@index([createdAt])
 }
 
 model PaperOrder {
   id            Int      @id @default(autoincrement())
-
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-
+  broker        String   @default("capital")
   market        String
   direction     String
   strategy      String   @default("Unclassified")
-
   entry         Float
   stopLoss      Float
   takeProfit    Float
-
   accountSize   Float    @default(30000)
   riskPercent   Float    @default(1)
   riskAmount    Float    @default(300)
   riskReward    Float    @default(0)
   positionSize  Float    @default(0)
-
   status        String   @default("OPEN")
   result        String   @default("OPEN")
   profitLoss    Float    @default(0)
-
   confidence    Float    @default(0)
   qualityGrade  String   @default("B")
   aiDecision    String   @default("WAIT")
-
   notes         String?
+
+  @@index([userId])
+  @@index([broker])
+}
+
+model LearningSnapshot {
+  id            Int      @id @default(autoincrement())
+  createdAt     DateTime @default(now())
+  broker        String   @default("capital")
+  symbol        String
+  winRate       Float
+  totalTrades   Int
+  adjustmentFactor Float @default(1.0)
+  insights      String?
+
+  @@index([symbol])
+  @@index([createdAt])
+}
+
+model BacktestRun {
+  id              Int      @id @default(autoincrement())
+  createdAt       DateTime @default(now())
+  symbol          String
+  interval        String
+  period          String
+  strategy        String
+  winRate         Float
+  profitFactor    Float
+  totalReturn     Float
+  maxDrawdown     Float
+  sharpeRatio     Float    @default(0)
+  totalTrades     Int
+
+  @@index([symbol, strategy])
 }

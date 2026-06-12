@@ -12,27 +12,28 @@ import { PaperPnLEngine } from "./paper-pnl-engine";
 import { PaperPositionManager } from "./paper-position-manager";
 
 export class PaperTradingManager {
-  private orderManager =
-    new PaperOrderManager();
+  private orderManager = new PaperOrderManager();
+  private positionManager = new PaperPositionManager();
+  private pnlEngine = new PaperPnLEngine();
+  private accountManager = new PaperAccountManager();
+  private account: PaperAccount = this.accountManager.createDemoAccount();
+  private orders: PaperOrder[] = [];
+  private positions: PaperPosition[] = [];
+  private slot: string;
 
-  private positionManager =
-    new PaperPositionManager();
+  constructor(slot = "capital") {
+    this.slot = slot;
+  }
 
-  private pnlEngine =
-    new PaperPnLEngine();
-
-  private accountManager =
-    new PaperAccountManager();
-
-  private account:
-    PaperAccount =
-      this.accountManager.createDemoAccount();
-
-  private orders:
-    PaperOrder[] = [];
-
-  private positions:
-    PaperPosition[] = [];
+  syncBalance(balance: number, currency: string) {
+    this.account = {
+      ...this.account,
+      balance: Number(balance.toFixed(2)),
+      equity: Number(balance.toFixed(2)),
+      currency,
+      updatedAt: new Date().toISOString(),
+    };
+  }
 
   createAndFillPaperOrder(
     symbol: string,
@@ -45,122 +46,45 @@ export class PaperTradingManager {
     reason: string,
     size = 1
   ) {
-    const order =
-      this.orderManager.createOrder(
-        symbol,
-        direction,
-        entry,
-        stopLoss,
-        takeProfit1,
-        takeProfit2,
-        confidence,
-        reason
-      );
-
-    PaperHistory.addOrderEvent(
-      order,
-      "ORDER_CREATED"
+    const order = this.orderManager.createOrder(
+      symbol, direction, entry, stopLoss, takeProfit1, takeProfit2, confidence, reason
     );
+    PaperHistory.addOrderEvent(order, "ORDER_CREATED", this.slot);
 
-    const filledOrder =
-      this.orderManager.fillOrder(order);
+    const filledOrder = this.orderManager.fillOrder(order);
+    PaperHistory.addOrderEvent(filledOrder, "ORDER_FILLED", this.slot);
 
-    PaperHistory.addOrderEvent(
-      filledOrder,
-      "ORDER_FILLED"
-    );
-
-    const position =
-      this.positionManager.openPosition(
-        filledOrder,
-        size
-      );
-
-    PaperHistory.addPositionEvent(
-      position,
-      "POSITION_OPENED"
-    );
+    const position = this.positionManager.openPosition(filledOrder, size);
+    PaperHistory.addPositionEvent(position, "POSITION_OPENED", this.slot);
 
     this.orders.push(filledOrder);
     this.positions.push(position);
+    this.account = this.accountManager.updateFromPositions(this.account, this.positions);
 
-    this.account =
-      this.accountManager.updateFromPositions(
-        this.account,
-        this.positions
+    return { order: filledOrder, position, account: this.account };
+  }
+
+  updateMarketPrice(symbol: string, currentPrice: number) {
+    this.positions = this.positions.map((position) => {
+      if (position.symbol !== symbol || position.status !== "OPEN") return position;
+
+      const unrealizedPnL = this.pnlEngine.calculateUnrealizedPnL(
+        position.direction, position.entry, currentPrice, position.size
       );
-
-    return {
-      order: filledOrder,
-      position,
-      account: this.account,
-    };
-  }
-
-  updateMarketPrice(
-    symbol: string,
-    currentPrice: number
-  ) {
-    this.positions =
-      this.positions.map((position) => {
-        if (
-          position.symbol !== symbol ||
-          position.status !== "OPEN"
-        ) {
-          return position;
-        }
-
-        const unrealizedPnL =
-          this.pnlEngine.calculateUnrealizedPnL(
-            position.direction,
-            position.entry,
-            currentPrice,
-            position.size
-          );
-
-        const updatedPosition =
-          this.positionManager.updatePositionPrice(
-            position,
-            currentPrice,
-            unrealizedPnL
-          );
-
-        PaperHistory.addPositionEvent(
-          updatedPosition,
-          "POSITION_UPDATED"
-        );
-
-        return updatedPosition;
-      });
-
-    this.account =
-      this.accountManager.updateFromPositions(
-        this.account,
-        this.positions
+      const updatedPosition = this.positionManager.updatePositionPrice(
+        position, currentPrice, unrealizedPnL
       );
+      PaperHistory.addPositionEvent(updatedPosition, "POSITION_UPDATED", this.slot);
+      return updatedPosition;
+    });
 
-    return {
-      positions: this.positions,
-      account: this.account,
-    };
+    this.account = this.accountManager.updateFromPositions(this.account, this.positions);
+    return { positions: this.positions, account: this.account };
   }
 
-  getOrders() {
-    return this.orders;
-  }
-
-  getPositions() {
-    return this.positions;
-  }
-
-  getAccount() {
-    return this.account;
-  }
-
-  getHistory() {
-    return PaperHistory.getAll();
-  }
+  getOrders() { return this.orders; }
+  getPositions() { return this.positions; }
+  getAccount() { return this.account; }
+  getSlot() { return this.slot; }
+  getHistory() { return PaperHistory.getAll(this.slot); }
 }
-
-export const paperTradingManager =
-  new PaperTradingManager();

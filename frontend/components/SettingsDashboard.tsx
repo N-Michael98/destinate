@@ -47,6 +47,58 @@ const TAB_LIST: { key: Tab; label: string; icon: string }[] = [
   { key: "system", label: "System", icon: "⚙️" },
 ];
 
+function ChangeUsernameForm() {
+  const [newUsername, setNewUsername] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setResult(null);
+    const r = await fetch("/api/auth/change-username", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newUsername }),
+    }).catch(() => null);
+    const d = r ? await r.json().catch(() => null) : null;
+    setLoading(false);
+    setResult({ ok: d?.ok ?? false, msg: d?.ok ? `Benutzername geändert zu "${d.username}"` : (d?.error ?? "Fehler") });
+    if (d?.ok) setNewUsername("");
+  };
+
+  return (
+    <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.1)", padding: "24px" }}>
+      <div style={{ fontSize: "14px", fontWeight: 700, color: "#f1f5f9", marginBottom: "16px" }}>👤 Benutzername ändern</div>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div>
+          <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>NEUER BENUTZERNAME</label>
+          <input
+            type="text"
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+            placeholder="Mindestens 3 Zeichen..."
+            minLength={3}
+            required
+            style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "9px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none" }}
+          />
+        </div>
+        {result && (
+          <div style={{ padding: "8px 12px", borderRadius: "6px", fontSize: "11px", background: result.ok ? "rgba(16,201,109,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${result.ok ? "rgba(16,201,109,0.3)" : "rgba(239,68,68,0.3)"}`, color: result.ok ? "#10c96d" : "#f87171" }}>
+            {result.ok ? "✓" : "✗"} {result.msg}
+          </div>
+        )}
+        <div>
+          <button type="submit" disabled={loading || newUsername.length < 3}
+            style={{ padding: "9px 24px", borderRadius: "6px", border: "1px solid rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.2)", color: "#a5b4fc", fontSize: "12px", fontFamily: "monospace", fontWeight: 700, cursor: "pointer", opacity: (loading || newUsername.length < 3) ? 0.5 : 1 }}>
+            {loading ? "Speichern..." : "Benutzername speichern"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function ChangePasswordForm() {
   const [form, setForm] = useState({ current: "", next: "", confirm: "" });
   const [loading, setLoading] = useState(false);
@@ -1005,6 +1057,8 @@ export default function SettingsDashboard() {
               </div>
             ))}
           </div>
+
+          <ChangeUsernameForm />
 
           <ChangePasswordForm />
 

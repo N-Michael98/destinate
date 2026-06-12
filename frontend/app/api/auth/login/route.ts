@@ -9,20 +9,18 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Record<string, string>;
     const { username, password } = body;
 
-    if (!username || !password) {
+    if (!username || !password)
       return NextResponse.json({ ok: false, error: "Benutzername und Passwort erforderlich" }, { status: 400 });
-    }
 
     const user = findUserByUsername(username.trim());
-    if (!user) {
+    if (!user || !verifyPassword(password, user.passwordHash))
       return NextResponse.json({ ok: false, error: "Ungültige Anmeldedaten" }, { status: 401 });
-    }
-    if (!verifyPassword(password, user.passwordHash)) {
-      return NextResponse.json({ ok: false, error: "Ungültige Anmeldedaten" }, { status: 401 });
-    }
-    if (user.status === "PENDING") {
-      return NextResponse.json({ ok: false, error: "Account wartet auf Admin-Freigabe" }, { status: 403 });
-    }
+
+    if (user.status === "PENDING_EMAIL")
+      return NextResponse.json({ ok: false, error: "Bitte bestätige zuerst deine E-Mail-Adresse. Prüfe deinen Posteingang." }, { status: 403 });
+
+    if (user.status === "PENDING_APPROVAL")
+      return NextResponse.json({ ok: false, error: "Dein Account wartet auf Admin-Freigabe. Du erhältst eine Benachrichtigung." }, { status: 403 });
 
     const token = await signToken({ sub: user.id, username: user.username, role: user.role });
     updateLastLogin(user.id);
@@ -32,7 +30,7 @@ export async function POST(request: Request) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
       path: "/",
     });
     return res;

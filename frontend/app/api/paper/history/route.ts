@@ -1,22 +1,13 @@
 import { NextResponse } from "next/server";
-import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
+import { getPaperManager } from "@/lib/paper-trading/paper-singleton";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    return NextResponse.json({
-      ok: true,
-      history: paperTradingManager.getHistory(),
-    });
+    const broker = new URL(request.url).searchParams.get("broker");
+    return NextResponse.json({ ok: true, history: getPaperManager(broker).getHistory() });
   } catch (error) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Failed to load paper trading history",
-        details:
-          error instanceof Error
-            ? error.message
-            : String(error),
-      },
+      { ok: false, error: "Failed to load paper trading history", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

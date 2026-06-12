@@ -1,22 +1,7 @@
-export type ICMarketsConnectionStatus =
-  | "DISCONNECTED"
-  | "PREPARED"
-  | "CONNECTED"
-  | "ERROR";
-
-export type ICMarketsAccountMode =
-  | "DEMO"
-  | "LIVE";
-
-export type ICMarketsOrderPermission =
-  | "READ_ONLY"
-  | "PAPER_ONLY"
-  | "DEMO_ALLOWED"
-  | "LIVE_BLOCKED";
-
-export type ICMarketsPositionSide =
-  | "LONG"
-  | "SHORT";
+export type ICMarketsConnectionStatus = "DISCONNECTED" | "PREPARED" | "CONNECTED" | "ERROR";
+export type ICMarketsAccountMode = "DEMO" | "LIVE";
+export type ICMarketsOrderPermission = "READ_ONLY" | "PAPER_ONLY" | "DEMO_ALLOWED" | "LIVE_BLOCKED";
+export type ICMarketsPositionSide = "LONG" | "SHORT";
 
 export interface ICMarketsConfig {
   enabled: boolean;
@@ -24,6 +9,8 @@ export interface ICMarketsConfig {
   server?: string;
   accountId?: string;
   apiKey?: string;
+  clientId?: string;
+  clientSecret?: string;
   readOnly: boolean;
   allowLiveOrders: boolean;
 }
@@ -58,7 +45,6 @@ export interface ICMarketsOrderRequest {
   entryPrice?: number;
   stopLoss?: number;
   takeProfit?: number;
-  comment?: string;
 }
 
 export interface ICMarketsOrderFirewallResult {

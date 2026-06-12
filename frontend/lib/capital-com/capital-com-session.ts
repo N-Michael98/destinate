@@ -1,6 +1,7 @@
 // Server-side session store — keeps CST + X-SECURITY-TOKEN secure, never sent to client
 import fs from "fs";
 import path from "path";
+import { paperManagerCapital } from "../paper-trading/paper-singleton";
 import {
   capitalCreateSession,
   capitalGetAccounts,
@@ -88,6 +89,12 @@ export async function connectCapital(
   saveCredentials({ apiKey, identifier, password });
 
   const primaryAccount = global.__capital_session__.accounts[0];
+
+  // Sync paper trading balance with real broker balance
+  if (primaryAccount?.balance != null) {
+    paperManagerCapital.syncBalance(primaryAccount.balance, primaryAccount.currency ?? "USD");
+  }
+
   return {
     ok: true,
     accountId: global.__capital_session__.accountId,

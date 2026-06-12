@@ -3464,7 +3464,7 @@ export default function Home() {
       <div className="flex">
         <aside className="w-80 min-h-screen sticky top-0 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
           <div className="mb-8">
-            <h1 className="text-3xl font-black leading-tight">AI Trading<br />System</h1>
+            <h1 className="text-3xl font-black leading-tight">Destinate</h1>
             <p className="text-gray-500 mt-3 text-sm">Mission Control  V17.0.0</p>
           </div>
 

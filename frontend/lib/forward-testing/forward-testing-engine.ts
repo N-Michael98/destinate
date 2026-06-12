@@ -13,6 +13,8 @@ const VERSION = "V16.4.0" as const;
 function round2(v: number) { return Math.round(v * 100) / 100; }
 function round4(v: number) { return Math.round(v * 10000) / 10000; }
 
+// Echte Preise werden zur Laufzeit von Python geladen (siehe loadLivePrices)
+// Fallback-Werte falls Python offline
 const BASE_PRICES: Record<string, number> = {
   XAUUSD: 3372,
   EURUSD: 1.0842,
@@ -22,6 +24,7 @@ const BASE_PRICES: Record<string, number> = {
   SPX500: 5400,
 };
 
+// ATR-basierte Risk-Distances — werden von Python überschrieben wenn verfügbar
 const RISK_DISTANCES: Record<string, number> = {
   XAUUSD: 15,
   EURUSD: 0.006,
@@ -30,6 +33,34 @@ const RISK_DISTANCES: Record<string, number> = {
   BTCUSD: 900,
   SPX500: 25,
 };
+
+// Überschreibe BASE_PRICES + RISK_DISTANCES mit Python-Live-Daten
+export async function loadLivePricesFromPython(): Promise<void> {
+  try {
+    const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
+    const symbols = Object.keys(BASE_PRICES);
+    const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols }),
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+    const d = await res.json();
+    for (const p of (d.prices ?? [])) {
+      if (p.price != null) BASE_PRICES[p.symbol] = p.price;
+    }
+    // ATR von Python laden für Risk-Distances
+    for (const sym of symbols) {
+      const ir = await fetch(`${PYTHON_BASE}/api/v1/indicators/${sym}?interval=1h&period=1mo`, { cache: "no-store" });
+      if (ir.ok) {
+        const id = await ir.json();
+        const atr = id.indicators?.atr;
+        if (atr) RISK_DISTANCES[sym] = atr * 1.5;
+      }
+    }
+  } catch { /* keep defaults */ }
+}
 
 function getBase(symbol: string) { return BASE_PRICES[symbol] ?? 100; }
 function getRisk(symbol: string) { return RISK_DISTANCES[symbol] ?? 1; }

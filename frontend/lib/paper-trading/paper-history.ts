@@ -10,102 +10,64 @@ type PaperHistoryEvent = {
   payload: unknown;
 };
 
-const historyFilePath = path.join(
-  process.cwd(),
-  "lib",
-  "data",
-  "paper-history.json"
-);
-
-function ensureHistoryFile() {
-  const directory = path.dirname(historyFilePath);
-
-  if (!fs.existsSync(directory)) {
-    fs.mkdirSync(directory, { recursive: true });
-  }
-
-  if (!fs.existsSync(historyFilePath)) {
-    fs.writeFileSync(historyFilePath, "[]", "utf-8");
-  }
+function historyFilePath(slot: string) {
+  return path.join(process.cwd(), "lib", "data", `paper-history-${slot}.json`);
 }
 
-function readHistory(): PaperHistoryEvent[] {
-  ensureHistoryFile();
+function ensureHistoryFile(slot: string) {
+  const filePath = historyFilePath(slot);
+  const directory = path.dirname(filePath);
+  if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
+  if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, "[]", "utf-8");
+}
 
+function readHistory(slot: string): PaperHistoryEvent[] {
+  ensureHistoryFile(slot);
   try {
-    const raw = fs.readFileSync(historyFilePath, "utf-8");
-    return JSON.parse(raw) as PaperHistoryEvent[];
+    return JSON.parse(fs.readFileSync(historyFilePath(slot), "utf-8")) as PaperHistoryEvent[];
   } catch {
     return [];
   }
 }
 
-function writeHistory(history: PaperHistoryEvent[]) {
-  ensureHistoryFile();
-  fs.writeFileSync(
-    historyFilePath,
-    JSON.stringify(history, null, 2),
-    "utf-8"
-  );
+function writeHistory(slot: string, history: PaperHistoryEvent[]) {
+  ensureHistoryFile(slot);
+  fs.writeFileSync(historyFilePath(slot), JSON.stringify(history, null, 2), "utf-8");
 }
 
 export class PaperHistory {
-  static addOrderEvent(order: unknown, event: string) {
-    const history = readHistory();
-
+  static addOrderEvent(order: unknown, event: string, slot = "capital") {
+    const history = readHistory(slot);
     history.push({
-      id: `paper-history-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`,
-      type: event,
-      entity: "ORDER",
-      event,
-      timestamp: new Date().toISOString(),
-      payload: order,
+      id: `paper-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: event, entity: "ORDER", event, timestamp: new Date().toISOString(), payload: order,
     });
-
-    writeHistory(history);
+    writeHistory(slot, history);
   }
 
-  static addPositionEvent(position: unknown, event: string) {
-    const history = readHistory();
-
+  static addPositionEvent(position: unknown, event: string, slot = "capital") {
+    const history = readHistory(slot);
     history.push({
-      id: `paper-history-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`,
-      type: event,
-      entity: "POSITION",
-      event,
-      timestamp: new Date().toISOString(),
-      payload: position,
+      id: `paper-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: event, entity: "POSITION", event, timestamp: new Date().toISOString(), payload: position,
     });
-
-    writeHistory(history);
+    writeHistory(slot, history);
   }
 
-  static addSystemEvent(event: string, payload: unknown = {}) {
-    const history = readHistory();
-
+  static addSystemEvent(event: string, payload: unknown = {}, slot = "capital") {
+    const history = readHistory(slot);
     history.push({
-      id: `paper-history-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)}`,
-      type: event,
-      entity: "SYSTEM",
-      event,
-      timestamp: new Date().toISOString(),
-      payload,
+      id: `paper-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: event, entity: "SYSTEM", event, timestamp: new Date().toISOString(), payload,
     });
-
-    writeHistory(history);
+    writeHistory(slot, history);
   }
 
-  static getAll() {
-    return readHistory();
+  static getAll(slot = "capital") {
+    return readHistory(slot);
   }
 
-  static clear() {
-    writeHistory([]);
+  static clear(slot = "capital") {
+    writeHistory(slot, []);
   }
 }

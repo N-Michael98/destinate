@@ -1,7 +1,7 @@
-import { GPTAnalyst } from "./gpt-analyst";
+﻿import { GPTAnalyst } from "./gpt-analyst";
 import { ClaudeRisk } from "./claude-risk";
 import { ConsensusEngine } from "./consensus-engine";
-import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
+import { paperTradingManager } from "@/lib/paper-trading/paper-singleton";
 import { AgentMemory } from "./memory/agent-memory";
 import { AILearningEngine } from "./learning-engine";
 import { StrategyEvolutionEngine } from "./strategy-evolution";

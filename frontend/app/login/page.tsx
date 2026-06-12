@@ -41,7 +41,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div style={{ fontSize: "32px", marginBottom: "8px" }}>📈</div>
-          <div style={{ fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>AI Trading System</div>
+          <div style={{ fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>Destinate</div>
           <div style={{ fontSize: "11px", color: "#475569", marginTop: "4px" }}>
             Sichere Handelsplattform · DEMO Modus
           </div>
@@ -120,17 +120,6 @@ export default function LoginPage() {
           </a>
         </div>
 
-        {/* Default admin hint — only shown in dev */}
-        {process.env.NODE_ENV !== "production" && (
-          <div style={{
-            marginTop: "24px", padding: "10px 14px",
-            background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)",
-            borderRadius: "8px", fontSize: "11px", color: "#92400e",
-          }}>
-            🔑 Standard-Admin: <strong>admin</strong> / <strong>admin123</strong>
-            <br />Passwort nach erstem Login ändern!
-          </div>
-        )}
       </div>
     </div>
   );

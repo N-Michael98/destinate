@@ -1,23 +1,61 @@
 import { NextResponse } from "next/server";
 import { getAISettings } from "../../../../lib/ai-config/ai-config-store";
 import { GPTAnalystManager } from "@/lib/gpt-analyst-engine";
+import {
+  fetchIndicatorsMany,
+  fetchBacktest,
+  formatIndicatorsForPrompt,
+  formatBacktestForPrompt,
+} from "@/lib/python-bridge/python-data";
+
+const SYMBOLS = ["XAUUSD", "EURUSD", "BTCUSD", "NAS100"];
 
 export async function GET() {
   const ai = getAISettings();
 
-  // Use real OpenAI API if key is stored
+  // Echte Marktdaten + Indikatoren von Python holen
+  const [indicators, btXAU, btEUR] = await Promise.all([
+    fetchIndicatorsMany(SYMBOLS, "1h", "1mo"),
+    fetchBacktest("XAUUSD", "1h", "6mo"),
+    fetchBacktest("EURUSD", "1h", "6mo"),
+  ]);
+
+  const hasPythonData = indicators.length > 0;
+
+  // Marktkontext für Prompt aufbauen
+  const marketContext = hasPythonData
+    ? indicators.map(formatIndicatorsForPrompt).join("\n\n")
+    : "Live market data unavailable — use general market knowledge.";
+
+  const backtestContext = [
+    btXAU ? formatBacktestForPrompt(btXAU) : null,
+    btEUR ? formatBacktestForPrompt(btEUR) : null,
+  ].filter(Boolean).join("\n");
+
   if (ai.openai.connected && ai.openai.apiKey.length > 20) {
     try {
-      const prompt = `You are a professional CFD/forex trading analyst.
-Analyze these 4 markets and return trade ideas in JSON:
-- XAUUSD (Gold): current price ~2340
-- USOIL (Crude Oil): current price ~78.5
-- EURUSD: current price ~1.085
-- BTCUSD (Bitcoin): current price ~67500
+      const prompt = `You are a professional CFD/forex trading analyst with access to live market data.
 
-Return JSON array:
+LIVE MARKET DATA (from Python/yfinance — use these exact values):
+${marketContext}
+
+${backtestContext ? `BACKTESTING RESULTS (last 6 months):\n${backtestContext}\n` : ""}
+
+Based on this REAL data, analyze the markets and return trade ideas as a JSON array.
+For each symbol consider: RSI overbought/oversold, MACD momentum, trend direction (EMA alignment), ATR for stop sizing.
+
+Return a JSON array of exactly ${SYMBOLS.length} trade ideas:
 [
-  { "symbol": "XAUUSD", "direction": "BUY", "confidence": 72, "reasoning": "...", "entry": 2340.5, "stopLoss": 2320.0, "takeProfit": 2380.0, "tradingStyle": "DAYTRADING" },
+  {
+    "symbol": "XAUUSD",
+    "direction": "BUY or SELL",
+    "confidence": 60-95,
+    "reasoning": "brief reason based on the indicators above",
+    "entry": <use current price from data>,
+    "stopLoss": <entry ± ATR*1.5>,
+    "takeProfit": <entry ± ATR*3>,
+    "tradingStyle": "DAYTRADING or SWING"
+  },
   ...
 ]`;
 
@@ -28,7 +66,7 @@ Return JSON array:
           model: ai.openai.model,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.3,
-          max_tokens: 600,
+          max_tokens: 800,
           response_format: { type: "json_object" },
         }),
       });
@@ -39,18 +77,36 @@ Return JSON array:
         const raw = choices?.[0]?.message?.content ?? "[]";
         const match = raw.match(/\[[\s\S]*\]/);
         const analyses = match ? JSON.parse(match[0]) : [];
-        return NextResponse.json({ success: true, analyses, source: "GPT_REAL", model: ai.openai.model, count: analyses.length, updatedAt: new Date().toISOString() });
+        return NextResponse.json({
+          success: true,
+          analyses,
+          source: "GPT_REAL",
+          pythonData: hasPythonData,
+          model: ai.openai.model,
+          count: analyses.length,
+          updatedAt: new Date().toISOString(),
+        });
       }
-    } catch { /* fallthrough to simulation */ }
+    } catch { /* fallthrough */ }
   }
 
-  // Fallback: simulation
+  // Fallback mit echten Preisen wenn verfügbar
   const analyst = new GPTAnalystManager();
-  const analyses = [
-    analyst.createTradeIdea("XAUUSD", 2340, "TRENDING_BULL", "NORMAL", "RISK_OFF"),
-    analyst.createTradeIdea("USOIL", 78.4, "TRENDING_BEAR", "NORMAL", "NEUTRAL"),
-    analyst.createTradeIdea("EURUSD", 1.085, "TRENDING_BEAR", "NORMAL", "NEUTRAL"),
-    analyst.createTradeIdea("BTCUSD", 67500, "TRENDING_BULL", "VOLATILE", "RISK_ON"),
-  ];
-  return NextResponse.json({ success: true, analyses, source: "SIMULATED", count: analyses.length, updatedAt: new Date().toISOString() });
+  const indMap = Object.fromEntries(indicators.map((i) => [i.symbol, i]));
+
+  const analyses = SYMBOLS.map((sym) => {
+    const ind = indMap[sym];
+    const price = ind?.price ?? (sym === "XAUUSD" ? 2340 : sym === "EURUSD" ? 1.085 : sym === "BTCUSD" ? 67500 : 19000);
+    const regime = ind?.trend === "BULLISH" ? "TRENDING_BULL" : ind?.trend === "BEARISH" ? "TRENDING_BEAR" : "RANGING";
+    return analyst.createTradeIdea(sym, price, regime, "NORMAL", "NEUTRAL");
+  });
+
+  return NextResponse.json({
+    success: true,
+    analyses,
+    source: "SIMULATED",
+    pythonData: hasPythonData,
+    count: analyses.length,
+    updatedAt: new Date().toISOString(),
+  });
 }

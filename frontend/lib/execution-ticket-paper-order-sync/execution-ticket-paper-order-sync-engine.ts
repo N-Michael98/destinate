@@ -1,6 +1,6 @@
 ﻿import { generateExecutionPositionTicketSyncReport } from "@/lib/execution-position-ticket-sync";
 import type { ExecutionPositionTicket } from "@/lib/execution-position-ticket-sync";
-import { paperTradingManager } from "@/lib/paper-trading/paper-trading-manager";
+import { paperTradingManager } from "@/lib/paper-trading/paper-singleton";
 import type { PaperDirection } from "@/lib/paper-trading/paper-types";
 
 import {
@@ -258,3 +258,4 @@ export function generateExecutionTicketPaperOrderSyncReport():
     updatedAt: new Date().toISOString(),
   };
 }
+
