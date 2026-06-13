@@ -7,16 +7,18 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  username      String   @unique
-  email         String   @unique
-  passwordHash  String
-  role          String   @default("USER")
-  status        String   @default("ACTIVE")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  trades        Trade[]
-  paperOrders   PaperOrder[]
+  id                String    @id @default(cuid())
+  username          String    @unique
+  email             String    @unique
+  passwordHash      String
+  role              String    @default("USER")
+  status            String    @default("PENDING_APPROVAL")
+  emailVerifyToken  String?
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  trades            Trade[]
+  paperOrders       PaperOrder[]
 }
 
 model Trade {
