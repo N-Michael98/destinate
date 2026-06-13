@@ -1,10 +1,11 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { cacheGetOrFetch } from "@/lib/cache/redis-cache";
 
 const DEFAULT_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "NAS100", "US30", "OIL"];
 
 export async function GET(request: Request) {
-  const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
+  const PYTHON_BASE = (process.env["PYTHON_BACKEND_URL"] as string) ?? "http://localhost:8000";
   const { searchParams } = new URL(request.url);
   const symbolsParam = searchParams.get("symbols");
   const symbols = symbolsParam ? symbolsParam.split(",") : DEFAULT_SYMBOLS;

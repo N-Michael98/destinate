@@ -1,7 +1,8 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
+  const PYTHON_BASE = (process.env["PYTHON_BACKEND_URL"] as string) ?? "http://localhost:8000";
   try {
     const res = await fetch(`${PYTHON_BASE}/health`, { cache: "no-store" });
     const data = await res.json();
