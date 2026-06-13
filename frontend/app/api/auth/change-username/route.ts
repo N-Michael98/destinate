@@ -1,8 +1,8 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { verifyToken } from "../../../../lib/auth/jwt";
+import { verifyToken, signToken } from "../../../../lib/auth/jwt";
 import { updateUsername } from "../../../../lib/auth/auth-store";
-import { signToken } from "../../../../lib/auth/jwt";
 
 export async function POST(request: Request) {
   try {
@@ -19,10 +19,9 @@ export async function POST(request: Request) {
     if (!newUsername?.trim())
       return NextResponse.json({ ok: false, error: "Benutzername erforderlich" }, { status: 400 });
 
-    const result = updateUsername(payload.sub, newUsername.trim());
+    const result = await updateUsername(payload.sub, newUsername.trim());
     if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: 409 });
 
-    // Re-issue JWT with new username
     const newToken = await signToken({ sub: payload.sub, username: newUsername.trim(), role: payload.role });
     const res = NextResponse.json({ ok: true, username: newUsername.trim() });
     res.cookies.set("auth_token", newToken, {

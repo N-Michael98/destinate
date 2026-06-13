@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "../../../../lib/auth/jwt";
@@ -12,7 +13,7 @@ export async function GET() {
     const payload = await verifyToken(token);
     if (!payload) return NextResponse.json({ ok: false, error: "Invalid token" }, { status: 401 });
 
-    const user = findUserById(payload.sub);
+    const user = await findUserById(payload.sub);
     if (!user) return NextResponse.json({ ok: false, error: "User not found" }, { status: 401 });
 
     return NextResponse.json({ ok: true, user: toPublic(user) });

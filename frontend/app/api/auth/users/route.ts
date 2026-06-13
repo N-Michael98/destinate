@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "../../../../lib/auth/jwt";
@@ -15,7 +16,7 @@ async function requireAdmin() {
 export async function GET() {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ ok: false, error: "Admin required" }, { status: 403 });
-  return NextResponse.json({ ok: true, users: getAllUsers() });
+  return NextResponse.json({ ok: true, users: await getAllUsers() });
 }
 
 export async function POST(request: Request) {
@@ -26,11 +27,11 @@ export async function POST(request: Request) {
   const { action, userId } = body;
 
   if (action === "approve") {
-    const ok = approveUser(userId);
+    const ok = await approveUser(userId);
     return NextResponse.json({ ok, error: ok ? undefined : "User nicht gefunden" });
   }
   if (action === "delete") {
-    const ok = deleteUser(userId);
+    const ok = await deleteUser(userId);
     return NextResponse.json({ ok, error: ok ? undefined : "Kann Admin nicht löschen" });
   }
 
