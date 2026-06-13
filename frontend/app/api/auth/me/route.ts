@@ -18,6 +18,7 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, user: toPublic(user) });
   } catch (err) {
+    console.error("[/api/auth/me] Error:", err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
 }
