@@ -1,7 +1,2 @@
-import { defineConfig } from "prisma/config";
-
-export default defineConfig({
-  datasource: {
-    url: process.env.DATABASE_URL,
-  },
-});
+// Prisma 7 config — URL is read from DATABASE_URL env via schema.prisma
+export default {};
