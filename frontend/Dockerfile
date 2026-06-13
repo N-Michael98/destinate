@@ -9,6 +9,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+ARG PYTHON_BACKEND_URL=http://localhost:8000
+ENV PYTHON_BACKEND_URL=$PYTHON_BACKEND_URL
 RUN ./node_modules/.bin/prisma generate
 RUN npm run build
 
