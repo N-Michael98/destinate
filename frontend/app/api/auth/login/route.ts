@@ -16,8 +16,7 @@ export async function POST(request: Request) {
     if (!user || !verifyPassword(password, user.passwordHash))
       return NextResponse.json({ ok: false, error: "Ungültige Anmeldedaten" }, { status: 401 });
 
-    if (user.status === "PENDING_EMAIL")
-      return NextResponse.json({ ok: false, error: "Bitte bestätige zuerst deine E-Mail-Adresse. Prüfe deinen Posteingang." }, { status: 403 });
+    // Email verification skipped in production (no mail server configured)
 
     if (user.status === "PENDING_APPROVAL")
       return NextResponse.json({ ok: false, error: "Dein Account wartet auf Admin-Freigabe. Du erhältst eine Benachrichtigung." }, { status: 403 });
