@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { registerUser, ensureAdminExists } from "../../../../lib/auth/auth-store";
-import { sendVerificationEmail } from "../../../../lib/auth/mailer";
 
 export async function POST(request: Request) {
   try {
@@ -19,23 +18,9 @@ export async function POST(request: Request) {
     const result = registerUser(username.trim(), email.trim().toLowerCase(), password);
     if (!result.ok) return NextResponse.json({ ok: false, error: result.error }, { status: 409 });
 
-    // Send verification email
-    const baseUrl = new URL(request.url).origin;
-    const mailResult = await sendVerificationEmail(email, username, result.token!, baseUrl);
-
-    if (!mailResult.ok) {
-      // Email failed but user is registered — tell them to contact admin
-      return NextResponse.json({
-        ok: true,
-        message: "Account erstellt, aber E-Mail konnte nicht gesendet werden. Bitte Admin kontaktieren.",
-        emailSent: false,
-      });
-    }
-
     return NextResponse.json({
       ok: true,
-      message: "Registrierung erfolgreich! Bitte prüfe deine E-Mail und bestätige den Link.",
-      emailSent: true,
+      message: "Registrierung erfolgreich! Dein Account wartet auf Admin-Freigabe. Du wirst benachrichtigt.",
     });
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });

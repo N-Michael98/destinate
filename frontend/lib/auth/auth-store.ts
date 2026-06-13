@@ -52,11 +52,14 @@ function setUsers(u: User[]): void { global.__users__ = u; saveUsers(u); }
 
 export function ensureAdminExists(): void {
   if (getUsers().some((u) => u.role === "ADMIN")) return;
+  const adminUsername = process.env.ADMIN_USERNAME || "admin";
+  const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
+  const adminEmail = process.env.ADMIN_EMAIL || "admin@destinate.ch";
   const admin: User = {
     id: "admin-1",
-    username: "admin",
-    email: "admin@trading.local",
-    passwordHash: bcrypt.hashSync("admin123", 12),
+    username: adminUsername,
+    email: adminEmail,
+    passwordHash: bcrypt.hashSync(adminPassword, 12),
     role: "ADMIN",
     status: "ACTIVE",
     emailVerifyToken: null,
@@ -96,20 +99,19 @@ export function registerUser(
   if (password.length < 8)
     return { ok: false, error: "Passwort muss mindestens 8 Zeichen haben" };
 
-  const token = crypto.randomBytes(32).toString("hex");
   const newUser: User = {
     id: `user-${Date.now()}`,
     username,
     email,
     passwordHash: bcrypt.hashSync(password, 12),
     role: "USER",
-    status: "PENDING_EMAIL",
-    emailVerifyToken: token,
+    status: "PENDING_APPROVAL",
+    emailVerifyToken: null,
     createdAt: new Date().toISOString(),
     lastLoginAt: null,
   };
   setUsers([...users, newUser]);
-  return { ok: true, token, userId: newUser.id };
+  return { ok: true, userId: newUser.id };
 }
 
 export function verifyEmailToken(token: string): { ok: boolean; error?: string } {
