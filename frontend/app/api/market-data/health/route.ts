@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
-const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
-
 export async function GET() {
+  const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
   try {
     const res = await fetch(`${PYTHON_BASE}/health`, { cache: "no-store" });
     const data = await res.json();

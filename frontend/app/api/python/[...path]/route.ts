@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
-const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
-
 async function proxy(request: Request, path: string[]) {
+  const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
   const { searchParams } = new URL(request.url);
   const qs = searchParams.toString();
   const target = `${PYTHON_BASE}/api/v1/${path.join("/")}${qs ? `?${qs}` : ""}`;
