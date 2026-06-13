@@ -1,2 +1,2 @@
-// Prisma 7 config — URL is read from DATABASE_URL env via schema.prisma
+// Prisma 6 — config handled via schema.prisma
 export default {};
