@@ -19,6 +19,7 @@ RUN addgroup -S destinate && adduser -S destinate -G destinate
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+RUN mkdir -p lib/data && chown -R destinate:destinate lib/data
 USER destinate
 EXPOSE 3000
 CMD ["node", "server.js"]
