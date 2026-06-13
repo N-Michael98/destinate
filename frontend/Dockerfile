@@ -27,4 +27,4 @@ COPY --from=builder /app/prisma ./prisma
 RUN mkdir -p lib/data && chown -R destinate:destinate lib/data
 USER destinate
 EXPOSE 3000
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy 2>/dev/null || true && node server.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node server.js"]
