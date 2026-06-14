@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { dbGet, dbSet } from "../db-store";
 
 type PaperHistoryEvent = {
   id: string;
@@ -10,64 +9,79 @@ type PaperHistoryEvent = {
   payload: unknown;
 };
 
-function historyFilePath(slot: string) {
-  return path.join(process.cwd(), "lib", "data", `paper-history-${slot}.json`);
+// Per-slot in-memory caches
+declare global { var __paper_history__: Record<string, PaperHistoryEvent[] | undefined> | undefined; }
+if (!global.__paper_history__) global.__paper_history__ = {};
+
+function getCache(slot: string): PaperHistoryEvent[] {
+  return global.__paper_history__![slot] ?? [];
 }
 
-function ensureHistoryFile(slot: string) {
-  const filePath = historyFilePath(slot);
-  const directory = path.dirname(filePath);
-  if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
-  if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, "[]", "utf-8");
+function setCache(slot: string, history: PaperHistoryEvent[]) {
+  global.__paper_history__![slot] = history;
 }
 
-function readHistory(slot: string): PaperHistoryEvent[] {
-  ensureHistoryFile(slot);
-  try {
-    return JSON.parse(fs.readFileSync(historyFilePath(slot), "utf-8")) as PaperHistoryEvent[];
-  } catch {
-    return [];
+// Load a slot from DB into cache on first access
+async function ensureLoaded(slot: string): Promise<void> {
+  if (global.__paper_history__![slot] === undefined) {
+    const data = await dbGet<PaperHistoryEvent[]>(`paper-history-${slot}`, []);
+    global.__paper_history__![slot] = data;
   }
 }
 
-function writeHistory(slot: string, history: PaperHistoryEvent[]) {
-  ensureHistoryFile(slot);
-  fs.writeFileSync(historyFilePath(slot), JSON.stringify(history, null, 2), "utf-8");
+// Persist cache to DB in background
+function persist(slot: string) {
+  dbSet(`paper-history-${slot}`, getCache(slot)).catch(() => {});
 }
 
 export class PaperHistory {
+  // Synchronous read from cache (callers do NOT need await)
+  static getAll(slot = "capital"): PaperHistoryEvent[] {
+    // Trigger async load on first call; returns [] until loaded
+    ensureLoaded(slot).catch(() => {});
+    return getCache(slot);
+  }
+
   static addOrderEvent(order: unknown, event: string, slot = "capital") {
-    const history = readHistory(slot);
+    const history = getCache(slot);
     history.push({
-      id: `paper-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: event, entity: "ORDER", event, timestamp: new Date().toISOString(), payload: order,
+      id: `ph-${Date.now()}`, type: event, entity: "ORDER",
+      event, timestamp: new Date().toISOString(), payload: order,
     });
-    writeHistory(slot, history);
+    setCache(slot, history);
+    persist(slot);
   }
 
   static addPositionEvent(position: unknown, event: string, slot = "capital") {
-    const history = readHistory(slot);
+    const history = getCache(slot);
     history.push({
-      id: `paper-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: event, entity: "POSITION", event, timestamp: new Date().toISOString(), payload: position,
+      id: `ph-${Date.now()}`, type: event, entity: "POSITION",
+      event, timestamp: new Date().toISOString(), payload: position,
     });
-    writeHistory(slot, history);
+    setCache(slot, history);
+    persist(slot);
   }
 
   static addSystemEvent(event: string, payload: unknown = {}, slot = "capital") {
-    const history = readHistory(slot);
+    const history = getCache(slot);
     history.push({
-      id: `paper-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: event, entity: "SYSTEM", event, timestamp: new Date().toISOString(), payload,
+      id: `ph-${Date.now()}`, type: event, entity: "SYSTEM",
+      event, timestamp: new Date().toISOString(), payload,
     });
-    writeHistory(slot, history);
-  }
-
-  static getAll(slot = "capital") {
-    return readHistory(slot);
+    setCache(slot, history);
+    persist(slot);
   }
 
   static clear(slot = "capital") {
-    writeHistory(slot, []);
+    setCache(slot, []);
+    persist(slot);
+  }
+
+  // Load all slots from DB into cache (call from instrumentation)
+  static async init(slots = ["capital", "icmarkets"]) {
+    for (const slot of slots) {
+      const data = await dbGet<PaperHistoryEvent[]>(`paper-history-${slot}`, []);
+      global.__paper_history__![slot] = data;
+    }
   }
 }

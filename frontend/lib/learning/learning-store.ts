@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { dbGet, dbSet } from "../db-store";
 
 export type SymbolLearning = {
   trades: number;
@@ -8,7 +7,7 @@ export type SymbolLearning = {
   winRate: number;
   avgPnl: number;
   totalPnl: number;
-  adjustmentFactor: number; // 1.0 = neutral, >1 = boost, <1 = reduce
+  adjustmentFactor: number;
   lastUpdated: string;
 };
 
@@ -49,7 +48,7 @@ export type LearningState = {
   insights: string[];
 };
 
-const STORE_PATH = path.join(process.cwd(), "lib", "data", "learning-state.json");
+const DB_KEY = "learning-state";
 
 const DEFAULT_STATE: LearningState = {
   version: "1.0",
@@ -67,31 +66,45 @@ const DEFAULT_STATE: LearningState = {
   insights: [],
 };
 
-export function readLearningState(): LearningState {
-  try {
-    if (!fs.existsSync(STORE_PATH)) return { ...DEFAULT_STATE };
-    return JSON.parse(fs.readFileSync(STORE_PATH, "utf-8")) as LearningState;
-  } catch {
-    return { ...DEFAULT_STATE };
+declare global { var __learning_state__: LearningState | undefined; }
+
+function getCache(): LearningState {
+  return global.__learning_state__ ?? { ...DEFAULT_STATE };
+}
+
+function ensureLoaded() {
+  if (global.__learning_state__ === undefined) {
+    global.__learning_state__ = { ...DEFAULT_STATE };
+    dbGet<LearningState>(DB_KEY, { ...DEFAULT_STATE }).then((data) => {
+      global.__learning_state__ = data;
+    }).catch(() => {});
   }
 }
 
-export function writeLearningState(state: LearningState): void {
-  const dir = path.dirname(STORE_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(STORE_PATH, JSON.stringify(state, null, 2), "utf-8");
+// Synchronous reads (backward compatible with existing callers)
+export function readLearningState(): LearningState {
+  ensureLoaded();
+  return getCache();
 }
 
-export function storePrediction(pred: Omit<PredictionRecord, "id" | "resolved">): void {
+export function writeLearningState(state: LearningState): void {
+  global.__learning_state__ = state;
+  dbSet(DB_KEY, state).catch(() => {});
+}
+
+export async function storePrediction(pred: Omit<PredictionRecord, "id" | "resolved">): Promise<void> {
   const state = readLearningState();
   state.pendingPredictions.push({
     ...pred,
     id: `pred-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     resolved: false,
   });
-  // Keep last 200 predictions
   if (state.pendingPredictions.length > 200) {
     state.pendingPredictions = state.pendingPredictions.slice(-200);
   }
   writeLearningState(state);
+}
+
+export async function init(): Promise<void> {
+  global.__learning_state__ = await dbGet<LearningState>(DB_KEY, { ...DEFAULT_STATE });
 }

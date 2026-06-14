@@ -129,7 +129,7 @@ export async function updatePassword(id: string, newHash: string): Promise<void>
 
 export async function getAllUsers(): Promise<UserPublic[]> {
   const users = await getPrisma().user.findMany({ orderBy: { createdAt: "desc" } });
-  return users.map((u) => toPublic(toUser(u)));
+  return users.map((u: unknown) => toPublic(toUser(u)));
 }
 
 export async function approveUser(id: string): Promise<boolean> {

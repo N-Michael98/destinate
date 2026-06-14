@@ -120,6 +120,14 @@ export async function register() {
         )
       `);
       await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "AppStorage" (
+          "key" TEXT NOT NULL,
+          "data" TEXT NOT NULL,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "AppStorage_pkey" PRIMARY KEY ("key")
+        )
+      `);
+      await db.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS "CapitalCredentials" (
           "id" TEXT NOT NULL DEFAULT 'singleton',
           "data" TEXT NOT NULL,
@@ -132,6 +140,24 @@ export async function register() {
       const { ensureAdminExists } = await import("./lib/auth/auth-store");
       await ensureAdminExists();
       console.log("[instrumentation] Admin user ready");
+
+      // Load caches from DB into memory on startup
+      try {
+        const { MissionControlEventLog } = await import("./lib/mission-control/event-log");
+        await MissionControlEventLog.init();
+      } catch { /* non-fatal */ }
+      try {
+        const { AgentMemory } = await import("./lib/ai-agent/memory/agent-memory");
+        await AgentMemory.init();
+      } catch { /* non-fatal */ }
+      try {
+        const { PaperHistory } = await import("./lib/paper-trading/paper-history");
+        await PaperHistory.init();
+      } catch { /* non-fatal */ }
+      try {
+        const { init: initLearning } = await import("./lib/learning/learning-store");
+        await initLearning();
+      } catch { /* non-fatal */ }
 
       // Auto-reconnect Capital.com with saved credentials
       try {
