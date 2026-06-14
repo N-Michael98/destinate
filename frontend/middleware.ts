@@ -19,6 +19,10 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) {
     return NextResponse.next();
   }
+  // Allow internal API routes (server-to-server calls, health scanner, etc.)
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
 
   const token = request.cookies.get("auth_token")?.value;
 
