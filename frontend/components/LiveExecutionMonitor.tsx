@@ -237,7 +237,7 @@ export default function LiveExecutionMonitor() {
                       {item.direction}
                     </span>
                   </div>
-                  <span style={{ fontSize: "10px", color: "#64748b" }}>P:{item.priorityScore} C:{item.adaptiveConfidence.toFixed(0)}%</span>
+                  <span style={{ fontSize: "10px", color: "#64748b" }}>P:{item.priorityScore} C:{(item.adaptiveConfidence ?? 0).toFixed(0)}%</span>
                 </div>
                 <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "8px" }}>{item.strategy} · Risk {item.riskPerTradePercent}%</div>
                 {capitalActive && (
@@ -267,7 +267,7 @@ export default function LiveExecutionMonitor() {
             </div>
             {positions.length > 0 && (
               <div style={{ fontSize: "13px", fontWeight: 700, color: totalPnL >= 0 ? "#10c96d" : "#f87171" }}>
-                P&L: {totalPnL >= 0 ? "+" : ""}{totalPnL.toFixed(2)}
+                P&L: {(totalPnL ?? 0) >= 0 ? "+" : ""}{(totalPnL ?? 0).toFixed(2)}
               </div>
             )}
           </div>
@@ -287,8 +287,8 @@ export default function LiveExecutionMonitor() {
                       {pos.direction}
                     </span>
                   </div>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: pos.profitLoss >= 0 ? "#10c96d" : "#f87171" }}>
-                    {pos.profitLoss >= 0 ? "+" : ""}{pos.profitLoss.toFixed(2)}
+                  <span style={{ fontSize: "14px", fontWeight: 700, color: (pos.profitLoss ?? 0) >= 0 ? "#10c96d" : "#f87171" }}>
+                    {(pos.profitLoss ?? 0) >= 0 ? "+" : ""}{(pos.profitLoss ?? 0).toFixed(2)}
                   </span>
                 </div>
                 <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "8px" }}>

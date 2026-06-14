@@ -244,11 +244,11 @@ export default function TechnicalIndicatorsPanel() {
 
                 <IndicatorRow
                   label="MACD Line"
-                  value={summary.macd.macdLine.toFixed(4)}
+                  value={(summary.macd.macdLine ?? 0).toFixed(4)}
                   signal={summary.macd.signal}
                   extra={summary.macd.crossover}
                 />
-                <IndicatorRow label="MACD Hist." value={summary.macd.histogram.toFixed(4)} signal={summary.macd.histogram >= 0 ? "BUY" : "SELL"} />
+                <IndicatorRow label="MACD Hist." value={(summary.macd.histogram ?? 0).toFixed(4)} signal={(summary.macd.histogram ?? 0) >= 0 ? "BUY" : "SELL"} />
 
                 <div style={{ height: "1px", background: "rgba(255,255,255,0.06)", margin: "8px 0" }} />
 
@@ -283,7 +283,7 @@ export default function TechnicalIndicatorsPanel() {
                 {/* ATR */}
                 <div style={{ marginBottom: "12px", padding: "10px", background: "rgba(0,0,0,0.2)", borderRadius: "8px" }}>
                   <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "4px" }}>ATR (14) — Avg True Range</div>
-                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#fbbf24" }}>{summary.atr.value.toFixed(summary.symbol === "EURUSD" ? 5 : 2)}</div>
+                  <div style={{ fontSize: "16px", fontWeight: 700, color: "#fbbf24" }}>{(summary.atr.value ?? 0).toFixed(summary.symbol === "EURUSD" ? 5 : 2)}</div>
                   <div style={{ fontSize: "10px", color: "#64748b" }}>Volatilität: <span style={{
                     color: summary.atr.volatilityLevel === "EXTREME" ? "#f87171" : summary.atr.volatilityLevel === "HIGH" ? "#fbbf24" : "#10c96d"
                   }}>{summary.atr.volatilityLevel}</span></div>

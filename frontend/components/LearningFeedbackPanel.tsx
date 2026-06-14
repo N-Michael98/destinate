@@ -218,7 +218,7 @@ export default function LearningFeedbackPanel() {
                         {s.trades > 0 ? `${s.actualWinRate}%` : "—"}
                       </span></span>
                       <span className="ml-auto">Gewichtung: <span className={s.adjustmentFactor >= 1.05 ? "text-green-400" : s.adjustmentFactor <= 0.95 ? "text-red-400" : "text-slate-300"}>
-                        ×{s.adjustmentFactor.toFixed(2)}
+                        ×{(s.adjustmentFactor ?? 1).toFixed(2)}
                       </span></span>
                     </div>
                     <FactorBar factor={s.adjustmentFactor} />
@@ -252,13 +252,13 @@ export default function LearningFeedbackPanel() {
                           {s.winRate}%
                         </td>
                         <td className={`px-3 py-2 ${s.avgPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {s.avgPnl >= 0 ? "+" : ""}${s.avgPnl.toFixed(2)}
+                          {(s.avgPnl ?? 0) >= 0 ? "+" : ""}${(s.avgPnl ?? 0).toFixed(2)}
                         </td>
-                        <td className={`px-3 py-2 font-medium ${s.totalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {s.totalPnl >= 0 ? "+" : ""}${s.totalPnl.toFixed(2)}
+                        <td className={`px-3 py-2 font-medium ${(s.totalPnl ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {(s.totalPnl ?? 0) >= 0 ? "+" : ""}${(s.totalPnl ?? 0).toFixed(2)}
                         </td>
                         <td className={`px-3 py-2 font-mono font-bold ${s.adjustmentFactor >= 1.05 ? "text-green-400" : s.adjustmentFactor <= 0.95 ? "text-red-400" : "text-slate-400"}`}>
-                          ×{s.adjustmentFactor.toFixed(2)}
+                          ×{(s.adjustmentFactor ?? 1).toFixed(2)}
                         </td>
                       </tr>
                     ))}

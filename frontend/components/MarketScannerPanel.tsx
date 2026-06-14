@@ -265,7 +265,7 @@ export default function MarketScannerPanel() {
                   )}
                 </div>
                 <div style={{ fontSize: "11px", color: "#a5b4fc", fontWeight: 700 }}>
-                  {opp.finalScore.toFixed(0)} pts
+                  {(opp.finalScore ?? 0).toFixed(0)} pts
                 </div>
               </div>
 
@@ -288,8 +288,8 @@ export default function MarketScannerPanel() {
                     <div style={{ height: "100%", width: `${opp.claude.riskScore}%`, background: opp.claude.riskScore < 40 ? "#10c96d" : opp.claude.riskScore < 65 ? "#fbbf24" : "#f87171", borderRadius: "2px" }} />
                   </div>
                 </div>
-                <div style={{ fontSize: "10px", color: opp.claude.rewardRiskRatio >= 2 ? "#10c96d" : opp.claude.rewardRiskRatio >= 1.5 ? "#fbbf24" : "#f87171" }}>
-                  R/R {opp.claude.rewardRiskRatio.toFixed(1)}
+                <div style={{ fontSize: "10px", color: (opp.claude.rewardRiskRatio ?? 0) >= 2 ? "#10c96d" : (opp.claude.rewardRiskRatio ?? 0) >= 1.5 ? "#fbbf24" : "#f87171" }}>
+                  R/R {(opp.claude.rewardRiskRatio ?? 0).toFixed(1)}
                 </div>
               </div>
 
@@ -339,7 +339,7 @@ export default function MarketScannerPanel() {
                 <div>Freigabe: <strong style={{ color: selectedOpp.claude.approved ? "#10c96d" : "#f87171" }}>{selectedOpp.claude.approved ? "APPROVED" : "REJECTED"}</strong></div>
                 <div>Risk Score: {selectedOpp.claude.riskScore}/100</div>
                 <div>Max Risk: {selectedOpp.claude.maxRiskPercent}%</div>
-                <div>R/R Ratio: {selectedOpp.claude.rewardRiskRatio.toFixed(2)}</div>
+                <div>R/R Ratio: {(selectedOpp.claude.rewardRiskRatio ?? 0).toFixed(2)}</div>
                 <div style={{ marginTop: "6px", color: "#64748b", fontSize: "10px" }}>{selectedOpp.claude.reasoning}</div>
               </div>
             </div>

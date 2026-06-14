@@ -237,7 +237,7 @@ function SingleResult({ result }: { result: BacktestResult }) {
                     <td className={`px-3 py-1.5 font-medium ${(t.pnl_usd ?? 0) >= 0 ? "text-green-400" : "text-red-400"}`}>
                       {(t.pnl_usd ?? 0) >= 0 ? "+" : ""}${(t.pnl_usd ?? 0).toFixed(2)}
                     </td>
-                    <td className="px-3 py-1.5 text-slate-300">${t.balance.toFixed(0)}</td>
+                    <td className="px-3 py-1.5 text-slate-300">${(t.balance ?? 0).toFixed(0)}</td>
                     <td className="px-3 py-1.5">
                       <span className={`rounded px-1.5 py-0.5 font-medium ${t.result === "WIN" ? "bg-green-500/20 text-green-300" : "bg-red-500/20 text-red-300"}`}>
                         {t.result}

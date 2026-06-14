@@ -466,9 +466,9 @@ export default function SettingsDashboard() {
                         {capitalAccounts.map((acc) => (
                           <div key={acc.accountId} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "12px", border: "1px solid rgba(16,201,109,0.15)" }}>
                             <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "4px" }}>{acc.accountName} · {acc.accountType}</div>
-                            <div style={{ fontSize: "16px", fontWeight: 700, color: "#10c96d" }}>{acc.currency} {acc.balance.toFixed(2)}</div>
+                            <div style={{ fontSize: "16px", fontWeight: 700, color: "#10c96d" }}>{acc.currency} {(acc.balance ?? 0).toFixed(2)}</div>
                             <div style={{ fontSize: "10px", color: "#475569", marginTop: "2px" }}>
-                              Available: {acc.available.toFixed(2)} · P&L: <span style={{ color: acc.profitLoss >= 0 ? "#10c96d" : "#f87171" }}>{acc.profitLoss.toFixed(2)}</span>
+                              Available: {(acc.available ?? 0).toFixed(2)} · P&L: <span style={{ color: (acc.profitLoss ?? 0) >= 0 ? "#10c96d" : "#f87171" }}>{(acc.profitLoss ?? 0).toFixed(2)}</span>
                             </div>
                           </div>
                         ))}
