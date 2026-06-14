@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const searchTerm = searchParams.get("q") ?? "";
     const types = searchParams.get("types") ?? "CURRENCIES,INDICES,COMMODITIES,CRYPTOCURRENCIES";
 
-    const ai = getAISettings();
+    const ai = await getAISettings();
     const capitalConnected = isCapitalConnected();
     const session = getCapitalSession();
 

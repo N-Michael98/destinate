@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 ﻿import { NextResponse } from "next/server";
 import { scanMissionControlEndpoints } from "@/lib/mission-control/health-scanner";
 import { MissionControlEventLog } from "@/lib/mission-control/event-log";

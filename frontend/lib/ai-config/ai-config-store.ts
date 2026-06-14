@@ -1,9 +1,4 @@
-import fs from "fs";
-import path from "path";
 import type { AISettings, AIProviderConfig, TelegramSettingsConfig } from "./ai-config-types";
-
-// Persist to a JSON file in the project root so keys survive server restarts
-const PERSIST_PATH = path.join(process.cwd(), ".ai-config.json");
 
 const DEFAULT_AI_SETTINGS: AISettings = {
   openai: {
@@ -41,96 +36,91 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   updatedAt: new Date().toISOString(),
 };
 
-function loadFromDisk(): AISettings {
+async function getPrisma() {
+  const { getPrisma: gp } = await import("../../app/lib/prisma");
+  return gp();
+}
+
+async function loadFromDB(): Promise<AISettings> {
   try {
-    if (fs.existsSync(PERSIST_PATH)) {
-      const raw = fs.readFileSync(PERSIST_PATH, "utf-8");
-      const parsed = JSON.parse(raw) as AISettings;
-      // Merge with defaults so new fields are always present
+    const db = await getPrisma();
+    const row = await db.$queryRaw<{ data: string }[]>`
+      SELECT data FROM "AIConfig" WHERE id = 'singleton' LIMIT 1
+    `;
+    if (row && row.length > 0) {
+      const parsed = JSON.parse(row[0].data) as AISettings;
       return {
         ...DEFAULT_AI_SETTINGS,
         ...parsed,
         openai: { ...DEFAULT_AI_SETTINGS.openai, ...parsed.openai },
         anthropic: { ...DEFAULT_AI_SETTINGS.anthropic, ...parsed.anthropic },
-        telegram: { ...DEFAULT_AI_SETTINGS.telegram, ...parsed.telegram },
+        telegram: {
+          ...DEFAULT_AI_SETTINGS.telegram,
+          ...parsed.telegram,
+          channels: { ...DEFAULT_AI_SETTINGS.telegram.channels, ...parsed.telegram?.channels },
+        },
       };
     }
-  } catch {
-    // If file is corrupt, start fresh
-  }
+  } catch { /* DB not ready → use defaults */ }
   return JSON.parse(JSON.stringify(DEFAULT_AI_SETTINGS));
 }
 
-function saveToDisk(settings: AISettings): void {
+async function saveToDB(settings: AISettings): Promise<void> {
   try {
-    fs.writeFileSync(PERSIST_PATH, JSON.stringify(settings, null, 2), "utf-8");
-  } catch {
-    // Non-fatal — log silently
+    const db = await getPrisma();
+    const data = JSON.stringify(settings);
+    await db.$executeRawUnsafe(
+      `INSERT INTO "AIConfig" (id, data, "updatedAt") VALUES ('singleton', $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
+      data
+    );
+  } catch { /* non-fatal */ }
+}
+
+declare global { var __ai_config_store__: AISettings | undefined; }
+
+async function getStore(): Promise<AISettings> {
+  if (!global.__ai_config_store__) {
+    global.__ai_config_store__ = await loadFromDB();
   }
+  return global.__ai_config_store__!;
 }
 
-// Load on module init (survives hot-reload via global cache)
-const GLOBAL_KEY = "__ai_config_store__";
-declare global {
-  // eslint-disable-next-line no-var
-  var __ai_config_store__: AISettings | undefined;
+async function setStore(s: AISettings): Promise<void> {
+  global.__ai_config_store__ = s;
+  await saveToDB(s);
 }
 
-if (!global[GLOBAL_KEY]) {
-  global[GLOBAL_KEY] = loadFromDisk();
+export async function getAISettings(): Promise<AISettings> {
+  return JSON.parse(JSON.stringify(await getStore()));
 }
 
-function getStore(): AISettings {
-  return global[GLOBAL_KEY]!;
+export async function updateOpenAI(patch: Partial<AIProviderConfig>): Promise<void> {
+  const s = await getStore();
+  await setStore({ ...s, openai: { ...s.openai, ...patch }, updatedAt: new Date().toISOString() });
 }
 
-function setStore(s: AISettings): void {
-  global[GLOBAL_KEY] = s;
-  saveToDisk(s);
+export async function updateAnthropic(patch: Partial<AIProviderConfig>): Promise<void> {
+  const s = await getStore();
+  await setStore({ ...s, anthropic: { ...s.anthropic, ...patch }, updatedAt: new Date().toISOString() });
 }
 
-export function getAISettings(): AISettings {
-  return JSON.parse(JSON.stringify(getStore()));
+export async function updateTelegram(patch: Partial<TelegramSettingsConfig>): Promise<void> {
+  const s = await getStore();
+  await setStore({ ...s, telegram: { ...s.telegram, ...patch }, updatedAt: new Date().toISOString() });
 }
 
-export function updateOpenAI(patch: Partial<AIProviderConfig>): void {
-  const s = getStore();
-  setStore({
-    ...s,
-    openai: { ...s.openai, ...patch },
-    updatedAt: new Date().toISOString(),
-  });
+export async function saveOpenAIKey(apiKey: string, model: string): Promise<void> {
+  await updateOpenAI({ apiKey, model, testStatus: "UNTESTED", connected: false, testError: null });
 }
 
-export function updateAnthropic(patch: Partial<AIProviderConfig>): void {
-  const s = getStore();
-  setStore({
-    ...s,
-    anthropic: { ...s.anthropic, ...patch },
-    updatedAt: new Date().toISOString(),
-  });
-}
-
-export function updateTelegram(patch: Partial<TelegramSettingsConfig>): void {
-  const s = getStore();
-  setStore({
-    ...s,
-    telegram: { ...s.telegram, ...patch },
-    updatedAt: new Date().toISOString(),
-  });
-}
-
-export function saveOpenAIKey(apiKey: string, model: string): void {
-  updateOpenAI({ apiKey, model, testStatus: "UNTESTED", connected: false, testError: null });
-}
-
-export function saveAnthropicKey(apiKey: string, model: string): void {
-  updateAnthropic({ apiKey, model, testStatus: "UNTESTED", connected: false, testError: null });
+export async function saveAnthropicKey(apiKey: string, model: string): Promise<void> {
+  await updateAnthropic({ apiKey, model, testStatus: "UNTESTED", connected: false, testError: null });
 }
 
 export async function testOpenAIConnection(apiKey: string, model: string): Promise<{ ok: boolean; error: string | null }> {
   if (!apiKey || apiKey.length < 20 || !apiKey.startsWith("sk-")) {
-    updateOpenAI({ testStatus: "FAILED", testError: "Key muss mit sk- beginnen", connected: false, lastTestedAt: new Date().toISOString() });
+    await updateOpenAI({ testStatus: "FAILED", testError: "Key muss mit sk- beginnen", connected: false, lastTestedAt: new Date().toISOString() });
     return { ok: false, error: "Key muss mit sk- beginnen (z.B. sk-proj-...)" };
   }
   try {
@@ -138,26 +128,26 @@ export async function testOpenAIConnection(apiKey: string, model: string): Promi
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (res.status === 401) {
-      updateOpenAI({ testStatus: "FAILED", testError: "Ungültiger API Key", connected: false, lastTestedAt: new Date().toISOString() });
+      await updateOpenAI({ testStatus: "FAILED", testError: "Ungültiger API Key", connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: "Ungültiger API Key (401 Unauthorized)" };
     }
     if (!res.ok) {
       const err = `HTTP ${res.status}`;
-      updateOpenAI({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() });
+      await updateOpenAI({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: err };
     }
-    updateOpenAI({ testStatus: "OK", testError: null, connected: true, apiKey, model, lastTestedAt: new Date().toISOString() });
+    await updateOpenAI({ testStatus: "OK", testError: null, connected: true, apiKey, model, lastTestedAt: new Date().toISOString() });
     return { ok: true, error: null };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Netzwerkfehler";
-    updateOpenAI({ testStatus: "FAILED", testError: msg, connected: false, lastTestedAt: new Date().toISOString() });
+    await updateOpenAI({ testStatus: "FAILED", testError: msg, connected: false, lastTestedAt: new Date().toISOString() });
     return { ok: false, error: msg };
   }
 }
 
 export async function testAnthropicConnection(apiKey: string, model: string): Promise<{ ok: boolean; error: string | null }> {
   if (!apiKey || apiKey.length < 20 || !apiKey.startsWith("sk-ant-")) {
-    updateAnthropic({ testStatus: "FAILED", testError: "Key muss mit sk-ant- beginnen", connected: false, lastTestedAt: new Date().toISOString() });
+    await updateAnthropic({ testStatus: "FAILED", testError: "Key muss mit sk-ant- beginnen", connected: false, lastTestedAt: new Date().toISOString() });
     return { ok: false, error: "Key muss mit sk-ant- beginnen" };
   }
   try {
@@ -171,23 +161,23 @@ export async function testAnthropicConnection(apiKey: string, model: string): Pr
       body: JSON.stringify({ model, max_tokens: 10, messages: [{ role: "user", content: "ping" }] }),
     });
     if (res.status === 401) {
-      updateAnthropic({ testStatus: "FAILED", testError: "Ungültiger API Key", connected: false, lastTestedAt: new Date().toISOString() });
+      await updateAnthropic({ testStatus: "FAILED", testError: "Ungültiger API Key", connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: "Ungültiger API Key (401 Unauthorized)" };
     }
     if (!res.ok && res.status !== 400) {
       const err = `HTTP ${res.status}`;
-      updateAnthropic({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() });
+      await updateAnthropic({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() });
       return { ok: false, error: err };
     }
-    updateAnthropic({ testStatus: "OK", testError: null, connected: true, apiKey, model, lastTestedAt: new Date().toISOString() });
+    await updateAnthropic({ testStatus: "OK", testError: null, connected: true, apiKey, model, lastTestedAt: new Date().toISOString() });
     return { ok: true, error: null };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Netzwerkfehler";
-    updateAnthropic({ testStatus: "FAILED", testError: msg, connected: false, lastTestedAt: new Date().toISOString() });
+    await updateAnthropic({ testStatus: "FAILED", testError: msg, connected: false, lastTestedAt: new Date().toISOString() });
     return { ok: false, error: msg };
   }
 }
 
-export function saveTelegramConfig(botToken: string, channels: TelegramSettingsConfig["channels"]): void {
-  updateTelegram({ botToken, channels, configured: !!botToken && botToken.length > 10 });
+export async function saveTelegramConfig(botToken: string, channels: TelegramSettingsConfig["channels"]): Promise<void> {
+  await updateTelegram({ botToken, channels, configured: !!botToken && botToken.length > 10 });
 }

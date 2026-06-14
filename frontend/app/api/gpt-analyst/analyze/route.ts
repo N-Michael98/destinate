@@ -10,8 +10,10 @@ import {
 
 const SYMBOLS = ["XAUUSD", "EURUSD", "BTCUSD", "NAS100"];
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  const ai = getAISettings();
+  const ai = await getAISettings();
 
   // Echte Marktdaten + Indikatoren von Python holen
   const [indicators, btXAU, btEUR] = await Promise.all([

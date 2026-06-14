@@ -111,6 +111,14 @@ export async function register() {
           CONSTRAINT "SystemSettings_pkey" PRIMARY KEY ("id")
         )
       `);
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "AIConfig" (
+          "id" TEXT NOT NULL DEFAULT 'singleton',
+          "data" TEXT NOT NULL,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "AIConfig_pkey" PRIMARY KEY ("id")
+        )
+      `);
       console.log("[instrumentation] Database schema ready");
 
       const { ensureAdminExists } = await import("./lib/auth/auth-store");

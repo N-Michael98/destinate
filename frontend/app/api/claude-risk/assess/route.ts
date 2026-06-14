@@ -8,8 +8,13 @@ import {
 
 const SYMBOLS = ["XAUUSD", "EURUSD", "BTCUSD", "NAS100"];
 
-export async function GET() {
-  const ai = getAISettings();
+export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
+  const ai = await getAISettings();
+  const baseUrl = (() => {
+    try { const u = new URL(request.url); return `${u.protocol}//${u.host}`; } catch { return "http://localhost:3000"; }
+  })();
 
   // GPT-Analyse holen (damit Claude echte Trade-Ideen bewertet)
   let gptAnalyses: Array<{
@@ -19,7 +24,7 @@ export async function GET() {
 
   try {
     const gptRes = await fetch(
-      `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/api/gpt-analyst/analyze`,
+      `${baseUrl}/api/gpt-analyst/analyze`,
       { cache: "no-store" }
     );
     if (gptRes.ok) {
