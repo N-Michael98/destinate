@@ -139,7 +139,7 @@ function simulateClaude(gpt: GPTMarketAnalysis): ClaudeRiskAssessment {
 }
 
 export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerOpportunity[]> {
-  const ai = getAISettings();
+  const ai = await getAISettings();
   const hasGPT = ai.openai.connected && ai.openai.apiKey.length > 20;
   const hasClaude = ai.anthropic.connected && ai.anthropic.apiKey.length > 20;
 
