@@ -3531,6 +3531,14 @@ export default function Home() {
                   Logout
                 </button>
               </div>
+              {authUser.role === "ADMIN" && (
+                <a
+                  href="/admin"
+                  style={{ display: "block", marginTop: "8px", padding: "6px 12px", borderRadius: "6px", border: "1px solid rgba(168,85,247,0.3)", background: "rgba(168,85,247,0.1)", color: "#c084fc", fontSize: "11px", fontFamily: "monospace", cursor: "pointer", textAlign: "center", textDecoration: "none" }}
+                >
+                  ⚙ Admin Panel
+                </a>
+              )}
             </div>
           )}
         </aside>

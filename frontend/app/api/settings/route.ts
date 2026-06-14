@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import {
   getSettings,
@@ -8,7 +9,7 @@ import {
 } from "../../../lib/settings";
 
 export async function GET() {
-  return NextResponse.json({ ok: true, settings: getSettings() });
+  return NextResponse.json({ ok: true, settings: await getSettings() });
 }
 
 export async function POST(request: Request) {
@@ -16,27 +17,27 @@ export async function POST(request: Request) {
   const action: string = body.action ?? "";
 
   if (action === "update_bot") {
-    updateBotSettings(body.patch ?? {});
-    return NextResponse.json({ ok: true, settings: getSettings() });
+    await updateBotSettings(body.patch ?? {});
+    return NextResponse.json({ ok: true, settings: await getSettings() });
   }
 
   if (action === "update_risk") {
-    updateRiskSettings(body.patch ?? {});
-    return NextResponse.json({ ok: true, settings: getSettings() });
+    await updateRiskSettings(body.patch ?? {});
+    return NextResponse.json({ ok: true, settings: await getSettings() });
   }
 
   if (action === "broker_connect") {
-    const result = simulateBrokerConnect(
+    const result = await simulateBrokerConnect(
       body.brokerKey,
       body.apiKey ?? "",
       body.accountMode ?? "DEMO"
     );
-    return NextResponse.json({ ok: result.ok, accountId: result.accountId, error: result.error, settings: getSettings() });
+    return NextResponse.json({ ok: result.ok, accountId: result.accountId, error: result.error, settings: await getSettings() });
   }
 
   if (action === "broker_disconnect") {
-    simulateBrokerDisconnect(body.brokerKey);
-    return NextResponse.json({ ok: true, settings: getSettings() });
+    await simulateBrokerDisconnect(body.brokerKey);
+    return NextResponse.json({ ok: true, settings: await getSettings() });
   }
 
   return NextResponse.json({ ok: false, error: "Unknown action" }, { status: 400 });

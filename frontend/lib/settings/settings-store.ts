@@ -1,8 +1,4 @@
-import fs from "fs";
-import path from "path";
 import type { SystemSettings, BrokerConnection, BotSettings, RiskSettings } from "../broker-config";
-
-const PERSIST_PATH = path.join(process.cwd(), ".system-settings.json");
 
 const DEFAULT_SETTINGS: SystemSettings = {
   version: "V17.0.0",
@@ -28,11 +24,19 @@ const DEFAULT_SETTINGS: SystemSettings = {
   updatedAt: new Date().toISOString(),
 };
 
-function loadFromDisk(): SystemSettings {
+async function getPrisma() {
+  const { getPrisma: gp } = await import("../../app/lib/prisma");
+  return gp();
+}
+
+async function loadFromDB(): Promise<SystemSettings> {
   try {
-    if (fs.existsSync(PERSIST_PATH)) {
-      const parsed = JSON.parse(fs.readFileSync(PERSIST_PATH, "utf-8")) as SystemSettings;
-      // Reset connection status on reload — session tokens are gone, must reconnect
+    const db = await getPrisma();
+    const row = await db.$queryRaw<{ data: string }[]>`
+      SELECT data FROM "SystemSettings" WHERE id = 'singleton' LIMIT 1
+    `;
+    if (row && row.length > 0) {
+      const parsed = JSON.parse(row[0].data) as SystemSettings;
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
@@ -40,56 +44,74 @@ function loadFromDisk(): SystemSettings {
         riskSettings: { ...DEFAULT_SETTINGS.riskSettings, ...parsed.riskSettings },
         connections: DEFAULT_SETTINGS.connections.map((def) => {
           const saved = parsed.connections?.find((c) => c.brokerKey === def.brokerKey);
-          // Keep config but reset live session state
           return saved ? { ...saved, connected: false, accountId: null, error: null } : def;
         }),
       };
     }
-  } catch { /* corrupt file → start fresh */ }
+  } catch { /* DB not ready yet → use defaults */ }
   return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 }
 
-function saveToDisk(s: SystemSettings): void {
-  try { fs.writeFileSync(PERSIST_PATH, JSON.stringify(s, null, 2), "utf-8"); } catch { /* non-fatal */ }
+async function saveToDB(s: SystemSettings): Promise<void> {
+  try {
+    const db = await getPrisma();
+    const data = JSON.stringify(s);
+    await db.$executeRawUnsafe(
+      `INSERT INTO "SystemSettings" (id, data, "updatedAt") VALUES ('singleton', $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
+      data
+    );
+  } catch { /* non-fatal */ }
 }
 
+// In-memory cache so we don't hit DB on every read within same process
 declare global { var __system_settings__: SystemSettings | undefined; }
-if (!global.__system_settings__) global.__system_settings__ = loadFromDisk();
 
-function get(): SystemSettings { return global.__system_settings__!; }
-function set(s: SystemSettings): void { global.__system_settings__ = s; saveToDisk(s); }
-
-export function getSettings(): SystemSettings { return JSON.parse(JSON.stringify(get())); }
-
-export function updateBotSettings(patch: Partial<BotSettings>): void {
-  const s = get();
-  set({ ...s, botSettings: { ...s.botSettings, ...patch }, updatedAt: new Date().toISOString() });
+async function get(): Promise<SystemSettings> {
+  if (!global.__system_settings__) {
+    global.__system_settings__ = await loadFromDB();
+  }
+  return global.__system_settings__!;
 }
 
-export function updateRiskSettings(patch: Partial<RiskSettings>): void {
-  const s = get();
-  set({ ...s, riskSettings: { ...s.riskSettings, ...patch }, updatedAt: new Date().toISOString() });
+async function set(s: SystemSettings): Promise<void> {
+  global.__system_settings__ = s;
+  await saveToDB(s);
 }
 
-export function updateBrokerConnection(patch: Partial<BrokerConnection> & { brokerKey: BrokerConnection["brokerKey"] }): void {
-  const s = get();
-  set({ ...s, connections: s.connections.map((c) => c.brokerKey === patch.brokerKey ? { ...c, ...patch } : c), updatedAt: new Date().toISOString() });
+export async function getSettings(): Promise<SystemSettings> {
+  return JSON.parse(JSON.stringify(await get()));
 }
 
-export function simulateBrokerConnect(
+export async function updateBotSettings(patch: Partial<BotSettings>): Promise<void> {
+  const s = await get();
+  await set({ ...s, botSettings: { ...s.botSettings, ...patch }, updatedAt: new Date().toISOString() });
+}
+
+export async function updateRiskSettings(patch: Partial<RiskSettings>): Promise<void> {
+  const s = await get();
+  await set({ ...s, riskSettings: { ...s.riskSettings, ...patch }, updatedAt: new Date().toISOString() });
+}
+
+export async function updateBrokerConnection(patch: Partial<BrokerConnection> & { brokerKey: BrokerConnection["brokerKey"] }): Promise<void> {
+  const s = await get();
+  await set({ ...s, connections: s.connections.map((c) => c.brokerKey === patch.brokerKey ? { ...c, ...patch } : c), updatedAt: new Date().toISOString() });
+}
+
+export async function simulateBrokerConnect(
   brokerKey: BrokerConnection["brokerKey"],
   apiKey: string,
   accountMode: BrokerConnection["accountMode"]
-): { ok: boolean; accountId: string | null; error: string | null } {
+): Promise<{ ok: boolean; accountId: string | null; error: string | null }> {
   if (!apiKey || apiKey.length < 8) {
-    updateBrokerConnection({ brokerKey, connected: false, error: "Invalid API key (minimum 8 characters)" });
+    await updateBrokerConnection({ brokerKey, connected: false, error: "Invalid API key (minimum 8 characters)" });
     return { ok: false, accountId: null, error: "Invalid API key" };
   }
   const fakeId = `${brokerKey.slice(0, 3)}-DEMO-${Math.floor(Math.random() * 900000 + 100000)}`;
-  updateBrokerConnection({ brokerKey, connected: true, accountId: fakeId, accountMode, lastConnectedAt: new Date().toISOString(), error: null });
+  await updateBrokerConnection({ brokerKey, connected: true, accountId: fakeId, accountMode, lastConnectedAt: new Date().toISOString(), error: null });
   return { ok: true, accountId: fakeId, error: null };
 }
 
-export function simulateBrokerDisconnect(brokerKey: BrokerConnection["brokerKey"]): void {
-  updateBrokerConnection({ brokerKey, connected: false, accountId: null, error: null });
+export async function simulateBrokerDisconnect(brokerKey: BrokerConnection["brokerKey"]): Promise<void> {
+  await updateBrokerConnection({ brokerKey, connected: false, accountId: null, error: null });
 }
