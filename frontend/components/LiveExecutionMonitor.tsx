@@ -58,9 +58,32 @@ export default function LiveExecutionMonitor() {
   const [positions, setPositions] = useState<OpenPosition[]>([]);
   const [execLogs, setExecLogs] = useState<ExecutionLog[]>([]);
   const [executing, setExecuting] = useState<string | null>(null);
-  const [autoExec, setAutoExec] = useState(false);
-  const [accountBalance, setAccountBalance] = useState(10000);
+  const [autoExec, setAutoExecRaw] = useState(false);
+  const [accountBalance, setAccountBalanceRaw] = useState(10000);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Persist toggle + balance across page reloads
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("liveExec_autoExec");
+      if (saved !== null) setAutoExecRaw(saved === "true");
+      const bal = localStorage.getItem("liveExec_accountBalance");
+      if (bal !== null) setAccountBalanceRaw(Number(bal));
+    } catch { /* localStorage unavailable */ }
+  }, []);
+
+  const setAutoExec = (val: boolean | ((p: boolean) => boolean)) => {
+    setAutoExecRaw((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      try { localStorage.setItem("liveExec_autoExec", String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const setAccountBalance = (val: number) => {
+    setAccountBalanceRaw(val);
+    try { localStorage.setItem("liveExec_accountBalance", String(val)); } catch { /* ignore */ }
+  };
 
   const loadQueue = useCallback(async () => {
     const r = await fetch("/api/execution-queue-position-sync").catch(() => null);

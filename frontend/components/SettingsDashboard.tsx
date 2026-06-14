@@ -219,6 +219,8 @@ export default function SettingsDashboard() {
       const [sR, aiR] = await Promise.all([
         fetch("/api/settings").then((r) => r.json()).catch(() => ({})),
         fetch("/api/ai-config").then((r) => r.json()).catch(() => ({})),
+        // Trigger Capital.com auto-reconnect on every settings load
+        fetch("/api/capital-com").catch(() => null),
       ]);
       if (sR.ok) setSettings(sR.settings);
       if (aiR.ok) {
