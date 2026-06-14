@@ -12,6 +12,7 @@ async function proxy(request: Request, path: string[]) {
       method: request.method,
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     };
     if (request.method !== "GET" && request.method !== "HEAD") {
       init.body = await request.text();

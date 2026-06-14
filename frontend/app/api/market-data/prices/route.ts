@@ -18,6 +18,7 @@ export async function GET(request: Request) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbols }),
         cache: "no-store",
+        signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) throw new Error("Python backend error");
       return res.json();
