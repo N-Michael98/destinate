@@ -54,6 +54,11 @@ def get_ohlcv(
     ticker = yf.Ticker(_resolve(symbol))
     df: pd.DataFrame = ticker.history(period=period, interval=interval)
 
+    # Fallback: try shorter period if no data returned
+    if df.empty and period in ("1mo", "3mo", "6mo"):
+        df = ticker.history(period="5d", interval=interval)
+    if df.empty and interval == "1h":
+        df = ticker.history(period="5d", interval="1d")
     if df.empty:
         return []
 
