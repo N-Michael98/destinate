@@ -34,7 +34,7 @@ async function checkEndpoint(key: string, checkedAt: string): Promise<{ status: 
     switch (key) {
       case "dependency": {
         const r = getDependencyScannerReport();
-        return { status: "READY", summary: `${r.items?.length ?? 0} dependencies` };
+        return { status: "READY", summary: `${r.activeItems ?? 0}/${r.totalItems ?? 0} active` };
       }
       case "portfolio": {
         const r = runPortfolioBrain();
