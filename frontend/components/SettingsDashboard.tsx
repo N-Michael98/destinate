@@ -216,20 +216,25 @@ export default function SettingsDashboard() {
 
   const fetchSettings = async () => {
     try {
-      const [sR, aiR] = await Promise.all([
+      const [sR, aiR, capR] = await Promise.all([
         fetch("/api/settings").then((r) => r.json()).catch(() => ({})),
         fetch("/api/ai-config").then((r) => r.json()).catch(() => ({})),
-        // Trigger Capital.com auto-reconnect on every settings load
-        fetch("/api/capital-com").catch(() => null),
+        fetch("/api/capital-com").then((r) => r.json()).catch(() => ({})),
       ]);
       if (sR.ok) setSettings(sR.settings);
+      // Pre-fill Capital.com login field if credentials are saved
+      if (capR?.savedIdentifier) {
+        setForms((p) => ({ ...p, CAPITAL_COM: { ...p.CAPITAL_COM, login: capR.savedIdentifier } }));
+      }
       if (aiR.ok) {
         setAISettings(aiR.settings);
         if (aiR.settings?.openai) {
           setOpenaiModel(aiR.settings.openai.model);
+          if (aiR.settings.openai.apiKey) setOpenaiKey(aiR.settings.openai.apiKey);
         }
         if (aiR.settings?.anthropic) {
           setAnthropicModel(aiR.settings.anthropic.model);
+          if (aiR.settings.anthropic.apiKey) setAnthropicKey(aiR.settings.anthropic.apiKey);
         }
         if (aiR.settings?.telegram) {
           setTgChannels(aiR.settings.telegram.channels);
