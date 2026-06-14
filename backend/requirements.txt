@@ -3,7 +3,8 @@ fastapi==0.115.5
 uvicorn[standard]==0.32.1
 
 # Market Data
-yfinance==0.2.51
+yfinance==0.2.61
+curl_cffi>=0.7.0
 
 # Data Analysis
 pandas==2.2.3

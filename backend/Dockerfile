@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --only-binary :all: pandas numpy && \
+    pip install --no-cache-dir curl_cffi && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . .
