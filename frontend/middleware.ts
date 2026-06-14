@@ -11,6 +11,16 @@ const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/api/auth/login",
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Force canonical domain — redirect Railway URL to custom domain
+  const host = request.headers.get("host") ?? "";
+  const customDomain = process.env.CUSTOM_DOMAIN; // e.g. "destinate.ch"
+  if (customDomain && host !== customDomain && host !== `www.${customDomain}`) {
+    const url = request.nextUrl.clone();
+    url.host = customDomain;
+    url.port = "";
+    return NextResponse.redirect(url, { status: 301 });
+  }
+
   // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
