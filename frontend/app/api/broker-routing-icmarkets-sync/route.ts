@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getBrokerRoutingICMarketsSyncReport } from "../../../lib/broker-routing-icmarkets-sync";
 
 export async function GET() {

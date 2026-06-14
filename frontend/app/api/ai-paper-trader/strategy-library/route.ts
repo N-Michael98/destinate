@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { StrategyLibrary } from "@/lib/ai-agent/strategy-library";
 

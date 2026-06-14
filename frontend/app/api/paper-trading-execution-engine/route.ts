@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { buildPaperTradingExecutionReport } from "@/lib/portfolio-brain/paper-trading-execution-engine";
 
 export async function GET() {

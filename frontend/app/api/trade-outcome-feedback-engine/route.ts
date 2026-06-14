@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { buildTradeOutcomeFeedbackReport } from "@/lib/portfolio-brain/trade-outcome-feedback-engine";
 
 export async function GET() {

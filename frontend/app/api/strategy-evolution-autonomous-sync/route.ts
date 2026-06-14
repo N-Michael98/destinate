@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateStrategyEvolutionAutonomousSyncReport } from "@/lib/strategy-evolution-autonomous-sync";
 
 export async function GET() {

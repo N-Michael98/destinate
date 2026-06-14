@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getTradeApprovalExecutionQueueSyncReport } from "../../../lib/trade-approval-execution-queue-sync";
 
 export async function GET() {

@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateAutonomousEvolutionTradeApprovalSyncReport } from "@/lib/autonomous-evolution-trade-approval-sync";
 
 export async function GET() {

@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateMultiStyleConsensusUnifiedDecisionSyncReport } from "@/lib/multi-style-consensus-unified-decision-sync";
 
 export async function GET() {

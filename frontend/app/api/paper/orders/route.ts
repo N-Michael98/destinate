@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getPaperManager } from "@/lib/paper-trading/paper-singleton";
 import { PaperDirection } from "@/lib/paper-trading/paper-types";

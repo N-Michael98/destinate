@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { AgentMemory } from "@/lib/ai-agent/memory/agent-memory";
 

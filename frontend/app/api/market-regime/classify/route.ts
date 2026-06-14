@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { marketDataManager } from "@/lib/market-data-engine";
 import { regimeManager } from "@/lib/market-regime-engine";
 

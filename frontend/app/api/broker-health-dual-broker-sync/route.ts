@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getBrokerHealthDualBrokerSyncReport } from "../../../lib/broker-health-dual-broker-sync";
 
 export async function GET() {

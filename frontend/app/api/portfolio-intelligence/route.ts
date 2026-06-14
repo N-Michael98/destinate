@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getPortfolioIntelligenceReport } from "@/lib/portfolio-intelligence";
 

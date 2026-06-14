@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getStrategyWeightAutoRebalancingReport } from "../../../lib/strategy-weight-auto-rebalancing";
 
 export async function GET() {

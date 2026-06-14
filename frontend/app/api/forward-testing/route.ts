@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { generateForwardTestingReport } from "../../../lib/forward-testing";
 import { loadLivePricesFromPython } from "../../../lib/forward-testing/forward-testing-engine";

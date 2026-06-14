@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { buildMissionControlRecoveryReport } from "@/lib/mission-control/recovery-tracker";
 
 export async function GET() {

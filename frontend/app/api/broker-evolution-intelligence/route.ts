@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateBrokerEvolutionIntelligenceReport } from "../../../lib/broker-evolution-intelligence";
 
 export async function GET() {

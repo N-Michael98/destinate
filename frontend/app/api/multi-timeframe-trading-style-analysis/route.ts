@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getMultiTimeframeTradingStyleAnalysisReport } from "../../../lib/multi-timeframe-trading-style-analysis";
 
 export async function GET() {

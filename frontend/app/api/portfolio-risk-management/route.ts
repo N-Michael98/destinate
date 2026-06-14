@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { buildPortfolioRiskManagementReport } from "@/lib/portfolio-brain/portfolio-risk-management";
 

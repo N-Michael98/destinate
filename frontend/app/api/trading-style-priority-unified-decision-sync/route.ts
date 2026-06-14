@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getTradingStylePriorityUnifiedDecisionSyncReport } from "../../../lib/trading-style-priority-unified-decision-sync";
 
 export async function GET() {

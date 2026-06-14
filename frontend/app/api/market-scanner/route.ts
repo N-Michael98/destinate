@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getCapitalSession, isCapitalConnected } from "../../../lib/capital-com/capital-com-session";
 import { capitalGetAvailableMarkets, capitalSearchMarkets } from "../../../lib/capital-com/capital-com-client";

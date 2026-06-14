@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { PaperPerformance } from "@/lib/paper-trading/paper-performance";
 

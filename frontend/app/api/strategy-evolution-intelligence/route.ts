@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { generateStrategyEvolutionReport } from "../../../lib/strategy-evolution-intelligence";
 import { generateLiveEvolutionScores } from "../../../lib/strategy-evolution/evolution-engine";

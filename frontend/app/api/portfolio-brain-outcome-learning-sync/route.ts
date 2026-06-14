@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { buildPortfolioBrainOutcomeLearningSyncReport } from "@/lib/portfolio-brain/portfolio-brain-outcome-learning-sync";
 

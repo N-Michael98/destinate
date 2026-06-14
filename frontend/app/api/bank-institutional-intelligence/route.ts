@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getBankInstitutionalIntelligenceReport } from "../../../lib/bank-institutional-intelligence";
 
 export async function GET() {

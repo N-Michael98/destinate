@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { NewsIntelligenceEngine } from "@/lib/news-intelligence/news-intelligence-engine";
 

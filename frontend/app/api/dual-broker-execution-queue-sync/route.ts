@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateDualBrokerExecutionQueueSyncReport } from "@/lib/dual-broker-execution-queue-sync";
 
 export async function GET() {

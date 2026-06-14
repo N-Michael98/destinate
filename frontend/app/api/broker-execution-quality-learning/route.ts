@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateBrokerExecutionQualityLearningReport } from "../../../lib/broker-execution-quality-learning";
 
 export async function GET() {

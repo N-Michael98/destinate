@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { icMarketsClient } from "@/lib/icmarkets-connector/icmarkets-client";
 import { paperManagerBroker2 } from "@/lib/paper-trading/paper-singleton";

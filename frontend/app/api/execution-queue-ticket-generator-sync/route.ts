@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateExecutionQueueTicketGeneratorSyncReport } from "@/lib/execution-queue-ticket-generator-sync";
 
 export async function GET() {

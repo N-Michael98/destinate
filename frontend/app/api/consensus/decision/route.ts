@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { consensusManager } from "@/lib/consensus-engine";
 import { fetchIndicatorsMany } from "@/lib/python-bridge/python-data";

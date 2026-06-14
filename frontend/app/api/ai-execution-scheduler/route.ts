@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getAIExecutionSchedulerReport } from "../../../lib/ai-execution-scheduler";
 
 export async function GET() {

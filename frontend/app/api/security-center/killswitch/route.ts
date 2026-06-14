@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getKillswitchReport, triggerKillswitch, resetKillswitch } from "../../../../lib/killswitch";
 import { sendTelegramMessage } from "../../../../lib/telegram-notifications";

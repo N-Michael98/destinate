@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { runMissionControlAudit } from "@/lib/mission-control/system-audit";
 import { MissionControlEventLog } from "@/lib/mission-control/event-log";
 

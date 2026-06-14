@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateSmartBrokerExecutionSyncReport } from "../../../lib/smart-broker-execution-sync";
 
 export async function GET() {

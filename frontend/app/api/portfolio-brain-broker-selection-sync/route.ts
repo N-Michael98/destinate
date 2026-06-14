@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generatePortfolioBrainBrokerSelectionSyncReport } from "@/lib/portfolio-brain-broker-selection-sync";
 
 export async function GET() {

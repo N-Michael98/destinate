@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateBrokerReputationMemoryReport } from "../../../lib/broker-reputation-memory";
 
 export async function GET() {

@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { buildDynamicMarketDataReport } from "@/lib/market-universe/dynamic-market-data";
 

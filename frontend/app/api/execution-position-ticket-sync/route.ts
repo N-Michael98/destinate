@@ -1,3 +1,4 @@
+﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { generateExecutionPositionTicketSyncReport } from "../../../lib/execution-position-ticket-sync";
 

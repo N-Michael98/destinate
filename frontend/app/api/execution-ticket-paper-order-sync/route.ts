@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateExecutionTicketPaperOrderSyncReport } from "@/lib/execution-ticket-paper-order-sync";
 
 export async function GET() {

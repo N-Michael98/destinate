@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateOutcomeLearningEvolutionFeedbackSyncReport } from "@/lib/outcome-learning-evolution-feedback-sync";
 
 export async function GET() {

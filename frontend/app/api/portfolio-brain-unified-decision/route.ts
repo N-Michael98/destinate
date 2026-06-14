@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { getPortfolioBrainUnifiedDecisionReport } from "../../../lib/portfolio-brain-unified-decision";
 
 export async function GET() {

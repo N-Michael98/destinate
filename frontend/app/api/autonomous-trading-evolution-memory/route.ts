@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+﻿export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
 import { generateAutonomousTradingEvolutionReport } from "@/lib/autonomous-trading-evolution";
 import {
   buildAutonomousTradingEvolutionMemoryReport,
