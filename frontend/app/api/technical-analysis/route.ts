@@ -12,33 +12,31 @@ export async function GET(request: Request) {
   const period = searchParams.get("period") ?? "1mo";
   const symbols = symbolsParam ? symbolsParam.split(",") : DEFAULT_SYMBOLS;
 
-  try {
-    const results = await Promise.all(
-      symbols.map((symbol) =>
-        cacheGetOrFetch(
-          `indicators:${symbol}:${interval}:${period}`,
-          async () => {
+  const results = await Promise.all(
+    symbols.map((symbol) =>
+      cacheGetOrFetch(
+        `indicators:${symbol}:${interval}:${period}`,
+        async () => {
+          try {
             const res = await fetch(
               `${PYTHON_BASE}/api/v1/indicators/${symbol}?interval=${interval}&period=${period}`,
               { cache: "no-store" }
             );
-            if (!res.ok) throw new Error(`Indicators failed for ${symbol}`);
+            if (!res.ok) return { symbol, error: `HTTP ${res.status}` };
             return res.json();
-          },
-          300, // 5 Minuten Cache — Indikatoren ändern sich nicht sekündlich
-        )
+          } catch {
+            return { symbol, error: "fetch failed" };
+          }
+        },
+        300,
       )
-    );
+    )
+  );
 
-    return NextResponse.json({
-      ok: true, source: "PYTHON_TA", interval, period,
-      symbols: results, count: results.length,
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    return NextResponse.json({
-      ok: false, error: "Python backend offline or error",
-      detail: err instanceof Error ? err.message : String(err),
-    }, { status: 503 });
-  }
+  const successful = results.filter((r: any) => !r?.error);
+  return NextResponse.json({
+    ok: successful.length > 0, source: "PYTHON_TA", interval, period,
+    symbols: results, count: successful.length,
+    updatedAt: new Date().toISOString(),
+  });
 }
