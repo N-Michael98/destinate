@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     if (action === "status") {
       const connected = isCapitalConnected();
       const session = getCapitalSession();
-      const saved = getSavedCredentials();
+      const saved = await getSavedCredentials();
       return NextResponse.json({
         ok: true,
         connected,
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
         accountType: session?.accountType ?? null,
         connectedAt: session?.connectedAt ?? null,
         accounts: session?.accounts ?? [],
-        savedIdentifier: saved?.identifier ?? null, // so UI can show who was connected
+        savedIdentifier: saved?.identifier ?? null,
       });
     }
 

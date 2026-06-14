@@ -119,11 +119,26 @@ export async function register() {
           CONSTRAINT "AIConfig_pkey" PRIMARY KEY ("id")
         )
       `);
+      await db.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "CapitalCredentials" (
+          "id" TEXT NOT NULL DEFAULT 'singleton',
+          "data" TEXT NOT NULL,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "CapitalCredentials_pkey" PRIMARY KEY ("id")
+        )
+      `);
       console.log("[instrumentation] Database schema ready");
 
       const { ensureAdminExists } = await import("./lib/auth/auth-store");
       await ensureAdminExists();
       console.log("[instrumentation] Admin user ready");
+
+      // Auto-reconnect Capital.com with saved credentials
+      try {
+        const { autoReconnectCapital } = await import("./lib/capital-com/capital-com-session");
+        const reconnected = await autoReconnectCapital();
+        if (reconnected) console.log("[instrumentation] Capital.com auto-reconnected");
+      } catch { /* non-fatal */ }
     } catch (err) {
       console.error("[instrumentation] Setup error:", err);
     }
