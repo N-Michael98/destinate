@@ -11,13 +11,22 @@ const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/api/auth/login",
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Force HTTPS
+  const proto = request.headers.get("x-forwarded-proto");
+  if (proto === "http") {
+    const url = request.nextUrl.clone();
+    url.protocol = "https:";
+    return NextResponse.redirect(url, { status: 301 });
+  }
+
   // Force canonical domain — redirect Railway URL to custom domain
   const host = request.headers.get("host") ?? "";
-  const customDomain = process.env.CUSTOM_DOMAIN; // e.g. "destinate.ch"
-  if (customDomain && host !== customDomain && host !== `www.${customDomain}`) {
+  const customDomain = process.env.CUSTOM_DOMAIN; // e.g. "www.destinate.ch"
+  if (customDomain && host !== customDomain && host !== customDomain.replace("www.", "")) {
     const url = request.nextUrl.clone();
     url.host = customDomain;
     url.port = "";
+    url.protocol = "https:";
     return NextResponse.redirect(url, { status: 301 });
   }
 
