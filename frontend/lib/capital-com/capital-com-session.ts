@@ -33,6 +33,16 @@ async function getPrisma() {
 }
 
 async function loadCredentials(): Promise<SavedCredentials | null> {
+  // 1. Railway Variables (like GPT/Claude) — always available after deploy
+  const envKey = process.env.CAPITAL_API_KEY;
+  const envId  = process.env.CAPITAL_IDENTIFIER;
+  const envPw  = process.env.CAPITAL_PASSWORD;
+  if (envKey && envId && envPw && envKey.length > 5 && envPw.length > 3) {
+    console.log(`[capital-com] loadCredentials: using Railway Variables for ${envId}`);
+    return { apiKey: envKey, identifier: envId, password: envPw };
+  }
+
+  // 2. Fallback: PostgreSQL DB (manual connect saved credentials)
   try {
     const db = await getPrisma();
     const row = await db.$queryRaw<{ data: string }[]>`
@@ -40,10 +50,10 @@ async function loadCredentials(): Promise<SavedCredentials | null> {
     `;
     if (row && row.length > 0) {
       const creds = JSON.parse(row[0].data) as SavedCredentials;
-      console.log(`[capital-com] loadCredentials: found credentials for ${creds.identifier}`);
+      console.log(`[capital-com] loadCredentials: using DB credentials for ${creds.identifier}`);
       return creds;
     }
-    console.warn("[capital-com] loadCredentials: no credentials in DB (CapitalCredentials table is empty)");
+    console.warn("[capital-com] loadCredentials: no credentials found in env vars or DB");
     return null;
   } catch (err) {
     console.error("[capital-com] loadCredentials FAILED:", err);
