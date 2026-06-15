@@ -7,6 +7,7 @@ import {
   isCapitalConnected,
   autoReconnectCapital,
   getSavedCredentials,
+  getLastReconnectError,
 } from "../../../lib/capital-com";
 import { capitalGetPrices } from "../../../lib/capital-com/capital-com-client";
 
@@ -15,11 +16,12 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action") ?? "status";
 
-    // Auto-reconnect on every status check if credentials are saved but session is gone
-    let reconnectError: string | null = null;
-    if (!isCapitalConnected()) {
+    // Only reconnect on explicit action=reconnect, not on every status check
+    // (prevents Capital.com rate limiting from 20s polling)
+    let reconnectError: string | null = getLastReconnectError();
+    if (action === "reconnect" && !isCapitalConnected()) {
       const r = await autoReconnectCapital();
-      if (!r.ok) reconnectError = r.error ?? "Unbekannter Fehler";
+      reconnectError = r.ok ? null : (r.error ?? "Unbekannter Fehler");
     }
 
     if (action === "status") {

@@ -94,9 +94,15 @@ async function clearCredentials(): Promise<void> {
 declare global {
   var __capital_session__: ActiveSession | null | undefined;
   var __capital_reconnecting__: boolean | undefined;
+  var __capital_last_error__: string | null | undefined;
 }
 if (global.__capital_session__ === undefined) global.__capital_session__ = null;
 if (global.__capital_reconnecting__ === undefined) global.__capital_reconnecting__ = false;
+if (global.__capital_last_error__ === undefined) global.__capital_last_error__ = null;
+
+export function getLastReconnectError(): string | null {
+  return global.__capital_last_error__ ?? null;
+}
 
 export function getCapitalSession(): ActiveSession | null {
   return global.__capital_session__ ?? null;
@@ -182,9 +188,11 @@ export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: str
     if (!creds) return { ok: false, error: "Keine gespeicherten Credentials in DB" };
     const result = await connectCapital(creds.apiKey, creds.identifier, creds.password);
     if (!result.ok) {
+      global.__capital_last_error__ = result.error ?? "Unbekannter Fehler";
       console.error(`[capital-com] Auto-reconnect failed: ${result.error}`);
       return { ok: false, error: result.error };
     }
+    global.__capital_last_error__ = null;
     return { ok: true };
   } finally {
     global.__capital_reconnecting__ = false;
