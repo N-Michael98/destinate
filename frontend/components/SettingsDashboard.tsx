@@ -258,7 +258,12 @@ export default function SettingsDashboard() {
     }
   };
 
-  useEffect(() => { fetchSettings(); }, []);
+  useEffect(() => {
+    fetchSettings();
+    // Auto-refresh every 20s when Capital.com not yet connected (catches auto-reconnect completing)
+    const iv = setInterval(() => { fetchSettings(); }, 20000);
+    return () => clearInterval(iv);
+  }, []);
 
   const postAI = async (payload: Record<string, unknown>) => {
     const r = await fetch("/api/ai-config", {
