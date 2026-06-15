@@ -227,9 +227,17 @@ export default function SettingsDashboard() {
       if (capR?.savedIdentifier) {
         setForms((p) => ({ ...p, CAPITAL_COM: { ...p.CAPITAL_COM, login: capR.savedIdentifier } }));
       }
-      // Show reconnect error if auto-reconnect failed
-      if (!capR?.connected && capR?.reconnectError) {
-        setCapitalError(`Auto-Reconnect Fehler: ${capR.reconnectError}${!capR.hasSavedCredentials ? " (Keine Credentials in DB — bitte manuell verbinden)" : ""}`);
+      // Show reconnect error if auto-reconnect failed (or no credentials saved)
+      if (!capR?.connected) {
+        if (capR?.reconnectError) {
+          setCapitalError(`Auto-Reconnect Fehler: ${capR.reconnectError}`);
+        } else if (capR?.hasSavedCredentials === false) {
+          setCapitalError("Keine Credentials in DB gespeichert — bitte manuell verbinden (API Key + Login + Passwort eingeben und Connect klicken)");
+        } else if (Object.keys(capR ?? {}).length === 0) {
+          setCapitalError("Capital.com API nicht erreichbar — bitte manuell verbinden");
+        }
+      } else {
+        setCapitalError(null);
       }
       if (aiR.ok) {
         setAISettings(aiR.settings);
@@ -461,9 +469,9 @@ export default function SettingsDashboard() {
                   </div>
                 </div>
 
-                {!c?.connected && capitalError && profile.key === "CAPITAL_COM" && (
+                {!c?.connected && profile.key === "CAPITAL_COM" && (
                   <div style={{ marginBottom: "12px", padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", fontSize: "11px", color: "#f87171" }}>
-                    ⚠ {capitalError}
+                    ⚠ {capitalError ?? "Capital.com nicht verbunden — bitte Credentials eingeben und Connect klicken"}
                   </div>
                 )}
 
