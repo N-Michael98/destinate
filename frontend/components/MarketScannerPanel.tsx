@@ -118,8 +118,9 @@ export default function MarketScannerPanel() {
     const r = await fetch(`/api/market-scanner?action=scan&types=${types}${q}`).catch(() => null);
     let scanData: ScanResult | null = null;
     if (r?.ok) {
-      scanData = await r.json().catch(() => null);
-      if (scanData) setResult(scanData);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw: any = await r.json().catch(() => null);
+      if (raw) { scanData = raw as ScanResult; setResult(scanData); }
     }
     setScanning(false);
 
