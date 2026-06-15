@@ -1,9 +1,10 @@
 ﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getCapitalSession, isCapitalConnected } from "../../../lib/capital-com/capital-com-session";
-import { capitalGetAvailableMarkets, capitalSearchMarkets } from "../../../lib/capital-com/capital-com-client";
+import { capitalGetTopMarkets, capitalSearchMarkets, type CapitalMarket } from "../../../lib/capital-com/capital-com-client";
 import { analyzeMarkets } from "../../../lib/market-scanner/ai-analysis-engine";
 import { getAISettings } from "../../../lib/ai-config/ai-config-store";
+import { cacheGetOrFetch } from "../../../lib/cache/redis-cache";
 
 export async function GET(request: Request) {
   try {
@@ -29,15 +30,18 @@ export async function GET(request: Request) {
     }
 
     // Fetch markets from Capital.com or use fallback list
-    let markets: Awaited<ReturnType<typeof capitalGetAvailableMarkets>>["markets"] = [];
+    let markets: CapitalMarket[] = [];
 
     if (capitalConnected && session) {
       const instrumentTypes = types.split(",").map((t) => t.trim());
-      const result = searchTerm
-        ? await capitalSearchMarkets(session.apiKey, session.cst, session.securityToken, searchTerm)
-        : await capitalGetAvailableMarkets(session.apiKey, session.cst, session.securityToken, instrumentTypes);
-
-      markets = result.markets ?? [];
+      const cacheKey = `markets:${instrumentTypes.sort().join(",")}:${searchTerm}`;
+      const result = await cacheGetOrFetch(cacheKey, async () => {
+        const r = searchTerm
+          ? await capitalSearchMarkets(session!.apiKey, session!.cst, session!.securityToken, searchTerm)
+          : await capitalGetTopMarkets(session!.apiKey, session!.cst, session!.securityToken, instrumentTypes);
+        return r.markets ?? [];
+      }, 30); // cache 30 seconds
+      markets = result;
     } else {
       // Fallback: static market list with simulated prices
       const FALLBACK_EPICS = [

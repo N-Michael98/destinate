@@ -66,18 +66,130 @@ export interface OpenPosition {
 
 // Capital.com epic names for our symbols
 export const EPIC_MAP: Record<string, string> = {
-  XAUUSD: "GOLD",
+  // Forex
   EURUSD: "EURUSD",
-  NAS100: "US100",
+  GBPUSD: "GBPUSD",
+  USDJPY: "USDJPY",
+  USDCHF: "USDCHF",
+  AUDUSD: "AUDUSD",
+  USDCAD: "USDCAD",
+  NZDUSD: "NZDUSD",
+  EURGBP: "EURGBP",
+  EURJPY: "EURJPY",
+  GBPJPY: "GBPJPY",
+  // Commodities
+  XAUUSD: "GOLD",
+  XAGUSD: "SILVER",
   USOIL: "OIL_CRUDE",
-  BTCUSD: "BITCOIN",
+  UKOIL: "OIL_BRENT",
+  NATGAS: "NATURAL_GAS",
+  // Indices
+  NAS100: "US100",
   SPX500: "US500",
+  DJ30: "US30",
+  GER40: "GERMANY40",
+  UK100: "UK100",
+  JPN225: "JAPAN225",
+  // Crypto
+  BTCUSD: "BITCOIN",
+  ETHUSD: "ETHEREUM",
+  LTCUSD: "LITECOIN",
+  XRPUSD: "RIPPLE",
+  ADAUSD: "CARDANO",
+  SOLUSD: "SOLANA",
+  DOTUSD: "POLKADOT",
+  LNKUSD: "CHAINLINK",
+  BNBUSD: "BNB",
 };
 
 // Reverse map: epic → symbol
 export const EPIC_TO_SYMBOL: Record<string, string> = Object.fromEntries(
   Object.entries(EPIC_MAP).map(([sym, epic]) => [epic, sym])
 );
+
+// Instrument metadata for display
+const INSTRUMENT_META: Record<string, { name: string; type: string }> = {
+  EURUSD: { name: "EUR/USD", type: "CURRENCIES" },
+  GBPUSD: { name: "GBP/USD", type: "CURRENCIES" },
+  USDJPY: { name: "USD/JPY", type: "CURRENCIES" },
+  USDCHF: { name: "USD/CHF", type: "CURRENCIES" },
+  AUDUSD: { name: "AUD/USD", type: "CURRENCIES" },
+  USDCAD: { name: "USD/CAD", type: "CURRENCIES" },
+  NZDUSD: { name: "NZD/USD", type: "CURRENCIES" },
+  EURGBP: { name: "EUR/GBP", type: "CURRENCIES" },
+  EURJPY: { name: "EUR/JPY", type: "CURRENCIES" },
+  GBPJPY: { name: "GBP/JPY", type: "CURRENCIES" },
+  XAUUSD: { name: "Gold", type: "COMMODITIES" },
+  XAGUSD: { name: "Silver", type: "COMMODITIES" },
+  USOIL: { name: "Crude Oil (WTI)", type: "COMMODITIES" },
+  UKOIL: { name: "Brent Oil", type: "COMMODITIES" },
+  NATGAS: { name: "Natural Gas", type: "COMMODITIES" },
+  NAS100: { name: "Nasdaq 100", type: "INDICES" },
+  SPX500: { name: "S&P 500", type: "INDICES" },
+  DJ30: { name: "Dow Jones 30", type: "INDICES" },
+  GER40: { name: "DAX 40", type: "INDICES" },
+  UK100: { name: "FTSE 100", type: "INDICES" },
+  JPN225: { name: "Nikkei 225", type: "INDICES" },
+  BTCUSD: { name: "Bitcoin", type: "CRYPTOCURRENCIES" },
+  ETHUSD: { name: "Ethereum", type: "CRYPTOCURRENCIES" },
+  LTCUSD: { name: "Litecoin", type: "CRYPTOCURRENCIES" },
+  XRPUSD: { name: "Ripple (XRP)", type: "CRYPTOCURRENCIES" },
+  ADAUSD: { name: "Cardano", type: "CRYPTOCURRENCIES" },
+  SOLUSD: { name: "Solana", type: "CRYPTOCURRENCIES" },
+  DOTUSD: { name: "Polkadot", type: "CRYPTOCURRENCIES" },
+  LNKUSD: { name: "Chainlink", type: "CRYPTOCURRENCIES" },
+  BNBUSD: { name: "BNB", type: "CRYPTOCURRENCIES" },
+};
+
+// Fetch live prices for all curated top markets via /markets/{epic}
+export async function capitalGetTopMarkets(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  filterTypes?: string[]
+): Promise<{ ok: boolean; markets?: CapitalMarket[]; error?: string }> {
+  try {
+    const entries = Object.entries(EPIC_MAP).filter(([sym]) => {
+      if (!filterTypes || filterTypes.includes("ALL")) return true;
+      const meta = INSTRUMENT_META[sym];
+      return meta && filterTypes.some((t) => meta.type.includes(t));
+    });
+
+    const results = await Promise.allSettled(
+      entries.map(async ([symbol, epic]) => {
+        const res = await fetch(`${DEMO_BASE}/markets/${epic}`, {
+          headers: authHeaders(apiKey, cst, securityToken),
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) return null;
+        const data = (await res.json()) as Record<string, unknown>;
+        const snap = (data.snapshot ?? {}) as Record<string, unknown>;
+        const bid = Number(snap.bid ?? 0);
+        const offer = Number(snap.offer ?? bid);
+        const meta = INSTRUMENT_META[symbol] ?? { name: symbol, type: "CURRENCIES" };
+        return {
+          epic,
+          instrumentName: meta.name,
+          instrumentType: meta.type,
+          symbol,
+          bid,
+          ask: offer,
+          spread: Number((offer - bid).toFixed(5)),
+          updateTime: String(snap.updateTime ?? new Date().toISOString()),
+        } as CapitalMarket;
+      })
+    );
+
+    const markets = results
+      .filter((r): r is PromiseFulfilledResult<CapitalMarket> => r.status === "fulfilled" && r.value !== null)
+      .map((r) => r.value)
+      .filter((m) => m.bid > 0);
+
+    return { ok: true, markets };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
 
 function authHeaders(apiKey: string, cst: string, securityToken: string) {
   return {
