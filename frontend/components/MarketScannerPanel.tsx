@@ -116,7 +116,7 @@ export default function MarketScannerPanel() {
     const types = typeFilter === "ALL" ? "CURRENCIES,INDICES,COMMODITIES,CRYPTOCURRENCIES" : typeFilter;
     const q = searchQ ? `&q=${encodeURIComponent(searchQ)}` : "";
     const r = await fetch(`/api/market-scanner?action=scan&types=${types}${q}`).catch(() => null);
-    let scanData: { opportunities?: unknown[] } | null = null;
+    let scanData: ScanResult | null = null;
     if (r?.ok) {
       scanData = await r.json().catch(() => null);
       if (scanData) setResult(scanData);
