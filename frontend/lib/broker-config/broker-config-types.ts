@@ -44,6 +44,11 @@ export interface BotSettings {
   autoApproveThreshold: number;
   pauseOnLoss: boolean;
   pauseOnLossPercent: number;
+  maxTradesPerDayByStyle: {
+    DAYTRADING: number;
+    SCALPING: number;
+    SWING: number;
+  };
 }
 
 export interface RiskSettings {

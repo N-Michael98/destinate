@@ -7,24 +7,30 @@ import { analyzeMarkets } from "../../../lib/market-scanner/ai-analysis-engine";
 import { executeCapitalDemoOrder } from "../../../lib/capital-com/capital-com-execution";
 import { cacheGet, cacheSet } from "../../../lib/cache/redis-cache";
 
-// Track daily trade count in memory (resets on redeploy, good enough for DEMO)
-declare global { var __daily_trades__: { date: string; count: number } | undefined; }
-
-function getDailyTradeCount(): number {
-  const today = new Date().toISOString().slice(0, 10);
-  if (!global.__daily_trades__ || global.__daily_trades__.date !== today) {
-    global.__daily_trades__ = { date: today, count: 0 };
-  }
-  return global.__daily_trades__.count;
+type TradingStyle = "DAYTRADING" | "SCALPING" | "SWING";
+declare global {
+  var __daily_trades__: { date: string; count: number; byStyle: Record<string, number> } | undefined;
 }
 
-function incrementDailyTradeCount(): void {
-  const today = new Date().toISOString().slice(0, 10);
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function ensureDailyTrades() {
+  const today = todayStr();
   if (!global.__daily_trades__ || global.__daily_trades__.date !== today) {
-    global.__daily_trades__ = { date: today, count: 1 };
-  } else {
-    global.__daily_trades__.count++;
+    global.__daily_trades__ = { date: today, count: 0, byStyle: {} };
   }
+  return global.__daily_trades__;
+}
+
+function getDailyTradeCount(style?: TradingStyle): number {
+  const d = ensureDailyTrades();
+  return style ? (d.byStyle[style] ?? 0) : d.count;
+}
+
+function incrementDailyTradeCount(style: TradingStyle): void {
+  const d = ensureDailyTrades();
+  d.count++;
+  d.byStyle[style] = (d.byStyle[style] ?? 0) + 1;
 }
 
 export async function POST(request: Request) {
@@ -75,15 +81,26 @@ export async function POST(request: Request) {
     const threshold = botSettings.autoApproveThreshold ?? 80;
     const minConfidence = riskSettings.minConfidenceScore ?? 65;
 
-    // Find best GO signal meeting AUTO threshold
-    const goSignals = opportunities.filter(
-      (o) => o.goSignal && o.gpt.confidence >= threshold && o.gpt.confidence >= minConfidence
-    );
+    const styleLimit = botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
+
+    // Find best GO signal meeting threshold + per-style daily limit not exceeded
+    const goSignals = opportunities.filter((o) => {
+      if (!o.goSignal) return false;
+      if (o.gpt.confidence < threshold) return false;
+      if (o.gpt.confidence < minConfidence) return false;
+      const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as TradingStyle;
+      const styleMax = styleLimit[style] ?? 999;
+      if (getDailyTradeCount(style) >= styleMax) return false;
+      return true;
+    });
 
     if (!goSignals.length) {
+      const styleCounts = Object.entries(styleLimit).map(
+        ([s, max]) => `${s}: ${getDailyTradeCount(s as TradingStyle)}/${max}`
+      ).join(", ");
       return NextResponse.json({
         ok: false,
-        reason: `Kein GO-Signal mit Confidence ≥ ${threshold}% gefunden`,
+        reason: `Kein GO-Signal mit Confidence ≥ ${threshold}% gefunden (Stil-Limits: ${styleCounts})`,
         scanned: opportunities.length,
         analyzed: opportunities.length,
         goCount: opportunities.filter((o) => o.goSignal).length,
@@ -92,6 +109,7 @@ export async function POST(request: Request) {
 
     // Execute best signal only (rank 1)
     const best = goSignals[0];
+    const bestStyle = (best.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as TradingStyle;
     const result = await executeCapitalDemoOrder({
       symbol: best.symbol,
       direction: best.gpt.direction as "BUY" | "SELL",
@@ -99,14 +117,13 @@ export async function POST(request: Request) {
       accountBalance,
       confidence: best.gpt.confidence,
       strategy: best.gpt.tradingStyle,
-      tradingStyle: best.gpt.tradingStyle as "SCALPING" | "DAYTRADING" | "SWING",
+      tradingStyle: bestStyle,
     });
 
     if (result.ok) {
-      incrementDailyTradeCount();
-      await cacheSet(positionCacheKey, openPositions + 1, 300); // 5 min cache
-
-      console.log(`[auto-execute] ✅ ${best.symbol} ${best.gpt.direction} executed — DealID: ${result.dealId} | Balance: ${accountBalance} ${currency}`);
+      incrementDailyTradeCount(bestStyle);
+      await cacheSet(positionCacheKey, openPositions + 1, 300);
+      console.log(`[auto-execute] ✅ ${best.symbol} ${best.gpt.direction} (${bestStyle}) — DealID: ${result.dealId} | ${getDailyTradeCount(bestStyle)}/${styleLimit[bestStyle]} ${bestStyle} heute`);
     } else {
       console.error(`[auto-execute] ❌ ${best.symbol} failed: ${result.error}`);
     }
@@ -141,6 +158,11 @@ export async function GET() {
     maxTradesPerDay: settings.botSettings.maxTradesPerDay,
     maxConcurrentPositions: settings.botSettings.maxConcurrentPositions,
     dailyTradesUsed: getDailyTradeCount(),
+    dailyTradesByStyle: {
+      DAYTRADING: getDailyTradeCount("DAYTRADING"),
+      SCALPING: getDailyTradeCount("SCALPING"),
+      SWING: getDailyTradeCount("SWING"),
+    },
     capitalConnected: isCapitalConnected(),
     accountBalance: session?.balance ?? null,
     currency: session?.currency ?? null,

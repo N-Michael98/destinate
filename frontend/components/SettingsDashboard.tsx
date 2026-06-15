@@ -925,6 +925,42 @@ export default function SettingsDashboard() {
               ))}
             </div>
 
+            {/* Per-style daily trade limits */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Max Trades / Tag — pro Trading-Stil
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                {(["DAYTRADING", "SCALPING", "SWING"] as const).map((style) => {
+                  const styleColors: Record<string, string> = { DAYTRADING: "#f59e0b", SCALPING: "#38bdf8", SWING: "#a78bfa" };
+                  const val = settings.botSettings.maxTradesPerDayByStyle?.[style] ?? (style === "SWING" ? 2 : style === "SCALPING" ? 5 : 3);
+                  return (
+                    <div key={style} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "6px", padding: "10px" }}>
+                      <label style={{ fontSize: "10px", color: styleColors[style], display: "block", marginBottom: "6px", fontWeight: 700 }}>
+                        {style}
+                      </label>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <input
+                          type="range" min={1} max={15} step={1} value={val}
+                          onChange={(e) => updateBotField("maxTradesPerDayByStyle", {
+                            ...(settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 }),
+                            [style]: parseInt(e.target.value),
+                          })}
+                          style={{ flex: 1, accentColor: styleColors[style] }}
+                        />
+                        <span style={{ fontSize: "14px", fontWeight: 700, color: styleColors[style], minWidth: "24px", textAlign: "right" }}>
+                          {val}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: "10px", color: "#475569", marginTop: "8px" }}>
+                Jeder Stil hat ein eigenes Tageslimit — z.B. 3 Daytrading-Trades blockieren keine Swing-Trades mehr.
+              </div>
+            </div>
+
             <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "12px",
               background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
               <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>

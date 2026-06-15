@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     autoApproveThreshold: 80,
     pauseOnLoss: true,
     pauseOnLossPercent: 3,
+    maxTradesPerDayByStyle: { DAYTRADING: 3, SCALPING: 5, SWING: 2 },
   },
   riskSettings: {
     maxRiskPerTradePct: 1.0,
