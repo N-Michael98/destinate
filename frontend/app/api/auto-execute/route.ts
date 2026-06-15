@@ -84,7 +84,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: false,
         reason: `Kein GO-Signal mit Confidence ≥ ${threshold}% gefunden`,
-        scanned: markets.markets.length,
+        scanned: opportunities.length,
         analyzed: opportunities.length,
         goCount: opportunities.filter((o) => o.goSignal).length,
       });
