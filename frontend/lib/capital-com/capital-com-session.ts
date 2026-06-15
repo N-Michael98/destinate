@@ -127,15 +127,16 @@ export async function disconnectCapital(): Promise<void> {
 }
 
 // Called on server startup — restores connection using saved credentials
-export async function autoReconnectCapital(): Promise<boolean> {
-  if (global.__capital_session__) return true;
+export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: string }> {
+  if (global.__capital_session__) return { ok: true };
   const creds = await loadCredentials();
-  if (!creds) return false;
+  if (!creds) return { ok: false, error: "Keine gespeicherten Credentials in DB" };
   const result = await connectCapital(creds.apiKey, creds.identifier, creds.password);
   if (!result.ok) {
     console.error(`[capital-com] Auto-reconnect failed: ${result.error}`);
+    return { ok: false, error: result.error };
   }
-  return result.ok;
+  return { ok: true };
 }
 
 export async function getSavedCredentials(): Promise<{ apiKey: string; identifier: string } | null> {

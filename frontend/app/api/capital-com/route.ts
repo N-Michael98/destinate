@@ -16,8 +16,10 @@ export async function GET(request: Request) {
     const action = searchParams.get("action") ?? "status";
 
     // Auto-reconnect on every status check if credentials are saved but session is gone
+    let reconnectError: string | null = null;
     if (!isCapitalConnected()) {
-      await autoReconnectCapital();
+      const r = await autoReconnectCapital();
+      if (!r.ok) reconnectError = r.error ?? "Unbekannter Fehler";
     }
 
     if (action === "status") {
@@ -34,6 +36,8 @@ export async function GET(request: Request) {
         balance: session?.balance ?? null,
         currency: session?.currency ?? null,
         savedIdentifier: saved?.identifier ?? null,
+        hasSavedCredentials: !!saved,
+        reconnectError,
       });
     }
 

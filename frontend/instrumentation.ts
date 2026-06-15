@@ -162,15 +162,16 @@ export async function register() {
       // Auto-reconnect Capital.com with retry (P3 fix: timing issue on cold start)
       try {
         const { autoReconnectCapital } = await import("./lib/capital-com/capital-com-session");
-        let reconnected = await autoReconnectCapital();
-        if (reconnected) {
+        let r = await autoReconnectCapital();
+        if (r.ok) {
           console.log("[instrumentation] Capital.com auto-reconnected");
         } else {
+          console.error(`[instrumentation] Capital.com reconnect attempt 1 failed: ${r.error}`);
           // Retry after 5s — Capital.com API sometimes slow on cold start
-          await new Promise((r) => setTimeout(r, 5000));
-          reconnected = await autoReconnectCapital();
-          if (reconnected) console.log("[instrumentation] Capital.com auto-reconnected (retry)");
-          else console.error("[instrumentation] Capital.com auto-reconnect failed after retry");
+          await new Promise((res) => setTimeout(res, 5000));
+          r = await autoReconnectCapital();
+          if (r.ok) console.log("[instrumentation] Capital.com auto-reconnected (retry)");
+          else console.error(`[instrumentation] Capital.com auto-reconnect failed after retry: ${r.error}`);
         }
       } catch { /* non-fatal */ }
     } catch (err) {

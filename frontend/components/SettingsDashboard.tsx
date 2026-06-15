@@ -201,6 +201,7 @@ export default function SettingsDashboard() {
   const [capitalAccounts, setCapitalAccounts] = useState<CapitalAccountInfo[]>([]);
   const [diagResult, setDiagResult] = useState<{ ok: boolean; steps: { step: string; ok: boolean; detail: string }[]; error?: string | null; hint?: string } | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [capitalError, setCapitalError] = useState<string | null>(null);
   const [openaiKey, setOpenaiKey] = useState("");
   const [openaiModel, setOpenaiModel] = useState("gpt-4o");
   const [anthropicKey, setAnthropicKey] = useState("");
@@ -225,6 +226,10 @@ export default function SettingsDashboard() {
       // Pre-fill Capital.com login field if credentials are saved
       if (capR?.savedIdentifier) {
         setForms((p) => ({ ...p, CAPITAL_COM: { ...p.CAPITAL_COM, login: capR.savedIdentifier } }));
+      }
+      // Show reconnect error if auto-reconnect failed
+      if (!capR?.connected && capR?.reconnectError) {
+        setCapitalError(`Auto-Reconnect Fehler: ${capR.reconnectError}${!capR.hasSavedCredentials ? " (Keine Credentials in DB — bitte manuell verbinden)" : ""}`);
       }
       if (aiR.ok) {
         setAISettings(aiR.settings);
@@ -455,6 +460,12 @@ export default function SettingsDashboard() {
                     </div>
                   </div>
                 </div>
+
+                {!c?.connected && capitalError && profile.key === "CAPITAL_COM" && (
+                  <div style={{ marginBottom: "12px", padding: "10px 14px", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", fontSize: "11px", color: "#f87171" }}>
+                    ⚠ {capitalError}
+                  </div>
+                )}
 
                 {c?.connected && c.accountId && (
                   <div style={{ marginBottom: "14px" }}>
