@@ -27,8 +27,9 @@ function incrementDailyTradeCount(): void {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const body = await request.json().catch(() => ({})) as { opportunities?: unknown[] };
     const settings = await getSettings();
     const { botSettings, riskSettings } = settings;
 
@@ -59,14 +60,18 @@ export async function POST() {
       return NextResponse.json({ ok: false, reason: `Max. offene Positionen erreicht: ${openPositions}/${botSettings.maxConcurrentPositions}` });
     }
 
-    // Scan markets
-    const markets = await capitalGetTopMarkets(session.apiKey, session.cst, session.securityToken);
-    if (!markets.ok || !markets.markets?.length) {
-      return NextResponse.json({ ok: false, reason: "Keine Märkte von Capital.com erhalten" });
+    // Use pre-analyzed opportunities from scanner if provided, otherwise re-scan
+    let opportunities: Awaited<ReturnType<typeof analyzeMarkets>>;
+    if (body.opportunities && Array.isArray(body.opportunities) && body.opportunities.length > 0) {
+      opportunities = body.opportunities as Awaited<ReturnType<typeof analyzeMarkets>>;
+    } else {
+      const markets = await capitalGetTopMarkets(session.apiKey, session.cst, session.securityToken);
+      if (!markets.ok || !markets.markets?.length) {
+        return NextResponse.json({ ok: false, reason: "Keine Märkte von Capital.com erhalten" });
+      }
+      opportunities = await analyzeMarkets(markets.markets);
     }
 
-    // AI Analysis
-    const opportunities = await analyzeMarkets(markets.markets);
     const threshold = botSettings.autoApproveThreshold ?? 80;
     const minConfidence = riskSettings.minConfidenceScore ?? 65;
 

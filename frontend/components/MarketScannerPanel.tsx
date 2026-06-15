@@ -122,10 +122,15 @@ export default function MarketScannerPanel() {
     }
     setScanning(false);
 
-    // Auto-execute if Bot Mode = AUTO
+    // Auto-execute if Bot Mode = AUTO — pass scan results directly, no re-scan
     const autoStatus = await fetch("/api/auto-execute").then(r => r.json()).catch(() => null);
     if (autoStatus?.botMode === "AUTO" && autoStatus?.capitalConnected) {
-      const execResult = await fetch("/api/auto-execute", { method: "POST" }).then(r => r.json()).catch(() => null);
+      const scanOpportunities = d?.opportunities ?? [];
+      const execResult = await fetch("/api/auto-execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunities: scanOpportunities }),
+      }).then(r => r.json()).catch(() => null);
       if (execResult?.executed) {
         setAutoExecLog(`✅ AUTO: ${execResult.symbol} ${execResult.direction} @${execResult.confidence}% — Deal ${execResult.dealId}`);
         setExecLogs(p => [{ id: `auto-${Date.now()}`, ts: new Date().toLocaleTimeString(), symbol: execResult.symbol, direction: execResult.direction, ok: true, dealId: execResult.dealId }, ...p].slice(0, 15));
