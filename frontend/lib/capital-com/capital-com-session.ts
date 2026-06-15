@@ -62,8 +62,12 @@ async function clearCredentials(): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
-declare global { var __capital_session__: ActiveSession | null | undefined; }
+declare global {
+  var __capital_session__: ActiveSession | null | undefined;
+  var __capital_reconnecting__: boolean | undefined;
+}
 if (global.__capital_session__ === undefined) global.__capital_session__ = null;
+if (global.__capital_reconnecting__ === undefined) global.__capital_reconnecting__ = false;
 
 export function getCapitalSession(): ActiveSession | null {
   return global.__capital_session__ ?? null;
@@ -126,17 +130,33 @@ export async function disconnectCapital(): Promise<void> {
   await clearCredentials();
 }
 
-// Called on server startup — restores connection using saved credentials
+// Called on server startup or status check — restores connection using saved credentials
+// Mutex prevents simultaneous reconnect attempts (race condition on page load)
 export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: string }> {
   if (global.__capital_session__) return { ok: true };
-  const creds = await loadCredentials();
-  if (!creds) return { ok: false, error: "Keine gespeicherten Credentials in DB" };
-  const result = await connectCapital(creds.apiKey, creds.identifier, creds.password);
-  if (!result.ok) {
-    console.error(`[capital-com] Auto-reconnect failed: ${result.error}`);
-    return { ok: false, error: result.error };
+
+  // If another request is already reconnecting, wait up to 8s for it to finish
+  if (global.__capital_reconnecting__) {
+    const deadline = Date.now() + 8000;
+    while (global.__capital_reconnecting__ && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return global.__capital_session__ ? { ok: true } : { ok: false, error: "Reconnect läuft bereits (Timeout)" };
   }
-  return { ok: true };
+
+  global.__capital_reconnecting__ = true;
+  try {
+    const creds = await loadCredentials();
+    if (!creds) return { ok: false, error: "Keine gespeicherten Credentials in DB" };
+    const result = await connectCapital(creds.apiKey, creds.identifier, creds.password);
+    if (!result.ok) {
+      console.error(`[capital-com] Auto-reconnect failed: ${result.error}`);
+      return { ok: false, error: result.error };
+    }
+    return { ok: true };
+  } finally {
+    global.__capital_reconnecting__ = false;
+  }
 }
 
 export async function getSavedCredentials(): Promise<{ apiKey: string; identifier: string } | null> {

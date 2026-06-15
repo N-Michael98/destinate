@@ -161,7 +161,7 @@ export async function register() {
 
       // Auto-reconnect Capital.com with retry (P3 fix: timing issue on cold start)
       try {
-        const { autoReconnectCapital } = await import("./lib/capital-com/capital-com-session");
+        const { autoReconnectCapital, isCapitalConnected } = await import("./lib/capital-com/capital-com-session");
         let r = await autoReconnectCapital();
         if (r.ok) {
           console.log("[instrumentation] Capital.com auto-reconnected");
@@ -173,6 +173,14 @@ export async function register() {
           if (r.ok) console.log("[instrumentation] Capital.com auto-reconnected (retry)");
           else console.error(`[instrumentation] Capital.com auto-reconnect failed after retry: ${r.error}`);
         }
+        // Heartbeat every 8min — Capital.com tokens expire after ~10min inactivity
+        setInterval(async () => {
+          if (!isCapitalConnected()) {
+            const rr = await autoReconnectCapital().catch(() => ({ ok: false as const, error: "Exception" }));
+            if (rr.ok) console.log("[heartbeat] Capital.com session refreshed");
+            else console.error(`[heartbeat] Capital.com session refresh failed: ${rr.error}`);
+          }
+        }, 8 * 60 * 1000);
       } catch { /* non-fatal */ }
     } catch (err) {
       console.error("[instrumentation] Setup error:", err);
