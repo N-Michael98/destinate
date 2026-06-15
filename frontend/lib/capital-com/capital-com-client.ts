@@ -265,16 +265,22 @@ export async function capitalGetAccounts(
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
     const data = (await res.json()) as { accounts: Record<string, unknown>[] };
-    const accounts: AccountInfo[] = (data.accounts ?? []).map((a) => ({
-      accountId: String(a.accountId ?? ""),
-      accountName: String(a.accountName ?? ""),
-      accountType: String(a.accountType ?? ""),
-      currency: String(a.currency ?? "USD"),
-      balance: Number(a.balance ?? 0),
-      deposit: Number(a.deposit ?? 0),
-      profitLoss: Number(a.profitLoss ?? 0),
-      available: Number(a.available ?? 0),
-    }));
+    const accounts: AccountInfo[] = (data.accounts ?? []).map((a) => {
+      // Capital.com returns balance as nested object: { balance, deposit, profitLoss, available }
+      const bal = (a.balance && typeof a.balance === "object")
+        ? (a.balance as Record<string, unknown>)
+        : null;
+      return {
+        accountId: String(a.accountId ?? ""),
+        accountName: String(a.accountName ?? ""),
+        accountType: String(a.accountType ?? ""),
+        currency: String(a.currency ?? "CHF"),
+        balance: bal ? Number(bal.balance ?? 0) : Number(a.balance ?? 0),
+        deposit: bal ? Number(bal.deposit ?? 0) : Number(a.deposit ?? 0),
+        profitLoss: bal ? Number(bal.profitLoss ?? 0) : Number(a.profitLoss ?? 0),
+        available: bal ? Number(bal.available ?? 0) : Number(a.available ?? 0),
+      };
+    });
     return { ok: true, accounts };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Network error" };
