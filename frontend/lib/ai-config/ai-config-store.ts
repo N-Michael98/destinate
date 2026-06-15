@@ -42,6 +42,7 @@ async function getPrisma() {
 }
 
 async function loadFromDB(): Promise<AISettings> {
+  let settings: AISettings = JSON.parse(JSON.stringify(DEFAULT_AI_SETTINGS));
   try {
     const db = await getPrisma();
     const row = await db.$queryRaw<{ data: string }[]>`
@@ -49,7 +50,7 @@ async function loadFromDB(): Promise<AISettings> {
     `;
     if (row && row.length > 0) {
       const parsed = JSON.parse(row[0].data) as AISettings;
-      return {
+      settings = {
         ...DEFAULT_AI_SETTINGS,
         ...parsed,
         openai: { ...DEFAULT_AI_SETTINGS.openai, ...parsed.openai },
@@ -62,7 +63,22 @@ async function loadFromDB(): Promise<AISettings> {
       };
     }
   } catch { /* DB not ready → use defaults */ }
-  return JSON.parse(JSON.stringify(DEFAULT_AI_SETTINGS));
+
+  // Railway Variables override DB — env vars take precedence
+  const envOpenAI = process.env.OPENAI_API_KEY;
+  const envAnthropic = process.env.ANTHROPIC_API_KEY;
+  const envTelegram = process.env.TELEGRAM_BOT_TOKEN;
+  if (envOpenAI && envOpenAI.length > 20) {
+    settings.openai = { ...settings.openai, apiKey: envOpenAI, connected: true, testStatus: "OK" };
+  }
+  if (envAnthropic && envAnthropic.length > 20) {
+    settings.anthropic = { ...settings.anthropic, apiKey: envAnthropic, connected: true, testStatus: "OK" };
+  }
+  if (envTelegram && envTelegram.length > 10) {
+    settings.telegram = { ...settings.telegram, botToken: envTelegram, configured: true };
+  }
+
+  return settings;
 }
 
 async function saveToDB(settings: AISettings): Promise<void> {
