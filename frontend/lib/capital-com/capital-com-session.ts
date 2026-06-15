@@ -136,6 +136,9 @@ export async function autoReconnectCapital(): Promise<boolean> {
   const creds = await loadCredentials();
   if (!creds) return false;
   const result = await connectCapital(creds.apiKey, creds.identifier, creds.password);
+  if (!result.ok) {
+    console.error(`[capital-com] Auto-reconnect failed: ${result.error}`);
+  }
   return result.ok;
 }
 
