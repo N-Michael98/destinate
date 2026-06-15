@@ -44,30 +44,60 @@ export interface CloseResult {
 
 // Minimum deal sizes per epic on Capital.com DEMO
 const MIN_SIZE: Record<string, number> = {
-  GOLD: 0.1,
-  EURUSD: 0.01,
-  US100: 0.1,
-  OIL_CRUDE: 0.1,
-  BITCOIN: 0.001,
-  US500: 0.1,
+  // Forex
+  EURUSD: 0.01, GBPUSD: 0.01, USDJPY: 0.01, USDCHF: 0.01,
+  AUDUSD: 0.01, USDCAD: 0.01, NZDUSD: 0.01, EURGBP: 0.01,
+  EURJPY: 0.01, GBPJPY: 0.01,
+  // Commodities
+  GOLD: 0.1, SILVER: 0.1, OIL_CRUDE: 0.1, OIL_BRENT: 0.1, NATURAL_GAS: 0.1,
+  // Indices
+  US100: 0.1, US500: 0.1, US30: 0.1, GERMANY40: 0.1, UK100: 0.1, JAPAN225: 0.1,
+  // Crypto
+  BITCOIN: 0.001, ETHEREUM: 0.01, LITECOIN: 0.1, RIPPLE: 1,
+  CARDANO: 1, SOLANA: 0.1, POLKADOT: 0.1, CHAINLINK: 0.1, BNB: 0.01,
 };
 
-// Approximate pip values per unit size (USD)
-// Used to calculate position size from risk amount + stop loss
+// Approximate pip/point values per unit size (USD)
 const PIP_VALUE_PER_UNIT: Record<string, number> = {
-  GOLD: 1,       // 1 pip = $1 per unit (oz)
-  EURUSD: 10,    // 1 pip = $10 per standard lot → 0.0001 per unit
-  US100: 1,      // 1 point = $1 per unit
-  OIL_CRUDE: 1,  // 1 point = $1 per unit
-  BITCOIN: 1,    // approximate
-  US500: 1,      // 1 point = $1 per unit
+  // Forex (1 pip = 0.0001, approx $10 per standard lot → $0.0001 per micro)
+  EURUSD: 10, GBPUSD: 10, USDJPY: 10, USDCHF: 10,
+  AUDUSD: 10, USDCAD: 10, NZDUSD: 10, EURGBP: 10,
+  EURJPY: 10, GBPJPY: 10,
+  // Commodities
+  GOLD: 1, SILVER: 0.5, OIL_CRUDE: 1, OIL_BRENT: 1, NATURAL_GAS: 0.1,
+  // Indices
+  US100: 1, US500: 1, US30: 1, GERMANY40: 1, UK100: 1, JAPAN225: 1,
+  // Crypto
+  BITCOIN: 1, ETHEREUM: 1, LITECOIN: 1, RIPPLE: 0.01,
+  CARDANO: 0.01, SOLANA: 1, POLKADOT: 1, CHAINLINK: 0.5, BNB: 1,
 };
 
-// Default stop loss in points if not provided, by style
+// Default stop loss in points by trading style per epic
 const DEFAULT_STOP_BY_STYLE: Record<string, Record<string, number>> = {
-  SCALPING:  { GOLD: 5, EURUSD: 10, US100: 20, OIL_CRUDE: 0.30, BITCOIN: 200, US500: 15 },
-  DAYTRADING:{ GOLD: 15, EURUSD: 25, US100: 50, OIL_CRUDE: 0.80, BITCOIN: 600, US500: 35 },
-  SWING:     { GOLD: 30, EURUSD: 50, US100: 100, OIL_CRUDE: 1.50, BITCOIN: 1500, US500: 70 },
+  SCALPING: {
+    EURUSD: 10, GBPUSD: 10, USDJPY: 10, USDCHF: 10, AUDUSD: 10,
+    USDCAD: 10, NZDUSD: 10, EURGBP: 10, EURJPY: 15, GBPJPY: 15,
+    GOLD: 5, SILVER: 0.20, OIL_CRUDE: 0.30, OIL_BRENT: 0.30, NATURAL_GAS: 0.10,
+    US100: 20, US500: 15, US30: 50, GERMANY40: 20, UK100: 15, JAPAN225: 30,
+    BITCOIN: 200, ETHEREUM: 20, LITECOIN: 2, RIPPLE: 0.02,
+    CARDANO: 0.01, SOLANA: 2, POLKADOT: 0.5, CHAINLINK: 0.5, BNB: 5,
+  },
+  DAYTRADING: {
+    EURUSD: 25, GBPUSD: 25, USDJPY: 25, USDCHF: 25, AUDUSD: 25,
+    USDCAD: 25, NZDUSD: 25, EURGBP: 25, EURJPY: 35, GBPJPY: 35,
+    GOLD: 15, SILVER: 0.50, OIL_CRUDE: 0.80, OIL_BRENT: 0.80, NATURAL_GAS: 0.25,
+    US100: 50, US500: 35, US30: 120, GERMANY40: 50, UK100: 35, JAPAN225: 80,
+    BITCOIN: 600, ETHEREUM: 60, LITECOIN: 5, RIPPLE: 0.05,
+    CARDANO: 0.03, SOLANA: 5, POLKADOT: 1, CHAINLINK: 1, BNB: 15,
+  },
+  SWING: {
+    EURUSD: 50, GBPUSD: 50, USDJPY: 50, USDCHF: 50, AUDUSD: 50,
+    USDCAD: 50, NZDUSD: 50, EURGBP: 50, EURJPY: 70, GBPJPY: 70,
+    GOLD: 30, SILVER: 1.00, OIL_CRUDE: 1.50, OIL_BRENT: 1.50, NATURAL_GAS: 0.50,
+    US100: 100, US500: 70, US30: 250, GERMANY40: 100, UK100: 70, JAPAN225: 150,
+    BITCOIN: 1500, ETHEREUM: 150, LITECOIN: 15, RIPPLE: 0.10,
+    CARDANO: 0.05, SOLANA: 10, POLKADOT: 2, CHAINLINK: 2, BNB: 30,
+  },
 };
 
 function calcPositionSize(
