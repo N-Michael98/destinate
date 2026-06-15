@@ -33,13 +33,6 @@ async function getPrisma() {
 }
 
 async function loadCredentials(): Promise<SavedCredentials | null> {
-  // Railway Variables override DB credentials
-  const envKey = process.env.CAPITAL_API_KEY;
-  const envId = process.env.CAPITAL_IDENTIFIER;
-  const envPw = process.env.CAPITAL_PASSWORD;
-  if (envKey && envId && envPw) {
-    return { apiKey: envKey, identifier: envId, password: envPw };
-  }
   try {
     const db = await getPrisma();
     const row = await db.$queryRaw<{ data: string }[]>`
