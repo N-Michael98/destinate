@@ -41,6 +41,18 @@ export async function GET(request: Request) {
       });
     }
 
+    if (action === "debug") {
+      // DB diagnostic — shows exactly what's in CapitalCredentials table
+      const saved = await getSavedCredentials();
+      return NextResponse.json({
+        ok: true,
+        dbHasCredentials: !!saved,
+        savedIdentifier: saved?.identifier ?? null,
+        sessionInMemory: isCapitalConnected(),
+        reconnectError,
+      });
+    }
+
     if (action === "prices") {
       const session = getCapitalSession();
       if (!session) return NextResponse.json({ ok: false, error: "Not connected" }, { status: 401 });

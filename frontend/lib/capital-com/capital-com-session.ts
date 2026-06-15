@@ -38,12 +38,20 @@ async function loadCredentials(): Promise<SavedCredentials | null> {
     const row = await db.$queryRaw<{ data: string }[]>`
       SELECT data FROM "CapitalCredentials" WHERE id = 'singleton' LIMIT 1
     `;
-    if (row && row.length > 0) return JSON.parse(row[0].data) as SavedCredentials;
-  } catch { /* DB not ready */ }
-  return null;
+    if (row && row.length > 0) {
+      const creds = JSON.parse(row[0].data) as SavedCredentials;
+      console.log(`[capital-com] loadCredentials: found credentials for ${creds.identifier}`);
+      return creds;
+    }
+    console.warn("[capital-com] loadCredentials: no credentials in DB (CapitalCredentials table is empty)");
+    return null;
+  } catch (err) {
+    console.error("[capital-com] loadCredentials FAILED:", err);
+    return null;
+  }
 }
 
-async function saveCredentials(creds: SavedCredentials): Promise<void> {
+async function saveCredentials(creds: SavedCredentials): Promise<boolean> {
   try {
     const db = await getPrisma();
     const data = JSON.stringify(creds);
@@ -52,7 +60,18 @@ async function saveCredentials(creds: SavedCredentials): Promise<void> {
        ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
       data
     );
-  } catch { /* non-fatal */ }
+    // Verify it was actually saved
+    const verify = await db.$queryRaw<{ data: string }[]>`SELECT data FROM "CapitalCredentials" WHERE id = 'singleton' LIMIT 1`;
+    if (!verify || verify.length === 0) {
+      console.error("[capital-com] saveCredentials: DB write succeeded but read-back returned nothing!");
+      return false;
+    }
+    console.log(`[capital-com] Credentials saved to DB for ${creds.identifier}`);
+    return true;
+  } catch (err) {
+    console.error("[capital-com] saveCredentials FAILED:", err);
+    return false;
+  }
 }
 
 async function clearCredentials(): Promise<void> {
@@ -107,7 +126,10 @@ export async function connectCapital(
   };
 
   // Save credentials for auto-reconnect on next server start
-  await saveCredentials({ apiKey, identifier, password });
+  const saved = await saveCredentials({ apiKey, identifier, password });
+  if (!saved) {
+    console.error("[capital-com] WARNING: Connected successfully but credentials could NOT be saved to DB — auto-reconnect will fail after next deploy!");
+  }
 
   if (primaryAccount?.balance != null) {
     paperManagerCapital.syncBalance(primaryAccount.balance, primaryAccount.currency ?? "USD");
