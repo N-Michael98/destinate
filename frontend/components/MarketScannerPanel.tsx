@@ -116,16 +116,17 @@ export default function MarketScannerPanel() {
     const types = typeFilter === "ALL" ? "CURRENCIES,INDICES,COMMODITIES,CRYPTOCURRENCIES" : typeFilter;
     const q = searchQ ? `&q=${encodeURIComponent(searchQ)}` : "";
     const r = await fetch(`/api/market-scanner?action=scan&types=${types}${q}`).catch(() => null);
+    let scanData: { opportunities?: unknown[] } | null = null;
     if (r?.ok) {
-      const d = await r.json().catch(() => null);
-      if (d) setResult(d);
+      scanData = await r.json().catch(() => null);
+      if (scanData) setResult(scanData);
     }
     setScanning(false);
 
     // Auto-execute if Bot Mode = AUTO — pass scan results directly, no re-scan
     const autoStatus = await fetch("/api/auto-execute").then(r => r.json()).catch(() => null);
     if (autoStatus?.botMode === "AUTO" && autoStatus?.capitalConnected) {
-      const scanOpportunities = d?.opportunities ?? [];
+      const scanOpportunities = scanData?.opportunities ?? [];
       const execResult = await fetch("/api/auto-execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
