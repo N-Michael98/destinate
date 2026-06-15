@@ -70,14 +70,34 @@ function formatPrice(v: number): string {
 export default function MarketScannerPanel() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
-  const [autoScan, setAutoScan] = useState(false);
+  const [autoScan, setAutoScanRaw] = useState(false);
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [showGoOnly, setShowGoOnly] = useState(false);
   const [searchQ, setSearchQ] = useState("");
-  const [accountBalance, setAccountBalance] = useState(10000);
+  const [accountBalance, setAccountBalanceRaw] = useState(10000);
   const [execLogs, setExecLogs] = useState<ExecLog[]>([]);
   const [executing, setExecuting] = useState<string | null>(null);
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+
+  // Persist autoScan + balance across reloads
+  useEffect(() => {
+    try {
+      const a = localStorage.getItem("scanner_autoScan");
+      if (a !== null) setAutoScanRaw(a === "true");
+      const b = localStorage.getItem("scanner_balance");
+      if (b !== null) setAccountBalanceRaw(Number(b));
+    } catch { /* ignore */ }
+  }, []);
+
+  const setAutoScan = (val: boolean) => {
+    setAutoScanRaw(val);
+    try { localStorage.setItem("scanner_autoScan", String(val)); } catch { /* ignore */ }
+  };
+
+  const setAccountBalance = (val: number) => {
+    setAccountBalanceRaw(val);
+    try { localStorage.setItem("scanner_balance", String(val)); } catch { /* ignore */ }
+  };
 
   const runScan = useCallback(async () => {
     setScanning(true);
@@ -160,7 +180,7 @@ export default function MarketScannerPanel() {
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span style={{ fontSize: "10px", color: "#64748b" }}>Auto 60s:</span>
-            <button onClick={() => setAutoScan((p) => !p)}
+            <button onClick={() => setAutoScan(!autoScan)}
               style={{ width: "36px", height: "20px", borderRadius: "10px", border: "none", cursor: "pointer", background: autoScan ? "#10c96d" : "rgba(255,255,255,0.1)", position: "relative" }}>
               <div style={{ width: "14px", height: "14px", borderRadius: "50%", background: "#fff", position: "absolute", top: "3px", left: autoScan ? "19px" : "3px", transition: "left 0.15s" }} />
             </button>
