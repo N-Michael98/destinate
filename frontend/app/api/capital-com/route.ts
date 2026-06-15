@@ -31,6 +31,8 @@ export async function GET(request: Request) {
         accountType: session?.accountType ?? null,
         connectedAt: session?.connectedAt ?? null,
         accounts: session?.accounts ?? [],
+        balance: session?.balance ?? null,
+        currency: session?.currency ?? null,
         savedIdentifier: saved?.identifier ?? null,
       });
     }

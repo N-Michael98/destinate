@@ -72,6 +72,15 @@ export default function LiveExecutionMonitor() {
     } catch { /* localStorage unavailable */ }
   }, []);
 
+  // Fetch real Capital.com balance and override manual input
+  useEffect(() => {
+    fetch("/api/capital-com").then(r => r.json()).then(d => {
+      if (d.connected && d.balance != null && d.balance > 0) {
+        setAccountBalanceRaw(d.balance);
+      }
+    }).catch(() => {});
+  }, []);
+
   const setAutoExec = (val: boolean | ((p: boolean) => boolean)) => {
     setAutoExecRaw((prev) => {
       const next = typeof val === "function" ? val(prev) : val;

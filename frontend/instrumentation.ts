@@ -159,11 +159,19 @@ export async function register() {
         await initLearning();
       } catch { /* non-fatal */ }
 
-      // Auto-reconnect Capital.com with saved credentials
+      // Auto-reconnect Capital.com with retry (P3 fix: timing issue on cold start)
       try {
         const { autoReconnectCapital } = await import("./lib/capital-com/capital-com-session");
-        const reconnected = await autoReconnectCapital();
-        if (reconnected) console.log("[instrumentation] Capital.com auto-reconnected");
+        let reconnected = await autoReconnectCapital();
+        if (reconnected) {
+          console.log("[instrumentation] Capital.com auto-reconnected");
+        } else {
+          // Retry after 5s — Capital.com API sometimes slow on cold start
+          await new Promise((r) => setTimeout(r, 5000));
+          reconnected = await autoReconnectCapital();
+          if (reconnected) console.log("[instrumentation] Capital.com auto-reconnected (retry)");
+          else console.error("[instrumentation] Capital.com auto-reconnect failed after retry");
+        }
       } catch { /* non-fatal */ }
     } catch (err) {
       console.error("[instrumentation] Setup error:", err);

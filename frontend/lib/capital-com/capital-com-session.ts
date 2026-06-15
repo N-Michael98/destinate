@@ -17,6 +17,8 @@ interface ActiveSession {
   accountType: string;
   connectedAt: string;
   accounts: AccountInfo[];
+  balance: number;
+  currency: string;
 }
 
 interface SavedCredentials {
@@ -93,6 +95,7 @@ export async function connectCapital(
 
   const accountsResult = await capitalGetAccounts(apiKey, session.cst!, session.securityToken!);
 
+  const primaryAccount = accountsResult.accounts?.[0];
   global.__capital_session__ = {
     apiKey,
     cst: session.cst!,
@@ -102,12 +105,12 @@ export async function connectCapital(
     accountType: session.accountType ?? "",
     connectedAt: new Date().toISOString(),
     accounts: accountsResult.accounts ?? [],
+    balance: primaryAccount?.balance ?? 0,
+    currency: primaryAccount?.currency ?? "USD",
   };
 
   // Save credentials for auto-reconnect on next server start
   await saveCredentials({ apiKey, identifier, password });
-
-  const primaryAccount = global.__capital_session__.accounts[0];
 
   if (primaryAccount?.balance != null) {
     paperManagerCapital.syncBalance(primaryAccount.balance, primaryAccount.currency ?? "USD");

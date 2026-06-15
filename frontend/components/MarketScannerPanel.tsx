@@ -75,9 +75,11 @@ export default function MarketScannerPanel() {
   const [showGoOnly, setShowGoOnly] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [accountBalance, setAccountBalanceRaw] = useState(10000);
+  const [realBalance, setRealBalance] = useState<{ balance: number; currency: string } | null>(null);
   const [execLogs, setExecLogs] = useState<ExecLog[]>([]);
   const [executing, setExecuting] = useState<string | null>(null);
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+  const [autoExecLog, setAutoExecLog] = useState<string | null>(null);
 
   // Persist autoScan + balance across reloads
   useEffect(() => {
@@ -87,6 +89,16 @@ export default function MarketScannerPanel() {
       const b = localStorage.getItem("scanner_balance");
       if (b !== null) setAccountBalanceRaw(Number(b));
     } catch { /* ignore */ }
+  }, []);
+
+  // Fetch real Capital.com balance on mount
+  useEffect(() => {
+    fetch("/api/capital-com").then(r => r.json()).then(d => {
+      if (d.connected && d.balance != null) {
+        setRealBalance({ balance: d.balance, currency: d.currency ?? "USD" });
+        if (d.balance > 0) setAccountBalanceRaw(d.balance);
+      }
+    }).catch(() => {});
   }, []);
 
   const setAutoScan = (val: boolean) => {
@@ -109,6 +121,18 @@ export default function MarketScannerPanel() {
       if (d) setResult(d);
     }
     setScanning(false);
+
+    // Auto-execute if Bot Mode = AUTO
+    const autoStatus = await fetch("/api/auto-execute").then(r => r.json()).catch(() => null);
+    if (autoStatus?.botMode === "AUTO" && autoStatus?.capitalConnected) {
+      const execResult = await fetch("/api/auto-execute", { method: "POST" }).then(r => r.json()).catch(() => null);
+      if (execResult?.executed) {
+        setAutoExecLog(`✅ AUTO: ${execResult.symbol} ${execResult.direction} @${execResult.confidence}% — Deal ${execResult.dealId}`);
+        setExecLogs(p => [{ id: `auto-${Date.now()}`, ts: new Date().toLocaleTimeString(), symbol: execResult.symbol, direction: execResult.direction, ok: true, dealId: execResult.dealId }, ...p].slice(0, 15));
+      } else if (execResult?.reason) {
+        setAutoExecLog(`ℹ ${execResult.reason}`);
+      }
+    }
   }, [typeFilter, searchQ]);
 
   // Auto-scan every 60 seconds
@@ -214,11 +238,26 @@ export default function MarketScannerPanel() {
           {showGoOnly ? "✓ Nur GO" : "Nur GO"}
         </button>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "8px" }}>
-          <label style={{ fontSize: "10px", color: "#64748b" }}>Balance (USD):</label>
-          <input type="number" value={accountBalance} onChange={(e) => setAccountBalance(Number(e.target.value))}
-            style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "5px 8px", color: "#f1f5f9", fontSize: "11px", fontFamily: "monospace", width: "100px", outline: "none" }} />
+          {realBalance ? (
+            <span style={{ fontSize: "10px", color: "#10c96d", background: "rgba(16,201,109,0.1)", border: "1px solid rgba(16,201,109,0.25)", borderRadius: "5px", padding: "4px 8px" }}>
+              ● {realBalance.currency} {realBalance.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
+          ) : (
+            <>
+              <label style={{ fontSize: "10px", color: "#64748b" }}>Balance (USD):</label>
+              <input type="number" value={accountBalance} onChange={(e) => setAccountBalance(Number(e.target.value))}
+                style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "5px 8px", color: "#f1f5f9", fontSize: "11px", fontFamily: "monospace", width: "100px", outline: "none" }} />
+            </>
+          )}
         </div>
       </div>
+
+      {/* Auto-Execute Status */}
+      {autoExecLog && (
+        <div style={{ marginBottom: "12px", padding: "8px 14px", background: autoExecLog.startsWith("✅") ? "rgba(16,201,109,0.08)" : "rgba(99,102,241,0.08)", border: `1px solid ${autoExecLog.startsWith("✅") ? "rgba(16,201,109,0.25)" : "rgba(99,102,241,0.2)"}`, borderRadius: "6px", fontSize: "11px", color: autoExecLog.startsWith("✅") ? "#10c96d" : "#94a3b8", fontFamily: "monospace" }}>
+          🤖 AUTO-EXECUTE: {autoExecLog}
+        </div>
+      )}
 
       {/* Summary bar */}
       {result && (
