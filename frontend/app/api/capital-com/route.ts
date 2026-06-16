@@ -16,12 +16,12 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action") ?? "status";
 
-    // Only reconnect on explicit action=reconnect, not on every status check
-    // (prevents Capital.com rate limiting from 20s polling)
+    // Reconnect if session missing — cooldown in autoReconnectCapital prevents rate limiting
     let reconnectError: string | null = getLastReconnectError();
-    if (action === "reconnect" && !isCapitalConnected()) {
+    if (!isCapitalConnected()) {
       const r = await autoReconnectCapital();
-      reconnectError = r.ok ? null : (r.error ?? "Unbekannter Fehler");
+      if (!r.ok) reconnectError = r.error ?? "Unbekannter Fehler";
+      else reconnectError = null;
     }
 
     if (action === "status") {

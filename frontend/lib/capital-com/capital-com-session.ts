@@ -95,10 +95,12 @@ declare global {
   var __capital_session__: ActiveSession | null | undefined;
   var __capital_reconnecting__: boolean | undefined;
   var __capital_last_error__: string | null | undefined;
+  var __capital_last_attempt__: number | undefined;
 }
 if (global.__capital_session__ === undefined) global.__capital_session__ = null;
 if (global.__capital_reconnecting__ === undefined) global.__capital_reconnecting__ = false;
 if (global.__capital_last_error__ === undefined) global.__capital_last_error__ = null;
+if (global.__capital_last_attempt__ === undefined) global.__capital_last_attempt__ = 0;
 
 export function getLastReconnectError(): string | null {
   return global.__capital_last_error__ ?? null;
@@ -182,10 +184,16 @@ export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: str
     return global.__capital_session__ ? { ok: true } : { ok: false, error: "Reconnect läuft bereits (Timeout)" };
   }
 
+  // Cooldown: max one reconnect attempt every 30s to avoid Capital.com rate limiting
+  const now = Date.now();
+  if (now - (global.__capital_last_attempt__ ?? 0) < 30_000) {
+    return { ok: false, error: global.__capital_last_error__ ?? "Reconnect cooldown (30s)" };
+  }
+  global.__capital_last_attempt__ = now;
   global.__capital_reconnecting__ = true;
   try {
     const creds = await loadCredentials();
-    if (!creds) return { ok: false, error: "Keine gespeicherten Credentials in DB" };
+    if (!creds) return { ok: false, error: "Keine Credentials — bitte in Settings verbinden oder Railway Variables setzen" };
     const result = await connectCapital(creds.apiKey, creds.identifier, creds.password);
     if (!result.ok) {
       global.__capital_last_error__ = result.error ?? "Unbekannter Fehler";
@@ -193,6 +201,7 @@ export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: str
       return { ok: false, error: result.error };
     }
     global.__capital_last_error__ = null;
+    console.log("[capital-com] Auto-reconnect successful");
     return { ok: true };
   } finally {
     global.__capital_reconnecting__ = false;
