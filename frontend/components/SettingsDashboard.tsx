@@ -225,7 +225,7 @@ export default function SettingsDashboard() {
       // Capital.com with 10s timeout so it never blocks the page
       const capR = await Promise.race([
         fetch("/api/capital-com").then((r) => r.json()).catch(() => ({})),
-        new Promise<Record<string, never>>((res) => setTimeout(() => res({}), 10000)),
+        new Promise<Record<string, never>>((res) => setTimeout(() => res({}), 5000)),
       ]);
       if (sR.ok) setSettings(sR.settings);
       // Pre-fill Capital.com login field if credentials are saved

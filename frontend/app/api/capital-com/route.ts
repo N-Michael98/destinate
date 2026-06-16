@@ -16,12 +16,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get("action") ?? "status";
 
-    // Reconnect if session missing — cooldown in autoReconnectCapital prevents rate limiting
-    let reconnectError: string | null = getLastReconnectError();
+    // Fire reconnect in background — don't block the status response
+    const reconnectError: string | null = getLastReconnectError();
     if (!isCapitalConnected()) {
-      const r = await autoReconnectCapital();
-      if (!r.ok) reconnectError = r.error ?? "Unbekannter Fehler";
-      else reconnectError = null;
+      autoReconnectCapital().catch(() => {}); // non-blocking
     }
 
     if (action === "status") {

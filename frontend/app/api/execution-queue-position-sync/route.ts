@@ -4,9 +4,9 @@ import { generateExecutionQueuePositionSyncReport } from "../../../lib/execution
 import { isCapitalConnected, autoReconnectCapital } from "../../../lib/capital-com/capital-com-session";
 
 export async function GET() {
-  // Auto-reconnect if session missing (cooldown prevents rate limiting)
+  // Fire reconnect in background — don't block the response
   if (!isCapitalConnected()) {
-    await autoReconnectCapital().catch(() => {});
+    autoReconnectCapital().catch(() => {});
   }
 
   const report = generateExecutionQueuePositionSyncReport();
