@@ -8,12 +8,18 @@ import {
   formatBacktestForPrompt,
 } from "@/lib/python-bridge/python-data";
 
-const SYMBOLS = ["XAUUSD", "EURUSD", "BTCUSD", "NAS100"];
+// Base universe — extended to match market scanner
+const BASE_SYMBOLS = ["XAUUSD", "EURUSD", "BTCUSD", "NAS100", "USOIL", "GBPUSD", "SPX500", "SILVER"];
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   const ai = await getAISettings();
+
+  // Allow caller to override symbols (e.g. from market scanner results)
+  const { searchParams } = new URL(request.url);
+  const symbolParam = searchParams.get("symbols");
+  const SYMBOLS = symbolParam ? symbolParam.split(",").map(s => s.trim()).filter(Boolean) : BASE_SYMBOLS;
 
   // Echte Marktdaten + Indikatoren von Python holen
   const [indicators, btXAU, btEUR] = await Promise.all([
@@ -46,7 +52,8 @@ ${backtestContext ? `BACKTESTING RESULTS (last 6 months):\n${backtestContext}\n`
 Based on this REAL data, analyze the markets and return trade ideas as a JSON array.
 For each symbol consider: RSI overbought/oversold, MACD momentum, trend direction (EMA alignment), ATR for stop sizing.
 
-Return a JSON array of exactly ${SYMBOLS.length} trade ideas:
+Analyze ALL ${SYMBOLS.length} symbols: ${SYMBOLS.join(", ")}.
+Return a JSON array with one entry per symbol:
 [
   {
     "symbol": "XAUUSD",
@@ -56,7 +63,7 @@ Return a JSON array of exactly ${SYMBOLS.length} trade ideas:
     "entry": <use current price from data>,
     "stopLoss": <entry ± ATR*1.5>,
     "takeProfit": <entry ± ATR*3>,
-    "tradingStyle": "DAYTRADING or SWING"
+    "tradingStyle": "DAYTRADING or SWING or SCALPING"
   },
   ...
 ]`;
