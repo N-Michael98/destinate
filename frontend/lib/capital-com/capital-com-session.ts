@@ -8,6 +8,61 @@ import {
   type AccountInfo,
 } from "./capital-com-client";
 
+// ── Redis session persistence ──────────────────────────────────────────────
+// Stores Capital.com session tokens in Redis so Cold Start can restore them
+// without a new login. TTL = 8 min (keep-alive runs every 2 min, Capital.com
+// expires sessions after 10 min of inactivity).
+const REDIS_KEY = "capital:session";
+const REDIS_TTL_SEC = 480; // 8 minutes
+
+declare global {
+  var __redis_client__: import("redis").RedisClientType | null | undefined;
+}
+
+async function getRedis(): Promise<import("redis").RedisClientType | null> {
+  const url = process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL;
+  if (!url) return null;
+  try {
+    if (global.__redis_client__) return global.__redis_client__;
+    const { createClient } = await import("redis");
+    const client = createClient({ url }) as import("redis").RedisClientType;
+    await client.connect();
+    global.__redis_client__ = client;
+    console.log("[capital-com] Redis connected");
+    return client;
+  } catch (err) {
+    console.warn("[capital-com] Redis unavailable:", err);
+    return null;
+  }
+}
+
+async function saveSessionToRedis(session: ActiveSession): Promise<void> {
+  try {
+    const r = await getRedis();
+    if (!r) return;
+    await r.set(REDIS_KEY, JSON.stringify(session), { EX: REDIS_TTL_SEC });
+  } catch { /* non-fatal */ }
+}
+
+async function loadSessionFromRedis(): Promise<ActiveSession | null> {
+  try {
+    const r = await getRedis();
+    if (!r) return null;
+    const raw = await r.get(REDIS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as ActiveSession;
+  } catch { return null; }
+}
+
+async function clearSessionFromRedis(): Promise<void> {
+  try {
+    const r = await getRedis();
+    if (!r) return;
+    await r.del(REDIS_KEY);
+  } catch { /* non-fatal */ }
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 interface ActiveSession {
   apiKey: string;
   cst: string;
@@ -134,6 +189,8 @@ export async function connectCapital(
     currency: primaryAccount?.currency ?? "USD",
   };
 
+  // Persist session to Redis — survives Cold Start restarts
+  await saveSessionToRedis(global.__capital_session__);
   await saveCredentials({ apiKey, identifier, password });
 
   if (primaryAccount?.balance != null) {
@@ -154,6 +211,7 @@ export async function disconnectCapital(): Promise<void> {
     await capitalDeleteSession(global.__capital_session__.apiKey, global.__capital_session__.cst, global.__capital_session__.securityToken).catch(() => {});
     global.__capital_session__ = null;
   }
+  await clearSessionFromRedis();
   await clearCredentials();
 }
 
@@ -182,6 +240,29 @@ export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: str
   global.__capital_last_attempt__ = now;
   global.__capital_reconnecting__ = true;
   try {
+    // 1. Try Redis first — instant restore without a new Capital.com login
+    const cached = await loadSessionFromRedis();
+    if (cached) {
+      console.log(`[capital-com] restored session from Redis ⚡ account=${cached.accountId}`);
+      global.__capital_session__ = cached;
+      // Validate immediately — ping Capital.com to confirm tokens are still valid
+      const ping = await capitalGetAccounts(cached.apiKey, cached.cst, cached.securityToken);
+      if (ping.ok) {
+        // Refresh TTL in Redis
+        await saveSessionToRedis(cached);
+        global.__capital_last_error__ = null;
+        global.__capital_last_attempt__ = 0;
+        console.log(`[capital-com] Redis session valid ✅ balance=${ping.accounts?.[0]?.balance}`);
+        return { ok: true };
+      } else {
+        // Tokens expired — clear Redis, fall through to fresh login
+        console.warn("[capital-com] Redis session expired — doing fresh login");
+        global.__capital_session__ = null;
+        await clearSessionFromRedis();
+      }
+    }
+
+    // 2. Fresh login with credentials
     const creds = await loadCredentials();
     if (!creds) {
       global.__capital_last_error__ = "Keine Credentials (Railway Variables oder DB leer)";
@@ -222,10 +303,13 @@ export async function keepAliveCapital(): Promise<void> {
       global.__capital_last_attempt__ = 0;
       await autoReconnectCapital().catch(() => {});
     } else {
-      // Update balance from ping
+      // Update balance from ping and refresh Redis TTL
       const primary = result.accounts?.[0];
       if (primary && global.__capital_session__) {
         global.__capital_session__.balance = primary.balance ?? global.__capital_session__.balance;
+      }
+      if (global.__capital_session__) {
+        await saveSessionToRedis(global.__capital_session__);
       }
       console.log(`[capital-com] keep-alive ✅ balance=${result.accounts?.[0]?.balance}`);
     }
