@@ -23,9 +23,16 @@ export async function GET(request: Request) {
     }
 
     if (action === "status") {
+      // All data from global memory — no async DB call, responds in <1ms
       const connected = isCapitalConnected();
       const session = getCapitalSession();
-      const saved = await getSavedCredentials();
+      // Credentials check from env vars (synchronous — no DB round-trip)
+      const savedIdentifier = process.env.CAPITAL_IDENTIFIER ?? null;
+      const hasSavedCredentials = !!(
+        process.env.CAPITAL_API_KEY &&
+        process.env.CAPITAL_IDENTIFIER &&
+        process.env.CAPITAL_PASSWORD
+      );
       return NextResponse.json({
         ok: true,
         connected,
@@ -35,8 +42,8 @@ export async function GET(request: Request) {
         accounts: session?.accounts ?? [],
         balance: session?.balance ?? null,
         currency: session?.currency ?? null,
-        savedIdentifier: saved?.identifier ?? null,
-        hasSavedCredentials: !!saved,
+        savedIdentifier,
+        hasSavedCredentials,
         reconnectError,
       });
     }
