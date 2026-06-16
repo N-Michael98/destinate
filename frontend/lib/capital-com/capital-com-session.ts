@@ -33,16 +33,15 @@ async function getPrisma() {
 }
 
 async function loadCredentials(): Promise<SavedCredentials | null> {
-  // 1. Railway Variables (like GPT/Claude) — always available after deploy
+  // 1. Railway Variables — always available after deploy (like GPT/Claude)
   const envKey = process.env.CAPITAL_API_KEY;
   const envId  = process.env.CAPITAL_IDENTIFIER;
   const envPw  = process.env.CAPITAL_PASSWORD;
   if (envKey && envId && envPw && envKey.length > 5 && envPw.length > 3) {
-    console.log(`[capital-com] loadCredentials: using Railway Variables for ${envId}`);
+    console.log(`[capital-com] credentials: using Railway Variables for ${envId}`);
     return { apiKey: envKey, identifier: envId, password: envPw };
   }
-
-  // 2. Fallback: PostgreSQL DB (manual connect saved credentials)
+  // 2. Fallback: PostgreSQL DB
   try {
     const db = await getPrisma();
     const row = await db.$queryRaw<{ data: string }[]>`
@@ -50,10 +49,10 @@ async function loadCredentials(): Promise<SavedCredentials | null> {
     `;
     if (row && row.length > 0) {
       const creds = JSON.parse(row[0].data) as SavedCredentials;
-      console.log(`[capital-com] loadCredentials: using DB credentials for ${creds.identifier}`);
+      console.log(`[capital-com] credentials: using DB for ${creds.identifier}`);
       return creds;
     }
-    console.warn("[capital-com] loadCredentials: no credentials found in env vars or DB");
+    console.warn("[capital-com] credentials: not found in env vars or DB");
     return null;
   } catch (err) {
     console.error("[capital-com] loadCredentials FAILED:", err);
@@ -61,7 +60,7 @@ async function loadCredentials(): Promise<SavedCredentials | null> {
   }
 }
 
-async function saveCredentials(creds: SavedCredentials): Promise<boolean> {
+async function saveCredentials(creds: SavedCredentials): Promise<void> {
   try {
     const db = await getPrisma();
     const data = JSON.stringify(creds);
@@ -70,17 +69,9 @@ async function saveCredentials(creds: SavedCredentials): Promise<boolean> {
        ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
       data
     );
-    // Verify it was actually saved
-    const verify = await db.$queryRaw<{ data: string }[]>`SELECT data FROM "CapitalCredentials" WHERE id = 'singleton' LIMIT 1`;
-    if (!verify || verify.length === 0) {
-      console.error("[capital-com] saveCredentials: DB write succeeded but read-back returned nothing!");
-      return false;
-    }
-    console.log(`[capital-com] Credentials saved to DB for ${creds.identifier}`);
-    return true;
+    console.log(`[capital-com] credentials saved to DB for ${creds.identifier}`);
   } catch (err) {
     console.error("[capital-com] saveCredentials FAILED:", err);
-    return false;
   }
 }
 
@@ -128,8 +119,8 @@ export async function connectCapital(
   if (!session.ok) return { ok: false, error: session.error };
 
   const accountsResult = await capitalGetAccounts(apiKey, session.cst!, session.securityToken!);
-
   const primaryAccount = accountsResult.accounts?.[0];
+
   global.__capital_session__ = {
     apiKey,
     cst: session.cst!,
@@ -143,11 +134,7 @@ export async function connectCapital(
     currency: primaryAccount?.currency ?? "USD",
   };
 
-  // Save credentials for auto-reconnect on next server start
-  const saved = await saveCredentials({ apiKey, identifier, password });
-  if (!saved) {
-    console.error("[capital-com] WARNING: Connected successfully but credentials could NOT be saved to DB — auto-reconnect will fail after next deploy!");
-  }
+  await saveCredentials({ apiKey, identifier, password });
 
   if (primaryAccount?.balance != null) {
     paperManagerCapital.syncBalance(primaryAccount.balance, primaryAccount.currency ?? "USD");
@@ -170,41 +157,82 @@ export async function disconnectCapital(): Promise<void> {
   await clearCredentials();
 }
 
-// Called on server startup or status check — restores connection using saved credentials
-// Mutex prevents simultaneous reconnect attempts (race condition on page load)
+// Auto-reconnect with mutex + 30s cooldown on FAILED attempts only
+// After success: cooldown resets so session can be recovered immediately if it drops again
 export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: string }> {
   if (global.__capital_session__) return { ok: true };
 
-  // If another request is already reconnecting, wait up to 8s for it to finish
+  // Wait if another reconnect is in progress
   if (global.__capital_reconnecting__) {
     const deadline = Date.now() + 8000;
     while (global.__capital_reconnecting__ && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 200));
     }
-    return global.__capital_session__ ? { ok: true } : { ok: false, error: "Reconnect läuft bereits (Timeout)" };
+    return global.__capital_session__ ? { ok: true } : { ok: false, error: "Reconnect timeout" };
   }
 
-  // Cooldown: max one reconnect attempt every 30s to avoid Capital.com rate limiting
+  // Cooldown only applies after a FAILED attempt (prevents rate limiting)
   const now = Date.now();
-  if (now - (global.__capital_last_attempt__ ?? 0) < 30_000) {
-    return { ok: false, error: global.__capital_last_error__ ?? "Reconnect cooldown (30s)" };
+  const timeSinceLastAttempt = now - (global.__capital_last_attempt__ ?? 0);
+  const hadRecentFailure = !!global.__capital_last_error__ && timeSinceLastAttempt < 30_000;
+  if (hadRecentFailure) {
+    return { ok: false, error: global.__capital_last_error__ ?? "Cooldown nach Fehler" };
   }
+
   global.__capital_last_attempt__ = now;
   global.__capital_reconnecting__ = true;
   try {
     const creds = await loadCredentials();
-    if (!creds) return { ok: false, error: "Keine Credentials — bitte in Settings verbinden oder Railway Variables setzen" };
+    if (!creds) {
+      global.__capital_last_error__ = "Keine Credentials (Railway Variables oder DB leer)";
+      return { ok: false, error: global.__capital_last_error__ };
+    }
     const result = await connectCapital(creds.apiKey, creds.identifier, creds.password);
     if (!result.ok) {
-      global.__capital_last_error__ = result.error ?? "Unbekannter Fehler";
-      console.error(`[capital-com] Auto-reconnect failed: ${result.error}`);
+      global.__capital_last_error__ = result.error ?? "Verbindungsfehler";
+      console.error(`[capital-com] reconnect failed: ${result.error}`);
       return { ok: false, error: result.error };
     }
+    // Success — reset error + cooldown so next drop reconnects immediately
     global.__capital_last_error__ = null;
-    console.log("[capital-com] Auto-reconnect successful");
+    global.__capital_last_attempt__ = 0;
+    console.log(`[capital-com] reconnected ✅ account=${result.accountId}`);
     return { ok: true };
   } finally {
     global.__capital_reconnecting__ = false;
+  }
+}
+
+// Keep-alive: ping Capital.com with GET /accounts every 2min to prevent session expiry
+// Called from instrumentation heartbeat
+export async function keepAliveCapital(): Promise<void> {
+  const session = global.__capital_session__;
+  if (!session) {
+    await autoReconnectCapital().catch(() => {});
+    return;
+  }
+  try {
+    const { capitalGetAccounts } = await import("./capital-com-client");
+    const result = await capitalGetAccounts(session.apiKey, session.cst, session.securityToken);
+    if (!result.ok) {
+      // Session expired — clear and reconnect
+      console.warn("[capital-com] keep-alive ping failed — session expired, reconnecting...");
+      global.__capital_session__ = null;
+      global.__capital_last_error__ = null;
+      global.__capital_last_attempt__ = 0;
+      await autoReconnectCapital().catch(() => {});
+    } else {
+      // Update balance from ping
+      const primary = result.accounts?.[0];
+      if (primary && global.__capital_session__) {
+        global.__capital_session__.balance = primary.balance ?? global.__capital_session__.balance;
+      }
+      console.log(`[capital-com] keep-alive ✅ balance=${result.accounts?.[0]?.balance}`);
+    }
+  } catch {
+    // Network error — clear session so reconnect happens next time
+    global.__capital_session__ = null;
+    global.__capital_last_attempt__ = 0;
   }
 }
 
