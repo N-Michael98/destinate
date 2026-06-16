@@ -202,6 +202,7 @@ export default function SettingsDashboard() {
   const [diagResult, setDiagResult] = useState<{ ok: boolean; steps: { step: string; ok: boolean; detail: string }[]; error?: string | null; hint?: string } | null>(null);
   const [diagLoading, setDiagLoading] = useState(false);
   const [capitalError, setCapitalError] = useState<string | null>(null);
+  const [capitalLiveStatus, setCapitalLiveStatus] = useState<{ connected: boolean; accountId?: string; accountType?: string; balance?: number; currency?: string } | null>(null);
   const [openaiKey, setOpenaiKey] = useState("");
   const [openaiModel, setOpenaiModel] = useState("gpt-4o");
   const [anthropicKey, setAnthropicKey] = useState("");
@@ -228,6 +229,16 @@ export default function SettingsDashboard() {
         new Promise<Record<string, never>>((res) => setTimeout(() => res({}), 5000)),
       ]);
       if (sR.ok) setSettings(sR.settings);
+      // Store live Capital.com status directly from API response
+      if (Object.keys(capR ?? {}).length > 0) {
+        setCapitalLiveStatus({
+          connected: !!capR?.connected,
+          accountId: capR?.accountId,
+          accountType: capR?.accountType,
+          balance: capR?.balance,
+          currency: capR?.currency,
+        });
+      }
       // Pre-fill Capital.com login field if credentials are saved
       if (capR?.savedIdentifier) {
         setForms((p) => ({ ...p, CAPITAL_COM: { ...p.CAPITAL_COM, login: capR.savedIdentifier } }));
@@ -343,6 +354,8 @@ export default function SettingsDashboard() {
 
       if (d.ok) {
         setCapitalAccounts(d.accounts ?? []);
+        setCapitalLiveStatus({ connected: true, accountId: d.accountId, accountType: d.accountType, balance: d.accounts?.[0]?.balance, currency: d.accounts?.[0]?.currency });
+        setCapitalError(null);
         // Sync to settings store for status display
         await postAction({ action: "broker_connect", brokerKey: key, apiKey: form.apiKey, accountMode: "DEMO" });
         const balance = d.accounts?.[0]?.balance;
@@ -383,6 +396,7 @@ export default function SettingsDashboard() {
         body: JSON.stringify({ action: "disconnect" }),
       }).catch(() => {});
       setCapitalAccounts([]);
+      setCapitalLiveStatus({ connected: false });
     }
     await postAction({ action: "broker_disconnect", brokerKey: key });
     setForms((f) => ({ ...f, [key]: { ...f[key], error: null, success: null } }));
@@ -443,7 +457,11 @@ export default function SettingsDashboard() {
       {activeTab === "brokers" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           {ALL_BROKER_PROFILES.map((profile) => {
-            const c = conn(profile.key);
+            const cRaw = conn(profile.key);
+            // For Capital.com: use live API status instead of stale DB settings
+            const c = profile.key === "CAPITAL_COM" && capitalLiveStatus != null
+              ? { ...cRaw, connected: capitalLiveStatus.connected, accountId: capitalLiveStatus.accountId, accountType: capitalLiveStatus.accountType, balance: capitalLiveStatus.balance, currency: capitalLiveStatus.currency }
+              : cRaw;
             const f = forms[profile.key];
             return (
               <div
