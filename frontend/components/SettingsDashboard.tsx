@@ -217,10 +217,15 @@ export default function SettingsDashboard() {
 
   const fetchSettings = async () => {
     try {
-      const [sR, aiR, capR] = await Promise.all([
+      // Load settings + AI config immediately, Capital.com status separately (can be slow)
+      const [sR, aiR] = await Promise.all([
         fetch("/api/settings").then((r) => r.json()).catch(() => ({})),
         fetch("/api/ai-config").then((r) => r.json()).catch(() => ({})),
+      ]);
+      // Capital.com with 10s timeout so it never blocks the page
+      const capR = await Promise.race([
         fetch("/api/capital-com").then((r) => r.json()).catch(() => ({})),
+        new Promise<Record<string, never>>((res) => setTimeout(() => res({}), 10000)),
       ]);
       if (sR.ok) setSettings(sR.settings);
       // Pre-fill Capital.com login field if credentials are saved

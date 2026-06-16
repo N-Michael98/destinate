@@ -216,11 +216,11 @@ export async function capitalCreateSession(
       },
       body: JSON.stringify({
         encryptedPassword: false,
-        identifier,   // ← Capital.com API uses "identifier" not "login"
+        identifier,
         password,
       }),
-      // Prevent Next.js from caching this request
       cache: "no-store",
+      signal: AbortSignal.timeout(8000), // 8s max — prevents page from hanging
     });
 
     if (!res.ok) {
