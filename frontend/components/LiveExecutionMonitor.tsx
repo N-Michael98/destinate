@@ -61,6 +61,7 @@ export default function LiveExecutionMonitor() {
   const [autoExec, setAutoExecRaw] = useState(false);
   const [accountBalance, setAccountBalanceRaw] = useState(10000);
   const [refreshing, setRefreshing] = useState(false);
+  const [capitalConnected, setCapitalConnected] = useState(false);
 
   // Persist toggle + balance across page reloads
   useEffect(() => {
@@ -72,14 +73,21 @@ export default function LiveExecutionMonitor() {
     } catch { /* localStorage unavailable */ }
   }, []);
 
-  // Fetch real Capital.com balance and override manual input
-  useEffect(() => {
+  // Fetch real Capital.com status and balance — poll every 20s
+  const fetchCapitalStatus = useCallback(() => {
     fetch("/api/capital-com").then(r => r.json()).then(d => {
+      setCapitalConnected(!!d.connected);
       if (d.connected && d.balance != null && d.balance > 0) {
         setAccountBalanceRaw(d.balance);
       }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetchCapitalStatus();
+    const iv = setInterval(fetchCapitalStatus, 20000);
+    return () => clearInterval(iv);
+  }, [fetchCapitalStatus]);
 
   const setAutoExec = (val: boolean | ((p: boolean) => boolean)) => {
     setAutoExecRaw((prev) => {
@@ -162,7 +170,8 @@ export default function LiveExecutionMonitor() {
     if (d?.ok) await loadPositions();
   };
 
-  const capitalActive = queue?.capitalComActive ?? false;
+  // Use direct Capital.com status (fast, <1ms endpoint) — queue fallback for compatibility
+  const capitalActive = capitalConnected || (queue?.capitalComActive ?? false);
   const totalPnL = positions.reduce((sum, p) => sum + p.profitLoss, 0);
 
   return (
