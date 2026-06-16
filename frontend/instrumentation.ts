@@ -173,14 +173,14 @@ export async function register() {
           if (r.ok) console.log("[instrumentation] Capital.com auto-reconnected (retry)");
           else console.error(`[instrumentation] Capital.com auto-reconnect failed after retry: ${r.error}`);
         }
-        // Heartbeat every 8min — Capital.com tokens expire after ~10min inactivity
+        // Heartbeat every 2min — keeps Capital.com session alive (tokens expire ~10min)
         setInterval(async () => {
           if (!isCapitalConnected()) {
             const rr = await autoReconnectCapital().catch(() => ({ ok: false as const, error: "Exception" }));
             if (rr.ok) console.log("[heartbeat] Capital.com session refreshed");
             else console.error(`[heartbeat] Capital.com session refresh failed: ${rr.error}`);
           }
-        }, 8 * 60 * 1000);
+        }, 2 * 60 * 1000);
       } catch { /* non-fatal */ }
     } catch (err) {
       console.error("[instrumentation] Setup error:", err);
