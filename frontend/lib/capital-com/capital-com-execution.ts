@@ -45,11 +45,11 @@ export interface CloseResult {
 }
 
 // Minimum deal sizes per epic on Capital.com DEMO
+// Forex: size is in base currency UNITS (e.g. EUR for EURUSD), minimum = 100
 const MIN_SIZE: Record<string, number> = {
-  // Forex — Capital.com requires min 1.0 for all forex pairs
-  EURUSD: 1, GBPUSD: 1, USDJPY: 1, USDCHF: 1,
-  AUDUSD: 1, USDCAD: 1, NZDUSD: 1, EURGBP: 1,
-  EURJPY: 1, GBPJPY: 1,
+  EURUSD: 100, GBPUSD: 100, USDJPY: 100, USDCHF: 100,
+  AUDUSD: 100, USDCAD: 100, NZDUSD: 100, EURGBP: 100,
+  EURJPY: 100, GBPJPY: 100,
   // Commodities
   GOLD: 0.1, SILVER: 0.1, OIL_CRUDE: 0.1, OIL_BRENT: 0.1, NATURAL_GAS: 0.1,
   // Indices
@@ -59,12 +59,13 @@ const MIN_SIZE: Record<string, number> = {
   CARDANO: 1, SOLANA: 0.1, POLKADOT: 0.1, CHAINLINK: 0.1, BNB: 0.01,
 };
 
-// Approximate pip/point values per unit size (USD)
+// Pip value per 1 unit of base currency
+// Forex: 1 pip = 0.0001 for most pairs, 0.01 for JPY pairs
+// At size=1 EUR: pip value ≈ $0.0001. At size=100 EUR: $0.01 per pip
 const PIP_VALUE_PER_UNIT: Record<string, number> = {
-  // Forex (1 pip = 0.0001, approx $10 per standard lot → $0.0001 per micro)
-  EURUSD: 10, GBPUSD: 10, USDJPY: 10, USDCHF: 10,
-  AUDUSD: 10, USDCAD: 10, NZDUSD: 10, EURGBP: 10,
-  EURJPY: 10, GBPJPY: 10,
+  EURUSD: 0.0001, GBPUSD: 0.0001, USDCHF: 0.0001,
+  AUDUSD: 0.0001, USDCAD: 0.0001, NZDUSD: 0.0001, EURGBP: 0.0001,
+  USDJPY: 0.000065, EURJPY: 0.000065, GBPJPY: 0.000065,
   // Commodities
   GOLD: 1, SILVER: 0.5, OIL_CRUDE: 1, OIL_BRENT: 1, NATURAL_GAS: 0.1,
   // Indices
