@@ -40,5 +40,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, settings: await getSettings() });
   }
 
+  if (action === "reset_daily_counter") {
+    const today = new Date().toISOString().slice(0, 10);
+    if (global.__daily_trades__) {
+      global.__daily_trades__ = { date: today, count: 0, byStyle: {} };
+    }
+    // Also clear Redis counter
+    try {
+      const { cacheSet } = await import("../../../lib/cache/redis-cache");
+      await cacheSet(`daily_trades:${today}`, { count: 0, byStyle: {} }, 90000);
+    } catch { /* non-fatal */ }
+    return NextResponse.json({ ok: true, message: "Tages-Counter zurückgesetzt" });
+  }
+
   return NextResponse.json({ ok: false, error: "Unknown action" }, { status: 400 });
 }

@@ -53,10 +53,14 @@ export async function POST(request: Request) {
     const accountBalance = session.balance > 0 ? session.balance : 10000;
     const currency = session.currency ?? "USD";
 
-    // Check daily trade limit
+    // Check daily trade limit (only if tradeLimitEnabled)
+    const tradeLimitEnabled = botSettings.tradeLimitEnabled ?? true;
+    const bypassScore = botSettings.tradeLimitBypassScore ?? 80;
     const dailyCount = getDailyTradeCount();
-    if (dailyCount >= botSettings.maxTradesPerDay) {
-      return NextResponse.json({ ok: false, reason: `Tageslimit erreicht: ${dailyCount}/${botSettings.maxTradesPerDay} Trades` });
+    const limitReached = dailyCount >= botSettings.maxTradesPerDay;
+    if (tradeLimitEnabled && limitReached) {
+      // Still allow if best signal has bypass score — filter is applied later in goSignals
+      // For now just log it, don't hard-block
     }
 
     // Check open positions limit
@@ -84,24 +88,29 @@ export async function POST(request: Request) {
 
     const styleLimit = botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
 
-    // Find best GO signal meeting threshold + per-style daily limit not exceeded
+    // Find best GO signal — respect tradeLimitEnabled + bypass rule
     const goSignals = opportunities.filter((o) => {
       if (!o.goSignal) return false;
-      if (o.gpt.confidence < threshold) return false;
       if (o.gpt.confidence < minConfidence) return false;
       const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as TradingStyle;
       const styleMax = styleLimit[style] ?? 999;
       if (getDailyTradeCount(style) >= styleMax) return false;
-      return true;
+      // Daily limit: OFF = no limit; ON + limit reached = require bypass score; ON + not reached = use threshold
+      if (!tradeLimitEnabled) return o.gpt.confidence >= threshold;
+      if (limitReached) return o.gpt.confidence >= bypassScore;
+      return o.gpt.confidence >= threshold;
     });
 
     if (!goSignals.length) {
+      const limitMsg = tradeLimitEnabled && limitReached
+        ? `Tageslimit ${dailyCount}/${botSettings.maxTradesPerDay} erreicht — kein Signal ≥ ${bypassScore}% Bypass`
+        : `Kein GO-Signal mit Confidence ≥ ${threshold}%`;
       const styleCounts = Object.entries(styleLimit).map(
         ([s, max]) => `${s}: ${getDailyTradeCount(s as TradingStyle)}/${max}`
       ).join(", ");
       return NextResponse.json({
         ok: false,
-        reason: `Kein GO-Signal mit Confidence ≥ ${threshold}% gefunden (Stil-Limits: ${styleCounts})`,
+        reason: `${limitMsg} (Stil-Limits: ${styleCounts})`,
         scanned: opportunities.length,
         analyzed: opportunities.length,
         goCount: opportunities.filter((o) => o.goSignal).length,

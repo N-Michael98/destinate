@@ -919,9 +919,22 @@ export default function SettingsDashboard() {
               })}
             </div>
 
+            {/* Reset Daily Counter */}
+            <div style={{ marginBottom: "12px", display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={async () => {
+                  await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset_daily_counter" }) });
+                  alert("✅ Tages-Counter zurückgesetzt — Bot kann wieder traden");
+                }}
+                style={{ fontSize: "11px", color: "#f59e0b", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "6px", padding: "4px 12px", cursor: "pointer" }}
+              >
+                🔄 Tages-Counter zurücksetzen
+              </button>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
               {[
-                { label: "Max Trades / Day", field: "maxTradesPerDay", value: settings.botSettings.maxTradesPerDay, min: 1, max: 20 },
+                { label: "Max Trades / Day", field: "maxTradesPerDay", value: settings.botSettings.maxTradesPerDay, min: 1, max: 50 },
                 { label: "Max Concurrent Positions", field: "maxConcurrentPositions", value: settings.botSettings.maxConcurrentPositions, min: 1, max: 10 },
                 { label: "Auto-Approve Threshold (%)", field: "autoApproveThreshold", value: settings.botSettings.autoApproveThreshold, min: 50, max: 99 },
                 { label: "Pause on Loss (%)", field: "pauseOnLossPercent", value: settings.botSettings.pauseOnLossPercent, min: 0.5, max: 20 },
