@@ -1544,6 +1544,21 @@ export default function TradingJournal() {
     setIsLoaded(true);
   }
 
+  async function syncFromCapital() {
+    try {
+      const res = await fetch("/api/capital-com/sync-journal", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        alert(`Sync abgeschlossen: ${data.imported} importiert, ${data.skipped} bereits vorhanden`);
+        await loadTrades();
+      } else {
+        alert(`Sync Fehler: ${data.error}`);
+      }
+    } catch (err) {
+      alert(`Sync Fehler: ${err}`);
+    }
+  }
+
   useEffect(() => {
     loadTrades();
   }, []);
@@ -2139,6 +2154,12 @@ export default function TradingJournal() {
               {item.label}
             </button>
           ))}
+          <button
+            onClick={syncFromCapital}
+            className="bg-green-800 hover:bg-green-700 text-white px-4 py-3 rounded-xl font-bold border border-green-600"
+          >
+            🔄 Sync Capital.com
+          </button>
         </div>
       </div>
 
