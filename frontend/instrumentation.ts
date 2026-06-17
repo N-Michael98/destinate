@@ -220,27 +220,42 @@ export async function register() {
               return styleCount < styleMax;
             });
 
+            // Store scan results globally so scanner UI can display them without manual scan
+            global.__last_scan_result__ = { opportunities, updatedAt: new Date().toISOString() };
+
             if (!best) return;
 
-            const style = (best.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
-            const result = await executeCapitalDemoOrder({
-              symbol: best.symbol,
-              direction: best.gpt.direction as "BUY" | "SELL",
-              riskPercent: Math.min(best.claude.maxRiskPercent, settings.riskSettings.maxRiskPerTradePct),
-              accountBalance: session.balance > 0 ? session.balance : 10000,
-              stopLossPrice: best.gpt.stopLoss,
-              takeProfitPrice: best.gpt.takeProfit,
-              confidence: best.gpt.confidence,
-              strategy: best.gpt.tradingStyle,
-              tradingStyle: style,
+            // Try signals in order — skip if execution fails (e.g. size too small)
+            const candidates = opportunities.filter((o) => {
+              if (!o.goSignal) return false;
+              if (o.gpt.confidence < threshold) return false;
+              const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
+              const styleMax = (styleLimit as Record<string, number>)[style] ?? 999;
+              return (global.__daily_trades__?.byStyle[style] ?? 0) < styleMax;
             });
 
-            if (result.ok) {
-              global.__daily_trades__.count++;
-              global.__daily_trades__.byStyle[style] = (global.__daily_trades__.byStyle[style] ?? 0) + 1;
-              console.log(`[auto-scan] ✅ ${best.symbol} ${best.gpt.direction} (${style}) — Deal ${result.dealId}`);
-            } else {
-              console.warn(`[auto-scan] ❌ ${best.symbol} failed: ${result.error}`);
+            for (const candidate of candidates) {
+              const style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
+              const result = await executeCapitalDemoOrder({
+                symbol: candidate.symbol,
+                direction: candidate.gpt.direction as "BUY" | "SELL",
+                riskPercent: Math.min(candidate.claude.maxRiskPercent, settings.riskSettings.maxRiskPerTradePct),
+                accountBalance: session.balance > 0 ? session.balance : 10000,
+                stopLossPrice: candidate.gpt.stopLoss,
+                takeProfitPrice: candidate.gpt.takeProfit,
+                confidence: candidate.gpt.confidence,
+                strategy: candidate.gpt.tradingStyle,
+                tradingStyle: style,
+              });
+
+              if (result.ok) {
+                global.__daily_trades__.count++;
+                global.__daily_trades__.byStyle[style] = (global.__daily_trades__.byStyle[style] ?? 0) + 1;
+                console.log(`[auto-scan] ✅ ${candidate.symbol} ${candidate.gpt.direction} (${style}) — Deal ${result.dealId}`);
+                break; // one trade per scan cycle
+              } else {
+                console.warn(`[auto-scan] ❌ ${candidate.symbol} failed: ${result.error} — trying next`);
+              }
             }
           } catch (err) {
             console.warn("[auto-scan] error:", err);

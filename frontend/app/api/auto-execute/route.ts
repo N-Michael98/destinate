@@ -10,6 +10,7 @@ import { cacheGet, cacheSet } from "../../../lib/cache/redis-cache";
 type TradingStyle = "DAYTRADING" | "SCALPING" | "SWING";
 declare global {
   var __daily_trades__: { date: string; count: number; byStyle: Record<string, number> } | undefined;
+  var __last_scan_result__: { opportunities: unknown[]; updatedAt: string } | undefined;
 }
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }

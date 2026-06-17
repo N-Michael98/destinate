@@ -101,6 +101,13 @@ export default function MarketScannerPanel() {
     }).catch(() => {});
   }, []);
 
+  // Load last server-side auto-scan results on mount (so UI isn't empty)
+  useEffect(() => {
+    fetch("/api/market-scanner?action=last").then(r => r.json()).then(d => {
+      if (d.ok && d.opportunities?.length) setResult(d as ScanResult);
+    }).catch(() => {});
+  }, []);
+
   const setAutoScan = (val: boolean) => {
     setAutoScanRaw(val);
     try { localStorage.setItem("scanner_autoScan", String(val)); } catch { /* ignore */ }

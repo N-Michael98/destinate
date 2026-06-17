@@ -17,6 +17,13 @@ export async function GET(request: Request) {
     const capitalConnected = isCapitalConnected();
     const session = getCapitalSession();
 
+    // Return last server-side auto-scan results (no re-scan needed)
+    if (action === "last") {
+      const last = global.__last_scan_result__;
+      if (!last) return NextResponse.json({ ok: false, reason: "Noch kein Auto-Scan gelaufen" });
+      return NextResponse.json({ ok: true, ...last, fromCache: true });
+    }
+
     if (action === "status") {
       return NextResponse.json({
         ok: true,
@@ -60,6 +67,9 @@ export async function GET(request: Request) {
     // Run AI analysis on all markets
     const opportunities = await analyzeMarkets(markets ?? []);
     const goSignals = opportunities.filter((o) => o.goSignal);
+
+    // Cache for scanner UI and server-side auto-scan display
+    global.__last_scan_result__ = { opportunities, updatedAt: new Date().toISOString() };
 
     return NextResponse.json({
       ok: true,
