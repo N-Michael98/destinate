@@ -484,66 +484,99 @@ function PortfolioBrainCenter() {
 
 
 function TradingJournalCenter() {
+  const [trades, setTrades] = useState<Array<{ status: string; result: string; profitLoss: number; market: string; direction: string; createdAt: string }>>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+
+  async function loadTrades() {
+    try {
+      const res = await fetch("/api/trades");
+      const data = await res.json();
+      if (data.success) setTrades(data.trades ?? []);
+    } catch { /* non-fatal */ }
+  }
+
+  async function syncCapital() {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const res = await fetch("/api/capital-com/sync-journal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const data = await res.json();
+      if (data.ok) {
+        setSyncMsg(`✅ ${data.imported} importiert, ${data.skipped} bereits vorhanden`);
+        await loadTrades();
+      } else {
+        setSyncMsg(`❌ ${data.error}`);
+      }
+    } catch (e) { setSyncMsg(`❌ ${e}`); }
+    setSyncing(false);
+  }
+
+  useEffect(() => { loadTrades(); }, []);
+
+  const closed = trades.filter((t) => t.status === "CLOSED");
+  const wins = closed.filter((t) => t.result === "WIN").length;
+  const losses = closed.filter((t) => t.result === "LOSS").length;
+  const winRate = closed.length > 0 ? Math.round((wins / closed.length) * 100) : 0;
+  const grossProfit = closed.filter((t) => t.profitLoss > 0).reduce((s, t) => s + t.profitLoss, 0);
+  const grossLoss = Math.abs(closed.filter((t) => t.profitLoss < 0).reduce((s, t) => s + t.profitLoss, 0));
+  const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : grossProfit > 0 ? "∞" : "0";
+  const totalPnL = closed.reduce((s, t) => s + t.profitLoss, 0);
+  const recentTrades = [...trades].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
+
   return (
     <section className="bg-gray-900 border border-green-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <h2 className="text-4xl font-black"> Trading Journal Center</h2>
+          <h2 className="text-4xl font-black">Trading Journal Center</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Zentrale bersicht fr Trades, Journal-Qualitt, Equity, Performance und sptere AI-Auswertung.
+            Echte Capital.com DEMO Trades — automatisch getrackt.
           </p>
         </div>
-        <div className="bg-black border border-green-800 rounded-2xl p-5 min-w-[190px]">
-          <p className="text-gray-400">Journal Status</p>
-          <p className="text-green-400 text-2xl font-bold">Active</p>
+        <div className="flex flex-col gap-3 items-end">
+          <div className="bg-black border border-green-800 rounded-2xl p-5 min-w-[190px]">
+            <p className="text-gray-400">Journal Status</p>
+            <p className="text-green-400 text-2xl font-bold">Active</p>
+          </div>
+          <button
+            onClick={syncCapital}
+            disabled={syncing}
+            className="bg-green-800 hover:bg-green-700 disabled:opacity-50 text-white px-5 py-3 rounded-xl font-bold text-sm border border-green-600"
+          >
+            {syncing ? "Syncing..." : "🔄 Sync Capital.com"}
+          </button>
+          {syncMsg && <p className="text-sm text-gray-300">{syncMsg}</p>}
         </div>
       </div>
 
       <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="Total Trades" value="3" subtitle="Paper sample" accent="text-blue-400" border="border-blue-900" />
-        <StatCard title="Winrate" value="67%" subtitle="Mock performance" accent="text-green-400" border="border-green-900" />
-        <StatCard title="Profit Factor" value="2.15" subtitle="Performance sample" accent="text-purple-400" border="border-purple-900" />
-        <StatCard title="Max DD" value="0.73%" subtitle="Risk tracking" accent="text-yellow-400" border="border-yellow-900" />
-        <StatCard title="Journal Score" value="A-" subtitle="Discipline rating" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Total Trades" value={String(trades.length)} subtitle={`${wins}W / ${losses}L / ${closed.length - wins - losses}BE`} accent="text-blue-400" border="border-blue-900" />
+        <StatCard title="Winrate" value={`${winRate}%`} subtitle="Geschlossene Trades" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Profit Factor" value={String(profitFactor)} subtitle="Gross profit / loss" accent="text-purple-400" border="border-purple-900" />
+        <StatCard title="Total P&L" value={`${totalPnL >= 0 ? "+" : ""}Fr${totalPnL.toFixed(2)}`} subtitle="Realisiert" accent={totalPnL >= 0 ? "text-green-400" : "text-red-400"} border={totalPnL >= 0 ? "border-green-900" : "border-red-900"} />
+        <StatCard title="Offene Trades" value={String(trades.filter(t => t.status === "OPEN").length)} subtitle="In Capital.com aktiv" accent="text-cyan-400" border="border-cyan-900" />
       </div>
 
-      <div className="grid grid-cols-2 gap-6 mb-6">
-        <EquityCurveChart />
-        <MonthlyPnLChart />
-      </div>
-
-      <div className="grid grid-cols-2 gap-6 mb-6">
-        <WinLossBarChart />
-        <PortfolioAllocationChart />
-      </div>
-
-      <div className="grid grid-cols-3 gap-6">
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> Latest Trades</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="NAS100 Long" value="+4.2R" accent="text-green-400" />
-            <StatusPill label="XAUUSD Long" value="+1.8R" accent="text-green-400" />
-            <StatusPill label="USOIL Short" value="-1.0R" accent="text-red-400" />
+      <div className="bg-black border border-gray-800 rounded-2xl p-6">
+        <h3 className="text-xl font-bold mb-4">Letzte Trades</h3>
+        {recentTrades.length === 0 ? (
+          <p className="text-gray-500">Keine Trades — klicke &quot;🔄 Sync Capital.com&quot; um Trades zu importieren</p>
+        ) : (
+          <div className="space-y-2">
+            {recentTrades.map((t, i) => (
+              <div key={i} className="flex items-center justify-between bg-gray-900 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className={`font-bold text-sm px-2 py-1 rounded ${t.direction === "BUY" ? "bg-green-900 text-green-300" : "bg-red-900 text-red-300"}`}>{t.direction}</span>
+                  <span className="font-semibold">{t.market}</span>
+                  <span className={`text-xs px-2 py-1 rounded ${t.result === "WIN" ? "bg-green-800 text-green-200" : t.result === "LOSS" ? "bg-red-800 text-red-200" : "bg-gray-700 text-gray-300"}`}>{t.result}</span>
+                </div>
+                <span className={`font-bold ${t.profitLoss > 0 ? "text-green-400" : t.profitLoss < 0 ? "text-red-400" : "text-gray-400"}`}>
+                  {t.profitLoss >= 0 ? "+" : ""}Fr{t.profitLoss.toFixed(2)}
+                </span>
+              </div>
+            ))}
           </div>
-        </div>
-
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> Journal Analytics</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="Best Strategy" value="Momentum" accent="text-green-400" />
-            <StatusPill label="Weak Setup" value="Inventory" accent="text-yellow-400" />
-            <StatusPill label="Review Status" value="Prepared" accent="text-blue-400" />
-          </div>
-        </div>
-
-        <div className="bg-black border border-gray-800 rounded-2xl p-6">
-          <h3 className="text-2xl font-bold"> AI Journal Link</h3>
-          <div className="space-y-3 mt-5">
-            <StatusPill label="Performance Tracker" value="Connected" accent="text-green-400" />
-            <StatusPill label="Feedback Engine" value="Connected" accent="text-green-400" />
-            <StatusPill label="Learning Reports" value="Ready" accent="text-cyan-400" />
-          </div>
-        </div>
+        )}
       </div>
     </section>
   );
