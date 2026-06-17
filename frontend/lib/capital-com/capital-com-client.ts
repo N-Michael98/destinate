@@ -356,10 +356,32 @@ export async function capitalPlaceOrder(
     }
 
     const data = (await res.json()) as Record<string, unknown>;
+    const dealReference = String(data.dealReference ?? "");
+
+    // Capital.com requires a confirm step to get the real dealId and verify acceptance
+    if (dealReference) {
+      await new Promise((r) => setTimeout(r, 800)); // brief wait for backend to process
+      try {
+        const confirmRes = await fetch(`${DEMO_BASE}/confirms/${dealReference}`, {
+          headers: authHeaders(apiKey, cst, securityToken),
+        });
+        if (confirmRes.ok) {
+          const confirm = (await confirmRes.json()) as Record<string, unknown>;
+          const status = String(confirm.status ?? "");
+          const dealId = String(confirm.dealId ?? dealReference);
+          if (status === "REJECTED" || status === "DELETED") {
+            const reason = String(confirm.reason ?? confirm.rejectReason ?? "Order rejected by broker");
+            return { ok: false, error: reason };
+          }
+          return { ok: true, dealReference, dealId, status: "OPENED" };
+        }
+      } catch { /* non-fatal — fall through to reference */ }
+    }
+
     return {
       ok: true,
-      dealReference: String(data.dealReference ?? ""),
-      dealId: String(data.dealId ?? data.dealReference ?? ""),
+      dealReference,
+      dealId: String(data.dealId ?? dealReference),
       status: "OPENED",
     };
   } catch (err) {
