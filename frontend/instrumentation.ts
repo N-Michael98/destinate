@@ -211,13 +211,19 @@ export async function register() {
             const threshold = settings.botSettings.autoApproveThreshold ?? 71;
             const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
 
-            // Use same daily counter as POST route
+            // Daily counter — load from Redis to survive restarts
             const today = new Date().toISOString().slice(0, 10);
+            const { cacheGet: cGet, cacheSet: cSet } = await import("./lib/cache/redis-cache");
+            const redisDailyKey = `daily_trades:${today}`;
+            const redisDailyRaw = await cGet<{ count: number; byStyle: Record<string, number> }>(redisDailyKey);
             if (!global.__daily_trades__ || global.__daily_trades__.date !== today) {
-              global.__daily_trades__ = { date: today, count: 0, byStyle: {} };
+              global.__daily_trades__ = { date: today, count: redisDailyRaw?.count ?? 0, byStyle: redisDailyRaw?.byStyle ?? {} };
             }
             const dailyCount = global.__daily_trades__.count;
-            if (dailyCount >= settings.botSettings.maxTradesPerDay) return;
+            if (dailyCount >= settings.botSettings.maxTradesPerDay) {
+              console.log(`[auto-scan] Tageslimit erreicht: ${dailyCount}/${settings.botSettings.maxTradesPerDay}`);
+              return;
+            }
 
             const best = opportunities.find((o) => {
               if (!o.goSignal) return false;
@@ -259,6 +265,8 @@ export async function register() {
               if (result.ok) {
                 global.__daily_trades__.count++;
                 global.__daily_trades__.byStyle[style] = (global.__daily_trades__.byStyle[style] ?? 0) + 1;
+                // Persist counter to Redis so restarts don't reset it
+                await cSet(redisDailyKey, { count: global.__daily_trades__.count, byStyle: global.__daily_trades__.byStyle }, 90000);
                 console.log(`[auto-scan] ✅ ${candidate.symbol} ${candidate.gpt.direction} (${style}) — Deal ${result.dealId}`);
                 // Save to Trading Journal
                 try {
