@@ -131,7 +131,7 @@ export async function executeCapitalDemoOrder(
     return { ok: false, broker: "CAPITAL_COM", mode: "DEMO", symbol: req.symbol, direction: req.direction, size: 0, epic: "", error: `Unknown symbol: ${req.symbol}`, executedAt: new Date().toISOString() };
   }
 
-  const size = calcPositionSize(
+  let size = calcPositionSize(
     epic,
     req.accountBalance,
     req.riskPercent,
@@ -139,19 +139,27 @@ export async function executeCapitalDemoOrder(
     req.tradingStyle
   );
 
-  const result: OrderResult = await capitalPlaceOrder(
-    session.apiKey,
-    session.cst,
-    session.securityToken,
-    {
-      epic,
-      direction: req.direction,
-      size,
-      stopLevel: req.stopLossPrice ?? undefined,
-      profitLevel: req.takeProfitPrice ?? undefined,
-      guaranteedStop: false,
-    }
-  );
+  // Retry with escalating size if Capital.com rejects minvalue
+  let result: OrderResult = { ok: false, error: "" };
+  for (let attempt = 0; attempt < 4; attempt++) {
+    result = await capitalPlaceOrder(
+      session.apiKey,
+      session.cst,
+      session.securityToken,
+      {
+        epic,
+        direction: req.direction,
+        size,
+        stopLevel: req.stopLossPrice ?? undefined,
+        profitLevel: req.takeProfitPrice ?? undefined,
+        guaranteedStop: false,
+      }
+    );
+    if (result.ok || !result.error?.includes("size.minvalue")) break;
+    // Double size each attempt: 1 → 2 → 4 → 8 (or whatever multiplier needed)
+    size = Math.round(size * 2 * 10) / 10;
+    console.log(`[capital-com] size too small for ${epic}, retrying with size=${size}`);
+  }
 
   return {
     ok: result.ok,
