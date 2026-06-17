@@ -44,6 +44,7 @@ export async function fetchPrices(symbols: string[]): Promise<PyPrice[]> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbols }),
       cache: "no-store",
+      signal: AbortSignal.timeout(5000),
     });
     const d = await res.json();
     return d.prices ?? [];
@@ -67,7 +68,7 @@ export async function fetchIndicators(
   try {
     const res = await fetch(
       `${PYTHON_BASE}/api/v1/indicators/${symbol}?interval=${interval}&period=${period}`,
-      { cache: "no-store" }
+      { cache: "no-store", signal: AbortSignal.timeout(5000) }
     );
     if (!res.ok) return null;
     return await res.json() as PyIndicators;
@@ -100,6 +101,7 @@ export async function fetchBacktest(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbol, interval, period, initial_balance: 10000 }),
       cache: "no-store",
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
     return await res.json() as PyBacktestResult;
