@@ -565,7 +565,7 @@ export interface ClosedPositionRecord {
   closeDate: string;
 }
 
-// Fetch closed position history from Capital.com
+// Fetch closed position history from Capital.com via /history/activity
 export async function capitalGetClosedPositions(
   apiKey: string,
   cst: string,
@@ -573,32 +573,54 @@ export async function capitalGetClosedPositions(
   lastNDays = 7
 ): Promise<{ ok: boolean; positions?: ClosedPositionRecord[]; error?: string }> {
   try {
-    const from = new Date(Date.now() - lastNDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) + "T00:00:00";
+    const from = new Date(Date.now() - lastNDays * 24 * 60 * 60 * 1000).toISOString().replace("Z", "");
+    const to = new Date().toISOString().replace("Z", "");
     const res = await fetch(
-      `${DEMO_BASE}/history/positions?from=${encodeURIComponent(from)}&pageSize=50`,
+      `${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=50`,
       { headers: authHeaders(apiKey, cst, securityToken) }
     );
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
-    const data = (await res.json()) as { positions?: Record<string, unknown>[] };
-    const positions: ClosedPositionRecord[] = (data.positions ?? []).map((p) => {
-      const pos = (p.position ?? p) as Record<string, unknown>;
-      const market = (p.market ?? {}) as Record<string, unknown>;
-      const epic = String(market.epic ?? pos.epic ?? "");
-      return {
-        dealId: String(pos.dealId ?? ""),
+    const data = (await res.json()) as { activities?: Record<string, unknown>[] };
+    const activities = data.activities ?? [];
+
+    const positions: ClosedPositionRecord[] = [];
+    for (const a of activities) {
+      const details = (a.details ?? {}) as Record<string, unknown>;
+      const actions = Array.isArray(details.actions) ? details.actions as Record<string, unknown>[] : [];
+
+      // Only process closed position activities
+      const hasDealClosed = actions.some(
+        (act) => String(act.actionType ?? "").includes("CLOSE") || String(act.actionType ?? "").includes("CLOSED")
+      );
+      if (!hasDealClosed && String(a.type ?? "") !== "CLOSE_POSITION") continue;
+
+      // Get dealId — from actions affectedDealId or top-level
+      const closedAction = actions.find((act) => String(act.actionType ?? "").includes("CLOSE"));
+      const dealId = String(closedAction?.affectedDealId ?? a.dealId ?? details.dealReference ?? "");
+      if (!dealId) continue;
+
+      const epic = String(details.epic ?? a.epic ?? "");
+      // profitAndLoss is a string like "+5.00" or "-3.50"
+      const pnlRaw = details.profitAndLoss ?? details.profit ?? 0;
+      const profitLoss = typeof pnlRaw === "string" ? parseFloat(pnlRaw.replace("+", "")) : Number(pnlRaw);
+
+      positions.push({
+        dealId,
         epic,
-        symbol: EPIC_TO_SYMBOL[epic] ?? epic,
-        direction: (pos.direction as "BUY" | "SELL") ?? "BUY",
-        size: Number(pos.dealSize ?? pos.size ?? 0),
-        openLevel: Number(pos.openLevel ?? 0),
-        closeLevel: Number(pos.closeLevel ?? 0),
-        profitLoss: Number(pos.profit ?? pos.profitLoss ?? 0),
-        currency: String(pos.currency ?? "USD"),
-        openDate: String(pos.openDateUtc ?? pos.createdDate ?? new Date().toISOString()),
-        closeDate: String(pos.closeDateUtc ?? pos.updatedDate ?? new Date().toISOString()),
-      };
-    });
+        symbol: EPIC_TO_SYMBOL[epic] ?? String(a.epic ?? epic),
+        direction: (details.direction as "BUY" | "SELL") ?? "BUY",
+        size: Number(details.dealSize ?? details.size ?? 0),
+        openLevel: Number(details.openLevel ?? details.level ?? 0),
+        closeLevel: Number(details.closeLevel ?? 0),
+        profitLoss,
+        currency: String(details.currency ?? "CHF"),
+        openDate: String(a.date ?? new Date().toISOString()),
+        closeDate: String(a.date ?? new Date().toISOString()),
+      });
+    }
+
+    console.log(`[capital] /history/activity: ${activities.length} activities, ${positions.length} closed positions`);
     return { ok: true, positions };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Network error" };
