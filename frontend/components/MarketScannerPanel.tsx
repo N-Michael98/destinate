@@ -30,6 +30,7 @@ interface Opportunity {
   bid: number;
   ask: number;
   spread: number;
+  currentPrice?: number;
   gpt: GPTAnalysis;
   claude: ClaudeRisk;
   finalScore: number;

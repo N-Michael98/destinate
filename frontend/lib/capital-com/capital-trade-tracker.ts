@@ -84,15 +84,8 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
 
     const db = getPrisma();
     // Find all OPEN trades in DB that have a dealId in notes
-    const openTrades = await db.$queryRawUnsafe<Array<{
-      id: string;
-      market: string;
-      direction: string;
-      entry: number;
-      stopLoss: number;
-      takeProfit: number;
-      notes: string;
-    }>>(`SELECT "id", "market", "direction", "entry", "stopLoss", "takeProfit", "notes" FROM "Trade" WHERE "status" = 'OPEN' AND "notes" LIKE '%dealId%'`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const openTrades: Array<{ id: string; market: string; direction: string; entry: number; stopLoss: number; takeProfit: number; notes: string }> = await (db.$queryRawUnsafe as any)(`SELECT "id", "market", "direction", "entry", "stopLoss", "takeProfit", "notes" FROM "Trade" WHERE "status" = 'OPEN' AND "notes" LIKE '%dealId%'`);
 
     for (const trade of openTrades) {
       let meta: { dealId?: string } = {};
