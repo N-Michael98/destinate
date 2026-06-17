@@ -11,11 +11,9 @@ export async function GET(request: Request) {
   if (broker === "capital" && isCapitalConnected()) {
     const session = getCapitalSession();
     if (session && session.balance > 0) {
-      account.balance = session.balance;
-      account.equity = session.balance + (account.unrealizedPnL ?? 0);
-      account.currency = session.currency ?? account.currency ?? "USD";
-      account.accountType = session.accountType ?? "DEMO";
-      account.broker = "Capital.com DEMO";
+      (account as Record<string, unknown>).balance = session.balance;
+      (account as Record<string, unknown>).equity = session.balance + ((account as Record<string, unknown>).unrealizedPnL as number ?? 0);
+      (account as Record<string, unknown>).currency = session.currency ?? (account as Record<string, unknown>).currency ?? "USD";
     }
   }
 
