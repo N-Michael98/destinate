@@ -33,7 +33,7 @@ export async function POST() {
     if (existing.length > 0) { skipped++; continue; }
 
     const profitLoss = pos.profitLoss ?? 0;
-    const result_str = profitLoss > 0 ? "WIN" : profitLoss < 0 ? "LOSS" : "CLOSED";
+    const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
 
     await db.$executeRawUnsafe(
       `INSERT INTO "Trade" (

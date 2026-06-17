@@ -34,6 +34,7 @@ export interface ExecutionResult {
   direction: string;
   size: number;
   epic: string;
+  openLevel?: number; // real fill price from Capital.com confirm
   error?: string;
   executedAt: string;
 }
@@ -185,6 +186,7 @@ export async function executeCapitalDemoOrder(
     epic,
     dealId: result.dealId,
     dealReference: result.dealReference,
+    openLevel: result.openLevel,
     error: result.error,
     executedAt: new Date().toISOString(),
   };

@@ -48,6 +48,7 @@ export interface OrderResult {
   dealId?: string;
   status?: string;
   error?: string;
+  openLevel?: number; // actual fill price from /confirms
 }
 
 export interface OpenPosition {
@@ -373,7 +374,8 @@ export async function capitalPlaceOrder(
             const reason = String(confirm.reason ?? confirm.rejectReason ?? "Order rejected by broker");
             return { ok: false, error: reason };
           }
-          return { ok: true, dealReference, dealId, status: "OPENED" };
+          const openLevel = Number(confirm.level ?? confirm.openLevel ?? 0);
+          return { ok: true, dealReference, dealId, status: "OPENED", openLevel: openLevel > 0 ? openLevel : undefined };
         }
       } catch { /* non-fatal — fall through to reference */ }
     }

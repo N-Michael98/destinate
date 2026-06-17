@@ -145,7 +145,7 @@ export async function POST(request: Request) {
           direction: best.gpt.direction as "BUY" | "SELL",
           tradingStyle: bestStyle,
           strategy: best.gpt.tradingStyle ?? bestStyle,
-          entry: (best.gpt as { entryPrice?: number }).entryPrice ?? 0,
+          entry: result.openLevel ?? (best.gpt as { entryPrice?: number }).entryPrice ?? 0,
           stopLoss: best.gpt.stopLoss ?? 0,
           takeProfit: best.gpt.takeProfit ?? 0,
           size: result.size,

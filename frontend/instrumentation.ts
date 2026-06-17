@@ -276,7 +276,7 @@ export async function register() {
                     direction: candidate.gpt.direction as "BUY" | "SELL",
                     tradingStyle: style,
                     strategy: candidate.gpt.tradingStyle ?? style,
-                    entry: (candidate.gpt as { entryPrice?: number }).entryPrice ?? (candidate as { currentPrice?: number }).currentPrice ?? 0,
+                    entry: result.openLevel ?? (candidate.gpt as { entryPrice?: number }).entryPrice ?? (candidate as { currentPrice?: number }).currentPrice ?? 0,
                     stopLoss: candidate.gpt.stopLoss ?? 0,
                     takeProfit: candidate.gpt.takeProfit ?? 0,
                     size: result.size,

@@ -41,7 +41,7 @@ export async function POST(request: Request) {
           direction: req.direction,
           tradingStyle: req.tradingStyle,
           strategy: req.strategy,
-          entry: (body as { entryPrice?: number }).entryPrice ?? 0,
+          entry: result.openLevel ?? (body as { entryPrice?: number }).entryPrice ?? 0,
           stopLoss: req.stopLossPrice ?? 0,
           takeProfit: req.takeProfitPrice ?? 0,
           size: result.size,

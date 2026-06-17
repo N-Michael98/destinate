@@ -66,7 +66,7 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
 export async function syncCapitalPositionsToJournal(): Promise<void> {
   try {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
-    const { capitalGetPositions } = await import("./capital-com-client");
+    const { capitalGetPositions, capitalGetClosedPositions } = await import("./capital-com-client");
 
     if (!isCapitalConnected()) return;
     const session = getCapitalSession()!;
@@ -75,38 +75,48 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     if (!posResult.ok) return;
 
     const openDealIds = new Set(
-      (posResult.positions ?? []).map((p) => {
-        try {
-          return (p as { dealId?: string }).dealId ?? "";
-        } catch { return ""; }
-      }).filter(Boolean)
+      (posResult.positions ?? []).map((p) => p.dealId ?? "").filter(Boolean)
+    );
+
+    // Fetch closed positions from Capital.com to get real P&L
+    const closedResult = await capitalGetClosedPositions(session.apiKey, session.cst, session.securityToken, 1);
+    const closedByDealId = new Map(
+      (closedResult.positions ?? []).map((p) => [p.dealId, p])
     );
 
     const db = getPrisma();
-    // Find all OPEN trades in DB that have a dealId in notes
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const openTrades: Array<{ id: string; market: string; direction: string; entry: number; stopLoss: number; takeProfit: number; notes: string }> = await (db.$queryRawUnsafe as any)(`SELECT "id", "market", "direction", "entry", "stopLoss", "takeProfit", "notes" FROM "Trade" WHERE "status" = 'OPEN' AND "notes" LIKE '%dealId%'`);
+    const openTrades: Array<{ id: number; market: string; direction: string; entry: number; stopLoss: number; takeProfit: number; notes: string }> = await (db.$queryRawUnsafe as any)(
+      `SELECT "id", "market", "direction", "entry", "stopLoss", "takeProfit", "notes" FROM "Trade" WHERE "status" = 'OPEN' AND "notes" LIKE '%dealId%'`
+    );
 
     for (const trade of openTrades) {
       let meta: { dealId?: string } = {};
       try { meta = JSON.parse(trade.notes); } catch { continue; }
       if (!meta.dealId || openDealIds.has(meta.dealId)) continue;
 
-      // Position closed on Capital.com — determine WIN or LOSS
-      // We approximate: check if current price (last known) hit SL or TP
-      // Simple heuristic: if no live price available, mark as CLOSED without result
-      const result = "CLOSED"; // Would need live price to determine WIN/LOSS
-      let profitLoss = 0;
+      // Position is no longer open — get real P&L from Capital.com closed history
+      const closed = closedByDealId.get(meta.dealId);
+      const profitLoss = closed?.profitLoss ?? 0;
+      const closeLevel = closed?.closeLevel ?? 0;
 
-      // Try to get last position data from Capital.com closed positions
-      // For now mark as CLOSED — the position monitor will update when price data available
+      // Determine WIN/LOSS/BREAKEVEN based on actual P&L
+      const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
+
+      // Update notes with close data
+      let updatedMeta: Record<string, unknown> = {};
+      try { updatedMeta = JSON.parse(trade.notes); } catch { updatedMeta = {}; }
+      updatedMeta.closeLevel = closeLevel;
+      updatedMeta.closedAt = new Date().toISOString();
+
       await db.$executeRawUnsafe(
-        `UPDATE "Trade" SET "status" = 'CLOSED', "result" = $1, "profitLoss" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
-        result,
+        `UPDATE "Trade" SET "status" = 'CLOSED', "result" = $1, "profitLoss" = $2, "notes" = $3, "updatedAt" = NOW() WHERE "id" = $4`,
+        result_str,
         profitLoss,
+        JSON.stringify(updatedMeta),
         trade.id
       );
-      console.log(`[trade-tracker] Trade closed: ${trade.market} ${trade.direction} deal=${meta.dealId}`);
+      console.log(`[trade-tracker] Closed: ${trade.market} ${trade.direction} → ${result_str} P&L=${profitLoss} deal=${meta.dealId}`);
     }
   } catch (err) {
     console.error("[trade-tracker] syncCapitalPositions error:", err);
