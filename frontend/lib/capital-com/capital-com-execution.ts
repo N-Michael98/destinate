@@ -46,10 +46,10 @@ export interface CloseResult {
 
 // Minimum deal sizes per epic on Capital.com DEMO
 const MIN_SIZE: Record<string, number> = {
-  // Forex — Capital.com requires min 0.1 lots
-  EURUSD: 0.1, GBPUSD: 0.1, USDJPY: 0.1, USDCHF: 0.1,
-  AUDUSD: 0.1, USDCAD: 0.1, NZDUSD: 0.1, EURGBP: 0.1,
-  EURJPY: 0.1, GBPJPY: 0.1,
+  // Forex — Capital.com requires min 1.0 for all forex pairs
+  EURUSD: 1, GBPUSD: 1, USDJPY: 1, USDCHF: 1,
+  AUDUSD: 1, USDCAD: 1, NZDUSD: 1, EURGBP: 1,
+  EURJPY: 1, GBPJPY: 1,
   // Commodities
   GOLD: 0.1, SILVER: 0.1, OIL_CRUDE: 0.1, OIL_BRENT: 0.1, NATURAL_GAS: 0.1,
   // Indices
