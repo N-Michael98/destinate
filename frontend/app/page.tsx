@@ -913,56 +913,96 @@ function LearningCenter() {
 }
 
 function LearningReportsCenter() {
+  const [report, setReport] = React.useState<{
+    totalTrades: number; openTrades: number; closedTrades: number;
+    wins: number; losses: number; winRate: number; totalPnL: number;
+    avgRR: number; profitFactor: number; bestTrade: string; worstTrade: string;
+    byStyle: Array<{ style: string; trades: number; winRate: number; pnl: number }>;
+  } | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    fetch("/api/forward-testing", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok && d.report?.metrics) {
+          const m = d.report.metrics;
+          setReport({
+            totalTrades: m.totalSignals,
+            openTrades: m.pendingTrades,
+            closedTrades: m.completedTrades,
+            wins: m.wins,
+            losses: m.losses,
+            winRate: m.winRate,
+            totalPnL: m.totalPnlPercent,
+            avgRR: m.avgRR,
+            profitFactor: m.profitFactor,
+            bestTrade: m.bestTrade,
+            worstTrade: m.worstTrade,
+            byStyle: d.report.byStyle ?? [],
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const winRateColor = !report ? "text-gray-400"
+    : report.winRate >= 60 ? "text-green-400"
+    : report.winRate >= 50 ? "text-yellow-400"
+    : "text-red-400";
+
   return (
     <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
           <h2 className="text-4xl font-black"> Learning Reports</h2>
           <p className="text-gray-400 text-xl mt-3">
-            AI-generierte Lernberichte: Performance-Analyse, Strategie-Ranking, Fehler-Review und Evolution-Empfehlungen.
+            Echte Capital.com DEMO Trade-History: Performance-Analyse, Strategie-Ranking und Evolution.
           </p>
         </div>
         <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">
           <p className="text-gray-400">Report Status</p>
-          <p className="text-cyan-400 text-2xl font-bold">Prepared</p>
+          <p className="text-cyan-400 text-2xl font-bold">{loading ? "Lädt…" : report ? "Live" : "Keine Daten"}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
-        <StatCard title="Tages-Report" value="Ready" subtitle="Täglich nach Close" accent="text-cyan-400" border="border-cyan-900" />
-        <StatCard title="Wochen-Report" value="Ready" subtitle="Freitag 18:00" accent="text-blue-400" border="border-blue-900" />
-        <StatCard title="Monats-Report" value="Ready" subtitle="Strategie Review" accent="text-purple-400" border="border-purple-900" />
-        <StatCard title="Evolution Report" value="Aktiv" subtitle="Mutations-Feedback" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Total Trades" value={report?.totalTrades ?? "—"} subtitle={`${report?.openTrades ?? 0} offen`} accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Win Rate" value={report ? `${report.winRate}%` : "—"} subtitle={`${report?.wins ?? 0}W / ${report?.losses ?? 0}L`} accent={winRateColor} border="border-cyan-900" />
+        <StatCard title="Profit Factor" value={report?.profitFactor ?? "—"} subtitle="Echte P&L" accent={report && report.profitFactor >= 1.5 ? "text-green-400" : "text-yellow-400"} border="border-blue-900" />
+        <StatCard title="Total P&L" value={report ? `${report.totalPnL > 0 ? "+" : ""}${report.totalPnL.toFixed(2)}` : "—"} subtitle="Realisiert" accent={report && report.totalPnL >= 0 ? "text-green-400" : "text-red-400"} border="border-purple-900" />
       </div>
 
       <div className="grid grid-cols-3 gap-6">
         <div className="bg-black border border-cyan-900 rounded-2xl p-6">
-          <h3 className="text-xl font-bold text-cyan-400 mb-4"> Tages-Analyse</h3>
+          <h3 className="text-xl font-bold text-cyan-400 mb-4"> Performance</h3>
           <div className="space-y-2">
-            <StatusPill label="Trade Performance" value="PnL / Win-Rate" accent="text-cyan-400" />
-            <StatusPill label="Beste Strategie" value="Momentum" accent="text-green-400" />
-            <StatusPill label="Fehler-Review" value="Inventory short" accent="text-red-400" />
-            <StatusPill label="GPT Zusammenfassung" value="Prepared" accent="text-blue-400" />
+            <StatusPill label="Win Rate" value={report ? `${report.winRate}%` : "—"} accent={winRateColor} />
+            <StatusPill label="Avg R:R" value={report ? `${report.avgRR}` : "—"} accent="text-blue-400" />
+            <StatusPill label="Bester Markt" value={report?.bestTrade || "—"} accent="text-green-400" />
+            <StatusPill label="Schlechtester" value={report?.worstTrade || "—"} accent="text-red-400" />
           </div>
         </div>
 
         <div className="bg-black border border-blue-900 rounded-2xl p-6">
-          <h3 className="text-xl font-bold text-blue-400 mb-4"> Wochen-Report</h3>
+          <h3 className="text-xl font-bold text-blue-400 mb-4"> Strategie-Ranking</h3>
           <div className="space-y-2">
-            <StatusPill label="Win-Rate Trend" value="67% → 71%" accent="text-green-400" />
-            <StatusPill label="Profit Factor" value="2.15" accent="text-cyan-400" />
-            <StatusPill label="Max Drawdown" value="0.73%" accent="text-yellow-400" />
-            <StatusPill label="Strategie-Ranking" value="Updated" accent="text-purple-400" />
+            {report?.byStyle?.length ? report.byStyle.sort((a, b) => b.winRate - a.winRate).map((s) => (
+              <StatusPill key={s.style} label={s.style} value={`${s.winRate}% (${s.trades}T)`} accent={s.winRate >= 60 ? "text-green-400" : s.winRate >= 50 ? "text-yellow-400" : "text-red-400"} />
+            )) : (
+              <p className="text-gray-500 text-sm">Noch keine geschlossenen Trades</p>
+            )}
           </div>
         </div>
 
         <div className="bg-black border border-purple-900 rounded-2xl p-6">
-          <h3 className="text-xl font-bold text-purple-400 mb-4"> Evolution Feedback</h3>
+          <h3 className="text-xl font-bold text-purple-400 mb-4"> Evolution</h3>
           <div className="space-y-2">
-            <StatusPill label="Mutation Score" value="→ Strategy Evolution" accent="text-purple-400" />
-            <StatusPill label="Beste Spezies" value="Momentum v3.2" accent="text-green-400" />
-            <StatusPill label="Eliminiert" value="Inventory v1.0" accent="text-red-400" />
-            <StatusPill label="Claude Review" value="Risk check" accent="text-red-300" />
+            <StatusPill label="Datenquelle" value="Capital.com DEMO" accent="text-cyan-400" />
+            <StatusPill label="Offene Trades" value={`${report?.openTrades ?? 0}`} accent="text-yellow-400" />
+            <StatusPill label="Geschlossen" value={`${report?.closedTrades ?? 0}`} accent="text-blue-400" />
+            <StatusPill label="Profit Factor" value={report ? `${report.profitFactor}` : "—"} accent={report && report.profitFactor >= 1.5 ? "text-green-400" : "text-yellow-400"} />
           </div>
         </div>
       </div>

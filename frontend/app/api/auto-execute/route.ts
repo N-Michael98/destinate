@@ -127,6 +127,24 @@ export async function POST(request: Request) {
       incrementDailyTradeCount(bestStyle);
       await cacheSet(positionCacheKey, openPositions + 1, 300);
       console.log(`[auto-execute] ✅ ${best.symbol} ${best.gpt.direction} (${bestStyle}) — DealID: ${result.dealId} | ${getDailyTradeCount(bestStyle)}/${styleLimit[bestStyle]} ${bestStyle} heute`);
+      // Save to Trading Journal
+      try {
+        const { saveCapitalTradeToJournal } = await import("../../../lib/capital-com/capital-trade-tracker");
+        await saveCapitalTradeToJournal({
+          dealId: result.dealId ?? "unknown",
+          symbol: best.symbol,
+          direction: best.gpt.direction as "BUY" | "SELL",
+          tradingStyle: bestStyle,
+          strategy: best.gpt.tradingStyle ?? bestStyle,
+          entry: (best.gpt as { entryPrice?: number }).entryPrice ?? 0,
+          stopLoss: best.gpt.stopLoss ?? 0,
+          takeProfit: best.gpt.takeProfit ?? 0,
+          size: result.size,
+          accountBalance,
+          riskPercent: riskSettings.maxRiskPerTradePct,
+          confidence: best.gpt.confidence,
+        });
+      } catch { /* non-fatal */ }
     } else {
       console.error(`[auto-execute] ❌ ${best.symbol} failed: ${result.error}`);
     }

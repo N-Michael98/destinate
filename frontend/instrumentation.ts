@@ -178,6 +178,14 @@ export async function register() {
         // auto-reconnects if session expired or dropped
         const { keepAliveCapital } = await import("./lib/capital-com/capital-com-session");
         setInterval(() => keepAliveCapital().catch(() => {}), 2 * 60 * 1000);
+
+        // Position monitor every 2min — detect SL/TP hits, update Trade journal
+        setInterval(async () => {
+          try {
+            const { syncCapitalPositionsToJournal } = await import("./lib/capital-com/capital-trade-tracker");
+            await syncCapitalPositionsToJournal();
+          } catch { /* non-fatal */ }
+        }, 2 * 60 * 1000);
       } catch { /* non-fatal */ }
 
       // ── Server-side Auto-Scan + Auto-Execute every 60s ─────────────────────
@@ -252,6 +260,24 @@ export async function register() {
                 global.__daily_trades__.count++;
                 global.__daily_trades__.byStyle[style] = (global.__daily_trades__.byStyle[style] ?? 0) + 1;
                 console.log(`[auto-scan] ✅ ${candidate.symbol} ${candidate.gpt.direction} (${style}) — Deal ${result.dealId}`);
+                // Save to Trading Journal
+                try {
+                  const { saveCapitalTradeToJournal } = await import("./lib/capital-com/capital-trade-tracker");
+                  await saveCapitalTradeToJournal({
+                    dealId: result.dealId ?? "unknown",
+                    symbol: candidate.symbol,
+                    direction: candidate.gpt.direction as "BUY" | "SELL",
+                    tradingStyle: style,
+                    strategy: candidate.gpt.tradingStyle ?? style,
+                    entry: candidate.gpt.entryPrice ?? candidate.currentPrice ?? 0,
+                    stopLoss: candidate.gpt.stopLoss ?? 0,
+                    takeProfit: candidate.gpt.takeProfit ?? 0,
+                    size: result.size,
+                    accountBalance: session.balance > 0 ? session.balance : 10000,
+                    riskPercent: settings.riskSettings.maxRiskPerTradePct,
+                    confidence: candidate.gpt.confidence,
+                  });
+                } catch { /* non-fatal */ }
                 break; // one trade per scan cycle
               } else {
                 console.warn(`[auto-scan] ❌ ${candidate.symbol} failed: ${result.error} — trying next`);

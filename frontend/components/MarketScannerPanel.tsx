@@ -169,6 +169,7 @@ export default function MarketScannerPanel() {
         accountBalance,
         stopLossPrice: opp.gpt.stopLoss,
         takeProfitPrice: opp.gpt.takeProfit,
+        entryPrice: opp.gpt.entryPrice ?? opp.currentPrice,
         confidence: opp.gpt.confidence,
         strategy: opp.gpt.tradingStyle,
         tradingStyle: opp.gpt.tradingStyle,

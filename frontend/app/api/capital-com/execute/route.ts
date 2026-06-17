@@ -30,6 +30,28 @@ export async function POST(request: Request) {
     };
 
     const result = await executeCapitalDemoOrder(req);
+
+    // Save to Trading Journal on success
+    if (result.ok && result.dealId) {
+      try {
+        const { saveCapitalTradeToJournal } = await import("../../../../lib/capital-com/capital-trade-tracker");
+        await saveCapitalTradeToJournal({
+          dealId: result.dealId,
+          symbol: req.symbol,
+          direction: req.direction,
+          tradingStyle: req.tradingStyle,
+          strategy: req.strategy,
+          entry: (body as { entryPrice?: number }).entryPrice ?? 0,
+          stopLoss: req.stopLossPrice ?? 0,
+          takeProfit: req.takeProfitPrice ?? 0,
+          size: result.size,
+          accountBalance: req.accountBalance,
+          riskPercent: req.riskPercent,
+          confidence: req.confidence,
+        });
+      } catch { /* non-fatal */ }
+    }
+
     return NextResponse.json(result, { status: result.ok ? 200 : 400 });
   } catch (error) {
     return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
