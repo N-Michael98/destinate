@@ -23,20 +23,28 @@ export async function POST(request: Request) {
 
   const session = getCapitalSession()!;
 
-  // Fetch activity history — Capital.com expects YYYY-MM-DDTHH:MM:SS (no ms, no Z)
-  function toCapitalDate(d: Date) {
-    return d.toISOString().slice(0, 19); // "2025-06-10T14:30:00"
-  }
-  const from = toCapitalDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
-  const to = toCapitalDate(new Date());
+  // Try Capital.com /history/activity with lastPeriod (ms) — fallback to from/to
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  const fromIso = new Date(Date.now() - sevenDaysMs).toISOString().slice(0, 19);
+  const toIso = new Date().toISOString().slice(0, 19);
 
-  const actRes = await fetch(
-    `${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=100`,
+  // Try lastPeriod first, then from/to
+  let actRes = await fetch(
+    `${DEMO_BASE}/history/activity?lastPeriod=${sevenDaysMs}&pageSize=100`,
     { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
   );
 
   if (!actRes.ok) {
-    return NextResponse.json({ ok: false, error: `Capital.com /history/activity: HTTP ${actRes.status}` }, { status: 500 });
+    // Fallback: from/to ISO format
+    actRes = await fetch(
+      `${DEMO_BASE}/history/activity?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
+      { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
+    );
+  }
+
+  if (!actRes.ok) {
+    const errText = await actRes.text().catch(() => "");
+    return NextResponse.json({ ok: false, error: `Capital.com /history/activity: HTTP ${actRes.status} — ${errText.slice(0, 200)}` }, { status: 500 });
   }
 
   const rawData = await actRes.json() as Record<string, unknown>;
