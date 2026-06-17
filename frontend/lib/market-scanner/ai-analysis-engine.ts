@@ -250,13 +250,19 @@ Rules:
 
       const raw = await callClaude(ai.anthropic.apiKey, ai.anthropic.model, prompt);
       const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
+      const riskScore = parsed.riskScore ?? 50;
+      const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
+      // Derive approved from risk metrics if Claude didn't return explicit boolean
+      const approved = parsed.approved !== undefined
+        ? parsed.approved
+        : (riskScore < 60 && parsedRR >= 1.5);
       claude = {
         symbol: market.symbol,
-        approved: parsed.approved ?? false,
-        riskScore: parsed.riskScore ?? 50,
+        approved,
+        riskScore,
         maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
         reasoning: parsed.reasoning ?? "",
-        rewardRiskRatio: parsed.rewardRiskRatio ?? rrRatio,
+        rewardRiskRatio: parsedRR,
         source: "CLAUDE_REAL",
       };
     } else {
