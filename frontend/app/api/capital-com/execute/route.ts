@@ -20,6 +20,8 @@ export async function POST(request: Request) {
       direction: body.direction,
       riskPercent: body.riskPercent ?? 1.0,
       accountBalance: body.accountBalance,
+      stopLossPrice: body.stopLossPrice,
+      takeProfitPrice: body.takeProfitPrice,
       stopLossPips: body.stopLossPips,
       takeProfitPips: body.takeProfitPips,
       confidence: body.confidence ?? 70,

@@ -15,6 +15,8 @@ export interface ExecutionRequest {
   direction: "BUY" | "SELL";
   riskPercent: number;
   accountBalance: number;
+  stopLossPrice?: number;   // absolute price level from GPT analysis
+  takeProfitPrice?: number; // absolute price level from GPT analysis
   stopLossPips?: number;
   takeProfitPips?: number;
   confidence: number;
@@ -145,7 +147,8 @@ export async function executeCapitalDemoOrder(
       epic,
       direction: req.direction,
       size,
-      stopLevel: req.stopLossPips ? undefined : undefined, // calculated by Capital.com risk engine
+      stopLevel: req.stopLossPrice ?? undefined,
+      profitLevel: req.takeProfitPrice ?? undefined,
       guaranteedStop: false,
     }
   );

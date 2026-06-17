@@ -115,6 +115,8 @@ export async function POST(request: Request) {
       direction: best.gpt.direction as "BUY" | "SELL",
       riskPercent: Math.min(best.claude.maxRiskPercent, riskSettings.maxRiskPerTradePct),
       accountBalance,
+      stopLossPrice: best.gpt.stopLoss,
+      takeProfitPrice: best.gpt.takeProfit,
       confidence: best.gpt.confidence,
       strategy: best.gpt.tradingStyle,
       tradingStyle: bestStyle,
