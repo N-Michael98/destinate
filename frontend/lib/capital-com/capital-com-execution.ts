@@ -50,6 +50,7 @@ const MIN_SIZE: Record<string, number> = {
   EURUSD: 100, GBPUSD: 100, USDJPY: 100, USDCHF: 100,
   AUDUSD: 100, USDCAD: 100, NZDUSD: 100, EURGBP: 100,
   EURJPY: 100, GBPJPY: 100,
+
   // Commodities
   GOLD: 0.1, SILVER: 0.1, OIL_CRUDE: 0.1, OIL_BRENT: 0.1, NATURAL_GAS: 0.1,
   // Indices
@@ -103,6 +104,17 @@ const DEFAULT_STOP_BY_STYLE: Record<string, Record<string, number>> = {
   },
 };
 
+// Maximum sizes to stay within Capital.com DEMO margin limits
+const MAX_SIZE: Record<string, number> = {
+  EURUSD: 1000, GBPUSD: 1000, USDJPY: 1000, USDCHF: 1000,
+  AUDUSD: 1000, USDCAD: 1000, NZDUSD: 1000, EURGBP: 1000,
+  EURJPY: 1000, GBPJPY: 1000,
+  GOLD: 5, SILVER: 50, OIL_CRUDE: 10, OIL_BRENT: 10, NATURAL_GAS: 100,
+  US100: 5, US500: 5, US30: 2, GERMANY40: 5, UK100: 5, JAPAN225: 2,
+  BITCOIN: 0.05, ETHEREUM: 0.5, LITECOIN: 10, RIPPLE: 500,
+  CARDANO: 500, SOLANA: 5, POLKADOT: 10, CHAINLINK: 10, BNB: 0.5,
+};
+
 function calcPositionSize(
   epic: string,
   accountBalance: number,
@@ -115,7 +127,8 @@ function calcPositionSize(
   const stop = stopPoints > 0 ? stopPoints : (DEFAULT_STOP_BY_STYLE[tradingStyle]?.[epic] ?? 20);
   const raw = riskAmount / (stop * pipVal);
   const min = MIN_SIZE[epic] ?? 0.1;
-  const rounded = Math.max(min, Math.floor(raw * 10) / 10);
+  const max = MAX_SIZE[epic] ?? raw;
+  const rounded = Math.min(max, Math.max(min, Math.floor(raw * 10) / 10));
   return Number(rounded.toFixed(2));
 }
 
