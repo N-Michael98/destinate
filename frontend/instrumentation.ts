@@ -220,33 +220,32 @@ export async function register() {
               global.__daily_trades__ = { date: today, count: redisDailyRaw?.count ?? 0, byStyle: redisDailyRaw?.byStyle ?? {} };
             }
             const dailyCount = global.__daily_trades__.count;
-            if (dailyCount >= settings.botSettings.maxTradesPerDay) {
-              console.log(`[auto-scan] Tageslimit erreicht: ${dailyCount}/${settings.botSettings.maxTradesPerDay}`);
-              return;
+            const tradeLimitEnabled = settings.botSettings.tradeLimitEnabled ?? true;
+            const bypassScore = settings.botSettings.tradeLimitBypassScore ?? 80;
+            const limitReached = dailyCount >= settings.botSettings.maxTradesPerDay;
+            if (tradeLimitEnabled && limitReached) {
+              console.log(`[auto-scan] Tageslimit ${dailyCount}/${settings.botSettings.maxTradesPerDay} — prüfe Bypass (Score ≥ ${bypassScore}%)`);
             }
-
-            const best = opportunities.find((o) => {
-              if (!o.goSignal) return false;
-              if (o.gpt.confidence < threshold) return false;
-              const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
-              const styleMax = (styleLimit as Record<string, number>)[style] ?? 999;
-              const styleCount = global.__daily_trades__?.byStyle[style] ?? 0;
-              return styleCount < styleMax;
-            });
 
             // Store scan results globally so scanner UI can display them without manual scan
             global.__last_scan_result__ = { opportunities, updatedAt: new Date().toISOString() };
 
-            if (!best) return;
-
-            // Try signals in order — skip if execution fails (e.g. size too small)
+            // Build candidate list — apply limit + bypass rule
             const candidates = opportunities.filter((o) => {
               if (!o.goSignal) return false;
               if (o.gpt.confidence < threshold) return false;
+              // Per-style limit check
               const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
               const styleMax = (styleLimit as Record<string, number>)[style] ?? 999;
-              return (global.__daily_trades__?.byStyle[style] ?? 0) < styleMax;
+              if ((global.__daily_trades__?.byStyle[style] ?? 0) >= styleMax) return false;
+              // Daily limit check
+              if (!tradeLimitEnabled) return true; // OFF = unlimited
+              if (!limitReached) return true;       // Limit not yet reached
+              // Limit reached — allow only if bypass score met
+              return o.gpt.confidence >= bypassScore;
             });
+
+            if (!candidates.length) return;
 
             for (const candidate of candidates) {
               const style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";

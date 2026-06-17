@@ -984,29 +984,52 @@ export default function SettingsDashboard() {
               </div>
             </div>
 
-            <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "12px",
-              background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
-              <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
-                Pause On Drawdown
-              </label>
-              <button
-                onClick={() => updateBotField("pauseOnLoss", !settings.botSettings.pauseOnLoss)}
-                style={{
-                  width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
-                  background: settings.botSettings.pauseOnLoss ? "#10c96d" : "rgba(255,255,255,0.1)",
-                  position: "relative", transition: "background 0.15s",
-                }}
-              >
-                <div style={{
-                  width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
-                  position: "absolute", top: "3px",
-                  left: settings.botSettings.pauseOnLoss ? "23px" : "3px",
-                  transition: "left 0.15s",
-                }} />
-              </button>
-              <span style={{ fontSize: "12px", color: settings.botSettings.pauseOnLoss ? "#10c96d" : "#64748b" }}>
-                {settings.botSettings.pauseOnLoss ? "ON" : "OFF"}
-              </span>
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
+                  Trade Limit
+                  <span style={{ marginLeft: "8px", fontSize: "9px", color: "#475569" }}>
+                    {(settings.botSettings.tradeLimitEnabled ?? true) ? "— Limit aktiv" : "— Unbegrenzt"}
+                  </span>
+                </label>
+                <button
+                  onClick={() => updateBotField("tradeLimitEnabled", !(settings.botSettings.tradeLimitEnabled ?? true))}
+                  style={{
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: (settings.botSettings.tradeLimitEnabled ?? true) ? "#10c96d" : "rgba(255,255,255,0.1)",
+                    position: "relative", transition: "background 0.15s",
+                  }}
+                >
+                  <div style={{
+                    width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: (settings.botSettings.tradeLimitEnabled ?? true) ? "23px" : "3px",
+                    transition: "left 0.15s",
+                  }} />
+                </button>
+                <span style={{ fontSize: "12px", color: (settings.botSettings.tradeLimitEnabled ?? true) ? "#10c96d" : "#64748b" }}>
+                  {(settings.botSettings.tradeLimitEnabled ?? true) ? "ON" : "OFF"}
+                </span>
+              </div>
+              {(settings.botSettings.tradeLimitEnabled ?? true) && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "10px", color: "#64748b", whiteSpace: "nowrap" }}>
+                    Bypass wenn Score ≥
+                  </span>
+                  <input
+                    type="range" min={70} max={99} step={1}
+                    value={settings.botSettings.tradeLimitBypassScore ?? 80}
+                    onChange={(e) => updateBotField("tradeLimitBypassScore", Number(e.target.value))}
+                    style={{ flex: 1, accentColor: "#f59e0b" }}
+                  />
+                  <span style={{ fontSize: "12px", color: "#f59e0b", fontWeight: "bold", minWidth: "36px" }}>
+                    {settings.botSettings.tradeLimitBypassScore ?? 80}%
+                  </span>
+                </div>
+              )}
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                ON = Max Trades/Tag aktiv. Limit erreicht → trotzdem Trade wenn Score ≥ Bypass-Wert.
+              </p>
             </div>
           </div>
         </div>

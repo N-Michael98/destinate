@@ -44,6 +44,8 @@ export interface BotSettings {
   autoApproveThreshold: number;
   pauseOnLoss: boolean;
   pauseOnLossPercent: number;
+  tradeLimitEnabled: boolean;       // ON = enforce daily limit; OFF = unlimited
+  tradeLimitBypassScore: number;    // When limit reached, still trade if score >= this
   maxTradesPerDayByStyle: {
     DAYTRADING: number;
     SCALPING: number;
