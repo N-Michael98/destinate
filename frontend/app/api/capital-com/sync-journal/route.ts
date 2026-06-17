@@ -23,9 +23,12 @@ export async function POST(request: Request) {
 
   const session = getCapitalSession()!;
 
-  // Fetch activity history — last 7 days
-  const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().replace("Z", "");
-  const to = new Date().toISOString().replace("Z", "");
+  // Fetch activity history — Capital.com expects YYYY-MM-DDTHH:MM:SS (no ms, no Z)
+  function toCapitalDate(d: Date) {
+    return d.toISOString().slice(0, 19); // "2025-06-10T14:30:00"
+  }
+  const from = toCapitalDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  const to = toCapitalDate(new Date());
 
   const actRes = await fetch(
     `${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=100`,
@@ -152,8 +155,8 @@ export async function GET() {
   }
 
   const session = getCapitalSession()!;
-  const from = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().replace("Z", "");
-  const to = new Date().toISOString().replace("Z", "");
+  const from = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
+  const to = new Date().toISOString().slice(0, 19);
 
   try {
     const res = await fetch(

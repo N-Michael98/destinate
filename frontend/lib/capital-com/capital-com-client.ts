@@ -573,8 +573,8 @@ export async function capitalGetClosedPositions(
   lastNDays = 7
 ): Promise<{ ok: boolean; positions?: ClosedPositionRecord[]; error?: string }> {
   try {
-    const from = new Date(Date.now() - lastNDays * 24 * 60 * 60 * 1000).toISOString().replace("Z", "");
-    const to = new Date().toISOString().replace("Z", "");
+    const from = new Date(Date.now() - lastNDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
+    const to = new Date().toISOString().slice(0, 19);
     const res = await fetch(
       `${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=50`,
       { headers: authHeaders(apiKey, cst, securityToken) }
