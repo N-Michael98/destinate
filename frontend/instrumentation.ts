@@ -179,6 +179,75 @@ export async function register() {
         const { keepAliveCapital } = await import("./lib/capital-com/capital-com-session");
         setInterval(() => keepAliveCapital().catch(() => {}), 2 * 60 * 1000);
       } catch { /* non-fatal */ }
+
+      // ── Server-side Auto-Scan + Auto-Execute every 60s ─────────────────────
+      // Runs regardless of which page is open — no browser required
+      try {
+        setInterval(async () => {
+          try {
+            const { isCapitalConnected, getCapitalSession } = await import("./lib/capital-com/capital-com-session");
+            const { getSettings } = await import("./lib/settings/settings-store");
+            if (!isCapitalConnected()) return;
+            const settings = await getSettings();
+            if (settings.botSettings.mode !== "AUTO") return;
+
+            const { capitalGetTopMarkets } = await import("./lib/capital-com/capital-com-client");
+            const { analyzeMarkets } = await import("./lib/market-scanner/ai-analysis-engine");
+            const { executeCapitalDemoOrder } = await import("./lib/capital-com/capital-com-execution");
+
+            const session = getCapitalSession()!;
+            const markets = await capitalGetTopMarkets(session.apiKey, session.cst, session.securityToken);
+            if (!markets.ok || !markets.markets?.length) return;
+
+            const opportunities = await analyzeMarkets(markets.markets);
+            const threshold = settings.botSettings.autoApproveThreshold ?? 71;
+            const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
+
+            // Use same daily counter as POST route
+            const today = new Date().toISOString().slice(0, 10);
+            if (!global.__daily_trades__ || global.__daily_trades__.date !== today) {
+              global.__daily_trades__ = { date: today, count: 0, byStyle: {} };
+            }
+            const dailyCount = global.__daily_trades__.count;
+            if (dailyCount >= settings.botSettings.maxTradesPerDay) return;
+
+            const best = opportunities.find((o) => {
+              if (!o.goSignal) return false;
+              if (o.gpt.confidence < threshold) return false;
+              const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
+              const styleMax = (styleLimit as Record<string, number>)[style] ?? 999;
+              const styleCount = global.__daily_trades__?.byStyle[style] ?? 0;
+              return styleCount < styleMax;
+            });
+
+            if (!best) return;
+
+            const style = (best.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
+            const result = await executeCapitalDemoOrder({
+              symbol: best.symbol,
+              direction: best.gpt.direction as "BUY" | "SELL",
+              riskPercent: Math.min(best.claude.maxRiskPercent, settings.riskSettings.maxRiskPerTradePct),
+              accountBalance: session.balance > 0 ? session.balance : 10000,
+              stopLossPrice: best.gpt.stopLoss,
+              takeProfitPrice: best.gpt.takeProfit,
+              confidence: best.gpt.confidence,
+              strategy: best.gpt.tradingStyle,
+              tradingStyle: style,
+            });
+
+            if (result.ok) {
+              global.__daily_trades__.count++;
+              global.__daily_trades__.byStyle[style] = (global.__daily_trades__.byStyle[style] ?? 0) + 1;
+              console.log(`[auto-scan] ✅ ${best.symbol} ${best.gpt.direction} (${style}) — Deal ${result.dealId}`);
+            } else {
+              console.warn(`[auto-scan] ❌ ${best.symbol} failed: ${result.error}`);
+            }
+          } catch (err) {
+            console.warn("[auto-scan] error:", err);
+          }
+        }, 60_000);
+        console.log("[instrumentation] Server-side auto-scan started (every 60s)");
+      } catch { /* non-fatal */ }
     } catch (err) {
       console.error("[instrumentation] Setup error:", err);
     }
