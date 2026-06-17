@@ -29,11 +29,11 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
 
     await db.$executeRawUnsafe(
       `INSERT INTO "Trade" (
-        "id", "market", "direction", "strategy", "entry", "stopLoss", "takeProfit",
+        "market", "direction", "strategy", "entry", "stopLoss", "takeProfit",
         "status", "result", "profitLoss", "accountSize", "riskPercent", "riskAmount",
         "riskReward", "positionSize", "notes", "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6,
+        $1, $2, $3, $4, $5, $6,
         'OPEN', 'OPEN', 0, $7, $8, $9, $10, $11, $12,
         NOW(), NOW()
       )`,
