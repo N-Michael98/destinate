@@ -968,9 +968,9 @@ function LearningReportsCenter() {
       </div>
 
       <div className="grid grid-cols-4 gap-6 mb-8">
-        <StatCard title="Total Trades" value={report?.totalTrades ?? "—"} subtitle={`${report?.openTrades ?? 0} offen`} accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Total Trades" value={report ? String(report.totalTrades) : "—"} subtitle={`${report?.openTrades ?? 0} offen`} accent="text-cyan-400" border="border-cyan-900" />
         <StatCard title="Win Rate" value={report ? `${report.winRate}%` : "—"} subtitle={`${report?.wins ?? 0}W / ${report?.losses ?? 0}L`} accent={winRateColor} border="border-cyan-900" />
-        <StatCard title="Profit Factor" value={report?.profitFactor ?? "—"} subtitle="Echte P&L" accent={report && report.profitFactor >= 1.5 ? "text-green-400" : "text-yellow-400"} border="border-blue-900" />
+        <StatCard title="Profit Factor" value={report ? String(report.profitFactor) : "—"} subtitle="Echte P&L" accent={report && report.profitFactor >= 1.5 ? "text-green-400" : "text-yellow-400"} border="border-blue-900" />
         <StatCard title="Total P&L" value={report ? `${report.totalPnL > 0 ? "+" : ""}${report.totalPnL.toFixed(2)}` : "—"} subtitle="Realisiert" accent={report && report.totalPnL >= 0 ? "text-green-400" : "text-red-400"} border="border-purple-900" />
       </div>
 
