@@ -6,6 +6,7 @@ interface GPTAnalysis {
   confidence: number;
   reasoning: string;
   entry: number;
+  entryPrice?: number;
   stopLoss: number;
   takeProfit: number;
   tradingStyle: string;
