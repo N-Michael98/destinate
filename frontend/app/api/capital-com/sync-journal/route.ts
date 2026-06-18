@@ -14,25 +14,33 @@ function authHeaders(apiKey: string, cst: string, token: string) {
   };
 }
 
-async function fetchActivity(apiKey: string, cst: string, token: string): Promise<{ ok: boolean; activities: Record<string, unknown>[]; error?: string }> {
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  const toIso = new Date().toISOString().slice(0, 19);
-  const fromIso = new Date(Date.now() - oneDayMs).toISOString().slice(0, 19);
+// GET — debug: show raw data from Capital.com endpoints
+export async function GET() {
+  if (!isCapitalConnected()) return NextResponse.json({ ok: false, error: "Capital.com nicht verbunden" });
+  const session = getCapitalSession()!;
+  const h = authHeaders(session.apiKey, session.cst, session.securityToken);
 
-  const attempts = [
-    `${DEMO_BASE}/history/activity?lastPeriod=${oneDayMs}`,
-    `${DEMO_BASE}/history/activity?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
-    `${DEMO_BASE}/history/activity`,
-  ];
+  const results: Record<string, unknown> = {};
 
-  for (const url of attempts) {
-    const res = await fetch(url, { headers: authHeaders(apiKey, cst, token) });
-    if (res.ok) {
-      const data = await res.json() as Record<string, unknown>;
-      return { ok: true, activities: (data.activities ?? []) as Record<string, unknown>[] };
-    }
-  }
-  return { ok: false, activities: [], error: "All attempts failed" };
+  // Try open positions
+  try {
+    const r = await fetch(`${DEMO_BASE}/positions`, { headers: h });
+    results.positions = { status: r.status, data: await r.json().catch(() => null) };
+  } catch (e) { results.positions = { error: String(e) }; }
+
+  // Try transactions
+  try {
+    const r = await fetch(`${DEMO_BASE}/history/transactions`, { headers: h });
+    results.transactions = { status: r.status, data: await r.json().catch(() => null) };
+  } catch (e) { results.transactions = { error: String(e) }; }
+
+  // Try activity with different params
+  try {
+    const r = await fetch(`${DEMO_BASE}/history/activity?lastPeriod=86400`, { headers: h });
+    results.activity_lastPeriod_86400 = { status: r.status, data: await r.json().catch(() => null) };
+  } catch (e) { results.activity_lastPeriod_86400 = { error: String(e) }; }
+
+  return NextResponse.json({ ok: true, results });
 }
 
 export async function POST(request: Request) {
@@ -43,108 +51,105 @@ export async function POST(request: Request) {
   }
 
   const session = getCapitalSession()!;
-  const { ok, activities, error } = await fetchActivity(session.apiKey, session.cst, session.securityToken);
-
-  if (!ok) {
-    return NextResponse.json({ ok: false, error }, { status: 500 });
-  }
-
-  if (body.debug) {
-    return NextResponse.json({ ok: true, debug: true, count: activities.length, sample: activities.slice(0, 3) });
-  }
-
+  const h = authHeaders(session.apiKey, session.cst, session.securityToken);
   const db = getPrisma();
   let imported = 0;
   let skipped = 0;
 
-  for (const a of activities) {
-    const details = (a.details ?? {}) as Record<string, unknown>;
-    const actions = Array.isArray(details.actions) ? details.actions as Record<string, unknown>[] : [];
+  // ── Step 1: Get currently OPEN positions from Capital.com ──────────────────
+  const posRes = await fetch(`${DEMO_BASE}/positions`, { headers: h });
+  const openDealIds = new Set<string>();
 
-    // Get P&L — Capital.com returns as string "+163.62" or "-15.72" or number
-    const pnlRaw = details.profitAndLoss ?? details.profit ?? 0;
-    const profitLoss = typeof pnlRaw === "string"
-      ? parseFloat(pnlRaw.replace("+", "")) || 0
-      : Number(pnlRaw);
+  if (posRes.ok) {
+    const posData = await posRes.json() as { positions?: Record<string, unknown>[] };
+    for (const p of posData.positions ?? []) {
+      const pos = (p.position ?? p) as Record<string, unknown>;
+      const dealId = String(pos.dealId ?? "");
+      if (dealId) openDealIds.add(dealId);
+    }
+  }
 
-    // Try to get dealId from multiple locations
-    const closeAction = actions.find((act) => String(act.actionType ?? "").toUpperCase().includes("CLOSE"));
-    const dealId = String(
-      closeAction?.affectedDealId ?? a.dealId ?? details.dealReference ?? ""
+  // ── Step 2: Mark OPEN DB trades as CLOSED if no longer in Capital.com ──────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const openDbTrades = await (db.$queryRawUnsafe as any)(
+    `SELECT id, market, direction, notes FROM "Trade" WHERE "status" = 'OPEN' AND notes LIKE '%dealId%'`
+  ) as Array<{ id: number; market: string; direction: string; notes: string }>;
+
+  for (const t of openDbTrades) {
+    let meta: { dealId?: string } = {};
+    try { meta = JSON.parse(t.notes); } catch { continue; }
+    if (!meta.dealId || openDealIds.has(meta.dealId)) continue;
+
+    // Position closed — mark as CLOSED (P&L unknown without history API)
+    await db.$executeRawUnsafe(
+      `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'CLOSED', "updatedAt" = NOW() WHERE "id" = $1`,
+      t.id
     );
+    imported++;
+  }
 
-    // Accept this activity if it has a P&L value OR has a CLOSE action
-    const hasPnl = Math.abs(profitLoss) > 0.001;
-    const hasClose = !!closeAction;
-    if (!hasPnl && !hasClose) continue;
-    if (!dealId) continue;
+  // ── Step 3: Try /history/transactions for P&L ─────────────────────────────
+  const txRes = await fetch(`${DEMO_BASE}/history/transactions`, { headers: h });
 
-    const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
-    const epic = String(a.epic ?? details.epic ?? "");
-    const direction = String(details.direction ?? "BUY");
-    const openLevel = Number(details.openLevel ?? details.level ?? 0);
-    const closeLevel = Number(details.closeLevel ?? 0);
-    const size = Number(details.dealSize ?? details.size ?? 0);
+  if (txRes.ok) {
+    const txData = await txRes.json() as { transactions?: Record<string, unknown>[] };
 
-    // Check if already in DB by dealId
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const existing = await (db.$queryRawUnsafe as any)(
-      `SELECT id, status FROM "Trade" WHERE notes LIKE $1 LIMIT 1`,
-      `%${dealId}%`
-    ) as Array<{ id: number; status: string }>;
+    if (body.debug) {
+      return NextResponse.json({ ok: true, debug: true, transactions: (txData.transactions ?? []).slice(0, 5), openDealIds: [...openDealIds] });
+    }
 
-    if (existing.length > 0) {
-      // Update if it exists as OPEN
-      if (existing[0].status === "OPEN") {
+    for (const tx of txData.transactions ?? []) {
+      const dealId = String(tx.reference ?? tx.dealId ?? "");
+      if (!dealId) continue;
+
+      const pnlRaw = tx.profitAndLoss ?? tx.pnl ?? tx.amount ?? 0;
+      const profitLoss = typeof pnlRaw === "string"
+        ? parseFloat(String(pnlRaw).replace("+", "")) || 0
+        : Number(pnlRaw);
+
+      if (Math.abs(profitLoss) < 0.001) continue; // skip zero P&L entries
+
+      const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
+
+      // Update existing CLOSED trade with real P&L
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existing = await (db.$queryRawUnsafe as any)(
+        `SELECT id, status FROM "Trade" WHERE notes LIKE $1 LIMIT 1`,
+        `%${dealId}%`
+      ) as Array<{ id: number; status: string }>;
+
+      if (existing.length > 0) {
         await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET "status" = 'CLOSED', "result" = $1, "profitLoss" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
+          `UPDATE "Trade" SET "result" = $1, "profitLoss" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
           result_str, profitLoss, existing[0].id
         );
         imported++;
       } else {
-        skipped++;
+        // Insert as new trade
+        const epic = String(tx.instrumentName ?? tx.epic ?? "UNKNOWN");
+        const dateStr = String(tx.date ?? tx.dateUtc ?? new Date().toISOString()).slice(0, 19).replace("T", " ");
+        await db.$executeRawUnsafe(
+          `INSERT INTO "Trade" (
+            "market", "direction", "strategy", "entry", "stopLoss", "takeProfit",
+            "status", "result", "profitLoss", "accountSize", "riskPercent", "riskAmount",
+            "riskReward", "positionSize", "notes", "createdAt", "updatedAt"
+          ) VALUES ($1,'BUY','Capital.com DEMO | Sync',0,0,0,'CLOSED',$2,$3,$4,1,0,0,0,$5,$6::timestamp,NOW())`,
+          epic, result_str, profitLoss,
+          session.balance > 0 ? session.balance : 10000,
+          JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "tx-sync" }),
+          dateStr
+        );
+        imported++;
       }
-      continue;
     }
-
-    // Insert as new CLOSED trade
-    const dateStr = String(a.date ?? new Date().toISOString()).slice(0, 19).replace("T", " ");
-    await db.$executeRawUnsafe(
-      `INSERT INTO "Trade" (
-        "market", "direction", "strategy", "entry", "stopLoss", "takeProfit",
-        "status", "result", "profitLoss", "accountSize", "riskPercent", "riskAmount",
-        "riskReward", "positionSize", "notes", "createdAt", "updatedAt"
-      ) VALUES (
-        $1, $2, 'Capital.com DEMO | Sync', $3, 0, 0,
-        'CLOSED', $4, $5, $6, 1, 0, 0, $7, $8,
-        $9::timestamp, NOW()
-      )`,
-      epic || "UNKNOWN",
-      direction,
-      openLevel,
-      result_str,
-      profitLoss,
-      session.balance > 0 ? session.balance : 10000,
-      size,
-      JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "sync", closeLevel, date: a.date }),
-      dateStr
-    );
-    imported++;
+  } else if (body.debug) {
+    return NextResponse.json({ ok: true, debug: true, txStatus: txRes.status, openDealIds: [...openDealIds], closedFromPositions: imported });
   }
 
   return NextResponse.json({
     ok: true,
     imported,
     skipped,
-    total: activities.length,
-    message: `${imported} Trades importiert/aktualisiert, ${skipped} bereits vorhanden`
+    message: `${imported} Trades aktualisiert`
   });
-}
-
-// GET — returns raw activity for debugging
-export async function GET() {
-  if (!isCapitalConnected()) return NextResponse.json({ ok: false, error: "Capital.com nicht verbunden" });
-  const session = getCapitalSession()!;
-  const { ok, activities, error } = await fetchActivity(session.apiKey, session.cst, session.securityToken);
-  return NextResponse.json({ ok, error, count: activities.length, activities: activities.slice(0, 5) });
 }
