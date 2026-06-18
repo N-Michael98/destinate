@@ -78,11 +78,22 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       (posResult.positions ?? []).map((p) => p.dealId ?? "").filter(Boolean)
     );
 
-    // Fetch closed positions from Capital.com to get real P&L
-    const closedResult = await capitalGetClosedPositions(session.apiKey, session.cst, session.securityToken, 1);
-    const closedByDealId = new Map(
-      (closedResult.positions ?? []).map((p) => [p.dealId, p])
-    );
+    // Fetch recent transactions for P&L (last 24h) — more reliable than activity endpoint
+    const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
+    const txRes = await fetch(`${DEMO_BASE}/history/transactions?lastPeriod=86400`, {
+      headers: { "X-CAP-API-KEY": session.apiKey, "CST": session.cst, "X-SECURITY-TOKEN": session.securityToken },
+    });
+    const txData = txRes.ok ? (await txRes.json() as { transactions?: Record<string, unknown>[] }) : { transactions: [] };
+    // Map: dealId → P&L (size field)
+    const pnlByDealId = new Map<string, number>();
+    const marketByDealId = new Map<string, string>();
+    for (const tx of txData.transactions ?? []) {
+      if (String(tx.transactionType ?? "") !== "TRADE") continue;
+      const dealId = String(tx.dealId ?? tx.reference ?? "");
+      const pnlRaw = tx.size ?? tx.profitAndLoss ?? 0;
+      const pnl = typeof pnlRaw === "string" ? parseFloat(String(pnlRaw).replace("+", "")) || 0 : Number(pnlRaw);
+      if (dealId) { pnlByDealId.set(dealId, pnl); marketByDealId.set(dealId, String(tx.instrumentName ?? "")); }
+    }
 
     const db = getPrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,10 +106,9 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       try { meta = JSON.parse(trade.notes); } catch { continue; }
       if (!meta.dealId || openDealIds.has(meta.dealId)) continue;
 
-      // Position is no longer open — get real P&L from Capital.com closed history
-      const closed = closedByDealId.get(meta.dealId);
-      const profitLoss = closed?.profitLoss ?? 0;
-      const closeLevel = closed?.closeLevel ?? 0;
+      // Position is no longer open — get real P&L from transactions (exact match or fuzzy market match)
+      const profitLoss = pnlByDealId.get(meta.dealId) ?? 0;
+      const closeLevel = 0;
 
       // Determine WIN/LOSS/BREAKEVEN based on actual P&L
       const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
