@@ -90,16 +90,21 @@ export async function POST(request: Request) {
 
   // ── Step 3: Try /history/transactions for P&L ─────────────────────────────
   const txRes = await fetch(`${DEMO_BASE}/history/transactions`, { headers: h });
+  let txCount = 0;
+  let txTradeCount = 0;
 
   if (txRes.ok) {
     const txData = await txRes.json() as { transactions?: Record<string, unknown>[] };
+    const allTx = txData.transactions ?? [];
+    txCount = allTx.length;
 
     if (body.debug) {
-      return NextResponse.json({ ok: true, debug: true, transactions: (txData.transactions ?? []).slice(0, 5), openDealIds: [...openDealIds] });
+      return NextResponse.json({ ok: true, debug: true, transactions: allTx.slice(0, 5), openDealIds: [...openDealIds] });
     }
 
-    for (const tx of txData.transactions ?? []) {
+    for (const tx of allTx) {
       if (String(tx.transactionType ?? "") !== "TRADE") continue;
+      txTradeCount++;
       const dealId = String(tx.dealId ?? tx.reference ?? "");
       if (!dealId) continue;
 
@@ -108,11 +113,10 @@ export async function POST(request: Request) {
         ? parseFloat(String(pnlRaw).replace("+", "")) || 0
         : Number(pnlRaw);
 
-      if (Math.abs(profitLoss) < 0.001) continue; // skip zero P&L entries
+      if (Math.abs(profitLoss) < 0.001) continue;
 
       const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
 
-      // Update existing trade with real P&L (match by dealId value in notes JSON)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const existing = await (db.$queryRawUnsafe as any)(
         `SELECT id, status FROM "Trade" WHERE notes::text LIKE $1 LIMIT 1`,
@@ -121,12 +125,11 @@ export async function POST(request: Request) {
 
       if (existing.length > 0) {
         await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET "result" = $1, "profitLoss" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
+          `UPDATE "Trade" SET "status"='CLOSED', "result" = $1, "profitLoss" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
           result_str, profitLoss, existing[0].id
         );
         imported++;
       } else {
-        // Insert as new trade
         const epic = String(tx.instrumentName ?? tx.epic ?? "UNKNOWN");
         const dateStr = String(tx.date ?? tx.dateUtc ?? new Date().toISOString()).slice(0, 19).replace("T", " ");
         await db.$executeRawUnsafe(
@@ -143,14 +146,15 @@ export async function POST(request: Request) {
         imported++;
       }
     }
-  } else if (body.debug) {
-    return NextResponse.json({ ok: true, debug: true, txStatus: txRes.status, openDealIds: [...openDealIds], closedFromPositions: imported });
   }
 
   return NextResponse.json({
     ok: true,
     imported,
     skipped,
+    txStatus: txRes.status,
+    txTotal: txCount,
+    txTrades: txTradeCount,
     message: `${imported} Trades aktualisiert`
   });
 }
