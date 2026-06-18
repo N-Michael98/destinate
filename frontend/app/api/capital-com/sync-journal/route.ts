@@ -99,10 +99,11 @@ export async function POST(request: Request) {
     }
 
     for (const tx of txData.transactions ?? []) {
-      const dealId = String(tx.reference ?? tx.dealId ?? "");
+      if (String(tx.transactionType ?? "") !== "TRADE") continue;
+      const dealId = String(tx.dealId ?? tx.reference ?? "");
       if (!dealId) continue;
 
-      const pnlRaw = tx.profitAndLoss ?? tx.pnl ?? tx.amount ?? 0;
+      const pnlRaw = tx.size ?? tx.profitAndLoss ?? tx.pnl ?? tx.amount ?? 0;
       const profitLoss = typeof pnlRaw === "string"
         ? parseFloat(String(pnlRaw).replace("+", "")) || 0
         : Number(pnlRaw);
@@ -111,11 +112,11 @@ export async function POST(request: Request) {
 
       const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
 
-      // Update existing CLOSED trade with real P&L
+      // Update existing trade with real P&L (match by dealId value in notes JSON)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const existing = await (db.$queryRawUnsafe as any)(
-        `SELECT id, status FROM "Trade" WHERE notes LIKE $1 LIMIT 1`,
-        `%${dealId}%`
+        `SELECT id, status FROM "Trade" WHERE notes::text LIKE $1 LIMIT 1`,
+        `%"dealId":"${dealId}"%`
       ) as Array<{ id: number; status: string }>;
 
       if (existing.length > 0) {
