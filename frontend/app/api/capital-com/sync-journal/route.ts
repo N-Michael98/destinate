@@ -117,10 +117,21 @@ export async function POST(request: Request) {
 
       const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
 
+      // Match by exact dealId OR by market+direction+CLOSED within 24h window (position vs working order ID mismatch)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const existing = await (db.$queryRawUnsafe as any)(
-        `SELECT id, status FROM "Trade" WHERE notes::text LIKE $1 LIMIT 1`,
-        `%"dealId":"${dealId}"%`
+        `SELECT id, status FROM "Trade"
+         WHERE notes::text LIKE $1
+         OR (
+           "market" = $2
+           AND "status" = 'CLOSED'
+           AND "profitLoss" = 0
+           AND "createdAt" > NOW() - INTERVAL '48 hours'
+           AND notes::text NOT LIKE '%"source":"tx-sync"%'
+         )
+         ORDER BY id DESC LIMIT 1`,
+        `%"dealId":"${dealId}"%`,
+        String(tx.instrumentName ?? "")
       ) as Array<{ id: number; status: string }>;
 
       if (existing.length > 0) {
