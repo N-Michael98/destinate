@@ -430,6 +430,34 @@ export async function capitalGetPositions(
   }
 }
 
+// Update SL/TP on an open position
+export async function capitalUpdatePosition(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  dealId: string,
+  stopLevel: number,
+  limitLevel?: number
+): Promise<OrderResult> {
+  try {
+    const body: Record<string, unknown> = { stopLevel };
+    if (limitLevel && limitLevel > 0) body.limitLevel = limitLevel;
+    const res = await fetch(`${DEMO_BASE}/positions/${dealId}`, {
+      method: "PUT",
+      headers: authHeaders(apiKey, cst, securityToken),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      return { ok: false, error: (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}` };
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+    return { ok: true, dealReference: String(data.dealReference ?? ""), status: "UPDATED" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
 // Close a specific position by dealId
 export async function capitalClosePosition(
   apiKey: string,

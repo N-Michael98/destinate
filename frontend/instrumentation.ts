@@ -184,6 +184,9 @@ export async function register() {
           try {
             const { syncCapitalPositionsToJournal } = await import("./lib/capital-com/capital-trade-tracker");
             await syncCapitalPositionsToJournal();
+            // Active trade manager: breakeven, trailing SL, early exit
+            const { runActiveTradeManager } = await import("./lib/capital-com/active-trade-manager");
+            await runActiveTradeManager();
           } catch { /* non-fatal */ }
         }, 2 * 60 * 1000);
       } catch { /* non-fatal */ }
