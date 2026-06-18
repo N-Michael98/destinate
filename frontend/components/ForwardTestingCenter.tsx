@@ -260,23 +260,27 @@ export default function ForwardTestingCenter() {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
-                {[
-                  { l: "Entry", v: r.entryPrice },
-                  { l: "Exit", v: r.exitPrice },
-                  { l: "SL", v: r.stopLoss },
-                  { l: "TP", v: r.takeProfit },
-                  { l: "Actual RR", v: r.actualRR },
-                  { l: "Exp RR", v: r.expectedRR },
-                  { l: "Lots", v: r.evolvedLotSize },
-                  { l: "Bars", v: r.barsHeld },
-                ].map(({ l, v }) => (
-                  <div key={l} className="rounded-xl border border-slate-800 bg-slate-950/70 p-2 text-center">
-                    <p className="text-[9px] uppercase tracking-[0.15em] text-slate-500">{l}</p>
-                    <p className="mt-1 text-xs font-bold text-white">{v}</p>
-                  </div>
-                ))}
-              </div>
+              {r.entryPrice > 0 ? (
+                <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
+                  {[
+                    { l: "Entry", v: r.entryPrice },
+                    { l: "Exit", v: r.exitPrice || "—" },
+                    { l: "SL", v: r.stopLoss || "—" },
+                    { l: "TP", v: r.takeProfit || "—" },
+                    { l: "Actual RR", v: r.actualRR || "—" },
+                    { l: "Exp RR", v: r.expectedRR || "—" },
+                    { l: "Lots", v: r.evolvedLotSize || "—" },
+                    { l: "Bars", v: r.barsHeld || "—" },
+                  ].map(({ l, v }) => (
+                    <div key={l} className="rounded-xl border border-slate-800 bg-slate-950/70 p-2 text-center">
+                      <p className="text-[9px] uppercase tracking-[0.15em] text-slate-500">{l}</p>
+                      <p className="mt-1 text-xs font-bold text-white">{v}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 italic">Preisdaten nicht verfügbar (via Sync importiert)</p>
+              )}
             </div>
           ))}
         </div>
