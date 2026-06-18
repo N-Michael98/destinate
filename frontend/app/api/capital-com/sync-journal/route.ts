@@ -30,7 +30,7 @@ export async function GET() {
 
   // Try transactions
   try {
-    const r = await fetch(`${DEMO_BASE}/history/transactions`, { headers: h });
+    const r = await fetch(`${DEMO_BASE}/history/transactions?lastPeriod=86400`, { headers: h });
     results.transactions = { status: r.status, data: await r.json().catch(() => null) };
   } catch (e) { results.transactions = { error: String(e) }; }
 
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
   }
 
   // ── Step 3: Try /history/transactions for P&L ─────────────────────────────
-  const txRes = await fetch(`${DEMO_BASE}/history/transactions`, { headers: h });
+  const txRes = await fetch(`${DEMO_BASE}/history/transactions?lastPeriod=86400`, { headers: h });
   let txCount = 0;
   let txTradeCount = 0;
 
