@@ -14,6 +14,27 @@ function authHeaders(apiKey: string, cst: string, token: string) {
   };
 }
 
+async function fetchActivity(apiKey: string, cst: string, token: string): Promise<{ ok: boolean; activities: Record<string, unknown>[]; error?: string }> {
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const toIso = new Date().toISOString().slice(0, 19);
+  const fromIso = new Date(Date.now() - oneDayMs).toISOString().slice(0, 19);
+
+  const attempts = [
+    `${DEMO_BASE}/history/activity?lastPeriod=${oneDayMs}`,
+    `${DEMO_BASE}/history/activity?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
+    `${DEMO_BASE}/history/activity`,
+  ];
+
+  for (const url of attempts) {
+    const res = await fetch(url, { headers: authHeaders(apiKey, cst, token) });
+    if (res.ok) {
+      const data = await res.json() as Record<string, unknown>;
+      return { ok: true, activities: (data.activities ?? []) as Record<string, unknown>[] };
+    }
+  }
+  return { ok: false, activities: [], error: "All attempts failed" };
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { debug?: boolean };
 
@@ -22,52 +43,16 @@ export async function POST(request: Request) {
   }
 
   const session = getCapitalSession()!;
+  const { ok, activities, error } = await fetchActivity(session.apiKey, session.cst, session.securityToken);
 
-  // Capital.com /history/activity — try different param combinations
-  // error.invalid.daterange = range too large or wrong format
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  const now = new Date();
-  const yesterday = new Date(Date.now() - oneDayMs);
-
-  // Format: YYYY-MM-DDTHH:MM:SS (no ms, no Z)
-  const toIso = now.toISOString().slice(0, 19);
-  const fromIso = yesterday.toISOString().slice(0, 19);
-
-  // Try 1: lastPeriod in ms (1 day)
-  let actRes = await fetch(
-    `${DEMO_BASE}/history/activity?lastPeriod=${oneDayMs}`,
-    { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
-  );
-
-  // Try 2: from/to with 1-day range
-  if (!actRes.ok) {
-    actRes = await fetch(
-      `${DEMO_BASE}/history/activity?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
-      { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
-    );
+  if (!ok) {
+    return NextResponse.json({ ok: false, error }, { status: 500 });
   }
 
-  // Try 3: no params — just get latest activity
-  if (!actRes.ok) {
-    actRes = await fetch(
-      `${DEMO_BASE}/history/activity`,
-      { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
-    );
-  }
-
-  if (!actRes.ok) {
-    const errText = await actRes.text().catch(() => "");
-    return NextResponse.json({ ok: false, error: `Capital.com /history/activity: HTTP ${actRes.status} — ${errText.slice(0, 300)}` }, { status: 500 });
-  }
-
-  const rawData = await actRes.json() as Record<string, unknown>;
-
-  // Return raw data in debug mode
   if (body.debug) {
-    return NextResponse.json({ ok: true, debug: true, raw: rawData });
+    return NextResponse.json({ ok: true, debug: true, count: activities.length, sample: activities.slice(0, 3) });
   }
 
-  const activities = (rawData.activities ?? []) as Record<string, unknown>[];
   const db = getPrisma();
   let imported = 0;
   let skipped = 0;
@@ -76,45 +61,45 @@ export async function POST(request: Request) {
     const details = (a.details ?? {}) as Record<string, unknown>;
     const actions = Array.isArray(details.actions) ? details.actions as Record<string, unknown>[] : [];
 
-    // Find DEAL_CLOSED action — this tells us a position was closed
-    const closeAction = actions.find((act) =>
-      String(act.actionType ?? "").toUpperCase().includes("CLOSE")
-    );
-    if (!closeAction) continue;
+    // Get P&L — Capital.com returns as string "+163.62" or "-15.72" or number
+    const pnlRaw = details.profitAndLoss ?? details.profit ?? 0;
+    const profitLoss = typeof pnlRaw === "string"
+      ? parseFloat(pnlRaw.replace("+", "")) || 0
+      : Number(pnlRaw);
 
-    // The affectedDealId is the dealId of the position that was closed
-    const dealId = String(closeAction.affectedDealId ?? a.dealId ?? "");
+    // Try to get dealId from multiple locations
+    const closeAction = actions.find((act) => String(act.actionType ?? "").toUpperCase().includes("CLOSE"));
+    const dealId = String(
+      closeAction?.affectedDealId ?? a.dealId ?? details.dealReference ?? ""
+    );
+
+    // Accept this activity if it has a P&L value OR has a CLOSE action
+    const hasPnl = Math.abs(profitLoss) > 0.001;
+    const hasClose = !!closeAction;
+    if (!hasPnl && !hasClose) continue;
     if (!dealId) continue;
 
-    // Parse P&L — Capital.com returns it as string "+163.62" or "-15.72"
-    const pnlRaw = String(details.profitAndLoss ?? "0");
-    const profitLoss = parseFloat(pnlRaw.replace("+", "")) || 0;
     const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
+    const epic = String(a.epic ?? details.epic ?? "");
+    const direction = String(details.direction ?? "BUY");
+    const openLevel = Number(details.openLevel ?? details.level ?? 0);
+    const closeLevel = Number(details.closeLevel ?? 0);
+    const size = Number(details.dealSize ?? details.size ?? 0);
 
-    // Check if already in DB (open trade with this dealId, or already imported)
+    // Check if already in DB by dealId
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const existing = await (db.$queryRawUnsafe as any)(
-      `SELECT id FROM "Trade" WHERE notes LIKE $1 LIMIT 1`,
+      `SELECT id, status FROM "Trade" WHERE notes LIKE $1 LIMIT 1`,
       `%${dealId}%`
-    ) as Array<{ id: number }>;
+    ) as Array<{ id: number; status: string }>;
 
     if (existing.length > 0) {
-      // If it exists as OPEN, update to CLOSED with real P&L
-      const existingId = existing[0].id;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const openCheck = await (db.$queryRawUnsafe as any)(
-        `SELECT id FROM "Trade" WHERE id = $1 AND "status" = 'OPEN'`,
-        existingId
-      ) as Array<{ id: number }>;
-
-      if (openCheck.length > 0) {
-        const epic = String(a.epic ?? details.epic ?? "");
-        const closeLevel = Number(details.closeLevel ?? details.level ?? 0);
+      // Update if it exists as OPEN
+      if (existing[0].status === "OPEN") {
         await db.$executeRawUnsafe(
           `UPDATE "Trade" SET "status" = 'CLOSED', "result" = $1, "profitLoss" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
-          result_str, profitLoss, existingId
+          result_str, profitLoss, existing[0].id
         );
-        console.log(`[sync] Updated OPEN→CLOSED: ${epic} ${result_str} P&L=${profitLoss}`);
         imported++;
       } else {
         skipped++;
@@ -122,42 +107,29 @@ export async function POST(request: Request) {
       continue;
     }
 
-    // New trade — insert as CLOSED
-    const epic = String(a.epic ?? details.epic ?? "");
-    const direction = String(details.direction ?? "BUY") as "BUY" | "SELL";
-    const openLevel = Number(details.openLevel ?? details.level ?? 0);
-    const closeLevel = Number(details.closeLevel ?? 0);
-    const size = Number(details.dealSize ?? details.size ?? 0);
-
+    // Insert as new CLOSED trade
+    const dateStr = String(a.date ?? new Date().toISOString()).slice(0, 19).replace("T", " ");
     await db.$executeRawUnsafe(
       `INSERT INTO "Trade" (
         "market", "direction", "strategy", "entry", "stopLoss", "takeProfit",
         "status", "result", "profitLoss", "accountSize", "riskPercent", "riskAmount",
         "riskReward", "positionSize", "notes", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, 'Capital.com DEMO | Auto-Import', $3, 0, 0,
+        $1, $2, 'Capital.com DEMO | Sync', $3, 0, 0,
         'CLOSED', $4, $5, $6, 1, 0, 0, $7, $8,
         $9::timestamp, NOW()
       )`,
-      epic,
+      epic || "UNKNOWN",
       direction,
       openLevel,
       result_str,
       profitLoss,
       session.balance > 0 ? session.balance : 10000,
       size,
-      JSON.stringify({
-        dealId,
-        broker: "Capital.com DEMO",
-        source: "sync-import",
-        closeLevel,
-        profitAndLoss: pnlRaw,
-        date: a.date,
-      }),
-      String(a.date ?? new Date().toISOString()).replace("T", " ").slice(0, 19)
+      JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "sync", closeLevel, date: a.date }),
+      dateStr
     );
     imported++;
-    console.log(`[sync] Imported: ${epic} ${direction} ${result_str} P&L=${profitLoss} deal=${dealId}`);
   }
 
   return NextResponse.json({
@@ -169,24 +141,10 @@ export async function POST(request: Request) {
   });
 }
 
-// GET — debug: return raw Capital.com activity log
+// GET — returns raw activity for debugging
 export async function GET() {
-  if (!isCapitalConnected()) {
-    return NextResponse.json({ ok: false, error: "Capital.com nicht verbunden" });
-  }
-
+  if (!isCapitalConnected()) return NextResponse.json({ ok: false, error: "Capital.com nicht verbunden" });
   const session = getCapitalSession()!;
-  const from = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
-  const to = new Date().toISOString().slice(0, 19);
-
-  try {
-    const res = await fetch(
-      `${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=20`,
-      { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
-    );
-    const data = await res.json();
-    return NextResponse.json({ ok: res.ok, status: res.status, data });
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: String(err) });
-  }
+  const { ok, activities, error } = await fetchActivity(session.apiKey, session.cst, session.securityToken);
+  return NextResponse.json({ ok, error, count: activities.length, activities: activities.slice(0, 5) });
 }
