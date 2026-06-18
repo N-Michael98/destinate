@@ -180,10 +180,13 @@ Return ONLY valid JSON with this structure:
 
 Rules:
 - direction must be BUY, SELL, or WAIT
-- confidence: 0-100
+- confidence: 0-100 (only recommend if genuinely confident, otherwise use WAIT)
 - tradingStyle: SCALPING (minutes), DAYTRADING (hours), or SWING (days)
 - Only recommend trades with realistic entry/stop/TP based on current bid/ask
-- stopLoss and takeProfit must be logical (stop BELOW entry for BUY, ABOVE for SELL)`;
+- stopLoss and takeProfit must be logical (stop BELOW entry for BUY, ABOVE for SELL)
+- CRITICAL for volatility: US100/NAS100 needs minimum 150pt SL, GOLD minimum 8pt, GBPUSD minimum 0.0030
+- Minimum R:R ratio 1.5 — if you cannot find a clean setup, use WAIT
+- Max 5 opportunities total, prefer quality over quantity`;
 
     const raw = await callGPT(ai.openai.apiKey, ai.openai.model, prompt);
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
@@ -213,6 +216,9 @@ Rules:
         marketBias: gptData.marketBias ?? "NEUTRAL",
         source: "GPT_REAL",
       };
+    } else if (hasGPT) {
+      // GPT connected but this market not in top 5 → skip, don't simulate
+      gpt = { ...simulateGPT(market), direction: "WAIT", confidence: 0, source: "GPT_REAL" };
     } else {
       gpt = simulateGPT(market);
     }
