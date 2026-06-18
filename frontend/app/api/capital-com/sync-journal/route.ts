@@ -23,28 +23,41 @@ export async function POST(request: Request) {
 
   const session = getCapitalSession()!;
 
-  // Try Capital.com /history/activity with lastPeriod (ms) — fallback to from/to
-  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-  const fromIso = new Date(Date.now() - sevenDaysMs).toISOString().slice(0, 19);
-  const toIso = new Date().toISOString().slice(0, 19);
+  // Capital.com /history/activity — try different param combinations
+  // error.invalid.daterange = range too large or wrong format
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const now = new Date();
+  const yesterday = new Date(Date.now() - oneDayMs);
 
-  // Try lastPeriod first, then from/to
+  // Format: YYYY-MM-DDTHH:MM:SS (no ms, no Z)
+  const toIso = now.toISOString().slice(0, 19);
+  const fromIso = yesterday.toISOString().slice(0, 19);
+
+  // Try 1: lastPeriod in ms (1 day)
   let actRes = await fetch(
-    `${DEMO_BASE}/history/activity?lastPeriod=${sevenDaysMs}&pageSize=100`,
+    `${DEMO_BASE}/history/activity?lastPeriod=${oneDayMs}`,
     { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
   );
 
+  // Try 2: from/to with 1-day range
   if (!actRes.ok) {
-    // Fallback: from/to ISO format
     actRes = await fetch(
       `${DEMO_BASE}/history/activity?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
       { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
     );
   }
 
+  // Try 3: no params — just get latest activity
+  if (!actRes.ok) {
+    actRes = await fetch(
+      `${DEMO_BASE}/history/activity`,
+      { headers: authHeaders(session.apiKey, session.cst, session.securityToken) }
+    );
+  }
+
   if (!actRes.ok) {
     const errText = await actRes.text().catch(() => "");
-    return NextResponse.json({ ok: false, error: `Capital.com /history/activity: HTTP ${actRes.status} — ${errText.slice(0, 200)}` }, { status: 500 });
+    return NextResponse.json({ ok: false, error: `Capital.com /history/activity: HTTP ${actRes.status} — ${errText.slice(0, 300)}` }, { status: 500 });
   }
 
   const rawData = await actRes.json() as Record<string, unknown>;
