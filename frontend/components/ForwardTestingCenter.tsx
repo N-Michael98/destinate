@@ -25,6 +25,7 @@ interface ForwardTestResult {
   hitStop: boolean;
   barsHeld: number;
   slippagePercent: number;
+  profitLoss?: number;
   note: string;
 }
 
@@ -242,10 +243,21 @@ export default function ForwardTestingCenter() {
                   <p className="text-xs text-slate-500">{r.note}</p>
                 </div>
                 <div className="text-right">
-                  <p className={`text-2xl font-black ${r.pnlPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {r.pnlPercent >= 0 ? "+" : ""}{r.pnlPercent}%
-                  </p>
-                  <p className="text-xs text-slate-500">P&L</p>
+                  {(r.profitLoss ?? 0) !== 0 ? (
+                    <>
+                      <p className={`text-2xl font-black ${(r.profitLoss ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {(r.profitLoss ?? 0) >= 0 ? "+" : ""}Fr{(r.profitLoss ?? 0).toFixed(2)}
+                      </p>
+                      <p className="text-xs text-slate-500">P&L (CHF)</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className={`text-2xl font-black ${r.pnlPercent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {r.pnlPercent >= 0 ? "+" : ""}{r.pnlPercent}%
+                      </p>
+                      <p className="text-xs text-slate-500">P&L</p>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">

@@ -68,12 +68,17 @@ export async function GET() {
         riskPercent: t.riskPercent,
         actualRR: t.riskReward,
         expectedRR: t.riskReward,
-        pnlPercent: t.riskAmount > 0 ? Number(((t.profitLoss / t.riskAmount) * t.riskPercent).toFixed(2)) : 0,
+        pnlPercent: t.riskAmount > 0
+          ? Number(((t.profitLoss / t.riskAmount) * t.riskPercent).toFixed(2))
+          : t.accountSize > 0
+            ? Number(((t.profitLoss / t.accountSize) * 100).toFixed(2))
+            : Number((t.profitLoss ?? 0).toFixed(2)),
         outcome,
         hitTarget: outcome === "WIN",
         hitStop: outcome === "LOSS",
         barsHeld: 0,
         slippagePercent: 0,
+        profitLoss: t.profitLoss ?? 0,
         dealId: (meta.dealId as string) ?? null,
         broker: (meta.broker as string) ?? "Capital.com DEMO",
         executedAt: t.createdAt,
