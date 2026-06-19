@@ -11,8 +11,13 @@
  */
 
 import { getPrisma } from "../../app/lib/prisma";
-import { capitalGetPrices, capitalUpdatePosition, capitalClosePosition } from "./capital-com-client";
+import { capitalGetPrices, capitalUpdatePosition, capitalClosePosition, capitalGetPositions, EPIC_MAP } from "./capital-com-client";
 import { getCapitalSession, isCapitalConnected } from "./capital-com-session";
+
+// Reverse map: epic → symbol (for capitalGetPrices which needs symbols)
+const EPIC_TO_SYMBOL: Record<string, string> = Object.fromEntries(
+  Object.entries(EPIC_MAP).map(([sym, epic]) => [epic, sym])
+);
 
 interface TradeMeta {
   dealId?: string;
@@ -43,12 +48,22 @@ export async function runActiveTradeManager(): Promise<void> {
   const session = getCapitalSession()!;
   const db = getPrisma();
 
+  // Get live positions from Capital.com to get real position dealId + openLevel + current SL/TP
+  const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
+  if (!posResult.ok) return;
+
+  // Map: workingOrderId (what DB stores) OR positionDealId → live position data
+  const livePositions = new Map<string, { dealId: string; openLevel: number; stopLevel: number; limitLevel: number; epic: string; direction: string }>();
+  for (const p of posResult.positions ?? []) {
+    const entry = { dealId: p.dealId, openLevel: p.openLevel, stopLevel: p.stopLevel ?? 0, limitLevel: p.profitLevel ?? 0, epic: p.epic, direction: p.direction };
+    if (p.dealId) livePositions.set(p.dealId, entry);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const openTrades = await (db.$queryRawUnsafe as any)(
     `SELECT id, market, direction, entry, "stopLoss", "takeProfit", notes
      FROM "Trade"
      WHERE status = 'OPEN'
-       AND entry > 0
        AND "stopLoss" > 0
        AND "takeProfit" > 0
        AND notes LIKE '%dealId%'`
@@ -59,16 +74,27 @@ export async function runActiveTradeManager(): Promise<void> {
     try { meta = JSON.parse(trade.notes); } catch { continue; }
     if (!meta.dealId) continue;
 
-    // Get current bid/ask
-    const priceResult = await capitalGetPrices(session.apiKey, session.cst, session.securityToken, [trade.market]);
+    // Find live position (DB stores workingOrderId, Capital.com positions have both)
+    const livePos = livePositions.get(meta.dealId);
+    if (!livePos) continue; // position already closed or not found
+
+    // Use live position's real dealId for API calls (not DB's working order id)
+    const positionDealId = livePos.dealId;
+
+    // Get current price — trade.market is epic (e.g. "US100"), need symbol (e.g. "NAS100")
+    const symbol = EPIC_TO_SYMBOL[trade.market] ?? trade.market;
+    const priceResult = await capitalGetPrices(session.apiKey, session.cst, session.securityToken, [symbol]);
     if (!priceResult.ok || !priceResult.prices?.length) continue;
 
     const latest = priceResult.prices[0];
-    // BUY closes at bid, SELL closes at ask
     const currentPrice = trade.direction === "BUY" ? latest.bid : latest.ask;
     if (!currentPrice) continue;
 
-    const { entry, stopLoss, takeProfit } = trade;
+    // Use live entry from Capital.com if DB entry is 0
+    const entry = trade.entry > 0 ? trade.entry : livePos.openLevel;
+    const stopLoss = trade.stopLoss;
+    const takeProfit = trade.takeProfit;
+    if (!entry) continue;
     const isBuy = trade.direction === "BUY";
 
     // Distance from entry to TP (total target range)
@@ -93,7 +119,7 @@ export async function runActiveTradeManager(): Promise<void> {
     // ── Early Exit ────────────────────────────────────────────────────────────
     // If price moved against us by more than exitAt × SL distance and BE not set yet
     if (!meta.beSet && pnlFraction < -lvl.exitAt) {
-      const closeResult = await capitalClosePosition(session.apiKey, session.cst, session.securityToken, meta.dealId);
+      const closeResult = await capitalClosePosition(session.apiKey, session.cst, session.securityToken, positionDealId);
       if (closeResult.ok) {
         const updatedMeta = { ...meta, closedBy: "active-manager-early-exit", closedAt: new Date().toISOString() };
         await db.$executeRawUnsafe(
@@ -108,7 +134,7 @@ export async function runActiveTradeManager(): Promise<void> {
     // ── Breakeven ─────────────────────────────────────────────────────────────
     if (!meta.beSet && progress >= lvl.beAt) {
       const newSL = entry; // SL → Entry = breakeven
-      const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, meta.dealId, newSL);
+      const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, positionDealId, newSL);
       if (updateResult.ok) {
         const updatedMeta = { ...meta, beSet: true, trailActive: false, trailSL: newSL };
         await db.$executeRawUnsafe(
@@ -134,7 +160,7 @@ export async function runActiveTradeManager(): Promise<void> {
         : newTrailSL < currentSL;
 
       if (shouldUpdate) {
-        const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, meta.dealId, newTrailSL);
+        const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, positionDealId, newTrailSL);
         if (updateResult.ok) {
           const updatedMeta = { ...meta, trailActive: true, trailSL: newTrailSL };
           await db.$executeRawUnsafe(
