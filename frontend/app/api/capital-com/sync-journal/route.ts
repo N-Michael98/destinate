@@ -113,8 +113,9 @@ export async function POST(request: Request) {
         ? parseFloat(String(pnlRaw).replace("+", "")) || 0
         : Number(pnlRaw);
 
-      if (Math.abs(profitLoss) < 0.001) continue;
+      if (Math.abs(profitLoss) < 0.0001) continue; // skip literally-zero entries only
 
+      // Spread losses (e.g. -2.34) are LOSS not BREAKEVEN
       const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
 
       // Match by exact dealId OR by market+direction+CLOSED within 24h window (position vs working order ID mismatch)

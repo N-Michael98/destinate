@@ -106,17 +106,27 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       try { meta = JSON.parse(trade.notes); } catch { continue; }
       if (!meta.dealId || openDealIds.has(meta.dealId)) continue;
 
-      // Position is no longer open — get real P&L from transactions (exact match or fuzzy market match)
-      const profitLoss = pnlByDealId.get(meta.dealId) ?? 0;
-      const closeLevel = 0;
+      // Position is no longer open — get real P&L from transactions
+      const profitLoss = pnlByDealId.get(meta.dealId) ?? null;
 
-      // Determine WIN/LOSS/BREAKEVEN based on actual P&L
+      // If no transaction found yet, wait for next cycle (Capital.com takes 1-3 min to post)
+      // Mark as CLOSED with BREAKEVEN only if we have a confirmed P&L value
+      if (profitLoss === null) {
+        // Mark closed but keep result as BREAKEVEN until next sync finds the P&L
+        await db.$executeRawUnsafe(
+          `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'BREAKEVEN', "profitLoss" = 0, "updatedAt" = NOW() WHERE "id" = $1`,
+          trade.id
+        );
+        continue;
+      }
+
+      // Spread losses (-0.01 to -5) are real losses, not breakeven
       const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
 
       // Update notes with close data
       let updatedMeta: Record<string, unknown> = {};
       try { updatedMeta = JSON.parse(trade.notes); } catch { updatedMeta = {}; }
-      updatedMeta.closeLevel = closeLevel;
+      updatedMeta.closeLevel = 0;
       updatedMeta.closedAt = new Date().toISOString();
 
       await db.$executeRawUnsafe(
