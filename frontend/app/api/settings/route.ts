@@ -27,6 +27,13 @@ export async function POST(request: Request) {
   }
 
   if (action === "broker_connect") {
+    // IC Markets uses MCP token (no apiKey needed) — mark as connected directly
+    if (body.brokerKey === "IC_MARKETS") {
+      const { updateBrokerConnection } = await import("@/lib/settings/settings-store");
+      const fakeId = `IC-MCP-${Math.floor(Math.random() * 900000 + 100000)}`;
+      await updateBrokerConnection({ brokerKey: "IC_MARKETS", connected: true, accountId: fakeId, accountMode: "DEMO", lastConnectedAt: new Date().toISOString(), error: null });
+      return NextResponse.json({ ok: true, accountId: fakeId, error: null, settings: await getSettings() });
+    }
     const result = await simulateBrokerConnect(
       body.brokerKey,
       body.apiKey ?? "",

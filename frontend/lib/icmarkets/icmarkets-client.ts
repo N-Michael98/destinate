@@ -116,13 +116,23 @@ export async function icGetAccount(): Promise<{
 }> {
   try {
     const result = await mcpCall("getAccount");
+    console.log("[IC Markets MCP] getAccount raw:", JSON.stringify(result));
+
+    // cTrader returns balance in cents (e.g. 2000000 = CHF 20,000.00)
+    // Try multiple field names and divide by 100 if value > 10000
+    const rawBalance = Number(result.balance ?? result.cash ?? result.moneyBalance ?? result.availableForTrading ?? 0);
+    const rawEquity  = Number(result.equity ?? result.netEquity ?? rawBalance);
+    const balance = rawBalance > 10000 ? rawBalance / 100 : rawBalance;
+    const equity  = rawEquity  > 10000 ? rawEquity  / 100 : rawEquity;
+
     return {
       ok: true,
-      balance: Number(result.balance ?? result.cash ?? 0),
-      equity: Number(result.equity ?? 0),
-      currency: String(result.currency ?? "CHF"),
-      accountId: String(result.accountId ?? result.id ?? ""),
-    };
+      balance,
+      equity,
+      currency: String(result.currency ?? result.depositCurrency ?? result.currencyCode ?? "CHF"),
+      accountId: String(result.accountId ?? result.ctidTraderAccountId ?? result.id ?? ""),
+      _raw: result, // for debugging
+    } as { ok: boolean; balance: number; equity: number; currency: string; accountId: string; _raw: Record<string, unknown> };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
   }
