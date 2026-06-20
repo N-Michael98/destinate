@@ -135,11 +135,11 @@ export async function icGetAccount(): Promise<{
   error?: string;
 }> {
   try {
-    const result = await mcpCall("getAccount");
-    console.log("[IC Markets MCP] getAccount raw:", JSON.stringify(result));
+    // cTrader MCP tool is "get_balance" (discovered via tools/list)
+    const result = await mcpCall("get_balance");
+    console.log("[IC Markets MCP] get_balance raw:", JSON.stringify(result));
 
     // cTrader returns balance in cents (e.g. 2000000 = CHF 20,000.00)
-    // Try multiple field names and divide by 100 if value > 10000
     const rawBalance = Number(result.balance ?? result.cash ?? result.moneyBalance ?? result.availableForTrading ?? 0);
     const rawEquity  = Number(result.equity ?? result.netEquity ?? rawBalance);
     const balance = rawBalance > 10000 ? rawBalance / 100 : rawBalance;
@@ -151,8 +151,7 @@ export async function icGetAccount(): Promise<{
       equity,
       currency: String(result.currency ?? result.depositCurrency ?? result.currencyCode ?? "CHF"),
       accountId: String(result.accountId ?? result.ctidTraderAccountId ?? result.id ?? ""),
-      _raw: result, // for debugging
-    } as { ok: boolean; balance: number; equity: number; currency: string; accountId: string; _raw: Record<string, unknown> };
+    };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
   }
@@ -174,7 +173,8 @@ export interface ICPosition {
 
 export async function icGetPositions(): Promise<{ ok: boolean; positions?: ICPosition[]; error?: string }> {
   try {
-    const result = await mcpCall("getPositions");
+    const result = await mcpCall("get_positions");
+    console.log("[IC Markets MCP] get_positions raw:", JSON.stringify(result).slice(0, 500));
     const raw = Array.isArray(result.positions) ? result.positions as Record<string, unknown>[] : [];
     const positions: ICPosition[] = raw.map((p) => ({
       positionId: String(p.positionId ?? p.id ?? ""),
@@ -218,7 +218,7 @@ export async function icPlaceOrder(
     if (stopLoss) params.stopLoss = stopLoss;
     if (takeProfit) params.takeProfit = takeProfit;
 
-    const result = await mcpCall("placeOrder", params);
+    const result = await mcpCall("create_order", params);
     return {
       ok: true,
       positionId: String(result.positionId ?? result.orderId ?? ""),
@@ -238,7 +238,7 @@ export async function icUpdatePosition(
   try {
     const params: Record<string, unknown> = { positionId, stopLoss };
     if (takeProfit) params.takeProfit = takeProfit;
-    await mcpCall("modifyPosition", params);
+    await mcpCall("amend_position", params);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
@@ -249,7 +249,7 @@ export async function icUpdatePosition(
 
 export async function icClosePosition(positionId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await mcpCall("closePosition", { positionId });
+    await mcpCall("close_position", { positionId });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
@@ -266,7 +266,7 @@ export async function icGetPrice(symbol: string): Promise<{
   error?: string;
 }> {
   try {
-    const result = await mcpCall("getSymbolPrice", { symbol });
+    const result = await mcpCall("get_spot_prices", { symbols: [symbol] });
     const bid = Number(result.bid ?? 0);
     const ask = Number(result.ask ?? result.offer ?? 0);
     return { ok: true, bid, ask, spread: Number((ask - bid).toFixed(5)) };
