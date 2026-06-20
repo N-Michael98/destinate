@@ -139,6 +139,17 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
         trade.id
       );
       console.log(`[trade-tracker] Closed: ${trade.market} ${trade.direction} → ${result_str} P&L=${profitLoss} deal=${meta.dealId}`);
+      try {
+        const { notifyTradeClosed } = await import("../telegram-notifications/telegram-sender");
+        await notifyTradeClosed({
+          symbol: trade.market,
+          direction: trade.direction as "BUY" | "SELL",
+          result: result_str as "WIN" | "LOSS" | "BREAKEVEN",
+          profitLoss,
+          currency: "CHF",
+          broker: "Capital.com",
+        });
+      } catch { /* non-fatal */ }
     }
   } catch (err) {
     console.error("[trade-tracker] syncCapitalPositions error:", err);

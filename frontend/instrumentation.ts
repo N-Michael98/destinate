@@ -197,6 +197,30 @@ export async function register() {
         const { keepAliveCapital } = await import("./lib/capital-com/capital-com-session");
         setInterval(() => keepAliveCapital().catch(() => {}), 2 * 60 * 1000);
 
+        // Daily summary at 20:00 via Telegram
+        setInterval(async () => {
+          try {
+            const now = new Date();
+            if (now.getHours() === 20 && now.getMinutes() < 2) {
+              const { getPrisma } = await import("./app/lib/prisma");
+              const db = getPrisma();
+              const today = now.toISOString().slice(0, 10);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const rows = await (db.$queryRawUnsafe as any)(
+                `SELECT result, "profitLoss" FROM "Trade"
+                 WHERE status = 'CLOSED' AND DATE("updatedAt") = $1`, today
+              ) as Array<{ result: string; profitLoss: number }>;
+              if (rows.length > 0) {
+                const wins = rows.filter((r) => r.result === "WIN").length;
+                const losses = rows.filter((r) => r.result === "LOSS").length;
+                const totalPnL = rows.reduce((s, r) => s + (r.profitLoss ?? 0), 0);
+                const { notifyDailySummary } = await import("./lib/telegram-notifications/telegram-sender");
+                await notifyDailySummary({ trades: rows.length, wins, losses, totalPnL, currency: "CHF", winRate: rows.length > 0 ? (wins / rows.length) * 100 : 0 });
+              }
+            }
+          } catch { /* non-fatal */ }
+        }, 60 * 1000); // check every minute
+
         // Position monitor every 2min — Capital.com + IC Markets parallel
         setInterval(async () => {
           try {

@@ -878,10 +878,21 @@ export default function SettingsDashboard() {
                 </div>
               ))}
             </div>
-            <button onClick={saveTelegram}
-              style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(0,195,255,0.4)", cursor: "pointer", background: "rgba(0,195,255,0.12)", color: "#00c3ff", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
-              💾 Telegram speichern
-            </button>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={saveTelegram}
+                style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(0,195,255,0.4)", cursor: "pointer", background: "rgba(0,195,255,0.12)", color: "#00c3ff", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
+                💾 Telegram speichern
+              </button>
+              <button onClick={async () => {
+                const r = await fetch("/api/telegram/test", { method: "POST" }).catch(() => null);
+                const d = r ? await r.json().catch(() => null) : null;
+                setAITestResult((p) => ({ ...p, telegram: { ok: d?.ok ?? false, msg: d?.message ?? "Fehler" } }));
+              }}
+                style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(0,195,255,0.25)", cursor: "pointer", background: "rgba(0,195,255,0.06)", color: "#67e8f9", fontSize: "12px", fontFamily: "monospace" }}>
+                📨 Test-Nachricht senden
+              </button>
+              <span style={{ fontSize: "10px", color: "#475569" }}>Token + Chat ID müssen in Railway gesetzt sein</span>
+            </div>
             {aiTestResult.telegram && (
               <div style={{ marginTop: "8px", padding: "8px 12px", borderRadius: "6px", fontSize: "11px", background: "rgba(16,201,109,0.1)", color: "#10c96d", border: "1px solid rgba(16,201,109,0.3)" }}>
                 {aiTestResult.telegram.msg}

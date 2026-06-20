@@ -142,6 +142,10 @@ export async function runActiveTradeManager(): Promise<void> {
           newSL, JSON.stringify(updatedMeta), trade.id
         );
         console.log(`[trade-mgr] Breakeven set: ${trade.market} entry=${entry} score=${score} progress=${(progress*100).toFixed(0)}%`);
+        try {
+          const { notifyBreakeven } = await import("../telegram-notifications/telegram-sender");
+          await notifyBreakeven({ symbol: trade.market, direction: trade.direction, entry, broker: "Capital.com" });
+        } catch { /* non-fatal */ }
       }
       continue;
     }

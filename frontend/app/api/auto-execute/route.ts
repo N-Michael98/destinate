@@ -155,6 +155,22 @@ export async function POST(request: Request) {
       await cacheSet(positionCacheKey, openPositions + 1, 300);
       const icLog = icResult ? (icResult.ok ? `IC:✅${icResult.positionId}` : `IC:❌${icResult.error}`) : "IC:not connected";
       console.log(`[auto-execute] ✅ ${best.symbol} ${best.gpt.direction} (${bestStyle}) — Capital:${result.dealId} | ${icLog} | ${getDailyTradeCount(bestStyle)}/${styleLimit[bestStyle]} heute`);
+      // Telegram notification
+      try {
+        const { notifyTradeExecuted } = await import("../../../lib/telegram-notifications/telegram-sender");
+        const brokerLabel = icResult?.ok ? "Capital.com + IC Markets" : "Capital.com";
+        await notifyTradeExecuted({
+          symbol: best.symbol,
+          direction: best.gpt.direction as "BUY" | "SELL",
+          size: result.size ?? 0,
+          entry: result.openLevel ?? 0,
+          stopLoss: best.gpt.stopLoss ?? 0,
+          takeProfit: best.gpt.takeProfit ?? 0,
+          confidence: best.gpt.confidence,
+          broker: brokerLabel,
+          dealId: result.dealId,
+        });
+      } catch { /* non-fatal */ }
       // Save to Trading Journal
       try {
         const { saveCapitalTradeToJournal } = await import("../../../lib/capital-com/capital-trade-tracker");
