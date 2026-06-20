@@ -365,12 +365,22 @@ export default function SettingsDashboard() {
         setForms((f) => ({ ...f, [key]: { ...f[key], loading: false, error: d.error ?? "Connection failed", success: null } }));
       }
     } else {
-      // IC Markets — simulation
-      const d = await postAction({ action: "broker_connect", brokerKey: key, apiKey: form.apiKey, accountMode: form.accountMode });
-      setForms((f) => ({
-        ...f,
-        [key]: { ...f[key], loading: false, error: d.ok ? null : (d.error ?? "Connection failed"), success: d.ok ? `Connected — Account ${d.accountId}` : null },
-      }));
+      // IC Markets — MCP Token aus Railway Env Variable (kein manueller Input)
+      const r = await fetch("/api/icmarkets/connect", { method: "POST" }).catch(() => null);
+      const d = r ? await r.json().catch(() => ({ ok: false, error: "Parse error" })) : { ok: false, error: "Network error" };
+      if (d.ok) {
+        await postAction({ action: "broker_connect", brokerKey: key, accountMode: "DEMO" });
+        const balStr = d.balance != null ? ` · Balance: ${d.currency} ${Number(d.balance).toFixed(2)}` : "";
+        setForms((f) => ({
+          ...f,
+          [key]: { ...f[key], loading: false, error: null, success: `Connected ✓ — cTrader MCP${balStr}` },
+        }));
+      } else {
+        setForms((f) => ({
+          ...f,
+          [key]: { ...f[key], loading: false, error: d.error ?? "Connection failed", success: null },
+        }));
+      }
     }
   };
 
@@ -601,27 +611,28 @@ export default function SettingsDashboard() {
                         </div>
                       </>
                     ) : (
-                      // IC Markets — simulation
-                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                        <div style={{ flex: 1, minWidth: "200px" }}>
-                          <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>API KEY</label>
-                          <input
-                            type="password"
-                            placeholder="Enter API key..."
-                            value={f.apiKey}
-                            onChange={(e) => setForms((p) => ({ ...p, [profile.key]: { ...p[profile.key], apiKey: e.target.value } }))}
-                            style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
-                          />
+                      // IC Markets — MCP Token (stored in Railway env, no manual input needed)
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ padding: "10px 14px", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "6px" }}>
+                            <p style={{ margin: 0, fontSize: "11px", color: "#64748b", fontFamily: "monospace" }}>
+                              🔑 cTrader MCP Token — gespeichert als Railway Environment Variable
+                            </p>
+                            <p style={{ margin: "4px 0 0", fontSize: "10px", color: "#475569", fontFamily: "monospace" }}>
+                              ICMARKETS_MCP_TOKEN · https://mcp.ctrader.com/trading/mcp
+                            </p>
+                          </div>
                         </div>
                         <div style={{ minWidth: "120px" }}>
-                          <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>ACCOUNT MODE</label>
+                          <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "4px" }}>LEVERAGE</label>
                           <select
                             value={f.accountMode}
                             onChange={(e) => setForms((p) => ({ ...p, [profile.key]: { ...p[profile.key], accountMode: e.target.value as AccountMode } }))}
                             style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "8px 12px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", outline: "none", width: "100%" }}
                           >
-                            <option value="DEMO">DEMO</option>
-                            <option value="LIVE">LIVE</option>
+                            <option value="400">1:400</option>
+                            <option value="500">1:500</option>
+                            <option value="1000">1:1000</option>
                           </select>
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-end" }}>

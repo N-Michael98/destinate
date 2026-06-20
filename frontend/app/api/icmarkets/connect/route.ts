@@ -1,40 +1,51 @@
-﻿export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { icMarketsClient } from "@/lib/icmarkets-connector/icmarkets-client";
+import { icGetAccount, isICMarketsConfigured } from "@/lib/icmarkets/icmarkets-client";
+import { setICMarketsSession } from "@/lib/icmarkets/icmarkets-session";
 import { paperManagerBroker2 } from "@/lib/paper-trading/paper-singleton";
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    const body = await request.json();
-    const { clientId, clientSecret, accountId } = body as Record<string, string>;
-
-    if (!clientId || !clientSecret || !accountId) {
-      return NextResponse.json({ ok: false, error: "clientId, clientSecret und accountId sind erforderlich" }, { status: 400 });
+    if (!isICMarketsConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: "ICMARKETS_MCP_TOKEN ist nicht konfiguriert — bitte in Railway Environment Variables setzen" },
+        { status: 400 }
+      );
     }
 
-    // Credentials in env setzen (Session-basiert)
-    process.env.ICMARKETS_CLIENT_ID     = clientId;
-    process.env.ICMARKETS_CLIENT_SECRET = clientSecret;
-    process.env.ICMARKETS_ACCOUNT_ID    = accountId;
+    const account = await icGetAccount();
 
-    // Verbindung testen
-    const snapshot = await icMarketsClient.getAccountSnapshot();
-
-    if (snapshot.status === "CONNECTED") {
-      // Paper Broker 2 mit echtem Balance synchronisieren
-      paperManagerBroker2.syncBalance(snapshot.balance, snapshot.currency);
-      return NextResponse.json({
-        ok: true,
-        status: "CONNECTED",
-        balance: snapshot.balance,
-        currency: snapshot.currency,
-        equity: snapshot.equity,
-        broker: "IC_MARKETS",
-        message: "IC Markets DEMO verbunden — Paper Trading Broker 2 synchronisiert.",
-      });
+    if (!account.ok) {
+      return NextResponse.json(
+        { ok: false, error: account.error ?? "MCP-Verbindung fehlgeschlagen" },
+        { status: 401 }
+      );
     }
 
-    return NextResponse.json({ ok: false, status: snapshot.status, error: "Verbindung fehlgeschlagen — Credentials prüfen" }, { status: 401 });
+    const leverage = Number(process.env.ICMARKETS_LEVERAGE ?? 500);
+
+    setICMarketsSession({
+      accountId: account.accountId ?? "",
+      balance: account.balance ?? 0,
+      equity: account.equity ?? 0,
+      currency: account.currency ?? "CHF",
+      connectedAt: new Date().toISOString(),
+      leverage,
+    });
+
+    paperManagerBroker2.syncBalance(account.balance ?? 0, account.currency ?? "CHF");
+
+    return NextResponse.json({
+      ok: true,
+      status: "CONNECTED",
+      balance: account.balance,
+      equity: account.equity,
+      currency: account.currency,
+      accountId: account.accountId,
+      leverage,
+      broker: "IC_MARKETS",
+      message: "IC Markets cTrader verbunden via MCP Token.",
+    });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Fehler" }, { status: 500 });
   }
