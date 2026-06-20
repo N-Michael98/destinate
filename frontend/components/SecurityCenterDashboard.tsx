@@ -332,7 +332,7 @@ export default function SecurityCenterDashboard() {
             <KpiCard label="Open Orders" value={security.openOrdersCount} sub="Paper orders" />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard label="Malwarebytes" value={security.malwarebytesConnected ? "Connected" : "Offline"} accent={security.malwarebytesConnected ? "text-emerald-400" : "text-red-400"} />
+            <KpiCard label="Malwarebytes" value="Simulated" accent="text-yellow-400" />
             <KpiCard label="Kill Switch" value={security.killswitchTriggered ? "TRIGGERED" : security.killswitchArmed ? "Armed" : "Disarmed"} accent={security.killswitchTriggered ? "text-red-400" : "text-emerald-400"} />
             <KpiCard label="Telegram" value={security.telegramConfigured ? "Configured" : "Not set"} accent={security.telegramConfigured ? "text-emerald-400" : "text-yellow-400"} />
             <KpiCard label="Last Scan" value={security.lastScanAt ? new Date(security.lastScanAt).toLocaleTimeString() : "Never"} />
@@ -358,7 +358,7 @@ export default function SecurityCenterDashboard() {
             <p className="text-yellow-400/80 text-xs mt-2">{malwarebytes.dataAccess.accessScope} — Malwarebytes hat keinen Zugriff auf Handelsdaten, API Keys, Broker-Zugangsdaten oder Positionen. Nur der Schutzstatus ist zugänglich.</p>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard label="Connection" value={malwarebytes.connectionStatus} accent={malwarebytes.connectionStatus === "CONNECTED" ? "text-emerald-400" : "text-red-400"} />
+            <KpiCard label="Connection" value={malwarebytes.connectionStatus} accent={malwarebytes.connectionStatus === "CONNECTED" ? "text-emerald-400" : malwarebytes.connectionStatus === "SIMULATED" ? "text-yellow-400" : "text-red-400"} />
             <KpiCard label="Scan Status" value={malwarebytes.scanStatus} accent={malwarebytes.scanStatus === "CLEAN" ? "text-emerald-400" : "text-red-400"} />
             <KpiCard label="Threats Found" value={malwarebytes.threatsFound} accent={malwarebytes.threatsFound === 0 ? "text-emerald-400" : "text-red-400"} />
             <KpiCard label="Quarantined" value={malwarebytes.threatsQuarantined} accent="text-yellow-400" />

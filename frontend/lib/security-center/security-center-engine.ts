@@ -96,7 +96,7 @@ export function generateSecurityCenterReport(): SecurityCenterReport {
     malwarebytesConnected: mw.connectionStatus === "CONNECTED",
     killswitchArmed: ks.armed,
     killswitchTriggered: ks.triggered,
-    telegramConfigured: false,
+    telegramConfigured: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
     brokerSessionsActive: ks.triggered ? 0 : 2,
     openOrdersCount: ks.triggered ? 0 : 3,
     permissions: PERMISSIONS,

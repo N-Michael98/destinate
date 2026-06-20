@@ -891,6 +891,19 @@ export default function SettingsDashboard() {
                 style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(0,195,255,0.25)", cursor: "pointer", background: "rgba(0,195,255,0.06)", color: "#67e8f9", fontSize: "12px", fontFamily: "monospace" }}>
                 📨 Test-Nachricht senden
               </button>
+              <button onClick={async () => {
+                const appUrl = window.location.origin;
+                const r = await fetch("/api/telegram/setup-webhook", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ appUrl }),
+                }).catch(() => null);
+                const d = r ? await r.json().catch(() => null) : null;
+                setAITestResult((p) => ({ ...p, telegram: { ok: d?.ok ?? false, msg: d?.ok ? `✅ Webhook aktiv: ${d.webhookUrl}` : `❌ ${d?.error ?? "Fehler"}` } }));
+              }}
+                style={{ padding: "8px 20px", borderRadius: "6px", border: "1px solid rgba(139,92,246,0.35)", cursor: "pointer", background: "rgba(139,92,246,0.08)", color: "#a78bfa", fontSize: "12px", fontFamily: "monospace" }}>
+                🔗 Webhook einrichten
+              </button>
               <span style={{ fontSize: "10px", color: "#475569" }}>Token + Chat ID müssen in Railway gesetzt sein</span>
             </div>
             {aiTestResult.telegram && (
