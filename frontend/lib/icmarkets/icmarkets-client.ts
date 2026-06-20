@@ -11,6 +11,7 @@ function authHeaders() {
   return {
     "Authorization": `Bearer ${MCP_TOKEN}`,
     "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
   };
 }
 
