@@ -41,19 +41,24 @@ export class ICMarketsClient {
   }
 
   // MCP call via cTrader Remote MCP Server
-  private async mcpCall(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  private async mcpCall(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     const res = await fetch(this.config.mcpUrl!, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.config.mcpToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "tools/call", params: { name: toolName, arguments: toolArgs } }),
     });
     if (!res.ok) throw new Error(`MCP HTTP ${res.status}`);
     const data = await res.json() as { result?: Record<string, unknown>; error?: { message: string } };
     if (data.error) throw new Error(data.error.message);
-    return data.result ?? {};
+    const result = data.result ?? {};
+    if (Array.isArray(result.content)) {
+      const textItem = (result.content as Array<{ type: string; text?: string }>).find((c) => c.type === "text");
+      if (textItem?.text) { try { return JSON.parse(textItem.text) as Record<string, unknown>; } catch { /* raw */ } }
+    }
+    return result;
   }
 
   private async fetchToken(): Promise<string | null> {

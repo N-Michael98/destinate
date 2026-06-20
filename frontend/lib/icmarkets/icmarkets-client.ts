@@ -14,12 +14,16 @@ function authHeaders() {
   };
 }
 
-async function mcpCall(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  // MCP Protocol: tools are called via tools/call
   const body = {
     jsonrpc: "2.0",
     id: Date.now(),
-    method,
-    params,
+    method: "tools/call",
+    params: {
+      name: toolName,
+      arguments: toolArgs,
+    },
   };
 
   const res = await fetch(MCP_URL, {
@@ -29,12 +33,22 @@ async function mcpCall(method: string, params: Record<string, unknown> = {}): Pr
   });
 
   if (!res.ok) {
-    throw new Error(`IC Markets MCP error: HTTP ${res.status}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`IC Markets MCP error: HTTP ${res.status}${text ? " — " + text.slice(0, 200) : ""}`);
   }
 
   const data = await res.json() as { result?: Record<string, unknown>; error?: { message: string } };
   if (data.error) throw new Error(data.error.message);
-  return data.result ?? {};
+
+  // MCP result may be wrapped in content array
+  const result = data.result ?? {};
+  if (Array.isArray(result.content)) {
+    const textItem = (result.content as Array<{ type: string; text?: string }>).find((c) => c.type === "text");
+    if (textItem?.text) {
+      try { return JSON.parse(textItem.text) as Record<string, unknown>; } catch { /* return raw */ }
+    }
+  }
+  return result;
 }
 
 // ── Account ───────────────────────────────────────────────────────────────────
