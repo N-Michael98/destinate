@@ -171,6 +171,7 @@ export async function POST(request: Request) {
           accountBalance,
           riskPercent: riskSettings.maxRiskPerTradePct,
           confidence: best.gpt.confidence,
+          icPositionId: icResult?.ok ? icResult.positionId : undefined,
         });
       } catch { /* non-fatal */ }
     } else {

@@ -184,14 +184,29 @@ export async function register() {
         const { keepAliveCapital } = await import("./lib/capital-com/capital-com-session");
         setInterval(() => keepAliveCapital().catch(() => {}), 2 * 60 * 1000);
 
-        // Position monitor every 2min — detect SL/TP hits, update Trade journal
+        // Position monitor every 2min — Capital.com + IC Markets parallel
         setInterval(async () => {
           try {
+            // Capital.com: sync journal + active trade manager
             const { syncCapitalPositionsToJournal } = await import("./lib/capital-com/capital-trade-tracker");
             await syncCapitalPositionsToJournal();
-            // Active trade manager: breakeven, trailing SL, early exit
             const { runActiveTradeManager } = await import("./lib/capital-com/active-trade-manager");
             await runActiveTradeManager();
+          } catch { /* non-fatal */ }
+
+          try {
+            // IC Markets: journal sync + active trade manager (parallel)
+            const { isICMarketsConnected } = await import("./lib/icmarkets/icmarkets-session");
+            if (isICMarketsConnected()) {
+              const [{ syncICMarketsJournal }, { runICMarketsTradeManager }] = await Promise.all([
+                import("./lib/icmarkets/icmarkets-journal-sync"),
+                import("./lib/icmarkets/icmarkets-trade-manager"),
+              ]);
+              await Promise.all([
+                syncICMarketsJournal(),
+                runICMarketsTradeManager(),
+              ]);
+            }
           } catch { /* non-fatal */ }
         }, 2 * 60 * 1000);
       } catch { /* non-fatal */ }

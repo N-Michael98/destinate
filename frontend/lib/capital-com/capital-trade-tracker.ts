@@ -16,6 +16,7 @@ export interface TradeRecord {
   accountBalance: number;
   riskPercent: number;
   confidence: number;
+  icPositionId?: string; // IC Markets position ID if also executed there
 }
 
 export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<void> {
@@ -54,6 +55,7 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
         confidence: trade.confidence,
         broker: "Capital.com DEMO",
         source: "auto-scan",
+        ...(trade.icPositionId ? { icPositionId: trade.icPositionId } : {}),
       })
     );
     console.log(`[trade-tracker] Saved trade: ${trade.symbol} ${trade.direction} (${trade.tradingStyle}) deal=${trade.dealId}`);
