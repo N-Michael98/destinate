@@ -709,7 +709,7 @@ export default function SettingsDashboard() {
                   borderRadius: "6px", fontSize: "10px", color: "#78716c" }}>
                   {profile.key === "CAPITAL_COM"
                     ? "🔗 Echte API-Verbindung (DEMO) — Marktpreise werden live geladen. Kein Trading, nur READ ONLY. Safety Lock aktiv."
-                    : "⚠ Simulation Mode — no real broker connection is made. All orders remain paper trades."}
+                    : "🔗 cTrader DEMO — Echte Verbindung via MCP Token. Trades werden auf dem Demo-Konto ausgeführt."}
                 </div>
               </div>
             );

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { icGetAccount, isICMarketsConfigured } from "@/lib/icmarkets/icmarkets-client";
+import { icGetAccount, icListTools, isICMarketsConfigured } from "@/lib/icmarkets/icmarkets-client";
 import { setICMarketsSession } from "@/lib/icmarkets/icmarkets-session";
 import { paperManagerBroker2 } from "@/lib/paper-trading/paper-singleton";
 
@@ -13,11 +13,16 @@ export async function POST() {
       );
     }
 
+    // First discover available tools
+    const tools = await icListTools();
+    console.log("[IC Markets MCP] available tools:", JSON.stringify(tools));
+
     const account = await icGetAccount();
+    console.log("[IC Markets MCP] account result:", JSON.stringify(account));
 
     if (!account.ok) {
       return NextResponse.json(
-        { ok: false, error: account.error ?? "MCP-Verbindung fehlgeschlagen" },
+        { ok: false, error: account.error ?? "MCP-Verbindung fehlgeschlagen", availableTools: tools },
         { status: 401 }
       );
     }

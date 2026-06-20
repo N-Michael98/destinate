@@ -104,6 +104,26 @@ async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {})
   return result;
 }
 
+// ── Discover available tools ──────────────────────────────────────────────────
+
+export async function icListTools(): Promise<string[]> {
+  try {
+    if (!mcpSessionId) await mcpInitialize();
+    const headers: Record<string, string> = { ...authHeaders() };
+    if (mcpSessionId && mcpSessionId !== "active") headers["mcp-session-id"] = mcpSessionId;
+
+    const res = await fetch(MCP_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "tools/list", params: {} }),
+    });
+    if (!res.ok) return [];
+    const data = await parseSseOrJson(res);
+    const toolsList = (data.result as { tools?: Array<{ name: string }> })?.tools ?? [];
+    return toolsList.map((t) => t.name);
+  } catch { return []; }
+}
+
 // ── Account ───────────────────────────────────────────────────────────────────
 
 export async function icGetAccount(): Promise<{
