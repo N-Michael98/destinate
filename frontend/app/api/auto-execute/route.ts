@@ -5,6 +5,8 @@ import { isCapitalConnected, getCapitalSession } from "../../../lib/capital-com/
 import { capitalGetTopMarkets } from "../../../lib/capital-com/capital-com-client";
 import { analyzeMarkets } from "../../../lib/market-scanner/ai-analysis-engine";
 import { executeCapitalDemoOrder } from "../../../lib/capital-com/capital-com-execution";
+import { executeICMarketsOrder } from "../../../lib/icmarkets/icmarkets-execution";
+import { isICMarketsConnected, getICMarketsSession } from "../../../lib/icmarkets/icmarkets-session";
 import { cacheGet, cacheSet } from "../../../lib/cache/redis-cache";
 
 type TradingStyle = "DAYTRADING" | "SCALPING" | "SWING";
@@ -120,22 +122,39 @@ export async function POST(request: Request) {
     // Execute best signal only (rank 1)
     const best = goSignals[0];
     const bestStyle = (best.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as TradingStyle;
-    const result = await executeCapitalDemoOrder({
-      symbol: best.symbol,
-      direction: best.gpt.direction as "BUY" | "SELL",
-      riskPercent: Math.min(best.claude.maxRiskPercent, riskSettings.maxRiskPerTradePct),
-      accountBalance,
-      stopLossPrice: best.gpt.stopLoss,
-      takeProfitPrice: best.gpt.takeProfit,
-      confidence: best.gpt.confidence,
-      strategy: best.gpt.tradingStyle,
-      tradingStyle: bestStyle,
-    });
+    const riskPct = Math.min(best.claude.maxRiskPercent, riskSettings.maxRiskPerTradePct);
+
+    // Execute on Capital.com + IC Markets in parallel (Option A: both brokers)
+    const icSession = getICMarketsSession();
+    const [result, icResult] = await Promise.all([
+      executeCapitalDemoOrder({
+        symbol: best.symbol,
+        direction: best.gpt.direction as "BUY" | "SELL",
+        riskPercent: riskPct,
+        accountBalance,
+        stopLossPrice: best.gpt.stopLoss,
+        takeProfitPrice: best.gpt.takeProfit,
+        confidence: best.gpt.confidence,
+        strategy: best.gpt.tradingStyle,
+        tradingStyle: bestStyle,
+      }),
+      isICMarketsConnected() ? executeICMarketsOrder({
+        symbol: best.symbol,
+        direction: best.gpt.direction as "BUY" | "SELL",
+        riskPercent: riskPct,
+        accountBalance: icSession?.balance ?? accountBalance,
+        stopLossPrice: best.gpt.stopLoss,
+        takeProfitPrice: best.gpt.takeProfit,
+        confidence: best.gpt.confidence,
+        tradingStyle: bestStyle,
+      }) : Promise.resolve(null),
+    ]);
 
     if (result.ok) {
       incrementDailyTradeCount(bestStyle);
       await cacheSet(positionCacheKey, openPositions + 1, 300);
-      console.log(`[auto-execute] ✅ ${best.symbol} ${best.gpt.direction} (${bestStyle}) — DealID: ${result.dealId} | ${getDailyTradeCount(bestStyle)}/${styleLimit[bestStyle]} ${bestStyle} heute`);
+      const icLog = icResult ? (icResult.ok ? `IC:✅${icResult.positionId}` : `IC:❌${icResult.error}`) : "IC:not connected";
+      console.log(`[auto-execute] ✅ ${best.symbol} ${best.gpt.direction} (${bestStyle}) — Capital:${result.dealId} | ${icLog} | ${getDailyTradeCount(bestStyle)}/${styleLimit[bestStyle]} heute`);
       // Save to Trading Journal
       try {
         const { saveCapitalTradeToJournal } = await import("../../../lib/capital-com/capital-trade-tracker");
@@ -155,7 +174,11 @@ export async function POST(request: Request) {
         });
       } catch { /* non-fatal */ }
     } else {
-      console.error(`[auto-execute] ❌ ${best.symbol} failed: ${result.error}`);
+      console.error(`[auto-execute] ❌ ${best.symbol} Capital failed: ${result.error}`);
+    }
+
+    if (icResult && !icResult.ok) {
+      console.error(`[auto-execute] ❌ ${best.symbol} IC Markets failed: ${icResult.error}`);
     }
 
     return NextResponse.json({
@@ -166,6 +189,8 @@ export async function POST(request: Request) {
       confidence: best.gpt.confidence,
       size: result.size,
       dealId: result.dealId,
+      icMarketsPositionId: icResult?.positionId ?? null,
+      icMarketsOk: icResult?.ok ?? false,
       error: result.error,
       accountBalance,
       currency,
