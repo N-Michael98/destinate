@@ -11,8 +11,11 @@ export interface ICMarketsConfig {
   apiKey?: string;
   clientId?: string;
   clientSecret?: string;
+  mcpToken?: string;  // cTrader Remote MCP Bearer token
+  mcpUrl?: string;    // cTrader MCP server URL
   readOnly: boolean;
   allowLiveOrders: boolean;
+  leverage?: number;  // 400, 500, or 1000
 }
 
 export interface ICMarketsAccountSnapshot {
