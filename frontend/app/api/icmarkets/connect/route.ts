@@ -29,7 +29,7 @@ export async function POST() {
 
     const leverage = Number(process.env.ICMARKETS_LEVERAGE ?? 500);
 
-    setICMarketsSession({
+    await setICMarketsSession({
       accountId: account.accountId ?? "",
       balance: account.balance ?? 0,
       equity: account.equity ?? 0,

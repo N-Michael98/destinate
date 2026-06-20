@@ -161,6 +161,11 @@ export async function register() {
 
       // Auto-reconnect Capital.com with retry (P3 fix: timing issue on cold start)
       try {
+        // Restore IC Markets session from Redis on startup
+        const { restoreICMarketsSessionFromRedis } = await import("./lib/icmarkets/icmarkets-session");
+        const icRestored = await restoreICMarketsSessionFromRedis();
+        if (icRestored) console.log("[instrumentation] IC Markets session restored from Redis");
+
         const { autoReconnectCapital, isCapitalConnected } = await import("./lib/capital-com/capital-com-session");
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         let r = await autoReconnectCapital();

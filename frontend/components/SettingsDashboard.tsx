@@ -408,6 +408,10 @@ export default function SettingsDashboard() {
       setCapitalAccounts([]);
       setCapitalLiveStatus({ connected: false });
     }
+    if (key === "IC_MARKETS") {
+      // Clear session from Redis
+      await fetch("/api/icmarkets/disconnect", { method: "POST" }).catch(() => {});
+    }
     await postAction({ action: "broker_disconnect", brokerKey: key });
     setForms((f) => ({ ...f, [key]: { ...f[key], error: null, success: null } }));
   };
