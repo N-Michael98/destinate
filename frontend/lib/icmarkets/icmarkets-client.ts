@@ -17,6 +17,26 @@ function authHeaders() {
 
 let mcpSessionId: string | null = null;
 
+// Parse SSE response body — server sends "event: message\ndata: {...}\n\n"
+async function parseSseOrJson(res: Response): Promise<{ result?: Record<string, unknown>; error?: { message: string } }> {
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("text/event-stream")) {
+    const text = await res.text();
+    // Extract all data: lines and find the one with jsonrpc result
+    for (const line of text.split("\n")) {
+      if (line.startsWith("data:")) {
+        const json = line.slice(5).trim();
+        if (!json || json === "[DONE]") continue;
+        try {
+          return JSON.parse(json) as { result?: Record<string, unknown>; error?: { message: string } };
+        } catch { /* try next line */ }
+      }
+    }
+    throw new Error(`MCP SSE: no valid data line found in response`);
+  }
+  return res.json() as Promise<{ result?: Record<string, unknown>; error?: { message: string } }>;
+}
+
 async function mcpInitialize(): Promise<void> {
   const res = await fetch(MCP_URL, {
     method: "POST",
@@ -38,15 +58,13 @@ async function mcpInitialize(): Promise<void> {
     throw new Error(`MCP initialize failed: HTTP ${res.status}${text ? " — " + text.slice(0, 200) : ""}`);
   }
 
-  // Session-ID aus Header lesen falls vorhanden
   mcpSessionId = res.headers.get("mcp-session-id") ?? res.headers.get("x-session-id") ?? "active";
 
-  const data = await res.json() as { result?: Record<string, unknown>; error?: { message: string } };
+  const data = await parseSseOrJson(res);
   if (data.error) throw new Error(`MCP initialize error: ${data.error.message}`);
 }
 
 async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-  // Initialize session first if needed
   if (!mcpSessionId) await mcpInitialize();
 
   const headers: Record<string, string> = { ...authHeaders() };
@@ -65,8 +83,7 @@ async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {})
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    // Session expired — reset and retry once
-    if (res.status === 400 && text.includes("session")) {
+    if (text.includes("session")) {
       mcpSessionId = null;
       await mcpInitialize();
       return mcpCall(toolName, toolArgs);
@@ -74,7 +91,7 @@ async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {})
     throw new Error(`IC Markets MCP error: HTTP ${res.status}${text ? " — " + text.slice(0, 200) : ""}`);
   }
 
-  const data = await res.json() as { result?: Record<string, unknown>; error?: { message: string } };
+  const data = await parseSseOrJson(res);
   if (data.error) throw new Error(data.error.message);
 
   const result = data.result ?? {};
