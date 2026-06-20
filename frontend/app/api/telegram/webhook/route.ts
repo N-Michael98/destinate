@@ -96,6 +96,46 @@ async function executeFullShutdown(name: string): Promise<string[]> {
   return log;
 }
 
+async function executeFullRestart(name: string): Promise<string[]> {
+  const log: string[] = [];
+
+  // Step 1: Reset killswitch lock
+  resetKillswitch();
+  log.push("Kill Switch: zurückgesetzt");
+
+  // Step 2: Reconnect IC Markets (token is in Redis)
+  try {
+    const { restoreICMarketsSessionFromRedis, getICMarketsSession } = await import("@/lib/icmarkets/icmarkets-session");
+    const restored = await restoreICMarketsSessionFromRedis();
+    if (restored) {
+      const { updateBrokerConnection } = await import("@/lib/settings/settings-store");
+      const sess = getICMarketsSession();
+      await updateBrokerConnection({ brokerKey: "IC_MARKETS", connected: true, accountId: sess?.accountId ?? "IC-MCP", accountMode: "DEMO" });
+      log.push("IC Markets: Verbunden (Token aus Redis wiederhergestellt)");
+    } else {
+      log.push("IC Markets: Token nicht in Redis — bitte manuell verbinden");
+    }
+  } catch (e) {
+    log.push(`IC Markets: Fehler — ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // Step 3: Reconnect Capital.com (credentials saved in DB)
+  try {
+    const { autoReconnectCapital } = await import("@/lib/capital-com/capital-com-session");
+    const result = await autoReconnectCapital();
+    if (result.ok) {
+      log.push("Capital.com: Verbunden (gespeicherte Zugangsdaten)");
+    } else {
+      log.push(`Capital.com: Reconnect fehlgeschlagen — ${result.error ?? "unbekannt"}`);
+    }
+  } catch (e) {
+    log.push(`Capital.com: Fehler — ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  log.push(`Reaktiviert von: ${name} via Telegram`);
+  return log;
+}
+
 export async function POST(request: Request) {
   try {
     const update = await request.json() as TelegramUpdate;
@@ -152,13 +192,29 @@ Eingabe: <code>${text.slice(0, 20)}***</code>
         return NextResponse.json({ ok: true });
       }
 
-      // Correct password — execute full shutdown
       pendingConfirm.delete(chatId);
-      await reply(chatId, "🔒 Passwort korrekt. Führe vollständigen Shutdown durch...");
 
-      const log = await executeFullShutdown(name);
+      if (pending.action === "reset") {
+        // Execute full system restart
+        await reply(chatId, "🔄 Passwort korrekt. Starte System neu...");
+        const log = await executeFullRestart(name);
+        await sendTelegram(
+`✅ <b>SYSTEM REAKTIVIERT</b>
 
-      await sendTelegram(
+Reaktiviert von: ${name} (Admin via Telegram)
+
+<b>Ausgeführt:</b>
+${log.map(l => `• ${l}`).join("\n")}
+
+🟢 System ist ONLINE
+📈 Trading wieder aktiv
+🕐 ${new Date().toLocaleString("de-CH")}`
+        );
+      } else {
+        // Execute full shutdown
+        await reply(chatId, "🔒 Passwort korrekt. Führe vollständigen Shutdown durch...");
+        const log = await executeFullShutdown(name);
+        await sendTelegram(
 `🚨 <b>KILL SWITCH — VOLLSTÄNDIGER SHUTDOWN</b>
 
 Ausgelöst von: ${name} (Admin via Telegram)
@@ -171,7 +227,8 @@ ${log.map(l => `• ${l}`).join("\n")}
 🕐 ${new Date().toLocaleString("de-CH")}
 
 Um das System zu reaktivieren: /reset + Admin-Passwort`
-      );
+        );
+      }
       return NextResponse.json({ ok: true });
     }
 
