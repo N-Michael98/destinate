@@ -25,7 +25,10 @@ function getClient(): Anthropic {
 export async function runClaudeWatchdog(): Promise<WatchdogResult | null> {
   const events = await getSecurityEvents();
 
+  console.log(`[watchdog] Cycle start — ${events.length} events in Redis`);
+
   if (events.length === 0) {
+    console.log("[watchdog] No events — SAFE (skipping Claude call)");
     return { verdict: "SAFE", summary: "No security events recorded.", eventCount: 0 };
   }
 
