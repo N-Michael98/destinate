@@ -94,7 +94,10 @@ export default function SystemHealthCheck() {
       let responseMs = 0;
 
       try {
-        const r = await fetch(ep.url, { cache: "no-store" });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const r = await fetch(ep.url, { cache: "no-store", signal: controller.signal });
+        clearTimeout(timeout);
         responseMs = Math.round(performance.now() - start);
 
         if (r.ok) {
@@ -113,7 +116,7 @@ export default function SystemHealthCheck() {
       } catch (err) {
         responseMs = Math.round(performance.now() - start);
         status = "ERROR";
-        message = err instanceof Error ? err.message : "Network error";
+        message = err instanceof Error && err.name === "AbortError" ? "Timeout (>8s)" : err instanceof Error ? err.message : "Network error";
       }
 
       const result: CheckResult = { ...ep, status, message, responseMs };
