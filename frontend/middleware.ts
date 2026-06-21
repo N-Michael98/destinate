@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
@@ -86,20 +88,16 @@ export async function middleware(request: NextRequest) {
   const eventType = detected?.type ?? (bfEntry.count >= BRUTE_THRESHOLD ? "BRUTE_FORCE" : null);
 
   if (eventType) {
-    // Fire-and-forget via internal API — middleware runs on Edge Runtime (no Redis directly)
-    // Use Railway internal port directly to avoid going through the public domain
-    const baseUrl = `http://127.0.0.1:${process.env.PORT ?? "3000"}`;
-    fetch(`${baseUrl}/api/security/log-event`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    // Direct Redis log — Node.js runtime has full access
+    import("./lib/security-watchdog/security-event-logger").then(({ logSecurityEvent }) => {
+      logSecurityEvent({
         type: eventType,
         ip,
         path: pathname,
         ua: request.headers.get("user-agent") ?? undefined,
         payload: detected?.payload,
         ts: now,
-      }),
+      }).catch(() => {});
     }).catch(() => {});
   }
 
