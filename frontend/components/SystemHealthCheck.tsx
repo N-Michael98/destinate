@@ -95,7 +95,7 @@ export default function SystemHealthCheck() {
 
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
+        const timeout = setTimeout(() => controller.abort(), 90000);
         const r = await fetch(ep.url, { cache: "no-store", signal: controller.signal });
         clearTimeout(timeout);
         responseMs = Math.round(performance.now() - start);
