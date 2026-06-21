@@ -86,16 +86,19 @@ export async function middleware(request: NextRequest) {
   const eventType = detected?.type ?? (bfEntry.count >= BRUTE_THRESHOLD ? "BRUTE_FORCE" : null);
 
   if (eventType) {
-    // Fire-and-forget — never block the request for logging
-    import("@/lib/security-watchdog/security-event-logger").then(({ logSecurityEvent }) => {
-      logSecurityEvent({
+    // Fire-and-forget via internal API — middleware runs on Edge Runtime (no Redis directly)
+    const baseUrl = request.nextUrl.origin;
+    fetch(`${baseUrl}/api/security/log-event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         type: eventType,
         ip,
         path: pathname,
         ua: request.headers.get("user-agent") ?? undefined,
         payload: detected?.payload,
         ts: now,
-      }).catch(() => {});
+      }),
     }).catch(() => {});
   }
 
