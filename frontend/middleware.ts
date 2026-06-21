@@ -87,7 +87,8 @@ export async function middleware(request: NextRequest) {
 
   if (eventType) {
     // Fire-and-forget via internal API — middleware runs on Edge Runtime (no Redis directly)
-    const baseUrl = request.nextUrl.origin;
+    // Use Railway internal port directly to avoid going through the public domain
+    const baseUrl = `http://127.0.0.1:${process.env.PORT ?? "3000"}`;
     fetch(`${baseUrl}/api/security/log-event`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
