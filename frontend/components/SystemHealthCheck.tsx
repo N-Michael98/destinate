@@ -23,8 +23,8 @@ const CHECK_ENDPOINTS: { id: string; label: string; group: string; url: string }
   { id: "malwarebytes", label: "Malwarebytes", group: "Security", url: "/api/security-center/malwarebytes" },
   { id: "telegram", label: "Telegram", group: "Security", url: "/api/security-center/telegram" },
   // AI Engines
-  { id: "gpt", label: "GPT Analyst", group: "AI Engines", url: "/api/gpt-analyst" },
-  { id: "claude", label: "Claude Risk", group: "AI Engines", url: "/api/claude-risk" },
+  { id: "gpt", label: "GPT Analyst", group: "AI Engines", url: "/api/gpt-analyst/status" },
+  { id: "claude", label: "Claude Risk", group: "AI Engines", url: "/api/claude-risk/status" },
   { id: "consensus", label: "Consensus Decision", group: "AI Engines", url: "/api/consensus/decision" },
   { id: "evolution", label: "Autonomous Evolution", group: "AI Engines", url: "/api/autonomous-trading-evolution" },
   // Market Data
