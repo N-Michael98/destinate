@@ -88,6 +88,10 @@ export async function middleware(request: NextRequest) {
   const eventType = detected?.type ?? (bfEntry.count >= BRUTE_THRESHOLD ? "BRUTE_FORCE" : null);
 
   if (eventType) {
+    console.log(`[middleware] Security event detected: ${eventType} | IP: ${ip} | Path: ${pathname}`);
+  }
+
+  if (eventType) {
     // Direct Redis log — Node.js runtime has full access
     import("./lib/security-watchdog/security-event-logger").then(({ logSecurityEvent }) => {
       logSecurityEvent({
