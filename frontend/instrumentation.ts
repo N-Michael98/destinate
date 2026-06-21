@@ -356,6 +356,14 @@ export async function register() {
         }, 60_000);
         console.log("[instrumentation] Server-side auto-scan started (every 60s)");
       } catch { /* non-fatal */ }
+
+      // ── Claude Security Watchdog every 3min ────────────────────────────────
+      try {
+        const { runClaudeWatchdog } = await import("./lib/security-watchdog/claude-watchdog");
+        setInterval(() => runClaudeWatchdog().catch(() => {}), 3 * 60 * 1000);
+        console.log("[instrumentation] Claude Security Watchdog started (every 3min)");
+      } catch { /* non-fatal */ }
+
     } catch (err) {
       console.error("[instrumentation] Setup error:", err);
     }

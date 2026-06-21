@@ -11,7 +11,8 @@ export type KillswitchTrigger =
   | "MALWAREBYTES_THREAT"
   | "INTRUSION_DETECTED"
   | "ANOMALY_DETECTED"
-  | "API_BREACH";
+  | "API_BREACH"
+  | "AI_WATCHDOG";
 
 export interface KillswitchStageResult {
   stage: string;
