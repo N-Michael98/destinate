@@ -29,8 +29,8 @@ const CHECK_ENDPOINTS: { id: string; label: string; group: string; url: string }
   { id: "evolution", label: "Autonomous Evolution", group: "AI Engines", url: "/api/autonomous-trading-evolution" },
   // Market Data
   { id: "capital-com", label: "Capital.com Session", group: "Market", url: "/api/capital-com?action=status" },
-  { id: "market-data", label: "Market Data", group: "Market", url: "/api/market-data" },
-  { id: "market-regime", label: "Market Regime", group: "Market", url: "/api/market-regime" },
+  { id: "market-data", label: "Market Data", group: "Market", url: "/api/market-data/status" },
+  { id: "market-regime", label: "Market Regime", group: "Market", url: "/api/market-regime/status" },
   { id: "news", label: "News Intelligence", group: "Market", url: "/api/news-intelligence" },
   { id: "opportunity", label: "Opportunity Scanner", group: "Market", url: "/api/opportunity-scanner" },
   // Execution Pipeline

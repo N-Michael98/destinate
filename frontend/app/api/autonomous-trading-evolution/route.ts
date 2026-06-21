@@ -1,9 +1,9 @@
 ﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { generateAutonomousTradingEvolutionReport } from "@/lib/autonomous-trading-evolution";
 
 export async function GET() {
   try {
+    const { generateAutonomousTradingEvolutionReport } = await import("@/lib/autonomous-trading-evolution");
     const report = generateAutonomousTradingEvolutionReport();
 
     return NextResponse.json({

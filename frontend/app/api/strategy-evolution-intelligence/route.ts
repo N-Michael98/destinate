@@ -4,16 +4,30 @@ import { generateStrategyEvolutionReport } from "../../../lib/strategy-evolution
 import { generateLiveEvolutionScores } from "../../../lib/strategy-evolution/evolution-engine";
 
 export async function GET() {
-  // Echte Backtesting-Scores von Python laden
-  const liveScores = await generateLiveEvolutionScores();
+  try {
+    // Python backend optional — graceful fallback if not deployed
+    const liveScores = await Promise.race([
+      generateLiveEvolutionScores(),
+      new Promise<[]>((resolve) => setTimeout(() => resolve([]), 5000)),
+    ]);
 
-  const report = generateStrategyEvolutionReport();
+    const report = generateStrategyEvolutionReport();
 
-  return NextResponse.json({
-    ok: true,
-    report,
-    liveEvolutionScores: liveScores,
-    source: liveScores.length > 0 ? "PYTHON_BACKTEST" : "MOCK",
-    updatedAt: new Date().toISOString(),
-  });
+    return NextResponse.json({
+      ok: true,
+      report,
+      liveEvolutionScores: liveScores,
+      source: liveScores.length > 0 ? "PYTHON_BACKTEST" : "MOCK",
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    return NextResponse.json({
+      ok: true,
+      report: generateStrategyEvolutionReport(),
+      liveEvolutionScores: [],
+      source: "MOCK",
+      error: err instanceof Error ? err.message : String(err),
+      updatedAt: new Date().toISOString(),
+    });
+  }
 }
