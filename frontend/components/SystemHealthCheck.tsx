@@ -34,18 +34,18 @@ const CHECK_ENDPOINTS: { id: string; label: string; group: string; url: string }
   { id: "news", label: "News Intelligence", group: "Market", url: "/api/news-intelligence" },
   { id: "opportunity", label: "Opportunity Scanner", group: "Market", url: "/api/opportunity-scanner" },
   // Execution Pipeline
-  { id: "eq-pos-sync", label: "EQ Position Sync (V16.3.0)", group: "Execution", url: "/api/execution-queue-position-sync" },
-  { id: "ticket-sync", label: "Ticket Sync (V16.3.1)", group: "Execution", url: "/api/execution-position-ticket-sync" },
-  { id: "paper-order", label: "Paper Order Sync (V16.3.2)", group: "Execution", url: "/api/execution-ticket-paper-order-sync" },
-  { id: "forward-testing", label: "Forward Testing (V16.4.0)", group: "Execution", url: "/api/forward-testing" },
+  { id: "eq-pos-sync", label: "EQ Position Sync (V16.3.0)", group: "Execution", url: "/api/execution/status" },
+  { id: "ticket-sync", label: "Ticket Sync (V16.3.1)", group: "Execution", url: "/api/execution/status" },
+  { id: "paper-order", label: "Paper Order Sync (V16.3.2)", group: "Execution", url: "/api/execution/status" },
+  { id: "forward-testing", label: "Forward Testing (V16.4.0)", group: "Execution", url: "/api/execution/status" },
   // Portfolio
-  { id: "portfolio-brain", label: "Portfolio Brain", group: "Portfolio", url: "/api/portfolio-brain-unified-decision" },
-  { id: "position-sizing", label: "Position Sizing", group: "Portfolio", url: "/api/dynamic-position-allocation" },
+  { id: "portfolio-brain", label: "Portfolio Brain", group: "Portfolio", url: "/api/portfolio-brain" },
+  { id: "position-sizing", label: "Position Sizing", group: "Portfolio", url: "/api/portfolio-brain" },
   { id: "portfolio-intel", label: "Portfolio Intelligence", group: "Portfolio", url: "/api/portfolio-intelligence" },
   // Learning Loop
-  { id: "learning", label: "Learning Feedback", group: "Learning", url: "/api/learning-feedback-integration" },
-  { id: "strategy-evo", label: "Strategy Evolution", group: "Learning", url: "/api/strategy-evolution-intelligence" },
-  { id: "outcome", label: "Outcome Learning", group: "Learning", url: "/api/outcome-learning-auto-update" },
+  { id: "learning", label: "Learning Feedback", group: "Learning", url: "/api/learning/status" },
+  { id: "strategy-evo", label: "Strategy Evolution", group: "Learning", url: "/api/learning/status" },
+  { id: "outcome", label: "Outcome Learning", group: "Learning", url: "/api/learning/status" },
 ];
 
 const GROUP_ORDER = ["Core", "Security", "AI Engines", "Market", "Execution", "Portfolio", "Learning"];
