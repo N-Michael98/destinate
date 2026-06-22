@@ -31,36 +31,37 @@ const SYMBOL_MAP: Record<string, string> = {
   OIL:    "USOIL",
 };
 
-// Pip values per symbol per 1 unit in account currency (CHF approx)
-// Forex: 1 unit = 1 base currency unit, pip = 0.0001 price move
-// Gold/Silver/Oil: 1 unit = 1 oz / 1 bbl, pip = 0.01 price move
+// cTrader MCP volume: internally divides input by 100 for display.
+// Forex min display = 10,000 → min MCP units = 1,000,000
+// XAUUSD: 400 MCP → 4oz → min ~100 MCP
+// Pip values calibrated so: 1% risk (200 CHF) / 20 pip stop ≈ min trade size
 const PIP_VALUE_PER_UNIT: Record<string, number> = {
-  EURUSD: 0.000105,
-  GBPUSD: 0.000105,
-  USDJPY: 0.000095,
-  AUDUSD: 0.000105,
-  USDCAD: 0.000105,
-  USDCHF: 0.0001,
-  GBPJPY: 0.000095,
-  EURJPY: 0.000095,
-  EURGBP: 0.000105,
-  NZDUSD: 0.000105,
+  EURUSD: 0.0000105,
+  GBPUSD: 0.0000105,
+  USDJPY: 0.0000095,
+  AUDUSD: 0.0000105,
+  USDCAD: 0.0000105,
+  USDCHF: 0.000010,
+  GBPJPY: 0.0000095,
+  EURJPY: 0.0000095,
+  EURGBP: 0.0000105,
+  NZDUSD: 0.0000105,
   NAS100:  0.001,
   SPX500:  0.001,
   GER40:   0.001,
   UK100:   0.001,
-  XAUUSD:  0.01,   // 1 pip = $0.01 per oz (2-decimal symbol)
-  XAGUSD:  0.001,  // 1 pip = $0.001 per oz
-  USOIL:   0.001,  // 1 pip = $0.001 per bbl
+  XAUUSD:  0.01,
+  XAGUSD:  0.001,
+  USOIL:   0.001,
 };
 
-// Minimum units per symbol
+// Minimum units per symbol (cTrader MCP minimum)
 const MIN_UNITS: Record<string, number> = {
-  EURUSD: 1000, GBPUSD: 1000, USDJPY: 1000, AUDUSD: 1000,
-  USDCAD: 1000, USDCHF: 1000, GBPJPY: 1000, EURJPY: 1000,
-  EURGBP: 1000, NZDUSD: 1000,
-  NAS100: 1, SPX500: 1, GER40: 1, UK100: 1,
-  XAUUSD: 1, XAGUSD: 10, USOIL: 10,
+  EURUSD: 1000000, GBPUSD: 1000000, USDJPY: 1000000, AUDUSD: 1000000,
+  USDCAD: 1000000, USDCHF: 1000000, GBPJPY: 1000000, EURJPY: 1000000,
+  EURGBP: 1000000, NZDUSD: 1000000,
+  NAS100: 10, SPX500: 10, GER40: 10, UK100: 10,
+  XAUUSD: 100, XAGUSD: 100, USOIL: 100,
 };
 
 function calcICPositionSize(
