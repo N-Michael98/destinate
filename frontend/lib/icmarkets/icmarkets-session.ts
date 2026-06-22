@@ -99,7 +99,8 @@ export async function autoReconnectICMarkets(): Promise<{ ok: boolean; error?: s
     }
     const account = await icGetAccount();
     if (!account.ok) return { ok: false, error: account.error };
-    const leverage = Number(process.env.ICMARKETS_LEVERAGE ?? 500);
+    // Read leverage from account (1:1000 demo); fall back to env or 500
+    const leverage = account.leverage ?? Number(process.env.ICMARKETS_LEVERAGE ?? 1000);
     await setICMarketsSession({
       accountId: account.accountId ?? "",
       balance: account.balance ?? 0,
@@ -108,7 +109,7 @@ export async function autoReconnectICMarkets(): Promise<{ ok: boolean; error?: s
       connectedAt: new Date().toISOString(),
       leverage,
     });
-    console.log(`[IC Markets] Auto-reconnected ⚡ balance: ${account.currency} ${account.balance}`);
+    console.log(`[IC Markets] Auto-reconnected ⚡ balance: ${account.currency} ${account.balance} leverage: 1:${leverage}`);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

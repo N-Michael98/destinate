@@ -144,10 +144,10 @@ export async function icGetAccount(): Promise<{
   equity?: number;
   currency?: string;
   accountId?: string;
+  leverage?: number;
   error?: string;
 }> {
   try {
-    // cTrader MCP tool is "get_balance" (discovered via tools/list)
     const result = await mcpCall("get_balance");
     console.log("[IC Markets MCP] get_balance raw:", JSON.stringify(result));
 
@@ -157,12 +157,16 @@ export async function icGetAccount(): Promise<{
     const balance = rawBalance > 10000 ? rawBalance / 100 : rawBalance;
     const equity  = rawEquity  > 10000 ? rawEquity  / 100 : rawEquity;
 
+    // Try to read leverage from account response or assets
+    const leverage = Number(result.leverage ?? result.maxLeverage ?? result.marginLeverage ?? 0);
+
     return {
       ok: true,
       balance,
       equity,
       currency: String(result.currency ?? result.depositCurrency ?? result.currencyCode ?? "CHF"),
       accountId: String(result.accountId ?? result.ctidTraderAccountId ?? result.id ?? ""),
+      leverage: leverage > 0 ? leverage : undefined,
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };

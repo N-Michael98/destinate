@@ -1,10 +1,11 @@
 /**
  * IC Markets cTrader order execution
- * Mirrors capital-com-execution.ts but uses MCP tools.
- * Volume is sent in Units (cTrader setting = Units, not Lots).
+ * Volume formula: MCP_units = riskAmount / (priceDistance × PRICE_VALUE[symbol])
+ * Verified: XAUUSD 400 MCP × 0.01 × $50 stop = $200 risk ✓
+ *           EURUSD 10M MCP × 0.01 × 0.002 stop = $200 risk ✓
  */
 
-import { icPlaceOrder, isICMarketsConfigured } from "./icmarkets-client";
+import { icPlaceOrder, isICMarketsConfigured, icGetPrice } from "./icmarkets-client";
 import { getICMarketsSession } from "./icmarkets-session";
 
 // cTrader symbol mapping: our internal symbol → exact cTrader symbolName
@@ -23,70 +24,76 @@ const SYMBOL_MAP: Record<string, string> = {
   NZDUSD: "NZDUSD",   // symbolId: 12
   // Indices (all confirmed ✅)
   US500:  "US500",    // symbolId: 10013
-  SPX500: "US500",    // alias
+  SPX500: "US500",
   UK100:  "UK100",    // symbolId: 10011
-  US100:  "USTEC",    // symbolId: 10014 (IC Markets calls Nasdaq "USTEC")
-  NAS100: "USTEC",    // alias
-  GER40:  "DE40",     // symbolId: 10046 (IC Markets calls DAX "DE40")
+  US100:  "USTEC",    // symbolId: 10014
+  NAS100: "USTEC",
+  GER40:  "DE40",     // symbolId: 10046
   // Commodities (all confirmed ✅)
   XAUUSD: "XAUUSD",   // symbolId: 41
-  GOLD:   "XAUUSD",   // alias
+  GOLD:   "XAUUSD",
   XAGUSD: "XAGUSD",   // symbolId: 42
-  SILVER: "XAGUSD",   // alias
-  USOIL:  "WTI",      // symbolId: 10022 (US WTI crude oil)
-  OIL:    "WTI",      // alias
-  BRENT:  "BRENT",    // symbolId: 10021 (UK Brent crude)
+  SILVER: "XAGUSD",
+  USOIL:  "WTI",      // symbolId: 10022
+  OIL:    "WTI",
+  BRENT:  "BRENT",    // symbolId: 10021
 };
 
-// cTrader MCP volume: internally divides input by 100 for display.
-// Forex min display = 10,000 → min MCP units = 1,000,000
-// XAUUSD: 400 MCP → 4oz → min ~100 MCP
-// Pip values calibrated so: 1% risk (200 CHF) / 20 pip stop ≈ min trade size
-const PIP_VALUE_PER_UNIT: Record<string, number> = {
-  EURUSD: 0.0000105,
-  GBPUSD: 0.0000105,
-  USDJPY: 0.0000095,
-  AUDUSD: 0.0000105,
-  USDCAD: 0.0000105,
-  USDCHF: 0.000010,
-  GBPJPY: 0.0000095,
-  EURJPY: 0.0000095,
-  EURGBP: 0.0000105,
-  NZDUSD: 0.0000105,
-  NAS100:  0.001,
-  SPX500:  0.001,
-  GER40:   0.001,
-  UK100:   0.001,
-  USTEC:   0.001,   // NAS100 in cTrader
-  DE40:    0.001,   // GER40 in cTrader
-  WTI:     0.001,   // USOIL in cTrader
-  BRENT:   0.001,
-  XAUUSD:  0.01,
-  XAGUSD:  0.001,
-  USOIL:   0.001,
+// Dollar value per 1-price-unit move per MCP unit.
+// Formula: riskAmount = units × priceDistance × PRICE_VALUE
+// Verified: XAUUSD = 0.01 (400 MCP × 0.01 × 50 = $200 ✓)
+//           EURUSD = 0.01 (10M MCP × 0.01 × 0.002 = $200 ✓)
+// JPY pairs: lower because pip value is in JPY (~145 conversion)
+const PRICE_VALUE: Record<string, number> = {
+  // USD-quoted forex
+  EURUSD: 0.01, GBPUSD: 0.01, AUDUSD: 0.01, NZDUSD: 0.01,
+  // USD-base forex (quote in CHF/CAD — approx USD conversion)
+  USDCHF: 0.011, USDCAD: 0.0075,
+  // JPY-quoted (divide by ~145 for USD)
+  USDJPY: 0.000069, EURJPY: 0.000069, GBPJPY: 0.000069,
+  // GBP-quoted
+  EURGBP: 0.013,
+  // Metals priced in USD
+  XAUUSD: 0.01, XAGUSD: 0.01,
+  // Indices ($1 per point per display contract)
+  USTEC: 0.01, US500: 0.01, UK100: 0.01, DE40: 0.01,
+  // Oil (~$0.01 per barrel per display unit)
+  WTI: 0.01, BRENT: 0.01,
 };
 
-// Minimum units per symbol (cTrader MCP minimum)
+// Minimum MCP units per instrument (cTrader minimum)
 const MIN_UNITS: Record<string, number> = {
-  EURUSD: 1000000, GBPUSD: 1000000, USDJPY: 1000000, AUDUSD: 1000000,
-  USDCAD: 1000000, USDCHF: 1000000, GBPJPY: 1000000, EURJPY: 1000000,
-  EURGBP: 1000000, NZDUSD: 1000000,
-  NAS100: 10, SPX500: 10, GER40: 10, UK100: 10,
-  USTEC: 10, DE40: 10, WTI: 100, BRENT: 100,
-  XAUUSD: 100, XAGUSD: 100, USOIL: 100,
+  // Forex: min 0.01 lot = 1,000 units display = 100,000 MCP
+  EURUSD: 100000, GBPUSD: 100000, USDJPY: 100000, AUDUSD: 100000,
+  USDCAD: 100000, USDCHF: 100000, GBPJPY: 100000, EURJPY: 100000,
+  EURGBP: 100000, NZDUSD: 100000,
+  // Indices: min 1 contract
+  USTEC: 100, US500: 100, UK100: 100, DE40: 100,
+  // Commodities: min ~1oz/barrel
+  XAUUSD: 100, XAGUSD: 100, WTI: 100, BRENT: 100,
+};
+
+// Default stop distance (price units) when no SL price available
+const DEFAULT_STOP: Record<string, number> = {
+  EURUSD: 0.002, GBPUSD: 0.002, AUDUSD: 0.002, NZDUSD: 0.002,
+  USDCHF: 0.002, USDCAD: 0.002, EURGBP: 0.002,
+  USDJPY: 0.30, EURJPY: 0.30, GBPJPY: 0.30,
+  XAUUSD: 15, XAGUSD: 0.3,
+  USTEC: 100, US500: 20, UK100: 30, DE40: 40,
+  WTI: 1.0, BRENT: 1.0,
 };
 
 function calcICPositionSize(
   ctraderSymbol: string,
   accountBalance: number,
   riskPercent: number,
-  stopPoints: number,
+  stopDistance: number, // actual price distance (|entry - SL|)
 ): number {
   const riskAmount = accountBalance * (riskPercent / 100);
-  const pipVal = PIP_VALUE_PER_UNIT[ctraderSymbol] ?? 0.0001;
-  const stop = stopPoints > 0 ? stopPoints : 20;
-  const units = Math.floor(riskAmount / (stop * pipVal));
-  const minUnits = MIN_UNITS[ctraderSymbol] ?? 1000;
+  const priceVal = PRICE_VALUE[ctraderSymbol] ?? 0.01;
+  const stop = stopDistance > 0 ? stopDistance : (DEFAULT_STOP[ctraderSymbol] ?? 0.002);
+  const units = Math.floor(riskAmount / (stop * priceVal));
+  const minUnits = MIN_UNITS[ctraderSymbol] ?? 100000;
   return Math.max(units, minUnits);
 }
 
@@ -98,6 +105,7 @@ export interface ICExecutionResult {
   ctraderSymbol: string;
   direction: "BUY" | "SELL";
   volume: number;
+  stopDistance?: number;
   error?: string;
   executedAt: string;
 }
@@ -124,28 +132,27 @@ export async function executeICMarketsOrder(req: {
   }
 
   const ctraderSymbol = SYMBOL_MAP[req.symbol] ?? req.symbol;
+  // Always use live balance from session (updated by keep-alive every 2min)
   const balance = session.balance > 0 ? session.balance : req.accountBalance;
 
-  // Calculate stop distance in pips from the stop loss price
-  // For forex: stopLossPrice is absolute price, entry ~= stopLoss ± few pips
-  // For indices/metals: distance can be larger
-  let stopPoints = 20;
-  if (req.stopLossPrice && req.stopLossPrice > 0) {
-    // Estimate entry ≈ stopLoss + typical distance
-    // Use a safe default based on symbol type if we can't get exact entry
-    const isMetalOrIndex = ["XAUUSD", "XAGUSD", "USOIL", "NAS100", "SPX500", "GER40", "UK100"].includes(ctraderSymbol);
-    if (isMetalOrIndex) {
-      // For gold around 4170: stop at 4164 → distance = 6 * 100 = 600 pips (0.01 per pip)
-      // We use 50 pips as safe default to avoid giant positions
-      stopPoints = 50;
-    } else {
-      stopPoints = 20; // 20 pips for forex
+  // ── Get live price to calculate actual stop distance ───────────────────────
+  let stopDistance = DEFAULT_STOP[ctraderSymbol] ?? 0.002;
+  try {
+    const priceResult = await icGetPrice(ctraderSymbol);
+    if (priceResult.ok && req.stopLossPrice && req.stopLossPrice > 0) {
+      const currentPrice = req.direction === "BUY"
+        ? (priceResult.ask ?? 0)
+        : (priceResult.bid ?? 0);
+      if (currentPrice > 0) {
+        const actualStop = Math.abs(currentPrice - req.stopLossPrice);
+        if (actualStop > 0) stopDistance = actualStop;
+      }
     }
-  }
+  } catch { /* use default */ }
 
-  const volume = calcICPositionSize(ctraderSymbol, balance, req.riskPercent, stopPoints);
+  const volume = calcICPositionSize(ctraderSymbol, balance, req.riskPercent, stopDistance);
 
-  console.log(`[IC Markets] Executing ${req.symbol}→${ctraderSymbol} ${req.direction} vol=${volume} balance=${balance} risk=${req.riskPercent}%`);
+  console.log(`[IC Markets] ${req.symbol}→${ctraderSymbol} ${req.direction} vol=${volume} balance=${balance} risk=${req.riskPercent}% stop=${stopDistance.toFixed(5)}`);
 
   const result = await icPlaceOrder(
     ctraderSymbol,
@@ -158,9 +165,9 @@ export async function executeICMarketsOrder(req: {
   if (!result.ok) {
     console.error(`[IC Markets] ❌ ${ctraderSymbol} failed: ${result.error}`);
   } else if (!result.positionId) {
-    console.warn(`[IC Markets] ⚠️ ${ctraderSymbol} ${req.direction} — order sent but positionId empty (cTrader may have rejected silently)`);
+    console.warn(`[IC Markets] ⚠️ ${ctraderSymbol} ${req.direction} — positionId empty`);
   } else {
-    console.log(`[IC Markets] ✅ ${ctraderSymbol} ${req.direction} — positionId: ${result.positionId}`);
+    console.log(`[IC Markets] ✅ ${ctraderSymbol} ${req.direction} positionId=${result.positionId} vol=${volume}`);
   }
 
   return {
@@ -171,6 +178,7 @@ export async function executeICMarketsOrder(req: {
     ctraderSymbol,
     direction: req.direction,
     volume,
+    stopDistance,
     error: result.error,
     executedAt: ts,
   };
