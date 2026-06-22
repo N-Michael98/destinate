@@ -1,46 +1,25 @@
 /**
  * Active Trade Manager
- * Runs every 60s via the background monitor.
- * For each open trade: checks current P&L vs entry/SL/TP and applies
- * 3-level breakeven + trailing SL + early exit based on confidence score.
+ * Runs every 2min via instrumentation.ts background monitor.
+ * Works on ALL live Capital.com positions — not just DB-tracked ones.
  *
- * Level thresholds (confidence score):
- *   70-75 (high risk):   BE at 40% to TP, Trail at 60% SL dist, Exit at -30% SL
- *   75-80 (medium risk): BE at 55% to TP, Trail at 50% SL dist, Exit at -50% SL
- *   80+   (low risk):    BE at 70% to TP, Trail at 40% SL dist, Exit at -70% SL
+ * Breakeven / Trailing levels by confidence score:
+ *   < 75 (high risk):   BE at 40% to TP, Trail at 60% SL dist
+ *   75-80 (medium):     BE at 55% to TP, Trail at 50% SL dist
+ *   80+   (low risk):   BE at 70% to TP, Trail at 40% SL dist
  */
 
 import { getPrisma } from "../../app/lib/prisma";
-import { capitalGetPrices, capitalUpdatePosition, capitalClosePosition, capitalGetPositions, EPIC_MAP } from "./capital-com-client";
+import { capitalGetPrices, capitalUpdatePosition, capitalClosePosition, capitalGetPositions } from "./capital-com-client";
 import { getCapitalSession, isCapitalConnected } from "./capital-com-session";
 
-// Reverse map: epic → symbol (for capitalGetPrices which needs symbols)
-const EPIC_TO_SYMBOL: Record<string, string> = Object.fromEntries(
-  Object.entries(EPIC_MAP).map(([sym, epic]) => [epic, sym])
-);
+// In-memory state for positions not in DB: dealId → {beSet, trailSL, confidence}
+const positionMeta: Map<string, { beSet: boolean; trailSL: number | null; confidence: number }> = new Map();
 
-interface TradeMeta {
-  dealId?: string;
-  confidence?: number;
-  beSet?: boolean;       // breakeven already applied
-  trailActive?: boolean; // trailing already started
-  trailSL?: number;      // current trailing SL level
-}
-
-interface OpenTrade {
-  id: number;
-  market: string;
-  direction: "BUY" | "SELL";
-  entry: number;
-  stopLoss: number;
-  takeProfit: number;
-  notes: string;
-}
-
-function getLevel(score: number): { beAt: number; trailDist: number; exitAt: number } {
-  if (score >= 80) return { beAt: 0.70, trailDist: 0.40, exitAt: 0.70 };
-  if (score >= 75) return { beAt: 0.55, trailDist: 0.50, exitAt: 0.50 };
-  return               { beAt: 0.40, trailDist: 0.60, exitAt: 0.30 };
+function getLevel(score: number): { beAt: number; trailDist: number } {
+  if (score >= 80) return { beAt: 0.70, trailDist: 0.40 };
+  if (score >= 75) return { beAt: 0.55, trailDist: 0.50 };
+  return               { beAt: 0.40, trailDist: 0.60 };
 }
 
 export async function runActiveTradeManager(): Promise<void> {
@@ -48,132 +27,123 @@ export async function runActiveTradeManager(): Promise<void> {
   const session = getCapitalSession()!;
   const db = getPrisma();
 
-  // Get live positions from Capital.com to get real position dealId + openLevel + current SL/TP
+  // ── Fetch ALL live positions from Capital.com ────────────────────────────
   const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
-  if (!posResult.ok) return;
+  if (!posResult.ok || !posResult.positions?.length) return;
 
-  // Map: workingOrderId (what DB stores) OR positionDealId → live position data
-  const livePositions = new Map<string, { dealId: string; openLevel: number; stopLevel: number; limitLevel: number; epic: string; direction: string }>();
-  for (const p of posResult.positions ?? []) {
-    const entry = { dealId: p.dealId, openLevel: p.openLevel, stopLevel: p.stopLevel ?? 0, limitLevel: p.profitLevel ?? 0, epic: p.epic, direction: p.direction };
-    if (p.dealId) livePositions.set(p.dealId, entry);
+  // Load DB trades with dealId → confidence score map
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbTrades = await (db.$queryRawUnsafe as any)(
+    `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealId%'`
+  ) as Array<{ notes: string }>;
+
+  const dbConfidenceByDealId: Map<string, number> = new Map();
+  const dbBeSetByDealId: Map<string, boolean> = new Map();
+  const dbTrailSLByDealId: Map<string, number | null> = new Map();
+  for (const t of dbTrades) {
+    try {
+      const m = JSON.parse(t.notes);
+      if (m.dealId) {
+        dbConfidenceByDealId.set(m.dealId, m.confidence ?? 72);
+        dbBeSetByDealId.set(m.dealId, m.beSet ?? false);
+        dbTrailSLByDealId.set(m.dealId, m.trailSL ?? null);
+      }
+    } catch { /* skip */ }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const openTrades = await (db.$queryRawUnsafe as any)(
-    `SELECT id, market, direction, entry, "stopLoss", "takeProfit", notes
-     FROM "Trade"
-     WHERE status = 'OPEN'
-       AND "stopLoss" > 0
-       AND "takeProfit" > 0
-       AND notes LIKE '%dealId%'`
-  ) as OpenTrade[];
+  // ── Process each live position ───────────────────────────────────────────
+  for (const pos of posResult.positions) {
+    const dealId = pos.dealId;
+    if (!dealId) continue;
 
-  for (const trade of openTrades) {
-    let meta: TradeMeta = {};
-    try { meta = JSON.parse(trade.notes); } catch { continue; }
-    if (!meta.dealId) continue;
+    const entry = pos.openLevel;
+    const currentSLLive = pos.stopLevel ?? 0;
+    const currentTP = pos.profitLevel ?? 0;
+    if (!entry || entry <= 0) continue;
+    // Need both SL and TP to apply logic
+    if (currentSLLive <= 0 || currentTP <= 0) continue;
 
-    // Find live position (DB stores workingOrderId, Capital.com positions have both)
-    const livePos = livePositions.get(meta.dealId);
-    if (!livePos) continue; // position already closed or not found
+    // Direction
+    const isBuy = (pos.direction ?? "").toUpperCase() === "BUY";
 
-    // Use live position's real dealId for API calls (not DB's working order id)
-    const positionDealId = livePos.dealId;
-
-    // Get current price — trade.market is epic (e.g. "US100"), need symbol (e.g. "NAS100")
-    const symbol = EPIC_TO_SYMBOL[trade.market] ?? trade.market;
-    const priceResult = await capitalGetPrices(session.apiKey, session.cst, session.securityToken, [symbol]);
-    if (!priceResult.ok || !priceResult.prices?.length) continue;
+    // Get current price via epic → symbol lookup
+    const epic = pos.epic ?? "";
+    // Try to get price using epic directly (Capital.com also accepts epic in some endpoints)
+    const priceResult = await capitalGetPrices(session.apiKey, session.cst, session.securityToken, [epic]).catch(() => null);
+    if (!priceResult?.ok || !priceResult.prices?.length) continue;
 
     const latest = priceResult.prices[0];
-    const currentPrice = trade.direction === "BUY" ? latest.bid : latest.ask;
+    const currentPrice = isBuy ? (latest.bid ?? 0) : (latest.ask ?? 0);
     if (!currentPrice) continue;
 
-    // Use live entry from Capital.com if DB entry is 0
-    const entry = trade.entry > 0 ? trade.entry : livePos.openLevel;
-    const stopLoss = trade.stopLoss;
-    const takeProfit = trade.takeProfit;
-    if (!entry) continue;
-    const isBuy = trade.direction === "BUY";
+    // Confidence + meta: DB first, then in-memory, then default
+    const confidence = dbConfidenceByDealId.get(dealId) ?? positionMeta.get(dealId)?.confidence ?? 72;
+    const memMeta = positionMeta.get(dealId) ?? { beSet: false, trailSL: null, confidence };
+    const beSet = dbBeSetByDealId.get(dealId) ?? memMeta.beSet;
+    const trailSL = dbTrailSLByDealId.get(dealId) ?? memMeta.trailSL;
 
-    // Distance from entry to TP (total target range)
-    const totalRange = Math.abs(takeProfit - entry);
-    const slRange = Math.abs(entry - stopLoss);
-    if (totalRange < 0.00001 || slRange < 0.00001) continue;
+    const lvl = getLevel(confidence);
 
-    // How far price has moved toward TP (can be negative = moving against)
+    // SL used for logic = live SL (Capital.com is source of truth)
+    const effectiveSL = currentSLLive > 0 ? currentSLLive : (trailSL ?? 0);
+
+    const totalRange = Math.abs(currentTP - entry);
+    const slRange = Math.abs(entry - effectiveSL);
+    if (totalRange < 0.000001 || slRange < 0.000001) continue;
+
     const progress = isBuy
       ? (currentPrice - entry) / totalRange
       : (entry - currentPrice) / totalRange;
 
-    // Current P&L as fraction of SL distance (negative = losing)
-    const pnlFraction = isBuy
-      ? (currentPrice - entry) / slRange
-      : (entry - currentPrice) / slRange;
+    const currentTrailSL = trailSL ?? effectiveSL;
 
-    const score = meta.confidence ?? 72;
-    const lvl = getLevel(score);
-    const currentSL = meta.trailSL ?? stopLoss;
-
-    // ── Early Exit ────────────────────────────────────────────────────────────
-    // If price moved against us by more than exitAt × SL distance and BE not set yet
-    if (!meta.beSet && pnlFraction < -lvl.exitAt) {
-      const closeResult = await capitalClosePosition(session.apiKey, session.cst, session.securityToken, positionDealId);
-      if (closeResult.ok) {
-        const updatedMeta = { ...meta, closedBy: "active-manager-early-exit", closedAt: new Date().toISOString() };
-        await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET status='CLOSED', result='LOSS', notes=$1, "updatedAt"=NOW() WHERE id=$2`,
-          JSON.stringify(updatedMeta), trade.id
-        );
-        console.log(`[trade-mgr] Early exit: ${trade.market} ${trade.direction} pnlFraction=${pnlFraction.toFixed(2)} score=${score}`);
-      }
-      continue;
-    }
-
-    // ── Breakeven ─────────────────────────────────────────────────────────────
-    if (!meta.beSet && progress >= lvl.beAt) {
-      const newSL = entry; // SL → Entry = breakeven
-      const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, positionDealId, newSL);
+    // ── Breakeven ──────────────────────────────────────────────────────────
+    if (!beSet && progress >= lvl.beAt) {
+      const newSL = entry;
+      const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, dealId, newSL);
       if (updateResult.ok) {
-        const updatedMeta = { ...meta, beSet: true, trailActive: false, trailSL: newSL };
+        positionMeta.set(dealId, { ...memMeta, beSet: true, trailSL: newSL, confidence });
+        // Update DB if we have a matching trade
         await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET "stopLoss"=$1, notes=$2, "updatedAt"=NOW() WHERE id=$3`,
-          newSL, JSON.stringify(updatedMeta), trade.id
-        );
-        console.log(`[trade-mgr] Breakeven set: ${trade.market} entry=${entry} score=${score} progress=${(progress*100).toFixed(0)}%`);
+          `UPDATE "Trade" SET "stopLoss"=$1, "updatedAt"=NOW()
+           WHERE status='OPEN' AND notes LIKE $2`,
+          newSL, `%${dealId}%`
+        ).catch(() => {});
+        console.log(`[trade-mgr] Breakeven: ${epic} ${pos.direction} entry=${entry} progress=${(progress*100).toFixed(0)}% confidence=${confidence}`);
         try {
           const { notifyBreakeven } = await import("../telegram-notifications/telegram-sender");
-          await notifyBreakeven({ symbol: trade.market, direction: trade.direction, entry, broker: "Capital.com" });
+          await notifyBreakeven({ symbol: epic, direction: isBuy ? "BUY" : "SELL", entry, broker: "Capital.com" });
         } catch { /* non-fatal */ }
       }
       continue;
     }
 
-    // ── Trailing SL ───────────────────────────────────────────────────────────
-    // Only after breakeven is set. Trail distance = lvl.trailDist × original SL range
-    if (meta.beSet) {
+    // ── Trailing SL ────────────────────────────────────────────────────────
+    // Only after breakeven is set (live SL >= entry for BUY, <= entry for SELL)
+    const breakevenReached = isBuy ? currentSLLive >= entry - 0.0001 : currentSLLive <= entry + 0.0001;
+    if (beSet || breakevenReached) {
       const trailDistance = slRange * lvl.trailDist;
-      const newTrailSL = isBuy
-        ? currentPrice - trailDistance
-        : currentPrice + trailDistance;
+      const newTrailSL = isBuy ? currentPrice - trailDistance : currentPrice + trailDistance;
 
-      // Only move SL in the direction of profit (never move it back)
-      const shouldUpdate = isBuy
-        ? newTrailSL > currentSL
-        : newTrailSL < currentSL;
-
+      const shouldUpdate = isBuy ? newTrailSL > currentTrailSL : newTrailSL < currentTrailSL;
       if (shouldUpdate) {
-        const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, positionDealId, newTrailSL);
+        const updateResult = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, dealId, newTrailSL);
         if (updateResult.ok) {
-          const updatedMeta = { ...meta, trailActive: true, trailSL: newTrailSL };
+          positionMeta.set(dealId, { ...memMeta, beSet: true, trailSL: newTrailSL, confidence });
           await db.$executeRawUnsafe(
-            `UPDATE "Trade" SET "stopLoss"=$1, notes=$2, "updatedAt"=NOW() WHERE id=$3`,
-            newTrailSL, JSON.stringify(updatedMeta), trade.id
-          );
-          console.log(`[trade-mgr] Trail SL: ${trade.market} newSL=${newTrailSL.toFixed(5)} price=${currentPrice.toFixed(5)}`);
+            `UPDATE "Trade" SET "stopLoss"=$1, "updatedAt"=NOW()
+             WHERE status='OPEN' AND notes LIKE $2`,
+            newTrailSL, `%${dealId}%`
+          ).catch(() => {});
+          console.log(`[trade-mgr] Trail SL: ${epic} newSL=${newTrailSL.toFixed(5)} price=${currentPrice.toFixed(5)}`);
         }
       }
     }
+  }
+
+  // ── Cleanup in-memory state for closed positions ─────────────────────────
+  const liveDealIds = new Set(posResult.positions.map(p => p.dealId).filter(Boolean));
+  for (const id of positionMeta.keys()) {
+    if (!liveDealIds.has(id)) positionMeta.delete(id);
   }
 }
