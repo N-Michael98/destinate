@@ -279,6 +279,7 @@ export async function register() {
             const opportunities = await analyzeMarkets(markets.markets);
             const threshold = settings.botSettings.autoApproveThreshold ?? 71;
             const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
+            const maxConcurrent = settings.botSettings.maxConcurrentPositions ?? 3;
 
             // Daily counter — load from Redis to survive restarts
             const today = new Date().toISOString().slice(0, 10);
@@ -291,15 +292,28 @@ export async function register() {
             const dailyCount = global.__daily_trades__.count;
             const tradeLimitEnabled = settings.botSettings.tradeLimitEnabled ?? true;
             const bypassScore = settings.botSettings.tradeLimitBypassScore ?? 80;
-            const limitReached = dailyCount >= settings.botSettings.maxTradesPerDay;
-            if (tradeLimitEnabled && limitReached) {
-              console.log(`[auto-scan] Tageslimit ${dailyCount}/${settings.botSettings.maxTradesPerDay} — prüfe Bypass (Score ≥ ${bypassScore}%)`);
+            const maxTradesPerDay = settings.botSettings.maxTradesPerDay ?? 5;
+
+            // ── Concurrent positions check ──────────────────────────────────────
+            const { capitalGetPositions } = await import("./lib/capital-com/capital-com-client");
+            const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken).catch(() => null);
+            const openCount = posResult?.positions?.length ?? 0;
+            if (openCount >= maxConcurrent) {
+              console.log(`[auto-scan] Max concurrent positions erreicht (${openCount}/${maxConcurrent}) — skip`);
+              return;
+            }
+
+            // ── Daily limit check ───────────────────────────────────────────────
+            const limitReached = tradeLimitEnabled && dailyCount >= maxTradesPerDay;
+            if (limitReached) {
+              console.log(`[auto-scan] Tageslimit erreicht (${dailyCount}/${maxTradesPerDay}) — kein weiterer Trade`);
+              return;
             }
 
             // Store scan results globally so scanner UI can display them without manual scan
             global.__last_scan_result__ = { opportunities, updatedAt: new Date().toISOString() };
 
-            // Build candidate list — apply limit + bypass rule
+            // Build candidate list — apply confidence + per-style limits only
             const candidates = opportunities.filter((o) => {
               if (!o.goSignal) return false;
               if (o.gpt.confidence < threshold) return false;
@@ -307,11 +321,7 @@ export async function register() {
               const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
               const styleMax = (styleLimit as Record<string, number>)[style] ?? 999;
               if ((global.__daily_trades__?.byStyle[style] ?? 0) >= styleMax) return false;
-              // Daily limit check
-              if (!tradeLimitEnabled) return true; // OFF = unlimited
-              if (!limitReached) return true;       // Limit not yet reached
-              // Limit reached — allow only if bypass score met
-              return o.gpt.confidence >= bypassScore;
+              return true;
             });
 
             if (!candidates.length) return;
