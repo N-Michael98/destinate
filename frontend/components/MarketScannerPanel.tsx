@@ -161,27 +161,37 @@ export default function MarketScannerPanel() {
   const executeGO = async (opp: Opportunity) => {
     if (executing) return;
     setExecuting(opp.epic);
-    const r = await fetch("/api/capital-com/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbol: opp.symbol,
-        direction: opp.gpt.direction,
-        riskPercent: opp.claude.maxRiskPercent,
-        accountBalance,
-        stopLossPrice: opp.gpt.stopLoss,
-        takeProfitPrice: opp.gpt.takeProfit,
-        entryPrice: opp.gpt.entryPrice ?? opp.currentPrice,
-        confidence: opp.gpt.confidence,
-        strategy: opp.gpt.tradingStyle,
-        tradingStyle: opp.gpt.tradingStyle,
-      }),
-    }).catch(() => null);
+    const orderBody = {
+      symbol: opp.symbol,
+      direction: opp.gpt.direction,
+      riskPercent: opp.claude.maxRiskPercent,
+      accountBalance,
+      stopLossPrice: opp.gpt.stopLoss,
+      takeProfitPrice: opp.gpt.takeProfit,
+      entryPrice: opp.gpt.entryPrice ?? opp.currentPrice,
+      confidence: opp.gpt.confidence,
+      strategy: opp.gpt.tradingStyle,
+      tradingStyle: opp.gpt.tradingStyle,
+    };
+    const [r, icR] = await Promise.all([
+      fetch("/api/capital-com/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderBody),
+      }).catch(() => null),
+      fetch("/api/icmarkets/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderBody),
+      }).catch(() => null),
+    ]);
     const d = r ? await r.json().catch(() => ({ ok: false, error: "Parse error" })) : { ok: false, error: "Network error" };
+    const icD = icR ? await icR.json().catch(() => null) : null;
+    const icLabel = icD?.ok ? ` + IC:✅${icD.positionId ?? ""}` : icD ? ` IC:❌${icD.error ?? "not connected"}` : " IC:not connected";
     setExecLogs((p) => [{
       id: `${Date.now()}`, ts: new Date().toLocaleTimeString(),
       symbol: opp.symbol, direction: opp.gpt.direction,
-      ok: d.ok, dealId: d.dealId, error: d.error,
+      ok: d.ok, dealId: d.dealId, error: d.error ? `${d.error}${icLabel}` : icLabel.trim(),
     }, ...p].slice(0, 15));
     setExecuting(null);
   };
