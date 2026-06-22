@@ -193,6 +193,38 @@ export async function icGetPositions(): Promise<{ ok: boolean; positions?: ICPos
   }
 }
 
+// ── Symbol ID lookup (cTrader needs numeric symbolId, not name) ───────────────
+
+// In-memory cache: symbol name → numeric symbolId
+const symbolIdCache: Map<string, number> = new Map();
+
+export async function icGetSymbolId(symbolName: string): Promise<number | null> {
+  if (symbolIdCache.has(symbolName)) return symbolIdCache.get(symbolName)!;
+  try {
+    // Try get_symbols tool first
+    const result = await mcpCall("get_symbols", {}).catch(() => null);
+    if (result) {
+      const symbols = (result.symbols ?? result.data ?? result) as Array<Record<string, unknown>>;
+      if (Array.isArray(symbols)) {
+        for (const s of symbols) {
+          const name = String(s.symbolName ?? s.name ?? s.symbol ?? "");
+          const id = Number(s.symbolId ?? s.id ?? 0);
+          if (name && id) symbolIdCache.set(name, id);
+        }
+        if (symbolIdCache.has(symbolName)) return symbolIdCache.get(symbolName)!;
+      }
+    }
+    // Fallback: try find_symbol
+    const r2 = await mcpCall("find_symbol", { symbolName }).catch(() => null);
+    if (r2) {
+      const id = Number(r2.symbolId ?? r2.id ?? 0);
+      if (id) { symbolIdCache.set(symbolName, id); return id; }
+    }
+  } catch { /* fall through */ }
+  console.warn(`[IC Markets] Could not resolve symbolId for ${symbolName}`);
+  return null;
+}
+
 // ── Place Order ───────────────────────────────────────────────────────────────
 
 export interface ICOrderResult {
@@ -209,8 +241,14 @@ export async function icPlaceOrder(
   takeProfit?: number,
 ): Promise<ICOrderResult> {
   try {
+    // cTrader MCP requires numeric symbolId, not symbol name string
+    const symbolId = await icGetSymbolId(symbol);
+    if (!symbolId) {
+      return { ok: false, error: `Could not resolve symbolId for ${symbol} — check cTrader symbol list` };
+    }
+
     const params: Record<string, unknown> = {
-      symbol,
+      symbolId,
       tradeSide: direction,
       volume,
       orderType: "MARKET",
@@ -218,6 +256,7 @@ export async function icPlaceOrder(
     if (stopLoss) params.stopLoss = stopLoss;
     if (takeProfit) params.takeProfit = takeProfit;
 
+    console.log(`[IC Markets MCP] create_order params: symbolId=${symbolId} (${symbol}) ${direction} vol=${volume}`);
     const result = await mcpCall("create_order", params);
     console.log("[IC Markets MCP] create_order raw:", JSON.stringify(result).slice(0, 300));
     return {
