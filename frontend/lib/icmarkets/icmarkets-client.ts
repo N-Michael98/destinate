@@ -94,10 +94,22 @@ async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {})
   const data = await parseSseOrJson(res);
   if (data.error) throw new Error(data.error.message);
 
+  // cTrader MCP wraps errors in {content:[{type:"text",text:"..."}], isError:true}
+  const raw = data as Record<string, unknown>;
+  if (raw.isError === true) {
+    const content = raw.content as Array<{ type: string; text?: string }> | undefined;
+    const errorText = content?.find((c) => c.type === "text")?.text ?? "MCP tool error";
+    throw new Error(errorText.slice(0, 300));
+  }
+
   const result = data.result ?? {};
   if (Array.isArray(result.content)) {
     const textItem = (result.content as Array<{ type: string; text?: string }>).find((c) => c.type === "text");
     if (textItem?.text) {
+      // Check if the text content is itself an error message
+      if (textItem.text.startsWith("HTTP 4") || textItem.text.startsWith("HTTP 5") || textItem.text.includes("isError")) {
+        throw new Error(textItem.text.slice(0, 300));
+      }
       try { return JSON.parse(textItem.text) as Record<string, unknown>; } catch { /* return raw */ }
     }
   }
