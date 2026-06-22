@@ -162,8 +162,14 @@ export async function register() {
       // Auto-reconnect Capital.com with retry (P3 fix: timing issue on cold start)
       try {
         // Restore IC Markets session from Redis on startup
-        const { restoreICMarketsSessionFromRedis, getICMarketsSession } = await import("./lib/icmarkets/icmarkets-session");
+        const { restoreICMarketsSessionFromRedis, getICMarketsSession, autoReconnectICMarkets, keepAliveICMarkets } = await import("./lib/icmarkets/icmarkets-session");
         const icRestored = await restoreICMarketsSessionFromRedis();
+        if (!icRestored) {
+          // No session in Redis — try fresh connect using env token
+          const r = await autoReconnectICMarkets();
+          if (r.ok) console.log("[instrumentation] IC Markets auto-connected from env token");
+          else console.warn(`[instrumentation] IC Markets auto-connect failed: ${r.error}`);
+        }
         if (icRestored) {
           const icSess = getICMarketsSession();
           console.log(`[instrumentation] IC Markets session restored from Redis ⚡ balance: ${icSess?.currency} ${icSess?.balance}`);
@@ -196,6 +202,9 @@ export async function register() {
         // auto-reconnects if session expired or dropped
         const { keepAliveCapital } = await import("./lib/capital-com/capital-com-session");
         setInterval(() => keepAliveCapital().catch(() => {}), 2 * 60 * 1000);
+
+        // IC Markets keep-alive every 2min — prevents MCP session expiry
+        setInterval(() => keepAliveICMarkets().catch(() => {}), 2 * 60 * 1000);
 
         // Daily summary at 20:00 via Telegram
         setInterval(async () => {

@@ -89,3 +89,49 @@ export async function restoreICMarketsSessionFromRedis(): Promise<boolean> {
   }
   return false;
 }
+
+/** Auto-reconnect using ICMARKETS_MCP_TOKEN from env — like Capital.com autoReconnect */
+export async function autoReconnectICMarkets(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { icGetAccount, isICMarketsConfigured } = await import("./icmarkets-client");
+    if (!isICMarketsConfigured()) {
+      return { ok: false, error: "ICMARKETS_MCP_TOKEN not set in Railway env vars" };
+    }
+    const account = await icGetAccount();
+    if (!account.ok) return { ok: false, error: account.error };
+    const leverage = Number(process.env.ICMARKETS_LEVERAGE ?? 500);
+    await setICMarketsSession({
+      accountId: account.accountId ?? "",
+      balance: account.balance ?? 0,
+      equity: account.equity ?? 0,
+      currency: account.currency ?? "CHF",
+      connectedAt: new Date().toISOString(),
+      leverage,
+    });
+    console.log(`[IC Markets] Auto-reconnected ⚡ balance: ${account.currency} ${account.balance}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Keep-alive ping — refreshes balance + re-initializes MCP session if dropped */
+export async function keepAliveICMarkets(): Promise<void> {
+  try {
+    const { icGetAccount, isICMarketsConfigured } = await import("./icmarkets-client");
+    if (!isICMarketsConfigured()) return;
+    const account = await icGetAccount();
+    if (!account.ok) {
+      console.warn(`[IC Markets] Keep-alive failed (${account.error}) — attempting reconnect`);
+      await autoReconnectICMarkets();
+      return;
+    }
+    // Update balance in session
+    if (global.__icmarkets_session__) {
+      global.__icmarkets_session__.balance = account.balance ?? global.__icmarkets_session__.balance;
+      global.__icmarkets_session__.equity = account.equity ?? global.__icmarkets_session__.equity;
+      await saveToRedis(global.__icmarkets_session__);
+    }
+    console.log(`[IC Markets] keep-alive ✅ balance=${account.balance}`);
+  } catch { /* non-fatal */ }
+}
