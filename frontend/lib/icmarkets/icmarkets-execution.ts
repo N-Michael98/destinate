@@ -62,8 +62,8 @@ const PRICE_VALUE: Record<string, number> = {
   XAUUSD: 1.0, XAGUSD: 1.0,
   // Indices (1 unit = 1 contract = $1/point)
   USTEC: 1.0, US500: 1.0, UK100: 1.0, DE40: 1.0,
-  // Oil (1 unit = 1 barrel ≈ $1/move)
-  WTI: 1.0, BRENT: 1.0,
+  // Oil: raw units ÷ 100 = display units (broker min=100 display=10000 raw)
+  WTI: 0.01, BRENT: 0.01,
 };
 
 // Minimum units per instrument in Units mode (cTrader min)
@@ -74,8 +74,8 @@ const MIN_UNITS: Record<string, number> = {
   EURGBP: 1000, NZDUSD: 1000,
   // Indices: min 1 contract
   USTEC: 1, US500: 1, UK100: 1, DE40: 1,
-  // Commodities: min 1 unit
-  XAUUSD: 1, XAGUSD: 1, WTI: 1, BRENT: 1,
+  // Commodities: metals min 1, oil min 10000 raw (= 100 display)
+  XAUUSD: 1, XAGUSD: 1, WTI: 10000, BRENT: 10000,
 };
 
 // Default stop distance (price units) when no SL price available

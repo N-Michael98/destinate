@@ -52,7 +52,7 @@ ${dir} <b>${params.symbol}</b>
 ✅ TP: ${params.takeProfit}
 ⚖️ R:R = 1:${rr}
 🤖 Confidence: ${params.confidence}%
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${new Date().toLocaleString("de-CH", { timeZone: "Europe/Zurich" })}`
   );
 }
 
@@ -74,7 +74,7 @@ export async function notifyTradeClosed(params: {
 📉 ${params.symbol} ${dir}
 🏦 Broker: ${params.broker}
 💰 P&L: <b>${plSign}${params.profitLoss.toFixed(2)} ${params.currency}</b>
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${new Date().toLocaleString("de-CH", { timeZone: "Europe/Zurich" })}`
   );
 }
 
@@ -90,7 +90,7 @@ export async function notifyBreakeven(params: {
 ${params.symbol} ${params.direction}
 🏦 Broker: ${params.broker}
 📍 SL → Entry: ${params.entry}
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${new Date().toLocaleString("de-CH", { timeZone: "Europe/Zurich" })}`
   );
 }
 
@@ -112,6 +112,6 @@ export async function notifyDailySummary(params: {
 ✅ Wins: ${params.wins} | ❌ Losses: ${params.losses}
 🎯 Win Rate: ${params.winRate.toFixed(0)}%
 💰 Gesamt P&L: <b>${plSign}${params.totalPnL.toFixed(2)} ${params.currency}</b>
-🕐 ${new Date().toLocaleDateString("de-CH")}`
+🕐 ${new Date().toLocaleDateString("de-CH", { timeZone: "Europe/Zurich" })}`
   );
 }
