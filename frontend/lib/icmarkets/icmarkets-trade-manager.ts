@@ -1,158 +1,169 @@
 /**
  * IC Markets Active Trade Manager
- * Mirrors capital active-trade-manager.ts but uses cTrader MCP tools.
- * Runs every 2 min alongside Capital.com manager.
+ * Runs every 2min via instrumentation.ts background monitor.
+ * Covers ALL live cTrader positions — not just DB-tracked ones.
  *
- * Levels (same as Capital.com):
- *   score ≥ 80: BE at 70% to TP, Trail 40% SL dist, Exit at -70% SL
- *   score ≥ 75: BE at 55% to TP, Trail 50% SL dist, Exit at -50% SL
- *   score  <75: BE at 40% to TP, Trail 60% SL dist, Exit at -30% SL
+ * Breakeven / Trailing levels by confidence:
+ *   < 75:  BE at 40% to TP, Trail = 60% of SL range
+ *   75-80: BE at 55% to TP, Trail = 50% of SL range
+ *   80+:   BE at 70% to TP, Trail = 40% of SL range
  */
 
 import { getPrisma } from "../../app/lib/prisma";
-import { icGetPositions, icUpdatePosition, icClosePosition, icGetPrice } from "./icmarkets-client";
+import { icGetPositions, icUpdatePosition, icGetPrice } from "./icmarkets-client";
 import { isICMarketsConnected } from "./icmarkets-session";
 
-// Our symbol → cTrader symbol
-const IC_SYMBOL_MAP: Record<string, string> = {
-  US100: "NAS100", US500: "SPX500", GER40: "GER40", UK100: "UK100",
-  GOLD: "XAUUSD", SILVER: "XAGUSD", OIL: "USOIL",
+// Default SL range per instrument when no fixed SL exists (absolute price units)
+const DEFAULT_SL_RANGE: Record<string, number> = {
+  XAUUSD: 10, XAGUSD: 0.5,
+  EURUSD: 0.003, GBPUSD: 0.003, USDJPY: 0.3, AUDUSD: 0.003,
+  USDCAD: 0.003, USDCHF: 0.003, GBPJPY: 0.3, EURJPY: 0.3,
+  EURGBP: 0.003, NZDUSD: 0.003,
+  USTEC: 50, US500: 20, UK100: 30, DE40: 40,
+  WTI: 1.0, BRENT: 1.0,
 };
-function toCtrader(symbol: string): string {
-  return IC_SYMBOL_MAP[symbol] ?? symbol;
-}
 
-interface TradeMeta {
-  dealId?: string;
-  icPositionId?: string;
-  confidence?: number;
-  beSet?: boolean;
-  trailActive?: boolean;
-  trailSL?: number;
-}
+// In-memory state per positionId (for positions not tracked in DB)
+interface PosMeta { beSet: boolean; trailSL: number | null; confidence: number }
+const positionMeta: Map<string, PosMeta> = new Map();
 
-interface OpenTrade {
-  id: number;
-  market: string;
-  direction: "BUY" | "SELL";
-  entry: number;
-  stopLoss: number;
-  takeProfit: number;
-  notes: string;
-}
-
-function getLevel(score: number): { beAt: number; trailDist: number; exitAt: number } {
-  if (score >= 80) return { beAt: 0.70, trailDist: 0.40, exitAt: 0.70 };
-  if (score >= 75) return { beAt: 0.55, trailDist: 0.50, exitAt: 0.50 };
-  return               { beAt: 0.40, trailDist: 0.60, exitAt: 0.30 };
+function getLevel(score: number): { beAt: number; trailDist: number } {
+  if (score >= 80) return { beAt: 0.70, trailDist: 0.40 };
+  if (score >= 75) return { beAt: 0.55, trailDist: 0.50 };
+  return               { beAt: 0.40, trailDist: 0.60 };
 }
 
 export async function runICMarketsTradeManager(): Promise<void> {
   if (!isICMarketsConnected()) return;
-
   const db = getPrisma();
 
-  // Get live IC Markets positions
+  // ── 1. Get all live IC Markets positions ─────────────────────────────────
   const posResult = await icGetPositions();
   if (!posResult.ok || !posResult.positions?.length) return;
 
-  // Map: icPositionId → live position data
-  const liveMap = new Map(posResult.positions.map((p) => [p.positionId, p]));
-
-  // Get open trades that have an IC Markets position ID stored
+  // ── 2. Load DB metadata (confidence, beSet, trailSL per icPositionId) ───
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const openTrades = await (db.$queryRawUnsafe as any)(
-    `SELECT id, market, direction, entry, "stopLoss", "takeProfit", notes
-     FROM "Trade"
-     WHERE status = 'OPEN'
-       AND "stopLoss" > 0
-       AND "takeProfit" > 0
-       AND notes LIKE '%icPositionId%'`
-  ) as OpenTrade[];
+  const dbTrades = await (db.$queryRawUnsafe as any)(
+    `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%icPositionId%'`
+  ) as Array<{ notes: string }>;
 
-  for (const trade of openTrades) {
-    let meta: TradeMeta = {};
-    try { meta = JSON.parse(trade.notes); } catch { continue; }
-    if (!meta.icPositionId) continue;
+  const dbMeta = new Map<string, PosMeta>();
+  for (const t of dbTrades) {
+    try {
+      const m = JSON.parse(t.notes);
+      if (m.icPositionId) {
+        dbMeta.set(String(m.icPositionId), {
+          beSet: m.icBeSet ?? m.beSet ?? false,
+          trailSL: m.icTrailSL ?? m.trailSL ?? null,
+          confidence: m.confidence ?? 72,
+        });
+      }
+    } catch { /* skip */ }
+  }
 
-    const livePos = liveMap.get(meta.icPositionId);
-    if (!livePos) continue; // already closed
+  // ── 3. Process each live position ────────────────────────────────────────
+  for (const pos of posResult.positions) {
+    const positionId = pos.positionId;
+    if (!positionId) continue;
+
+    const entry = pos.openPrice;
+    if (!entry || entry <= 0) continue;
+
+    const isBuy = pos.direction === "BUY";
+    const symbol = pos.symbol; // already cTrader name (e.g. "XAUUSD", "USTEC")
 
     // Get current price from cTrader
-    const ctraderSymbol = toCtrader(trade.market);
-    const priceResult = await icGetPrice(ctraderSymbol);
-    if (!priceResult.ok) continue;
-
-    const currentPrice = trade.direction === "BUY" ? priceResult.bid! : priceResult.ask!;
+    const priceResult = await icGetPrice(symbol).catch(() => null);
+    if (!priceResult?.ok) continue;
+    const currentPrice = isBuy ? (priceResult.bid ?? 0) : (priceResult.ask ?? 0);
     if (!currentPrice) continue;
 
-    const entry = trade.entry > 0 ? trade.entry : livePos.openPrice;
-    const stopLoss = trade.stopLoss;
-    const takeProfit = trade.takeProfit;
-    if (!entry || entry === 0) continue;
+    // Merge DB meta + in-memory meta
+    const mem = positionMeta.get(positionId) ?? { beSet: false, trailSL: null, confidence: 72 };
+    const meta: PosMeta = dbMeta.get(positionId) ?? mem;
 
-    const isBuy = trade.direction === "BUY";
-    const totalRange = Math.abs(takeProfit - entry);
-    const slRange = Math.abs(entry - stopLoss);
-    if (totalRange < 0.00001 || slRange < 0.00001) continue;
+    const lvl = getLevel(meta.confidence);
 
+    // SL/TP from live position
+    const liveSL = pos.stopLoss ?? 0;
+    const liveTP = pos.takeProfit ?? 0;
+
+    // SL range: prefer fixed SL, fall back to default for instrument
+    const slRange = liveSL > 0
+      ? Math.abs(entry - liveSL)
+      : (DEFAULT_SL_RANGE[symbol] ?? 0.005);
+
+    const totalRange = liveTP > 0
+      ? Math.abs(liveTP - entry)
+      : slRange * 2;
+
+    if (slRange < 0.000001) continue;
+
+    // Progress toward TP (0 = entry, 1 = full TP, negative = losing)
     const progress = isBuy
       ? (currentPrice - entry) / totalRange
       : (entry - currentPrice) / totalRange;
 
-    const pnlFraction = isBuy
-      ? (currentPrice - entry) / slRange
-      : (entry - currentPrice) / slRange;
+    // Effective SL for trailing calculations
+    const effectiveSL = liveSL > 0 ? liveSL : (meta.trailSL ?? (isBuy ? entry - slRange : entry + slRange));
+    const currentTrailSL = meta.trailSL ?? effectiveSL;
 
-    const score = meta.confidence ?? 72;
-    const lvl = getLevel(score);
-    const currentSL = meta.trailSL ?? stopLoss;
+    // Already at breakeven?
+    const alreadyAtBE = isBuy
+      ? (liveSL > 0 && liveSL >= entry - 0.0001)
+      : (liveSL > 0 && liveSL <= entry + 0.0001);
+    const beEffective = meta.beSet || alreadyAtBE;
 
-    // ── Early Exit ────────────────────────────────────────────────────────────
-    if (!meta.beSet && pnlFraction < -lvl.exitAt) {
-      const closeResult = await icClosePosition(meta.icPositionId);
-      if (closeResult.ok) {
-        const updatedMeta = { ...meta, icClosedBy: "active-manager-early-exit", icClosedAt: new Date().toISOString() };
-        await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET notes=$1, "updatedAt"=NOW() WHERE id=$2`,
-          JSON.stringify(updatedMeta), trade.id
-        );
-        console.log(`[ic-trade-mgr] Early exit: ${trade.market} ${trade.direction} pnl=${pnlFraction.toFixed(2)}`);
-      }
-      continue;
-    }
-
-    // ── Breakeven ─────────────────────────────────────────────────────────────
-    if (!meta.beSet && progress >= lvl.beAt) {
-      const updateResult = await icUpdatePosition(meta.icPositionId, entry, trade.takeProfit);
+    // ── Breakeven ────────────────────────────────────────────────────────────
+    if (!beEffective && progress >= lvl.beAt) {
+      const newSL = entry;
+      const updateResult = await icUpdatePosition(positionId, newSL, liveTP > 0 ? liveTP : undefined);
       if (updateResult.ok) {
-        const updatedMeta = { ...meta, beSet: true, trailActive: false, trailSL: entry };
+        const newMeta = { ...meta, beSet: true, trailSL: newSL };
+        positionMeta.set(positionId, newMeta);
         await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET notes=$1, "updatedAt"=NOW() WHERE id=$2`,
-          JSON.stringify(updatedMeta), trade.id
-        );
-        console.log(`[ic-trade-mgr] Breakeven: ${trade.market} entry=${entry} progress=${(progress*100).toFixed(0)}%`);
+          `UPDATE "Trade" SET "stopLoss"=$1, "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $2`,
+          newSL, `%${positionId}%`
+        ).catch(() => {});
+        console.log(`[ic-trade-mgr] ✅ Breakeven: ${symbol} ${pos.direction} entry=${entry} progress=${(progress*100).toFixed(0)}%`);
+        try {
+          const { notifyBreakeven } = await import("../telegram-notifications/telegram-sender");
+          await notifyBreakeven({ symbol, direction: pos.direction, entry, broker: "IC Markets" });
+        } catch { /* non-fatal */ }
+        continue;
+      } else {
+        console.warn(`[ic-trade-mgr] Breakeven FAILED: ${symbol} ${positionId} — ${updateResult.error}`);
       }
-      continue;
     }
 
-    // ── Trailing SL ───────────────────────────────────────────────────────────
-    if (meta.beSet) {
+    // ── Trailing SL ──────────────────────────────────────────────────────────
+    if (beEffective || alreadyAtBE) {
       const trailDistance = slRange * lvl.trailDist;
-      const newTrailSL = isBuy ? currentPrice - trailDistance : currentPrice + trailDistance;
+      const newTrailSL = isBuy
+        ? currentPrice - trailDistance
+        : currentPrice + trailDistance;
 
-      const shouldUpdate = isBuy ? newTrailSL > currentSL : newTrailSL < currentSL;
+      const shouldUpdate = isBuy
+        ? newTrailSL > currentTrailSL && newTrailSL >= entry
+        : newTrailSL < currentTrailSL && newTrailSL <= entry;
+
       if (shouldUpdate) {
-        const updateResult = await icUpdatePosition(meta.icPositionId, newTrailSL, trade.takeProfit);
+        const updateResult = await icUpdatePosition(positionId, newTrailSL, liveTP > 0 ? liveTP : undefined);
         if (updateResult.ok) {
-          const updatedMeta = { ...meta, trailActive: true, trailSL: newTrailSL };
+          positionMeta.set(positionId, { ...meta, beSet: true, trailSL: newTrailSL });
           await db.$executeRawUnsafe(
-            `UPDATE "Trade" SET notes=$1, "updatedAt"=NOW() WHERE id=$2`,
-            JSON.stringify(updatedMeta), trade.id
-          );
-          console.log(`[ic-trade-mgr] Trail SL: ${trade.market} newSL=${newTrailSL.toFixed(5)} price=${currentPrice.toFixed(5)}`);
+            `UPDATE "Trade" SET "stopLoss"=$1, "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $2`,
+            newTrailSL, `%${positionId}%`
+          ).catch(() => {});
+          console.log(`[ic-trade-mgr] 📈 Trail SL: ${symbol} ${pos.direction} SL=${newTrailSL.toFixed(5)} price=${currentPrice.toFixed(5)}`);
         }
       }
     }
+  }
+
+  // ── 4. Cleanup memory for closed positions ───────────────────────────────
+  const liveIds = new Set(posResult.positions.map(p => p.positionId).filter(Boolean));
+  for (const id of positionMeta.keys()) {
+    if (!liveIds.has(id)) positionMeta.delete(id);
   }
 }
