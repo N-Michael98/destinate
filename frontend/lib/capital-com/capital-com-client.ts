@@ -458,6 +458,33 @@ export async function capitalUpdatePosition(
   }
 }
 
+// Partially close a position: opens opposite order for partialSize
+export async function capitalClosePartial(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  epic: string,
+  direction: "BUY" | "SELL",
+  partialSize: number,
+): Promise<OrderResult> {
+  try {
+    const oppositeDir = direction === "BUY" ? "SELL" : "BUY";
+    const res = await fetch(`${DEMO_BASE}/positions`, {
+      method: "POST",
+      headers: authHeaders(apiKey, cst, securityToken),
+      body: JSON.stringify({ epic, direction: oppositeDir, size: partialSize, orderType: "MARKET" }),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      return { ok: false, error: (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}` };
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+    return { ok: true, dealReference: String(data.dealReference ?? ""), status: "PARTIAL_CLOSE" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
 // Close a specific position by dealId
 export async function capitalClosePosition(
   apiKey: string,

@@ -344,7 +344,7 @@ export async function icUpdatePosition(
   takeProfit?: number,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const params: Record<string, unknown> = { positionId, stopLoss };
+    const params: Record<string, unknown> = { positionId: Number(positionId), stopLoss };
     if (takeProfit) params.takeProfit = takeProfit;
     await mcpCall("amend_position", params);
     return { ok: true };
@@ -357,7 +357,17 @@ export async function icUpdatePosition(
 
 export async function icClosePosition(positionId: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await mcpCall("close_position", { positionId });
+    await mcpCall("close_position", { positionId: Number(positionId) });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+  }
+}
+
+/** Partially close a cTrader position by specifying volume to close */
+export async function icClosePartial(positionId: string, volume: number): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await mcpCall("close_position", { positionId: Number(positionId), volume });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
@@ -375,8 +385,27 @@ export async function icGetPrice(symbol: string): Promise<{
 }> {
   try {
     const result = await mcpCall("get_spot_prices", { symbols: [symbol] });
-    const bid = Number(result.bid ?? 0);
-    const ask = Number(result.ask ?? result.offer ?? 0);
+    // get_spot_prices returns array or nested — handle all formats
+    let bid = 0, ask = 0;
+    if (Array.isArray(result)) {
+      // [{symbolName, bid, ask, ...}]
+      const entry = (result as Record<string, unknown>[])[0] ?? {};
+      bid = Number(entry.bid ?? 0);
+      ask = Number(entry.ask ?? entry.offer ?? 0);
+    } else if (Array.isArray(result.prices)) {
+      const entry = (result.prices as Record<string, unknown>[])[0] ?? {};
+      bid = Number(entry.bid ?? 0);
+      ask = Number(entry.ask ?? entry.offer ?? 0);
+    } else if (Array.isArray(result.spotPrices)) {
+      const entry = (result.spotPrices as Record<string, unknown>[])[0] ?? {};
+      bid = Number(entry.bid ?? 0);
+      ask = Number(entry.ask ?? entry.offer ?? 0);
+    } else {
+      // flat object fallback
+      bid = Number(result.bid ?? 0);
+      ask = Number(result.ask ?? result.offer ?? 0);
+    }
+    if (!bid && !ask) return { ok: false, error: "No price data returned" };
     return { ok: true, bid, ask, spread: Number((ask - bid).toFixed(5)) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };

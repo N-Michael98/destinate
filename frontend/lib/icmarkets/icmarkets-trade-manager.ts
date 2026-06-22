@@ -1,19 +1,23 @@
 /**
- * IC Markets Active Trade Manager
- * Runs every 2min via instrumentation.ts background monitor.
- * Covers ALL live cTrader positions — not just DB-tracked ones.
+ * Active Trade Manager — IC Markets (cTrader)
+ * Runs every 2min. Covers ALL live positions.
  *
- * Breakeven / Trailing levels by confidence:
- *   < 75:  BE at 40% to TP, Trail = 60% of SL range
- *   75-80: BE at 55% to TP, Trail = 50% of SL range
- *   80+:   BE at 70% to TP, Trail = 40% of SL range
+ * Order of checks per position:
+ *  1. Zeit-Exit   — close if position age > style limit
+ *  2. Partial TP  — close 50% at 50% to TP (once only)
+ *  3. Breakeven   — SL → entry when progress ≥ beAt
+ *  4. Trailing SL — move SL up as price rises (only after BE)
+ *
+ * Zeit-Exit limits:
+ *  SCALPING:   4 hours
+ *  DAYTRADING: 24 hours
+ *  SWING:      168 hours (7 days)
  */
 
 import { getPrisma } from "../../app/lib/prisma";
-import { icGetPositions, icUpdatePosition, icGetPrice } from "./icmarkets-client";
+import { icGetPositions, icUpdatePosition, icClosePosition, icClosePartial, icGetPrice } from "./icmarkets-client";
 import { isICMarketsConnected } from "./icmarkets-session";
 
-// Default SL range per instrument when no fixed SL exists (absolute price units)
 const DEFAULT_SL_RANGE: Record<string, number> = {
   XAUUSD: 10, XAGUSD: 0.5,
   EURUSD: 0.003, GBPUSD: 0.003, USDJPY: 0.3, AUDUSD: 0.003,
@@ -23,8 +27,19 @@ const DEFAULT_SL_RANGE: Record<string, number> = {
   WTI: 1.0, BRENT: 1.0,
 };
 
-// In-memory state per positionId (for positions not tracked in DB)
-interface PosMeta { beSet: boolean; trailSL: number | null; confidence: number }
+const STYLE_MAX_HOURS: Record<string, number> = {
+  SCALPING:   4,
+  DAYTRADING: 24,
+  SWING:      168,
+};
+
+interface PosMeta {
+  beSet: boolean;
+  partialDone: boolean;
+  trailSL: number | null;
+  confidence: number;
+  tradingStyle: string;
+}
 const positionMeta: Map<string, PosMeta> = new Map();
 
 function getLevel(score: number): { beAt: number; trailDist: number } {
@@ -37,11 +52,11 @@ export async function runICMarketsTradeManager(): Promise<void> {
   if (!isICMarketsConnected()) return;
   const db = getPrisma();
 
-  // ── 1. Get all live IC Markets positions ─────────────────────────────────
+  // ── 1. Get all live positions ─────────────────────────────────────────────
   const posResult = await icGetPositions();
   if (!posResult.ok || !posResult.positions?.length) return;
 
-  // ── 2. Load DB metadata (confidence, beSet, trailSL per icPositionId) ───
+  // ── 2. Load DB metadata ───────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dbTrades = await (db.$queryRawUnsafe as any)(
     `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%icPositionId%'`
@@ -53,74 +68,96 @@ export async function runICMarketsTradeManager(): Promise<void> {
       const m = JSON.parse(t.notes);
       if (m.icPositionId) {
         dbMeta.set(String(m.icPositionId), {
-          beSet: m.icBeSet ?? m.beSet ?? false,
-          trailSL: m.icTrailSL ?? m.trailSL ?? null,
-          confidence: m.confidence ?? 72,
+          beSet:       m.icBeSet ?? m.beSet ?? false,
+          partialDone: m.icPartialDone ?? m.partialDone ?? false,
+          trailSL:     m.icTrailSL ?? m.trailSL ?? null,
+          confidence:  m.confidence ?? 72,
+          tradingStyle: m.tradingStyle ?? m.strategy ?? "DAYTRADING",
         });
       }
     } catch { /* skip */ }
   }
 
-  // ── 3. Process each live position ────────────────────────────────────────
+  // ── 3. Process each position ──────────────────────────────────────────────
   for (const pos of posResult.positions) {
     const positionId = pos.positionId;
     if (!positionId) continue;
-
     const entry = pos.openPrice;
     if (!entry || entry <= 0) continue;
-
     const isBuy = pos.direction === "BUY";
-    const symbol = pos.symbol; // already cTrader name (e.g. "XAUUSD", "USTEC")
+    const symbol = pos.symbol;
 
-    // Get current price from cTrader
+    // Get price (per position — IC Markets has no batch API)
     const priceResult = await icGetPrice(symbol).catch(() => null);
     if (!priceResult?.ok) continue;
     const currentPrice = isBuy ? (priceResult.bid ?? 0) : (priceResult.ask ?? 0);
     if (!currentPrice) continue;
 
-    // Merge DB meta + in-memory meta
-    const mem = positionMeta.get(positionId) ?? { beSet: false, trailSL: null, confidence: 72 };
+    const mem = positionMeta.get(positionId) ?? { beSet: false, partialDone: false, trailSL: null, confidence: 72, tradingStyle: "DAYTRADING" };
     const meta: PosMeta = dbMeta.get(positionId) ?? mem;
 
     const lvl = getLevel(meta.confidence);
-
-    // SL/TP from live position
     const liveSL = pos.stopLoss ?? 0;
     const liveTP = pos.takeProfit ?? 0;
 
-    // SL range: prefer fixed SL, fall back to default for instrument
     const slRange = liveSL > 0
       ? Math.abs(entry - liveSL)
       : (DEFAULT_SL_RANGE[symbol] ?? 0.005);
-
     const totalRange = liveTP > 0
       ? Math.abs(liveTP - entry)
       : slRange * 2;
-
     if (slRange < 0.000001) continue;
 
-    // Progress toward TP (0 = entry, 1 = full TP, negative = losing)
     const progress = isBuy
       ? (currentPrice - entry) / totalRange
       : (entry - currentPrice) / totalRange;
 
-    // Effective SL for trailing calculations
-    const effectiveSL = liveSL > 0 ? liveSL : (meta.trailSL ?? (isBuy ? entry - slRange : entry + slRange));
-    const currentTrailSL = meta.trailSL ?? effectiveSL;
-
-    // Already at breakeven?
     const alreadyAtBE = isBuy
       ? (liveSL > 0 && liveSL >= entry - 0.0001)
       : (liveSL > 0 && liveSL <= entry + 0.0001);
     const beEffective = meta.beSet || alreadyAtBE;
+    const currentTrailSL = meta.trailSL ?? (liveSL > 0 ? liveSL : (isBuy ? entry - slRange : entry + slRange));
 
-    // ── Breakeven ────────────────────────────────────────────────────────────
+    // ── Zeit-Exit ─────────────────────────────────────────────────────────
+    const style = meta.tradingStyle.toUpperCase();
+    const maxHours = STYLE_MAX_HOURS[style] ?? STYLE_MAX_HOURS.DAYTRADING;
+    const openedAt = new Date(pos.openTime ?? Date.now());
+    const ageHours = (Date.now() - openedAt.getTime()) / (1000 * 60 * 60);
+    if (ageHours >= maxHours) {
+      const closeResult = await icClosePosition(positionId);
+      if (closeResult.ok) {
+        positionMeta.delete(positionId);
+        await db.$executeRawUnsafe(
+          `UPDATE "Trade" SET status='CLOSED', result='CLOSED_TIME', "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $1`,
+          `%${positionId}%`
+        ).catch(() => {});
+        console.log(`[ic-trade-mgr] ⏰ Zeit-Exit: ${symbol} ${pos.direction} age=${ageHours.toFixed(1)}h limit=${maxHours}h (${style})`);
+        continue;
+      }
+    }
+
+    // ── Partial TP (50% close at 50% progress) ───────────────────────────
+    if (!meta.partialDone && progress >= 0.50 && pos.volume > 0) {
+      const partialVol = Math.floor(pos.volume / 2);
+      if (partialVol > 0) {
+        const partialResult = await icClosePartial(positionId, partialVol);
+        if (partialResult.ok) {
+          positionMeta.set(positionId, { ...meta, partialDone: true });
+          await db.$executeRawUnsafe(
+            `UPDATE "Trade" SET "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $1`,
+            `%${positionId}%`
+          ).catch(() => {});
+          console.log(`[ic-trade-mgr] 💰 Partial TP: ${symbol} closed ${partialVol} of ${pos.volume} at ${(progress*100)|0}% to TP`);
+        }
+      }
+    }
+
+    // ── Breakeven ─────────────────────────────────────────────────────────
     if (!beEffective && progress >= lvl.beAt) {
       const newSL = entry;
-      const updateResult = await icUpdatePosition(positionId, newSL, liveTP > 0 ? liveTP : undefined);
-      if (updateResult.ok) {
-        const newMeta = { ...meta, beSet: true, trailSL: newSL };
-        positionMeta.set(positionId, newMeta);
+      const upd = await icUpdatePosition(positionId, newSL, liveTP > 0 ? liveTP : undefined);
+      if (upd.ok) {
+        positionMeta.set(positionId, { ...meta, beSet: true, trailSL: newSL });
         await db.$executeRawUnsafe(
           `UPDATE "Trade" SET "stopLoss"=$1, "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $2`,
           newSL, `%${positionId}%`
@@ -131,25 +168,19 @@ export async function runICMarketsTradeManager(): Promise<void> {
           await notifyBreakeven({ symbol, direction: pos.direction, entry, broker: "IC Markets" });
         } catch { /* non-fatal */ }
         continue;
-      } else {
-        console.warn(`[ic-trade-mgr] Breakeven FAILED: ${symbol} ${positionId} — ${updateResult.error}`);
       }
     }
 
-    // ── Trailing SL ──────────────────────────────────────────────────────────
+    // ── Trailing SL ───────────────────────────────────────────────────────
     if (beEffective || alreadyAtBE) {
       const trailDistance = slRange * lvl.trailDist;
-      const newTrailSL = isBuy
-        ? currentPrice - trailDistance
-        : currentPrice + trailDistance;
-
+      const newTrailSL = isBuy ? currentPrice - trailDistance : currentPrice + trailDistance;
       const shouldUpdate = isBuy
         ? newTrailSL > currentTrailSL && newTrailSL >= entry
         : newTrailSL < currentTrailSL && newTrailSL <= entry;
-
       if (shouldUpdate) {
-        const updateResult = await icUpdatePosition(positionId, newTrailSL, liveTP > 0 ? liveTP : undefined);
-        if (updateResult.ok) {
+        const upd = await icUpdatePosition(positionId, newTrailSL, liveTP > 0 ? liveTP : undefined);
+        if (upd.ok) {
           positionMeta.set(positionId, { ...meta, beSet: true, trailSL: newTrailSL });
           await db.$executeRawUnsafe(
             `UPDATE "Trade" SET "stopLoss"=$1, "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $2`,
@@ -161,7 +192,7 @@ export async function runICMarketsTradeManager(): Promise<void> {
     }
   }
 
-  // ── 4. Cleanup memory for closed positions ───────────────────────────────
+  // ── Cleanup closed positions ──────────────────────────────────────────────
   const liveIds = new Set(posResult.positions.map(p => p.positionId).filter(Boolean));
   for (const id of positionMeta.keys()) {
     if (!liveIds.has(id)) positionMeta.delete(id);
