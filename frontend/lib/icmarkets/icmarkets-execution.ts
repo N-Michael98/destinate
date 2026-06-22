@@ -21,22 +21,21 @@ const SYMBOL_MAP: Record<string, string> = {
   USDCAD: "USDCAD",   // symbolId: 8
   EURGBP: "EURGBP",   // symbolId: 9
   NZDUSD: "NZDUSD",   // symbolId: 12
-  // Indices (confirmed ✅)
-  US500:  "US500",    // symbolId: 10013 (was SPX500 — wrong)
+  // Indices (all confirmed ✅)
+  US500:  "US500",    // symbolId: 10013
+  SPX500: "US500",    // alias
   UK100:  "UK100",    // symbolId: 10011
-  // Indices (cTrader name unknown — need to verify)
-  US100:  "US100",    // try "US100" (might be NAS100, USTEC, etc.)
-  NAS100: "US100",    // alias
-  SPX500: "US500",    // alias → US500
-  GER40:  "GER40",    // might be DE40, FDAX — to be confirmed
-  // Commodities (confirmed ✅)
+  US100:  "USTEC",    // symbolId: 10014 (IC Markets calls Nasdaq "USTEC")
+  NAS100: "USTEC",    // alias
+  GER40:  "DE40",     // symbolId: 10046 (IC Markets calls DAX "DE40")
+  // Commodities (all confirmed ✅)
   XAUUSD: "XAUUSD",   // symbolId: 41
   GOLD:   "XAUUSD",   // alias
   XAGUSD: "XAGUSD",   // symbolId: 42
   SILVER: "XAGUSD",   // alias
-  // Commodities (cTrader name unknown — BRENT seen in cache)
-  USOIL:  "BRENT",    // IC Markets uses BRENT for crude oil
-  OIL:    "BRENT",    // alias
+  USOIL:  "WTI",      // symbolId: 10022 (US WTI crude oil)
+  OIL:    "WTI",      // alias
+  BRENT:  "BRENT",    // symbolId: 10021 (UK Brent crude)
 };
 
 // cTrader MCP volume: internally divides input by 100 for display.
@@ -58,6 +57,10 @@ const PIP_VALUE_PER_UNIT: Record<string, number> = {
   SPX500:  0.001,
   GER40:   0.001,
   UK100:   0.001,
+  USTEC:   0.001,   // NAS100 in cTrader
+  DE40:    0.001,   // GER40 in cTrader
+  WTI:     0.001,   // USOIL in cTrader
+  BRENT:   0.001,
   XAUUSD:  0.01,
   XAGUSD:  0.001,
   USOIL:   0.001,
@@ -69,6 +72,7 @@ const MIN_UNITS: Record<string, number> = {
   USDCAD: 1000000, USDCHF: 1000000, GBPJPY: 1000000, EURJPY: 1000000,
   EURGBP: 1000000, NZDUSD: 1000000,
   NAS100: 10, SPX500: 10, GER40: 10, UK100: 10,
+  USTEC: 10, DE40: 10, WTI: 100, BRENT: 100,
   XAUUSD: 100, XAGUSD: 100, USOIL: 100,
 };
 
