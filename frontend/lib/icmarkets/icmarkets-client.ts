@@ -260,16 +260,40 @@ export async function icPlaceOrder(
     const result = await mcpCall("create_order", params);
     console.log("[IC Markets MCP] create_order raw:", JSON.stringify(result).slice(0, 300));
 
-    const positionId = String(result.positionId ?? result.orderId ?? result.dealId ?? result.id ?? "");
+    // create_order may return orderId instead of positionId for market orders
+    let positionId = String(result.positionId ?? result.dealId ?? result.id ?? "");
+    const orderId = String(result.orderId ?? "");
+    console.log(`[IC Markets MCP] create_order ids: positionId="${positionId}" orderId="${orderId}"`);
 
-    // Amend SL/TP after fill if we have a positionId and SL/TP values
-    if (positionId && (stopLoss || takeProfit)) {
+    // Amend SL/TP: need real positionId (not orderId). If empty, fetch from get_positions.
+    if ((stopLoss || takeProfit)) {
       try {
-        const amendParams: Record<string, unknown> = { positionId };
-        if (stopLoss) amendParams.stopLoss = stopLoss;
-        if (takeProfit) amendParams.takeProfit = takeProfit;
-        const amendResult = await mcpCall("amend_position", amendParams);
-        console.log("[IC Markets MCP] amend_position raw:", JSON.stringify(amendResult).slice(0, 200));
+        // Short wait for market order to fill
+        await new Promise((r) => setTimeout(r, 1500));
+
+        // If we don't have a positionId yet, find the newest position for this symbolId
+        if (!positionId) {
+          const posRes = await mcpCall("get_positions", {});
+          const positions = (posRes.positions as Array<Record<string, unknown>>) ?? [];
+          // Find newest position for this symbol
+          const match = positions
+            .filter((p) => Number(p.symbolId) === Number(symbolId))
+            .sort((a, b) => Number(b.positionId ?? 0) - Number(a.positionId ?? 0))[0];
+          if (match?.positionId) {
+            positionId = String(match.positionId);
+            console.log(`[IC Markets MCP] resolved positionId from get_positions: ${positionId}`);
+          }
+        }
+
+        if (positionId) {
+          const amendParams: Record<string, unknown> = { positionId: Number(positionId) };
+          if (stopLoss) amendParams.stopLoss = stopLoss;
+          if (takeProfit) amendParams.takeProfit = takeProfit;
+          const amendResult = await mcpCall("amend_position", amendParams);
+          console.log("[IC Markets MCP] amend_position raw:", JSON.stringify(amendResult).slice(0, 200));
+        } else {
+          console.warn("[IC Markets] Could not get positionId for amend — SL/TP not set");
+        }
       } catch (amendErr) {
         console.warn("[IC Markets] amend_position failed (non-fatal):", amendErr instanceof Error ? amendErr.message : amendErr);
       }
