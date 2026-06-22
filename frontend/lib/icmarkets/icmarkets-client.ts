@@ -218,17 +218,22 @@ export async function icGetSymbolId(symbolName: string): Promise<number | null> 
     if (result) {
       const symbols = (result.symbols ?? result.data ?? result) as Array<Record<string, unknown>>;
       if (Array.isArray(symbols)) {
+        console.log(`[IC Markets] get_symbols returned ${symbols.length} symbols, first 3:`, JSON.stringify(symbols.slice(0, 3)));
         for (const s of symbols) {
           const name = String(s.symbolName ?? s.name ?? s.symbol ?? "");
           const id = Number(s.symbolId ?? s.id ?? 0);
           if (name && id) symbolIdCache.set(name, id);
         }
+        console.log(`[IC Markets] symbolIdCache keys (first 10):`, [...symbolIdCache.keys()].slice(0, 10).join(", "));
         if (symbolIdCache.has(symbolName)) return symbolIdCache.get(symbolName)!;
+      } else {
+        console.log(`[IC Markets] get_symbols result (not array):`, JSON.stringify(result).slice(0, 300));
       }
     }
     // Fallback: try find_symbol
     const r2 = await mcpCall("find_symbol", { symbolName }).catch(() => null);
     if (r2) {
+      console.log(`[IC Markets] find_symbol(${symbolName}) result:`, JSON.stringify(r2).slice(0, 200));
       const id = Number(r2.symbolId ?? r2.id ?? 0);
       if (id) { symbolIdCache.set(symbolName, id); return id; }
     }
