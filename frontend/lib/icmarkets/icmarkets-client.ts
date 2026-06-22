@@ -219,9 +219,10 @@ export async function icPlaceOrder(
     if (takeProfit) params.takeProfit = takeProfit;
 
     const result = await mcpCall("create_order", params);
+    console.log("[IC Markets MCP] create_order raw:", JSON.stringify(result).slice(0, 300));
     return {
       ok: true,
-      positionId: String(result.positionId ?? result.orderId ?? ""),
+      positionId: String(result.positionId ?? result.orderId ?? result.dealId ?? result.id ?? ""),
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };

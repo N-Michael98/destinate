@@ -31,10 +31,9 @@ const SYMBOL_MAP: Record<string, string> = {
   OIL:    "USOIL",
 };
 
-// Pip values per symbol in account currency (CHF approx)
-// For forex: 1 pip = 0.0001, for JPY pairs = 0.01
-// At 1 unit: pip value = 0.0001 CHF (EURUSD) etc.
-// We approximate: for most forex pairs 1 unit ≈ 0.0001 CHF per pip
+// Pip values per symbol per 1 unit in account currency (CHF approx)
+// Forex: 1 unit = 1 base currency unit, pip = 0.0001 price move
+// Gold/Silver/Oil: 1 unit = 1 oz / 1 bbl, pip = 0.01 price move
 const PIP_VALUE_PER_UNIT: Record<string, number> = {
   EURUSD: 0.000105,
   GBPUSD: 0.000105,
@@ -47,12 +46,12 @@ const PIP_VALUE_PER_UNIT: Record<string, number> = {
   EURGBP: 0.000105,
   NZDUSD: 0.000105,
   NAS100:  0.001,
-  SPX500:  0.00015,
-  GER40:   0.00012,
-  UK100:   0.00013,
-  XAUUSD:  0.0001,
-  XAGUSD:  0.0001,
-  USOIL:   0.0001,
+  SPX500:  0.001,
+  GER40:   0.001,
+  UK100:   0.001,
+  XAUUSD:  0.01,   // 1 pip = $0.01 per oz (2-decimal symbol)
+  XAGUSD:  0.001,  // 1 pip = $0.001 per oz
+  USOIL:   0.001,  // 1 pip = $0.001 per bbl
 };
 
 // Minimum units per symbol
@@ -114,11 +113,21 @@ export async function executeICMarketsOrder(req: {
   const ctraderSymbol = SYMBOL_MAP[req.symbol] ?? req.symbol;
   const balance = session.balance > 0 ? session.balance : req.accountBalance;
 
-  // Calculate stop distance in points
+  // Calculate stop distance in pips from the stop loss price
+  // For forex: stopLossPrice is absolute price, entry ~= stopLoss ± few pips
+  // For indices/metals: distance can be larger
   let stopPoints = 20;
-  if (req.stopLossPrice && req.accountBalance > 0) {
-    // Approximate — will be refined when we have live price
-    stopPoints = Math.abs(req.stopLossPrice) > 0 ? 20 : 20;
+  if (req.stopLossPrice && req.stopLossPrice > 0) {
+    // Estimate entry ≈ stopLoss + typical distance
+    // Use a safe default based on symbol type if we can't get exact entry
+    const isMetalOrIndex = ["XAUUSD", "XAGUSD", "USOIL", "NAS100", "SPX500", "GER40", "UK100"].includes(ctraderSymbol);
+    if (isMetalOrIndex) {
+      // For gold around 4170: stop at 4164 → distance = 6 * 100 = 600 pips (0.01 per pip)
+      // We use 50 pips as safe default to avoid giant positions
+      stopPoints = 50;
+    } else {
+      stopPoints = 20; // 20 pips for forex
+    }
   }
 
   const volume = calcICPositionSize(ctraderSymbol, balance, req.riskPercent, stopPoints);
@@ -135,6 +144,8 @@ export async function executeICMarketsOrder(req: {
 
   if (!result.ok) {
     console.error(`[IC Markets] ❌ ${ctraderSymbol} failed: ${result.error}`);
+  } else if (!result.positionId) {
+    console.warn(`[IC Markets] ⚠️ ${ctraderSymbol} ${req.direction} — order sent but positionId empty (cTrader may have rejected silently)`);
   } else {
     console.log(`[IC Markets] ✅ ${ctraderSymbol} ${req.direction} — positionId: ${result.positionId}`);
   }
