@@ -318,24 +318,54 @@ export async function register() {
 
             for (const candidate of candidates) {
               const style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
-              const result = await executeCapitalDemoOrder({
+              const riskPct = Math.min(candidate.claude.maxRiskPercent, settings.riskSettings.maxRiskPerTradePct);
+              const orderParams = {
                 symbol: candidate.symbol,
                 direction: candidate.gpt.direction as "BUY" | "SELL",
-                riskPercent: Math.min(candidate.claude.maxRiskPercent, settings.riskSettings.maxRiskPerTradePct),
+                riskPercent: riskPct,
                 accountBalance: session.balance > 0 ? session.balance : 10000,
                 stopLossPrice: candidate.gpt.stopLoss,
                 takeProfitPrice: candidate.gpt.takeProfit,
                 confidence: candidate.gpt.confidence,
                 strategy: candidate.gpt.tradingStyle,
                 tradingStyle: style,
-              });
+              };
+
+              // Execute on Capital.com + IC Markets in parallel
+              const { executeICMarketsOrder } = await import("./lib/icmarkets/icmarkets-execution");
+              const { isICMarketsConnected: icConnected, getICMarketsSession: icSess } = await import("./lib/icmarkets/icmarkets-session");
+              const icSession = icSess();
+              const [result, icResult] = await Promise.all([
+                executeCapitalDemoOrder(orderParams),
+                icConnected() ? executeICMarketsOrder({
+                  ...orderParams,
+                  accountBalance: icSession?.balance ?? orderParams.accountBalance,
+                }) : Promise.resolve(null),
+              ]);
 
               if (result.ok) {
                 global.__daily_trades__.count++;
                 global.__daily_trades__.byStyle[style] = (global.__daily_trades__.byStyle[style] ?? 0) + 1;
                 // Persist counter to Redis so restarts don't reset it
                 await cSet(redisDailyKey, { count: global.__daily_trades__.count, byStyle: global.__daily_trades__.byStyle }, 90000);
-                console.log(`[auto-scan] ✅ ${candidate.symbol} ${candidate.gpt.direction} (${style}) — Deal ${result.dealId}`);
+                const icLog = icResult ? (icResult.ok ? `IC:✅${icResult.positionId}` : `IC:❌${icResult.error?.slice(0, 60)}`) : "IC:not connected";
+                console.log(`[auto-scan] ✅ ${candidate.symbol} ${candidate.gpt.direction} (${style}) — Deal ${result.dealId} | ${icLog}`);
+                // Telegram notification
+                try {
+                  const { notifyTradeExecuted } = await import("./lib/telegram-notifications/telegram-sender");
+                  const brokerLabel = icResult?.ok ? "Capital.com + IC Markets" : "Capital.com";
+                  await notifyTradeExecuted({
+                    symbol: candidate.symbol,
+                    direction: candidate.gpt.direction as "BUY" | "SELL",
+                    size: result.size ?? 0,
+                    entry: result.openLevel ?? 0,
+                    stopLoss: candidate.gpt.stopLoss ?? 0,
+                    takeProfit: candidate.gpt.takeProfit ?? 0,
+                    confidence: candidate.gpt.confidence,
+                    broker: brokerLabel,
+                    dealId: result.dealId,
+                  });
+                } catch { /* non-fatal */ }
                 // Save to Trading Journal
                 try {
                   const { saveCapitalTradeToJournal } = await import("./lib/capital-com/capital-trade-tracker");
