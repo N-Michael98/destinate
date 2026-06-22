@@ -247,22 +247,35 @@ export async function icPlaceOrder(
       return { ok: false, error: `Could not resolve symbolId for ${symbol} — check cTrader symbol list` };
     }
 
+    // cTrader MCP: absolute SL/TP not supported on MARKET orders at order time.
+    // Place without SL/TP, then amend_position after fill.
     const params: Record<string, unknown> = {
       symbolId,
       tradeSide: direction,
       volume,
       orderType: "MARKET",
     };
-    if (stopLoss) params.stopLoss = stopLoss;
-    if (takeProfit) params.takeProfit = takeProfit;
 
     console.log(`[IC Markets MCP] create_order params: symbolId=${symbolId} (${symbol}) ${direction} vol=${volume}`);
     const result = await mcpCall("create_order", params);
     console.log("[IC Markets MCP] create_order raw:", JSON.stringify(result).slice(0, 300));
-    return {
-      ok: true,
-      positionId: String(result.positionId ?? result.orderId ?? result.dealId ?? result.id ?? ""),
-    };
+
+    const positionId = String(result.positionId ?? result.orderId ?? result.dealId ?? result.id ?? "");
+
+    // Amend SL/TP after fill if we have a positionId and SL/TP values
+    if (positionId && (stopLoss || takeProfit)) {
+      try {
+        const amendParams: Record<string, unknown> = { positionId };
+        if (stopLoss) amendParams.stopLoss = stopLoss;
+        if (takeProfit) amendParams.takeProfit = takeProfit;
+        const amendResult = await mcpCall("amend_position", amendParams);
+        console.log("[IC Markets MCP] amend_position raw:", JSON.stringify(amendResult).slice(0, 200));
+      } catch (amendErr) {
+        console.warn("[IC Markets] amend_position failed (non-fatal):", amendErr instanceof Error ? amendErr.message : amendErr);
+      }
+    }
+
+    return { ok: true, positionId };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
   }
