@@ -39,38 +39,43 @@ const SYMBOL_MAP: Record<string, string> = {
   BRENT:  "BRENT",    // symbolId: 10021
 };
 
-// Dollar value per 1-price-unit move per MCP unit.
-// Formula: riskAmount = units × priceDistance × PRICE_VALUE
-// Verified: XAUUSD = 0.01 (400 MCP × 0.01 × 50 = $200 ✓)
-//           EURUSD = 0.01 (10M MCP × 0.01 × 0.002 = $200 ✓)
-// JPY pairs: lower because pip value is in JPY (~145 conversion)
+// cTrader is set to UNITS mode — volume parameter = actual units (1:1, no ×100 factor)
+//
+// PRICE_VALUE = $ per 1-price-unit move per 1 unit of instrument
+// Formula: riskAmount = units × stopDistance × PRICE_VALUE
+//
+// USD-quoted (EURUSD, GBPUSD, XAUUSD, indices): PRICE_VALUE = 1.0
+//   e.g. EURUSD: 100,000 units × 0.002 stop × 1.0 = $200 risk ✓
+//   e.g. XAUUSD: 13 units × $15 stop × 1.0 = $195 risk ✓
+// JPY-quoted: PRICE_VALUE = 1/rate (rate ≈ 145-155)
+// USD-base/other-quote: PRICE_VALUE < 1 (CAD, CHF ≈ 0.73-0.91)
 const PRICE_VALUE: Record<string, number> = {
-  // USD-quoted forex
-  EURUSD: 0.01, GBPUSD: 0.01, AUDUSD: 0.01, NZDUSD: 0.01,
-  // USD-base forex (quote in CHF/CAD — approx USD conversion)
-  USDCHF: 0.011, USDCAD: 0.0075,
-  // JPY-quoted (divide by ~145 for USD)
-  USDJPY: 0.000069, EURJPY: 0.000069, GBPJPY: 0.000069,
-  // GBP-quoted
-  EURGBP: 0.013,
-  // Metals priced in USD
-  XAUUSD: 0.01, XAGUSD: 0.01,
-  // Indices ($1 per point per display contract)
-  USTEC: 0.01, US500: 0.01, UK100: 0.01, DE40: 0.01,
-  // Oil (~$0.01 per barrel per display unit)
-  WTI: 0.01, BRENT: 0.01,
+  // USD-quoted forex (1 unit = 1 base currency ≈ $1, move in USD)
+  EURUSD: 1.0, GBPUSD: 1.0, AUDUSD: 1.0, NZDUSD: 1.0,
+  // USD-base / non-USD-quote
+  USDCHF: 1.1,   // CHF quote → ÷0.90 ≈ 1.11
+  USDCAD: 0.73,  // CAD quote → ÷1.37 ≈ 0.73
+  EURGBP: 1.27,  // GBP quote → ×1.27
+  // JPY-quoted (÷ ~150)
+  USDJPY: 0.0067, EURJPY: 0.0067, GBPJPY: 0.0067,
+  // Metals (1 unit = 1 oz/unit, price in USD)
+  XAUUSD: 1.0, XAGUSD: 1.0,
+  // Indices (1 unit = 1 contract = $1/point)
+  USTEC: 1.0, US500: 1.0, UK100: 1.0, DE40: 1.0,
+  // Oil (1 unit = 1 barrel ≈ $1/move)
+  WTI: 1.0, BRENT: 1.0,
 };
 
-// Minimum MCP units per instrument (cTrader minimum)
+// Minimum units per instrument in Units mode (cTrader min)
 const MIN_UNITS: Record<string, number> = {
-  // Forex: min 0.01 lot = 1,000 units display = 100,000 MCP
-  EURUSD: 100000, GBPUSD: 100000, USDJPY: 100000, AUDUSD: 100000,
-  USDCAD: 100000, USDCHF: 100000, GBPJPY: 100000, EURJPY: 100000,
-  EURGBP: 100000, NZDUSD: 100000,
+  // Forex: min 0.01 lot = 1,000 units
+  EURUSD: 1000, GBPUSD: 1000, USDJPY: 1000, AUDUSD: 1000,
+  USDCAD: 1000, USDCHF: 1000, GBPJPY: 1000, EURJPY: 1000,
+  EURGBP: 1000, NZDUSD: 1000,
   // Indices: min 1 contract
-  USTEC: 100, US500: 100, UK100: 100, DE40: 100,
-  // Commodities: min ~1oz/barrel
-  XAUUSD: 100, XAGUSD: 100, WTI: 100, BRENT: 100,
+  USTEC: 1, US500: 1, UK100: 1, DE40: 1,
+  // Commodities: min 1 unit
+  XAUUSD: 1, XAGUSD: 1, WTI: 1, BRENT: 1,
 };
 
 // Default stop distance (price units) when no SL price available
