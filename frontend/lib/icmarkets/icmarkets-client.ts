@@ -210,6 +210,16 @@ export async function icGetPositions(): Promise<{ ok: boolean; positions?: ICPos
 // In-memory cache: symbol name → numeric symbolId
 const symbolIdCache: Map<string, number> = new Map();
 
+/** Search cached symbols by keyword — returns matching {name: id} pairs */
+export function icSearchSymbols(keyword: string): Record<string, number> {
+  const kw = keyword.toLowerCase();
+  const results: Record<string, number> = {};
+  for (const [name, id] of symbolIdCache.entries()) {
+    if (name.toLowerCase().includes(kw)) results[name] = id;
+  }
+  return results;
+}
+
 export async function icGetSymbolId(symbolName: string): Promise<number | null> {
   if (symbolIdCache.has(symbolName)) return symbolIdCache.get(symbolName)!;
   try {

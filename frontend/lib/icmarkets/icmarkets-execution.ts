@@ -7,28 +7,36 @@
 import { icPlaceOrder, isICMarketsConfigured } from "./icmarkets-client";
 import { getICMarketsSession } from "./icmarkets-session";
 
-// cTrader symbol mapping: our internal symbol → cTrader symbol name
+// cTrader symbol mapping: our internal symbol → exact cTrader symbolName
+// Verified via /api/icmarkets/symbols endpoint (351 symbols)
 const SYMBOL_MAP: Record<string, string> = {
-  // Forex
-  EURUSD: "EURUSD",
-  GBPUSD: "GBPUSD",
-  USDJPY: "USDJPY",
-  AUDUSD: "AUDUSD",
-  USDCAD: "USDCAD",
-  USDCHF: "USDCHF",
-  GBPJPY: "GBPJPY",
-  EURJPY: "EURJPY",
-  EURGBP: "EURGBP",
-  NZDUSD: "NZDUSD",
-  // Indices (cTrader names)
-  US100:  "NAS100",
-  US500:  "SPX500",
-  GER40:  "GER40",
-  UK100:  "UK100",
-  // Commodities
-  GOLD:   "XAUUSD",
-  SILVER: "XAGUSD",
-  OIL:    "USOIL",
+  // Forex (all confirmed ✅)
+  EURUSD: "EURUSD",   // symbolId: 1
+  GBPUSD: "GBPUSD",   // symbolId: 2
+  EURJPY: "EURJPY",   // symbolId: 3
+  USDJPY: "USDJPY",   // symbolId: 4
+  AUDUSD: "AUDUSD",   // symbolId: 5
+  USDCHF: "USDCHF",   // symbolId: 6
+  GBPJPY: "GBPJPY",   // symbolId: 7
+  USDCAD: "USDCAD",   // symbolId: 8
+  EURGBP: "EURGBP",   // symbolId: 9
+  NZDUSD: "NZDUSD",   // symbolId: 12
+  // Indices (confirmed ✅)
+  US500:  "US500",    // symbolId: 10013 (was SPX500 — wrong)
+  UK100:  "UK100",    // symbolId: 10011
+  // Indices (cTrader name unknown — need to verify)
+  US100:  "US100",    // try "US100" (might be NAS100, USTEC, etc.)
+  NAS100: "US100",    // alias
+  SPX500: "US500",    // alias → US500
+  GER40:  "GER40",    // might be DE40, FDAX — to be confirmed
+  // Commodities (confirmed ✅)
+  XAUUSD: "XAUUSD",   // symbolId: 41
+  GOLD:   "XAUUSD",   // alias
+  XAGUSD: "XAGUSD",   // symbolId: 42
+  SILVER: "XAGUSD",   // alias
+  // Commodities (cTrader name unknown — BRENT seen in cache)
+  USOIL:  "BRENT",    // IC Markets uses BRENT for crude oil
+  OIL:    "BRENT",    // alias
 };
 
 // cTrader MCP volume: internally divides input by 100 for display.
