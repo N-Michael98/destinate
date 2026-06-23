@@ -55,8 +55,15 @@ def _last(series: pd.Series) -> Optional[float]:
 # ── Ebene 1: Technische Analyse ───────────────────────────────────────────────
 
 def _technical_analysis(df: pd.DataFrame) -> dict:
-    if df.empty or len(df) < 20:
+    if df.empty or len(df) < 10:
         return {"signal": "NEUTRAL", "score": 50, "reason": "Zu wenig Daten"}
+    try:
+        return _technical_analysis_inner(df)
+    except Exception as e:
+        logger.warning(f"[intelligence] TA Fehler: {e}")
+        return {"signal": "NEUTRAL", "score": 50, "reason": f"TA Fehler: {str(e)[:60]}"}
+
+def _technical_analysis_inner(df: pd.DataFrame) -> dict:
 
     close = df["close"]
     high  = df["high"]
@@ -332,35 +339,51 @@ def analyze(symbol: str) -> dict:
     sym = symbol.upper()
     logger.info(f"[intelligence] Analysiere {sym}")
 
-    # Ebene 1: Technisch (1h)
-    df_1h = _load(sym, "1h", "5d")
-    tech  = _technical_analysis(df_1h)
+    try:
+        # Ebene 1: Technisch (1h)
+        df_1h = _load(sym, "1h", "5d")
+        tech  = _technical_analysis(df_1h)
 
-    # Ebene 2: Regime
-    regime = _detect_regime(df_1h, tech)
+        # Ebene 2: Regime
+        regime = _detect_regime(df_1h, tech)
 
-    # Ebene 3: Multi-Timeframe
-    mtf = _multi_timeframe(sym)
+        # Ebene 3: Multi-Timeframe
+        try:
+            mtf = _multi_timeframe(sym)
+        except Exception as e:
+            logger.warning(f"[intelligence] MTF Fehler {sym}: {e}")
+            mtf = {"alignment": "MIXED", "alignment_score": 50, "avg_score": 50, "timeframes": {}}
 
-    # Ebene 4: Korrelation
-    corr = _correlation_check(sym, tech["signal"])
+        # Ebene 4: Korrelation
+        try:
+            corr = _correlation_check(sym, tech["signal"])
+        except Exception as e:
+            logger.warning(f"[intelligence] Korrelation Fehler {sym}: {e}")
+            corr = {"confirmed": True, "details": [], "boost": 0}
 
-    # Ebene 5: Gesamt
-    combined = _combine_scores(tech, regime, mtf, corr)
+        # Ebene 5: Gesamt
+        combined = _combine_scores(tech, regime, mtf, corr)
 
-    return {
-        "symbol":   sym,
-        "signal":   combined["signal"],
-        "score":    combined["score"],
-        "confidence": combined["confidence"],
-        "layers": {
-            "technical":       tech,
-            "regime":          regime,
-            "multi_timeframe": mtf,
-            "correlation":     corr,
-        },
-        "trade_recommended": combined["signal"] != "NEUTRAL" and regime["trade_ok"],
-    }
+        return {
+            "symbol":   sym,
+            "signal":   combined["signal"],
+            "score":    combined["score"],
+            "confidence": combined["confidence"],
+            "layers": {
+                "technical":       tech,
+                "regime":          regime,
+                "multi_timeframe": mtf,
+                "correlation":     corr,
+            },
+            "trade_recommended": combined["signal"] != "NEUTRAL" and regime["trade_ok"],
+        }
+    except Exception as e:
+        logger.error(f"[intelligence] Analyse Fehler {sym}: {e}")
+        return {
+            "symbol": sym, "signal": "NEUTRAL", "score": 50,
+            "confidence": 0, "trade_recommended": False,
+            "error": str(e),
+        }
 
 def analyze_multi(symbols: list[str]) -> list[dict]:
     results = []
