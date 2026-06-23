@@ -48,6 +48,7 @@ quantstats==0.0.62
 vaderSentiment==3.3.2
 feedparser==6.0.11
 newspaper3k==0.2.8
+transformers==4.44.2
 
 # Stability (G2G)
 tenacity==9.0.0
