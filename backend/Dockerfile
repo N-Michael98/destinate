@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --only-binary :all: pandas numpy && \
+RUN pip install --no-cache-dir --only-binary :all: pandas "numpy==1.26.4" && \
     pip install --no-cache-dir curl_cffi && \
     pip install --no-cache-dir TA-Lib && \
     pip install --no-cache-dir -r requirements.txt
