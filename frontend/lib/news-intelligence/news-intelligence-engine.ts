@@ -13,6 +13,7 @@ interface NewsIntelligenceItem {
 interface NewsIntelligenceReport {
   items: NewsIntelligenceItem[];
   marketRiskScore: number;
+  overallSentiment: string;
   tradingAction: string;
   source: string;
   timestamp: string;
@@ -50,11 +51,12 @@ export async function getNewsIntelligence(): Promise<NewsIntelligenceItem[]> {
 export class NewsIntelligenceEngine {
   static analyze(): NewsIntelligenceReport {
     return {
-      items:           [],
-      marketRiskScore: 25,
-      tradingAction:   "NORMAL_TRADING",
-      source:          "LIVE_NEWS_INTELLIGENCE",
-      timestamp:       new Date().toISOString(),
+      items:            [],
+      marketRiskScore:  25,
+      overallSentiment: "NEUTRAL",
+      tradingAction:    "NORMAL_TRADING",
+      source:           "LIVE_NEWS_INTELLIGENCE",
+      timestamp:        new Date().toISOString(),
     };
   }
 }
