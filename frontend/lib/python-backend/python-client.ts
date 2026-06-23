@@ -7,7 +7,7 @@
  * läuft das System normal weiter (TypeScript Trade Manager als Fallback).
  */
 
-const BASE_URL = process.env.PYTHON_BACKEND_URL ?? "";
+const BASE_URL = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
 
 function isConfigured(): boolean {
   return BASE_URL.length > 5;
