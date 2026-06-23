@@ -35,7 +35,7 @@ async function getClosedDeals(fromTimestamp?: number): Promise<ICDeal[]> {
 }
 
 export async function syncICMarketsJournal(): Promise<{ synced: number; skipped: number }> {
-  if (!isICMarketsConnected() || !MCP_TOKEN) return { synced: 0, skipped: 0 };
+  if (!isICMarketsConnected()) return { synced: 0, skipped: 0 };
 
   const db = getPrisma();
   let synced = 0;
