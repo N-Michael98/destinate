@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from api.routes import health, market, indicators, backtesting, dukascopy
+from api.routes import health, market, indicators, backtesting, dukascopy, events, lifecycle
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -24,6 +24,13 @@ app.include_router(market.router,      prefix="/api/v1")
 app.include_router(indicators.router,  prefix="/api/v1")
 app.include_router(backtesting.router, prefix="/api/v1")
 app.include_router(dukascopy.router,   prefix="/api/v1")
+app.include_router(events.router,      prefix="/api/v1")
+app.include_router(lifecycle.router,   prefix="/api/v1")
+
+@app.on_event("startup")
+async def startup():
+    from services.telegram_alerts import register_handlers
+    register_handlers()
 
 @app.get("/")
 def root():
