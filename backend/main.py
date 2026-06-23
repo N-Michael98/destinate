@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from api.routes import health, market, indicators, backtesting, dukascopy, events, lifecycle, intelligence, advanced, sentiment, backtest_extended, talib_analysis, finbert
+from api.routes import health, market, indicators, backtesting, dukascopy, events, lifecycle, intelligence, advanced, sentiment, backtest_extended, talib_analysis, finbert, system
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -32,6 +32,7 @@ app.include_router(sentiment.router,        prefix="/api/v1/sentiment")
 app.include_router(backtest_extended.router, prefix="/api/v1/backtest/extended")
 app.include_router(talib_analysis.router,   prefix="/api/v1/talib")
 app.include_router(finbert.router,          prefix="/api/v1/finbert")
+app.include_router(system.router,           prefix="/api/v1/system")
 
 @app.on_event("startup")
 async def startup():

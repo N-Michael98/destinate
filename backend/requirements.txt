@@ -53,6 +53,11 @@ transformers==4.44.2
 # Stability (G2G)
 tenacity==9.0.0
 pandera==0.20.4
+pybreaker==1.2.0
+uvloop==0.21.0
+
+# Performance
+polars==1.6.0
 
 # Testing (G4)
 hypothesis==6.135.0
