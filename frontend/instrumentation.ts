@@ -206,14 +206,15 @@ export async function register() {
         // IC Markets keep-alive every 2min — prevents MCP session expiry
         setInterval(() => keepAliveICMarkets().catch(() => {}), 2 * 60 * 1000);
 
-        // Daily summary at 20:00 via Telegram
-        setInterval(async () => {
-          try {
-            const now = new Date();
-            if (now.getHours() === 20 && now.getMinutes() < 2) {
+        // Daily summary täglich um 20:00 Zürich-Zeit via node-cron
+        try {
+          const cron = await import("node-cron");
+          cron.schedule("0 20 * * *", async () => {
+            try {
+              const now = new Date();
               const { getPrisma } = await import("./app/lib/prisma");
               const db = getPrisma();
-              const today = now.toISOString().slice(0, 10);
+              const today = now.toLocaleDateString("en-CA", { timeZone: "Europe/Zurich" });
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const rows = await (db.$queryRawUnsafe as any)(
                 `SELECT result, "profitLoss" FROM "Trade"
@@ -226,9 +227,10 @@ export async function register() {
                 const { notifyDailySummary } = await import("./lib/telegram-notifications/telegram-sender");
                 await notifyDailySummary({ trades: rows.length, wins, losses, totalPnL, currency: "CHF", winRate: rows.length > 0 ? (wins / rows.length) * 100 : 0 });
               }
-            }
-          } catch { /* non-fatal */ }
-        }, 60 * 1000); // check every minute
+            } catch { /* non-fatal */ }
+          }, { timezone: "Europe/Zurich" });
+          console.log("[instrumentation] Daily summary cron: täglich 20:00 Zürich");
+        } catch { /* non-fatal */ }
 
         // Position monitor every 2min — Capital.com + IC Markets parallel
         setInterval(async () => {
