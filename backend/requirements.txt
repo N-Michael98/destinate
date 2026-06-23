@@ -41,7 +41,7 @@ hurst==0.0.5
 scikit-learn==1.5.2
 
 # Technical Analysis Extended (G2C)
-pandas-ta==0.3.14b0
+pandas-ta==0.3.14b
 
 # Backtesting (G2E)
 vectorbt==0.26.2
