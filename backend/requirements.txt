@@ -41,7 +41,6 @@ hurst==0.0.5
 scikit-learn==1.5.2
 
 # Backtesting (G2E)
-vectorbt==0.26.2
 quantstats==0.0.62
 
 # News & Sentiment (G2F)

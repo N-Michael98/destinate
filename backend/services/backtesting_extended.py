@@ -26,12 +26,10 @@ def _load_df(symbol: str, interval: str = "1d", period: str = "1y") -> Optional[
 
 def run_ema_crossover_backtest(symbol: str, fast: int = 20, slow: int = 50) -> dict:
     """
-    EMA Crossover Strategie Backtest via vectorbt.
+    EMA Crossover Strategie Backtest — pure pandas/numpy, keine externen Deps.
     Fast EMA kreuzt über Slow EMA → BUY, darunter → SELL.
     """
     try:
-        import vectorbt as vbt
-
         df = _load_df(symbol, "1d", "2y")
         if df is None or len(df) < slow + 10:
             return {"error": "Zu wenig Daten", "symbol": symbol}
@@ -43,23 +41,45 @@ def run_ema_crossover_backtest(symbol: str, fast: int = 20, slow: int = 50) -> d
         entries = (fast_ema > slow_ema) & (fast_ema.shift(1) <= slow_ema.shift(1))
         exits   = (fast_ema < slow_ema) & (fast_ema.shift(1) >= slow_ema.shift(1))
 
-        pf = vbt.Portfolio.from_signals(close, entries, exits, init_cash=10000, fees=0.001)
+        # Einfaches Backtest ohne vectorbt
+        cash, position, entry_price = 10000.0, 0.0, 0.0
+        trades, wins = 0, 0
+        equity = [cash]
 
-        stats = pf.stats()
+        for i in range(len(close)):
+            price = float(close.iloc[i])
+            if entries.iloc[i] and position == 0:
+                position = (cash * 0.999) / price
+                entry_price = price
+                cash = 0.0
+            elif exits.iloc[i] and position > 0:
+                cash = position * price * 0.999
+                trades += 1
+                if price > entry_price:
+                    wins += 1
+                position = 0.0
+            equity.append(cash + position * price)
+
+        final = cash + position * float(close.iloc[-1])
+        total_return = round((final / 10000 - 1) * 100, 2)
+        win_rate = round(wins / trades * 100, 2) if trades > 0 else 0
+        eq = np.array(equity)
+        peak = np.maximum.accumulate(eq)
+        dd = (eq - peak) / np.where(peak > 0, peak, 1)
+        max_dd = round(float(dd.min()) * 100, 2)
+
         return {
-            "symbol":        symbol,
-            "strategy":      f"EMA({fast},{slow}) Crossover",
-            "total_return":  round(float(stats.get("Total Return [%]", 0)), 2),
-            "sharpe_ratio":  round(float(stats.get("Sharpe Ratio", 0) or 0), 3),
-            "max_drawdown":  round(float(stats.get("Max Drawdown [%]", 0)), 2),
-            "win_rate":      round(float(stats.get("Win Rate [%]", 0)), 2),
-            "total_trades":  int(stats.get("Total Trades", 0)),
-            "period":        "2y daily",
+            "symbol":       symbol,
+            "strategy":     f"EMA({fast},{slow}) Crossover",
+            "total_return": total_return,
+            "max_drawdown": max_dd,
+            "win_rate":     win_rate,
+            "total_trades": trades,
+            "final_equity": round(final, 2),
+            "period":       "2y daily",
         }
-    except ImportError:
-        return {"error": "vectorbt nicht installiert", "symbol": symbol}
     except Exception as e:
-        logger.error(f"[backtest] vectorbt Fehler {symbol}: {e}")
+        logger.error(f"[backtest] EMA Fehler {symbol}: {e}")
         return {"error": str(e)[:100], "symbol": symbol}
 
 def get_performance_report(symbol: str) -> dict:
