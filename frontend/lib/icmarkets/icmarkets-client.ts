@@ -64,7 +64,7 @@ async function mcpInitialize(): Promise<void> {
   if (data.error) throw new Error(`MCP initialize error: ${data.error.message}`);
 }
 
-async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+export async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
   if (!mcpSessionId) await mcpInitialize();
 
   const headers: Record<string, string> = { ...authHeaders() };
@@ -416,4 +416,33 @@ export async function icGetPrice(symbol: string): Promise<{
 
 export function isICMarketsConfigured(): boolean {
   return MCP_TOKEN.length > 20;
+}
+
+// ── Closed Deals / History ────────────────────────────────────────────────────
+// cTrader MCP tool name discovery: try known names, log which works
+
+export async function icGetDeals(fromTimestamp?: number): Promise<{ ok: boolean; deals?: Record<string, unknown>[]; toolUsed?: string; error?: string }> {
+  try {
+    // Try known cTrader tool names for closed positions
+    const candidates = ["get_transactions", "get_closed_positions", "get_history", "get_deals"];
+    for (const toolName of candidates) {
+      try {
+        const params: Record<string, unknown> = { limit: 100 };
+        if (fromTimestamp) params.from = fromTimestamp;
+        const result = await mcpCall(toolName, params);
+        const deals = Array.isArray(result.deals) ? result.deals
+          : Array.isArray(result.transactions) ? result.transactions
+          : Array.isArray(result.positions) ? result.positions
+          : Array.isArray(result.history) ? result.history
+          : null;
+        if (deals !== null) {
+          console.log(`[IC Markets MCP] icGetDeals: tool="${toolName}" count=${deals.length}`);
+          return { ok: true, deals: deals as Record<string, unknown>[], toolUsed: toolName };
+        }
+      } catch { /* try next */ }
+    }
+    return { ok: false, error: "No valid deals tool found", deals: [] };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Unknown error", deals: [] };
+  }
 }

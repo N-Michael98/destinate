@@ -6,48 +6,7 @@
 
 import { getPrisma } from "../../app/lib/prisma";
 import { isICMarketsConnected } from "./icmarkets-session";
-import { icListTools } from "./icmarkets-client";
-
-// Re-use mcpCall indirectly via a local helper to avoid circular import
-const MCP_URL = process.env.ICMARKETS_MCP_URL ?? "https://mcp.ctrader.com/trading/mcp";
-const MCP_TOKEN = process.env.ICMARKETS_MCP_TOKEN ?? "";
-
-async function mcpToolCall(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-  const res = await fetch(MCP_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${MCP_TOKEN}`,
-      "Content-Type": "application/json",
-      "Accept": "application/json, text/event-stream",
-    },
-    body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "tools/call", params: { name: toolName, arguments: toolArgs } }),
-  });
-  if (!res.ok) throw new Error(`MCP HTTP ${res.status}`);
-
-  const contentType = res.headers.get("content-type") ?? "";
-  let data: { result?: Record<string, unknown>; error?: { message: string } };
-  if (contentType.includes("text/event-stream")) {
-    const text = await res.text();
-    let parsed: typeof data | null = null;
-    for (const line of text.split("\n")) {
-      if (line.startsWith("data:")) {
-        try { parsed = JSON.parse(line.slice(5).trim()); break; } catch { /* next */ }
-      }
-    }
-    if (!parsed) throw new Error("MCP SSE: no data line");
-    data = parsed;
-  } else {
-    data = await res.json() as typeof data;
-  }
-
-  if (data.error) throw new Error(data.error.message);
-  const result = data.result ?? {};
-  if (Array.isArray(result.content)) {
-    const textItem = (result.content as Array<{ type: string; text?: string }>).find((c) => c.type === "text");
-    if (textItem?.text) { try { return JSON.parse(textItem.text) as Record<string, unknown>; } catch { /* raw */ } }
-  }
-  return result;
-}
+import { icGetDeals } from "./icmarkets-client";
 
 interface ICDeal {
   positionId: string;
@@ -61,25 +20,18 @@ interface ICDeal {
 }
 
 async function getClosedDeals(fromTimestamp?: number): Promise<ICDeal[]> {
-  try {
-    const params: Record<string, unknown> = { limit: 100 };
-    if (fromTimestamp) params.from = fromTimestamp;
-    const result = await mcpToolCall("get_deals", params);
-    const raw = Array.isArray(result.deals) ? result.deals as Record<string, unknown>[] : [];
-    return raw.map((d) => ({
-      positionId: String(d.positionId ?? d.dealId ?? d.id ?? ""),
-      symbol: String(d.symbol ?? d.symbolName ?? ""),
-      direction: String(d.tradeSide ?? d.direction ?? "BUY"),
-      volume: Number(d.volume ?? 0),
-      entryPrice: Number(d.entryPrice ?? d.openPrice ?? 0),
-      closePrice: Number(d.closePrice ?? d.exitPrice ?? 0),
-      netProfit: Number(d.netProfit ?? d.profitLoss ?? 0),
-      closeTime: String(d.closeTime ?? d.closeTimestamp ?? new Date().toISOString()),
-    }));
-  } catch (err) {
-    console.error("[ic-journal-sync] get_deals error:", err);
-    return [];
-  }
+  const res = await icGetDeals(fromTimestamp);
+  if (!res.ok || !res.deals?.length) return [];
+  return res.deals.map((d) => ({
+    positionId: String(d.positionId ?? d.dealId ?? d.id ?? ""),
+    symbol: String(d.symbol ?? d.symbolName ?? ""),
+    direction: String(d.tradeSide ?? d.direction ?? "BUY"),
+    volume: Number(d.volume ?? 0),
+    entryPrice: Number(d.entryPrice ?? d.openPrice ?? 0),
+    closePrice: Number(d.closePrice ?? d.exitPrice ?? 0),
+    netProfit: Number(d.netProfit ?? d.profitLoss ?? 0),
+    closeTime: String(d.closeTime ?? d.closeTimestamp ?? new Date().toISOString()),
+  }));
 }
 
 export async function syncICMarketsJournal(): Promise<{ synced: number; skipped: number }> {
