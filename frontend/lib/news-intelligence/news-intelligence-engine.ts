@@ -1,179 +1,45 @@
-import {
-  NewsImpact,
-  NewsIntelligenceReport,
-  NewsItem,
-  NewsSentiment,
-} from "./news-types";
+import type { NewsItem } from "@/lib/intelligence/news-types";
 
-function impactToScore(impact: NewsImpact) {
-  switch (impact) {
-    case "CRITICAL":
-      return 100;
-    case "HIGH":
-      return 75;
-    case "MEDIUM":
-      return 45;
-    case "LOW":
-      return 20;
-    default:
-      return 0;
-  }
+interface NewsIntelligenceItem {
+  id: string;
+  title: string;
+  category: string;
+  impact: "LOW" | "MEDIUM" | "HIGH";
+  sentiment: string;
+  affectedMarkets: string[];
+  source: string;
+  summary: string;
+  timestamp: string;
 }
 
-function calculateOverallSentiment(news: NewsItem[]): NewsSentiment {
-  const riskOffCount = news.filter(
-    (item) =>
-      item.sentiment === "RISK_OFF" ||
-      item.sentiment === "BEARISH"
-  ).length;
-
-  const riskOnCount = news.filter(
-    (item) =>
-      item.sentiment === "RISK_ON" ||
-      item.sentiment === "BULLISH"
-  ).length;
-
-  if (riskOffCount > riskOnCount) {
-    return "RISK_OFF";
-  }
-
-  if (riskOnCount > riskOffCount) {
-    return "RISK_ON";
-  }
-
-  return "NEUTRAL";
-}
-
-function createMockNewsFeed(): NewsItem[] {
+export async function getNewsIntelligence(): Promise<NewsIntelligenceItem[]> {
   const now = new Date().toISOString();
 
-  return [
-    {
-      id: "news-geopolitical-risk-001",
-      title: "Geopolitical risk watch active",
-      category: "GEOPOLITICAL",
-      impact: "MEDIUM",
-      sentiment: "RISK_OFF",
-      affectedMarkets: ["XAUUSD", "USOIL", "EURUSD", "NAS100"],
-      source: "SYSTEM_MOCK_NEWS",
-      summary:
-        "Mock geopolitical layer prepared. Later this will connect to live geopolitical and world news sources.",
-      timestamp: now,
-    },
-    {
-      id: "news-central-bank-001",
-      title: "Central bank policy sensitivity active",
-      category: "CENTRAL_BANK",
-      impact: "HIGH",
-      sentiment: "NEUTRAL",
-      affectedMarkets: ["EURUSD", "NAS100", "XAUUSD"],
-      source: "SYSTEM_MOCK_NEWS",
-      summary:
-        "Mock central bank layer prepared. Later this will track Fed, ECB, BoE and major rate decisions.",
-      timestamp: now,
-    },
-    {
-      id: "news-commodities-001",
-      title: "Commodity supply risk monitor prepared",
-      category: "COMMODITIES",
-      impact: "MEDIUM",
-      sentiment: "RISK_OFF",
-      affectedMarkets: ["USOIL", "XAUUSD"],
-      source: "SYSTEM_MOCK_NEWS",
-      summary:
-        "Mock commodity news layer prepared for oil supply, OPEC, inventories and safe-haven gold reactions.",
-      timestamp: now,
-    },
-  ];
-}
+  try {
+    const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+    if (!PYTHON_BASE) return [];
 
-export class NewsIntelligenceEngine {
-  static analyze(): NewsIntelligenceReport {
-    const news = createMockNewsFeed();
+    const res = await fetch(`${PYTHON_BASE}/api/v1/sentiment/headlines`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
 
-    const highImpactNews = news.filter(
-      (item) =>
-        item.impact === "HIGH" ||
-        item.impact === "CRITICAL"
-    );
+    const data = await res.json();
+    const headlines: Array<{ title?: string; source?: string; summary?: string }> = data?.headlines ?? [];
 
-    const geopoliticalItems = news.filter(
-      (item) => item.category === "GEOPOLITICAL"
-    );
-
-    const macroItems = news.filter(
-      (item) =>
-        item.category === "MACRO" ||
-        item.category === "CENTRAL_BANK"
-    );
-
-    const geopoliticalRiskScore =
-      geopoliticalItems.length > 0
-        ? Math.max(
-            ...geopoliticalItems.map((item) =>
-              impactToScore(item.impact)
-            )
-          )
-        : 0;
-
-    const macroRiskScore =
-      macroItems.length > 0
-        ? Math.max(
-            ...macroItems.map((item) =>
-              impactToScore(item.impact)
-            )
-          )
-        : 0;
-
-    const marketRiskScore = Math.round(
-      news.reduce(
-        (sum, item) => sum + impactToScore(item.impact),
-        0
-      ) / Math.max(news.length, 1)
-    );
-
-    const affectedMarkets = Array.from(
-      new Set(
-        news.flatMap((item) => item.affectedMarkets)
-      )
-    );
-
-    const overallSentiment =
-      calculateOverallSentiment(news);
-
-    const geopoliticalRisk: NewsImpact =
-      geopoliticalRiskScore >= 75
-        ? "HIGH"
-        : geopoliticalRiskScore >= 45
-          ? "MEDIUM"
-          : "LOW";
-
-    const macroRisk: NewsImpact =
-      macroRiskScore >= 75
-        ? "HIGH"
-        : macroRiskScore >= 45
-          ? "MEDIUM"
-          : "LOW";
-
-    const recommendation =
-      marketRiskScore >= 75
-        ? "High news risk detected. Reduce risk and require stronger confirmation before paper trades."
-        : marketRiskScore >= 45
-          ? "Medium news risk detected. Keep strategy selection active but avoid overconfidence."
-          : "Low news risk detected. Normal strategy selection can continue.";
-
-    return {
-      version: "V11.0.0",
-      totalNews: news.length,
-      highImpactNews: highImpactNews.length,
-      geopoliticalRisk,
-      macroRisk,
-      overallSentiment,
-      marketRiskScore,
-      affectedMarkets,
-      recommendation,
-      news,
-      updatedAt: new Date().toISOString(),
-    };
+    return headlines.slice(0, 10).map((h, i) => ({
+      id:              `live-intel-${i}`,
+      title:           h.title ?? "",
+      category:        "MARKET_NEWS",
+      impact:          "MEDIUM" as const,
+      sentiment:       "NEUTRAL",
+      affectedMarkets: ["XAUUSD", "EURUSD", "NAS100", "USOIL"],
+      source:          h.source ?? "feedparser",
+      summary:         h.summary ?? h.title ?? "",
+      timestamp:       now,
+    }));
+  } catch {
+    return [];
   }
 }

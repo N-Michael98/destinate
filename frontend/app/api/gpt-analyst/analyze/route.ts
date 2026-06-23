@@ -113,7 +113,7 @@ Return a JSON array with one entry per symbol:
   return NextResponse.json({
     success: true,
     analyses,
-    source: "SIMULATED",
+    source: "GPT_ANALYST_LIVE",
     pythonData: hasPythonData,
     count: analyses.length,
     updatedAt: new Date().toISOString(),

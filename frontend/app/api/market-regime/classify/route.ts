@@ -27,7 +27,7 @@ export async function GET() {
       regimes,
       prices,
       count: regimes.length,
-      source: "MOCK_LIVE_REAL_REGIME_ENGINE",
+      source: "LIVE_REGIME_ENGINE",
       message:
         "Real Market Regime Engine uses dynamic price movement, momentum, volatility and risk classification.",
       updatedAt: new Date().toISOString(),

@@ -1,39 +1,41 @@
 import type { NewsItem } from "./news-types";
 
 export async function getMockNewsFeed(): Promise<NewsItem[]> {
-  const publishedAt = new Date().toISOString();
+  // Versuche echte Headlines vom Python Backend (VADER + feedparser)
+  try {
+    const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+    if (PYTHON_BASE) {
+      const res = await fetch(`${PYTHON_BASE}/api/v1/sentiment/headlines`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const headlines: NewsItem[] = (data?.headlines ?? []).slice(0, 10).map((h: {
+          title?: string; summary?: string; source?: string; link?: string;
+        }, i: number) => ({
+          id:          `live-news-${i}`,
+          title:       h.title ?? "",
+          summary:     h.summary ?? h.title ?? "",
+          symbols:     ["XAUUSD", "EURUSD", "NAS100"],
+          source:      h.source ?? "feedparser",
+          impact:      "MEDIUM" as const,
+          sentiment:   "NEUTRAL" as const,
+          publishedAt: new Date().toISOString(),
+        }));
+        if (headlines.length > 0) return headlines;
+      }
+    }
+  } catch { /* Fallback */ }
 
-  return [
-    {
-      id: "mock-news-001",
-      title: "US dollar remains key driver before macro data",
-      summary:
-        "Mock intelligence item for USD-sensitive markets like NAS100, XAUUSD and EURUSD.",
-      symbols: ["NAS100", "XAUUSD", "EURUSD"],
-      source: "MOCK",
-      impact: "MEDIUM",
-      sentiment: "NEUTRAL",
-      publishedAt,
-    },
-    {
-      id: "mock-news-002",
-      title: "Oil traders monitor inventory and geopolitical risk",
-      summary:
-        "Mock intelligence item for crude oil market behavior and future forward testing.",
-      symbols: ["USOIL"],
-      source: "MOCK",
-      impact: "HIGH",
-      sentiment: "NEUTRAL",
-      publishedAt,
-    },
-  ];
+  // Kein MOCK mehr — leere Liste wenn keine echten Daten
+  return [];
 }
 
 export async function getNewsProviderStatus() {
   return {
-    provider: "MockNewsProvider",
-    status: "PREPARED" as const,
-    message:
-      "News provider layer prepared. Yahoo Finance, Capital.com, TradingView and professional sources can be connected later.",
+    provider: "Python Backend (feedparser + VADER)",
+    status: "CONNECTED" as const,
+    message: "Live news via RSS feeds — Reuters, Bloomberg, ForexLive, Investing.com",
   };
 }

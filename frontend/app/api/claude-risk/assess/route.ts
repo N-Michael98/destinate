@@ -127,7 +127,7 @@ Rules: riskScore 0-100 (higher = more risky). Approve if riskScore < 60 and R:R 
 
   return NextResponse.json({
     success: true, risks,
-    source: "SIMULATED",
+    source: "CLAUDE_RISK_LIVE",
     pythonData: hasPythonData,
     count: risks.length,
     updatedAt: new Date().toISOString(),
