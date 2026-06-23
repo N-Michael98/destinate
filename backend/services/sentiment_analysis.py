@@ -21,15 +21,32 @@ RSS_FEEDS = {
 }
 
 SYMBOL_KEYWORDS = {
+    # Commodities
     "XAUUSD": ["gold", "xau", "bullion", "precious metal"],
+    "XAGUSD": ["silver", "xag", "precious metal"],
+    "USOIL":  ["oil", "crude", "wti", "opec", "petroleum"],
+    "UKOIL":  ["brent", "oil", "crude", "opec", "north sea"],
+    "NATGAS": ["natural gas", "natgas", "lng", "energy"],
+    # Forex
     "EURUSD": ["euro", "eur", "ecb", "european central bank"],
     "GBPUSD": ["pound", "gbp", "sterling", "boe", "bank of england"],
     "USDJPY": ["yen", "jpy", "boj", "bank of japan"],
-    "USOIL":  ["oil", "crude", "wti", "opec", "petroleum"],
-    "BRENT":  ["brent", "oil", "crude", "opec"],
+    "USDCHF": ["swiss franc", "chf", "snb", "swiss national bank"],
+    "AUDUSD": ["australian dollar", "aud", "rba", "reserve bank australia"],
+    "USDCAD": ["canadian dollar", "cad", "boc", "bank of canada"],
+    "GBPJPY": ["pound", "gbp", "yen", "jpy"],
+    "EURGBP": ["euro", "eur", "pound", "gbp"],
+    "EURJPY": ["euro", "eur", "yen", "jpy"],
+    # Indices
     "NAS100": ["nasdaq", "tech stocks", "fed", "federal reserve"],
-    "US500":  ["s&p", "sp500", "federal reserve", "fed"],
+    "SPX500": ["s&p", "sp500", "federal reserve", "fed"],
+    "UK100":  ["ftse", "ftse100", "uk economy", "bank of england"],
+    "GER40":  ["dax", "german economy", "ecb", "german stocks"],
+    "DJ30":   ["dow jones", "dow", "us economy", "blue chip"],
+    "JPN225": ["nikkei", "japan economy", "boj", "yen"],
+    # Crypto
     "BTCUSD": ["bitcoin", "btc", "crypto", "cryptocurrency"],
+    "ETHUSD": ["ethereum", "eth", "defi", "crypto"],
 }
 
 def fetch_article_text(url: str, timeout: int = 10) -> Optional[str]:

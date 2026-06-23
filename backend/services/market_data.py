@@ -4,6 +4,7 @@ from typing import Optional
 
 # Symbol-Mapping: Trading-Symbole → Yahoo Finance Symbole
 SYMBOL_MAP = {
+    # Forex
     "EURUSD": "EURUSD=X",
     "GBPUSD": "GBPUSD=X",
     "USDJPY": "USDJPY=X",
@@ -13,16 +14,25 @@ SYMBOL_MAP = {
     "USDCAD": "USDCAD=X",
     "EURGBP": "EURGBP=X",
     "EURJPY": "EURJPY=X",
-    "XAUUSD": "GC=F",       # Gold Futures
-    "XAGUSD": "SI=F",       # Silver Futures
+    "GBPJPY": "GBPJPY=X",
+    # Commodities
+    "XAUUSD": "GC=F",
+    "XAGUSD": "SI=F",
+    "USOIL":  "CL=F",
+    "UKOIL":  "BZ=F",
+    "OIL":    "CL=F",
+    "NATGAS": "NG=F",
+    # Crypto
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
-    "US30":   "^DJI",       # Dow Jones
-    "NAS100": "^NDX",       # Nasdaq 100
-    "SPX500": "^GSPC",      # S&P 500
-    "GER40":  "^GDAXI",     # DAX
-    "UK100":  "^FTSE",      # FTSE 100
-    "OIL":    "CL=F",       # Crude Oil
+    # Indices
+    "NAS100": "^NDX",
+    "SPX500": "^GSPC",
+    "GER40":  "^GDAXI",
+    "UK100":  "^FTSE",
+    "DJ30":   "^DJI",
+    "JPN225": "^N225",
+    "US30":   "^DJI",
 }
 
 VALID_INTERVALS = {"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"}
