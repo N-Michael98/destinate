@@ -211,7 +211,7 @@ def _detect_regime(df: pd.DataFrame, tech: dict) -> dict:
 
 def _multi_timeframe(symbol: str) -> dict:
     results = {}
-    timeframes = [("1h", "5d"), ("4h", "1mo"), ("1d", "3mo")]
+    timeframes = [("1h", "5d"), ("1d", "1mo"), ("1d", "3mo")]
 
     for interval, period in timeframes:
         df = _load(symbol, interval, period)
