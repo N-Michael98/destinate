@@ -64,6 +64,7 @@ export async function runActiveTradeManager(): Promise<void> {
 
   // ── 1. Fetch all live positions ───────────────────────────────────────────
   const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
+  console.log(`[trade-mgr] positions: ok=${posResult.ok} count=${posResult.positions?.length ?? 0}`);
   if (!posResult.ok || !posResult.positions?.length) return;
 
   // ── 2. Load DB metadata ───────────────────────────────────────────────────
@@ -90,10 +91,17 @@ export async function runActiveTradeManager(): Promise<void> {
 
   // ── 3. Batch price fetch ──────────────────────────────────────────────────
   const symbols = [...new Set(posResult.positions.map(p => p.symbol).filter(Boolean))];
+  console.log(`[trade-mgr] price fetch symbols: ${symbols.join(", ")}`);
   const priceResult = await capitalGetPrices(session.apiKey, session.cst, session.securityToken, symbols).catch(() => null);
   const priceMap = new Map<string, { bid: number; ask: number }>();
   for (const p of priceResult?.prices ?? []) {
     if (p.symbol) priceMap.set(p.symbol, { bid: p.bid, ask: p.ask });
+  }
+  console.log(`[trade-mgr] priceMap keys: ${[...priceMap.keys()].join(", ") || "EMPTY"}`);
+  for (const pos of posResult.positions) {
+    const sym = pos.symbol ?? pos.epic ?? "";
+    const entry = pos.openLevel;
+    console.log(`[trade-mgr] pos: dealId=${pos.dealId} symbol=${sym} entry=${entry} hasPrice=${priceMap.has(sym)}`);
   }
 
   // ── 4. Process each position ──────────────────────────────────────────────
