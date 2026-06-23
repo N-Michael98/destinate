@@ -405,6 +405,13 @@ export async function capitalGetPositions(
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
     const data = (await res.json()) as { positions: Record<string, unknown>[] };
+    // Debug: log first position raw to find correct field names
+    if (data.positions?.length) {
+      const first = data.positions[0] as Record<string, unknown>;
+      const firstPos = (first.position ?? {}) as Record<string, unknown>;
+      console.log("[capital-pos-debug] raw position fields:", JSON.stringify(Object.keys(firstPos)));
+      console.log("[capital-pos-debug] openLevel raw:", firstPos.openLevel, "level:", firstPos.level, "price:", firstPos.price);
+    }
     const positions: OpenPosition[] = (data.positions ?? []).map((p) => {
       const pos = (p.position ?? {}) as Record<string, unknown>;
       const market = (p.market ?? {}) as Record<string, unknown>;
