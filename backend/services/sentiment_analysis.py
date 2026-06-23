@@ -32,6 +32,26 @@ SYMBOL_KEYWORDS = {
     "BTCUSD": ["bitcoin", "btc", "crypto", "cryptocurrency"],
 }
 
+def fetch_article_text(url: str, timeout: int = 10) -> Optional[str]:
+    """
+    Lädt den vollen Artikel-Text via newspaper3k.
+    Gibt None zurück wenn nicht verfügbar oder Fehler.
+    """
+    try:
+        from newspaper import Article
+        article = Article(url)
+        article.download()
+        article.parse()
+        text = article.text.strip()
+        return text[:3000] if text else None
+    except ImportError:
+        logger.warning("[sentiment] newspaper3k nicht installiert")
+        return None
+    except Exception as e:
+        logger.debug(f"[sentiment] Article fetch Fehler {url[:50]}: {e}")
+        return None
+
+
 def fetch_headlines(max_per_feed: int = 5) -> list[dict]:
     """Holt Headlines von allen RSS Feeds."""
     headlines = []

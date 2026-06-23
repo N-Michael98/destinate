@@ -83,11 +83,13 @@ def finbert_symbol_sentiment(symbol: str) -> dict:
         }
 
     keywords = SYMBOL_KEYWORDS.get(symbol.upper(), [symbol.lower()])
-    all_headlines = fetch_headlines(max_per_feed=5)
+    all_headlines = fetch_headlines(max_per_feed=8)
+
+    from services.sentiment_analysis import fetch_article_text
 
     relevant = [
         h for h in all_headlines
-        if any(kw.lower() in h.lower() for kw in keywords)
+        if any(kw.lower() in h.get("title", "").lower() for kw in keywords)
     ][:15]
 
     if not relevant:
@@ -102,10 +104,23 @@ def finbert_symbol_sentiment(symbol: str) -> dict:
     results = []
     pos_sum = neg_sum = neu_sum = 0.0
 
-    for headline in relevant:
-        r = _classify_text(headline)
+    for item in relevant:
+        headline = item.get("title", "") if isinstance(item, dict) else item
+        link = item.get("link", "") if isinstance(item, dict) else ""
+
+        # Versuche vollen Artikel-Text zu laden (newspaper3k) — Fallback auf Headline
+        full_text = fetch_article_text(link) if link else None
+        text_to_analyze = full_text if full_text and len(full_text) > 100 else headline
+        source = "full_article" if full_text and len(full_text) > 100 else "headline"
+
+        r = _classify_text(text_to_analyze)
         if r:
-            results.append({"headline": headline[:100], **r})
+            results.append({
+                "headline": headline[:100],
+                "source": source,
+                "chars_analyzed": len(text_to_analyze),
+                **r,
+            })
             pos_sum += r["positive"]
             neg_sum += r["negative"]
             neu_sum += r["neutral"]
