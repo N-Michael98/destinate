@@ -40,9 +40,6 @@ xgboost==2.1.3
 hurst==0.0.5
 scikit-learn==1.5.2
 
-# Technical Analysis Extended (G2C)
-pandas-ta
-
 # Backtesting (G2E)
 vectorbt==0.26.2
 quantstats==0.0.62
