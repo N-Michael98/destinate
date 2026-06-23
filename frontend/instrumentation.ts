@@ -240,6 +240,49 @@ export async function register() {
             await runActiveTradeManager();
           } catch { /* non-fatal */ }
 
+          // Python lifecycle manager: BE/Trailing/Exit für alle registrierten Trades
+          try {
+            const { isPythonBackendConfigured, pyPriceUpdate, pyUpdateBalance } = await import("./lib/python-backend/python-client");
+            if (isPythonBackendConfigured()) {
+              const { isCapitalConnected, getCapitalSession } = await import("./lib/capital-com/capital-com-session");
+              if (isCapitalConnected()) {
+                const sess = getCapitalSession()!;
+                await pyUpdateBalance(sess.balance);
+                const { capitalGetPositions, capitalUpdatePosition, capitalClosePosition, capitalClosePartial } = await import("./lib/capital-com/capital-com-client");
+                const { capitalGetPrices } = await import("./lib/capital-com/capital-com-client");
+                const posResult = await capitalGetPositions(sess.apiKey, sess.cst, sess.securityToken).catch(() => null);
+                const positions = posResult?.positions ?? [];
+                if (positions.length > 0) {
+                  const symbols = [...new Set(positions.map((p: { symbol?: string; epic?: string }) => p.symbol ?? p.epic ?? "").filter(Boolean))];
+                  const priceResult = await capitalGetPrices(sess.apiKey, sess.cst, sess.securityToken, symbols).catch(() => null);
+                  const priceMap = new Map<string, number>();
+                  for (const p of priceResult?.prices ?? []) {
+                    if (p.symbol) priceMap.set(p.symbol, (p.bid + p.ask) / 2);
+                  }
+                  for (const pos of positions) {
+                    const tradeId = pos.dealId;
+                    if (!tradeId) continue;
+                    const symbol = pos.symbol ?? pos.epic ?? "";
+                    const currentPrice = priceMap.get(symbol);
+                    if (!currentPrice) continue;
+                    const action = await pyPriceUpdate(tradeId, currentPrice).catch(() => ({ action: null }));
+                    if (!action || action.action === null) continue;
+                    if (action.action === "UPDATE_SL" && action.new_sl) {
+                      await capitalUpdatePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId, action.new_sl, undefined).catch(() => {});
+                      console.log(`[py-lifecycle] ✅ SL updated: ${symbol} → ${action.new_sl}`);
+                    } else if (action.action === "CLOSE") {
+                      await capitalClosePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId).catch(() => {});
+                      console.log(`[py-lifecycle] ⏰ Zeit-Exit: ${symbol}`);
+                    } else if (action.action === "PARTIAL_CLOSE" && action.volume) {
+                      await capitalClosePartial(sess.apiKey, sess.cst, sess.securityToken, pos.epic ?? "", pos.direction, action.volume).catch(() => {});
+                      console.log(`[py-lifecycle] 💰 Partial TP: ${symbol} vol=${action.volume}`);
+                    }
+                  }
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
+
           try {
             // IC Markets: journal sync + active trade manager (parallel)
             const { isICMarketsConnected } = await import("./lib/icmarkets/icmarkets-session");
@@ -374,6 +417,24 @@ export async function register() {
                     confidence: candidate.gpt.confidence,
                     broker: brokerLabel,
                     dealId: result.dealId,
+                  });
+                } catch { /* non-fatal */ }
+                // Register trade with Python lifecycle manager
+                try {
+                  const { pyRegisterTrade, pyUpdateBalance } = await import("./lib/python-backend/python-client");
+                  await pyUpdateBalance(session.balance);
+                  await pyRegisterTrade({
+                    tradeId:     result.dealId ?? "unknown",
+                    symbol:      candidate.symbol,
+                    direction:   candidate.gpt.direction as "BUY" | "SELL",
+                    entry:       result.openLevel ?? 0,
+                    stopLoss:    candidate.gpt.stopLoss ?? 0,
+                    takeProfit:  candidate.gpt.takeProfit ?? 0,
+                    size:        result.size ?? 0,
+                    confidence:  candidate.gpt.confidence,
+                    tradingStyle: style,
+                    broker:      "Capital.com",
+                    openedAt:    new Date().toISOString(),
                   });
                 } catch { /* non-fatal */ }
                 // Save to Trading Journal
