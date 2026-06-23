@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
-from api.routes import health, market, indicators, backtesting, dukascopy, events, lifecycle, intelligence
+from api.routes import health, market, indicators, backtesting, dukascopy, events, lifecycle, intelligence, advanced
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -27,6 +27,7 @@ app.include_router(dukascopy.router,   prefix="/api/v1")
 app.include_router(events.router,      prefix="/api/v1")
 app.include_router(lifecycle.router,    prefix="/api/v1")
 app.include_router(intelligence.router, prefix="/api/v1")
+app.include_router(advanced.router,    prefix="/api/v1/advanced")
 
 @app.on_event("startup")
 async def startup():
