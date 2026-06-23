@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ── Hilfsfunktion ─────────────────────────────────────────────────────────────
 
-def _load_close(symbol: str, interval: str = "1h", period: str = "30d") -> Optional[np.ndarray]:
+def _load_close(symbol: str, interval: str = "1h", period: str = "1mo") -> Optional[np.ndarray]:
     candles = get_ohlcv(symbol, interval, period)
     if not candles or len(candles) < 30:
         return None
@@ -205,7 +205,7 @@ def advanced_analyze(symbol: str) -> dict:
     logger.info(f"[advanced] Analysiere {sym}")
 
     try:
-        closes = _load_close(sym, "1h", "30d")
+        closes = _load_close(sym, "1h", "1mo")
         if closes is None:
             return {
                 "symbol": sym,
