@@ -117,7 +117,13 @@ export async function runActiveTradeManager(): Promise<void> {
       if (epic) priceMap.set(epic, { bid: p.bid, ask: p.ask });
     }
   }
-  console.log(`[trade-mgr] priceMap keys: ${[...priceMap.keys()].join(", ") || "EMPTY"}`);
+  const fetchedSyms = [...priceMap.keys()].filter(k => symbolsNeeded.includes(k));
+  const missingSyms = symbolsNeeded.filter(s => !priceMap.has(s));
+  console.log(`[trade-mgr] Preise: ${fetchedSyms.length}/${symbolsNeeded.length} geladen${missingSyms.length ? ` | FEHLEND: ${missingSyms.join(",")}` : " ✅"}`);
+
+  if (missingSyms.length > 0) {
+    console.warn(`[trade-mgr] ⚠️ Preis-Fetch fehlgeschlagen für: ${missingSyms.join(", ")} — diese Positionen werden diesen Zyklus übersprungen`);
+  }
 
   // ── 4. Process each position ──────────────────────────────────────────────
   for (const pos of posResult.positions) {

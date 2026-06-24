@@ -295,32 +295,34 @@ export async function capitalGetPrices(
   symbols: string[] = ["XAUUSD", "EURUSD", "NAS100", "USOIL", "BTCUSD", "SPX500"]
 ): Promise<{ ok: boolean; prices?: MarketPrice[]; error?: string }> {
   try {
-    const prices: MarketPrice[] = [];
-
-    for (const symbol of symbols) {
-      const epic = EPIC_MAP[symbol];
-      if (!epic) continue;
-
-      const res = await fetch(`${DEMO_BASE}/markets/${epic}`, {
-        headers: authHeaders(apiKey, cst, securityToken),
-      });
-
-      if (!res.ok) continue;
-
-      const data = (await res.json()) as Record<string, unknown>;
-      const snapshot = (data.snapshot ?? {}) as Record<string, unknown>;
-      const bid = Number(snapshot.bid ?? 0);
-      const offer = Number(snapshot.offer ?? 0);
-
-      prices.push({
-        symbol,
-        bid,
-        ask: offer,
-        spread: Number((offer - bid).toFixed(5)),
-        updateTime: String(snapshot.updateTime ?? new Date().toISOString()),
-      });
-    }
-
+    // Parallel fetching — alle Symbole gleichzeitig statt sequenziell
+    // (sequentiell mit await-in-for führt bei >5 Symbolen zu Rate-Limit-Drops)
+    const results = await Promise.all(
+      symbols.map(async (symbol): Promise<MarketPrice | null> => {
+        const epic = EPIC_MAP[symbol];
+        if (!epic) return null;
+        try {
+          const res = await fetch(`${DEMO_BASE}/markets/${epic}`, {
+            headers: authHeaders(apiKey, cst, securityToken),
+            signal: AbortSignal.timeout(6000),
+          });
+          if (!res.ok) return null;
+          const data = (await res.json()) as Record<string, unknown>;
+          const snapshot = (data.snapshot ?? {}) as Record<string, unknown>;
+          const bid = Number(snapshot.bid ?? 0);
+          const offer = Number(snapshot.offer ?? 0);
+          if (bid <= 0 && offer <= 0) return null;
+          return {
+            symbol,
+            bid,
+            ask: offer,
+            spread: Number((offer - bid).toFixed(5)),
+            updateTime: String(snapshot.updateTime ?? new Date().toISOString()),
+          };
+        } catch { return null; }
+      })
+    );
+    const prices = results.filter((p): p is MarketPrice => p !== null);
     return { ok: true, prices };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Network error" };

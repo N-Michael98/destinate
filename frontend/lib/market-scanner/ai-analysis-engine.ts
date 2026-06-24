@@ -31,6 +31,7 @@ export interface ScannerOpportunity {
   epic: string;
   symbol: string;
   instrumentName: string;
+  instrumentType?: string;
   bid: number;
   ask: number;
   spread: number;
@@ -38,6 +39,7 @@ export interface ScannerOpportunity {
   claude: ClaudeRiskAssessment;
   finalScore: number;
   goSignal: boolean;
+  taSignals?: { atr?: number; rsi?: number; trend?: string; signal?: string };
   analysisQuality?: {
     hasGPT: boolean;
     hasTALib: boolean;
@@ -216,6 +218,64 @@ function simulateClaude(gpt: GPTMarketAnalysis): ClaudeRiskAssessment {
   };
 }
 
+// ── Feature 4: Strategy Performance Feedback ─────────────────────────────────
+// Cached — wird alle 30min vom Python Backtest neu geholt
+let _stratPerfCache: { data: string; ts: number } | null = null;
+
+async function fetchStrategyPerformance(): Promise<string> {
+  const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+  if (!PYTHON_BASE) return "";
+  const now = Date.now();
+  if (_stratPerfCache && now - _stratPerfCache.ts < 30 * 60 * 1000) return _stratPerfCache.data;
+  try {
+    const res = await fetch(`${PYTHON_BASE}/api/v1/backtest/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: "EURUSD", interval: "1h", period: "1mo", strategy: "multi", initial_balance: 10000 }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return "";
+    const d = await res.json() as Record<string, unknown>;
+    const wr = d.win_rate ? `${Number(d.win_rate).toFixed(0)}%` : "n/a";
+    const pf = d.profit_factor ? `PF=${Number(d.profit_factor).toFixed(2)}` : "";
+    const sr = d.sharpe_ratio ? `Sharpe=${Number(d.sharpe_ratio).toFixed(2)}` : "";
+    const summary = `Recent backtest (EURUSD 1mo): WinRate=${wr} ${pf} ${sr}`.trim();
+    _stratPerfCache = { data: summary, ts: now };
+    return summary;
+  } catch { return ""; }
+}
+
+// ── Feature 6: Multi-Timeframe TA-Lib ────────────────────────────────────────
+async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+  if (!PYTHON_BASE || !symbols.length) return result;
+  try {
+    // 1H und 4H parallel zu 1D (1D schon in fetchTALibData)
+    // yfinance VALID_INTERVALS: 1h, 1d, 1wk — "4h" nicht unterstützt → "1wk" stattdessen
+    const [r1h, r1wk] = await Promise.all([
+      fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols, interval: "1h" }),
+        signal: AbortSignal.timeout(25000),
+      }).then(r => r.ok ? r.json() as Promise<{ results?: Record<string, { trend: string; signal: string }> }> : null).catch(() => null),
+      fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols, interval: "1wk" }),
+        signal: AbortSignal.timeout(25000),
+      }).then(r => r.ok ? r.json() as Promise<{ results?: Record<string, { trend: string; signal: string }> }> : null).catch(() => null),
+    ]);
+    for (const sym of symbols) {
+      const t1h = r1h?.results?.[sym];
+      const t1wk = r1wk?.results?.[sym];
+      if (t1h || t1wk) {
+        result.set(sym, `1H:${t1h?.trend ?? "?"}/${t1h?.signal ?? "?"} 1W:${t1wk?.trend ?? "?"}/${t1wk?.signal ?? "?"}`);
+      }
+    }
+  } catch { /* non-fatal */ }
+  return result;
+}
+
 // ── Main Analyse ───────────────────────────────────────────────────────────────
 export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerOpportunity[]> {
   const ai = await getAISettings();
@@ -224,11 +284,13 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
   const validMarkets = markets.filter((m) => m.bid > 0).slice(0, 30);
 
-  // ── TA-Lib + Strategy Signale parallel vom Python Backend holen ──────────
+  // ── TA-Lib (1D) + Strategy Signale + Multi-TF + Strategy Performance parallel
   const symbols = validMarkets.map(m => m.symbol).filter(Boolean);
-  const [taData, strategyData] = await Promise.all([
+  const [taData, strategyData, mtfData, stratPerfSummary] = await Promise.all([
     fetchTALibData(symbols),
     fetchStrategySignals(symbols),
+    fetchMultiTimeframeSummary(symbols),
+    fetchStrategyPerformance(),
   ]);
 
   // ── Sicherheits-Check: GPT + TA-Lib müssen beide verfügbar sein ──────────
@@ -250,24 +312,29 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
     const marketList = validMarkets.map((m) => {
       const ta = taData.get(m.symbol);
       const sr = strategyData.get(m.symbol);
+      const mtf = mtfData.get(m.symbol);
       const taInfo = ta
-        ? ` | trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${ta.ema_20?.toFixed(2)} ema50=${ta.ema_50?.toFixed(2)} atr=${ta.atr?.toFixed(2)}`
+        ? ` | 1D:trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${ta.ema_20?.toFixed(2)} ema50=${ta.ema_50?.toFixed(2)} atr=${ta.atr?.toFixed(2)}`
         : "";
+      const mtfInfo = mtf ? ` | ${mtf}` : "";
       const stInfo = sr && sr.consensus !== "NEUTRAL"
         ? ` | strategies=${sr.consensus}(${sr.consensus_conf}%) [${sr.long_votes}L/${sr.short_votes}S/${sr.neutral_votes}N of ${sr.total_strategies}] top="${sr.active[0]?.strategy ?? "none"}: ${sr.active[0]?.reasoning?.slice(0, 80) ?? ""}"`
         : sr ? ` | strategies=NEUTRAL(${sr.neutral_votes}/${sr.total_strategies} neutral)` : "";
-      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${stInfo}`;
+      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${mtfInfo}${stInfo}`;
     }).join("\n");
 
-    const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.
+    const stratPerfLine = stratPerfSummary ? `\nSystem performance context: ${stratPerfSummary}` : "";
 
-Analyze these live markets with REAL technical indicator data from TA-Lib and identify the TOP 5 trading opportunities:
+    const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${stratPerfLine}
+
+Analyze these live markets with REAL technical indicator data from TA-Lib (1D + 1H + 4H multi-timeframe) and identify the TOP 5 trading opportunities:
 
 ${marketList}
 
 CRITICAL RULES — violations = bad analysis:
-- ONLY recommend BUY if trend=BULLISH OR signal=BUY/STRONG_BUY. If trend=BEARISH → SELL or WAIT.
-- ONLY recommend SELL if trend=BEARISH OR signal=SELL/STRONG_SELL. If trend=BULLISH → BUY or WAIT.
+- ONLY recommend BUY if 1D trend=BULLISH OR signal=BUY/STRONG_BUY. If trend=BEARISH → SELL or WAIT.
+- ONLY recommend SELL if 1D trend=BEARISH OR signal=SELL/STRONG_SELL. If trend=BULLISH → BUY or WAIT.
+- MULTI-TIMEFRAME: if 1H and 1W (weekly) both confirm 1D direction → increase confidence +10. If they disagree → reduce -15 or WAIT.
 - RSI > 70 = overbought → prefer SELL or WAIT for BUY setups
 - RSI < 30 = oversold → prefer BUY or WAIT for SELL setups
 - If signal=NEUTRAL and RSI 40-60 → WAIT
@@ -432,11 +499,13 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       && gpt.stopLoss > 0
       && gpt.takeProfit > 0;
 
+    const taEntry = taData.get(market.symbol);
     opportunities.push({
       rank: 0,
       epic: market.epic,
       symbol: market.symbol,
       instrumentName: market.instrumentName,
+      instrumentType: (market as { instrumentType?: string }).instrumentType,
       bid: market.bid,
       ask: market.ask,
       spread: market.spread,
@@ -444,6 +513,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       claude,
       finalScore,
       goSignal,
+      taSignals: taEntry ? { atr: taEntry.atr, rsi: taEntry.rsi, trend: taEntry.trend, signal: taEntry.signal } : undefined,
       // Diagnose-Felder: zeigen warum goSignal false ist
       analysisQuality: {
         hasGPT,

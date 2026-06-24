@@ -446,9 +446,42 @@ export async function register() {
 
             if (!candidates.length) return;
 
+            // ── Professional Trading Filters (1-3, 5, 7) ──────────────────────
+            const { runAllFilters, getVolatilityAdjustedRisk } = await import("./lib/trading-filters/trade-filters");
+            const currentBalance = session.balance > 0 ? session.balance : 10000;
+            const maxDailyLossPct = settings.riskSettings?.maxDailyDrawdownPct ?? 3.0;
+            // Offene Positionen für Korrelations-Check
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const openPositionsList = (posResult?.positions ?? []).map((p: any) => ({
+              symbol: p.market?.symbol as string | undefined,
+              epic: p.market?.epic as string | undefined,
+              direction: p.position?.direction as string | undefined,
+            }));
+
             for (const candidate of candidates) {
               const style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
-              const riskPct = Math.min(candidate.claude.maxRiskPercent, settings.riskSettings.maxRiskPerTradePct);
+
+              // ── Filter-Check vor Execution ─────────────────────────────────
+              const filterResult = await runAllFilters({
+                symbol: candidate.symbol,
+                direction: candidate.gpt.direction as "BUY" | "SELL",
+                bid: candidate.bid ?? 0,
+                spread: candidate.spread ?? 0,
+                instrumentType: candidate.instrumentType ?? "CURRENCIES",
+                currentBalance,
+                openPositions: openPositionsList,
+                maxDailyLossPct,
+              });
+              if (!filterResult.allowed) {
+                console.log(`[auto-scan] 🚫 ${candidate.symbol} GEBLOCKT [${filterResult.blockedBy}]: ${filterResult.reason}`);
+                continue;
+              }
+
+              // ── Feature 7: Volatility-Scaling des Risk-Prozentsatzes ───────
+              const ta = candidate.taSignals;
+              const atr = (ta as { atr?: number } | undefined)?.atr ?? 0;
+              const baseRisk = Math.min(candidate.claude.maxRiskPercent, settings.riskSettings.maxRiskPerTradePct);
+              const riskPct = getVolatilityAdjustedRisk(candidate.symbol, baseRisk, atr, candidate.bid ?? 0);
 
               const orderParams = {
                 symbol: candidate.symbol,
