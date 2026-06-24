@@ -73,6 +73,43 @@ async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSumma
   return result;
 }
 
+// ── Strategy Signale vom Python Backend holen ─────────────────────────────────
+interface StrategySignal {
+  signal:     "LONG" | "SHORT" | "NEUTRAL";
+  confidence: number;
+  reasoning:  string;
+}
+interface StrategyResult {
+  symbol:          string;
+  consensus:       "LONG" | "SHORT" | "NEUTRAL";
+  consensus_conf:  number;
+  long_votes:      number;
+  short_votes:     number;
+  neutral_votes:   number;
+  total_strategies:number;
+  active:          Array<{ strategy: string; signal: string; confidence: number; reasoning: string }>;
+}
+
+async function fetchStrategySignals(symbols: string[]): Promise<Map<string, StrategyResult>> {
+  const result = new Map<string, StrategyResult>();
+  const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+  if (!PYTHON_BASE) return result;
+  try {
+    const res = await fetch(`${PYTHON_BASE}/api/v1/strategies/analyze/multi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols }),
+      signal: AbortSignal.timeout(25000), // Strategien brauchen etwas länger
+    });
+    if (!res.ok) return result;
+    const data = await res.json() as { results?: Record<string, StrategyResult> };
+    for (const [sym, sr] of Object.entries(data.results ?? {})) {
+      result.set(sym, sr);
+    }
+  } catch { /* non-fatal */ }
+  return result;
+}
+
 // ── Real OpenAI API call ───────────────────────────────────────────────────────
 async function callGPT(apiKey: string, model: string, prompt: string): Promise<string | null> {
   try {
@@ -165,9 +202,12 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
   const validMarkets = markets.filter((m) => m.bid > 0).slice(0, 30);
 
-  // ── TA-Lib Daten vom Python Backend holen ────────────────────────────────
+  // ── TA-Lib + Strategy Signale parallel vom Python Backend holen ──────────
   const symbols = validMarkets.map(m => m.symbol).filter(Boolean);
-  const taData = await fetchTALibData(symbols);
+  const [taData, strategyData] = await Promise.all([
+    fetchTALibData(symbols),
+    fetchStrategySignals(symbols),
+  ]);
 
   // ── GPT Batch Analyse mit echten TA-Daten ────────────────────────────────
   let gptBatchResult: Record<string, Partial<GPTMarketAnalysis>> = {};
@@ -176,10 +216,14 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
     // Marktliste mit TA-Lib Daten anreichern
     const marketList = validMarkets.map((m) => {
       const ta = taData.get(m.symbol);
+      const sr = strategyData.get(m.symbol);
       const taInfo = ta
         ? ` | trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${ta.ema_20?.toFixed(2)} ema50=${ta.ema_50?.toFixed(2)} atr=${ta.atr?.toFixed(2)}`
         : "";
-      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}`;
+      const stInfo = sr && sr.consensus !== "NEUTRAL"
+        ? ` | strategies=${sr.consensus}(${sr.consensus_conf}%) [${sr.long_votes}L/${sr.short_votes}S/${sr.neutral_votes}N of ${sr.total_strategies}] top="${sr.active[0]?.strategy ?? "none"}: ${sr.active[0]?.reasoning?.slice(0, 80) ?? ""}"`
+        : sr ? ` | strategies=NEUTRAL(${sr.neutral_votes}/${sr.total_strategies} neutral)` : "";
+      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${stInfo}`;
     }).join("\n");
 
     const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.
@@ -194,6 +238,9 @@ CRITICAL RULES — violations = bad analysis:
 - RSI > 70 = overbought → prefer SELL or WAIT for BUY setups
 - RSI < 30 = oversold → prefer BUY or WAIT for SELL setups
 - If signal=NEUTRAL and RSI 40-60 → WAIT
+- If strategies=LONG with >60% confidence AND trend=BULLISH → strong BUY signal
+- If strategies=SHORT with >60% confidence AND trend=BEARISH → strong SELL signal
+- If strategies and trend DISAGREE → reduce confidence by 15 or go WAIT
 - Minimum R:R ratio 1.5 — if no clean setup → WAIT
 - stopLoss MUST be below entry for BUY, above entry for SELL
 - Max SL distances: GOLD=15pts, EURUSD=0.0040, NAS100=200pts, USOIL=2.0, BTCUSD=1000
@@ -272,16 +319,24 @@ Return ONLY valid JSON:
       gpt = noSignal(market);
     }
 
-    // Zusätzliche TA-Validierung: GPT-Signal gegen Trend prüfen
-    if (gpt.direction !== "WAIT" && ta) {
-      const gptBuysButBearish = gpt.direction === "BUY" && ta.trend === "BEARISH" && ta.signal === "SELL";
-      const gptSellsButBullish = gpt.direction === "SELL" && ta.trend === "BULLISH" && ta.signal === "BUY";
-      if (gptBuysButBearish || gptSellsButBullish) {
+    // TA-Lib + Strategie-Konsens gegen GPT-Signal prüfen
+    if (gpt.direction !== "WAIT") {
+      const sr = strategyData.get(market.symbol);
+      const taBearish = ta && ta.trend === "BEARISH" && ta.signal === "SELL";
+      const taBullish = ta && ta.trend === "BULLISH" && ta.signal === "BUY";
+      const stratSell = sr && sr.consensus === "SHORT" && sr.consensus_conf >= 60;
+      const stratBuy  = sr && sr.consensus === "LONG"  && sr.consensus_conf >= 60;
+
+      // Blockieren wenn TA + Strategie-Mehrheit gegen GPT-Signal
+      const blockBuy  = gpt.direction === "BUY"  && taBearish && stratSell;
+      const blockSell = gpt.direction === "SELL" && taBullish && stratBuy;
+
+      if (blockBuy || blockSell) {
         gpt = {
           ...gpt,
           direction: "WAIT",
           confidence: 0,
-          reasoning: `Signal blockiert: GPT sagt ${gpt.direction} aber TA-Lib zeigt ${ta.trend} trend (${ta.signal}). Kein Trade.`,
+          reasoning: `Signal blockiert: GPT=${gpt.direction} aber TA=${ta?.trend} + Strategien=${sr?.consensus}(${sr?.consensus_conf}%). Kein Trade.`,
         };
       }
     }
