@@ -425,8 +425,9 @@ export async function register() {
                 try {
                   const { pyRegisterTrade, pyUpdateBalance } = await import("./lib/python-backend/python-client");
                   await pyUpdateBalance(session.balance);
+                  if (!result.dealId) throw new Error("no dealId");
                   await pyRegisterTrade({
-                    tradeId:     result.dealId ?? "unknown",
+                    tradeId:     result.dealId,
                     symbol:      candidate.symbol,
                     direction:   candidate.gpt.direction as "BUY" | "SELL",
                     entry:       result.openLevel ?? 0,

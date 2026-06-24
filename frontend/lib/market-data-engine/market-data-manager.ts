@@ -15,7 +15,7 @@ export class MarketDataManager {
   }
 
   refreshPrices() {
-    return priceCache.refreshMockPrices();
+    return priceCache.refreshPrices();
   }
 
   isReady() {

@@ -50,18 +50,46 @@ export async function GET(request: Request) {
       }, 30); // cache 30 seconds
       markets = result;
     } else {
-      // Fallback: static market list with simulated prices
-      const FALLBACK_EPICS = [
-        { epic: "GOLD", instrumentName: "Gold", instrumentType: "COMMODITIES", symbol: "XAUUSD", bid: 2340, ask: 2340.5, spread: 0.5, updateTime: new Date().toISOString() },
-        { epic: "EURUSD", instrumentName: "EUR/USD", instrumentType: "CURRENCIES", symbol: "EURUSD", bid: 1.0848, ask: 1.0850, spread: 0.0002, updateTime: new Date().toISOString() },
-        { epic: "US100", instrumentName: "Nasdaq 100", instrumentType: "INDICES", symbol: "NAS100", bid: 19180, ask: 19182, spread: 2, updateTime: new Date().toISOString() },
-        { epic: "OIL_CRUDE", instrumentName: "Crude Oil", instrumentType: "COMMODITIES", symbol: "USOIL", bid: 78.45, ask: 78.50, spread: 0.05, updateTime: new Date().toISOString() },
-        { epic: "BITCOIN", instrumentName: "Bitcoin", instrumentType: "CRYPTOCURRENCIES", symbol: "BTCUSD", bid: 67480, ask: 67500, spread: 20, updateTime: new Date().toISOString() },
-        { epic: "US500", instrumentName: "S&P 500", instrumentType: "INDICES", symbol: "SPX500", bid: 5448, ask: 5450, spread: 2, updateTime: new Date().toISOString() },
-        { epic: "GBPUSD", instrumentName: "GBP/USD", instrumentType: "CURRENCIES", symbol: "GBPUSD", bid: 1.2700, ask: 1.2702, spread: 0.0002, updateTime: new Date().toISOString() },
-        { epic: "SILVER", instrumentName: "Silver", instrumentType: "COMMODITIES", symbol: "SILVER", bid: 29.50, ask: 29.55, spread: 0.05, updateTime: new Date().toISOString() },
-      ];
-      markets = FALLBACK_EPICS;
+      // Kein Capital.com — versuche Python Backend für echte Preise
+      try {
+        const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+        const FALLBACK_SYMBOLS = ["XAUUSD", "EURUSD", "NAS100", "USOIL", "BTCUSD", "SPX500", "GBPUSD", "XAGUSD", "GER40", "UK100"];
+        if (PYTHON_BASE) {
+          const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbols: FALLBACK_SYMBOLS }),
+            signal: AbortSignal.timeout(8000),
+          });
+          if (res.ok) {
+            const data = await res.json() as { prices?: Array<{ symbol: string; bid: number; ask: number }> };
+            const META: Record<string, { epic: string; name: string; type: string }> = {
+              XAUUSD: { epic: "GOLD",     name: "Gold",        type: "COMMODITIES" },
+              EURUSD: { epic: "EURUSD",   name: "EUR/USD",     type: "CURRENCIES" },
+              NAS100: { epic: "US100",    name: "Nasdaq 100",  type: "INDICES" },
+              USOIL:  { epic: "OIL_CRUDE",name: "Crude Oil",   type: "COMMODITIES" },
+              BTCUSD: { epic: "BITCOIN",  name: "Bitcoin",     type: "CRYPTOCURRENCIES" },
+              SPX500: { epic: "US500",    name: "S&P 500",     type: "INDICES" },
+              GBPUSD: { epic: "GBPUSD",  name: "GBP/USD",     type: "CURRENCIES" },
+              XAGUSD: { epic: "SILVER",  name: "Silver",      type: "COMMODITIES" },
+              GER40:  { epic: "GERMANY40",name: "DAX 40",     type: "INDICES" },
+              UK100:  { epic: "UK100",   name: "FTSE 100",    type: "INDICES" },
+            };
+            markets = (data.prices ?? [])
+              .filter(p => p.bid > 0)
+              .map(p => ({
+                epic:           META[p.symbol]?.epic ?? p.symbol,
+                instrumentName: META[p.symbol]?.name ?? p.symbol,
+                instrumentType: META[p.symbol]?.type ?? "COMMODITIES",
+                symbol:         p.symbol,
+                bid:            p.bid,
+                ask:            p.ask,
+                spread:         Number((p.ask - p.bid).toFixed(5)),
+                updateTime:     new Date().toISOString(),
+              }));
+          }
+        }
+      } catch { /* non-fatal */ }
     }
 
     // Run AI analysis on all markets
