@@ -63,6 +63,34 @@ def get_ohlcv(
     interval: str = "1h",
     period: str = "5d",
 ) -> list[dict]:
+    # "4h" is not a native yfinance interval — resample from 1h data
+    if interval == "4h":
+        candles_1h = get_ohlcv(symbol, "1h", period)
+        if not candles_1h:
+            return []
+        df_1h = pd.DataFrame(candles_1h)
+        df_1h["timestamp"] = pd.to_datetime(df_1h["timestamp"], utc=True)
+        df_1h = df_1h.set_index("timestamp")
+        df_4h = df_1h.resample("4h").agg({
+            "open":   "first",
+            "high":   "max",
+            "low":    "min",
+            "close":  "last",
+            "volume": "sum",
+        }).dropna(subset=["close"])
+        return [
+            {
+                "timestamp": ts.isoformat(),
+                "open":   round(float(row["open"]),   5),
+                "high":   round(float(row["high"]),   5),
+                "low":    round(float(row["low"]),    5),
+                "close":  round(float(row["close"]),  5),
+                "volume": int(row["volume"]),
+            }
+            for ts, row in df_4h.iterrows()
+            if pd.notna(row.get("close")) and float(row.get("close", 0)) > 0
+        ]
+
     if interval not in VALID_INTERVALS:
         raise ValueError(f"Invalid interval: {interval}")
     if period not in VALID_PERIODS:
