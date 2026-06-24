@@ -342,19 +342,11 @@ export async function register() {
             // ── Concurrent positions check (echte Positionen von Capital.com) ───
             const { capitalGetPositions } = await import("./lib/capital-com/capital-com-client");
             const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken).catch(() => null);
-            const openPositions = posResult?.positions ?? [];
-            const openCount = openPositions.length;
+            const openCount = posResult?.positions?.length ?? 0;
             if (openCount >= maxConcurrent) {
               console.log(`[auto-scan] Max concurrent positions erreicht (${openCount}/${maxConcurrent}) — skip`);
               return;
             }
-
-            // ── Bereits offene Symbole — kein Duplicate-Trade ──────────────────
-            const openSymbols = new Set<string>(
-              openPositions.map((p: { symbol?: string; epic?: string }) =>
-                (p.symbol ?? p.epic ?? "").toUpperCase()
-              ).filter(Boolean)
-            );
 
             // ── Daily limit check ───────────────────────────────────────────────
             const limitReached = tradeLimitEnabled && dailyCount >= maxTradesPerDay;
@@ -366,16 +358,10 @@ export async function register() {
             // Store scan results globally so scanner UI can display them without manual scan
             global.__last_scan_result__ = { opportunities, updatedAt: new Date().toISOString() };
 
-            // Build candidate list — apply confidence + per-style limits + kein Duplicate-Symbol
+            // Build candidate list
             const candidates = opportunities.filter((o) => {
               if (!o.goSignal) return false;
               if (o.gpt.confidence < threshold) return false;
-              // Kein zweiter Trade auf dasselbe Symbol das bereits offen ist
-              const sym = (o.symbol ?? "").toUpperCase();
-              if (openSymbols.has(sym)) {
-                console.log(`[auto-scan] ⛔ ${sym} bereits offen — kein Duplicate-Trade`);
-                return false;
-              }
               // Per-style limit check
               const style = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
               const styleMax = (styleLimit as Record<string, number>)[style] ?? 999;
