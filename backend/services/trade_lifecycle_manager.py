@@ -213,10 +213,12 @@ class TradeLifecycleManager:
             }, source="lifecycle_manager")
             return {"action": "PARTIAL_CLOSE", "volume": partial_vol}
 
-        # 3. Breakeven
+        # 3. Breakeven — symbol-spezifische Toleranz (globales 0.0001 war falsch für Indices/Crypto)
+        pip = get_pip_size(trade.symbol)
+        be_tol = pip * 2
         already_at_be = (
-            (trade.is_buy()  and trade.current_sl >= trade.entry - 0.0001) or
-            (not trade.is_buy() and trade.current_sl <= trade.entry + 0.0001)
+            (trade.is_buy()  and trade.current_sl >= trade.entry - be_tol) or
+            (not trade.is_buy() and trade.current_sl <= trade.entry + be_tol)
         ) if trade.current_sl > 0 else False
 
         if not trade.be_set and not already_at_be and progress >= lvl["be_at"]:
