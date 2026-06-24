@@ -13,8 +13,16 @@ from services.market_data import get_ohlcv
 logger = logging.getLogger(__name__)
 
 
-def _load_arrays(symbol: str, interval: str = "1d", period: str = "6mo"):
+_PERIOD_FOR_INTERVAL = {
+    "1m": "1d", "2m": "1d", "5m": "5d", "15m": "5d", "30m": "1mo",
+    "60m": "3mo", "90m": "3mo", "1h": "3mo", "4h": "6mo",
+    "1d": "6mo", "5d": "1y", "1wk": "2y", "1mo": "5y", "3mo": "5y",
+}
+
+def _load_arrays(symbol: str, interval: str = "1d", period: str = None):
     """Lädt OHLCV als numpy arrays für TA-Lib."""
+    if period is None:
+        period = _PERIOD_FOR_INTERVAL.get(interval, "6mo")
     candles = get_ohlcv(symbol, interval, period)
     if not candles or len(candles) < 30:
         return None
