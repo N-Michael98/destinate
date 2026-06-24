@@ -38,6 +38,15 @@ export interface ScannerOpportunity {
   claude: ClaudeRiskAssessment;
   finalScore: number;
   goSignal: boolean;
+  analysisQuality?: {
+    hasGPT: boolean;
+    hasTALib: boolean;
+    hasStrategies: boolean;
+    pythonBackendOk: boolean;
+    isRealAnalysis: boolean;
+    taLibSymbolCount: number;
+    strategySymbolCount: number;
+  };
 }
 
 // ── Python Backend TA-Lib Analyse holen ───────────────────────────────────────
@@ -222,6 +231,17 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
     fetchStrategySignals(symbols),
   ]);
 
+  // ── Sicherheits-Check: GPT + TA-Lib müssen beide verfügbar sein ──────────
+  // Kein GPT-Key → kein Trade. TA-Lib nicht geantwortet → kein Trade.
+  const taPct = symbols.length > 0 ? taData.size / symbols.length : 0;
+  const pythonBackendOk = taData.size > 0 && taPct >= 0.5; // mind. 50% der Symbole analysiert
+  if (!hasGPT) {
+    console.warn("[ai-engine] ⛔ Kein GPT-Key — kein Trade möglich. Analyse wird fortgesetzt aber goSignal=false für alle.");
+  }
+  if (!pythonBackendOk) {
+    console.warn(`[ai-engine] ⛔ Python Backend nicht erreichbar oder zu wenige TA-Lib Daten (${taData.size}/${symbols.length}) — kein Trade möglich.`);
+  }
+
   // ── GPT Batch Analyse mit echten TA-Daten ────────────────────────────────
   let gptBatchResult: Record<string, Partial<GPTMarketAnalysis>> = {};
 
@@ -401,8 +421,12 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     const finalScore = gpt.direction === "WAIT" ? 0 :
       (gpt.confidence * 0.5 + (100 - claude.riskScore) * 0.3 + (claude.approved ? 20 : 0));
 
-    // goSignal: Confidence ≥ 70 (nicht 65), Claude approved, SL/TP vorhanden
-    const goSignal = claude.approved
+    // goSignal: NUR wenn GPT-Key aktiv + Python Backend geantwortet hat + echte Analyse
+    // GPT_SIMULATED = TA-Lib Fallback ohne GPT → kein Trade
+    // GPT_REAL ohne TA-Lib-Daten (pythonBackendOk=false) → kein Trade
+    const isRealAnalysis = gpt.source === "GPT_REAL" && hasGPT && pythonBackendOk;
+    const goSignal = isRealAnalysis
+      && claude.approved
       && gpt.confidence >= 70
       && gpt.direction !== "WAIT"
       && gpt.stopLoss > 0
@@ -420,6 +444,16 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       claude,
       finalScore,
       goSignal,
+      // Diagnose-Felder: zeigen warum goSignal false ist
+      analysisQuality: {
+        hasGPT,
+        hasTALib: taData.has(market.symbol),
+        hasStrategies: strategyData.has(market.symbol),
+        pythonBackendOk,
+        isRealAnalysis,
+        taLibSymbolCount: taData.size,
+        strategySymbolCount: strategyData.size,
+      },
     });
   }
 
