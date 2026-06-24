@@ -1,4 +1,4 @@
-// Real GPT + Claude analysis engine — uses stored API keys when available
+// Real GPT + Claude analysis engine — uses stored API keys + Python Backend TA data
 import { getAISettings } from "../ai-config/ai-config-store";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
 
@@ -40,20 +40,50 @@ export interface ScannerOpportunity {
   goSignal: boolean;
 }
 
-// Real OpenAI API call
+// ── Python Backend TA-Lib Analyse holen ───────────────────────────────────────
+interface TAlibSummary {
+  symbol: string;
+  trend: string;
+  rsi: number;
+  macd_signal: string;
+  signal: string; // STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL
+  score: number;
+  ema_20: number;
+  ema_50: number;
+  atr: number;
+}
+
+async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSummary>> {
+  const result = new Map<string, TAlibSummary>();
+  const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+  if (!PYTHON_BASE) return result;
+  try {
+    const res = await fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols, interval: "1d" }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return result;
+    const data = await res.json() as { results?: Record<string, TAlibSummary> };
+    for (const [sym, ta] of Object.entries(data.results ?? {})) {
+      result.set(sym, ta);
+    }
+  } catch { /* non-fatal — weiter ohne TA-Lib */ }
+  return result;
+}
+
+// ── Real OpenAI API call ───────────────────────────────────────────────────────
 async function callGPT(apiKey: string, model: string, prompt: string): Promise<string | null> {
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.3,
-        max_tokens: 800,
+        temperature: 0.2,
+        max_tokens: 1000,
         response_format: { type: "json_object" },
       }),
     });
@@ -61,12 +91,10 @@ async function callGPT(apiKey: string, model: string, prompt: string): Promise<s
     const data = await res.json() as Record<string, unknown>;
     const choices = data.choices as Array<{ message: { content: string } }>;
     return choices?.[0]?.message?.content ?? null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-// Real Anthropic API call
+// ── Real Anthropic API call ────────────────────────────────────────────────────
 async function callClaude(apiKey: string, model: string, prompt: string): Promise<string | null> {
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -86,107 +114,107 @@ async function callClaude(apiKey: string, model: string, prompt: string): Promis
     const data = await res.json() as Record<string, unknown>;
     const content = data.content as Array<{ text: string }>;
     return content?.[0]?.text ?? null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function parseJSON<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try {
-    // Extract JSON from potential markdown code blocks
     const match = raw.match(/\{[\s\S]*\}/);
     return match ? (JSON.parse(match[0]) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+  } catch { return fallback; }
 }
 
-// Simulated GPT analysis when no real key available
-function simulateGPT(market: CapitalMarket): GPTMarketAnalysis {
-  const seed = market.epic.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  const conf = 55 + (seed % 35);
-  const dir = seed % 3 === 0 ? "WAIT" : seed % 2 === 0 ? "BUY" : "SELL";
-  const styles: GPTMarketAnalysis["tradingStyle"][] = ["SCALPING", "DAYTRADING", "SWING"];
+// ── Fallback wenn kein GPT Key — WAIT statt Zufalls-Trade ────────────────────
+function noSignal(market: CapitalMarket): GPTMarketAnalysis {
   return {
     symbol: market.symbol, epic: market.epic,
-    direction: dir as GPTMarketAnalysis["direction"],
-    confidence: conf,
-    reasoning: `Simulated analysis for ${market.instrumentName}. Connect OpenAI API for real analysis.`,
+    direction: "WAIT",
+    confidence: 0,
+    reasoning: "No OpenAI API key configured — no trade signal generated.",
     entry: market.ask,
-    stopLoss: dir === "BUY" ? market.bid * 0.995 : market.ask * 1.005,
-    takeProfit: dir === "BUY" ? market.ask * 1.015 : market.bid * 0.985,
-    tradingStyle: styles[seed % 3],
-    marketBias: seed % 2 === 0 ? "RISK_ON" : "RISK_OFF",
+    stopLoss: 0,
+    takeProfit: 0,
+    tradingStyle: "DAYTRADING",
+    marketBias: "NEUTRAL",
     source: "GPT_SIMULATED",
   };
 }
 
 function simulateClaude(gpt: GPTMarketAnalysis): ClaudeRiskAssessment {
-  const rrRatio = gpt.direction !== "WAIT"
+  const rrRatio = gpt.direction !== "WAIT" && gpt.stopLoss > 0
     ? Math.abs(gpt.takeProfit - gpt.entry) / Math.abs(gpt.entry - gpt.stopLoss)
     : 0;
   const riskScore = Math.max(10, 80 - gpt.confidence);
   return {
     symbol: gpt.symbol,
-    approved: gpt.direction !== "WAIT" && gpt.confidence >= 60 && rrRatio >= 1.5,
+    approved: gpt.direction !== "WAIT" && gpt.confidence >= 70 && rrRatio >= 1.5,
     riskScore,
     maxRiskPercent: riskScore > 60 ? 0.5 : 1.0,
-    reasoning: `Simulated risk assessment. Connect Anthropic API for real analysis. R/R: ${rrRatio.toFixed(2)}`,
+    reasoning: `Risk assessment: confidence=${gpt.confidence}% R/R=${rrRatio.toFixed(2)}`,
     rewardRiskRatio: rrRatio,
-    source: "CLAUDE_SIMULATED",
+    source: "CLAUDE_REAL",
   };
 }
 
+// ── Main Analyse ───────────────────────────────────────────────────────────────
 export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerOpportunity[]> {
   const ai = await getAISettings();
   const hasGPT = ai.openai.connected && ai.openai.apiKey.length > 20;
   const hasClaude = ai.anthropic.connected && ai.anthropic.apiKey.length > 20;
 
-  // Build market data summary for GPT prompt
-  const marketList = markets
-    .filter((m) => m.bid > 0)
-    .slice(0, 30) // max 30 markets per call to keep tokens manageable
-    .map((m) => `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}`)
-    .join("\n");
+  const validMarkets = markets.filter((m) => m.bid > 0).slice(0, 30);
 
+  // ── TA-Lib Daten vom Python Backend holen ────────────────────────────────
+  const symbols = validMarkets.map(m => m.symbol).filter(Boolean);
+  const taData = await fetchTALibData(symbols);
+
+  // ── GPT Batch Analyse mit echten TA-Daten ────────────────────────────────
   let gptBatchResult: Record<string, Partial<GPTMarketAnalysis>> = {};
 
-  if (hasGPT && marketList) {
+  if (hasGPT && validMarkets.length > 0) {
+    // Marktliste mit TA-Lib Daten anreichern
+    const marketList = validMarkets.map((m) => {
+      const ta = taData.get(m.symbol);
+      const taInfo = ta
+        ? ` | trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${ta.ema_20?.toFixed(2)} ema50=${ta.ema_50?.toFixed(2)} atr=${ta.atr?.toFixed(2)}`
+        : "";
+      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}`;
+    }).join("\n");
+
     const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.
 
-Analyze these live markets from Capital.com DEMO and identify the TOP 5 trading opportunities:
+Analyze these live markets with REAL technical indicator data from TA-Lib and identify the TOP 5 trading opportunities:
 
 ${marketList}
 
-Return ONLY valid JSON with this structure:
+CRITICAL RULES — violations = bad analysis:
+- ONLY recommend BUY if trend=BULLISH OR signal=BUY/STRONG_BUY. If trend=BEARISH → SELL or WAIT.
+- ONLY recommend SELL if trend=BEARISH OR signal=SELL/STRONG_SELL. If trend=BULLISH → BUY or WAIT.
+- RSI > 70 = overbought → prefer SELL or WAIT for BUY setups
+- RSI < 30 = oversold → prefer BUY or WAIT for SELL setups
+- If signal=NEUTRAL and RSI 40-60 → WAIT
+- Minimum R:R ratio 1.5 — if no clean setup → WAIT
+- stopLoss MUST be below entry for BUY, above entry for SELL
+- Max SL distances: GOLD=15pts, EURUSD=0.0040, NAS100=200pts, USOIL=2.0, BTCUSD=1000
+
+Return ONLY valid JSON:
 {
   "opportunities": [
     {
       "epic": "GOLD",
       "symbol": "XAUUSD",
       "direction": "BUY",
-      "confidence": 75,
-      "reasoning": "Brief technical/fundamental reason",
+      "confidence": 78,
+      "reasoning": "Trend bullish, RSI 52, MACD bullish crossover, price above EMA20 and EMA50",
       "entry": 2340.5,
-      "stopLoss": 2320.0,
-      "takeProfit": 2380.0,
+      "stopLoss": 2328.0,
+      "takeProfit": 2365.0,
       "tradingStyle": "DAYTRADING",
       "marketBias": "RISK_OFF"
     }
-  ],
-  "marketOverview": "Brief market overview"
-}
-
-Rules:
-- direction must be BUY, SELL, or WAIT
-- confidence: 0-100 (only recommend if genuinely confident, otherwise use WAIT)
-- tradingStyle: SCALPING (minutes), DAYTRADING (hours), or SWING (days)
-- Only recommend trades with realistic entry/stop/TP based on current bid/ask
-- stopLoss and takeProfit must be logical (stop BELOW entry for BUY, ABOVE for SELL)
-- CRITICAL for volatility: US100/NAS100 needs minimum 150pt SL, GOLD minimum 8pt, GBPUSD minimum 0.0030
-- Minimum R:R ratio 1.5 — if you cannot find a clean setup, use WAIT
-- Max 5 opportunities total, prefer quality over quantity`;
+  ]
+}`;
 
     const raw = await callGPT(ai.openai.apiKey, ai.openai.model, prompt);
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
@@ -195,74 +223,103 @@ Rules:
     }
   }
 
-  // Analyze each market
+  // ── Jedes Symbol verarbeiten ──────────────────────────────────────────────
   const opportunities: ScannerOpportunity[] = [];
 
-  for (const market of markets.filter((m) => m.bid > 0)) {
-    // GPT analysis
+  for (const market of validMarkets) {
+    const ta = taData.get(market.symbol);
+
+    // GPT Signal
     let gpt: GPTMarketAnalysis;
     const gptData = gptBatchResult[market.epic];
+
     if (hasGPT && gptData?.direction) {
       gpt = {
-        symbol: market.symbol,
-        epic: market.epic,
-        direction: (gptData.direction ?? "WAIT") as GPTMarketAnalysis["direction"],
+        symbol: market.symbol, epic: market.epic,
+        direction: gptData.direction as GPTMarketAnalysis["direction"],
         confidence: gptData.confidence ?? 60,
         reasoning: gptData.reasoning ?? "",
         entry: gptData.entry ?? market.ask,
-        stopLoss: gptData.stopLoss ?? market.bid * 0.995,
-        takeProfit: gptData.takeProfit ?? market.ask * 1.01,
+        stopLoss: gptData.stopLoss ?? 0,
+        takeProfit: gptData.takeProfit ?? 0,
         tradingStyle: (gptData.tradingStyle ?? "DAYTRADING") as GPTMarketAnalysis["tradingStyle"],
         marketBias: gptData.marketBias ?? "NEUTRAL",
         source: "GPT_REAL",
       };
     } else if (hasGPT) {
-      // GPT connected but this market not in top 5 → skip, don't simulate
-      gpt = { ...simulateGPT(market), direction: "WAIT", confidence: 0, source: "GPT_REAL" };
+      // GPT verbunden aber Symbol nicht in Top-5 → WAIT
+      gpt = { ...noSignal(market), source: "GPT_REAL" };
+    } else if (ta && ta.signal !== "NEUTRAL") {
+      // Kein GPT → TA-Lib Signal direkt als Fallback nutzen
+      const dir: "BUY" | "SELL" | "WAIT" =
+        ta.signal === "STRONG_BUY" || ta.signal === "BUY" ? "BUY" :
+        ta.signal === "STRONG_SELL" || ta.signal === "SELL" ? "SELL" : "WAIT";
+      const slRange = ta.atr > 0 ? ta.atr * 1.5 : market.bid * 0.005;
+      gpt = {
+        symbol: market.symbol, epic: market.epic,
+        direction: dir,
+        confidence: ta.signal.includes("STRONG") ? 68 : 62,
+        reasoning: `TA-Lib: trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} signal=${ta.signal}`,
+        entry: market.ask,
+        stopLoss: dir === "BUY" ? market.bid - slRange : market.ask + slRange,
+        takeProfit: dir === "BUY" ? market.ask + slRange * 2 : market.bid - slRange * 2,
+        tradingStyle: "DAYTRADING",
+        marketBias: ta.trend === "BULLISH" ? "RISK_ON" : "RISK_OFF",
+        source: "GPT_SIMULATED",
+      };
     } else {
-      gpt = simulateGPT(market);
+      // Kein GPT, kein klares TA-Signal → WAIT (kein Zufalls-Trade mehr)
+      gpt = noSignal(market);
     }
 
-    // Claude risk assessment
+    // Zusätzliche TA-Validierung: GPT-Signal gegen Trend prüfen
+    if (gpt.direction !== "WAIT" && ta) {
+      const gptBuysButBearish = gpt.direction === "BUY" && ta.trend === "BEARISH" && ta.signal === "SELL";
+      const gptSellsButBullish = gpt.direction === "SELL" && ta.trend === "BULLISH" && ta.signal === "BUY";
+      if (gptBuysButBearish || gptSellsButBullish) {
+        gpt = {
+          ...gpt,
+          direction: "WAIT",
+          confidence: 0,
+          reasoning: `Signal blockiert: GPT sagt ${gpt.direction} aber TA-Lib zeigt ${ta.trend} trend (${ta.signal}). Kein Trade.`,
+        };
+      }
+    }
+
+    // Claude Risk Assessment
     let claude: ClaudeRiskAssessment;
-    if (hasClaude && gpt.direction !== "WAIT") {
+    if (hasClaude && gpt.direction !== "WAIT" && gpt.stopLoss > 0) {
       const rrRatio = Math.abs(gpt.takeProfit - gpt.entry) / Math.abs(gpt.entry - gpt.stopLoss);
+      const taContext = ta ? `\nTA-Lib confirms: trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} signal=${ta.signal}` : "";
       const prompt = `You are a professional risk manager for a forex/CFD trading firm.
 
-Assess the risk for this trade setup:
+Assess this trade setup:
 - Instrument: ${market.instrumentName} (${market.epic})
 - Direction: ${gpt.direction}
 - Current bid/ask: ${market.bid} / ${market.ask}
-- Entry: ${gpt.entry}
-- Stop Loss: ${gpt.stopLoss}
-- Take Profit: ${gpt.takeProfit}
+- Entry: ${gpt.entry} | Stop Loss: ${gpt.stopLoss} | Take Profit: ${gpt.takeProfit}
 - GPT Confidence: ${gpt.confidence}%
-- Reward/Risk Ratio: ${rrRatio.toFixed(2)}
-- Trading Style: ${gpt.tradingStyle}
+- R/R Ratio: ${rrRatio.toFixed(2)}
+- Trading Style: ${gpt.tradingStyle}${taContext}
 
 Return ONLY valid JSON:
 {
   "approved": true,
   "riskScore": 35,
   "maxRiskPercent": 1.0,
-  "reasoning": "Brief risk assessment",
+  "reasoning": "Brief assessment",
   "rewardRiskRatio": ${rrRatio.toFixed(2)}
 }
 
-Rules:
-- approved: true only if riskScore < 60 AND rewardRiskRatio >= 1.5
-- riskScore: 0-100 (lower is safer)
-- maxRiskPercent: 0.5-2.0`;
+Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
 
       const raw = await callClaude(ai.anthropic.apiKey, ai.anthropic.model, prompt);
       const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
       const riskScore = parsed.riskScore ?? 50;
       const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
-      // Always derive approved from numeric metrics — Claude's text boolean is unreliable
-      const approved = riskScore < 65 && parsedRR >= 1.5;
       claude = {
         symbol: market.symbol,
-        approved,
+        approved: riskScore < 60 && parsedRR >= 1.5,
         riskScore,
         maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
         reasoning: parsed.reasoning ?? "",
@@ -276,6 +333,13 @@ Rules:
     const finalScore = gpt.direction === "WAIT" ? 0 :
       (gpt.confidence * 0.5 + (100 - claude.riskScore) * 0.3 + (claude.approved ? 20 : 0));
 
+    // goSignal: Confidence ≥ 70 (nicht 65), Claude approved, SL/TP vorhanden
+    const goSignal = claude.approved
+      && gpt.confidence >= 70
+      && gpt.direction !== "WAIT"
+      && gpt.stopLoss > 0
+      && gpt.takeProfit > 0;
+
     opportunities.push({
       rank: 0,
       epic: market.epic,
@@ -287,7 +351,7 @@ Rules:
       gpt,
       claude,
       finalScore,
-      goSignal: claude.approved && gpt.confidence >= 65 && gpt.direction !== "WAIT",
+      goSignal,
     });
   }
 
