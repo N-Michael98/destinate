@@ -97,9 +97,11 @@ function calcICPositionSize(
   const riskAmount = accountBalance * (riskPercent / 100);
   const priceVal = PRICE_VALUE[ctraderSymbol] ?? 0.01;
   const stop = stopDistance > 0 ? stopDistance : (DEFAULT_STOP[ctraderSymbol] ?? 0.002);
-  const units = Math.floor(riskAmount / (stop * priceVal));
-  const minUnits = MIN_UNITS[ctraderSymbol] ?? 100000;
-  return Math.max(units, minUnits);
+  const rawUnits = riskAmount / (stop * priceVal);
+  const step = MIN_UNITS[ctraderSymbol] ?? 1000;
+  // Volume muss Vielfaches des volume step sein (cTrader Pflicht)
+  const snapped = Math.floor(rawUnits / step) * step;
+  return Math.max(snapped, step);
 }
 
 export interface ICExecutionResult {
