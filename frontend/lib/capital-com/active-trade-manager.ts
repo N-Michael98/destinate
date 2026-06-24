@@ -12,30 +12,37 @@
  *  ≥80: BE at 70%, Trail 40% of SL range
  *  ≥75: BE at 55%, Trail 50% of SL range
  *   <75: BE at 40%, Trail 60% of SL range
- *
- * Zeit-Exit limits (position age):
- *  SCALPING:   4 hours
- *  DAYTRADING: 24 hours
- *  SWING:      168 hours (7 days)
  */
 
 import { getPrisma } from "../../app/lib/prisma";
 import {
   capitalGetPrices, capitalUpdatePosition, capitalClosePosition,
-  capitalClosePartial, capitalGetPositions,
+  capitalClosePartial, capitalGetPositions, EPIC_MAP,
 } from "./capital-com-client";
 import { getCapitalSession, isCapitalConnected } from "./capital-com-session";
 
+// Default SL range per symbol — used when position has no SL set
 const DEFAULT_SL_RANGE: Record<string, number> = {
-  XAUUSD: 10, XAGUSD: 0.5,
+  XAUUSD: 10,   XAGUSD: 0.5,
   EURUSD: 0.003, GBPUSD: 0.003, USDJPY: 0.3, AUDUSD: 0.003,
   USDCAD: 0.003, USDCHF: 0.003, GBPJPY: 0.3, EURJPY: 0.3,
   EURGBP: 0.003, NZDUSD: 0.003,
-  NAS100: 50, US100: 50, SPX500: 20, US500: 20, UK100: 30, GER40: 40,
-  USOIL: 1.0, BRENT: 1.0,
+  NAS100: 50, SPX500: 20, UK100: 30, GER40: 40, DJ30: 50, JPN225: 200,
+  USOIL: 1.0, UKOIL: 1.0, NATGAS: 0.1,
+  BTCUSD: 500, ETHUSD: 30,
 };
 
-// Zeit-Exit limits in hours per trading style
+// Breakeven tolerance per symbol — prevents false alreadyAtBE detection
+const BE_TOLERANCE: Record<string, number> = {
+  XAUUSD: 0.5,   XAGUSD: 0.02,
+  EURUSD: 0.0002, GBPUSD: 0.0002, USDJPY: 0.02, AUDUSD: 0.0002,
+  USDCAD: 0.0002, USDCHF: 0.0002, GBPJPY: 0.02, EURJPY: 0.02,
+  EURGBP: 0.0002, NZDUSD: 0.0002,
+  NAS100: 2, SPX500: 1, UK100: 1, GER40: 2, DJ30: 5, JPN225: 10,
+  USOIL: 0.05, UKOIL: 0.05, NATGAS: 0.005,
+  BTCUSD: 10, ETHUSD: 1,
+};
+
 const STYLE_MAX_HOURS: Record<string, number> = {
   SCALPING:   4,
   DAYTRADING: 24,
@@ -44,7 +51,7 @@ const STYLE_MAX_HOURS: Record<string, number> = {
 
 interface PosMeta {
   beSet: boolean;
-  partialDone: boolean; // Partial TP already executed
+  partialDone: boolean;
   trailSL: number | null;
   confidence: number;
   tradingStyle: string;
@@ -79,30 +86,38 @@ export async function runActiveTradeManager(): Promise<void> {
       const m = JSON.parse(t.notes);
       if (m.dealId) {
         dbMeta.set(m.dealId, {
-          beSet:       m.beSet ?? false,
-          partialDone: m.partialDone ?? false,
-          trailSL:     m.trailSL ?? null,
-          confidence:  m.confidence ?? 72,
+          beSet:        m.beSet ?? false,
+          partialDone:  m.partialDone ?? false,
+          trailSL:      m.trailSL ?? null,
+          confidence:   m.confidence ?? 72,
           tradingStyle: m.tradingStyle ?? m.strategy ?? "DAYTRADING",
         });
       }
     } catch { /* skip */ }
   }
 
-  // ── 3. Batch price fetch ──────────────────────────────────────────────────
-  const symbols = [...new Set(posResult.positions.map(p => p.symbol).filter(Boolean))];
-  console.log(`[trade-mgr] price fetch symbols: ${symbols.join(", ")}`);
-  const priceResult = await capitalGetPrices(session.apiKey, session.cst, session.securityToken, symbols).catch(() => null);
+  // ── 3. Batch price fetch — alle Symbole auf einmal ────────────────────────
+  // Nutze symbol aus Position, aber auch epic als Fallback für EPIC_MAP lookup
+  const symbolsNeeded = [...new Set(
+    posResult.positions.map(p => p.symbol).filter(Boolean)
+  )];
+  console.log(`[trade-mgr] price fetch symbols: ${symbolsNeeded.join(", ")}`);
+
+  const priceResult = await capitalGetPrices(
+    session.apiKey, session.cst, session.securityToken, symbolsNeeded
+  ).catch(() => null);
+
+  // Build priceMap — key by symbol AND by epic for fallback lookup
   const priceMap = new Map<string, { bid: number; ask: number }>();
   for (const p of priceResult?.prices ?? []) {
-    if (p.symbol) priceMap.set(p.symbol, { bid: p.bid, ask: p.ask });
+    if (p.symbol && (p.bid > 0 || p.ask > 0)) {
+      priceMap.set(p.symbol, { bid: p.bid, ask: p.ask });
+      // Also store by epic in case position returns epic as symbol
+      const epic = EPIC_MAP[p.symbol];
+      if (epic) priceMap.set(epic, { bid: p.bid, ask: p.ask });
+    }
   }
   console.log(`[trade-mgr] priceMap keys: ${[...priceMap.keys()].join(", ") || "EMPTY"}`);
-  for (const pos of posResult.positions) {
-    const sym = pos.symbol ?? pos.epic ?? "";
-    const entry = pos.openLevel;
-    console.log(`[trade-mgr] pos: dealId=${pos.dealId} symbol=${sym} entry=${entry} hasPrice=${priceMap.has(sym)}`);
-  }
 
   // ── 4. Process each position ──────────────────────────────────────────────
   for (const pos of posResult.positions) {
@@ -111,15 +126,21 @@ export async function runActiveTradeManager(): Promise<void> {
     const entry = pos.openLevel;
     if (!entry || entry <= 0) continue;
     const isBuy = pos.direction === "BUY";
-    const symbol = pos.symbol ?? pos.epic ?? "";
 
-    const prices = priceMap.get(symbol);
-    if (!prices) continue;
+    // Symbol lookup — try symbol first, then epic
+    const symbol = pos.symbol || pos.epic || "";
+    const prices = priceMap.get(symbol) ?? priceMap.get(pos.epic ?? "");
+    if (!prices) {
+      console.log(`[trade-mgr] ⚠️ no price for ${symbol} (epic=${pos.epic}) — skipping`);
+      continue;
+    }
     const currentPrice = isBuy ? prices.bid : prices.ask;
-    if (!currentPrice) continue;
+    if (!currentPrice || currentPrice <= 0) continue;
 
     // Merge DB + in-memory meta
-    const mem = positionMeta.get(dealId) ?? { beSet: false, partialDone: false, trailSL: null, confidence: 72, tradingStyle: "DAYTRADING" };
+    const mem = positionMeta.get(dealId) ?? {
+      beSet: false, partialDone: false, trailSL: null, confidence: 72, tradingStyle: "DAYTRADING"
+    };
     const meta: PosMeta = dbMeta.get(dealId) ?? mem;
 
     const lvl = getLevel(meta.confidence);
@@ -128,7 +149,7 @@ export async function runActiveTradeManager(): Promise<void> {
 
     const slRange = liveSL > 0
       ? Math.abs(entry - liveSL)
-      : (DEFAULT_SL_RANGE[symbol] ?? 0.005);
+      : (DEFAULT_SL_RANGE[symbol] ?? entry * 0.005); // 0.5% fallback
     const totalRange = liveTP > 0
       ? Math.abs(liveTP - entry)
       : slRange * 2;
@@ -138,11 +159,15 @@ export async function runActiveTradeManager(): Promise<void> {
       ? (currentPrice - entry) / totalRange
       : (entry - currentPrice) / totalRange;
 
+    // Symbol-specific BE tolerance (kein globales 0.0001 mehr)
+    const beTol = BE_TOLERANCE[symbol] ?? slRange * 0.01;
     const alreadyAtBE = isBuy
-      ? (liveSL > 0 && liveSL >= entry - 0.0001)
-      : (liveSL > 0 && liveSL <= entry + 0.0001);
+      ? (liveSL > 0 && liveSL >= entry - beTol)
+      : (liveSL > 0 && liveSL <= entry + beTol);
     const beEffective = meta.beSet || alreadyAtBE;
     const currentTrailSL = meta.trailSL ?? (liveSL > 0 ? liveSL : (isBuy ? entry - slRange : entry + slRange));
+
+    console.log(`[trade-mgr] ${symbol} ${pos.direction} entry=${entry} current=${currentPrice} progress=${(progress*100).toFixed(1)}% beEff=${beEffective} SL=${liveSL}`);
 
     // ── Zeit-Exit ─────────────────────────────────────────────────────────
     const style = meta.tradingStyle.toUpperCase();
@@ -154,10 +179,10 @@ export async function runActiveTradeManager(): Promise<void> {
       if (closeResult.ok) {
         positionMeta.delete(dealId);
         await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET status='CLOSED', result='CLOSED_TIME', notes=notes||' {"zeitExit":true}', "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $1`,
+          `UPDATE "Trade" SET status='CLOSED', result='CLOSED_TIME', "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $1`,
           `%${dealId}%`
         ).catch(() => {});
-        console.log(`[trade-mgr] ⏰ Zeit-Exit: ${symbol} ${pos.direction} age=${ageHours.toFixed(1)}h limit=${maxHours}h (${style})`);
+        console.log(`[trade-mgr] ⏰ Zeit-Exit: ${symbol} ${pos.direction} age=${ageHours.toFixed(1)}h (${style})`);
         try {
           const { notifyTradeExecuted } = await import("../telegram-notifications/telegram-sender");
           await notifyTradeExecuted({ symbol, direction: pos.direction, size: pos.size, entry, stopLoss: 0, takeProfit: 0, confidence: meta.confidence, broker: "Capital.com (Zeit-Exit)", dealId });
@@ -167,26 +192,44 @@ export async function runActiveTradeManager(): Promise<void> {
     }
 
     // ── Partial TP (50% close at 50% progress) ───────────────────────────
-    if (!meta.partialDone && progress >= 0.50 && pos.size > 0) {
-      const partialSize = Math.floor(pos.size / 2);
+    if (!meta.partialDone && progress >= 0.50) {
+      // pos.size kann 0 sein wenn Capital.com dealSize zurückgibt — beide prüfen
+      const rawSize = pos.size > 0 ? pos.size : 0;
+      const partialSize = rawSize >= 2 ? Math.floor(rawSize / 2) : 0;
       if (partialSize > 0) {
-        const partialResult = await capitalClosePartial(session.apiKey, session.cst, session.securityToken, pos.epic, pos.direction, partialSize);
+        const epicForClose = EPIC_MAP[symbol] ?? pos.epic ?? symbol;
+        const partialResult = await capitalClosePartial(
+          session.apiKey, session.cst, session.securityToken,
+          epicForClose, pos.direction, partialSize
+        );
         if (partialResult.ok) {
-          const newMeta = { ...meta, partialDone: true };
-          positionMeta.set(dealId, newMeta);
+          positionMeta.set(dealId, { ...meta, partialDone: true });
           await db.$executeRawUnsafe(
             `UPDATE "Trade" SET "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $1`,
             `%${dealId}%`
           ).catch(() => {});
-          console.log(`[trade-mgr] 💰 Partial TP: ${symbol} closed ${partialSize} of ${pos.size} at ${progress*100|0}% to TP`);
+          console.log(`[trade-mgr] 💰 Partial TP: ${symbol} closed ${partialSize} of ${rawSize} at ${(progress*100)|0}% to TP`);
+          try {
+            const { notifyBreakeven } = await import("../telegram-notifications/telegram-sender");
+            await notifyBreakeven({ symbol, direction: pos.direction, entry, broker: "Capital.com (Partial TP)" });
+          } catch { /* non-fatal */ }
+        } else {
+          console.log(`[trade-mgr] ⚠️ Partial TP failed: ${symbol} error=${partialResult.error}`);
         }
+      } else {
+        // Markiere als done wenn Size zu klein — verhindert endlose Versuche
+        positionMeta.set(dealId, { ...meta, partialDone: true });
+        console.log(`[trade-mgr] ⚠️ Partial TP skipped: ${symbol} size=${rawSize} too small`);
       }
     }
 
     // ── Breakeven ─────────────────────────────────────────────────────────
     if (!beEffective && progress >= lvl.beAt) {
       const newSL = entry;
-      const upd = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, dealId, newSL, liveTP > 0 ? liveTP : undefined);
+      const upd = await capitalUpdatePosition(
+        session.apiKey, session.cst, session.securityToken,
+        dealId, newSL, liveTP > 0 ? liveTP : undefined
+      );
       if (upd.ok) {
         positionMeta.set(dealId, { ...meta, beSet: true, trailSL: newSL });
         await db.$executeRawUnsafe(
@@ -199,6 +242,8 @@ export async function runActiveTradeManager(): Promise<void> {
           await notifyBreakeven({ symbol, direction: pos.direction, entry, broker: "Capital.com" });
         } catch { /* non-fatal */ }
         continue;
+      } else {
+        console.log(`[trade-mgr] ⚠️ Breakeven failed: ${symbol} error=${upd.error}`);
       }
     }
 
@@ -207,10 +252,13 @@ export async function runActiveTradeManager(): Promise<void> {
       const trailDistance = slRange * lvl.trailDist;
       const newTrailSL = isBuy ? currentPrice - trailDistance : currentPrice + trailDistance;
       const shouldUpdate = isBuy
-        ? newTrailSL > currentTrailSL && newTrailSL >= entry
-        : newTrailSL < currentTrailSL && newTrailSL <= entry;
+        ? newTrailSL > currentTrailSL + beTol && newTrailSL >= entry
+        : newTrailSL < currentTrailSL - beTol && newTrailSL <= entry;
       if (shouldUpdate) {
-        const upd = await capitalUpdatePosition(session.apiKey, session.cst, session.securityToken, dealId, newTrailSL, liveTP > 0 ? liveTP : undefined);
+        const upd = await capitalUpdatePosition(
+          session.apiKey, session.cst, session.securityToken,
+          dealId, newTrailSL, liveTP > 0 ? liveTP : undefined
+        );
         if (upd.ok) {
           positionMeta.set(dealId, { ...meta, beSet: true, trailSL: newTrailSL });
           await db.$executeRawUnsafe(
@@ -218,6 +266,8 @@ export async function runActiveTradeManager(): Promise<void> {
             newTrailSL, `%${dealId}%`
           ).catch(() => {});
           console.log(`[trade-mgr] 📈 Trail SL: ${symbol} ${pos.direction} SL=${newTrailSL.toFixed(5)} price=${currentPrice.toFixed(5)}`);
+        } else {
+          console.log(`[trade-mgr] ⚠️ Trail SL failed: ${symbol} error=${upd.error}`);
         }
       }
     }
