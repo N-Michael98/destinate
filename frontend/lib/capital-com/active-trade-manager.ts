@@ -53,6 +53,7 @@ interface PosMeta {
   beSet: boolean;
   partialDone: boolean;
   trailSL: number | null;
+  peakPrice: number | null; // Höchster Preis (BUY) / niedrigster Preis (SELL) seit Profit
   confidence: number;
   tradingStyle: string;
 }
@@ -149,7 +150,7 @@ export async function runActiveTradeManager(): Promise<void> {
 
     // Merge DB + in-memory meta
     const mem = positionMeta.get(dealId) ?? {
-      beSet: false, partialDone: false, trailSL: null, confidence: 72, tradingStyle: "DAYTRADING"
+      beSet: false, partialDone: false, trailSL: null, peakPrice: null, confidence: 72, tradingStyle: "DAYTRADING"
     };
     const meta: PosMeta = dbMeta.get(dealId) ?? mem;
 
@@ -257,27 +258,46 @@ export async function runActiveTradeManager(): Promise<void> {
       }
     }
 
-    // ── Trailing SL ───────────────────────────────────────────────────────
-    if (beEffective || alreadyAtBE) {
+    // ── Profit Trail (ab erstem Gewinn-Tick, basierend auf Peak-Price) ──────
+    // Startet sobald Preis über Entry (BUY) oder unter Entry (SELL) geht.
+    // Trail folgt dem Höchst-/Tiefstpreis — dreht der Markt um, schützt der SL den Profit.
+    const inProfit = isBuy ? currentPrice > entry : currentPrice < entry;
+    if (inProfit) {
+      const prevPeak = meta.peakPrice ?? currentPrice;
+      const newPeak = isBuy
+        ? Math.max(prevPeak, currentPrice)
+        : Math.min(prevPeak, currentPrice);
+
       const trailDistance = slRange * lvl.trailDist;
-      const newTrailSL = isBuy ? currentPrice - trailDistance : currentPrice + trailDistance;
+      const newTrailSL = isBuy
+        ? Math.max(newPeak - trailDistance, entry) // nie unter Entry (BE-Minimum)
+        : Math.min(newPeak + trailDistance, entry); // nie über Entry (BE-Minimum)
+
+      const currentSL = liveSL > 0 ? liveSL : (isBuy ? entry - slRange : entry + slRange);
       const shouldUpdate = isBuy
-        ? newTrailSL > currentTrailSL + beTol && newTrailSL >= entry
-        : newTrailSL < currentTrailSL - beTol && newTrailSL <= entry;
+        ? newTrailSL > currentSL + beTol
+        : newTrailSL < currentSL - beTol;
+
       if (shouldUpdate) {
         const upd = await capitalUpdatePosition(
           session.apiKey, session.cst, session.securityToken,
           dealId, newTrailSL, liveTP > 0 ? liveTP : undefined
         );
         if (upd.ok) {
-          positionMeta.set(dealId, { ...meta, beSet: true, trailSL: newTrailSL });
+          positionMeta.set(dealId, { ...meta, beSet: newTrailSL >= entry, peakPrice: newPeak, trailSL: newTrailSL });
           await db.$executeRawUnsafe(
             `UPDATE "Trade" SET "stopLoss"=$1, "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $2`,
             newTrailSL, `%${dealId}%`
           ).catch(() => {});
-          console.log(`[trade-mgr] 📈 Trail SL: ${symbol} ${pos.direction} SL=${newTrailSL.toFixed(5)} price=${currentPrice.toFixed(5)}`);
+          const isBE = newTrailSL === entry;
+          console.log(`[trade-mgr] 📈 Profit Trail: ${symbol} ${pos.direction} peak=${newPeak.toFixed(5)} SL=${newTrailSL.toFixed(5)}${isBE ? " (BE)" : ""}`);
         } else {
-          console.log(`[trade-mgr] ⚠️ Trail SL failed: ${symbol} error=${upd.error}`);
+          console.log(`[trade-mgr] ⚠️ Profit Trail failed: ${symbol} error=${upd.error}`);
+        }
+      } else {
+        // Peak aktualisieren ohne API-Call
+        if (newPeak !== prevPeak) {
+          positionMeta.set(dealId, { ...meta, peakPrice: newPeak });
         }
       }
     }
