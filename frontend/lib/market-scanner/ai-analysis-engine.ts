@@ -71,7 +71,7 @@ async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSumma
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ symbols, interval: "1d" }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) {
       console.warn(`[ai-engine] TA-Lib Backend Fehler: ${res.status} ${res.statusText}`);

@@ -26,8 +26,8 @@ async def analyze_symbol(symbol: str):
 
 @router.post("/analyze/multi")
 async def analyze_multi(req: MultiRequest):
-    if len(req.symbols) > 22:
-        raise HTTPException(status_code=400, detail="Max 22 Symbole")
+    if len(req.symbols) > 30:
+        raise HTTPException(status_code=400, detail="Max 30 Symbole")
     try:
         results = analyze_strategies_multi(req.symbols)
         return {"results": {r["symbol"]: r for r in results}}
