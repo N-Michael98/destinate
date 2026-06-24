@@ -313,15 +313,90 @@ export async function register() {
             const settings = await getSettings();
             if (settings.botSettings.mode !== "AUTO") return;
 
-            const { capitalGetTopMarkets } = await import("./lib/capital-com/capital-com-client");
+            const { capitalGetTopMarkets, EPIC_MAP } = await import("./lib/capital-com/capital-com-client");
             const { analyzeMarkets } = await import("./lib/market-scanner/ai-analysis-engine");
             const { executeCapitalDemoOrder } = await import("./lib/capital-com/capital-com-execution");
 
             const session = getCapitalSession()!;
-            const markets = await capitalGetTopMarkets(session.apiKey, session.cst, session.securityToken);
-            if (!markets.ok || !markets.markets?.length) return;
+            const capitalResult = await capitalGetTopMarkets(session.apiKey, session.cst, session.securityToken);
+            if (!capitalResult.ok) return;
 
-            const opportunities = await analyzeMarkets(markets.markets);
+            // Alle 22 Watchlist-Symbole — die primäre Analysebasis
+            const WATCHLIST = [
+              "NAS100","SPX500","UK100","GER40","DJ30","JPN225",
+              "XAUUSD","USOIL","UKOIL","XAGUSD","NATGAS",
+              "EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","EURGBP","GBPJPY","EURJPY",
+              "BTCUSD","ETHUSD",
+            ];
+
+            // Capital.com hat nur für manche Symbole Preise — fehlende aus Python ergänzen
+            const capitalMarkets = capitalResult.markets ?? [];
+            const capitalSymbols = new Set(capitalMarkets.map(m => m.symbol));
+            const missingSymbols = WATCHLIST.filter(s => !capitalSymbols.has(s));
+
+            let supplemented = [...capitalMarkets];
+            if (missingSymbols.length > 0) {
+              try {
+                const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+                if (PYTHON_BASE) {
+                  const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ symbols: missingSymbols }),
+                    signal: AbortSignal.timeout(10000),
+                  });
+                  if (res.ok) {
+                    const data = await res.json() as { prices?: Array<{ symbol: string; price: number | null }> };
+                    const INSTRUMENT_META: Record<string, { epic: string; name: string; type: string }> = {
+                      NAS100: { epic: "US100",      name: "Nasdaq 100",  type: "INDICES" },
+                      SPX500: { epic: "US500",      name: "S&P 500",     type: "INDICES" },
+                      UK100:  { epic: "UK100",      name: "FTSE 100",    type: "INDICES" },
+                      GER40:  { epic: "GERMANY40",  name: "DAX 40",      type: "INDICES" },
+                      DJ30:   { epic: "US30",       name: "Dow Jones",   type: "INDICES" },
+                      JPN225: { epic: "JAPAN225",   name: "Nikkei 225",  type: "INDICES" },
+                      XAUUSD: { epic: "GOLD",       name: "Gold",        type: "COMMODITIES" },
+                      USOIL:  { epic: "OIL_CRUDE",  name: "Crude Oil",   type: "COMMODITIES" },
+                      UKOIL:  { epic: "OIL_BRENT",  name: "Brent Oil",   type: "COMMODITIES" },
+                      XAGUSD: { epic: "SILVER",     name: "Silver",      type: "COMMODITIES" },
+                      NATGAS: { epic: "NATURAL_GAS",name: "Natural Gas", type: "COMMODITIES" },
+                      EURUSD: { epic: "EURUSD",     name: "EUR/USD",     type: "CURRENCIES" },
+                      GBPUSD: { epic: "GBPUSD",     name: "GBP/USD",     type: "CURRENCIES" },
+                      USDJPY: { epic: "USDJPY",     name: "USD/JPY",     type: "CURRENCIES" },
+                      USDCHF: { epic: "USDCHF",     name: "USD/CHF",     type: "CURRENCIES" },
+                      AUDUSD: { epic: "AUDUSD",     name: "AUD/USD",     type: "CURRENCIES" },
+                      USDCAD: { epic: "USDCAD",     name: "USD/CAD",     type: "CURRENCIES" },
+                      EURGBP: { epic: "EURGBP",     name: "EUR/GBP",     type: "CURRENCIES" },
+                      GBPJPY: { epic: "GBPJPY",     name: "GBP/JPY",     type: "CURRENCIES" },
+                      EURJPY: { epic: "EURJPY",     name: "EUR/JPY",     type: "CURRENCIES" },
+                      BTCUSD: { epic: "BITCOIN",    name: "Bitcoin",     type: "CRYPTOCURRENCIES" },
+                      ETHUSD: { epic: "ETHEREUM",   name: "Ethereum",    type: "CRYPTOCURRENCIES" },
+                    };
+                    for (const p of data.prices ?? []) {
+                      if (!p.price || p.price <= 0) continue;
+                      const meta = INSTRUMENT_META[p.symbol];
+                      if (!meta) continue;
+                      const spreadPct = meta.type === "CURRENCIES" ? 0.0002 : meta.type === "CRYPTOCURRENCIES" ? 0.001 : 0.0005;
+                      const half = p.price * spreadPct / 2;
+                      supplemented.push({
+                        epic: meta.epic,
+                        instrumentName: meta.name,
+                        instrumentType: meta.type,
+                        symbol: p.symbol,
+                        bid: Number((p.price - half).toFixed(5)),
+                        ask: Number((p.price + half).toFixed(5)),
+                        spread: Number((half * 2).toFixed(5)),
+                        updateTime: new Date().toISOString(),
+                      });
+                    }
+                  }
+                }
+              } catch { /* non-fatal — analysiere mit was vorhanden */ }
+            }
+
+            console.log(`[auto-scan] Märkte: ${capitalMarkets.length} von Capital.com + ${supplemented.length - capitalMarkets.length} von Python = ${supplemented.length} total`);
+
+            if (!supplemented.length) return;
+            const opportunities = await analyzeMarkets(supplemented);
             const threshold = settings.botSettings.autoApproveThreshold ?? 71;
             const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
             const maxConcurrent = settings.botSettings.maxConcurrentPositions ?? 3;
