@@ -94,6 +94,7 @@ export async function runActiveTradeManager(): Promise<void> {
           beSet:        m.beSet ?? false,
           partialDone:  m.partialDone ?? false,
           trailSL:      m.trailSL ?? null,
+          peakPrice:    m.peakPrice ?? null,
           confidence:   m.confidence ?? 72,
           tradingStyle: m.tradingStyle ?? m.strategy ?? "DAYTRADING",
         });
