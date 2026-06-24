@@ -59,9 +59,9 @@ interface PosMeta {
 const positionMeta: Map<string, PosMeta> = new Map();
 
 function getLevel(score: number): { beAt: number; trailDist: number } {
-  if (score >= 80) return { beAt: 0.70, trailDist: 0.40 };
-  if (score >= 75) return { beAt: 0.55, trailDist: 0.50 };
-  return               { beAt: 0.40, trailDist: 0.60 };
+  if (score >= 80) return { beAt: 0.45, trailDist: 0.30 };
+  if (score >= 75) return { beAt: 0.30, trailDist: 0.40 };
+  return               { beAt: 0.20, trailDist: 0.50 };
 }
 
 export async function runActiveTradeManager(): Promise<void> {
