@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 interface GPTAnalysis {
   direction: "BUY" | "SELL" | "WAIT";
@@ -151,12 +151,16 @@ export default function MarketScannerPanel() {
     }
   }, [typeFilter, searchQ]);
 
-  // Auto-scan every 60 seconds
+  // Auto-scan every 60 seconds — sofortiger erster Scan beim Einschalten
+  const runScanRef = useRef(runScan);
+  useEffect(() => { runScanRef.current = runScan; }, [runScan]);
+
   useEffect(() => {
     if (!autoScan) return;
-    const t = setInterval(runScan, 60000);
+    runScanRef.current(); // Sofort scannen
+    const t = setInterval(() => runScanRef.current(), 60000);
     return () => clearInterval(t);
-  }, [autoScan, runScan]);
+  }, [autoScan]);
 
   const executeGO = async (opp: Opportunity) => {
     if (executing) return;
