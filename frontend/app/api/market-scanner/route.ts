@@ -50,46 +50,78 @@ export async function GET(request: Request) {
       }, 30); // cache 30 seconds
       markets = result;
     } else {
-      // Kein Capital.com — versuche Python Backend für echte Preise
+      // Kein Capital.com — Python Backend für echte Preise (alle 22 Watchlist-Symbole)
       try {
         const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
-        const FALLBACK_SYMBOLS = ["XAUUSD", "EURUSD", "NAS100", "USOIL", "BTCUSD", "SPX500", "GBPUSD", "XAGUSD", "GER40", "UK100"];
+        const FALLBACK_SYMBOLS = [
+          // Indices
+          "NAS100", "SPX500", "UK100", "GER40", "DJ30", "JPN225",
+          // Commodities
+          "XAUUSD", "USOIL", "UKOIL", "XAGUSD", "NATGAS",
+          // Forex
+          "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "EURGBP", "GBPJPY", "EURJPY",
+          // Crypto
+          "BTCUSD", "ETHUSD",
+        ];
+        const META: Record<string, { epic: string; name: string; type: string }> = {
+          NAS100: { epic: "US100",     name: "Nasdaq 100",   type: "INDICES" },
+          SPX500: { epic: "US500",     name: "S&P 500",      type: "INDICES" },
+          UK100:  { epic: "UK100",     name: "FTSE 100",     type: "INDICES" },
+          GER40:  { epic: "GERMANY40", name: "DAX 40",       type: "INDICES" },
+          DJ30:   { epic: "US30",      name: "Dow Jones",    type: "INDICES" },
+          JPN225: { epic: "JAPAN225",  name: "Nikkei 225",   type: "INDICES" },
+          XAUUSD: { epic: "GOLD",      name: "Gold",         type: "COMMODITIES" },
+          USOIL:  { epic: "OIL_CRUDE", name: "Crude Oil",    type: "COMMODITIES" },
+          UKOIL:  { epic: "OIL_BRENT", name: "Brent Oil",    type: "COMMODITIES" },
+          XAGUSD: { epic: "SILVER",    name: "Silver",       type: "COMMODITIES" },
+          NATGAS: { epic: "NATURAL_GAS",name: "Natural Gas", type: "COMMODITIES" },
+          EURUSD: { epic: "EURUSD",    name: "EUR/USD",      type: "CURRENCIES" },
+          GBPUSD: { epic: "GBPUSD",    name: "GBP/USD",      type: "CURRENCIES" },
+          USDJPY: { epic: "USDJPY",    name: "USD/JPY",      type: "CURRENCIES" },
+          USDCHF: { epic: "USDCHF",    name: "USD/CHF",      type: "CURRENCIES" },
+          AUDUSD: { epic: "AUDUSD",    name: "AUD/USD",      type: "CURRENCIES" },
+          USDCAD: { epic: "USDCAD",    name: "USD/CAD",      type: "CURRENCIES" },
+          EURGBP: { epic: "EURGBP",    name: "EUR/GBP",      type: "CURRENCIES" },
+          GBPJPY: { epic: "GBPJPY",    name: "GBP/JPY",      type: "CURRENCIES" },
+          EURJPY: { epic: "EURJPY",    name: "EUR/JPY",      type: "CURRENCIES" },
+          BTCUSD: { epic: "BITCOIN",   name: "Bitcoin",      type: "CRYPTOCURRENCIES" },
+          ETHUSD: { epic: "ETHEREUM",  name: "Ethereum",     type: "CRYPTOCURRENCIES" },
+        };
         if (PYTHON_BASE) {
           const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ symbols: FALLBACK_SYMBOLS }),
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(12000),
           });
           if (res.ok) {
-            const data = await res.json() as { prices?: Array<{ symbol: string; bid: number; ask: number }> };
-            const META: Record<string, { epic: string; name: string; type: string }> = {
-              XAUUSD: { epic: "GOLD",     name: "Gold",        type: "COMMODITIES" },
-              EURUSD: { epic: "EURUSD",   name: "EUR/USD",     type: "CURRENCIES" },
-              NAS100: { epic: "US100",    name: "Nasdaq 100",  type: "INDICES" },
-              USOIL:  { epic: "OIL_CRUDE",name: "Crude Oil",   type: "COMMODITIES" },
-              BTCUSD: { epic: "BITCOIN",  name: "Bitcoin",     type: "CRYPTOCURRENCIES" },
-              SPX500: { epic: "US500",    name: "S&P 500",     type: "INDICES" },
-              GBPUSD: { epic: "GBPUSD",  name: "GBP/USD",     type: "CURRENCIES" },
-              XAGUSD: { epic: "SILVER",  name: "Silver",      type: "COMMODITIES" },
-              GER40:  { epic: "GERMANY40",name: "DAX 40",     type: "INDICES" },
-              UK100:  { epic: "UK100",   name: "FTSE 100",    type: "INDICES" },
-            };
+            // Python Backend gibt { symbol, price, currency } zurück — kein bid/ask
+            // Wir nutzen price als mid-price und simulieren einen minimalen Spread
+            const data = await res.json() as { prices?: Array<{ symbol: string; price: number | null; currency?: string }> };
             markets = (data.prices ?? [])
-              .filter(p => p.bid > 0)
-              .map(p => ({
-                epic:           META[p.symbol]?.epic ?? p.symbol,
-                instrumentName: META[p.symbol]?.name ?? p.symbol,
-                instrumentType: META[p.symbol]?.type ?? "COMMODITIES",
-                symbol:         p.symbol,
-                bid:            p.bid,
-                ask:            p.ask,
-                spread:         Number((p.ask - p.bid).toFixed(5)),
-                updateTime:     new Date().toISOString(),
-              }));
+              .filter(p => p.price != null && p.price > 0)
+              .map(p => {
+                const price = p.price as number;
+                // Spread-Schätzung: Forex 0.02%, Crypto 0.1%, alles andere 0.05%
+                const spreadPct = META[p.symbol]?.type === "CURRENCIES" ? 0.0002
+                  : META[p.symbol]?.type === "CRYPTOCURRENCIES" ? 0.001
+                  : 0.0005;
+                const half = price * spreadPct / 2;
+                return {
+                  epic:           META[p.symbol]?.epic ?? p.symbol,
+                  instrumentName: META[p.symbol]?.name ?? p.symbol,
+                  instrumentType: META[p.symbol]?.type ?? "COMMODITIES",
+                  symbol:         p.symbol,
+                  bid:            Number((price - half).toFixed(5)),
+                  ask:            Number((price + half).toFixed(5)),
+                  spread:         Number((half * 2).toFixed(5)),
+                  updateTime:     new Date().toISOString(),
+                };
+              });
+            console.log(`[market-scanner] Fallback: ${markets.length}/${FALLBACK_SYMBOLS.length} Märkte von Python Backend geladen`);
           }
         }
-      } catch { /* non-fatal */ }
+      } catch (e) { console.warn("[market-scanner] Fallback Fehler:", e); }
     }
 
     // Run AI analysis on all markets

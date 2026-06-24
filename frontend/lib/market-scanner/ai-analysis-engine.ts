@@ -64,12 +64,20 @@ async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSumma
       body: JSON.stringify({ symbols, interval: "1d" }),
       signal: AbortSignal.timeout(10000),
     });
-    if (!res.ok) return result;
+    if (!res.ok) {
+      console.warn(`[ai-engine] TA-Lib Backend Fehler: ${res.status} ${res.statusText}`);
+      return result;
+    }
     const data = await res.json() as { results?: Record<string, TAlibSummary> };
+    const received = Object.keys(data.results ?? {}).length;
+    console.log(`[ai-engine] TA-Lib: ${received}/${symbols.length} Symbole analysiert`);
     for (const [sym, ta] of Object.entries(data.results ?? {})) {
       result.set(sym, ta);
     }
-  } catch { /* non-fatal — weiter ohne TA-Lib */ }
+    // Fehlende Symbole loggen
+    const missing = symbols.filter(s => !result.has(s));
+    if (missing.length > 0) console.warn(`[ai-engine] TA-Lib fehlend (kein yfinance-Mapping?): ${missing.join(", ")}`);
+  } catch (e) { console.warn("[ai-engine] TA-Lib fetch fehlgeschlagen:", e); }
   return result;
 }
 
@@ -101,12 +109,17 @@ async function fetchStrategySignals(symbols: string[]): Promise<Map<string, Stra
       body: JSON.stringify({ symbols }),
       signal: AbortSignal.timeout(25000), // Strategien brauchen etwas länger
     });
-    if (!res.ok) return result;
+    if (!res.ok) {
+      console.warn(`[ai-engine] Strategies Backend Fehler: ${res.status} ${res.statusText}`);
+      return result;
+    }
     const data = await res.json() as { results?: Record<string, StrategyResult> };
+    const received = Object.keys(data.results ?? {}).length;
+    console.log(`[ai-engine] Strategies: ${received}/${symbols.length} Symbole analysiert`);
     for (const [sym, sr] of Object.entries(data.results ?? {})) {
       result.set(sym, sr);
     }
-  } catch { /* non-fatal */ }
+  } catch (e) { console.warn("[ai-engine] Strategies fetch fehlgeschlagen:", e); }
   return result;
 }
 

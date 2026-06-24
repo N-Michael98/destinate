@@ -25,6 +25,13 @@ SYMBOL_MAP = {
     # Crypto
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
+    "LTCUSD": "LTC-USD",
+    "XRPUSD": "XRP-USD",
+    "ADAUSD": "ADA-USD",
+    "SOLUSD": "SOL-USD",
+    "DOTUSD": "DOT-USD",
+    "LNKUSD": "LINK-USD",
+    "BNBUSD": "BNB-USD",
     # Indices
     "NAS100": "^NDX",
     "SPX500": "^GSPC",

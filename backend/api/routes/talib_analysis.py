@@ -17,12 +17,14 @@ async def talib_analyze(symbol: str, interval: str = "1d"):
 
 @router.post("/analyze/multi")
 async def talib_analyze_multi(req: MultiRequest):
-    raw_list = [analyze_talib(s, req.interval) for s in req.symbols[:15]]
-    # Frontend erwartet ein Dict keyed by symbol, nicht eine Liste
+    raw_list = [analyze_talib(s, req.interval) for s in req.symbols[:30]]
     results: dict = {}
     for item in raw_list:
         sym = item.get("symbol")
-        if not sym or "error" in item:
+        if not sym:
+            continue
+        if "error" in item:
+            print(f"[talib] ⚠ {sym}: {item['error']}")
             continue
         # Flatten nested structure → TAlibSummary shape
         momentum = item.get("momentum", {})
