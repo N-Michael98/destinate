@@ -28,7 +28,7 @@ def _load(symbol: str, interval: str = "1h", period: str = "3mo") -> pd.DataFram
     if not candles or len(candles) < 30:
         return pd.DataFrame()
     df = pd.DataFrame(candles)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
     df.set_index("timestamp", inplace=True)
     for col in ["open", "high", "low", "close", "volume"]:
         if col in df.columns:
