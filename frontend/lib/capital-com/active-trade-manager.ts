@@ -65,7 +65,11 @@ function getLevel(score: number): { beAt: number; trailDist: number } {
 }
 
 export async function runActiveTradeManager(): Promise<void> {
-  if (!isCapitalConnected()) return;
+  console.log("[trade-mgr] gestartet");
+  if (!isCapitalConnected()) {
+    console.log("[trade-mgr] Capital nicht verbunden — abgebrochen");
+    return;
+  }
   const session = getCapitalSession()!;
   const db = getPrisma();
 

@@ -234,13 +234,23 @@ export async function register() {
 
         // Position monitor every 2min — Capital.com + IC Markets parallel
         setInterval(async () => {
+          console.log("[position-monitor] 2min Zyklus gestartet");
+
+          // Capital.com: Journal-Sync — separat damit Fehler nicht trade-mgr blockieren
           try {
-            // Capital.com: sync journal + active trade manager
             const { syncCapitalPositionsToJournal } = await import("./lib/capital-com/capital-trade-tracker");
             await syncCapitalPositionsToJournal();
+          } catch (e) {
+            console.error("[position-monitor] syncCapitalPositionsToJournal Fehler:", e instanceof Error ? e.message : String(e));
+          }
+
+          // Capital.com: Active Trade Manager (BE/Trailing/Partial TP)
+          try {
             const { runActiveTradeManager } = await import("./lib/capital-com/active-trade-manager");
             await runActiveTradeManager();
-          } catch { /* non-fatal */ }
+          } catch (e) {
+            console.error("[position-monitor] runActiveTradeManager Fehler:", e instanceof Error ? e.message : String(e));
+          }
 
           // Python lifecycle manager: BE/Trailing/Exit für alle registrierten Trades
           try {
@@ -254,6 +264,7 @@ export async function register() {
                 const { capitalGetPrices } = await import("./lib/capital-com/capital-com-client");
                 const posResult = await capitalGetPositions(sess.apiKey, sess.cst, sess.securityToken).catch(() => null);
                 const positions = posResult?.positions ?? [];
+                console.log(`[py-lifecycle] ${positions.length} Positionen für Lifecycle-Update`);
                 if (positions.length > 0) {
                   const symbols = [...new Set(positions.map((p: { symbol?: string; epic?: string }) => p.symbol ?? p.epic ?? "").filter(Boolean))];
                   const priceResult = await capitalGetPrices(sess.apiKey, sess.cst, sess.securityToken, symbols).catch(() => null);
@@ -271,19 +282,23 @@ export async function register() {
                     if (!action || action.action === null) continue;
                     if (action.action === "UPDATE_SL" && action.new_sl) {
                       await capitalUpdatePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId, action.new_sl, undefined).catch(() => {});
-                      console.log(`[py-lifecycle] ✅ SL updated: ${symbol} → ${action.new_sl}`);
+                      console.log(`[py-lifecycle] SL updated: ${symbol} -> ${action.new_sl}`);
                     } else if (action.action === "CLOSE") {
                       await capitalClosePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId).catch(() => {});
-                      console.log(`[py-lifecycle] ⏰ Zeit-Exit: ${symbol}`);
+                      console.log(`[py-lifecycle] Zeit-Exit: ${symbol}`);
                     } else if (action.action === "PARTIAL_CLOSE" && action.volume) {
                       await capitalClosePartial(sess.apiKey, sess.cst, sess.securityToken, pos.epic ?? "", pos.direction, action.volume).catch(() => {});
-                      console.log(`[py-lifecycle] 💰 Partial TP: ${symbol} vol=${action.volume}`);
+                      console.log(`[py-lifecycle] Partial TP: ${symbol} vol=${action.volume}`);
                     }
                   }
                 }
+              } else {
+                console.log("[py-lifecycle] Capital nicht verbunden — skip");
               }
             }
-          } catch { /* non-fatal */ }
+          } catch (e) {
+            console.error("[py-lifecycle] Fehler:", e instanceof Error ? e.message : String(e));
+          }
 
           try {
             // IC Markets: journal sync + active trade manager (parallel)
