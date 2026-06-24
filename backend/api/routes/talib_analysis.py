@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.talib_indicators import analyze_talib, talib_pattern_scan
 
 router = APIRouter()
@@ -17,7 +18,19 @@ async def talib_analyze(symbol: str, interval: str = "1d"):
 
 @router.post("/analyze/multi")
 async def talib_analyze_multi(req: MultiRequest):
-    raw_list = [analyze_talib(s, req.interval) for s in req.symbols[:30]]
+    symbols = req.symbols[:30]
+    interval = req.interval
+
+    # Parallel ausführen — alle Symbole gleichzeitig statt sequenziell
+    raw_list = []
+    with ThreadPoolExecutor(max_workers=min(len(symbols), 12)) as executor:
+        futures = {executor.submit(analyze_talib, s, interval): s for s in symbols}
+        for future in as_completed(futures):
+            try:
+                raw_list.append(future.result())
+            except Exception as e:
+                raw_list.append({"symbol": futures[future], "error": str(e)})
+
     results: dict = {}
     for item in raw_list:
         sym = item.get("symbol")
@@ -26,7 +39,6 @@ async def talib_analyze_multi(req: MultiRequest):
         if "error" in item:
             print(f"[talib] ⚠ {sym}: {item['error']}")
             continue
-        # Flatten nested structure → TAlibSummary shape
         momentum = item.get("momentum", {})
         trend    = item.get("trend", {})
         vol      = item.get("volatility", {})
@@ -46,6 +58,7 @@ async def talib_analyze_multi(req: MultiRequest):
             "ema_50":      ema50,
             "atr":         vol.get("atr_14") or 0,
         }
+    print(f"[talib] ✅ {len(results)}/{len(symbols)} Symbole analysiert")
     return {"results": results}
 
 

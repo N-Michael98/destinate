@@ -7,7 +7,8 @@ GET  /api/v1/strategies/list                    → Liste aller verfügbaren Str
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from services.trading_strategies import analyze_all_strategies, analyze_strategies_multi, STRATEGIES
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from services.trading_strategies import analyze_all_strategies, STRATEGIES
 
 router = APIRouter(prefix="/strategies", tags=["Trading Strategies"])
 
@@ -28,11 +29,21 @@ async def analyze_symbol(symbol: str):
 async def analyze_multi(req: MultiRequest):
     if len(req.symbols) > 30:
         raise HTTPException(status_code=400, detail="Max 30 Symbole")
-    try:
-        results = analyze_strategies_multi(req.symbols)
-        return {"results": {r["symbol"]: r for r in results}}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    symbols = [s.upper() for s in req.symbols]
+
+    # Parallel ausführen — alle Symbole gleichzeitig (15 Strategien pro Symbol)
+    results = []
+    with ThreadPoolExecutor(max_workers=min(len(symbols), 8)) as executor:
+        futures = {executor.submit(analyze_all_strategies, s): s for s in symbols}
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception as e:
+                sym = futures[future]
+                print(f"[strategies] ⚠ {sym}: {e}")
+
+    print(f"[strategies] ✅ {len(results)}/{len(symbols)} Symbole analysiert")
+    return {"results": {r["symbol"]: r for r in results}}
 
 
 @router.get("/list")
