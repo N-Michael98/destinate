@@ -93,10 +93,35 @@ def get_ohlcv(
     return records
 
 def get_multi_price(symbols: list[str]) -> list[dict]:
-    results = []
-    for sym in symbols:
-        try:
-            results.append(get_current_price(sym))
-        except Exception as e:
-            results.append({"symbol": sym.upper(), "price": None, "error": str(e)})
-    return results
+    if not symbols:
+        return []
+    # Batch-Download: alle Symbole in einem einzigen yfinance-Request (viel schneller)
+    tickers = [_resolve(s) for s in symbols]
+    sym_map = {_resolve(s): s.upper() for s in symbols}
+    try:
+        df = yf.download(tickers, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True)
+        results = []
+        if len(tickers) == 1:
+            # yf.download gibt bei 1 Symbol keinen MultiIndex zurück
+            close = df["Close"] if "Close" in df.columns else None
+            price = float(close.dropna().iloc[-1]) if close is not None and not close.dropna().empty else None
+            results.append({"symbol": symbols[0].upper(), "price": round(price, 5) if price else None})
+        else:
+            close_df = df["Close"] if "Close" in df.columns else df
+            for ticker, sym_original in sym_map.items():
+                try:
+                    series = close_df[ticker].dropna() if ticker in close_df.columns else None
+                    price = float(series.iloc[-1]) if series is not None and not series.empty else None
+                    results.append({"symbol": sym_original, "price": round(price, 5) if price else None})
+                except Exception:
+                    results.append({"symbol": sym_original, "price": None})
+        return results
+    except Exception:
+        # Fallback: einzeln abrufen
+        results = []
+        for sym in symbols:
+            try:
+                results.append(get_current_price(sym))
+            except Exception as e:
+                results.append({"symbol": sym.upper(), "price": None, "error": str(e)})
+        return results

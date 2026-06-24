@@ -343,7 +343,7 @@ export async function register() {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ symbols: missingSymbols }),
-                    signal: AbortSignal.timeout(10000),
+                    signal: AbortSignal.timeout(20000),
                   });
                   if (res.ok) {
                     const data = await res.json() as { prices?: Array<{ symbol: string; price: number | null }> };
