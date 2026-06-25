@@ -194,7 +194,13 @@ Eingabe: <code>${text.slice(0, 20)}***</code>
 
       pendingConfirm.delete(chatId);
 
-      if (pending.action === "reset") {
+      if (pending.action.startsWith("unblock:")) {
+        const ipToUnblock = pending.action.split(":")[1];
+        const { unblockIP } = await import("@/lib/security-watchdog/ip-blocklist");
+        await unblockIP(ipToUnblock);
+        await reply(chatId, `✅ IP <code>${ipToUnblock}</code> wurde freigeschaltet.\n\nDu kannst die Website jetzt wieder aufrufen.`);
+        await sendTelegram(`🔓 <b>IP freigegeben</b>\n\nIP: <code>${ipToUnblock}</code>\nFreigegeben von: ${name}\n🕐 ${new Date().toLocaleString("de-CH")}`);
+      } else if (pending.action === "reset") {
         // Execute full system restart
         await reply(chatId, "🔄 Passwort korrekt. Starte System neu...");
         const log = await executeFullRestart(name);
@@ -303,13 +309,40 @@ Befehle:
 /ks — Kurzform für /killswitch
 /reset — System reaktivieren (Passwort nötig)
 /status — Aktueller System Status
+/blocked — Alle gesperrten IPs anzeigen
+/unblock [ip] — IP freischalten (Passwort nötig)
 
 <b>Sicherheit:</b>
 • Alle kritischen Befehle erfordern Admin-Passwort
 • Falsches Passwort → sofortiger Sicherheitsalert
 • Unbekannte Chat-IDs werden geblockt und gemeldet
-• Passwort wird in Railway als KILLSWITCH_PASSWORD gesetzt`
+• ATTACK-IPs werden PERMANENT gesperrt`
       );
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower === "/blocked") {
+      const { getBlockedIPs } = await import("@/lib/security-watchdog/ip-blocklist");
+      const list = await getBlockedIPs();
+      if (list.length === 0) {
+        await reply(chatId, "✅ Keine IPs geblockt.");
+      } else {
+        const lines = list.map(e =>
+          `${e.permanent ? "🔴 PERMANENT" : "⏱ 72h"} <code>${e.ip}</code>\n   ${e.reason.slice(0, 60)}\n   Seit: ${new Date(e.blockedAt).toLocaleString("de-CH")}`
+        ).join("\n\n");
+        await reply(chatId, `🚫 <b>Geblockte IPs (${list.length}):</b>\n\n${lines}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower.startsWith("/unblock ")) {
+      const ipToUnblock = text.split(" ")[1]?.trim();
+      if (!ipToUnblock) {
+        await reply(chatId, "❓ Verwendung: /unblock [IP-Adresse]\nBeispiel: /unblock 85.155.182.244");
+        return NextResponse.json({ ok: true });
+      }
+      pendingConfirm.set(chatId, { action: `unblock:${ipToUnblock}`, expiresAt: Date.now() + 60_000 });
+      await reply(chatId, `🔐 IP <code>${ipToUnblock}</code> freischalten?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
       return NextResponse.json({ ok: true });
     }
 

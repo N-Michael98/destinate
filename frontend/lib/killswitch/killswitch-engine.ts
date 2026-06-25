@@ -6,6 +6,8 @@ import {
 } from "./killswitch-types";
 
 const VERSION = "V17.0.0" as const;
+const REDIS_KEY = "killswitch:state"; // persistiert über Deploys
+const REDIS_TTL = 30 * 24 * 60 * 60; // 30 Tage
 
 let _state: KillswitchReport = buildIdleState();
 
@@ -50,8 +52,36 @@ function now() {
   return new Date().toISOString();
 }
 
+// Schreibt Killswitch-State in Redis (fire-and-forget, blockiert nicht)
+function persistToRedis(state: KillswitchReport): void {
+  import("@/lib/cache/redis-cache").then(({ cacheSet }) => {
+    cacheSet(REDIS_KEY, state, REDIS_TTL);
+  }).catch(() => {});
+}
+
+// Löscht Killswitch-State aus Redis (fire-and-forget)
+function deleteFromRedis(): void {
+  import("@/lib/cache/redis-cache").then(({ cacheDel }) => {
+    cacheDel(REDIS_KEY);
+  }).catch(() => {});
+}
+
 export function getKillswitchReport(): KillswitchReport {
   return { ..._state };
+}
+
+// Wird beim Server-Start aufgerufen — stellt Killswitch aus Redis wieder her
+export async function restoreKillswitchFromRedis(): Promise<boolean> {
+  try {
+    const { cacheGet } = await import("@/lib/cache/redis-cache");
+    const saved = await cacheGet<KillswitchReport>(REDIS_KEY);
+    if (saved && saved.triggered) {
+      _state = saved;
+      console.log(`[killswitch] 🔴 State aus Redis wiederhergestellt — System bleibt gesperrt (seit ${saved.triggeredAt})`);
+      return true;
+    }
+  } catch { /* non-fatal */ }
+  return false;
 }
 
 export function triggerKillswitch(
@@ -104,11 +134,16 @@ export function triggerKillswitch(
     updatedAt: now(),
   };
 
+  // In Redis persistieren — überlebt Deploys
+  persistToRedis(_state);
+
   return { ..._state };
 }
 
 export function resetKillswitch(): KillswitchReport {
   if (!_state.triggered || !_state.canReset) return { ..._state };
   _state = buildIdleState();
+  // Aus Redis löschen
+  deleteFromRedis();
   return { ..._state };
 }

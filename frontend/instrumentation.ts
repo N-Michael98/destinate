@@ -159,6 +159,15 @@ export async function register() {
         await initLearning();
       } catch { /* non-fatal */ }
 
+      // Killswitch-State aus Redis wiederherstellen (überlebt Deploys)
+      try {
+        const { restoreKillswitchFromRedis } = await import("./lib/killswitch");
+        const ksRestored = await restoreKillswitchFromRedis();
+        if (ksRestored) {
+          console.log("[killswitch] 🔴 SYSTEM GESPERRT — Killswitch aus Redis wiederhergestellt. /reset erforderlich.");
+        }
+      } catch { /* non-fatal */ }
+
       // Auto-reconnect Capital.com with retry (P3 fix: timing issue on cold start)
       try {
         // Restore IC Markets session from Redis on startup
