@@ -8,8 +8,9 @@
 
 import { getPrisma } from "../../app/lib/prisma";
 import {
-  capitalGetPrices, capitalGetPositions, capitalGetTopMarkets, EPIC_MAP,
+  capitalGetPrices, capitalGetPositions, EPIC_MAP,
 } from "./capital-com-client";
+import { fetchPrices as pyFetchPrices } from "../python-bridge/python-data";
 import { getCapitalSession, isCapitalConnected } from "./capital-com-session";
 import { runRiskAgent, type PosMeta } from "../agents/risk-agent";
 
@@ -69,17 +70,17 @@ export async function runActiveTradeManager(): Promise<void> {
     }
   }
 
-  // Fallback: fehlende Preise über capitalGetMarkets holen (Such-Endpoint funktioniert auch wenn /markets/${epic} 0 zurückgibt)
+  // Fallback: fehlende Preise vom Python Backend holen
   const missingSyms = symbolsNeeded.filter(s => !priceMap.has(s));
   if (missingSyms.length > 0) {
-    console.warn(`[trade-mgr] ⚠️ Preis fehlt für: ${missingSyms.join(", ")} — versuche Fallback via GetMarkets`);
-    const fallback = await capitalGetTopMarkets(session.apiKey, session.cst, session.securityToken).catch(() => null);
-    for (const m of fallback?.markets ?? []) {
-      if (missingSyms.includes(m.symbol) && (m.bid > 0 || m.ask > 0)) {
-        priceMap.set(m.symbol, { bid: m.bid, ask: m.ask });
-        const epic = EPIC_MAP[m.symbol];
-        if (epic) priceMap.set(epic, { bid: m.bid, ask: m.ask });
-        console.log(`[trade-mgr] ✅ Fallback-Preis: ${m.symbol} bid=${m.bid} ask=${m.ask}`);
+    console.warn(`[trade-mgr] ⚠️ Preis fehlt für: ${missingSyms.join(", ")} — Fallback via Python Backend`);
+    const pyPrices = await pyFetchPrices(missingSyms).catch(() => []);
+    for (const p of pyPrices) {
+      if (p.symbol && p.price != null && p.price > 0) {
+        priceMap.set(p.symbol, { bid: p.price, ask: p.price });
+        const epic = EPIC_MAP[p.symbol];
+        if (epic) priceMap.set(epic, { bid: p.price, ask: p.price });
+        console.log(`[trade-mgr] ✅ Python-Preis: ${p.symbol} mid=${p.price}`);
       }
     }
     const stillMissing = missingSyms.filter(s => !priceMap.has(s));
