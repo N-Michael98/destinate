@@ -8,7 +8,7 @@
 
 import { getPrisma } from "../../app/lib/prisma";
 import {
-  capitalGetPrices, capitalGetPositions, EPIC_MAP,
+  capitalGetPrices, capitalGetPositions, capitalGetTopMarkets, EPIC_MAP,
 } from "./capital-com-client";
 import { getCapitalSession, isCapitalConnected } from "./capital-com-session";
 import { runRiskAgent, type PosMeta } from "../agents/risk-agent";
@@ -69,9 +69,21 @@ export async function runActiveTradeManager(): Promise<void> {
     }
   }
 
+  // Fallback: fehlende Preise über capitalGetMarkets holen (Such-Endpoint funktioniert auch wenn /markets/${epic} 0 zurückgibt)
   const missingSyms = symbolsNeeded.filter(s => !priceMap.has(s));
   if (missingSyms.length > 0) {
-    console.warn(`[trade-mgr] ⚠️ Preis fehlt für: ${missingSyms.join(", ")}`);
+    console.warn(`[trade-mgr] ⚠️ Preis fehlt für: ${missingSyms.join(", ")} — versuche Fallback via GetMarkets`);
+    const fallback = await capitalGetTopMarkets(session.apiKey, session.cst, session.securityToken).catch(() => null);
+    for (const m of fallback?.markets ?? []) {
+      if (missingSyms.includes(m.symbol) && (m.bid > 0 || m.ask > 0)) {
+        priceMap.set(m.symbol, { bid: m.bid, ask: m.ask });
+        const epic = EPIC_MAP[m.symbol];
+        if (epic) priceMap.set(epic, { bid: m.bid, ask: m.ask });
+        console.log(`[trade-mgr] ✅ Fallback-Preis: ${m.symbol} bid=${m.bid} ask=${m.ask}`);
+      }
+    }
+    const stillMissing = missingSyms.filter(s => !priceMap.has(s));
+    if (stillMissing.length > 0) console.warn(`[trade-mgr] ❌ Preis nicht abrufbar: ${stillMissing.join(", ")}`);
   }
 
   // ── 4. RiskAgent ausführen ────────────────────────────────────────────────
