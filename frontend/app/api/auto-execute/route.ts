@@ -38,8 +38,17 @@ function incrementDailyTradeCount(style: TradingStyle): void {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({})) as { opportunities?: unknown[] };
+    const body = await request.json().catch(() => ({})) as { opportunities?: unknown[]; manual?: boolean };
     const settings = await getSettings();
+
+    // OrchestratorAgent ist jetzt für automatische Execution zuständig.
+    // Dieser Endpoint darf nur noch bei manuellem GO-Button-Klick ausführen.
+    if (!body.manual) {
+      return NextResponse.json({
+        ok: false,
+        reason: "Auto-Execute via UI deaktiviert — OrchestratorAgent übernimmt automatische Ausführung",
+      });
+    }
     const { botSettings, riskSettings } = settings;
 
     // Only run in AUTO mode

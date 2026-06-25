@@ -133,21 +133,11 @@ export default function MarketScannerPanel() {
     }
     setScanning(false);
 
-    // Auto-execute if Bot Mode = AUTO — pass scan results directly, no re-scan
+    // OrchestratorAgent übernimmt automatische Execution — UI zeigt nur Scan-Ergebnisse an.
+    // Manueller GO-Button bleibt aktiv via /api/capital-com/execute.
     const autoStatus = await fetch("/api/auto-execute").then(r => r.json()).catch(() => null);
-    if (autoStatus?.botMode === "AUTO" && autoStatus?.capitalConnected) {
-      const scanOpportunities = scanData?.opportunities ?? [];
-      const execResult = await fetch("/api/auto-execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunities: scanOpportunities }),
-      }).then(r => r.json()).catch(() => null);
-      if (execResult?.executed) {
-        setAutoExecLog(`✅ AUTO: ${execResult.symbol} ${execResult.direction} @${execResult.confidence}% — Deal ${execResult.dealId}`);
-        setExecLogs(p => [{ id: `auto-${Date.now()}`, ts: new Date().toLocaleTimeString(), symbol: execResult.symbol, direction: execResult.direction, ok: true, dealId: execResult.dealId }, ...p].slice(0, 15));
-      } else if (execResult?.reason) {
-        setAutoExecLog(`ℹ ${execResult.reason}`);
-      }
+    if (autoStatus?.botMode === "AUTO") {
+      setAutoExecLog(`🤖 OrchestratorAgent aktiv — automatische Execution läuft server-seitig alle 60s`);
     }
   }, [typeFilter, searchQ]);
 
