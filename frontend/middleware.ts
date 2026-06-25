@@ -65,7 +65,7 @@ const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/api/auth/login",
 // Brute-force tracker — IP → { count, firstSeen }  (in-memory, resets on redeploy)
 const bruteForceMap = new Map<string, { count: number; firstSeen: number }>();
 const BRUTE_WINDOW_MS = 60_000; // 1 minute
-const BRUTE_THRESHOLD = 20;     // 20+ requests from same IP in 1 min = suspicious
+const BRUTE_THRESHOLD = 8;      // 8+ requests from same IP in 1 min = suspicious
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -130,14 +130,12 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) {
     return NextResponse.next();
   }
-  // Allow internal API routes (server-to-server calls, health scanner, etc.)
-  if (pathname.startsWith("/api/")) {
-    return NextResponse.next();
-  }
-
   const token = request.cookies.get("auth_token")?.value;
 
+  const isApiRoute = pathname.startsWith("/api/");
+
   if (!token) {
+    if (isApiRoute) return new NextResponse("Unauthorized", { status: 401 });
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -145,6 +143,7 @@ export async function middleware(request: NextRequest) {
     await jwtVerify(token, SECRET);
     return NextResponse.next();
   } catch {
+    if (isApiRoute) return new NextResponse("Unauthorized", { status: 401 });
     const res = NextResponse.redirect(new URL("/login", request.url));
     res.cookies.set("auth_token", "", { maxAge: 0, path: "/" });
     return res;

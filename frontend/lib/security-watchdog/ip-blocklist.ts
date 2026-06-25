@@ -1,7 +1,7 @@
 import { cacheGet, cacheSet } from "@/lib/cache/redis-cache";
 
 const REDIS_KEY = "security:blocked_ips";
-const TTL = 24 * 60 * 60; // 24 Stunden
+const TTL = 72 * 60 * 60; // 72 Stunden
 
 interface BlockedIP {
   ip: string;
