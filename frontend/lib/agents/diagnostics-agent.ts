@@ -175,7 +175,8 @@ function handleEvent(event: AgentEvent): void {
 
 function checkAgentHealth(): void {
   const now = Date.now();
-  const knownAgents = ["RiskAgent", "ExecutionAgent", "OrchestratorAgent", "AnalysisAgent"];
+  // Nur periodische Agents überwachen — ExecutionAgent ist on-demand (läuft nur bei Trades)
+  const knownAgents = ["RiskAgent", "OrchestratorAgent", "AnalysisAgent"];
 
   for (const agentId of knownAgents) {
     const hb = heartbeats.get(agentId);
