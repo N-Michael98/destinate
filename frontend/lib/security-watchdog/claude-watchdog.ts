@@ -132,7 +132,7 @@ async function handleAttack(result: WatchdogResult, blockedIP?: string): Promise
 `🚨 <b>SECURITY WATCHDOG — ATTACK DETECTED</b>
 
 ${result.summary}
-${blockedIP ? `🚫 IP AUTO-GEBLOCKT: <code>${blockedIP}</code> (24h)` : ""}
+${blockedIP ? `🚫 IP AUTO-GEBLOCKT: <code>${blockedIP}</code> (PERMANENT)` : ""}
 Events analyzed: ${result.eventCount}
 
 ⚡ <b>AUTO-KILLSWITCH TRIGGERED</b>
