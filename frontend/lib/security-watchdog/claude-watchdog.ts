@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSecurityEvents, clearSecurityEvents } from "./security-event-logger";
+import { blockIP } from "./ip-blocklist";
 import { triggerKillswitch } from "@/lib/killswitch";
 import { sendTelegram } from "@/lib/telegram-notifications/telegram-sender";
 
@@ -83,13 +84,26 @@ Respond ONLY with the JSON object, nothing else.`;
 
     console.log(`[watchdog] Verdict: ${result.verdict} — ${result.summary} (${events.length} events)`);
 
+    // Häufigste angreifende IP ermitteln
+    const ipCounts = new Map<string, number>();
+    for (const e of events) {
+      if (e.ip && e.ip !== "unknown") ipCounts.set(e.ip, (ipCounts.get(e.ip) ?? 0) + 1);
+    }
+    const topIP = [...ipCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+
     if (result.verdict === "ATTACK") {
-      await handleAttack(result);
+      if (topIP) await blockIP(topIP[0], `ATTACK: ${result.summary}`);
+      await handleAttack(result, topIP?.[0]);
     } else if (result.verdict === "SUSPICIOUS") {
+      // Bei SUSPICIOUS: IP blockieren wenn sie > 5 Events hat
+      if (topIP && topIP[1] >= 5) {
+        await blockIP(topIP[0], `SUSPICIOUS (${topIP[1]} Events): ${result.summary}`);
+      }
       await sendTelegram(
 `⚠️ <b>Security Watchdog — SUSPICIOUS</b>
 
 ${result.summary}
+${topIP ? `🔍 Haupt-IP: <code>${topIP[0]}</code> (${topIP[1]} Events)${topIP[1] >= 5 ? " — <b>AUTO-GEBLOCKT 24h</b>" : ""}` : ""}
 Events in window: ${result.eventCount}
 🕐 ${new Date().toLocaleString("de-CH")}
 
@@ -107,7 +121,7 @@ Events in window: ${result.eventCount}
   }
 }
 
-async function handleAttack(result: WatchdogResult): Promise<void> {
+async function handleAttack(result: WatchdogResult, blockedIP?: string): Promise<void> {
   console.error(`[watchdog] 🚨 ATTACK DETECTED — triggering killswitch`);
 
   // 1. Trigger killswitch immediately
@@ -118,6 +132,7 @@ async function handleAttack(result: WatchdogResult): Promise<void> {
 `🚨 <b>SECURITY WATCHDOG — ATTACK DETECTED</b>
 
 ${result.summary}
+${blockedIP ? `🚫 IP AUTO-GEBLOCKT: <code>${blockedIP}</code> (24h)` : ""}
 Events analyzed: ${result.eventCount}
 
 ⚡ <b>AUTO-KILLSWITCH TRIGGERED</b>

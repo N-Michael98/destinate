@@ -69,10 +69,19 @@ const BRUTE_THRESHOLD = 20;     // 20+ requests from same IP in 1 min = suspicio
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const ip = getClientIP(request);
+
+  // ── IP Blocklist — geblockte IPs sofort ablehnen ─────────────────────────
+  if (ip !== "unknown") {
+    const { isIPBlocked } = await import("./lib/security-watchdog/ip-blocklist");
+    if (await isIPBlocked(ip)) {
+      console.log(`[middleware] 🚫 Geblockte IP abgewiesen: ${ip} | ${pathname}`);
+      return new NextResponse("Access denied", { status: 403 });
+    }
+  }
 
   // ── Security event detection ─────────────────────────────────────────────
   const detected = detectSuspicious(request);
-  const ip = getClientIP(request);
 
   // Brute force check — track all IPs, flag if over threshold
   const now = Date.now();
