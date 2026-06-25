@@ -92,18 +92,18 @@ Respond ONLY with the JSON object, nothing else.`;
     const topIP = [...ipCounts.entries()].sort((a, b) => b[1] - a[1])[0];
 
     if (result.verdict === "ATTACK") {
-      if (topIP) await blockIP(topIP[0], `ATTACK: ${result.summary}`);
+      if (topIP) await blockIP(topIP[0], `ATTACK: ${result.summary}`, true); // permanent
       await handleAttack(result, topIP?.[0]);
     } else if (result.verdict === "SUSPICIOUS") {
-      // Bei SUSPICIOUS: IP blockieren wenn sie > 5 Events hat
+      // Bei SUSPICIOUS: IP blockieren wenn sie > 5 Events hat (72h)
       if (topIP && topIP[1] >= 5) {
-        await blockIP(topIP[0], `SUSPICIOUS (${topIP[1]} Events): ${result.summary}`);
+        await blockIP(topIP[0], `SUSPICIOUS (${topIP[1]} Events): ${result.summary}`, false);
       }
       await sendTelegram(
 `⚠️ <b>Security Watchdog — SUSPICIOUS</b>
 
 ${result.summary}
-${topIP ? `🔍 Haupt-IP: <code>${topIP[0]}</code> (${topIP[1]} Events)${topIP[1] >= 5 ? " — <b>AUTO-GEBLOCKT 24h</b>" : ""}` : ""}
+${topIP ? `🔍 Haupt-IP: <code>${topIP[0]}</code> (${topIP[1]} Events)${topIP[1] >= 5 ? " — <b>AUTO-GEBLOCKT 72h</b>" : ""}` : ""}
 Events in window: ${result.eventCount}
 🕐 ${new Date().toLocaleString("de-CH")}
 
