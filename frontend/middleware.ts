@@ -60,7 +60,7 @@ const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET ?? "ai-trading-system-secret-change-in-production-32chars"
 );
 
-const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/api/auth/login", "/api/auth/register", "/api/auth/verify-email"];
+const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/api/auth/login", "/api/auth/register", "/api/auth/verify-email", "/api/telegram/webhook"];
 
 // Brute-force tracker — IP → { count, firstSeen }  (in-memory, resets on redeploy)
 const bruteForceMap = new Map<string, { count: number; firstSeen: number }>();
@@ -70,6 +70,11 @@ const BRUTE_THRESHOLD = 8;      // 8+ requests from same IP in 1 min = suspiciou
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const ip = getClientIP(request);
+
+  // ── Telegram Webhook ist immer zugänglich (Blocklist bypassen)
+  if (pathname === "/api/telegram/webhook") {
+    return NextResponse.next();
+  }
 
   // ── IP Blocklist — geblockte IPs sofort ablehnen ─────────────────────────
   if (ip !== "unknown") {
