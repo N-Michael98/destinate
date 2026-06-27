@@ -232,6 +232,26 @@ async function postTradeActions(params: {
   } catch { /* non-fatal */ }
 }
 
+// ── Trading Session Check ─────────────────────────────────────────────────────
+// London:   08:00–17:00 UTC  |  New York: 13:00–22:00 UTC
+// Overlap:  13:00–17:00 UTC  (aktivste Zeit)
+// Gesamt:   08:00–22:00 UTC, Montag–Freitag
+
+function isWithinTradingSession(): boolean {
+  const now = new Date();
+  const dayUTC = now.getUTCDay(); // 0=So, 1=Mo, ..., 5=Fr, 6=Sa
+  if (dayUTC === 0 || dayUTC === 6) return false; // Wochenende
+
+  const hourUTC = now.getUTCHours();
+  const minuteUTC = now.getUTCMinutes();
+  const timeUTC = hourUTC * 60 + minuteUTC;
+
+  const londonOpen  =  8 * 60; //  08:00 UTC
+  const nyClose     = 22 * 60; //  22:00 UTC
+
+  return timeUTC >= londonOpen && timeUTC < nyClose;
+}
+
 // ── Hauptzyklus ───────────────────────────────────────────────────────────────
 
 export async function runOrchestratorCycle(): Promise<void> {
@@ -250,6 +270,23 @@ export async function runOrchestratorCycle(): Promise<void> {
     return;
   }
 
+  // ── 1b. Trading Session prüfen (London 08:00 + New York bis 22:00 UTC) ────
+  // Ausnahme: Offene Positionen werden auch ausserhalb der Session überwacht
+  const { capitalGetPositions } = await import("../capital-com/capital-com-client");
+  const session0 = getCapitalSession()!;
+  const posCheck = await capitalGetPositions(session0.apiKey, session0.cst, session0.securityToken).catch(() => null);
+  const hasOpenPositions = (posCheck?.positions?.length ?? 0) > 0;
+
+  if (!isWithinTradingSession()) {
+    if (hasOpenPositions) {
+      console.log("[orchestrator] Ausserhalb Session — aber offene Positionen vorhanden, nur Monitoring (kein neuer Trade)");
+      // Kein return — läuft weiter aber ExecutionAgent wird nicht aufgerufen (openCount >= maxConcurrent gesetzt)
+    } else {
+      console.log("[orchestrator] Ausserhalb Trading Session (Mo–Fr 08:00–22:00 UTC) — Zyklus übersprungen");
+      return;
+    }
+  }
+
   const session = getCapitalSession()!;
 
   // ── 2. Limiten prüfen ─────────────────────────────────────────────────────
@@ -266,13 +303,19 @@ export async function runOrchestratorCycle(): Promise<void> {
   }
   const dailyCount = global.__daily_trades__.count;
 
-  const { capitalGetPositions } = await import("../capital-com/capital-com-client");
-  const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken).catch(() => null);
+  const posResult = posCheck; // bereits geholt im Session-Check oben
   const openCount = posResult?.positions?.length ?? 0;
 
-  if (openCount >= maxConcurrent) {
-    console.log(`[orchestrator] Max Positionen erreicht (${openCount}/${maxConcurrent}) — übersprungen`);
-    return;
+  // Ausserhalb Session: kein neuer Trade, aber weiter analysieren für Monitoring
+  const blockNewTrades = !isWithinTradingSession();
+
+  if (openCount >= maxConcurrent || blockNewTrades) {
+    if (blockNewTrades && openCount > 0) {
+      console.log(`[orchestrator] Ausserhalb Session — ${openCount} offene Positionen werden weiter überwacht, kein neuer Trade`);
+    } else if (openCount >= maxConcurrent) {
+      console.log(`[orchestrator] Max Positionen erreicht (${openCount}/${maxConcurrent}) — übersprungen`);
+      return;
+    }
   }
   if (tradeLimitEnabled && dailyCount >= maxTradesPerDay) {
     console.log(`[orchestrator] Tageslimit erreicht (${dailyCount}/${maxTradesPerDay}) — übersprungen`);
@@ -317,7 +360,12 @@ export async function runOrchestratorCycle(): Promise<void> {
     return;
   }
 
-  // ── 6. Kandidaten filtern ─────────────────────────────────────────────────
+  // ── 6. Kandidaten filtern (ausserhalb Session: kein neuer Trade) ─────────
+  if (blockNewTrades) {
+    console.log("[orchestrator] Ausserhalb Session — Analyse fertig, kein Trade-Execution");
+    return;
+  }
+
   const threshold = settings.botSettings.autoApproveThreshold ?? 71;
   const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
 
