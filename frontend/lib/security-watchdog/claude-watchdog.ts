@@ -59,9 +59,8 @@ Respond ONLY with the JSON object, nothing else.`;
   try {
     const client = getClient();
     const stream = await client.messages.stream({
-      model: "claude-opus-4-8",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 256,
-      thinking: { type: "adaptive" },
       messages: [{ role: "user", content: prompt }],
     });
 

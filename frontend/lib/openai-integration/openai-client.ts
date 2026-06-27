@@ -11,7 +11,7 @@ export class OpenAIClient {
   constructor(config?: Partial<OpenAIConfig>) {
     this.config = {
       enabled: true,
-      model: "gpt-5.5",
+      model: "gpt-4o-mini",
       temperature: 0.2,
       maxTokens: 2000,
       ...config,

@@ -333,13 +333,13 @@ export async function register() {
         console.log("[instrumentation] DiagnosticsAgent gestartet");
       } catch { /* non-fatal */ }
 
-      // ── OrchestratorAgent — koordiniert alle Agents jeden 60s ───────────────
+      // ── OrchestratorAgent — koordiniert alle Agents jeden 5min ───────────────
       try {
         const { runOrchestratorCycle } = await import("./lib/agents/orchestrator-agent");
         setInterval(() => runOrchestratorCycle().catch(err =>
           console.error("[orchestrator] Zyklus-Fehler:", err instanceof Error ? err.message : String(err))
-        ), 60_000);
-        console.log("[instrumentation] OrchestratorAgent gestartet (every 60s)");
+        ), 5 * 60_000);
+        console.log("[instrumentation] OrchestratorAgent gestartet (every 5min)");
       } catch { /* non-fatal */ }
 
       // ── Claude Security Watchdog every 3min ────────────────────────────────
