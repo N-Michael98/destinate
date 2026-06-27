@@ -46,6 +46,7 @@ export interface RiskAgentContext {
   positions: LivePosition[];
   priceMap: Map<string, PriceData>;
   dbMeta: Map<string, PosMeta>;
+  atrMap: Map<string, number>;
 }
 
 // ── Konfiguration ─────────────────────────────────────────────────────────────
@@ -74,10 +75,15 @@ const STYLE_MAX_HOURS: Record<string, number> = {
   SCALPING: 4, DAYTRADING: 24, SWING: 168,
 };
 
-function getLevel(score: number): { beAt: number; trailDist: number } {
-  if (score >= 80) return { beAt: 0.45, trailDist: 0.30 };
-  if (score >= 75) return { beAt: 0.30, trailDist: 0.40 };
-  return               { beAt: 0.20, trailDist: 0.50 };
+// Profit-%-Schwellen + ATR-Faktor nach Trading-Style
+function getStyleThresholds(style: string): {
+  bePct: number; partialPct: number; trailPct: number; atrFactor: number;
+} {
+  switch (style.toUpperCase()) {
+    case "SCALPING":  return { bePct: 0.003, partialPct: 0.006, trailPct: 0.010, atrFactor: 1.0 };
+    case "SWING":     return { bePct: 0.010, partialPct: 0.020, trailPct: 0.030, atrFactor: 2.5 };
+    default:          return { bePct: 0.005, partialPct: 0.010, trailPct: 0.015, atrFactor: 1.5 };
+  }
 }
 
 // ── In-Memory State ───────────────────────────────────────────────────────────
@@ -150,23 +156,24 @@ async function processPosition(
   const currentPrice = isBuy ? prices.bid : prices.ask;
   if (!currentPrice || currentPrice <= 0) return;
 
-  const lvl = getLevel(meta.confidence);
+  const thresholds = getStyleThresholds(meta.tradingStyle);
   const liveSL = stopLevel != null ? stopLevel : 0;
   const liveTP = profitLevel != null ? profitLevel : 0;
 
   const slRange = liveSL > 0
     ? Math.abs(entry - liveSL)
     : (DEFAULT_SL_RANGE[symbol] ?? entry * 0.005);
-  const totalRange = liveTP > 0 ? Math.abs(liveTP - entry) : slRange * 2;
   if (slRange < 0.000001) return;
 
-  const progress = isBuy
-    ? (currentPrice - entry) / totalRange
-    : (entry - currentPrice) / totalRange;
+  // Echter Profit in % — unabhängig von TP-Distanz
+  const profitPct = isBuy
+    ? (currentPrice - entry) / entry
+    : (entry - currentPrice) / entry;
+
+  // ATR vom Python Backend — Fallback auf slRange * 0.5
+  const atr = ctx.atrMap.get(symbol) ?? ctx.atrMap.get(epic ?? "") ?? slRange * 0.5;
 
   const beTol = BE_TOLERANCE[symbol] ?? slRange * 0.01;
-  // BE-Zone: SL innerhalb 20% des SL-Range von Entry gilt als "bereits bei BE gesetzt".
-  // Deckt den 15% Buffer ab — verhindert wiederholte BE-API-Calls nach Neustart.
   const beZone = Math.max(beTol, slRange * 0.20);
   const alreadyAtBE = isBuy
     ? (liveSL > 0 && liveSL >= entry - beZone)
@@ -174,7 +181,7 @@ async function processPosition(
   const beEffective = meta.beSet || alreadyAtBE;
   const currentTrailSL = meta.trailSL ?? (liveSL > 0 ? liveSL : (isBuy ? entry - slRange : entry + slRange));
 
-  console.log(`[risk-agent] ${symbol} ${direction} entry=${entry} cur=${currentPrice} progress=${(progress*100).toFixed(1)}% be=${beEffective}`);
+  console.log(`[risk-agent] ${symbol} ${direction} entry=${entry} cur=${currentPrice} profit=${(profitPct*100).toFixed(2)}% atr=${atr.toFixed(5)} be=${beEffective}`);
 
   // ── Zeit-Exit ──────────────────────────────────────────────────────────────
   const style = meta.tradingStyle.toUpperCase();
@@ -195,9 +202,9 @@ async function processPosition(
     return;
   }
 
-  // ── Partial TP ─────────────────────────────────────────────────────────────
-  if (!meta.partialDone && progress >= 0.50) {
-    const aiDecision = await askAIManager(symbol, direction, progress, meta.confidence, "PARTIAL_TP");
+  // ── Partial TP — bei 1.0% Profit (Daytrading), 0.6% Scalping, 2.0% Swing ──
+  if (!meta.partialDone && profitPct >= thresholds.partialPct) {
+    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "PARTIAL_TP");
 
     if (aiDecision.action !== "SKIP") {
       const rawSize = pos.size > 0 ? pos.size : 0;
@@ -214,7 +221,7 @@ async function processPosition(
             timestamp: new Date().toISOString(),
             payload: { dealId, symbol, direction, partialSize, progress, aiReason: aiDecision.reason },
           });
-          console.log(`[risk-agent] 💰 Partial TP: ${symbol} ${partialSize}/${rawSize} (AI: ${aiDecision.reason})`);
+          console.log(`[risk-agent] 💰 Partial TP: ${symbol} ${partialSize}/${rawSize} profit=${(profitPct*100).toFixed(2)}% (AI: ${aiDecision.reason})`);
         }
       } else {
         positionMeta.set(dealId, { ...meta, partialDone: true });
@@ -222,9 +229,9 @@ async function processPosition(
     }
   }
 
-  // ── Breakeven ──────────────────────────────────────────────────────────────
-  if (!beEffective && progress >= lvl.beAt) {
-    const aiDecision = await askAIManager(symbol, direction, progress, meta.confidence, "BREAKEVEN");
+  // ── Breakeven — bei 0.5% Profit (Daytrading), 0.3% Scalping, 1.0% Swing ──
+  if (!beEffective && profitPct >= thresholds.bePct) {
+    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "BREAKEVEN");
 
     // AI kann BE-Buffer anpassen (default 15%)
     const beBufferRatio = aiDecision.action === "ADJUST" && aiDecision.adjustedBeBuffer != null
@@ -256,13 +263,13 @@ async function processPosition(
     }
   }
 
-  // ── Profit Trail ───────────────────────────────────────────────────────────
-  const inProfit = isBuy ? currentPrice > entry : currentPrice < entry;
-  if (inProfit) {
+  // ── ATR Trailing Stop — ab 1.5% Profit (Daytrading), 1.0% Scalping, 3.0% Swing ──
+  if (profitPct >= thresholds.trailPct) {
     const prevPeak = meta.peakPrice ?? currentPrice;
     const newPeak = isBuy ? Math.max(prevPeak, currentPrice) : Math.min(prevPeak, currentPrice);
 
-    const trailDistance = slRange * lvl.trailDist;
+    // ATR-basierte Trail-Distanz (1.5× ATR für Daytrading)
+    const trailDistance = atr * thresholds.atrFactor;
     const newTrailSL = isBuy
       ? Math.max(newPeak - trailDistance, entry)
       : Math.min(newPeak + trailDistance, entry);
@@ -272,7 +279,7 @@ async function processPosition(
       : newTrailSL < currentTrailSL - beTol;
 
     if (shouldUpdate) {
-      const aiDecision = await askAIManager(symbol, direction, progress, meta.confidence, "TRAIL");
+      const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "TRAIL");
 
       if (aiDecision.action !== "SKIP") {
         const upd = await capitalUpdatePosition(apiKey, cst, securityToken, dealId, newTrailSL, liveTP > 0 ? liveTP : undefined);
@@ -282,9 +289,9 @@ async function processPosition(
             type: "RISK:TRAIL_UPDATED",
             agentId: AGENT_ID,
             timestamp: new Date().toISOString(),
-            payload: { dealId, symbol, direction, newTrailSL, newPeak, aiReason: aiDecision.reason },
+            payload: { dealId, symbol, direction, newTrailSL, newPeak, atr, aiReason: aiDecision.reason },
           });
-          console.log(`[risk-agent] 📈 Trail: ${symbol} peak=${newPeak.toFixed(5)} SL=${newTrailSL.toFixed(5)}`);
+          console.log(`[risk-agent] 📈 ATR Trail: ${symbol} peak=${newPeak.toFixed(5)} SL=${newTrailSL.toFixed(5)} ATR=${atr.toFixed(5)}×${thresholds.atrFactor}`);
         }
       }
     } else if (newPeak !== prevPeak) {

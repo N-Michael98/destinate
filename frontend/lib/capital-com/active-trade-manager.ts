@@ -87,7 +87,30 @@ export async function runActiveTradeManager(): Promise<void> {
     if (stillMissing.length > 0) console.warn(`[trade-mgr] ❌ Preis nicht abrufbar: ${stillMissing.join(", ")}`);
   }
 
-  // ── 4. RiskAgent ausführen ────────────────────────────────────────────────
+  // ── 4. ATR vom Python Backend holen (für ATR-basiertes Trailing) ─────────
+  const atrMap = new Map<string, number>();
+  const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
+  if (PYTHON_BASE && symbolsNeeded.length > 0) {
+    try {
+      const atrRes = await fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols: symbolsNeeded, interval: "1h" }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (atrRes.ok) {
+        const atrData = await atrRes.json() as { results?: Record<string, { atr?: number }> };
+        for (const [sym, ta] of Object.entries(atrData.results ?? {})) {
+          if (ta.atr && ta.atr > 0) {
+            atrMap.set(sym, ta.atr);
+            console.log(`[trade-mgr] ATR ${sym}=${ta.atr.toFixed(5)}`);
+          }
+        }
+      }
+    } catch { /* non-fatal — Fallback auf slRange*0.5 im RiskAgent */ }
+  }
+
+  // ── 5. RiskAgent ausführen ────────────────────────────────────────────────
   await runRiskAgent({
     apiKey: session.apiKey,
     cst: session.cst,
@@ -95,5 +118,6 @@ export async function runActiveTradeManager(): Promise<void> {
     positions: posResult.positions,
     priceMap,
     dbMeta,
+    atrMap,
   });
 }
