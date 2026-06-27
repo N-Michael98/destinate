@@ -219,7 +219,7 @@ async function processPosition(
             type: "RISK:PARTIAL_TP",
             agentId: AGENT_ID,
             timestamp: new Date().toISOString(),
-            payload: { dealId, symbol, direction, partialSize, progress, aiReason: aiDecision.reason },
+            payload: { dealId, symbol, direction, partialSize, profitPct, aiReason: aiDecision.reason },
           });
           console.log(`[risk-agent] 💰 Partial TP: ${symbol} ${partialSize}/${rawSize} profit=${(profitPct*100).toFixed(2)}% (AI: ${aiDecision.reason})`);
         }
