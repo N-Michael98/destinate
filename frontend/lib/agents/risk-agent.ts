@@ -249,7 +249,7 @@ async function processPosition(
           type: "RISK:BE_SET",
           agentId: AGENT_ID,
           timestamp: new Date().toISOString(),
-          payload: { dealId, symbol, direction, entry, newSL, beBuffer, progress, aiReason: aiDecision.reason },
+          payload: { dealId, symbol, direction, entry, newSL, beBuffer, profitPct, aiReason: aiDecision.reason },
         });
         console.log(`[risk-agent] ✅ BE: ${symbol} SL=${newSL.toFixed(5)} (buffer=${(beBufferRatio*100).toFixed(0)}% AI:${aiDecision.reason})`);
         try {
