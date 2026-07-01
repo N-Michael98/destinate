@@ -19,6 +19,7 @@ export interface ExecutionRequest {
   takeProfitPrice?: number; // absolute price level from GPT analysis
   stopLossPips?: number;
   takeProfitPips?: number;
+  currentPrice?: number;    // bid (SELL) or ask (BUY) — used for accurate position sizing
   confidence: number;
   strategy: string;
   tradingStyle: "SCALPING" | "DAYTRADING" | "SWING";
@@ -105,11 +106,21 @@ const DEFAULT_STOP_BY_STYLE: Record<string, Record<string, number>> = {
   },
 };
 
+// Pip size per instrument: 1 pip = this many price units
+// Used to convert |currentPrice - stopLossPrice| → pips for position sizing
+const PIP_SIZE: Record<string, number> = {
+  EURUSD: 0.0001, GBPUSD: 0.0001, USDCHF: 0.0001,
+  AUDUSD: 0.0001, USDCAD: 0.0001, NZDUSD: 0.0001, EURGBP: 0.0001,
+  USDJPY: 0.01, EURJPY: 0.01, GBPJPY: 0.01,
+  // All others (commodities, indices, crypto): 1.0 (price unit = 1 point)
+};
+
 // Maximum sizes to stay within Capital.com DEMO margin limits
+// Forex raised to 5000 so risk-based sizing isn't capped below 1% for typical accounts
 const MAX_SIZE: Record<string, number> = {
-  EURUSD: 1000, GBPUSD: 1000, USDJPY: 1000, USDCHF: 1000,
-  AUDUSD: 1000, USDCAD: 1000, NZDUSD: 1000, EURGBP: 1000,
-  EURJPY: 1000, GBPJPY: 1000,
+  EURUSD: 5000, GBPUSD: 5000, USDJPY: 5000, USDCHF: 5000,
+  AUDUSD: 5000, USDCAD: 5000, NZDUSD: 5000, EURGBP: 5000,
+  EURJPY: 5000, GBPJPY: 5000,
   GOLD: 5, SILVER: 50, OIL_CRUDE: 10, OIL_BRENT: 10, NATURAL_GAS: 100,
   US100: 5, US500: 5, US30: 2, GERMANY40: 5, UK100: 5, JAPAN225: 2,
   BITCOIN: 0.05, ETHEREUM: 0.5, LITECOIN: 10, RIPPLE: 500,
@@ -121,12 +132,28 @@ function calcPositionSize(
   accountBalance: number,
   riskPercent: number,
   stopPoints: number,
-  tradingStyle: string
+  tradingStyle: string,
+  stopLossPrice?: number,
+  currentPrice?: number,
 ): number {
   const riskAmount = accountBalance * (riskPercent / 100);
   const pipVal = PIP_VALUE_PER_UNIT[epic] ?? 1;
-  const stop = stopPoints > 0 ? stopPoints : (DEFAULT_STOP_BY_STYLE[tradingStyle]?.[epic] ?? 20);
-  const raw = riskAmount / (stop * pipVal);
+
+  let effectiveStop = stopPoints > 0 ? stopPoints : 0;
+
+  // Priority: compute stop from actual GPT price levels (most accurate)
+  if (effectiveStop <= 0 && stopLossPrice && stopLossPrice > 0 && currentPrice && currentPrice > 0) {
+    const pipSize = PIP_SIZE[epic] ?? 1.0;
+    const distance = Math.abs(currentPrice - stopLossPrice);
+    if (distance > 0) effectiveStop = distance / pipSize;
+  }
+
+  // Fallback to style-based default when no price data available
+  if (effectiveStop <= 0) {
+    effectiveStop = DEFAULT_STOP_BY_STYLE[tradingStyle]?.[epic] ?? 20;
+  }
+
+  const raw = riskAmount / (effectiveStop * pipVal);
   const min = MIN_SIZE[epic] ?? 0.1;
   const max = MAX_SIZE[epic] ?? raw;
   const rounded = Math.min(max, Math.max(min, Math.floor(raw * 10) / 10));
@@ -151,7 +178,9 @@ export async function executeCapitalDemoOrder(
     req.accountBalance,
     req.riskPercent,
     req.stopLossPips ?? 0,
-    req.tradingStyle
+    req.tradingStyle,
+    req.stopLossPrice,
+    req.currentPrice,
   );
 
   // Retry with escalating size if Capital.com rejects minvalue

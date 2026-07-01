@@ -424,13 +424,15 @@ export async function runOrchestratorCycle(): Promise<void> {
     const riskPct = getVolatilityAdjustedRisk(candidate.symbol, baseRisk, atr, candidate.bid ?? 0);
 
     // ExecutionAgent
+    const isBuy = candidate.gpt.direction === "BUY";
     const execResult = await runExecutionAgent({
       symbol: candidate.symbol,
-      direction: candidate.gpt.direction as "BUY" | "SELL",
+      direction: isBuy ? "BUY" : "SELL",
       riskPercent: riskPct,
       accountBalance: currentBalance,
       stopLossPrice: candidate.gpt.stopLoss > 0 ? candidate.gpt.stopLoss : undefined,
       takeProfitPrice: candidate.gpt.takeProfit > 0 ? candidate.gpt.takeProfit : undefined,
+      currentPrice: isBuy ? (candidate.ask ?? candidate.bid ?? 0) : (candidate.bid ?? 0),
       confidence: candidate.gpt.confidence,
       strategy: candidate.gpt.tradingStyle ?? style,
       tradingStyle: style,
