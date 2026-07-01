@@ -306,16 +306,19 @@ export async function runOrchestratorCycle(): Promise<void> {
   const posResult = posCheck; // bereits geholt im Session-Check oben
   const openCount = posResult?.positions?.length ?? 0;
 
-  // Ausserhalb Session: kein neuer Trade, aber weiter analysieren für Monitoring
+  // Ausserhalb Session: keine neuen Trades
   const blockNewTrades = !isWithinTradingSession();
 
-  if (openCount >= maxConcurrent || blockNewTrades) {
-    if (blockNewTrades && openCount > 0) {
-      console.log(`[orchestrator] Ausserhalb Session — ${openCount} offene Positionen werden weiter überwacht, kein neuer Trade`);
-    } else if (openCount >= maxConcurrent) {
-      console.log(`[orchestrator] Max Positionen erreicht (${openCount}/${maxConcurrent}) — übersprungen`);
-      return;
-    }
+  if (blockNewTrades && openCount === 0) {
+    console.log("[orchestrator] Ausserhalb Session, keine offenen Positionen — Zyklus übersprungen");
+    return;
+  }
+  if (blockNewTrades && openCount > 0) {
+    console.log(`[orchestrator] Ausserhalb Session — ${openCount} offene Positionen werden überwacht, kein neuer Trade`);
+  }
+  if (openCount >= maxConcurrent) {
+    console.log(`[orchestrator] Max Positionen erreicht (${openCount}/${maxConcurrent}) — übersprungen`);
+    return;
   }
   if (tradeLimitEnabled && dailyCount >= maxTradesPerDay) {
     console.log(`[orchestrator] Tageslimit erreicht (${dailyCount}/${maxTradesPerDay}) — übersprungen`);
