@@ -196,10 +196,29 @@ Eingabe: <code>${text.slice(0, 20)}***</code>
 
       if (pending.action.startsWith("unblock:")) {
         const ipToUnblock = pending.action.split(":")[1];
-        const { unblockIP } = await import("@/lib/security-watchdog/ip-blocklist");
+        const { unblockIP, whitelistIP } = await import("@/lib/security-watchdog/ip-blocklist");
         await unblockIP(ipToUnblock);
-        await reply(chatId, `✅ IP <code>${ipToUnblock}</code> wurde freigeschaltet.\n\nDu kannst die Website jetzt wieder aufrufen.`);
-        await sendTelegram(`🔓 <b>IP freigegeben</b>\n\nIP: <code>${ipToUnblock}</code>\nFreigegeben von: ${name}\n🕐 ${new Date().toLocaleString("de-CH")}`);
+        await whitelistIP(ipToUnblock, "Auto-Whitelist nach /unblock");
+        await reply(chatId, `✅ IP <code>${ipToUnblock}</code> freigeschaltet + auf Whitelist.\n\n🛡 Watchdog wird diese IP nicht mehr automatisch sperren.`);
+        await sendTelegram(`🔓 <b>IP freigegeben + Whitelist</b>\n\nIP: <code>${ipToUnblock}</code>\nFreigegeben von: ${name}\n🛡 Auf Whitelist — kein Auto-Block mehr\n🕐 ${new Date().toLocaleString("de-CH")}`);
+      } else if (pending.action.startsWith("block:")) {
+        const ipToBlock = pending.action.split(":")[1];
+        const { blockIP } = await import("@/lib/security-watchdog/ip-blocklist");
+        await blockIP(ipToBlock, `Manuell geblockt von Admin via Telegram`, true);
+        await reply(chatId, `🚫 IP <code>${ipToBlock}</code> wurde PERMANENT gesperrt.`);
+        await sendTelegram(`🚫 <b>IP manuell gesperrt</b>\n\nIP: <code>${ipToBlock}</code>\nGesperrt von: ${name} (PERMANENT)\n🕐 ${new Date().toLocaleString("de-CH")}`);
+      } else if (pending.action.startsWith("trust:")) {
+        const ipToTrust = pending.action.split(":")[1];
+        const { whitelistIP } = await import("@/lib/security-watchdog/ip-blocklist");
+        await whitelistIP(ipToTrust, `Manuell vertraut von Admin via Telegram`);
+        await reply(chatId, `🛡 IP <code>${ipToTrust}</code> auf Whitelist.\n\nWatchdog wird diese IP nie automatisch sperren.`);
+        await sendTelegram(`🛡 <b>IP auf Whitelist</b>\n\nIP: <code>${ipToTrust}</code>\nHinzugefügt von: ${name}\n🕐 ${new Date().toLocaleString("de-CH")}`);
+      } else if (pending.action.startsWith("untrust:")) {
+        const ipToUntrust = pending.action.split(":")[1];
+        const { unwhitelistIP } = await import("@/lib/security-watchdog/ip-blocklist");
+        await unwhitelistIP(ipToUntrust);
+        await reply(chatId, `⚠️ IP <code>${ipToUntrust}</code> von Whitelist entfernt.\n\nWatchdog kann diese IP jetzt wieder automatisch sperren.`);
+        await sendTelegram(`⚠️ <b>IP von Whitelist entfernt</b>\n\nIP: <code>${ipToUntrust}</code>\nEntfernt von: ${name}\n🕐 ${new Date().toLocaleString("de-CH")}`);
       } else if (pending.action === "reset") {
         // Execute full system restart
         await reply(chatId, "🔄 Passwort korrekt. Starte System neu...");
@@ -304,19 +323,24 @@ Befehle:
       await reply(chatId,
 `🤖 <b>Destinate Trading Bot</b>
 
-<b>Sicherheits-Befehle:</b>
+<b>System-Befehle:</b>
 /killswitch — Vollständiger Shutdown (Passwort nötig)
 /ks — Kurzform für /killswitch
 /reset — System reaktivieren (Passwort nötig)
 /status — Aktueller System Status
+
+<b>IP-Verwaltung:</b>
 /blocked — Alle gesperrten IPs anzeigen
-/unblock [ip] — IP freischalten (Passwort nötig)
+/block [ip] — IP manuell PERMANENT sperren (Passwort nötig)
+/unblock [ip] — IP freischalten + Whitelist (Passwort nötig)
+/trusted — Alle Whitelist-IPs anzeigen
+/trust [ip] — IP auf Whitelist (Watchdog blockt nie)
+/untrust [ip] — IP von Whitelist entfernen
 
 <b>Sicherheit:</b>
 • Alle kritischen Befehle erfordern Admin-Passwort
 • Falsches Passwort → sofortiger Sicherheitsalert
-• Unbekannte Chat-IDs werden geblockt und gemeldet
-• ATTACK-IPs werden PERMANENT gesperrt`
+• Whitelisted IPs: Watchdog analysiert, aber kein Auto-Block`
       );
       return NextResponse.json({ ok: true });
     }
@@ -342,7 +366,54 @@ Befehle:
         return NextResponse.json({ ok: true });
       }
       pendingConfirm.set(chatId, { action: `unblock:${ipToUnblock}`, expiresAt: Date.now() + 60_000 });
-      await reply(chatId, `🔐 IP <code>${ipToUnblock}</code> freischalten?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
+      await reply(chatId, `🔐 IP <code>${ipToUnblock}</code> freischalten + Whitelist?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower.startsWith("/block ")) {
+      const ipToBlock = text.split(" ")[1]?.trim();
+      if (!ipToBlock) {
+        await reply(chatId, "❓ Verwendung: /block [IP-Adresse]\nBeispiel: /block 178.197.207.245");
+        return NextResponse.json({ ok: true });
+      }
+      pendingConfirm.set(chatId, { action: `block:${ipToBlock}`, expiresAt: Date.now() + 60_000 });
+      await reply(chatId, `🔐 IP <code>${ipToBlock}</code> PERMANENT sperren?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower.startsWith("/trust ")) {
+      const ipToTrust = text.split(" ")[1]?.trim();
+      if (!ipToTrust) {
+        await reply(chatId, "❓ Verwendung: /trust [IP-Adresse]\nBeispiel: /trust 85.155.182.244");
+        return NextResponse.json({ ok: true });
+      }
+      pendingConfirm.set(chatId, { action: `trust:${ipToTrust}`, expiresAt: Date.now() + 60_000 });
+      await reply(chatId, `🔐 IP <code>${ipToTrust}</code> auf Whitelist setzen?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower.startsWith("/untrust ")) {
+      const ipToUntrust = text.split(" ")[1]?.trim();
+      if (!ipToUntrust) {
+        await reply(chatId, "❓ Verwendung: /untrust [IP-Adresse]\nBeispiel: /untrust 85.155.182.244");
+        return NextResponse.json({ ok: true });
+      }
+      pendingConfirm.set(chatId, { action: `untrust:${ipToUntrust}`, expiresAt: Date.now() + 60_000 });
+      await reply(chatId, `🔐 IP <code>${ipToUntrust}</code> von Whitelist entfernen?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower === "/trusted") {
+      const { getWhitelistedIPs } = await import("@/lib/security-watchdog/ip-blocklist");
+      const list = await getWhitelistedIPs();
+      if (list.length === 0) {
+        await reply(chatId, "ℹ️ Keine IPs auf der Whitelist.");
+      } else {
+        const lines = list.map(e =>
+          `🛡 <code>${e.ip}</code>\n   ${e.reason}\n   Seit: ${new Date(e.addedAt).toLocaleString("de-CH")}`
+        ).join("\n\n");
+        await reply(chatId, `🛡 <b>Whitelist (${list.length} IPs):</b>\n\n${lines}`);
+      }
       return NextResponse.json({ ok: true });
     }
 

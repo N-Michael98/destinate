@@ -2,8 +2,10 @@ import { cacheGet, cacheSet } from "@/lib/cache/redis-cache";
 
 const REDIS_KEY_TEMP      = "security:blocked_ips";           // 72h, läuft ab
 const REDIS_KEY_PERMANENT = "security:blocked_ips_permanent"; // für immer
-const TTL_TEMP      = 72 * 60 * 60;          // 72 Stunden
-const TTL_PERMANENT = 10 * 365 * 24 * 60 * 60; // 10 Jahre (wird bei jedem Zugriff erneuert)
+const REDIS_KEY_WHITELIST = "security:trusted_ips";           // Watchdog blockt diese nie
+const TTL_TEMP      = 72 * 60 * 60;
+const TTL_PERMANENT = 10 * 365 * 24 * 60 * 60;
+const TTL_WHITELIST = 10 * 365 * 24 * 60 * 60;
 
 interface BlockedIP {
   ip: string;
@@ -11,6 +13,49 @@ interface BlockedIP {
   blockedAt: string;
   expiresAt: string | null; // null = permanent
   permanent: boolean;
+}
+
+interface TrustedIP {
+  ip: string;
+  reason: string;
+  addedAt: string;
+}
+
+// ── Whitelist (Watchdog-Schutz) ───────────────────────────────────────────────
+
+export async function whitelistIP(ip: string, reason = "Manuell von Admin"): Promise<void> {
+  try {
+    const list = (await cacheGet<TrustedIP[]>(REDIS_KEY_WHITELIST)) ?? [];
+    if (list.some(e => e.ip === ip)) return;
+    list.push({ ip, reason, addedAt: new Date().toISOString() });
+    await cacheSet(REDIS_KEY_WHITELIST, list, TTL_WHITELIST);
+    console.log(`[ip-blocklist] ✅ IP auf Whitelist: ${ip} — ${reason}`);
+  } catch { /* non-fatal */ }
+}
+
+export async function isIPWhitelisted(ip: string): Promise<boolean> {
+  try {
+    const list = (await cacheGet<TrustedIP[]>(REDIS_KEY_WHITELIST)) ?? [];
+    return list.some(e => e.ip === ip);
+  } catch {
+    return false;
+  }
+}
+
+export async function unwhitelistIP(ip: string): Promise<void> {
+  try {
+    const list = (await cacheGet<TrustedIP[]>(REDIS_KEY_WHITELIST)) ?? [];
+    await cacheSet(REDIS_KEY_WHITELIST, list.filter(e => e.ip !== ip), TTL_WHITELIST);
+    console.log(`[ip-blocklist] 🔓 IP von Whitelist entfernt: ${ip}`);
+  } catch { /* non-fatal */ }
+}
+
+export async function getWhitelistedIPs(): Promise<TrustedIP[]> {
+  try {
+    return (await cacheGet<TrustedIP[]>(REDIS_KEY_WHITELIST)) ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function blockIP(ip: string, reason: string, permanent = false): Promise<void> {

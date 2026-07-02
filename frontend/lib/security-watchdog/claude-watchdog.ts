@@ -91,12 +91,34 @@ Respond ONLY with the JSON object, nothing else.`;
     const topIP = [...ipCounts.entries()].sort((a, b) => b[1] - a[1])[0];
 
     if (result.verdict === "ATTACK") {
-      if (topIP) await blockIP(topIP[0], `ATTACK: ${result.summary}`, true); // permanent
-      await handleAttack(result, topIP?.[0]);
+      // Whitelist-Check: whitelisted IPs werden nie automatisch geblockt/killswitch
+      const { isIPWhitelisted } = await import("./ip-blocklist");
+      const attackIP = topIP?.[0];
+      const trusted = attackIP ? await isIPWhitelisted(attackIP) : false;
+      if (trusted) {
+        console.log(`[watchdog] ⚠️ ATTACK von vertrauenswürdiger IP ${attackIP} — kein Auto-Block/Killswitch`);
+        await sendTelegram(
+`⚠️ <b>Security Watchdog — ATTACK von vertrauenswürdiger IP</b>
+
+${result.summary}
+🔵 IP <code>${attackIP}</code> ist auf der Whitelist — kein Auto-Block.
+Events analyzed: ${result.eventCount}
+🕐 ${new Date().toLocaleString("de-CH")}
+
+<i>Falls dies ein echter Angriff ist: /untrust ${attackIP} dann /block ${attackIP}</i>`
+        );
+      } else {
+        if (attackIP) await blockIP(attackIP, `ATTACK: ${result.summary}`, true); // permanent
+        await handleAttack(result, attackIP);
+      }
     } else if (result.verdict === "SUSPICIOUS") {
-      // Bei SUSPICIOUS: IP blockieren wenn sie > 5 Events hat (72h)
+      // Bei SUSPICIOUS: IP blockieren wenn sie > 5 Events hat (72h) — ausser whitelisted
       if (topIP && topIP[1] >= 5) {
-        await blockIP(topIP[0], `SUSPICIOUS (${topIP[1]} Events): ${result.summary}`, false);
+        const { isIPWhitelisted } = await import("./ip-blocklist");
+        const trusted = await isIPWhitelisted(topIP[0]);
+        if (!trusted) {
+          await blockIP(topIP[0], `SUSPICIOUS (${topIP[1]} Events): ${result.summary}`, false);
+        }
       }
       await sendTelegram(
 `⚠️ <b>Security Watchdog — SUSPICIOUS</b>
