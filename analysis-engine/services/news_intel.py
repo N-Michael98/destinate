@@ -36,15 +36,15 @@ MAX_HEADLINES_PER_BANK = 5
 # ── Geopolitische Themen (GDELT) ──────────────────────────────────────────────
 GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 GEO_TOPICS: list[dict] = [
-    {"topic": "Russland-Ukraine", "query": '"Ukraine" "Russia" (war OR attack OR sanctions)',
+    {"topic": "Russland-Ukraine", "query": "ukraine russia war",
      "affects": ["EUR", "NATGAS", "USOIL", "XAUUSD", "GER40"]},
-    {"topic": "Nahost", "query": '("Israel" OR "Iran") (conflict OR strike OR war)',
+    {"topic": "Nahost", "query": "israel iran conflict",
      "affects": ["USOIL", "UKOIL", "XAUUSD"]},
-    {"topic": "China-Taiwan", "query": '"China" "Taiwan" (tension OR military)',
+    {"topic": "China-Taiwan", "query": "china taiwan tension",
      "affects": ["JPN225", "USDJPY", "NAS100"]},
-    {"topic": "OPEC-Öl", "query": '"OPEC" (production OR output OR cut)',
+    {"topic": "OPEC-Öl", "query": "opec oil production",
      "affects": ["USOIL", "UKOIL"]},
-    {"topic": "US-Handelspolitik", "query": '"United States" (tariffs OR "trade war")',
+    {"topic": "US-Handelspolitik", "query": "united states tariffs trade",
      "affects": ["USDCHF", "NAS100", "SPX500", "XAUUSD"]},
 ]
 
@@ -64,12 +64,21 @@ def _fetch_gdelt(query: str) -> dict:
     """GDELT-Artikel der letzten 24h zu einem Thema. Leeres Resultat bei Fehler."""
     try:
         resp = httpx.get(GDELT_URL, params={
-            "query": query, "mode": "ArtList", "maxrecords": 15,
-            "timespan": "24h", "format": "json",
-        }, timeout=15)
+            "query": query,
+            "mode": "ArtList", "maxrecords": 15,
+            "timespan": "1d", "format": "json",
+        }, timeout=15, follow_redirects=True,
+            headers={"User-Agent": "DestinateAnalysisEngine/1.0"})
         if resp.status_code != 200:
+            logger.warning(f"[news] GDELT HTTP {resp.status_code}: {resp.text[:120]}")
             return {"articleCount": 0, "titles": []}
-        articles = resp.json().get("articles", [])
+        try:
+            body = resp.json()
+        except Exception:
+            # GDELT gibt Fehler als Plaintext mit Status 200 zurück
+            logger.warning(f"[news] GDELT kein JSON: {resp.text[:120]}")
+            return {"articleCount": 0, "titles": []}
+        articles = body.get("articles", [])
         titles = list({a.get("title", "").strip() for a in articles if a.get("title")})[:8]
         return {"articleCount": len(articles), "titles": titles}
     except Exception as e:
@@ -112,9 +121,12 @@ def run_news_intel() -> None:
             }
             logger.info(f"[news-intel] {source} ({currency}): {len(headlines)} Headlines")
 
-    # 2. Geopolitik
+    # 2. Geopolitik — GDELT Rate-Limit: max 1 Request / 5s → 6s Pause
+    import time
     geopolitics: list[dict] = []
-    for t in GEO_TOPICS:
+    for i, t in enumerate(GEO_TOPICS):
+        if i > 0:
+            time.sleep(6)
         g = _fetch_gdelt(t["query"])
         sentiment = _finbert_sentiment(". ".join(g["titles"])) if g["titles"] else None
         geopolitics.append({
