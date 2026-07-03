@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks
 from services.storage import redis_get_json
 from services.data_collector import run_data_collector, REDIS_KEY_TRADE_STATS
 from services.news_intel import run_news_intel, REDIS_KEY_NEWS
+from services.backtest_engine import run_backtests, REDIS_KEY_BACKTESTS
 
 router = APIRouter()
 
@@ -32,3 +33,16 @@ def trigger_data_collector(bg: BackgroundTasks):
 def trigger_news_intel(bg: BackgroundTasks):
     bg.add_task(run_news_intel)
     return {"started": True, "job": "news-intel", "check": "/api/v1/news"}
+
+
+@router.get("/backtests")
+def get_backtests():
+    data = redis_get_json(REDIS_KEY_BACKTESTS)
+    return {"available": data is not None, "data": data}
+
+
+@router.post("/run/backtest")
+def trigger_backtest(bg: BackgroundTasks):
+    """Nächtlichen Backtest manuell starten (dauert einige Minuten)."""
+    bg.add_task(run_backtests)
+    return {"started": True, "job": "backtest", "check": "/api/v1/backtests"}

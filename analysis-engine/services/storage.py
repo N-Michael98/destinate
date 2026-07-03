@@ -65,3 +65,24 @@ def pg_query(sql: str, params: tuple = ()) -> list[tuple]:
     finally:
         if conn:
             conn.close()
+
+
+def pg_execute(sql: str, params: tuple = ()) -> bool:
+    """INSERT/UPDATE gegen PostgreSQL. Nur für additive Writes
+    (z.B. BacktestRun-Zeilen) — nie bestehende Trading-Daten ändern."""
+    if not settings.DATABASE_URL:
+        return False
+    conn = None
+    try:
+        import psycopg2
+        conn = psycopg2.connect(settings.DATABASE_URL, connect_timeout=10)
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.warning(f"PG Execute fehlgeschlagen: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()

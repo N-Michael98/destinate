@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
 
         from services.data_collector import run_data_collector
         from services.news_intel import run_news_intel
+        from services.backtest_engine import run_backtests
 
         scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -40,17 +41,20 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_data_collector, "interval", hours=4, id="data-collector")
         scheduler.add_job(run_news_intel, "interval", hours=2, id="news-intel")
 
+        # Phase 3: Backtest Engine nachts 02:00 UTC
+        scheduler.add_job(run_backtests, "cron", hour=2, minute=0, id="backtest",
+                          misfire_grace_time=3600)
+
         # Erster Lauf kurz nach Start (damit sofort Daten da sind)
         soon = datetime.now(timezone.utc)
         scheduler.add_job(run_data_collector, "date", run_date=soon + timedelta(seconds=30))
         scheduler.add_job(run_news_intel, "date", run_date=soon + timedelta(seconds=90))
 
-        # Phase 3+: Backtest + AI Learning folgen:
-        # scheduler.add_job(run_backtests, "cron", hour=2, minute=0)
+        # Phase 4: AI Learning folgt:
         # scheduler.add_job(run_ai_learning, "cron", hour=5, minute=0)
 
         scheduler.start()
-        logger.info("Scheduler gestartet — Jobs: data-collector (4h), news-intel (2h)")
+        logger.info("Scheduler gestartet — Jobs: data-collector (4h), news-intel (2h), backtest (02:00 UTC)")
     except Exception as e:
         logger.error(f"Scheduler-Start fehlgeschlagen (non-fatal): {e}")
 
@@ -84,6 +88,7 @@ def root():
             "insights": "/api/v1/insights",
             "trade_stats": "/api/v1/trade-stats",
             "news": "/api/v1/news",
+            "backtests": "/api/v1/backtests",
         },
-        "phase": "2 — Data Collector + News/Geo Intelligence aktiv",
+        "phase": "3 — Backtest Engine aktiv (nachts 02:00 UTC, Diagnose-Modus für Verlierer-Märkte)",
     }
