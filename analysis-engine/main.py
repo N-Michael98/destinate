@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from core.config import settings
-from api.routes import health, insights
+from api.routes import health, insights, data
 
 scheduler = None
 
@@ -27,17 +27,30 @@ async def lifespan(app: FastAPI):
     """Startup: Scheduler für autonome Jobs starten."""
     global scheduler
     try:
+        from datetime import datetime, timedelta, timezone
+
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+        from services.data_collector import run_data_collector
+        from services.news_intel import run_news_intel
+
         scheduler = AsyncIOScheduler(timezone="UTC")
 
-        # Phase 2+: Jobs werden hier registriert, z.B.:
-        # scheduler.add_job(run_data_collector, "interval", hours=4)
-        # scheduler.add_job(run_news_intel, "interval", hours=2)
+        # Phase 2: Data Collector alle 4h, News-Intel alle 2h
+        scheduler.add_job(run_data_collector, "interval", hours=4, id="data-collector")
+        scheduler.add_job(run_news_intel, "interval", hours=2, id="news-intel")
+
+        # Erster Lauf kurz nach Start (damit sofort Daten da sind)
+        soon = datetime.now(timezone.utc)
+        scheduler.add_job(run_data_collector, "date", run_date=soon + timedelta(seconds=30))
+        scheduler.add_job(run_news_intel, "date", run_date=soon + timedelta(seconds=90))
+
+        # Phase 3+: Backtest + AI Learning folgen:
         # scheduler.add_job(run_backtests, "cron", hour=2, minute=0)
         # scheduler.add_job(run_ai_learning, "cron", hour=5, minute=0)
 
         scheduler.start()
-        logger.info("Scheduler gestartet (noch keine Jobs — Phase 1 Skeleton)")
+        logger.info("Scheduler gestartet — Jobs: data-collector (4h), news-intel (2h)")
     except Exception as e:
         logger.error(f"Scheduler-Start fehlgeschlagen (non-fatal): {e}")
 
@@ -57,6 +70,7 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(insights.router, prefix="/api/v1")
+app.include_router(data.router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -68,6 +82,8 @@ def root():
         "endpoints": {
             "health": "/health",
             "insights": "/api/v1/insights",
+            "trade_stats": "/api/v1/trade-stats",
+            "news": "/api/v1/news",
         },
-        "phase": "1 — Skeleton (Scheduler bereit, Module folgen)",
+        "phase": "2 — Data Collector + News/Geo Intelligence aktiv",
     }
