@@ -54,3 +54,48 @@ def trigger_ai_learning(bg: BackgroundTasks):
     """AI Learning Manager manuell starten (Claude-Analyse + Telegram-Report)."""
     bg.add_task(run_ai_learning)
     return {"started": True, "job": "ai-learning", "check": "/api/v1/insights"}
+
+
+@router.get("/comms-check")
+def comms_check():
+    """Verbindungs-Check: beweist jede Kommunikations-Strecke mit echten Daten."""
+    from services.storage import pg_query, get_redis
+
+    result: dict = {}
+
+    # 1. PostgreSQL lesen (Trade-Tabelle von destinate)
+    rows = pg_query('SELECT COUNT(*) FROM "Trade"')
+    result["pg_read_trades"] = {"ok": bool(rows), "count": rows[0][0] if rows else None}
+
+    # 2. PostgreSQL schreiben (BacktestRun-INSERTs der Backtest Engine)
+    rows = pg_query('SELECT COUNT(*), MAX("createdAt") FROM "BacktestRun"')
+    result["pg_write_backtestruns"] = {
+        "ok": bool(rows and rows[0][0] > 0),
+        "count": rows[0][0] if rows else None,
+        "lastInsert": str(rows[0][1]) if rows and rows[0][1] else None,
+    }
+
+    # 3. Redis (alle 4 Analyse-Keys mit Frische)
+    r = get_redis()
+    redis_keys = {}
+    if r:
+        import json as _json
+        for key in ("analysis:trade_stats", "analysis:news", "analysis:backtests", "analysis:insights"):
+            try:
+                raw = r.get(key)
+                updated = _json.loads(raw).get("updatedAt") if raw else None
+                redis_keys[key] = {"exists": raw is not None, "updatedAt": updated}
+            except Exception as e:
+                redis_keys[key] = {"exists": False, "error": str(e)}
+    result["redis"] = {"ok": r is not None, "keys": redis_keys}
+
+    # 4. divine-warmth Backend (Preis-Daten)
+    import httpx
+    from core.config import settings
+    try:
+        resp = httpx.get(f"{settings.PYTHON_BACKEND_URL}/health", timeout=10)
+        result["divine_warmth"] = {"ok": resp.status_code == 200, "status": resp.status_code}
+    except Exception as e:
+        result["divine_warmth"] = {"ok": False, "error": str(e)}
+
+    return result
