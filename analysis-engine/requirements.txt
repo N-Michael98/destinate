@@ -8,6 +8,8 @@ numpy==1.26.4
 
 # Backtesting
 vectorbt==0.26.2
+# vectorbt 0.26.2 ist inkompatibel mit plotly 6.x ('heatmapgl' entfernt) → pinnen
+plotly==5.24.1
 
 # Technical Indicators (pure-python, kein C-Build nötig)
 ta==0.11.0
