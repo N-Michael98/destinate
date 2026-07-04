@@ -95,10 +95,10 @@ Regeln:
 - fix soll umsetzbar sein (Strategie-Wechsel, SL/TP-Anpassung, Style-Wechsel)"""
 
 
-def _ask_claude(prompt: str) -> dict | None:
+def _ask_claude(prompt: str) -> tuple[dict | None, str | None]:
+    """(result, error) — error ist remote via /api/v1/insights sichtbar."""
     if not settings.ANTHROPIC_API_KEY:
-        logger.warning("[ai-learning] ANTHROPIC_API_KEY fehlt")
-        return None
+        return None, "ANTHROPIC_API_KEY fehlt"
     try:
         resp = httpx.post(
             "https://api.anthropic.com/v1/messages",
@@ -115,18 +115,20 @@ def _ask_claude(prompt: str) -> dict | None:
             timeout=60,
         )
         if resp.status_code != 200:
-            logger.warning(f"[ai-learning] Claude HTTP {resp.status_code}: {resp.text[:200]}")
-            return None
+            err = f"Claude HTTP {resp.status_code}: {resp.text[:300]}"
+            logger.warning(f"[ai-learning] {err}")
+            return None, err
         text = resp.json()["content"][0]["text"].strip()
         # JSON extrahieren (falls Markdown-Fences)
         text = text.replace("```json", "").replace("```", "").strip()
         start, end = text.find("{"), text.rfind("}")
         if start == -1 or end == -1:
-            return None
-        return json.loads(text[start:end + 1])
+            return None, f"Kein JSON in Antwort: {text[:200]}"
+        return json.loads(text[start:end + 1]), None
     except Exception as e:
-        logger.warning(f"[ai-learning] Claude-Call fehlgeschlagen: {e}")
-        return None
+        err = f"{type(e).__name__}: {e}"
+        logger.warning(f"[ai-learning] Claude-Call fehlgeschlagen: {err}")
+        return None, err
 
 
 # ── 3. Telegram-Report ────────────────────────────────────────────────────────
@@ -187,12 +189,13 @@ def run_ai_learning() -> None:
         return
 
     news = redis_get_json(REDIS_KEY_NEWS) or {}
-    ai = _ask_claude(_build_prompt(comparison, news))
+    ai, ai_error = _ask_claude(_build_prompt(comparison, news))
 
     insights = {
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "forwardTest": comparison,
         "ai": ai,  # None wenn Claude nicht erreichbar — forwardTest bleibt nutzbar
+        "aiError": ai_error,
     }
     ok = redis_set_json(REDIS_KEY_INSIGHTS, insights, TTL)
     logger.info(f"[ai-learning] Insights gespeichert — Redis={'ok' if ok else 'FEHLER'} | AI={'ok' if ai else 'FALLBACK'}")
