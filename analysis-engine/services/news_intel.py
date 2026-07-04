@@ -33,18 +33,29 @@ CENTRAL_BANK_FEEDS: dict[str, list[tuple[str, str]]] = {
 }
 MAX_HEADLINES_PER_BANK = 5
 
-# ── Geopolitische Themen (GDELT) ──────────────────────────────────────────────
-GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+# ── Geopolitische Themen (via Welt-News-RSS + Keyword-Matching) ───────────────
+# GDELT wurde ersetzt: dessen Rate-Limit ist IP-basiert und Cloud-IPs
+# (Railway) teilen es sich → dauerhaft HTTP 429. RSS ist zuverlässig.
+GEO_FEEDS: list[tuple[str, str]] = [
+    ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
+    ("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
+    ("Deutsche Welle", "https://rss.dw.com/rdf/rss-en-world"),
+]
 GEO_TOPICS: list[dict] = [
-    {"topic": "Russland-Ukraine", "query": "ukraine russia war",
+    {"topic": "Russland-Ukraine",
+     "keywords": ["ukraine", "russia", "russian", "kyiv", "moscow", "putin", "zelensky"],
      "affects": ["EUR", "NATGAS", "USOIL", "XAUUSD", "GER40"]},
-    {"topic": "Nahost", "query": "israel iran conflict",
+    {"topic": "Nahost",
+     "keywords": ["israel", "iran", "gaza", "middle east", "hezbollah", "tehran", "lebanon", "houthi"],
      "affects": ["USOIL", "UKOIL", "XAUUSD"]},
-    {"topic": "China-Taiwan", "query": "china taiwan tension",
+    {"topic": "China-Taiwan",
+     "keywords": ["taiwan", "beijing", "china military", "south china sea"],
      "affects": ["JPN225", "USDJPY", "NAS100"]},
-    {"topic": "OPEC-Öl", "query": "opec oil production",
+    {"topic": "OPEC-Öl",
+     "keywords": ["opec", "oil price", "crude", "oil production", "oil output"],
      "affects": ["USOIL", "UKOIL"]},
-    {"topic": "US-Handelspolitik", "query": "united states tariffs trade",
+    {"topic": "US-Handelspolitik",
+     "keywords": ["tariff", "trade war", "trade deal", "sanctions", "export controls"],
      "affects": ["USDCHF", "NAS100", "SPX500", "XAUUSD"]},
 ]
 
@@ -60,37 +71,27 @@ def _fetch_rss(url: str, limit: int) -> list[str]:
         return []
 
 
-def _fetch_gdelt(query: str, retry: bool = True) -> dict:
-    """GDELT-Artikel der letzten 24h zu einem Thema. Leeres Resultat bei Fehler.
-    Railway-IPs teilen sich das GDELT-Rate-Limit → bei 429 einmal warten + retry.
-    'error' im Resultat macht Fehler remote sichtbar (/api/v1/news)."""
-    import time as _time
-    try:
-        resp = httpx.get(GDELT_URL, params={
-            "query": query,
-            "mode": "ArtList", "maxrecords": 15,
-            "timespan": "1d", "format": "json",
-        }, timeout=15, follow_redirects=True,
-            headers={"User-Agent": "DestinateAnalysisEngine/1.0"})
-        if resp.status_code == 429 and retry:
-            logger.info("[news] GDELT 429 — warte 20s und versuche erneut")
-            _time.sleep(20)
-            return _fetch_gdelt(query, retry=False)
-        if resp.status_code != 200:
-            logger.warning(f"[news] GDELT HTTP {resp.status_code}: {resp.text[:120]}")
-            return {"articleCount": 0, "titles": [], "error": f"HTTP {resp.status_code}: {resp.text[:100]}"}
-        try:
-            body = resp.json()
-        except Exception:
-            # GDELT gibt Fehler als Plaintext mit Status 200 zurück
-            logger.warning(f"[news] GDELT kein JSON: {resp.text[:120]}")
-            return {"articleCount": 0, "titles": [], "error": f"kein JSON: {resp.text[:100]}"}
-        articles = body.get("articles", [])
-        titles = list({a.get("title", "").strip() for a in articles if a.get("title")})[:8]
-        return {"articleCount": len(articles), "titles": titles}
-    except Exception as e:
-        logger.warning(f"[news] GDELT '{query[:30]}...' fehlgeschlagen: {e}")
-        return {"articleCount": 0, "titles": [], "error": f"{type(e).__name__}: {e}"}
+def _fetch_geo_headlines() -> tuple[list[str], list[str]]:
+    """Alle Welt-News-Headlines aus den GEO_FEEDS. (headlines, feed_errors)"""
+    headlines: list[str] = []
+    errors: list[str] = []
+    for source, url in GEO_FEEDS:
+        got = _fetch_rss(url, 40)
+        if got:
+            headlines.extend(got)
+            logger.info(f"[news-intel] {source}: {len(got)} Welt-Headlines")
+        else:
+            errors.append(f"{source}: keine Headlines")
+    # Duplikate raus, Reihenfolge behalten
+    seen: set[str] = set()
+    unique = [h for h in headlines if not (h.lower() in seen or seen.add(h.lower()))]
+    return unique, errors
+
+
+def _match_topic(headlines: list[str], keywords: list[str]) -> list[str]:
+    """Headlines die zu einem Themen-Keyword passen (case-insensitive)."""
+    kws = [k.lower() for k in keywords]
+    return [h for h in headlines if any(k in h.lower() for k in kws)][:8]
 
 
 def _finbert_sentiment(text: str) -> dict | None:
@@ -128,23 +129,21 @@ def run_news_intel() -> None:
             }
             logger.info(f"[news-intel] {source} ({currency}): {len(headlines)} Headlines")
 
-    # 2. Geopolitik — GDELT Rate-Limit (IP-geteilt auf Railway) → 12s Pause
-    import time
+    # 2. Geopolitik — Welt-News-RSS (BBC/AlJazeera/DW) + Keyword-Matching
+    all_headlines, feed_errors = _fetch_geo_headlines()
     geopolitics: list[dict] = []
-    for i, t in enumerate(GEO_TOPICS):
-        if i > 0:
-            time.sleep(12)
-        g = _fetch_gdelt(t["query"])
-        sentiment = _finbert_sentiment(". ".join(g["titles"])) if g["titles"] else None
+    for t in GEO_TOPICS:
+        titles = _match_topic(all_headlines, t["keywords"])
+        sentiment = _finbert_sentiment(". ".join(titles)) if titles else None
         geopolitics.append({
             "topic": t["topic"],
             "affects": t["affects"],
-            "articleCount": g["articleCount"],
-            "titles": g["titles"],
+            "articleCount": len(titles),
+            "titles": titles,
             "sentiment": sentiment,
-            "error": g.get("error"),
+            "error": "; ".join(feed_errors) if (not all_headlines and feed_errors) else None,
         })
-        logger.info(f"[news-intel] {t['topic']}: {g['articleCount']} Artikel")
+        logger.info(f"[news-intel] {t['topic']}: {len(titles)} Artikel")
 
     payload = {
         "updatedAt": datetime.now(timezone.utc).isoformat(),
