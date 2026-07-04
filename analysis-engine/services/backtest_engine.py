@@ -83,11 +83,11 @@ def _fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             timeout=30,
         )
         if resp.status_code != 200:
-            logger.warning(f"[backtest] OHLCV {symbol}: HTTP {resp.status_code}")
+            _log_error(f"OHLCV {symbol}: HTTP {resp.status_code} — {resp.text[:100]}")
             return None
         candles = resp.json().get("candles", [])
         if len(candles) < 200:
-            logger.warning(f"[backtest] OHLCV {symbol}: nur {len(candles)} Kerzen — übersprungen")
+            _log_error(f"OHLCV {symbol}: nur {len(candles)} Kerzen — übersprungen")
             return None
         df = pd.DataFrame(candles)
         # erwartete Keys: time/timestamp + open high low close
@@ -96,12 +96,12 @@ def _fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             df.index = pd.to_datetime(df[time_col])
         for col in ("open", "high", "low", "close"):
             if col not in df.columns:
-                logger.warning(f"[backtest] OHLCV {symbol}: Spalte '{col}' fehlt")
+                _log_error(f"OHLCV {symbol}: Spalte '{col}' fehlt — Keys: {list(df.columns)[:8]}")
                 return None
             df[col] = pd.to_numeric(df[col], errors="coerce")
         return df.dropna(subset=["close"])
     except Exception as e:
-        logger.warning(f"[backtest] OHLCV {symbol} fehlgeschlagen: {e}")
+        _log_error(f"OHLCV {symbol}: {type(e).__name__}: {e}")
         return None
 
 
@@ -130,12 +130,23 @@ def _signals(close: pd.Series, strategy: str, p: dict) -> tuple[pd.Series, pd.Se
     return entries.fillna(False), exits.fillna(False)
 
 
+# Fehler-Sammlung für Fern-Diagnose (landet im Redis-Summary)
+_ERRORS: list[str] = []
+
+
+def _log_error(msg: str) -> None:
+    logger.warning(f"[backtest] {msg}")
+    if len(_ERRORS) < 25:
+        _ERRORS.append(msg)
+
+
 def _run_single(close: pd.Series, strategy: str, params: dict, sl: float, tp: float) -> dict | None:
     """Ein Backtest mit vectorbt. None bei Fehler."""
     try:
         import vectorbt as vbt
         entries, exits = _signals(close, strategy, params)
         if entries.sum() < 3:
+            _log_error(f"{strategy} {params}: nur {int(entries.sum())} Signale — übersprungen")
             return None  # zu wenig Signale — nicht aussagekräftig
         pf = vbt.Portfolio.from_signals(
             close, entries, exits,
@@ -167,7 +178,7 @@ def _run_single(close: pd.Series, strategy: str, params: dict, sl: float, tp: fl
             "params": params, "sl": sl, "tp": tp,
         }
     except Exception as e:
-        logger.warning(f"[backtest] {strategy} {params} fehlgeschlagen: {e}")
+        _log_error(f"{strategy} {params}: {type(e).__name__}: {e}")
         return None
 
 
@@ -204,6 +215,7 @@ def run_backtests() -> None:
 
 def _run_backtests_inner() -> None:
     started = time.time()
+    _ERRORS.clear()
     logger.info("[backtest] Lauf gestartet")
 
     diagnose_symbols = _find_diagnose_symbols()
@@ -265,6 +277,7 @@ def _run_backtests_inner() -> None:
     # Zusammenfassung + Live-vs-Backtest-Vergleich für den AI Manager (Phase 4)
     summary = {
         "status": "done",
+        "errors": _ERRORS[:25],
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "durationSec": round(time.time() - started),
         "diagnoseSymbols": diagnose_symbols,
