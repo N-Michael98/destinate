@@ -188,14 +188,38 @@ def _find_diagnose_symbols() -> list[str]:
 
 
 def run_backtests() -> None:
+    """Wrapper mit Fern-Diagnose: Fortschritt + Fehler landen in Redis."""
+    try:
+        _run_backtests_inner()
+    except Exception as e:
+        import traceback
+        logger.error(f"[backtest] ABGESTÜRZT: {e}\n{traceback.format_exc()}")
+        redis_set_json(REDIS_KEY_BACKTESTS, {
+            "status": "error",
+            "error": str(e),
+            "trace": traceback.format_exc()[-1500:],
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }, TTL)
+
+
+def _run_backtests_inner() -> None:
     started = time.time()
-    logger.info("[backtest] Nächtlicher Lauf gestartet")
+    logger.info("[backtest] Lauf gestartet")
 
     diagnose_symbols = _find_diagnose_symbols()
     logger.info(f"[backtest] Diagnose-Modus (Verlierer, volle Matrix): {diagnose_symbols or 'keine'}")
 
     results: dict[str, list[dict]] = {}
-    for symbol in WATCHLIST:
+    for idx, symbol in enumerate(WATCHLIST):
+        # Fortschritt nach Redis — remote sichtbar unter /api/v1/backtests
+        redis_set_json(REDIS_KEY_BACKTESTS, {
+            "status": "running",
+            "progress": f"{idx}/{len(WATCHLIST)}",
+            "currentSymbol": symbol,
+            "elapsedSec": round(time.time() - started),
+            "partialBest": {s: r[0]["strategy"] for s, r in results.items()},
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }, TTL)
         df = _fetch_ohlcv(symbol)
         if df is None:
             continue
@@ -240,6 +264,7 @@ def run_backtests() -> None:
 
     # Zusammenfassung + Live-vs-Backtest-Vergleich für den AI Manager (Phase 4)
     summary = {
+        "status": "done",
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "durationSec": round(time.time() - started),
         "diagnoseSymbols": diagnose_symbols,

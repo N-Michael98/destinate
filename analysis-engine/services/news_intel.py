@@ -60,8 +60,10 @@ def _fetch_rss(url: str, limit: int) -> list[str]:
         return []
 
 
-def _fetch_gdelt(query: str) -> dict:
-    """GDELT-Artikel der letzten 24h zu einem Thema. Leeres Resultat bei Fehler."""
+def _fetch_gdelt(query: str, retry: bool = True) -> dict:
+    """GDELT-Artikel der letzten 24h zu einem Thema. Leeres Resultat bei Fehler.
+    Railway-IPs teilen sich das GDELT-Rate-Limit → bei 429 einmal warten + retry."""
+    import time as _time
     try:
         resp = httpx.get(GDELT_URL, params={
             "query": query,
@@ -69,6 +71,10 @@ def _fetch_gdelt(query: str) -> dict:
             "timespan": "1d", "format": "json",
         }, timeout=15, follow_redirects=True,
             headers={"User-Agent": "DestinateAnalysisEngine/1.0"})
+        if resp.status_code == 429 and retry:
+            logger.info("[news] GDELT 429 — warte 20s und versuche erneut")
+            _time.sleep(20)
+            return _fetch_gdelt(query, retry=False)
         if resp.status_code != 200:
             logger.warning(f"[news] GDELT HTTP {resp.status_code}: {resp.text[:120]}")
             return {"articleCount": 0, "titles": []}
@@ -121,12 +127,12 @@ def run_news_intel() -> None:
             }
             logger.info(f"[news-intel] {source} ({currency}): {len(headlines)} Headlines")
 
-    # 2. Geopolitik — GDELT Rate-Limit: max 1 Request / 5s → 6s Pause
+    # 2. Geopolitik — GDELT Rate-Limit (IP-geteilt auf Railway) → 12s Pause
     import time
     geopolitics: list[dict] = []
     for i, t in enumerate(GEO_TOPICS):
         if i > 0:
-            time.sleep(6)
+            time.sleep(12)
         g = _fetch_gdelt(t["query"])
         sentiment = _finbert_sentiment(". ".join(g["titles"])) if g["titles"] else None
         geopolitics.append({
