@@ -384,6 +384,19 @@ export async function runOrchestratorCycle(): Promise<void> {
     return;
   }
 
+  // ── 6b. Analysis-Engine Insights (rein additiv — null = kein Einfluss) ────
+  let analysisInsights: Awaited<ReturnType<typeof import("../analysis-engine/insights-reader").getAnalysisInsights>> = null;
+  let getSymbolScore: typeof import("../analysis-engine/insights-reader").getSymbolScore | null = null;
+  try {
+    const mod = await import("../analysis-engine/insights-reader");
+    analysisInsights = await mod.getAnalysisInsights();
+    getSymbolScore = mod.getSymbolScore;
+    const warnings = analysisInsights?.ai?.newsWarnings ?? [];
+    for (const w of warnings.slice(0, 3)) {
+      console.log(`[orchestrator] 📰 Analysis-Engine Warnung: ${w}`);
+    }
+  } catch { /* non-fatal — Trading läuft ohne Insights weiter */ }
+
   // ── 7. Pro Kandidat: Filter → ExecutionAgent ──────────────────────────────
   const { runAllFilters, getVolatilityAdjustedRisk } = await import("../trading-filters/trade-filters");
   const currentBalance = session.balance > 0 ? session.balance : 10000;
@@ -401,6 +414,16 @@ export async function runOrchestratorCycle(): Promise<void> {
     if (tradesThisCycle >= aiDecision.maxTradesThisCycle) break;
 
     const style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
+
+    // Analysis-Engine Score: nur EXTREM schlechte Märkte (<30) blocken.
+    // Philosophie: schwache Märkte werden diagnostiziert, nicht gemieden.
+    if (getSymbolScore) {
+      const score = getSymbolScore(analysisInsights, candidate.symbol);
+      if (score !== null && score < 30) {
+        console.log(`[orchestrator] 🧠 ${candidate.symbol} übersprungen — Analysis-Engine Score ${score}/100 (Diagnose läuft nachts)`);
+        continue;
+      }
+    }
 
     // Trading Filters
     const filterResult = await runAllFilters({
