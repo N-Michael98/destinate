@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
         from services.data_collector import run_data_collector
         from services.news_intel import run_news_intel
         from services.backtest_engine import run_backtests
+        from services.ai_learning import run_ai_learning
 
         scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -50,11 +51,12 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_data_collector, "date", run_date=soon + timedelta(seconds=30))
         scheduler.add_job(run_news_intel, "date", run_date=soon + timedelta(seconds=90))
 
-        # Phase 4: AI Learning folgt:
-        # scheduler.add_job(run_ai_learning, "cron", hour=5, minute=0)
+        # Phase 4: AI Learning täglich 03:30 UTC (nach dem 02:00-Backtest)
+        scheduler.add_job(run_ai_learning, "cron", hour=3, minute=30, id="ai-learning",
+                          misfire_grace_time=3600)
 
         scheduler.start()
-        logger.info("Scheduler gestartet — Jobs: data-collector (4h), news-intel (2h), backtest (02:00 UTC)")
+        logger.info("Scheduler gestartet — data-collector (4h), news-intel (2h), backtest (02:00), ai-learning (03:30)")
     except Exception as e:
         logger.error(f"Scheduler-Start fehlgeschlagen (non-fatal): {e}")
 
@@ -90,5 +92,5 @@ def root():
             "news": "/api/v1/news",
             "backtests": "/api/v1/backtests",
         },
-        "phase": "3 — Backtest Engine aktiv (nachts 02:00 UTC, Diagnose-Modus für Verlierer-Märkte)",
+        "phase": "4 — AI Learning Manager aktiv (täglich 03:30 UTC, Telegram-Report)",
     }

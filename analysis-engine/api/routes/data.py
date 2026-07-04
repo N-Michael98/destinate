@@ -6,6 +6,7 @@ from services.storage import redis_get_json
 from services.data_collector import run_data_collector, REDIS_KEY_TRADE_STATS
 from services.news_intel import run_news_intel, REDIS_KEY_NEWS
 from services.backtest_engine import run_backtests, REDIS_KEY_BACKTESTS
+from services.ai_learning import run_ai_learning
 
 router = APIRouter()
 
@@ -46,3 +47,10 @@ def trigger_backtest(bg: BackgroundTasks):
     """Nächtlichen Backtest manuell starten (dauert einige Minuten)."""
     bg.add_task(run_backtests)
     return {"started": True, "job": "backtest", "check": "/api/v1/backtests"}
+
+
+@router.post("/run/ai-learning")
+def trigger_ai_learning(bg: BackgroundTasks):
+    """AI Learning Manager manuell starten (Claude-Analyse + Telegram-Report)."""
+    bg.add_task(run_ai_learning)
+    return {"started": True, "job": "ai-learning", "check": "/api/v1/insights"}
