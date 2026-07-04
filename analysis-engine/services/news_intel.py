@@ -62,7 +62,8 @@ def _fetch_rss(url: str, limit: int) -> list[str]:
 
 def _fetch_gdelt(query: str, retry: bool = True) -> dict:
     """GDELT-Artikel der letzten 24h zu einem Thema. Leeres Resultat bei Fehler.
-    Railway-IPs teilen sich das GDELT-Rate-Limit → bei 429 einmal warten + retry."""
+    Railway-IPs teilen sich das GDELT-Rate-Limit → bei 429 einmal warten + retry.
+    'error' im Resultat macht Fehler remote sichtbar (/api/v1/news)."""
     import time as _time
     try:
         resp = httpx.get(GDELT_URL, params={
@@ -77,19 +78,19 @@ def _fetch_gdelt(query: str, retry: bool = True) -> dict:
             return _fetch_gdelt(query, retry=False)
         if resp.status_code != 200:
             logger.warning(f"[news] GDELT HTTP {resp.status_code}: {resp.text[:120]}")
-            return {"articleCount": 0, "titles": []}
+            return {"articleCount": 0, "titles": [], "error": f"HTTP {resp.status_code}: {resp.text[:100]}"}
         try:
             body = resp.json()
         except Exception:
             # GDELT gibt Fehler als Plaintext mit Status 200 zurück
             logger.warning(f"[news] GDELT kein JSON: {resp.text[:120]}")
-            return {"articleCount": 0, "titles": []}
+            return {"articleCount": 0, "titles": [], "error": f"kein JSON: {resp.text[:100]}"}
         articles = body.get("articles", [])
         titles = list({a.get("title", "").strip() for a in articles if a.get("title")})[:8]
         return {"articleCount": len(articles), "titles": titles}
     except Exception as e:
         logger.warning(f"[news] GDELT '{query[:30]}...' fehlgeschlagen: {e}")
-        return {"articleCount": 0, "titles": []}
+        return {"articleCount": 0, "titles": [], "error": f"{type(e).__name__}: {e}"}
 
 
 def _finbert_sentiment(text: str) -> dict | None:
@@ -141,6 +142,7 @@ def run_news_intel() -> None:
             "articleCount": g["articleCount"],
             "titles": g["titles"],
             "sentiment": sentiment,
+            "error": g.get("error"),
         })
         logger.info(f"[news-intel] {t['topic']}: {g['articleCount']} Artikel")
 
