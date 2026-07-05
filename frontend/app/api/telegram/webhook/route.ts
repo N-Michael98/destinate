@@ -201,6 +201,25 @@ Eingabe: <code>${text.slice(0, 20)}***</code>
         await whitelistIP(ipToUnblock, "Auto-Whitelist nach /unblock");
         await reply(chatId, `✅ IP <code>${ipToUnblock}</code> freigeschaltet + auf Whitelist.\n\n🛡 Watchdog wird diese IP nicht mehr automatisch sperren.`);
         await sendTelegram(`🔓 <b>IP freigegeben + Whitelist</b>\n\nIP: <code>${ipToUnblock}</code>\nFreigegeben von: ${name}\n🛡 Auf Whitelist — kein Auto-Block mehr\n🕐 ${new Date().toLocaleString("de-CH")}`);
+      } else if (pending.action.startsWith("apply:")) {
+        const symbolToApply = pending.action.split(":")[1];
+        const { applyOverride } = await import("@/lib/analysis-engine/overrides-store");
+        const ov = await applyOverride(symbolToApply, name);
+        if (ov) {
+          await reply(chatId, `✅ Override für <b>${symbolToApply.toUpperCase()}</b> angewendet:\n` +
+            `Style: ${ov.style} | Strategie: ${ov.strategy}\n` +
+            `SL: ${((ov.slPct ?? 0) * 100).toFixed(1)}% | TP: ${((ov.tpPct ?? 0) * 100).toFixed(1)}%\n\n` +
+            `Gilt 30 Tage. Zurücknehmen: /unapply ${symbolToApply.toUpperCase()}`);
+        } else {
+          await reply(chatId, `❌ Kein Vorschlag für ${symbolToApply.toUpperCase()} gefunden. /vorschlaege zeigt die aktuelle Liste.`);
+        }
+      } else if (pending.action.startsWith("unapply:")) {
+        const symbolToUnapply = pending.action.split(":")[1];
+        const { unapplyOverride } = await import("@/lib/analysis-engine/overrides-store");
+        const removed = await unapplyOverride(symbolToUnapply);
+        await reply(chatId, removed
+          ? `✅ Override für <b>${symbolToUnapply.toUpperCase()}</b> entfernt — Symbol handelt wieder normal.`
+          : `ℹ️ Kein aktiver Override für ${symbolToUnapply.toUpperCase()}.`);
       } else if (pending.action.startsWith("block:")) {
         const ipToBlock = pending.action.split(":")[1];
         const { blockIP } = await import("@/lib/security-watchdog/ip-blocklist");
@@ -337,6 +356,11 @@ Befehle:
 /trust [ip] — IP auf Whitelist (Watchdog blockt nie)
 /untrust [ip] — IP von Whitelist entfernen
 
+<b>Analysis Engine (Lern-System):</b>
+/vorschlaege — Verbesserungs-Vorschläge anzeigen
+/apply [symbol] — Vorschlag anwenden (Passwort nötig)
+/unapply [symbol] — Override entfernen (Passwort nötig)
+
 <b>Sicherheit:</b>
 • Alle kritischen Befehle erfordern Admin-Passwort
 • Falsches Passwort → sofortiger Sicherheitsalert
@@ -400,6 +424,61 @@ Befehle:
       }
       pendingConfirm.set(chatId, { action: `untrust:${ipToUntrust}`, expiresAt: Date.now() + 60_000 });
       await reply(chatId, `🔐 IP <code>${ipToUntrust}</code> von Whitelist entfernen?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower === "/vorschlaege" || textLower === "/vorschläge") {
+      const { getRecommendations, getAppliedOverrides } = await import("@/lib/analysis-engine/overrides-store");
+      const [recs, applied] = await Promise.all([getRecommendations(), getAppliedOverrides()]);
+      if (recs.length === 0 && Object.keys(applied).length === 0) {
+        await reply(chatId, "ℹ️ Aktuell keine Vorschläge der Analysis Engine.\n(Neue Vorschläge kommen täglich 04:00 UTC nach dem Nacht-Backtest)");
+        return NextResponse.json({ ok: true });
+      }
+      const lines: string[] = [];
+      if (recs.length > 0) {
+        lines.push("🔧 <b>Offene Vorschläge:</b>");
+        for (const r of recs) {
+          const isApplied = !!applied[r.symbol.toUpperCase()];
+          lines.push(`• <b>${r.symbol}</b>${isApplied ? " ✅ ANGEWENDET" : ""} → ${r.suggestion.strategy} als ${r.suggestion.style}`);
+          lines.push(`  ${r.reason}`);
+          lines.push(`  ${r.evidence}`);
+        }
+        lines.push("");
+        lines.push("Anwenden: /apply SYMBOL (Passwort nötig)");
+      }
+      const appliedKeys = Object.keys(applied);
+      if (appliedKeys.length > 0) {
+        lines.push("");
+        lines.push("✅ <b>Aktive Overrides:</b>");
+        for (const sym of appliedKeys) {
+          const o = applied[sym];
+          lines.push(`• ${sym}: ${o.strategy} als ${o.style} (seit ${new Date(o.appliedAt).toLocaleDateString("de-CH")})`);
+        }
+        lines.push("Entfernen: /unapply SYMBOL");
+      }
+      await reply(chatId, lines.join("\n"));
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower.startsWith("/apply ")) {
+      const symbolToApply = text.split(" ")[1]?.trim();
+      if (!symbolToApply) {
+        await reply(chatId, "❓ Verwendung: /apply [SYMBOL]\nBeispiel: /apply GBPJPY");
+        return NextResponse.json({ ok: true });
+      }
+      pendingConfirm.set(chatId, { action: `apply:${symbolToApply}`, expiresAt: Date.now() + 60_000 });
+      await reply(chatId, `🔐 Override für <code>${symbolToApply.toUpperCase()}</code> anwenden?\n\nDas ändert Style/SL/TP für neue Trades dieses Symbols (30 Tage).\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (textLower.startsWith("/unapply ")) {
+      const symbolToUnapply = text.split(" ")[1]?.trim();
+      if (!symbolToUnapply) {
+        await reply(chatId, "❓ Verwendung: /unapply [SYMBOL]\nBeispiel: /unapply GBPJPY");
+        return NextResponse.json({ ok: true });
+      }
+      pendingConfirm.set(chatId, { action: `unapply:${symbolToUnapply}`, expiresAt: Date.now() + 60_000 });
+      await reply(chatId, `🔐 Override für <code>${symbolToUnapply.toUpperCase()}</code> entfernen?\n\nGib dein <b>Admin-Passwort</b> ein (60 Sekunden):`);
       return NextResponse.json({ ok: true });
     }
 

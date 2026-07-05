@@ -397,6 +397,16 @@ export async function runOrchestratorCycle(): Promise<void> {
     }
   } catch { /* non-fatal — Trading läuft ohne Insights weiter */ }
 
+  // ── 6c. Bestätigte Overrides (Stufe 1C — nur was Admin per /apply freigab) ─
+  let appliedOverrides: Record<string, import("../analysis-engine/overrides-store").SymbolOverride> = {};
+  try {
+    const { getAppliedOverrides } = await import("../analysis-engine/overrides-store");
+    appliedOverrides = await getAppliedOverrides();
+    if (Object.keys(appliedOverrides).length > 0) {
+      console.log(`[orchestrator] 🔧 Aktive Overrides: ${Object.keys(appliedOverrides).join(", ")}`);
+    }
+  } catch { /* non-fatal */ }
+
   // ── 7. Pro Kandidat: Filter → ExecutionAgent ──────────────────────────────
   const { runAllFilters, getVolatilityAdjustedRisk } = await import("../trading-filters/trade-filters");
   const currentBalance = session.balance > 0 ? session.balance : 10000;
@@ -413,7 +423,14 @@ export async function runOrchestratorCycle(): Promise<void> {
   for (const candidate of candidates) {
     if (tradesThisCycle >= aiDecision.maxTradesThisCycle) break;
 
-    const style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
+    let style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
+
+    // Stufe 1C: Vom Admin bestätigter Override für dieses Symbol
+    const override = appliedOverrides[candidate.symbol.toUpperCase()];
+    if (override?.style) {
+      style = override.style;
+      console.log(`[orchestrator] 🔧 ${candidate.symbol}: Override aktiv — Style=${style}${override.slPct ? ` SL=${(override.slPct * 100).toFixed(1)}%` : ""}`);
+    }
 
     // Analysis-Engine Score: nur EXTREM schlechte Märkte (<30) blocken.
     // Philosophie: schwache Märkte werden diagnostiziert, nicht gemieden.
@@ -448,14 +465,28 @@ export async function runOrchestratorCycle(): Promise<void> {
 
     // ExecutionAgent
     const isBuy = candidate.gpt.direction === "BUY";
+    const entryPrice = isBuy ? (candidate.ask ?? candidate.bid ?? 0) : (candidate.bid ?? 0);
+
+    // Override-SL/TP: prozentual vom aktuellen Preis (aus Backtest-Evidenz)
+    let slPrice = candidate.gpt.stopLoss > 0 ? candidate.gpt.stopLoss : undefined;
+    let tpPrice = candidate.gpt.takeProfit > 0 ? candidate.gpt.takeProfit : undefined;
+    if (override && entryPrice > 0) {
+      if (override.slPct && override.slPct > 0) {
+        slPrice = isBuy ? entryPrice * (1 - override.slPct) : entryPrice * (1 + override.slPct);
+      }
+      if (override.tpPct && override.tpPct > 0) {
+        tpPrice = isBuy ? entryPrice * (1 + override.tpPct) : entryPrice * (1 - override.tpPct);
+      }
+    }
+
     const execResult = await runExecutionAgent({
       symbol: candidate.symbol,
       direction: isBuy ? "BUY" : "SELL",
       riskPercent: riskPct,
       accountBalance: currentBalance,
-      stopLossPrice: candidate.gpt.stopLoss > 0 ? candidate.gpt.stopLoss : undefined,
-      takeProfitPrice: candidate.gpt.takeProfit > 0 ? candidate.gpt.takeProfit : undefined,
-      currentPrice: isBuy ? (candidate.ask ?? candidate.bid ?? 0) : (candidate.bid ?? 0),
+      stopLossPrice: slPrice,
+      takeProfitPrice: tpPrice,
+      currentPrice: entryPrice,
       confidence: candidate.gpt.confidence,
       strategy: candidate.gpt.tradingStyle ?? style,
       tradingStyle: style,
