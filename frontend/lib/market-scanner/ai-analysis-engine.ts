@@ -282,6 +282,20 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
   const hasGPT = ai.openai.connected && ai.openai.apiKey.length > 20;
   const hasClaude = ai.anthropic.connected && ai.anthropic.apiKey.length > 20;
 
+  // Kosten-Guard: Dieser Scanner läuft alle 5 Min — teure Modelle aus der
+  // UI-Config werden für Routine-Scans auf die günstigen Pendants gemappt.
+  // (gpt-4o ≈ 6× teurer als mini; Sonnet ≈ 3× teurer als Haiku)
+  const CHEAP_GPT: Record<string, string> = { "gpt-4o": "gpt-4o-mini", "gpt-4-turbo": "gpt-4o-mini" };
+  const CHEAP_CLAUDE: Record<string, string> = {
+    "claude-sonnet-4-6": "claude-haiku-4-5-20251001",
+    "claude-opus-4-8": "claude-haiku-4-5-20251001",
+  };
+  const scanGptModel = CHEAP_GPT[ai.openai.model] ?? ai.openai.model;
+  const scanClaudeModel = CHEAP_CLAUDE[ai.anthropic.model] ?? ai.anthropic.model;
+  if (scanGptModel !== ai.openai.model || scanClaudeModel !== ai.anthropic.model) {
+    console.log(`[ai-engine] 💰 Kosten-Guard: Scan nutzt ${scanGptModel} / ${scanClaudeModel} (Config: ${ai.openai.model} / ${ai.anthropic.model})`);
+  }
+
   const validMarkets = markets.filter((m) => m.bid > 0).slice(0, 30);
 
   // ── TA-Lib (1D) + Strategy Signale + Multi-TF + Strategy Performance parallel
@@ -363,7 +377,7 @@ Return ONLY valid JSON:
   ]
 }`;
 
-    const raw = await callGPT(ai.openai.apiKey, ai.openai.model, prompt);
+    const raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt);
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
     for (const opp of parsed.opportunities ?? []) {
       if (opp.epic) gptBatchResult[opp.epic] = opp;
@@ -468,7 +482,7 @@ Return ONLY valid JSON:
 
 Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
 
-      const raw = await callClaude(ai.anthropic.apiKey, ai.anthropic.model, prompt);
+      const raw = await callClaude(ai.anthropic.apiKey, scanClaudeModel, prompt);
       const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
       const riskScore = parsed.riskScore ?? 50;
       const parsedRR = parsed.rewardRiskRatio ?? rrRatio;

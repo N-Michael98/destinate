@@ -4,7 +4,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   openai: {
     provider: "OPENAI",
     apiKey: "",
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     temperature: 0.3,
     maxTokens: 2048,
     connected: false,
@@ -15,7 +15,7 @@ const DEFAULT_AI_SETTINGS: AISettings = {
   anthropic: {
     provider: "ANTHROPIC",
     apiKey: "",
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     temperature: 0.3,
     maxTokens: 2048,
     connected: false,

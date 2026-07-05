@@ -343,6 +343,16 @@ export async function runOrchestratorCycle(): Promise<void> {
     updatedAt: new Date().toISOString(),
   };
 
+  // ── 4b. Kosten-Guards: AI-Entscheidung nur wenn sie etwas bewirken kann ───
+  if (blockNewTrades) {
+    console.log("[orchestrator] Ausserhalb Session — Analyse fertig, kein Trade-Execution (kein AI-Call)");
+    return;
+  }
+  if (analysisResult.approved.length === 0) {
+    console.log("[orchestrator] Keine approved Signale — Zyklus beendet (kein AI-Call)");
+    return;
+  }
+
   // ── 5. OrchestratorAgent AI-Entscheidung ──────────────────────────────────
   const diagnostics = getDiagnosticsReport();
   const aiDecision = await askAIManager({
@@ -365,12 +375,7 @@ export async function runOrchestratorCycle(): Promise<void> {
     return;
   }
 
-  // ── 6. Kandidaten filtern (ausserhalb Session: kein neuer Trade) ─────────
-  if (blockNewTrades) {
-    console.log("[orchestrator] Ausserhalb Session — Analyse fertig, kein Trade-Execution");
-    return;
-  }
-
+  // ── 6. Kandidaten filtern ──────────────────────────────────────────────────
   const threshold = settings.botSettings.autoApproveThreshold ?? 71;
   const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
 
