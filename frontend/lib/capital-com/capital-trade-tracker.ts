@@ -17,6 +17,7 @@ export interface TradeRecord {
   riskPercent: number;
   confidence: number;
   icPositionId?: string; // IC Markets position ID if also executed there
+  entryContext?: Record<string, unknown>; // Marktbedingungen beim Entry (für Analysis Engine)
 }
 
 export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<void> {
@@ -56,6 +57,7 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
         broker: "Capital.com DEMO",
         source: "auto-scan",
         ...(trade.icPositionId ? { icPositionId: trade.icPositionId } : {}),
+        ...(trade.entryContext ? { entryContext: trade.entryContext } : {}),
       })
     );
     console.log(`[trade-tracker] Saved trade: ${trade.symbol} ${trade.direction} (${trade.tradingStyle}) deal=${trade.dealId}`);

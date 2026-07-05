@@ -170,8 +170,9 @@ async function postTradeActions(params: {
   style: string;
   balance: number;
   riskPct: number;
+  entryContext?: Record<string, unknown>;
 }): Promise<void> {
-  const { candidate, execResult, style, balance, riskPct } = params;
+  const { candidate, execResult, style, balance, riskPct, entryContext } = params;
   const result = execResult.capital;
   const icResult = execResult.icMarkets;
 
@@ -228,6 +229,7 @@ async function postTradeActions(params: {
       accountBalance: balance,
       riskPercent:  riskPct,
       confidence:   candidate.gpt.confidence,
+      entryContext,
     });
   } catch { /* non-fatal */ }
 }
@@ -502,7 +504,24 @@ export async function runOrchestratorCycle(): Promise<void> {
       const icLog = execResult.icMarkets?.ok ? `IC:✅${execResult.icMarkets.positionId}` : "IC:❌";
       console.log(`[orchestrator] ✅ Trade: ${candidate.symbol} ${candidate.gpt.direction} (${style}) Deal=${execResult.capital?.dealId} | ${icLog}`);
 
-      await postTradeActions({ candidate, execResult, style, balance: session.balance, riskPct });
+      // Stufe 2: Marktbedingungen beim Entry festhalten (für Analysis-Engine-Diagnosen)
+      const now = new Date();
+      const entryContext: Record<string, unknown> = {
+        hourUTC: now.getUTCHours(),
+        dayUTC: now.getUTCDay(),
+        atr,
+        spread: candidate.spread ?? 0,
+        bid: candidate.bid ?? 0,
+        ask: candidate.ask ?? 0,
+        styleUsed: style,
+        gptStyle: candidate.gpt.tradingStyle ?? null,
+        riskPctUsed: riskPct,
+        aiScore: getSymbolScore ? getSymbolScore(analysisInsights, candidate.symbol) : null,
+        overrideActive: !!override,
+        ...(override ? { overrideStrategy: override.strategy } : {}),
+      };
+
+      await postTradeActions({ candidate, execResult, style, balance: session.balance, riskPct, entryContext });
       break; // 1 Trade pro Zyklus
     } else {
       console.warn(`[orchestrator] ❌ ${candidate.symbol} fehlgeschlagen: ${execResult.aiReason}`);

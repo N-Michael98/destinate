@@ -119,6 +119,65 @@ export function checkDailyLossLimit(
   return { allowed: true, reason: "" };
 }
 
+// ── 4. Wochen-Drawdown Guard ──────────────────────────────────────────────────
+// Stoppt neue Trades wenn Wochenverlust > maxWeeklyLossPct (Redis-persistent,
+// überlebt Deploys). Offene Positionen werden weiter verwaltet — nur keine neuen.
+
+function isoWeekKey(): string {
+  const d = new Date();
+  // ISO-Woche: Donnerstag der aktuellen Woche bestimmt das Jahr
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((t.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${t.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+export async function checkWeeklyLossLimit(
+  currentBalance: number,
+  maxWeeklyLossPct: number = 6.0
+): Promise<FilterResult> {
+  try {
+    if (currentBalance <= 0) return { allowed: true, reason: "" };
+    const { cacheGet, cacheSet } = await import("../cache/redis-cache");
+    const key = `week_start_balance:${isoWeekKey()}`;
+    const stored = await cacheGet<{ balance: number; alerted?: boolean }>(key);
+
+    if (!stored) {
+      // Erster Zyklus dieser Woche: Startbalance festhalten (8 Tage TTL)
+      await cacheSet(key, { balance: currentBalance }, 8 * 24 * 60 * 60);
+      return { allowed: true, reason: "" };
+    }
+
+    const lossPct = ((stored.balance - currentBalance) / stored.balance) * 100;
+    if (lossPct >= maxWeeklyLossPct) {
+      console.log(`[filter] 🛑 WOCHENVERLUST LIMIT: ${lossPct.toFixed(2)}% >= ${maxWeeklyLossPct}% — keine neuen Trades diese Woche`);
+      // Telegram-Alarm nur einmal pro Woche
+      if (!stored.alerted) {
+        await cacheSet(key, { balance: stored.balance, alerted: true }, 8 * 24 * 60 * 60);
+        try {
+          const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+          await sendTelegram(
+`🛑 <b>WOCHEN-DRAWDOWN-SCHUTZ AKTIV</b>
+
+Wochenverlust: -${lossPct.toFixed(1)}% (Limit: -${maxWeeklyLossPct}%)
+Wochenstart-Balance: ${stored.balance.toFixed(2)}
+Aktuelle Balance: ${currentBalance.toFixed(2)}
+
+⛔ Keine neuen Trades bis Montag.
+✅ Offene Positionen werden weiter verwaltet (BE/Trail/TP).
+🕐 ${new Date().toLocaleString("de-CH")}`
+          );
+        } catch { /* non-fatal */ }
+      }
+      return { allowed: false, reason: `Wochenverlust-Limit: -${lossPct.toFixed(1)}% (Max: -${maxWeeklyLossPct}%)` };
+    }
+    return { allowed: true, reason: "" };
+  } catch {
+    return { allowed: true, reason: "" }; // bei Fehler nicht blocken
+  }
+}
+
 // ── 5. Liquidity / Spread Filter ─────────────────────────────────────────────
 // Blockiert Trades auf illiquiden Märkten (zu großer Spread)
 const MAX_SPREAD_PCT: Record<string, number> = {
@@ -191,6 +250,10 @@ export async function runAllFilters(params: {
   // 3. Daily Loss
   const lossFilter = checkDailyLossLimit(currentBalance, maxDailyLossPct);
   if (!lossFilter.allowed) return { allowed: false, blockedBy: "DAILY_LOSS_LIMIT", reason: lossFilter.reason };
+
+  // 4. Weekly Drawdown Guard
+  const weeklyFilter = await checkWeeklyLossLimit(currentBalance);
+  if (!weeklyFilter.allowed) return { allowed: false, blockedBy: "WEEKLY_LOSS_LIMIT", reason: weeklyFilter.reason };
 
   // 5. Liquidity
   const liqFilter = checkLiquidity(symbol, bid, spread, instrumentType);
