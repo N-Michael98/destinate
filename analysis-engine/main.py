@@ -77,7 +77,23 @@ app = FastAPI(
     version=settings.VERSION,
     description="Autonome Analyse: Backtesting, Forward-Testing, News-Intelligence, AI Learning",
     lifespan=lifespan,
+    # Öffentliche API-Doku deaktiviert (Sicherheit) — Endpoints bleiben nutzbar
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
+
+
+@app.middleware("http")
+async def api_key_guard(request, call_next):
+    """Schützt /api/v1/* mit X-Analysis-Key Header.
+    ANALYSIS_API_KEY leer → alles offen (Fallback: nichts bricht ohne Config).
+    /health bleibt immer offen (UptimeRobot)."""
+    if settings.ANALYSIS_API_KEY and request.url.path.startswith("/api/"):
+        if request.headers.get("X-Analysis-Key") != settings.ANALYSIS_API_KEY:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    return await call_next(request)
 
 app.include_router(health.router)
 app.include_router(insights.router, prefix="/api/v1")

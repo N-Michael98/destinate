@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 
+    # API-Schutz: wenn gesetzt, brauchen alle /api/v1/* Requests den Header
+    # X-Analysis-Key mit diesem Wert. Leer = offen (Fallback, nichts bricht).
+    ANALYSIS_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"
