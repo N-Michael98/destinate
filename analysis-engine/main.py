@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
         from services.news_intel import run_news_intel
         from services.backtest_engine import run_backtests
         from services.ai_learning import run_ai_learning
+        from services.recommendations import run_recommendations
 
         scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -53,6 +54,10 @@ async def lifespan(app: FastAPI):
 
         # Phase 4: AI Learning täglich 03:30 UTC (nach dem 02:00-Backtest)
         scheduler.add_job(run_ai_learning, "cron", hour=3, minute=30, id="ai-learning",
+                          misfire_grace_time=3600)
+
+        # Stufe 1A: Verbesserungs-Vorschläge täglich 04:00 UTC (nur melden, nie anwenden)
+        scheduler.add_job(run_recommendations, "cron", hour=4, minute=0, id="recommendations",
                           misfire_grace_time=3600)
 
         scheduler.start()

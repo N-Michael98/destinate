@@ -7,6 +7,7 @@ from services.data_collector import run_data_collector, REDIS_KEY_TRADE_STATS
 from services.news_intel import run_news_intel, REDIS_KEY_NEWS
 from services.backtest_engine import run_backtests, REDIS_KEY_BACKTESTS
 from services.ai_learning import run_ai_learning
+from services.recommendations import run_recommendations, REDIS_KEY_RECOMMENDATIONS
 
 router = APIRouter()
 
@@ -54,6 +55,19 @@ def trigger_ai_learning(bg: BackgroundTasks):
     """AI Learning Manager manuell starten (Claude-Analyse + Telegram-Report)."""
     bg.add_task(run_ai_learning)
     return {"started": True, "job": "ai-learning", "check": "/api/v1/insights"}
+
+
+@router.get("/recommendations")
+def get_recommendations():
+    data = redis_get_json(REDIS_KEY_RECOMMENDATIONS)
+    return {"available": data is not None, "data": data}
+
+
+@router.post("/run/recommendations")
+def trigger_recommendations(bg: BackgroundTasks):
+    """Vorschlags-Generator manuell starten (meldet nur, wendet nichts an)."""
+    bg.add_task(run_recommendations)
+    return {"started": True, "job": "recommendations", "check": "/api/v1/recommendations"}
 
 
 @router.get("/comms-check")
