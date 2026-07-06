@@ -171,8 +171,12 @@ async function postTradeActions(params: {
   balance: number;
   riskPct: number;
   entryContext?: Record<string, unknown>;
+  actualSL?: number;  // tatsächlich gesetzter SL (Override oder GPT)
+  actualTP?: number;
 }): Promise<void> {
   const { candidate, execResult, style, balance, riskPct, entryContext } = params;
+  const actualSL = params.actualSL ?? candidate.gpt.stopLoss ?? 0;
+  const actualTP = params.actualTP ?? candidate.gpt.takeProfit ?? 0;
   const result = execResult.capital;
   const icResult = execResult.icMarkets;
 
@@ -185,8 +189,8 @@ async function postTradeActions(params: {
       direction: candidate.gpt.direction as "BUY" | "SELL",
       size: result?.size ?? 0,
       entry: result?.openLevel ?? 0,
-      stopLoss: candidate.gpt.stopLoss ?? 0,
-      takeProfit: candidate.gpt.takeProfit ?? 0,
+      stopLoss: actualSL,
+      takeProfit: actualTP,
       confidence: candidate.gpt.confidence,
       broker: brokerLabel,
       dealId: result?.dealId,
@@ -203,8 +207,8 @@ async function postTradeActions(params: {
       symbol:       candidate.symbol,
       direction:    candidate.gpt.direction as "BUY" | "SELL",
       entry:        result.openLevel ?? 0,
-      stopLoss:     candidate.gpt.stopLoss ?? 0,
-      takeProfit:   candidate.gpt.takeProfit ?? 0,
+      stopLoss:     actualSL,
+      takeProfit:   actualTP,
       size:         result.size ?? 0,
       confidence:   candidate.gpt.confidence,
       tradingStyle: style,
@@ -223,8 +227,8 @@ async function postTradeActions(params: {
       tradingStyle: style,
       strategy:     candidate.gpt.tradingStyle ?? style,
       entry:        result?.openLevel ?? 0,
-      stopLoss:     candidate.gpt.stopLoss ?? 0,
-      takeProfit:   candidate.gpt.takeProfit ?? 0,
+      stopLoss:     actualSL,
+      takeProfit:   actualTP,
       size:         result?.size ?? 0,
       accountBalance: balance,
       riskPercent:  riskPct,
@@ -418,10 +422,12 @@ export async function runOrchestratorCycle(): Promise<void> {
   const { runAllFilters, getVolatilityAdjustedRisk } = await import("../trading-filters/trade-filters");
   const currentBalance = session.balance > 0 ? session.balance : 10000;
   const maxDailyLossPct = settings.riskSettings?.maxDailyDrawdownPct ?? 3.0;
+  // Symbole normalisieren ("GBP/JPY" → "GBPJPY") — sonst greifen
+  // Korrelations- und Duplikat-Checks nicht (Capital liefert teils mit Slash)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const openPositionsList = (posResult?.positions ?? []).map((p: any) => ({
-    symbol: p.market?.symbol as string | undefined,
-    epic: p.market?.epic as string | undefined,
+    symbol: (p.market?.symbol as string | undefined)?.replace("/", "").toUpperCase(),
+    epic: (p.market?.epic as string | undefined)?.toUpperCase(),
     direction: p.position?.direction as string | undefined,
   }));
 
@@ -437,6 +443,18 @@ export async function runOrchestratorCycle(): Promise<void> {
     if (override?.style) {
       style = override.style;
       console.log(`[orchestrator] 🔧 ${candidate.symbol}: Override aktiv — Style=${style}${override.slPct ? ` SL=${(override.slPct * 100).toFixed(1)}%` : ""}`);
+    }
+
+    // Duplikat-Schutz: pro Symbol max. 1 offene Position.
+    // (3× GBPJPY gestapelt am 06.07. = 3% konzentriertes Risiko — nie wieder)
+    const candSym = candidate.symbol.toUpperCase().replace("/", "");
+    const candEpic = INSTRUMENT_META[candidate.symbol]?.epic?.toUpperCase();
+    const alreadyOpen = openPositionsList.some(p =>
+      p.symbol === candSym || (candEpic && p.epic === candEpic)
+    );
+    if (alreadyOpen) {
+      console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Position bereits offen (max 1 pro Symbol)`);
+      continue;
     }
 
     // Analysis-Engine Score: nur EXTREM schlechte Märkte (<30) blocken.
@@ -526,7 +544,10 @@ export async function runOrchestratorCycle(): Promise<void> {
         ...(override ? { overrideStrategy: override.strategy } : {}),
       };
 
-      await postTradeActions({ candidate, execResult, style, balance: session.balance, riskPct, entryContext });
+      await postTradeActions({
+        candidate, execResult, style, balance: session.balance, riskPct, entryContext,
+        actualSL: slPrice, actualTP: tpPrice,
+      });
       break; // 1 Trade pro Zyklus
     } else {
       console.warn(`[orchestrator] ❌ ${candidate.symbol} fehlgeschlagen: ${execResult.aiReason}`);
