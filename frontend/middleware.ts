@@ -65,7 +65,10 @@ const PUBLIC_PATHS = ["/login", "/register", "/verify-email", "/api/auth/login",
 // Brute-force tracker — IP → { count, firstSeen }  (in-memory, resets on redeploy)
 const bruteForceMap = new Map<string, { count: number; firstSeen: number }>();
 const BRUTE_WINDOW_MS = 60_000; // 1 minute
-const BRUTE_THRESHOLD = 8;      // 8+ requests from same IP in 1 min = suspicious
+// WICHTIG: Eingeloggte Nutzer (gültiges auth_token) werden NICHT gezählt —
+// das eigene Dashboard macht 10-20 API-Calls pro Seitenladung und wurde
+// vorher fälschlich als "Brute Force" geflaggt (False Positive → Self-Block).
+const BRUTE_THRESHOLD_ANON = 30; // 30+ anonyme Requests/min = verdächtig (Login-Bruteforce etc.)
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -77,29 +80,42 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── IP Blocklist — geblockte IPs sofort ablehnen ─────────────────────────
+  // Mit 800ms-Timeout: Wenn Redis hängt, darf NIE die ganze Seite hängen
+  // (fail-open: im Zweifel durchlassen — Auth-Check unten greift trotzdem).
   if (ip !== "unknown") {
-    const { isIPBlocked } = await import("./lib/security-watchdog/ip-blocklist");
-    if (await isIPBlocked(ip)) {
-      console.log(`[middleware] 🚫 Geblockte IP abgewiesen: ${ip} | ${pathname}`);
-      return new NextResponse("Access denied", { status: 403 });
-    }
+    try {
+      const { isIPBlocked } = await import("./lib/security-watchdog/ip-blocklist");
+      const blocked = await Promise.race([
+        isIPBlocked(ip),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 800)),
+      ]);
+      if (blocked) {
+        console.log(`[middleware] 🚫 Geblockte IP abgewiesen: ${ip} | ${pathname}`);
+        return new NextResponse("Access denied", { status: 403 });
+      }
+    } catch { /* fail-open */ }
   }
 
   // ── Security event detection ─────────────────────────────────────────────
   const detected = detectSuspicious(request);
 
-  // Brute force check — track all IPs, flag if over threshold
+  // Brute force check — nur NICHT eingeloggte Requests zählen.
+  // Eingeloggte Dashboard-Nutzung erzeugt legitim viele API-Calls.
+  const hasAuthCookie = !!request.cookies.get("auth_token")?.value;
   const now = Date.now();
-  const bfEntry = bruteForceMap.get(ip) ?? { count: 0, firstSeen: now };
-  if (now - bfEntry.firstSeen > BRUTE_WINDOW_MS) {
-    // Reset window
-    bruteForceMap.set(ip, { count: 1, firstSeen: now });
-  } else {
-    bfEntry.count++;
-    bruteForceMap.set(ip, bfEntry);
+  let bruteForce = false;
+  if (!hasAuthCookie) {
+    const bfEntry = bruteForceMap.get(ip) ?? { count: 0, firstSeen: now };
+    if (now - bfEntry.firstSeen > BRUTE_WINDOW_MS) {
+      bruteForceMap.set(ip, { count: 1, firstSeen: now });
+    } else {
+      bfEntry.count++;
+      bruteForceMap.set(ip, bfEntry);
+    }
+    bruteForce = bfEntry.count >= BRUTE_THRESHOLD_ANON;
   }
 
-  const eventType = detected?.type ?? (bfEntry.count >= BRUTE_THRESHOLD ? "BRUTE_FORCE" : null);
+  const eventType = detected?.type ?? (bruteForce ? "BRUTE_FORCE" : null);
 
   if (eventType) {
     console.log(`[middleware] Security event detected: ${eventType} | IP: ${ip} | Path: ${pathname}`);
