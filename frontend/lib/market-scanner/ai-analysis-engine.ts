@@ -148,11 +148,18 @@ async function callGPT(apiKey: string, model: string, prompt: string): Promise<s
         response_format: { type: "json_object" },
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`[ai-engine] ⛔ GPT HTTP ${res.status}: ${body.slice(0, 200)}`);
+      return null;
+    }
     const data = await res.json() as Record<string, unknown>;
     const choices = data.choices as Array<{ message: { content: string } }>;
     return choices?.[0]?.message?.content ?? null;
-  } catch { return null; }
+  } catch (e) {
+    console.warn(`[ai-engine] ⛔ GPT Call fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
 }
 
 // ── Real Anthropic API call ────────────────────────────────────────────────────
@@ -171,11 +178,18 @@ async function callClaude(apiKey: string, model: string, prompt: string): Promis
         messages: [{ role: "user", content: prompt }],
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(`[ai-engine] ⛔ Claude HTTP ${res.status}: ${body.slice(0, 200)}`);
+      return null;
+    }
     const data = await res.json() as Record<string, unknown>;
     const content = data.content as Array<{ text: string }>;
     return content?.[0]?.text ?? null;
-  } catch { return null; }
+  } catch (e) {
+    console.warn(`[ai-engine] ⛔ Claude Call fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
 }
 
 function parseJSON<T>(raw: string | null, fallback: T): T {
@@ -382,6 +396,7 @@ Return ONLY valid JSON:
     for (const opp of parsed.opportunities ?? []) {
       if (opp.epic) gptBatchResult[opp.epic] = opp;
     }
+    console.log(`[ai-engine] GPT-Batch: ${raw ? `Antwort ${raw.length} Zeichen` : "KEINE ANTWORT (Call fehlgeschlagen)"} → ${Object.keys(gptBatchResult).length} Opportunities`);
   }
 
   // ── Jedes Symbol verarbeiten ──────────────────────────────────────────────
