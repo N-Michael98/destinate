@@ -391,7 +391,14 @@ Return ONLY valid JSON:
   ]
 }`;
 
-    const raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt);
+    let raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt);
+    // Sicherheitsnetz: Wenn das günstige Modell im OpenAI-Projekt gesperrt ist
+    // (403 model access), einmal mit dem konfigurierten Modell nachversuchen —
+    // eine Modell-Sperre darf nie die komplette Analyse schwärzen.
+    if (raw === null && scanGptModel !== ai.openai.model) {
+      console.warn(`[ai-engine] ↩️ Fallback auf Config-Modell ${ai.openai.model} (${scanGptModel} nicht verfügbar?)`);
+      raw = await callGPT(ai.openai.apiKey, ai.openai.model, prompt);
+    }
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
     for (const opp of parsed.opportunities ?? []) {
       if (opp.epic) gptBatchResult[opp.epic] = opp;
