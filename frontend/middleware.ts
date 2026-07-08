@@ -80,13 +80,19 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── IP Blocklist — geblockte IPs sofort ablehnen ─────────────────────────
+  // Whitelist schlägt Blockliste: gewhitelistete IPs/Subnetze (z.B.
+  // 176.113.69.*) können nie durch Altlast-Block-Einträge gesperrt werden.
   // Mit 800ms-Timeout: Wenn Redis hängt, darf NIE die ganze Seite hängen
   // (fail-open: im Zweifel durchlassen — Auth-Check unten greift trotzdem).
   if (ip !== "unknown") {
     try {
-      const { isIPBlocked } = await import("./lib/security-watchdog/ip-blocklist");
+      const { isIPBlocked, isIPWhitelisted } = await import("./lib/security-watchdog/ip-blocklist");
+      const check = (async () => {
+        if (await isIPWhitelisted(ip)) return false; // Whitelist gewinnt immer
+        return isIPBlocked(ip);
+      })();
       const blocked = await Promise.race([
-        isIPBlocked(ip),
+        check,
         new Promise<false>((resolve) => setTimeout(() => resolve(false), 800)),
       ]);
       if (blocked) {

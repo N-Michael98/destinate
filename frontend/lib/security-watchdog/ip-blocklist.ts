@@ -23,6 +23,17 @@ interface TrustedIP {
 
 // ── Whitelist (Watchdog-Schutz) ───────────────────────────────────────────────
 
+/**
+ * Wildcard-Vergleich: "176.113.69.*" matcht alle IPs mit Präfix "176.113.69."
+ * Nur * am Ende erlaubt (Subnetz), exakte IPs matchen exakt.
+ */
+function ipMatchesPattern(pattern: string, ip: string): boolean {
+  if (pattern.endsWith(".*")) {
+    return ip.startsWith(pattern.slice(0, -1)); // "176.113.69.*" → Präfix "176.113.69."
+  }
+  return pattern === ip;
+}
+
 export async function whitelistIP(ip: string, reason = "Manuell von Admin"): Promise<void> {
   try {
     const list = (await cacheGet<TrustedIP[]>(REDIS_KEY_WHITELIST)) ?? [];
@@ -36,7 +47,7 @@ export async function whitelistIP(ip: string, reason = "Manuell von Admin"): Pro
 export async function isIPWhitelisted(ip: string): Promise<boolean> {
   try {
     const list = (await cacheGet<TrustedIP[]>(REDIS_KEY_WHITELIST)) ?? [];
-    return list.some(e => e.ip === ip);
+    return list.some(e => ipMatchesPattern(e.ip, ip));
   } catch {
     return false;
   }

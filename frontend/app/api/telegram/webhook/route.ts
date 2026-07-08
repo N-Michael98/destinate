@@ -353,7 +353,7 @@ Befehle:
 /block [ip] — IP manuell PERMANENT sperren (Passwort nötig)
 /unblock [ip] — IP freischalten + Whitelist (Passwort nötig)
 /trusted — Alle Whitelist-IPs anzeigen
-/trust [ip] — IP auf Whitelist (Watchdog blockt nie)
+/trust [ip] — IP auf Whitelist (auch Subnetz: /trust 176.113.69.*)
 /untrust [ip] — IP von Whitelist entfernen
 
 <b>Analysis Engine (Lern-System):</b>
