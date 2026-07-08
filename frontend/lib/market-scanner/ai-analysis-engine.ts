@@ -144,7 +144,7 @@ async function callGPT(apiKey: string, model: string, prompt: string): Promise<s
         model,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
-        max_tokens: 1000,
+        max_tokens: 1800, // Top 8 Opportunities brauchen ~800-1000 Tokens Output
         response_format: { type: "json_object" },
       }),
     });
@@ -353,9 +353,35 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
     const stratPerfLine = stratPerfSummary ? `\nSystem performance context: ${stratPerfSummary}` : "";
 
-    const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${stratPerfLine}
+    // News-Sentiment aus der Analysis Engine (Redis) — komplett fail-safe:
+    // Fehler/leer → newsBlock bleibt "" und der Prompt ist exakt wie bisher.
+    let newsBlock = "";
+    try {
+      const { cacheGet } = await import("../cache/redis-cache");
+      const news = await cacheGet<{
+        centralBanks?: Record<string, { source?: string; sentiment?: { label?: string } | null }>;
+        geopolitics?: Array<{ topic: string; articleCount: number; affects: string[]; sentiment?: { label?: string } | null }>;
+      }>("analysis:news");
+      if (news) {
+        const lines: string[] = [];
+        for (const [cur, cb] of Object.entries(news.centralBanks ?? {})) {
+          const label = cb?.sentiment?.label;
+          if (label && label !== "neutral") lines.push(`${cur} central-bank news sentiment: ${label} (${cb.source})`);
+        }
+        for (const g of news.geopolitics ?? []) {
+          if ((g.articleCount ?? 0) > 0) {
+            lines.push(`Geopolitics "${g.topic}": ${g.articleCount} articles, sentiment=${g.sentiment?.label ?? "?"} — affects ${g.affects.join(", ")}`);
+          }
+        }
+        if (lines.length > 0) {
+          newsBlock = `\n\nCURRENT NEWS & GEOPOLITICAL CONTEXT (risk overlay — reduce confidence or prefer WAIT on negatively affected symbols):\n${lines.slice(0, 10).join("\n")}`;
+        }
+      }
+    } catch { /* non-fatal — Prompt ohne News wie bisher */ }
 
-Analyze these live markets with REAL technical indicator data from TA-Lib (1D + 1H + 4H multi-timeframe) and identify the TOP 5 trading opportunities:
+    const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${stratPerfLine}${newsBlock}
+
+Analyze these live markets with REAL technical indicator data from TA-Lib (1D + 1H + 4H multi-timeframe) and identify the TOP 8 trading opportunities:
 
 ${marketList}
 
@@ -528,7 +554,18 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     // GPT_SIMULATED = TA-Lib Fallback ohne GPT → kein Trade
     // GPT_REAL ohne TA-Lib-Daten (pythonBackendOk=false) → kein Trade
     const isRealAnalysis = gpt.source === "GPT_REAL" && hasGPT && pythonBackendOk;
+
+    // Qualitäts-Gate: DIESES Symbol braucht vollständige Daten (TA-Lib UND
+    // Strategie-Konsens). Fehlt eine Ebene (Timeout, yfinance-Lücke), wird
+    // das Symbol in diesem Zyklus nicht gehandelt — statt still mit halber
+    // Analyse. Nächster Zyklus (5 Min) versucht es automatisch neu.
+    const hasFullData = !!ta && strategyData.has(market.symbol);
+    if (!hasFullData && isRealAnalysis && gpt.direction !== "WAIT") {
+      console.log(`[ai-engine] 🔒 ${market.symbol}: unvollständige Analyse (TA=${!!ta}, Strategien=${strategyData.has(market.symbol)}) — kein goSignal diesen Zyklus`);
+    }
+
     const goSignal = isRealAnalysis
+      && hasFullData
       && claude.approved
       && gpt.confidence >= 70
       && gpt.direction !== "WAIT"
