@@ -125,31 +125,36 @@ async function fetchMarkets(
   let supplemented = [...capitalMarkets];
 
   // ── Stufe 1: ECHTE Capital.com-Preise für fehlende Symbole ────────────────
-  // (vorher bekamen 16/23 Märkte nur yfinance-Preise mit geschätztem Spread)
+  // In 5er-Gruppen mit Pause: Capital-Rate-Limit (~10 req/s) verwarf bei
+  // 16 parallelen Anfragen einen Teil (Beleg 08.07.: nur 7/16 geliefert).
+  let realPriceAdded = 0;
   if (missingSymbols.length > 0) {
     try {
       const { capitalGetPrices } = await import("../capital-com/capital-com-client");
-      const pr = await capitalGetPrices(apiKey, cst, secToken, missingSymbols);
-      let added = 0;
-      for (const p of pr.prices ?? []) {
-        const meta = INSTRUMENT_META[p.symbol];
-        if (!meta || !(p.bid > 0 && p.ask > 0)) continue;
-        supplemented.push({
-          epic: meta.epic,
-          instrumentName: meta.name,
-          instrumentType: meta.type,
-          symbol: p.symbol,
-          bid: p.bid,
-          ask: p.ask,
-          spread: p.spread,
-          updateTime: p.updateTime ?? new Date().toISOString(),
-        });
-        added++;
+      const CHUNK = 5;
+      for (let i = 0; i < missingSymbols.length; i += CHUNK) {
+        if (i > 0) await new Promise(r => setTimeout(r, 400)); // Rate-Limit-Pause
+        const chunk = missingSymbols.slice(i, i + CHUNK);
+        const pr = await capitalGetPrices(apiKey, cst, secToken, chunk).catch(() => null);
+        for (const p of pr?.prices ?? []) {
+          const meta = INSTRUMENT_META[p.symbol];
+          if (!meta || !(p.bid > 0 && p.ask > 0)) continue;
+          supplemented.push({
+            epic: meta.epic,
+            instrumentName: meta.name,
+            instrumentType: meta.type,
+            symbol: p.symbol,
+            bid: p.bid,
+            ask: p.ask,
+            spread: p.spread,
+            updateTime: p.updateTime ?? new Date().toISOString(),
+          });
+          realPriceAdded++;
+        }
       }
-      if (added > 0) {
+      if (realPriceAdded > 0) {
         const nowCovered = new Set(supplemented.map(m => m.symbol));
         missingSymbols = missingSymbols.filter(s => !nowCovered.has(s));
-        console.log(`[orchestrator] ${added} Märkte mit echten Capital-Preisen ergänzt (bid/ask/spread live)`);
       }
     } catch { /* non-fatal — Python-Fallback unten greift */ }
   }
@@ -189,7 +194,8 @@ async function fetchMarkets(
     } catch { /* non-fatal */ }
   }
 
-  console.log(`[orchestrator] Märkte: ${capitalMarkets.length} Capital + ${supplemented.length - capitalMarkets.length} Python = ${supplemented.length} total`);
+  const capitalTotal = capitalMarkets.length + realPriceAdded;
+  console.log(`[orchestrator] Märkte: ${capitalTotal} Capital(echt) + ${supplemented.length - capitalTotal} Python(yfinance) = ${supplemented.length} total`);
   return supplemented;
 }
 
