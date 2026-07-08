@@ -120,10 +120,41 @@ async function fetchMarkets(
 
   const capitalMarkets = capitalResult.markets ?? [];
   const capitalSymbols = new Set(capitalMarkets.map((m: CapitalMarket) => m.symbol));
-  const missingSymbols = WATCHLIST.filter(s => !capitalSymbols.has(s));
+  let missingSymbols = WATCHLIST.filter(s => !capitalSymbols.has(s));
 
   let supplemented = [...capitalMarkets];
 
+  // ── Stufe 1: ECHTE Capital.com-Preise für fehlende Symbole ────────────────
+  // (vorher bekamen 16/23 Märkte nur yfinance-Preise mit geschätztem Spread)
+  if (missingSymbols.length > 0) {
+    try {
+      const { capitalGetPrices } = await import("../capital-com/capital-com-client");
+      const pr = await capitalGetPrices(apiKey, cst, secToken, missingSymbols);
+      let added = 0;
+      for (const p of pr.prices ?? []) {
+        const meta = INSTRUMENT_META[p.symbol];
+        if (!meta || !(p.bid > 0 && p.ask > 0)) continue;
+        supplemented.push({
+          epic: meta.epic,
+          instrumentName: meta.name,
+          instrumentType: meta.type,
+          symbol: p.symbol,
+          bid: p.bid,
+          ask: p.ask,
+          spread: p.spread,
+          updateTime: p.updateTime ?? new Date().toISOString(),
+        });
+        added++;
+      }
+      if (added > 0) {
+        const nowCovered = new Set(supplemented.map(m => m.symbol));
+        missingSymbols = missingSymbols.filter(s => !nowCovered.has(s));
+        console.log(`[orchestrator] ${added} Märkte mit echten Capital-Preisen ergänzt (bid/ask/spread live)`);
+      }
+    } catch { /* non-fatal — Python-Fallback unten greift */ }
+  }
+
+  // ── Stufe 2: Python/yfinance-Fallback nur noch für den Rest ───────────────
   if (missingSymbols.length > 0) {
     try {
       const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
