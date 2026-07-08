@@ -108,8 +108,41 @@ Events analyzed: ${result.eventCount}
 <i>Falls dies ein echter Angriff ist: /untrust ${attackIP} dann /block ${attackIP}</i>`
         );
       } else {
+        // ── Eskalations-Doppel-Check VOR dem Blocken ─────────────────────────
+        // Die Middleware weist gesperrte IPs ab BEVOR Events geloggt werden.
+        // Events von einer bereits gesperrten IP = Block wurde umgangen = echte
+        // Eskalation. Ebenso: viele verschiedene IPs = koordinierter Angriff.
+        const { isIPBlocked } = await import("./ip-blocklist");
+        let bypassedIP: string | null = null;
+        for (const ip of ipCounts.keys()) {
+          if (await isIPBlocked(ip)) { bypassedIP = ip; break; }
+        }
+        const distinctIPs = ipCounts.size;
+
         if (attackIP) await blockIP(attackIP, `ATTACK: ${result.summary}`, true); // permanent
-        await handleAttack(result, attackIP);
+
+        if (bypassedIP || distinctIPs >= 5) {
+          // Echte Eskalation → Killswitch bleibt scharf
+          const escalation = bypassedIP
+            ? `Events von bereits gesperrter IP ${bypassedIP} — Block wurde umgangen!`
+            : `Koordinierter Angriff: ${distinctIPs} verschiedene IPs gleichzeitig`;
+          await handleAttack(result, attackIP, escalation);
+        } else {
+          // Standard-Fall (Scanner-Bot): Block + Alarm reichen — Trading läuft weiter.
+          // Ein einzelner, sofort gesperrter Bot darf das Trading nicht mehr stoppen.
+          console.log(`[watchdog] 🚫 ATTACK geblockt (${attackIP}) — kein Killswitch (Einzel-IP, Block greift)`);
+          await sendTelegram(
+`🚫 <b>Security Watchdog — ANGRIFF GEBLOCKT</b>
+
+${result.summary}
+🚫 IP AUTO-GEBLOCKT: <code>${attackIP}</code> (PERMANENT)
+Events analyzed: ${result.eventCount}
+
+✅ <b>Trading läuft normal weiter</b> — Angreifer ist ausgesperrt.
+<i>Killswitch nur bei Eskalation (Block umgangen oder ≥5 IPs koordiniert).</i>
+🕐 ${new Date().toLocaleString("de-CH")}`
+          );
+        }
       }
     } else if (result.verdict === "SUSPICIOUS") {
       // Bei SUSPICIOUS: IP blockieren wenn sie > 5 Events hat (72h) — ausser whitelisted
@@ -142,17 +175,18 @@ Events in window: ${result.eventCount}
   }
 }
 
-async function handleAttack(result: WatchdogResult, blockedIP?: string): Promise<void> {
-  console.error(`[watchdog] 🚨 ATTACK DETECTED — triggering killswitch`);
+async function handleAttack(result: WatchdogResult, blockedIP?: string, escalation?: string): Promise<void> {
+  console.error(`[watchdog] 🚨 ESKALATION — triggering killswitch: ${escalation ?? "unbekannt"}`);
 
   // 1. Trigger killswitch immediately
   triggerKillswitch("AI_WATCHDOG", "Claude Security Watchdog");
 
   // 2. Alert via Telegram
   await sendTelegram(
-`🚨 <b>SECURITY WATCHDOG — ATTACK DETECTED</b>
+`🚨 <b>SECURITY WATCHDOG — ESKALATION</b>
 
 ${result.summary}
+${escalation ? `⚠️ Eskalationsgrund: ${escalation}` : ""}
 ${blockedIP ? `🚫 IP AUTO-GEBLOCKT: <code>${blockedIP}</code> (PERMANENT)` : ""}
 Events analyzed: ${result.eventCount}
 
