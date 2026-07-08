@@ -156,6 +156,10 @@ async function fetchMarkets(
         const nowCovered = new Set(supplemented.map(m => m.symbol));
         missingSymbols = missingSymbols.filter(s => !nowCovered.has(s));
       }
+      // Fern-Diagnose: WELCHE Symbole liefert Capital nicht (und landen im Fallback)?
+      if (missingSymbols.length > 0) {
+        console.log(`[orchestrator] Capital-Preise fehlen für: ${missingSymbols.join(", ")} — Python-Fallback greift`);
+      }
     } catch { /* non-fatal — Python-Fallback unten greift */ }
   }
 
