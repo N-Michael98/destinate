@@ -24,7 +24,7 @@ from services.storage import redis_get_json, redis_set_json
 REDIS_KEY_RECOMMENDATIONS = "analysis:recommendations"
 REDIS_KEY_TRADE_STATS = "analysis:trade_stats"
 REDIS_KEY_BACKTESTS = "analysis:backtests"
-TTL = 30 * 60 * 60
+TTL = 8 * 24 * 60 * 60  # 8 Tage — Vorschläge kommen wöchentlich (So 04:00), /apply braucht sie die ganze Woche
 
 # Backtest-Strategie → Trading-Style den destinate kennt
 STRATEGY_TO_STYLE = {

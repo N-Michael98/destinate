@@ -56,9 +56,18 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_ai_learning, "cron", hour=3, minute=30, id="ai-learning",
                           misfire_grace_time=3600)
 
-        # Stufe 1A: Verbesserungs-Vorschläge täglich 04:00 UTC (nur melden, nie anwenden)
-        scheduler.add_job(run_recommendations, "cron", hour=4, minute=0, id="recommendations",
-                          misfire_grace_time=3600)
+        # Stufe 1A: Verbesserungs-Vorschläge — WÖCHENTLICH Sonntag 04:00 UTC
+        # (User-Vorgabe 12.07.: Methoden 1+ Wochen testen statt täglicher Flut;
+        #  Daten-Sammlung darunter läuft weiter täglich)
+        scheduler.add_job(run_recommendations, "cron", day_of_week="sun", hour=4, minute=0,
+                          id="recommendations", misfire_grace_time=3600)
+
+        # Auswertungs-Reports: Woche (So 06:00) + Monat (1. um 06:30)
+        from services.periodic_report import run_weekly_report, run_monthly_report
+        scheduler.add_job(run_weekly_report, "cron", day_of_week="sun", hour=6, minute=0,
+                          id="weekly-report", misfire_grace_time=3600)
+        scheduler.add_job(run_monthly_report, "cron", day=1, hour=6, minute=30,
+                          id="monthly-report", misfire_grace_time=3600)
 
         scheduler.start()
         logger.info("Scheduler gestartet — data-collector (4h), news-intel (2h), backtest (02:00), ai-learning (03:30)")

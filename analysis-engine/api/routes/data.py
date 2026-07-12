@@ -70,6 +70,14 @@ def trigger_recommendations(bg: BackgroundTasks):
     return {"started": True, "job": "recommendations", "check": "/api/v1/recommendations"}
 
 
+@router.post("/run/weekly-report")
+def trigger_weekly_report(bg: BackgroundTasks):
+    """Wochen-Report manuell auslösen (Telegram)."""
+    from services.periodic_report import run_weekly_report
+    bg.add_task(run_weekly_report)
+    return {"started": True, "job": "weekly-report"}
+
+
 @router.get("/comms-check")
 def comms_check():
     """Verbindungs-Check: beweist jede Kommunikations-Strecke mit echten Daten."""
