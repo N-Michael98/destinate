@@ -95,8 +95,9 @@ Regeln:
 - fix soll umsetzbar sein (Strategie-Wechsel, SL/TP-Anpassung, Style-Wechsel)"""
 
 
-def _ask_claude(prompt: str) -> tuple[dict | None, str | None]:
-    """(result, error) — error ist remote via /api/v1/insights sichtbar."""
+def _ask_claude(prompt: str, retry: bool = True) -> tuple[dict | None, str | None]:
+    """(result, error) — error ist remote via /api/v1/insights sichtbar.
+    Bei kaputtem JSON (Haiku ist nicht deterministisch): 1x Retry."""
     if not settings.ANTHROPIC_API_KEY:
         return None, "ANTHROPIC_API_KEY fehlt"
     try:
@@ -109,7 +110,7 @@ def _ask_claude(prompt: str) -> tuple[dict | None, str | None]:
             },
             json={
                 "model": settings.AI_MODEL,
-                "max_tokens": 1500,
+                "max_tokens": 2000,
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=60,
@@ -118,16 +119,29 @@ def _ask_claude(prompt: str) -> tuple[dict | None, str | None]:
             err = f"Claude HTTP {resp.status_code}: {resp.text[:300]}"
             logger.warning(f"[ai-learning] {err}")
             return None, err
-        text = resp.json()["content"][0]["text"].strip()
+        body = resp.json()
+        stop_reason = body.get("stop_reason")
+        text = body["content"][0]["text"].strip()
         # JSON extrahieren (falls Markdown-Fences)
         text = text.replace("```json", "").replace("```", "").strip()
         start, end = text.find("{"), text.rfind("}")
         if start == -1 or end == -1:
-            return None, f"Kein JSON in Antwort: {text[:200]}"
-        return json.loads(text[start:end + 1]), None
+            return None, f"Kein JSON in Antwort (stop={stop_reason}): {text[:200]}"
+        try:
+            return json.loads(text[start:end + 1]), None
+        except json.JSONDecodeError as je:
+            # Diagnose: abgeschnitten (stop=max_tokens) oder Formatfehler?
+            err = f"JSON kaputt (stop={stop_reason}, len={len(text)}): {je} | Ende: ...{text[-120:]}"
+            logger.warning(f"[ai-learning] {err}")
+            if retry:
+                logger.info("[ai-learning] Retry (Haiku nicht deterministisch)")
+                return _ask_claude(prompt, retry=False)
+            return None, err
     except Exception as e:
         err = f"{type(e).__name__}: {e}"
         logger.warning(f"[ai-learning] Claude-Call fehlgeschlagen: {err}")
+        if retry:
+            return _ask_claude(prompt, retry=False)
         return None, err
 
 
