@@ -113,14 +113,31 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       // Position is no longer open — get real P&L from transactions
       const profitLoss = pnlByDealId.get(meta.dealId) ?? null;
 
-      // If no transaction found yet, wait for next cycle (Capital.com takes 1-3 min to post)
-      // Mark as CLOSED with BREAKEVEN only if we have a confirmed P&L value
+      // Capital.com braucht 1-3 Min um den P&L zu verbuchen. BUG-FIX 13.07.:
+      // Vorher wurde hier sofort CLOSED/BREAKEVEN/0 gesetzt — aber der Sync
+      // liest nur status='OPEN', also wurde der echte P&L NIE nachgetragen
+      // (alle Trades endeten als 0.0). Jetzt: OPEN lassen und bis zu 5 Zyklen
+      // (~10 Min) auf die Transaktion warten, erst dann aufgeben.
       if (profitLoss === null) {
-        // Mark closed but keep result as BREAKEVEN until next sync finds the P&L
-        await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'BREAKEVEN', "profitLoss" = 0, "updatedAt" = NOW() WHERE "id" = $1`,
-          trade.id
-        );
+        let m: Record<string, unknown> = {};
+        try { m = JSON.parse(trade.notes); } catch { m = {}; }
+        const retries = (typeof m.pnlRetries === "number" ? m.pnlRetries : 0) + 1;
+        if (retries <= 5) {
+          m.pnlRetries = retries;
+          await db.$executeRawUnsafe(
+            `UPDATE "Trade" SET "notes" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+            JSON.stringify(m),
+            trade.id
+          );
+          console.log(`[trade-tracker] P&L noch nicht verbucht: ${trade.market} deal=${meta.dealId} (Versuch ${retries}/5) — bleibt OPEN`);
+        } else {
+          // Nach 5 Versuchen aufgeben — wie altes Verhalten
+          await db.$executeRawUnsafe(
+            `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'BREAKEVEN', "profitLoss" = 0, "updatedAt" = NOW() WHERE "id" = $1`,
+            trade.id
+          );
+          console.warn(`[trade-tracker] ⚠️ P&L nach 5 Versuchen nicht gefunden: ${trade.market} deal=${meta.dealId} — CLOSED als BREAKEVEN`);
+        }
         continue;
       }
 
