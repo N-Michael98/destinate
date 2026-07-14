@@ -500,11 +500,18 @@ export async function runOrchestratorCycle(): Promise<void> {
 
     // Analysis-Engine Score: nur EXTREM schlechte Märkte (<30) blocken.
     // Philosophie: schwache Märkte werden diagnostiziert, nicht gemieden.
+    // AUSNAHME: Ein vom Admin bestätigter /apply-Override übersteuert den
+    // Score — der Sinn des Overrides ist ja, den schwachen Markt mit neuer
+    // Methode zu TESTEN (der Score basiert auf der alten Methode).
     if (getSymbolScore) {
       const score = getSymbolScore(analysisInsights, candidate.symbol);
       if (score !== null && score < 30) {
-        console.log(`[orchestrator] 🧠 ${candidate.symbol} übersprungen — Analysis-Engine Score ${score}/100 (Diagnose läuft nachts)`);
-        continue;
+        if (override) {
+          console.log(`[orchestrator] 🧠 ${candidate.symbol}: Score ${score}/100, aber Override aktiv — Test läuft weiter`);
+        } else {
+          console.log(`[orchestrator] 🧠 ${candidate.symbol} übersprungen — Analysis-Engine Score ${score}/100 (Diagnose läuft nachts)`);
+          continue;
+        }
       }
     }
 
