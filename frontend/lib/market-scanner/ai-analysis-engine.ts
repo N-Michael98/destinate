@@ -144,7 +144,7 @@ async function callGPT(apiKey: string, model: string, prompt: string): Promise<s
         model,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
-        max_tokens: 1800, // Top 8 Opportunities brauchen ~800-1000 Tokens Output
+        max_tokens: 4000, // Urteil für ALLE ~22 Märkte (Testphase) ≈ 2500-3500 Tokens Output
         response_format: { type: "json_object" },
       }),
     });
@@ -381,7 +381,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
     const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${stratPerfLine}${newsBlock}
 
-Analyze these live markets with REAL technical indicator data from TA-Lib (1D + 1H + 4H multi-timeframe) and identify the TOP 8 trading opportunities:
+Analyze these live markets with REAL technical indicator data from TA-Lib (1D + 1H + 4H multi-timeframe). Return a judgment for EVERY market listed — use direction "WAIT" (confidence 0, stopLoss 0, takeProfit 0) when there is no clean setup. Do NOT skip any market:
 
 ${marketList}
 
@@ -456,7 +456,7 @@ Return ONLY valid JSON:
         source: "GPT_REAL",
       };
     } else if (hasGPT) {
-      // GPT verbunden aber Symbol nicht in Top-5 → WAIT
+      // GPT hat dieses Symbol trotz Anweisung nicht beantwortet → sicherer WAIT
       gpt = { ...noSignal(market), source: "GPT_REAL" };
     } else if (ta && ta.signal !== "NEUTRAL") {
       // Kein GPT → TA-Lib Signal direkt als Fallback nutzen
