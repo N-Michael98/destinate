@@ -498,20 +498,17 @@ export async function runOrchestratorCycle(): Promise<void> {
       continue;
     }
 
-    // Analysis-Engine Score: nur EXTREM schlechte Märkte (<30) blocken.
-    // Philosophie: schwache Märkte werden diagnostiziert, nicht gemieden.
-    // AUSNAHME: Ein vom Admin bestätigter /apply-Override übersteuert den
-    // Score — der Sinn des Overrides ist ja, den schwachen Markt mit neuer
-    // Methode zu TESTEN (der Score basiert auf der alten Methode).
+    // Analysis-Engine Score — TESTPHASE (User-Entscheid 15.07.): NUR LOGGEN,
+    // nicht mehr blocken. Grund: Die Scores basieren noch auf den vergifteten
+    // 0.0-P&L-Altdaten (Bug bis 13.07. behoben) — Blocken würde Märkte wegen
+    // eines Datenfehlers benachteiligen. Alle 22 Märkte testen gleichberechtigt;
+    // die 7 anderen Schutzstufen (Confidence, Meta-AI, Threshold, Duplikat,
+    // Korrelation, Kalender, Tages-/Wochen-Limits) bleiben voll aktiv.
+    // Reaktivierung des Blocks nach der Testphase: diesen Commit reverten.
     if (getSymbolScore) {
       const score = getSymbolScore(analysisInsights, candidate.symbol);
       if (score !== null && score < 30) {
-        if (override) {
-          console.log(`[orchestrator] 🧠 ${candidate.symbol}: Score ${score}/100, aber Override aktiv — Test läuft weiter`);
-        } else {
-          console.log(`[orchestrator] 🧠 ${candidate.symbol} übersprungen — Analysis-Engine Score ${score}/100 (Diagnose läuft nachts)`);
-          continue;
-        }
+        console.log(`[orchestrator] 🧠 ${candidate.symbol}: Score ${score}/100${override ? " (Override aktiv)" : ""} — Testphase: nur Hinweis, kein Block`);
       }
     }
 
