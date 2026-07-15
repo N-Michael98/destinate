@@ -4,6 +4,7 @@
  */
 
 export type AgentEventType =
+  | "RISK:HEARTBEAT"
   | "RISK:BE_SET"
   | "RISK:TRAIL_UPDATED"
   | "RISK:PARTIAL_TP"

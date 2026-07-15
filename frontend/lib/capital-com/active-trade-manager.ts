@@ -16,6 +16,21 @@ import { runRiskAgent, type PosMeta } from "../agents/risk-agent";
 
 export async function runActiveTradeManager(): Promise<void> {
   console.log("[trade-mgr] gestartet");
+
+  // Heartbeat für den DiagnosticsAgent: beweist dass der 2-Min-Loop lebt —
+  // auch wenn es nichts zu tun gibt (keine Positionen / keine Schwellen).
+  // Vorher: RiskAgent meldete nur AKTIONEN → in ruhigen Phasen Fehlalarm
+  // "Agent nicht mehr aktiv" nach 10 Min.
+  try {
+    const { agentBus } = await import("../agents/agent-bus");
+    agentBus.publish({
+      type: "RISK:HEARTBEAT",
+      agentId: "RiskAgent",
+      timestamp: new Date().toISOString(),
+      payload: { source: "active-trade-manager" },
+    });
+  } catch { /* non-fatal */ }
+
   if (!isCapitalConnected()) {
     console.log("[trade-mgr] Capital nicht verbunden — abgebrochen");
     return;

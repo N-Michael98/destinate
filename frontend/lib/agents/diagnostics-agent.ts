@@ -247,6 +247,7 @@ export function initDiagnosticsAgent(): void {
 
   // Alle Bus-Events abonnieren
   const eventTypes: AgentEventType[] = [
+    "RISK:HEARTBEAT",
     "RISK:BE_SET", "RISK:TRAIL_UPDATED", "RISK:PARTIAL_TP",
     "RISK:POSITION_CLOSED", "RISK:ERROR",
     "EXECUTION:TRADE_OPENED", "EXECUTION:TRADE_CLOSED",
