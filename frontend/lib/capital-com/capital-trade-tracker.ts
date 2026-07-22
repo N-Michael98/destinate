@@ -99,6 +99,34 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       if (dealId) { pnlByDealId.set(dealId, pnl); marketByDealId.set(dealId, String(tx.instrumentName ?? "")); }
     }
 
+    // ── P&L-Match über openPrice (BEWIESEN 26.07. via /api/debug-pnl) ────────
+    // Capital vergibt beim Schliessen eine ANDERE dealId als beim Öffnen → der
+    // direkte dealId-Match (pnlByDealId) griff praktisch nie (alle Trades 0.0).
+    // Bewiesene Kette: DB.entry == activity.openPrice, und activity.dealId ==
+    // transaction.dealId. Also: (epic, openPrice) → P&L.
+    const { EPIC_MAP } = await import("./capital-com-client");
+    const pnlByEpicOpen = new Map<string, number>();
+    try {
+      const from = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 19);
+      const to = new Date().toISOString().slice(0, 19);
+      const actRes = await fetch(`${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=200`, {
+        headers: { "X-CAP-API-KEY": session.apiKey, "CST": session.cst, "X-SECURITY-TOKEN": session.securityToken },
+      });
+      if (actRes.ok) {
+        const actData = await actRes.json() as { activities?: Record<string, unknown>[] };
+        for (const a of actData.activities ?? []) {
+          if (String(a.type ?? "") !== "POSITION") continue;
+          const actDealId = String(a.dealId ?? "");
+          const pnl = pnlByDealId.get(actDealId);  // activity.dealId == transaction.dealId
+          if (pnl === undefined) continue;
+          const details = (a.details ?? {}) as Record<string, unknown>;
+          const openPrice = Number(details.openPrice ?? 0);
+          const epic = String(a.epic ?? details.epic ?? "");
+          if (openPrice > 0 && epic) pnlByEpicOpen.set(`${epic}|${openPrice.toFixed(5)}`, pnl);
+        }
+      }
+    } catch { /* non-fatal — Fallback auf Retry-Logik unten */ }
+
     const db = getPrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const openTrades: Array<{ id: number; market: string; direction: string; entry: number; stopLoss: number; takeProfit: number; notes: string }> = await (db.$queryRawUnsafe as any)(
@@ -110,8 +138,11 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       try { meta = JSON.parse(trade.notes); } catch { continue; }
       if (!meta.dealId || openDealIds.has(meta.dealId)) continue;
 
-      // Position is no longer open — get real P&L from transactions
-      const profitLoss = pnlByDealId.get(meta.dealId) ?? null;
+      // Position is no longer open — get real P&L.
+      // Weg 1 (alt): direkt per Open-dealId — matcht praktisch nie.
+      // Weg 2 (BEWIESEN): über market+entry → epic+openPrice → P&L.
+      const openKey = `${(EPIC_MAP[trade.market] ?? trade.market)}|${Number(trade.entry).toFixed(5)}`;
+      const profitLoss = pnlByDealId.get(meta.dealId) ?? pnlByEpicOpen.get(openKey) ?? null;
 
       // Capital.com braucht 1-3 Min um den P&L zu verbuchen. BUG-FIX 13.07.:
       // Vorher wurde hier sofort CLOSED/BREAKEVEN/0 gesetzt — aber der Sync
