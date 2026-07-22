@@ -24,16 +24,16 @@ export async function GET() {
     // gespeicherte dealIds aus der DB — OPEN + zuletzt CLOSED
     const db = getPrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows: Array<{ id: number; market: string; status: string; result: string; profitLoss: number; notes: string }> =
+    const rows: Array<{ id: number; market: string; status: string; result: string; profitLoss: number; entry: number; direction: string; notes: string }> =
       await (db.$queryRawUnsafe as any)(
-        `SELECT "id","market","status","result","profitLoss","notes" FROM "Trade"
+        `SELECT "id","market","status","result","profitLoss","entry","direction","notes" FROM "Trade"
          WHERE "notes" LIKE '%dealId%' ORDER BY "updatedAt" DESC LIMIT 15`
       );
     const dbTrades = rows.map(t => {
       let dealId: string | undefined;
       let pnlRetries: unknown;
       try { const m = JSON.parse(t.notes); dealId = m.dealId; pnlRetries = m.pnlRetries; } catch { /* skip */ }
-      return { id: t.id, market: t.market, status: t.status, result: t.result, profitLoss: t.profitLoss, dealId, pnlRetries };
+      return { id: t.id, market: t.market, status: t.status, result: t.result, profitLoss: t.profitLoss, entry: t.entry, direction: t.direction, dealId, pnlRetries };
     });
 
     // ── TRADE-Transaktionen (P&L in size) — korrekt mit 24h (86400) ──────────
@@ -62,17 +62,15 @@ export async function GET() {
         return String(a.type ?? "").includes("POSITION") ||
                actions.some(act => String(act.actionType ?? "").includes("CLOSE"));
       })
-      .slice(0, 8)
+      .slice(0, 10)
       .map(a => {
         const details = (a.details ?? {}) as Record<string, unknown>;
-        const actions = Array.isArray(details.actions) ? details.actions as Record<string, unknown>[] : [];
         return {
           epic: a.epic ?? details.epic,
-          type: a.type,
-          topDealId: a.dealId,
-          affectedDealIds: actions.map(act => ({ actionType: act.actionType, affectedDealId: act.affectedDealId })),
-          profitAndLoss: details.profitAndLoss ?? details.profit,
-          dealReference: details.dealReference,
+          source: a.source,
+          activityDealId: a.dealId,       // == transaction.dealId (mit P&L)
+          openPrice: details.openPrice,   // == DB.entry ?
+          direction: details.direction,
         };
       });
 
