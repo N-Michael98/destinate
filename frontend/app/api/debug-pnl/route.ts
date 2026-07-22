@@ -62,8 +62,51 @@ export async function GET() {
       return { id: t.id, market: t.market, status: t.status, result: t.result, profitLoss: t.profitLoss, dealId, pnlRetries };
     });
 
+    // ── Match-Test: für jeden CLOSED DB-Trade prüfen, welcher Matcher greift ──
+    // (a) transactions TRADE per dealId  (b) activity CLOSE per affectedDealId
+    // Vollständige Listen holen (nicht nur die ersten 5) für den Test:
+    let allTx: Record<string, unknown>[] = [];
+    let allAct: Record<string, unknown>[] = [];
+    try {
+      const r = await fetch(`${DEMO_BASE}/history/transactions?lastPeriod=604800`, { headers });
+      if (r.ok) allTx = ((await r.json() as { transactions?: Record<string, unknown>[] }).transactions ?? []);
+    } catch { /* skip */ }
+    try {
+      const from = new Date(Date.now() - 604800 * 1000).toISOString().slice(0, 19);
+      const to = new Date().toISOString().slice(0, 19);
+      const r = await fetch(`${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=200`, { headers });
+      if (r.ok) allAct = ((await r.json() as { activities?: Record<string, unknown>[] }).activities ?? []);
+    } catch { /* skip */ }
+
+    // Map per Transaction-dealId (aktueller Sync-Weg)
+    const txByDealId = new Map<string, unknown>();
+    for (const tx of allTx) {
+      if (String(tx.transactionType ?? "") !== "TRADE") continue;
+      const id = String(tx.dealId ?? "");
+      if (id) txByDealId.set(id, { size: tx.size, ref: tx.reference, name: tx.instrumentName });
+    }
+    // Map per activity affectedDealId (Kandidat-Weg)
+    const actByAffected = new Map<string, unknown>();
+    for (const a of allAct) {
+      const details = (a.details ?? {}) as Record<string, unknown>;
+      const actions = Array.isArray(details.actions) ? details.actions as Record<string, unknown>[] : [];
+      for (const act of actions) {
+        const aff = String(act.affectedDealId ?? "");
+        if (aff) actByAffected.set(aff, { actionType: act.actionType, pnl: details.profitAndLoss ?? details.profit, epic: details.epic ?? a.epic });
+      }
+    }
+
+    const matchTest = dbTrades.slice(0, 10).map(t => ({
+      market: t.market,
+      dbDealId: t.dealId,
+      matchByTxDealId: t.dealId ? (txByDealId.get(t.dealId) ?? null) : null,
+      matchByActivityAffected: t.dealId ? (actByAffected.get(t.dealId) ?? null) : null,
+    }));
+
     return NextResponse.json({
-      hint: "Vergleiche: db.dealId  vs.  transaction.dealId/reference  vs.  activity.dealId/affectedDealId. Wo steht der echte P&L?",
+      hint: "matchByTxDealId = aktueller Sync-Weg (offenbar null). matchByActivityAffected = Kandidat-Fix. Welcher liefert Daten?",
+      counts: { transactions: allTx.length, activities: allAct.length, txTradeEntries: txByDealId.size, activityAffectedEntries: actByAffected.size },
+      matchTest,
       transactionsRaw: transactions,
       activitiesRaw: activities,
       dbTrades,
