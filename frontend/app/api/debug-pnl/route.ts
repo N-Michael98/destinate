@@ -51,7 +51,8 @@ export async function GET() {
     const to = new Date().toISOString().slice(0, 19);
     let allAct: Record<string, unknown>[] = [];
     try {
-      const r = await fetch(`${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=200`, { headers });
+      // detailed=true → Capital liefert erst dann details.actions[].affectedDealId
+      const r = await fetch(`${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=200&detailed=true`, { headers });
       if (r.ok) allAct = ((await r.json() as { activities?: Record<string, unknown>[] }).activities ?? []);
     } catch { /* skip */ }
     const closeActs = allAct
@@ -75,11 +76,19 @@ export async function GET() {
         };
       });
 
+    // Eine CLOSE-Aktivität komplett roh (um mit detailed=true die volle Struktur zu sehen)
+    const firstCloseRaw = allAct.find(a => {
+      const details = (a.details ?? {}) as Record<string, unknown>;
+      const actions = Array.isArray(details.actions) ? details.actions as Record<string, unknown>[] : [];
+      return String(a.type ?? "").includes("POSITION") || actions.some(act => String(act.actionType ?? "").includes("CLOSE"));
+    }) ?? null;
+
     return NextResponse.json({
-      hint: "Vergleiche dbTrades[].dealId mit closeActivities[].affectedDealIds und tradeTransactions[].dealId. Wo matcht die Open-dealId + wo steht der P&L?",
+      hint: "detailed=true getestet. firstCloseActivityRaw zeigt die volle Struktur. Steht jetzt affectedDealId ODER der P&L drin?",
       counts: { totalTx: allTx.length, tradeTx: tradeTx.length, totalActivities: allAct.length, closeActivities: closeActs.length },
       tradeTransactions: tradeTx,
       closeActivities: closeActs,
+      firstCloseActivityRaw: firstCloseRaw,
       dbTrades: dbTrades.slice(0, 12),
     });
   } catch (err) {
