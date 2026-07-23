@@ -363,11 +363,32 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
       const taInfo = ta
         ? ` | 1D:trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${ta.ema_20?.toFixed(2)} ema50=${ta.ema_50?.toFixed(2)} atr=${ta.atr?.toFixed(2)}`
         : "";
+      // Schritt 3 (26.07.): Bollinger (dynamische S/R), ADX (Trendstärke),
+      // EMA200 (Haupttrend), Candlestick-Patterns — bisher nie an GPT gegeben
+      const extraTa = ta
+        ? [
+            ta.bb_upper != null && ta.bb_lower != null ? `bb=[${Number(ta.bb_lower).toFixed(2)}..${Number(ta.bb_upper).toFixed(2)}]` : "",
+            ta.adx != null ? `adx=${Number(ta.adx).toFixed(0)}` : "",
+            ta.ema_200 != null ? `ema200=${Number(ta.ema_200).toFixed(2)}${ta.above_ema200 === true ? "(price>ema200)" : ta.above_ema200 === false ? "(price<ema200)" : ""}` : "",
+            (ta.patterns_bullish?.length ?? 0) > 0 ? `bullPat=${ta.patterns_bullish!.slice(0, 2).join(",")}` : "",
+            (ta.patterns_bearish?.length ?? 0) > 0 ? `bearPat=${ta.patterns_bearish!.slice(0, 2).join(",")}` : "",
+          ].filter(Boolean).join(" ")
+        : "";
+      const extraInfo = extraTa ? ` | ${extraTa}` : "";
+      // Schritt 3: konkrete S/R-Zonen + Abstand in ATR (Kernstück gegen
+      // Einstiege direkt an der Zone)
+      const lv = sr?.levels;
+      const srZones = lv
+        ? ` | SR: support=${lv.support} resistance=${lv.resistance} distToRes=${lv.dist_to_resistance_atr ?? "?"}ATR distToSup=${lv.dist_to_support_atr ?? "?"}ATR`
+        : "";
       const mtfInfo = mtf ? ` | ${mtf}` : "";
+      // Schritt 3: ALLE aktiven Strategien (vorher nur Top-1 auf 80 Zeichen)
       const stInfo = sr && sr.consensus !== "NEUTRAL"
-        ? ` | strategies=${sr.consensus}(${sr.consensus_conf}%) [${sr.long_votes}L/${sr.short_votes}S/${sr.neutral_votes}N of ${sr.total_strategies}] top="${sr.active[0]?.strategy ?? "none"}: ${sr.active[0]?.reasoning?.slice(0, 80) ?? ""}"`
+        ? ` | strategies=${sr.consensus}(${sr.consensus_conf}%) [${sr.long_votes}L/${sr.short_votes}S/${sr.neutral_votes}N of ${sr.total_strategies}] active: ${
+            (sr.active ?? []).slice(0, 6).map(a => `${a.strategy}=${a.signal}(${a.confidence})`).join(", ")
+          }`
         : sr ? ` | strategies=NEUTRAL(${sr.neutral_votes}/${sr.total_strategies} neutral)` : "";
-      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${mtfInfo}${stInfo}`;
+      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${srZones}${mtfInfo}${stInfo}`;
     }).join("\n");
 
     const stratPerfLine = stratPerfSummary ? `\nSystem performance context: ${stratPerfSummary}` : "";
@@ -414,8 +435,20 @@ CRITICAL RULES — violations = bad analysis:
 - If strategies=LONG with >60% confidence AND trend=BULLISH → strong BUY signal
 - If strategies=SHORT with >60% confidence AND trend=BEARISH → strong SELL signal
 - If strategies and trend DISAGREE → reduce confidence by 15 or go WAIT
+- SUPPORT/RESISTANCE (highest priority — overrides trend signals):
+  * distToRes < 1.0 ATR → price is AT resistance → NO BUY. Either WAIT for a
+    confirmed breakout followed by a retest, or consider SELL on rejection.
+  * distToSup < 1.0 ATR → price is AT support → NO SELL. Either WAIT for a
+    confirmed breakdown followed by a retest, or consider BUY on bounce.
+  * Never buy into resistance or sell into support just because the trend agrees.
+  * Also treat the Bollinger band edges (bb=[lower..upper]) as dynamic zones.
+- ADX < 20 = weak/ranging trend → trend-following setups are unreliable, prefer
+  range logic (buy support / sell resistance) or WAIT.
+- EMA200: only take BUY when price > ema200, SELL when price < ema200, unless a
+  clear reversal pattern (bullPat/bearPat) confirms otherwise.
 - Minimum R:R ratio 1.5 — if no clean setup → WAIT
 - stopLoss MUST be below entry for BUY, above entry for SELL
+- Place stopLoss beyond the relevant S/R zone, not inside it
 - Max SL distances: GOLD=15pts, EURUSD=0.0040, NAS100=200pts, USOIL=2.0, BTCUSD=1000
 
 Return ONLY valid JSON:
