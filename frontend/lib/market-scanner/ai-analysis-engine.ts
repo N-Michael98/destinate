@@ -117,6 +117,15 @@ interface StrategyResult {
   neutral_votes:   number;
   total_strategies:number;
   active:          Array<{ strategy: string; signal: string; confidence: number; reasoning: string }>;
+  // Schritt 2 (26.07.): explizite S/R-Zonen (optional — älteres Backend ok)
+  levels?: {
+    support: number;
+    resistance: number;
+    price: number;
+    atr: number;
+    dist_to_resistance_atr: number | null;
+    dist_to_support_atr: number | null;
+  } | null;
 }
 
 async function fetchStrategySignals(symbols: string[]): Promise<Map<string, StrategyResult>> {

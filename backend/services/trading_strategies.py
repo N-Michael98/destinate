@@ -371,15 +371,31 @@ def strategy_support_resistance(symbol: str) -> dict:
     near_resistance = abs(price - resistance_zone) < tolerance
     near_support    = abs(price - support_zone)    < tolerance
 
+    # Schritt 2 (26.07.): S/R-Levels EXPLIZIT mitgeben (nicht nur im Text) —
+    # damit der Scanner/GPT die konkreten Zonen und den Abstand kennt.
+    levels = {
+        "support": round(float(support_zone), 6),
+        "resistance": round(float(resistance_zone), 6),
+        "price": round(price, 6),
+        "atr": round(atr, 6),
+        # Abstand in ATR: <1.0 = Preis klebt an der Zone (kein Einstieg in
+        # Zonen-Richtung, erst Breakout/Rejection + Retest abwarten)
+        "dist_to_resistance_atr": round((resistance_zone - price) / atr, 2) if atr > 0 else None,
+        "dist_to_support_atr": round((price - support_zone) / atr, 2) if atr > 0 else None,
+    }
+
     if near_support and rsi and rsi < 45:
         conf = 65 + int((45 - rsi))
-        return _result("LONG", min(82, conf), price, support_zone - atr, price + atr * 3,
-                       f"Bounce von Support {support_zone:.5f} | RSI={rsi:.1f} | Toleranz={tolerance:.5f}")
+        r = _result("LONG", min(82, conf), price, support_zone - atr, price + atr * 3,
+                    f"Bounce von Support {support_zone:.5f} | RSI={rsi:.1f} | Toleranz={tolerance:.5f}")
     elif near_resistance and rsi and rsi > 55:
         conf = 65 + int(rsi - 55)
-        return _result("SHORT", min(82, conf), price, resistance_zone + atr, price - atr * 3,
-                       f"Rejection von Resistance {resistance_zone:.5f} | RSI={rsi:.1f}")
-    return _neutral(f"Preis {price:.5f} nicht nah an S ({support_zone:.5f}) oder R ({resistance_zone:.5f})")
+        r = _result("SHORT", min(82, conf), price, resistance_zone + atr, price - atr * 3,
+                    f"Rejection von Resistance {resistance_zone:.5f} | RSI={rsi:.1f}")
+    else:
+        r = _neutral(f"Preis {price:.5f} nicht nah an S ({support_zone:.5f}) oder R ({resistance_zone:.5f})")
+    r["levels"] = levels
+    return r
 
 
 # ── 8. Candlestick Patterns ───────────────────────────────────────────────────
@@ -900,6 +916,11 @@ def analyze_all_strategies(symbol: str) -> dict:
     ]
     active_strategies.sort(key=lambda x: -x["confidence"])
 
+    # Schritt 2 (26.07.): S/R-Levels aus der support_resistance-Strategie nach
+    # oben durchreichen — vorher steckten sie nur im reasoning-Text und gingen
+    # verloren, sobald die Strategie nicht die Top-1 war.
+    sr_levels = (results.get("support_resistance") or {}).get("levels")
+
     return {
         "symbol":          sym,
         "consensus":       consensus,
@@ -911,6 +932,7 @@ def analyze_all_strategies(symbol: str) -> dict:
         "best_strategy":   best,
         "active":          active_strategies,
         "all":             results,
+        "levels":          sr_levels,
     }
 
 
