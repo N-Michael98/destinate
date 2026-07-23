@@ -201,6 +201,52 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
         });
       } catch { /* non-fatal */ }
     }
+
+    // ── NACHTRAG: CLOSED-Trades mit profitLoss=0 der letzten 48h korrigieren ──
+    // Beleg 23.07.: Capital verbuchte die P&L-Transaktion erst um 07:07 UTC für
+    // einen deutlich älteren Trade. Die 5 Retries (=10 Min) geben viel zu früh
+    // auf → Trade landet auf 0.0. Sobald die Transaktion da ist, wird der echte
+    // Wert hier nachgetragen. Sicherheiten: nur profitLoss=0, nur wenn ein
+    // echter Wert gefunden wird, updatedAt bleibt unverändert (Report-Zeitraum
+    // bleibt korrekt), UPDATE nochmals mit profitLoss=0 abgesichert.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const zeroTrades: Array<{ id: number; market: string; entry: number; notes: string }> =
+        await (db.$queryRawUnsafe as any)(
+          `SELECT "id","market","entry","notes" FROM "Trade"
+           WHERE "status" = 'CLOSED' AND "profitLoss" = 0
+             AND "updatedAt" >= NOW() - INTERVAL '48 hours'
+             AND "notes" LIKE '%dealId%'`
+        );
+      const corrected: string[] = [];
+      for (const t of zeroTrades) {
+        let m: { dealId?: string } = {};
+        try { m = JSON.parse(t.notes); } catch { continue; }
+        const key = `${(EPIC_MAP[t.market] ?? t.market)}|${Number(t.entry).toFixed(5)}`;
+        const pnl = (m.dealId ? pnlByDealId.get(m.dealId) : undefined) ?? pnlByEpicOpen.get(key);
+        if (pnl === undefined || pnl === 0) continue; // nur echte Werte nachtragen
+        const res = pnl > 0.01 ? "WIN" : pnl < -0.01 ? "LOSS" : "BREAKEVEN";
+        await db.$executeRawUnsafe(
+          `UPDATE "Trade" SET "result" = $1, "profitLoss" = $2 WHERE "id" = $3 AND "profitLoss" = 0`,
+          res, pnl, t.id
+        );
+        corrected.push(`${t.market}: ${res} ${pnl > 0 ? "+" : ""}${pnl}`);
+        console.log(`[trade-tracker] 🔄 P&L nachgetragen: ${t.market} id=${t.id} → ${res} ${pnl}`);
+      }
+      if (corrected.length > 0) {
+        console.log(`[trade-tracker] ✅ ${corrected.length} Trades mit echtem P&L korrigiert`);
+        try {
+          const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+          await sendTelegram(
+            `🔄 <b>P&L nachgetragen</b>\n\n${corrected.length} Trade(s) hatten 0.0, weil Capital die Transaktion verspätet verbucht — jetzt mit echten Werten korrigiert:\n\n` +
+            corrected.slice(0, 10).map(c => `• ${c}`).join("\n") +
+            (corrected.length > 10 ? `\n…und ${corrected.length - 10} weitere` : "")
+          );
+        } catch { /* non-fatal */ }
+      }
+    } catch (e) {
+      console.warn("[trade-tracker] P&L-Nachtrag fehlgeschlagen (non-fatal):", e instanceof Error ? e.message : String(e));
+    }
   } catch (err) {
     console.error("[trade-tracker] syncCapitalPositions error:", err);
   }
