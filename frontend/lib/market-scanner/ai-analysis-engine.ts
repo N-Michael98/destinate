@@ -533,24 +533,44 @@ Return ONLY valid JSON:
       gpt = noSignal(market);
     }
 
-    // TA-Lib + Strategie-Konsens gegen GPT-Signal prüfen
+    // ── Veto-Prüfung (Schritt 4, 26.07.) ────────────────────────────────────
+    // Vorher mussten VIER Bedingungen gleichzeitig zutreffen (ta.trend UND
+    // ta.signal UND Strategie-Konsens UND conf>=60) — das griff praktisch nie.
+    // Jetzt: zwei unabhängige Vetos, jedes für sich ausreichend.
     if (gpt.direction !== "WAIT") {
       const sr = strategyData.get(market.symbol);
-      const taBearish = ta && ta.trend === "BEARISH" && ta.signal === "SELL";
-      const taBullish = ta && ta.trend === "BULLISH" && ta.signal === "BUY";
+      let blockReason = "";
+
+      // Veto 1: Strategie-Mehrheit klar gegen die GPT-Richtung (>=60% Konsens)
       const stratSell = sr && sr.consensus === "SHORT" && sr.consensus_conf >= 60;
       const stratBuy  = sr && sr.consensus === "LONG"  && sr.consensus_conf >= 60;
+      if (gpt.direction === "BUY" && stratSell) {
+        blockReason = `Strategie-Konsens SHORT (${sr!.consensus_conf}%, ${sr!.short_votes}/${sr!.total_strategies}) gegen GPT-BUY`;
+      } else if (gpt.direction === "SELL" && stratBuy) {
+        blockReason = `Strategie-Konsens LONG (${sr!.consensus_conf}%, ${sr!.long_votes}/${sr!.total_strategies}) gegen GPT-SELL`;
+      }
 
-      // Blockieren wenn TA + Strategie-Mehrheit gegen GPT-Signal
-      const blockBuy  = gpt.direction === "BUY"  && taBearish && stratSell;
-      const blockSell = gpt.direction === "SELL" && taBullish && stratBuy;
+      // Veto 2 (hart): Einstieg direkt in eine S/R-Zone hinein — genau der
+      // Fall aus dem UK100-Beispiel (LONG an der Resistance). Erst Breakout
+      // bzw. Rejection + Retest abwarten.
+      const lv = sr?.levels;
+      if (!blockReason && lv) {
+        const dr = lv.dist_to_resistance_atr;
+        const ds = lv.dist_to_support_atr;
+        if (gpt.direction === "BUY" && dr != null && dr >= 0 && dr < 1.0) {
+          blockReason = `Preis klebt an Resistance ${lv.resistance} (${dr} ATR) — BUY erst nach Breakout+Retest`;
+        } else if (gpt.direction === "SELL" && ds != null && ds >= 0 && ds < 1.0) {
+          blockReason = `Preis klebt an Support ${lv.support} (${ds} ATR) — SELL erst nach Breakdown+Retest`;
+        }
+      }
 
-      if (blockBuy || blockSell) {
+      if (blockReason) {
+        console.log(`[ai-engine] 🛑 ${market.symbol} ${gpt.direction} blockiert: ${blockReason}`);
         gpt = {
           ...gpt,
           direction: "WAIT",
           confidence: 0,
-          reasoning: `Signal blockiert: GPT=${gpt.direction} aber TA=${ta?.trend} + Strategien=${sr?.consensus}(${sr?.consensus_conf}%). Kein Trade.`,
+          reasoning: `Signal blockiert: ${blockReason}`,
         };
       }
     }
