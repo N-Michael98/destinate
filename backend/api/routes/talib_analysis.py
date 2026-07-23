@@ -47,6 +47,7 @@ async def talib_analyze_multi(req: MultiRequest):
         trend_str = "BULLISH" if ema20 > ema50 else "BEARISH" if ema20 < ema50 else "NEUTRAL"
         macd_val  = momentum.get("macd") or 0
         macd_sig  = momentum.get("macd_signal") or 0
+        patterns = item.get("patterns", {})
         results[sym] = {
             "symbol":      sym,
             "signal":      item.get("signal", "NEUTRAL"),
@@ -57,6 +58,17 @@ async def talib_analyze_multi(req: MultiRequest):
             "ema_20":      ema20,
             "ema_50":      ema50,
             "atr":         vol.get("atr_14") or 0,
+            # ── Schritt 1 (26.07.): bisher berechnet aber verworfen ──────────
+            # Bollinger = dynamische S/R-Zonen, ADX = Trendstärke,
+            # EMA200 = Haupttrend, Patterns = Umkehrsignale.
+            "bb_upper":       vol.get("bb_upper"),
+            "bb_middle":      vol.get("bb_middle"),
+            "bb_lower":       vol.get("bb_lower"),
+            "adx":            trend.get("adx"),
+            "ema_200":        trend.get("ema_200"),
+            "above_ema200":   trend.get("above_ema200"),
+            "patterns_bullish": patterns.get("bullish", []),
+            "patterns_bearish": patterns.get("bearish", []),
         }
     print(f"[talib] ✅ {len(results)}/{len(symbols)} Symbole analysiert")
     return {"results": results}

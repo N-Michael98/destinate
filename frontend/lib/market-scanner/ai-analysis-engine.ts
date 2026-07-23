@@ -62,6 +62,16 @@ interface TAlibSummary {
   ema_20: number;
   ema_50: number;
   atr: number;
+  // ── Schritt 1 (26.07.): zusätzliche Felder vom Backend (alle optional,
+  // damit ein älterer Backend-Stand nichts bricht) ──────────────────────────
+  bb_upper?: number | null;      // dynamische Resistance-Zone
+  bb_middle?: number | null;
+  bb_lower?: number | null;      // dynamische Support-Zone
+  adx?: number | null;           // Trendstärke (>25 = starker Trend)
+  ema_200?: number | null;       // Haupttrend-Linie
+  above_ema200?: boolean | null;
+  patterns_bullish?: string[];
+  patterns_bearish?: string[];
 }
 
 async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSummary>> {
