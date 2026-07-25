@@ -109,7 +109,10 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     try {
       const from = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 19);
       const to = new Date().toISOString().slice(0, 19);
-      const actRes = await fetch(`${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=200`, {
+      // detailed=true ist ZWINGEND: nur dann liefert Capital details.openPrice
+      // (ohne den Parameter fehlt das details-Objekt → Map bliebe leer → alle
+      //  Trades blieben 0.0). Bewiesen via /api/debug-pnl backfillSim.
+      const actRes = await fetch(`${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=200&detailed=true`, {
         headers: { "X-CAP-API-KEY": session.apiKey, "CST": session.cst, "X-SECURITY-TOKEN": session.securityToken },
       });
       if (actRes.ok) {
@@ -125,7 +128,10 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           if (openPrice > 0 && epic) pnlByEpicOpen.set(`${epic}|${openPrice.toFixed(5)}`, pnl);
         }
       }
-    } catch { /* non-fatal — Fallback auf Retry-Logik unten */ }
+      console.log(`[trade-tracker] P&L-Map: ${pnlByDealId.size} tx, ${pnlByEpicOpen.size} epic|openPrice`);
+    } catch (e) {
+      console.warn(`[trade-tracker] Activity-Fetch fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+    }
 
     const db = getPrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
