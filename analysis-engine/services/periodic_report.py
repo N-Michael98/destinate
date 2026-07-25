@@ -49,6 +49,37 @@ def _stats_for_window(days_back_start: int, days_back_end: int) -> dict:
     return {"total": total, "bySymbol": by_symbol}
 
 
+def _entry_quality_breakdown(days: int) -> dict:
+    """Entry-Engine Phase D: WinRate/PnL gruppiert nach Entry-Quality-Tier.
+    Liest den Tier aus notes.entryContext.entryQualityTier (seit 26.07.)."""
+    import json as _json
+    rows = pg_query(
+        '''SELECT result, "profitLoss", notes
+           FROM "Trade"
+           WHERE status = 'CLOSED'
+             AND "updatedAt" >= NOW() - INTERVAL '%s days' ''' % int(days)
+    )
+    tiers: dict[str, dict] = {}
+    for result, pnl, notes in rows:
+        tier = "UNBEKANNT"
+        try:
+            ctx = (_json.loads(notes) or {}).get("entryContext") or {}
+            tier = ctx.get("entryQualityTier") or "UNBEKANNT"
+        except Exception:
+            pass
+        e = tiers.setdefault(tier, {"trades": 0, "wins": 0, "losses": 0, "pnl": 0.0})
+        e["trades"] += 1
+        if result == "WIN":
+            e["wins"] += 1
+        elif result == "LOSS":
+            e["losses"] += 1
+        e["pnl"] = round(e["pnl"] + float(pnl or 0), 2)
+    for e in tiers.values():
+        decided = e["wins"] + e["losses"]
+        e["winRate"] = round(e["wins"] / decided * 100, 1) if decided else None
+    return tiers
+
+
 def _fmt_total(t: dict) -> str:
     wr = f"{t['winRate']}%" if t.get("winRate") is not None else "n/a"
     sign = "+" if t["pnl"] >= 0 else ""
@@ -99,6 +130,20 @@ def _build_report(days: int, title: str, compare_previous: bool) -> str:
     if overrides:
         lines.append(f"🔧 = aktiver Override ({', '.join(overrides.keys())})")
         lines.append("Bilanz gut → behalten | schlecht → /unapply + neue /vorschlaege prüfen")
+        lines.append("")
+
+    # Entry-Engine Phase D: Auswertung nach Entry-Quality-Tier
+    tiers = _entry_quality_breakdown(days)
+    rated = {k: v for k, v in tiers.items() if k != "UNBEKANNT"}
+    if rated:
+        lines.append("<b>🎯 Nach Entry-Quality (Engine):</b>")
+        order = ["EXCELLENT", "GOOD", "MODERATE", "WEAK", "NO_SIGNAL"]
+        for tier in sorted(rated.keys(), key=lambda x: order.index(x) if x in order else 99):
+            e = rated[tier]
+            wr = f"{e['winRate']}%" if e.get("winRate") is not None else "n/a"
+            sign = "+" if e["pnl"] >= 0 else ""
+            lines.append(f"• {tier}: {e['trades']} Trades, WR {wr}, {sign}{e['pnl']}")
+        lines.append("<i>Wenn GOOD/EXCELLENT besser abschneiden → Engine wirkt, Schwelle anheben.</i>")
         lines.append("")
 
     lines.append(f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC")

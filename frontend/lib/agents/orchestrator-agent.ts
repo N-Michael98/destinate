@@ -584,6 +584,9 @@ export async function runOrchestratorCycle(): Promise<void> {
         styleUsed: style,
         gptStyle: candidate.gpt.tradingStyle ?? null,
         riskPctUsed: riskPct,
+        // Entry-Engine Phase D: Qualitäts-Tier für spätere Auswertung
+        entryQualityTier: (candidate as { entryQualityTier?: string }).entryQualityTier ?? null,
+        entryQualityScore: (candidate as { entryQualityScore?: number }).entryQualityScore ?? null,
         aiScore: getSymbolScore ? getSymbolScore(analysisInsights, candidate.symbol) : null,
         overrideActive: !!override,
         ...(override ? { overrideStrategy: override.strategy } : {}),

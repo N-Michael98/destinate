@@ -40,6 +40,9 @@ export interface ScannerOpportunity {
   finalScore: number;
   goSignal: boolean;
   taSignals?: { atr?: number; rsi?: number; trend?: string; signal?: string };
+  // Entry-Engine Phase D (26.07.): Qualitäts-Tier pro Chance (für Reporting)
+  entryQualityTier?: string;
+  entryQualityScore?: number;
   analysisQuality?: {
     hasGPT: boolean;
     hasTALib: boolean;
@@ -694,6 +697,8 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       finalScore,
       goSignal,
       taSignals: taEntry ? { atr: taEntry.atr, rsi: taEntry.rsi, trend: taEntry.trend, signal: taEntry.signal } : undefined,
+      entryQualityTier: strategyData.get(market.symbol)?.entry_quality?.tier,
+      entryQualityScore: strategyData.get(market.symbol)?.entry_quality?.score,
       // Diagnose-Felder: zeigen warum goSignal false ist
       analysisQuality: {
         hasGPT,
