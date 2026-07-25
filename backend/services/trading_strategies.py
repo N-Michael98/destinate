@@ -852,6 +852,86 @@ def strategy_supply_demand(symbol: str) -> dict:
     return _neutral(f"Preis {price:.5f} nicht in bekannter S/D-Zone (Zonen gefunden: {len(demand_zones)}D / {len(supply_zones)}S)")
 
 
+# ── 16. Market Structure (Entry-Engine Phase A, 26.07.) ───────────────────────
+
+def _find_swings(high: pd.Series, low: pd.Series, n: int = 3):
+    """Swing-Highs/Lows: Punkt ist höher/tiefer als n Kerzen links UND rechts.
+    Gibt chronologische Listen (idx, price) zurück."""
+    highs, lows = [], []
+    hv, lv = high.values, low.values
+    for i in range(n, len(hv) - n):
+        if all(hv[i] >= hv[i - j] for j in range(1, n + 1)) and \
+           all(hv[i] >= hv[i + j] for j in range(1, n + 1)):
+            highs.append((i, float(hv[i])))
+        if all(lv[i] <= lv[i - j] for j in range(1, n + 1)) and \
+           all(lv[i] <= lv[i + j] for j in range(1, n + 1)):
+            lows.append((i, float(lv[i])))
+    return highs, lows
+
+
+def strategy_market_structure(symbol: str) -> dict:
+    """
+    Market Structure (Price Action / ICT-Konzept — ergänzt ict_smart_money):
+    - HH+HL = bullische Struktur, LH+LL = bärische Struktur
+    - Break of Structure (BOS): Preis bricht letztes Swing-High/-Low
+    - Equal Highs/Lows = Liquiditätszonen (Ziel für Stop-Runs)
+    Handel NUR mit der Struktur + frischem BOS, nicht dagegen.
+    """
+    df = _load(symbol, "4h", "3mo")
+    if df.empty or len(df) < 40:
+        return _neutral("Zu wenig Daten")
+
+    high, low, close = df["high"], df["low"], df["close"]
+    atr = _atr(df)
+    price = float(close.iloc[-1])
+    if atr <= 0:
+        return _neutral("ATR ungültig")
+
+    highs, lows = _find_swings(high, low, n=3)
+    if len(highs) < 2 or len(lows) < 2:
+        return _neutral("Zu wenige Swing-Punkte")
+
+    last_h, prev_h = highs[-1][1], highs[-2][1]
+    last_l, prev_l = lows[-1][1], lows[-2][1]
+
+    # Strukturrichtung aus der Swing-Sequenz
+    if last_h > prev_h and last_l > prev_l:
+        structure = "BULLISH"
+    elif last_h < prev_h and last_l < prev_l:
+        structure = "BEARISH"
+    else:
+        structure = "RANGE"
+
+    # Break of Structure: aktueller Preis über letztem Swing-High / unter letztem Swing-Low
+    bos_up = price > last_h
+    bos_down = price < last_l
+
+    # Equal Highs/Lows (Liquidität) — relative Toleranz 0.1%, funktioniert für
+    # alle Asset-Klassen (kein hardcodierter Absolutwert)
+    eq_high = abs(last_h - prev_h) / max(prev_h, 1e-9) < 0.001
+    eq_low = abs(last_l - prev_l) / max(prev_l, 1e-9) < 0.001
+
+    liq = []
+    if eq_high:
+        liq.append(f"Equal Highs ~{last_h:.5f} (Liquidität oben)")
+    if eq_low:
+        liq.append(f"Equal Lows ~{last_l:.5f} (Liquidität unten)")
+    liq_str = (" | " + ", ".join(liq)) if liq else ""
+
+    # LONG: bullische Struktur + frischer BOS nach oben
+    if structure == "BULLISH" and bos_up:
+        conf = 70
+        return _result("LONG", min(85, conf), price, last_l - atr * 0.5, price + atr * 3,
+                       f"BOS↑ über Swing-High {last_h:.5f} | Struktur HH+HL{liq_str}")
+    # SHORT: bärische Struktur + frischer BOS nach unten
+    if structure == "BEARISH" and bos_down:
+        conf = 70
+        return _result("SHORT", min(85, conf), price, last_h + atr * 0.5, price - atr * 3,
+                       f"BOS↓ unter Swing-Low {last_l:.5f} | Struktur LH+LL{liq_str}")
+
+    return _neutral(f"Struktur={structure}, kein frischer BOS (letztes H={last_h:.5f}, L={last_l:.5f}){liq_str}")
+
+
 # ── Alle Strategien kombinieren ────────────────────────────────────────────────
 
 STRATEGIES: dict[str, callable] = {
@@ -870,6 +950,7 @@ STRATEGIES: dict[str, callable] = {
     "macd":              strategy_macd,
     "ict_smart_money":   strategy_ict_smart_money,
     "supply_demand":     strategy_supply_demand,
+    "market_structure":  strategy_market_structure,
 }
 
 
