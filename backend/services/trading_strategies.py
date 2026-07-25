@@ -1002,6 +1002,12 @@ def analyze_all_strategies(symbol: str) -> dict:
     # verloren, sobald die Strategie nicht die Top-1 war.
     sr_levels = (results.get("support_resistance") or {}).get("levels")
 
+    # Entry-Engine Phase B (26.07.): Entry Quality Score — aggregiert die
+    # BEREITS berechneten Signale zu EINER Kennzahl (rechnet nichts neu).
+    entry_quality = _compute_entry_quality(results, consensus, avg_conf,
+                                           long_count, short_count,
+                                           sr_levels, best)
+
     return {
         "symbol":          sym,
         "consensus":       consensus,
@@ -1014,7 +1020,71 @@ def analyze_all_strategies(symbol: str) -> dict:
         "active":          active_strategies,
         "all":             results,
         "levels":          sr_levels,
+        "entry_quality":   entry_quality,
     }
+
+
+def _compute_entry_quality(results: dict, consensus: str, avg_conf: int,
+                           long_count: int, short_count: int,
+                           sr_levels: Optional[dict], best: dict) -> dict:
+    """
+    Entry Quality Score 0-100 aus VORHANDENEN Signalen (keine Neuberechnung).
+    Gewichtung (Summe 100):
+      Strategie-Konsens-Stärke        35
+      Market-Structure + BOS          25
+      S/R-Kontext (Abstand zur Zone)  20
+      Konsens-Confidence              20
+    Tier: >=85 EXCELLENT | >=70 GOOD | >=55 MODERATE | >=40 WEAK | sonst NO_SIGNAL
+    direction folgt dem Konsens (der Score bewertet dessen Qualität).
+    """
+    if consensus == "NEUTRAL":
+        return {"score": 0, "tier": "NO_SIGNAL", "direction": "NEUTRAL", "reasons": []}
+
+    total = long_count + short_count
+    winners = long_count if consensus == "LONG" else short_count
+    reasons: list[str] = []
+    score = 0.0
+
+    # 1. Konsens-Stärke (Anteil der Gewinner-Stimmen an allen abgegebenen)
+    ratio = winners / total if total > 0 else 0
+    score += 35 * ratio
+    reasons.append(f"Konsens {consensus} {winners}/{total} Strategien")
+
+    # 2. Market Structure + BOS (nutzt die neue 16. Strategie)
+    ms = results.get("market_structure") or {}
+    ms_sig = ms.get("signal", "NEUTRAL")
+    if ms_sig == consensus:
+        score += 25
+        reasons.append(f"Market-Structure bestätigt ({ms.get('reasoning', '')[:60]})")
+    elif ms_sig != "NEUTRAL" and ms_sig != consensus:
+        score -= 10  # Struktur widerspricht → Abzug
+        reasons.append("Market-Structure widerspricht Konsens")
+
+    # 3. S/R-Kontext: Einstieg NICHT direkt in die Zone (Abstand >= 1 ATR gut)
+    if sr_levels:
+        if consensus == "LONG":
+            dr = sr_levels.get("dist_to_resistance_atr")
+            if dr is not None and dr >= 1.0:
+                score += 20; reasons.append(f"Genug Platz zur Resistance ({dr} ATR)")
+            elif dr is not None and dr < 1.0:
+                reasons.append(f"⚠ nah an Resistance ({dr} ATR)")
+        else:  # SHORT
+            ds = sr_levels.get("dist_to_support_atr")
+            if ds is not None and ds >= 1.0:
+                score += 20; reasons.append(f"Genug Platz zum Support ({ds} ATR)")
+            elif ds is not None and ds < 1.0:
+                reasons.append(f"⚠ nah an Support ({ds} ATR)")
+    else:
+        score += 10  # keine Zone bekannt → neutral-positiv (halbe Gewichtung)
+
+    # 4. Konsens-Confidence (0-100 → 0-20)
+    score += 20 * (max(0, min(100, avg_conf)) / 100)
+
+    score_i = int(max(0, min(100, round(score))))
+    tier = ("EXCELLENT" if score_i >= 85 else "GOOD" if score_i >= 70
+            else "MODERATE" if score_i >= 55 else "WEAK" if score_i >= 40
+            else "NO_SIGNAL")
+    return {"score": score_i, "tier": tier, "direction": consensus, "reasons": reasons[:6]}
 
 
 def analyze_strategies_multi(symbols: list[str]) -> list[dict]:

@@ -126,6 +126,13 @@ interface StrategyResult {
     dist_to_resistance_atr: number | null;
     dist_to_support_atr: number | null;
   } | null;
+  // Entry-Engine Phase B (26.07.): aggregierter Einstiegs-Qualitätsscore
+  entry_quality?: {
+    score: number;                                    // 0-100
+    tier: "EXCELLENT" | "GOOD" | "MODERATE" | "WEAK" | "NO_SIGNAL";
+    direction: "LONG" | "SHORT" | "NEUTRAL";
+    reasons: string[];
+  } | null;
 }
 
 async function fetchStrategySignals(symbols: string[]): Promise<Map<string, StrategyResult>> {
