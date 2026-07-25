@@ -388,6 +388,11 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
       const srZones = lv
         ? ` | SR: support=${lv.support} resistance=${lv.resistance} distToRes=${lv.dist_to_resistance_atr ?? "?"}ATR distToSup=${lv.dist_to_support_atr ?? "?"}ATR`
         : "";
+      // Phase C (26.07.): Entry Quality Score in den Prompt
+      const eq = sr?.entry_quality;
+      const eqInfo = eq && eq.tier !== "NO_SIGNAL"
+        ? ` | entryQuality=${eq.score}/100(${eq.tier},${eq.direction})`
+        : "";
       const mtfInfo = mtf ? ` | ${mtf}` : "";
       // Schritt 3: ALLE aktiven Strategien (vorher nur Top-1 auf 80 Zeichen)
       const stInfo = sr && sr.consensus !== "NEUTRAL"
@@ -395,7 +400,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
             (sr.active ?? []).slice(0, 6).map(a => `${a.strategy}=${a.signal}(${a.confidence})`).join(", ")
           }`
         : sr ? ` | strategies=NEUTRAL(${sr.neutral_votes}/${sr.total_strategies} neutral)` : "";
-      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${srZones}${mtfInfo}${stInfo}`;
+      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${srZones}${eqInfo}${mtfInfo}${stInfo}`;
     }).join("\n");
 
     const stratPerfLine = stratPerfSummary ? `\nSystem performance context: ${stratPerfSummary}` : "";
@@ -453,6 +458,10 @@ CRITICAL RULES — violations = bad analysis:
   range logic (buy support / sell resistance) or WAIT.
 - EMA200: only take BUY when price > ema200, SELL when price < ema200, unless a
   clear reversal pattern (bullPat/bearPat) confirms otherwise.
+- ENTRY QUALITY (entryQuality=score/100): this aggregates strategy consensus,
+  market structure/BOS, S/R context and confidence. If it disagrees with your
+  direction, or tier is WEAK, reduce confidence by 15 or WAIT. Prefer setups
+  where entryQuality is GOOD or EXCELLENT and agrees with your direction.
 - Minimum R:R ratio 1.5 — if no clean setup → WAIT
 - stopLoss MUST be below entry for BUY, above entry for SELL
 - Place stopLoss beyond the relevant S/R zone, not inside it
@@ -571,6 +580,15 @@ Return ONLY valid JSON:
         }
       }
 
+      // Veto 3 (Entry-Engine Phase C): Entry Quality zeigt klar in die
+      // Gegenrichtung UND hat solide Qualität (GOOD+) → blocken.
+      const eq = sr?.entry_quality;
+      const gptDir = gpt.direction === "BUY" ? "LONG" : "SELL";
+      if (!blockReason && eq && (eq.tier === "GOOD" || eq.tier === "EXCELLENT")
+          && eq.direction !== "NEUTRAL" && eq.direction !== gptDir) {
+        blockReason = `Entry-Quality ${eq.score}/100 (${eq.tier}) zeigt ${eq.direction}, GPT will ${gpt.direction}`;
+      }
+
       if (blockReason) {
         console.log(`[ai-engine] 🛑 ${market.symbol} ${gpt.direction} blockiert: ${blockReason}`);
         gpt = {
@@ -626,8 +644,18 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       claude = simulateClaude(gpt);
     }
 
+    // Entry-Engine Phase C: kleiner Bonus/Malus aus Entry Quality, wenn sie mit
+    // der Handelsrichtung übereinstimmt (max ±8 Punkte — GPT bleibt Haupttreiber)
+    const eqScore = (() => {
+      const eq = strategyData.get(market.symbol)?.entry_quality;
+      if (!eq || eq.direction === "NEUTRAL" || gpt.direction === "WAIT") return 0;
+      const gptDir = gpt.direction === "BUY" ? "LONG" : "SELL";
+      if (eq.direction !== gptDir) return -4;                 // leichte Gegenrichtung
+      return eq.tier === "EXCELLENT" ? 8 : eq.tier === "GOOD" ? 5 : eq.tier === "MODERATE" ? 2 : 0;
+    })();
+
     const finalScore = gpt.direction === "WAIT" ? 0 :
-      (gpt.confidence * 0.5 + (100 - claude.riskScore) * 0.3 + (claude.approved ? 20 : 0));
+      (gpt.confidence * 0.5 + (100 - claude.riskScore) * 0.3 + (claude.approved ? 20 : 0) + eqScore);
 
     // goSignal: NUR wenn GPT-Key aktiv + Python Backend geantwortet hat + echte Analyse
     // GPT_SIMULATED = TA-Lib Fallback ohne GPT → kein Trade
