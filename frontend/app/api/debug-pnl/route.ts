@@ -81,9 +81,51 @@ export async function GET() {
       return String(a.type ?? "").includes("POSITION") || actions.some(act => String(act.actionType ?? "").includes("CLOSE"));
     }) ?? null;
 
+    // ── BACKFILL-SIMULATION: bildet EXAKT die Fix-Logik nach (read-only) ──────
+    // Zeigt pro 0-Trade ob ein P&L-Match entstehen würde und warum (nicht).
+    const { EPIC_MAP } = await import("../../../lib/capital-com/capital-com-client");
+    const pnlByTx = new Map<string, number>();
+    for (const tx of allTx) {
+      if (String(tx.transactionType ?? "") !== "TRADE") continue;
+      const id = String(tx.dealId ?? "");
+      const raw = tx.size ?? 0;
+      const n = typeof raw === "string" ? parseFloat(String(raw).replace("+", "")) || 0 : Number(raw);
+      if (id) pnlByTx.set(id, n);
+    }
+    const pnlByEpicOpen = new Map<string, number>();
+    const epicOpenKeysBuilt: string[] = [];
+    for (const a of allAct) {
+      if (String(a.type ?? "") !== "POSITION") continue;
+      const id = String(a.dealId ?? "");
+      const pnl = pnlByTx.get(id);
+      if (pnl === undefined) continue;
+      const details = (a.details ?? {}) as Record<string, unknown>;
+      const op = Number(details.openPrice ?? 0);
+      const epic = String(a.epic ?? details.epic ?? "");
+      if (op > 0 && epic) {
+        const k = `${epic}|${op.toFixed(5)}`;
+        pnlByEpicOpen.set(k, pnl);
+        epicOpenKeysBuilt.push(`${k}=${pnl}`);
+      }
+    }
+    const backfillSim = dbTrades
+      .filter(t => t.profitLoss === 0 && t.dealId)
+      .slice(0, 12)
+      .map(t => {
+        const epic = (EPIC_MAP as Record<string, string>)[t.market] ?? t.market;
+        const key = `${epic}|${Number(t.entry).toFixed(5)}`;
+        return {
+          id: t.id, market: t.market, entry: t.entry, lookupKey: key,
+          wouldGetPnl: pnlByEpicOpen.get(key) ?? null,
+          alsoTriedDealId: t.dealId ? (pnlByTx.get(t.dealId) ?? null) : null,
+        };
+      });
+
     return NextResponse.json({
-      hint: "detailed=true getestet. firstCloseActivityRaw zeigt die volle Struktur. Steht jetzt affectedDealId ODER der P&L drin?",
-      counts: { totalTx: allTx.length, tradeTx: tradeTx.length, totalActivities: allAct.length, closeActivities: closeActs.length },
+      hint: "backfillSim = simuliert die Fix-Logik. wouldGetPnl != null → Match funktioniert (Problem = Deploy/Ausführung). null → Match scheitert (Grund an lookupKey vs epicOpenKeysBuilt erkennbar).",
+      backfillSim,
+      epicOpenKeysBuilt,
+      counts: { totalTx: allTx.length, tradeTx: tradeTx.length, totalActivities: allAct.length, closeActivities: closeActs.length, epicOpenEntries: pnlByEpicOpen.size },
       tradeTransactions: tradeTx,
       closeActivities: closeActs,
       firstCloseActivityRaw: firstCloseRaw,
