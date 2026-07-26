@@ -64,6 +64,9 @@ async def talib_analyze_multi(req: MultiRequest):
             "bb_upper":       vol.get("bb_upper"),
             "bb_middle":      vol.get("bb_middle"),
             "bb_lower":       vol.get("bb_lower"),
+            # Regime-Detection (26.07. Woche 2): bb_width = Bandbreite in % des
+            # Mittelwerts. Eng = Konsolidierung/Range, weit = Expansion/Volatil.
+            "bb_width":       vol.get("bb_width"),
             "adx":            trend.get("adx"),
             "ema_200":        trend.get("ema_200"),
             "above_ema200":   trend.get("above_ema200"),
