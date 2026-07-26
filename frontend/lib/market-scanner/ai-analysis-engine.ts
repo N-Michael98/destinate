@@ -70,6 +70,7 @@ interface TAlibSummary {
   bb_upper?: number | null;      // dynamische Resistance-Zone
   bb_middle?: number | null;
   bb_lower?: number | null;      // dynamische Support-Zone
+  bb_width?: number | null;      // Bandbreite in % — für Regime-Detection
   adx?: number | null;           // Trendstärke (>25 = starker Trend)
   ema_200?: number | null;       // Haupttrend-Linie
   above_ema200?: boolean | null;
@@ -319,6 +320,58 @@ async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string
   return result;
 }
 
+// ── Regime-Detection (Woche 2, 26.07.) ───────────────────────────────────────
+// Nutzt AUSSCHLIESSLICH bereits vorhandene, echte TA-Werte (adx, bb_width) —
+// keine Neuberechnung, kein Platzhalter (siehe alte lib/market-regime/* die
+// immer "TRENDING, confidence 86" zurückgab — bewusst NICHT wiederverwendet).
+export type MarketRegimeType = "TRENDING" | "RANGING" | "VOLATILE" | "UNKNOWN";
+
+export interface MarketRegimeInfo {
+  regime: MarketRegimeType;
+  reason: string;
+}
+
+export function detectMarketRegime(ta?: TAlibSummary | null): MarketRegimeInfo {
+  const adx = ta?.adx;
+  const bbWidth = ta?.bb_width;
+  if (adx == null && bbWidth == null) {
+    return { regime: "UNKNOWN", reason: "keine ADX/BB-Daten" };
+  }
+  // Hohe Bollinger-Breite = Ausdehnung/Volatilitäts-Schub (unabhängig vom Trend)
+  if (bbWidth != null && bbWidth > 4.0) {
+    return { regime: "VOLATILE", reason: `bb_width=${bbWidth.toFixed(1)}% (Ausdehnung)` };
+  }
+  // ADX > 25 = klassische Trendstärke-Schwelle (Wilder)
+  if (adx != null && adx >= 25) {
+    return { regime: "TRENDING", reason: `adx=${adx.toFixed(0)}` };
+  }
+  // ADX < 20 + enge Bollinger-Bänder = Konsolidierung/Range
+  if (adx != null && adx < 20) {
+    return { regime: "RANGING", reason: `adx=${adx.toFixed(0)}${bbWidth != null ? `, bb_width=${bbWidth.toFixed(1)}%` : ""}` };
+  }
+  return { regime: "UNKNOWN", reason: `adx=${adx?.toFixed(0) ?? "?"} (Übergangszone 20-25)` };
+}
+
+// Strategien, die auf klare Trends angewiesen sind — im RANGING-Regime schwach
+const TREND_FOLLOWING_STRATEGIES = new Set(["trend_following", "breakout", "ma_crossover", "donchian", "momentum"]);
+// Strategien, die von Seitwärtsbewegung profitieren — im RANGING-Regime stark
+const MEAN_REVERSION_STRATEGIES = new Set(["mean_reversion", "support_resistance", "rsi_divergence", "bb_squeeze", "scalping"]);
+
+/** Passt die Confidence einer Top-Strategie ans erkannte Regime an (additiv,
+ * kappt nur — erhöht nie über die Original-Confidence hinaus). */
+export function regimeAdjustedNote(regime: MarketRegimeType, topStrategyName?: string): string {
+  if (regime === "RANGING" && topStrategyName && TREND_FOLLOWING_STRATEGIES.has(topStrategyName)) {
+    return "RANGING-Markt + Trendfolge-Strategie — historisch schwach, Vorsicht";
+  }
+  if (regime === "RANGING" && topStrategyName && MEAN_REVERSION_STRATEGIES.has(topStrategyName)) {
+    return "RANGING-Markt + Mean-Reversion-Strategie — passt zueinander";
+  }
+  if (regime === "VOLATILE") {
+    return "Volatilitäts-Ausdehnung — engere Positionsgrösse/weitere Stops erwägen";
+  }
+  return "";
+}
+
 // ── Main Analyse ───────────────────────────────────────────────────────────────
 export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerOpportunity[]> {
   const ai = await getAISettings();
@@ -385,6 +438,10 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
           ].filter(Boolean).join(" ")
         : "";
       const extraInfo = extraTa ? ` | ${extraTa}` : "";
+      // Regime-Detection (Woche 2, 26.07.): TRENDING/RANGING/VOLATILE aus
+      // echten ADX/BB-Werten — kein Platzhalter, nutzt bereits vorhandene Daten
+      const regimeInfo = detectMarketRegime(ta);
+      const regimeText = regimeInfo.regime !== "UNKNOWN" ? ` | regime=${regimeInfo.regime}(${regimeInfo.reason})` : "";
       // Schritt 3: konkrete S/R-Zonen + Abstand in ATR (Kernstück gegen
       // Einstiege direkt an der Zone)
       const lv = sr?.levels;
@@ -403,7 +460,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
             (sr.active ?? []).slice(0, 6).map(a => `${a.strategy}=${a.signal}(${a.confidence})`).join(", ")
           }`
         : sr ? ` | strategies=NEUTRAL(${sr.neutral_votes}/${sr.total_strategies} neutral)` : "";
-      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${srZones}${eqInfo}${mtfInfo}${stInfo}`;
+      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${regimeText}${srZones}${eqInfo}${mtfInfo}${stInfo}`;
     }).join("\n");
 
     const stratPerfLine = stratPerfSummary ? `\nSystem performance context: ${stratPerfSummary}` : "";
@@ -459,6 +516,9 @@ CRITICAL RULES — violations = bad analysis:
   * Also treat the Bollinger band edges (bb=[lower..upper]) as dynamic zones.
 - ADX < 20 = weak/ranging trend → trend-following setups are unreliable, prefer
   range logic (buy support / sell resistance) or WAIT.
+- REGIME (regime=TRENDING/RANGING/VOLATILE): in RANGING, prefer mean-reversion
+  entries (bounce off support/resistance) over breakout/trend-following setups.
+  In VOLATILE, widen stops or reduce confidence — false breakouts are common.
 - EMA200: only take BUY when price > ema200, SELL when price < ema200, unless a
   clear reversal pattern (bullPat/bearPat) confirms otherwise.
 - ENTRY QUALITY (entryQuality=score/100): this aggregates strategy consensus,
