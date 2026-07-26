@@ -74,6 +74,13 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_backup, "cron", hour=1, minute=0, id="backup",
                           misfire_grace_time=3600)
 
+        # Walk-Forward-Optimierung: wöchentlich Samstag 03:00 UTC (teurer als
+        # der nächtliche Backtest — läuft deshalb nur 1x/Woche, eigener Tag
+        # damit er nicht mit Backtest 02:00 oder Reports So 04:00-06:30 kollidiert)
+        from services.walk_forward import run_walk_forward
+        scheduler.add_job(run_walk_forward, "cron", day_of_week="sat", hour=3, minute=0,
+                          id="walk-forward", misfire_grace_time=3600)
+
         scheduler.start()
         logger.info("Scheduler gestartet — data-collector (4h), news-intel (2h), backtest (02:00), ai-learning (03:30)")
     except Exception as e:

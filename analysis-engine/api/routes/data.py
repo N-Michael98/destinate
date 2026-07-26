@@ -86,6 +86,21 @@ def trigger_backup(bg: BackgroundTasks):
     return {"started": True, "job": "backup"}
 
 
+@router.get("/walkforward")
+def get_walk_forward():
+    from services.walk_forward import REDIS_KEY_WALKFORWARD
+    data = redis_get_json(REDIS_KEY_WALKFORWARD)
+    return {"available": data is not None, "data": data}
+
+
+@router.post("/run/walkforward")
+def trigger_walk_forward(bg: BackgroundTasks):
+    """Walk-Forward-Optimierung manuell auslösen (dauert mehrere Minuten)."""
+    from services.walk_forward import run_walk_forward
+    bg.add_task(run_walk_forward)
+    return {"started": True, "job": "walkforward", "check": "/api/v1/walkforward"}
+
+
 @router.get("/comms-check")
 def comms_check():
     """Verbindungs-Check: beweist jede Kommunikations-Strecke mit echten Daten."""

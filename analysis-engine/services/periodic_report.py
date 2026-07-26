@@ -99,7 +99,7 @@ def _send(text: str) -> None:
         logger.warning(f"[report] Telegram fehlgeschlagen: {e}")
 
 
-def _build_report(days: int, title: str, compare_previous: bool) -> str:
+def _build_report(days: int, title: str, compare_previous: bool, show_walk_forward: bool = False) -> str:
     current = _stats_for_window(days, 0)
     lines = [f"📊 <b>{title}</b>", ""]
     lines.append(f"<b>Gesamt ({days} Tage):</b> {_fmt_total(current['total'])}")
@@ -132,6 +132,23 @@ def _build_report(days: int, title: str, compare_previous: bool) -> str:
         lines.append("Bilanz gut → behalten | schlecht → /unapply + neue /vorschlaege prüfen")
         lines.append("")
 
+    # Walk-Forward-Optimierung (Woche 2, 26.07.): zeigt ob die nächtlichen
+    # Backtest-Ergebnisse auf ungesehenen Daten standhalten (Overfitting-Check)
+    if show_walk_forward:
+        wf = redis_get_json("analysis:walkforward")
+        if wf and wf.get("robustSymbols") is not None:
+            lines.append("<b>🔬 Walk-Forward (Overfitting-Check, Out-of-Sample):</b>")
+            robust = wf.get("robustSymbols") or []
+            overfit = wf.get("overfitWarningSymbols") or []
+            if robust:
+                lines.append(f"✅ Robust (auch auf ungesehenen Daten profitabel): {', '.join(robust)}")
+            if overfit:
+                lines.append(f"⚠️ Overfitting-Verdacht (nur In-Sample gut): {', '.join(overfit)}")
+            if not robust and not overfit:
+                lines.append("Keine Symbole mit klarem Ergebnis diese Woche.")
+            lines.append("<i>Nur bei 'Robust' die Backtest-Erkenntnisse fürs Live-Trading vertrauen.</i>")
+            lines.append("")
+
     # Entry-Engine Phase D: Auswertung nach Entry-Quality-Tier
     tiers = _entry_quality_breakdown(days)
     rated = {k: v for k, v in tiers.items() if k != "UNBEKANNT"}
@@ -152,7 +169,7 @@ def _build_report(days: int, title: str, compare_previous: bool) -> str:
 
 def run_weekly_report() -> None:
     logger.info("[report] Wochen-Report gestartet")
-    _send(_build_report(7, "Wochen-Report — Analysis Engine", compare_previous=True))
+    _send(_build_report(7, "Wochen-Report — Analysis Engine", compare_previous=True, show_walk_forward=True))
     logger.info("[report] Wochen-Report gesendet")
 
 
