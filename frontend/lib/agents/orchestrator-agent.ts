@@ -574,6 +574,18 @@ export async function runOrchestratorCycle(): Promise<void> {
 
       // Stufe 2: Marktbedingungen beim Entry festhalten (für Analysis-Engine-Diagnosen)
       const now = new Date();
+      // Slippage-Tracking (Woche 2, 26.07.): erwarteter Kurs beim Scan-Entscheid
+      // (entryPrice = bid/ask vom Zyklusstart) vs. echter Fill von Capital.com
+      // (execResult.capital.openLevel). Reine Messung — beeinflusst nichts,
+      // liefert nur Daten für die spätere Auswertung (Wochen-Report).
+      const actualFill = execResult.capital?.openLevel;
+      // Vorzeichen: negativ = Slippage GEGEN uns (teurer bezahlt/billiger verkauft
+      // als erwartet), positiv = zu unseren Gunsten. BUY: hoeherer Fill ist
+      // schlechter -> entryPrice - actualFill. SELL: niedrigerer Fill ist
+      // schlechter -> actualFill - entryPrice.
+      const slippagePoints = (actualFill != null && entryPrice > 0)
+        ? Number((isBuy ? entryPrice - actualFill : actualFill - entryPrice).toFixed(6))
+        : null;
       const entryContext: Record<string, unknown> = {
         hourUTC: now.getUTCHours(),
         dayUTC: now.getUTCDay(),
@@ -590,6 +602,10 @@ export async function runOrchestratorCycle(): Promise<void> {
         aiScore: getSymbolScore ? getSymbolScore(analysisInsights, candidate.symbol) : null,
         overrideActive: !!override,
         ...(override ? { overrideStrategy: override.strategy } : {}),
+        // Slippage-Tracking
+        expectedEntryPrice: entryPrice,
+        actualFillPrice: actualFill ?? null,
+        slippagePoints,
       };
 
       await postTradeActions({
