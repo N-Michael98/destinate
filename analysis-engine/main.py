@@ -69,6 +69,11 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_monthly_report, "cron", day=1, hour=6, minute=30,
                           id="monthly-report", misfire_grace_time=3600)
 
+        # Backup-Service: nächtlich 01:00 UTC (vor dem 02:00-Backtest)
+        from services.backup import run_backup
+        scheduler.add_job(run_backup, "cron", hour=1, minute=0, id="backup",
+                          misfire_grace_time=3600)
+
         scheduler.start()
         logger.info("Scheduler gestartet — data-collector (4h), news-intel (2h), backtest (02:00), ai-learning (03:30)")
     except Exception as e:

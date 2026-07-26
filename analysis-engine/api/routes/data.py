@@ -78,6 +78,14 @@ def trigger_weekly_report(bg: BackgroundTasks):
     return {"started": True, "job": "weekly-report"}
 
 
+@router.post("/run/backup")
+def trigger_backup(bg: BackgroundTasks):
+    """DB-Backup manuell auslösen (gzip-JSON als Telegram-Dokument)."""
+    from services.backup import run_backup
+    bg.add_task(run_backup)
+    return {"started": True, "job": "backup"}
+
+
 @router.get("/comms-check")
 def comms_check():
     """Verbindungs-Check: beweist jede Kommunikations-Strecke mit echten Daten."""
