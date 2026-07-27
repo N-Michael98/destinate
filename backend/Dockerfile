@@ -4,7 +4,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc build-essential wget \
-    && wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+    && wget -q --tries=5 --timeout=30 --waitretry=10 http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib && ./configure --prefix=/usr && make && make install \
     && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz \
