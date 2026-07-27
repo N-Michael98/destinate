@@ -530,7 +530,8 @@ CRITICAL RULES — violations = bad analysis:
 - Place stopLoss beyond the relevant S/R zone, not inside it
 - Max SL distances: GOLD=15pts, EURUSD=0.0040, NAS100=200pts, USOIL=2.0, BTCUSD=1000
 
-Return ONLY valid JSON:
+Return ONLY valid JSON. BUY and SELL are equally valid outcomes — decide purely from
+each market's own data, never from habit or from these examples' direction:
 {
   "opportunities": [
     {
@@ -544,6 +545,18 @@ Return ONLY valid JSON:
       "takeProfit": 2365.0,
       "tradingStyle": "DAYTRADING",
       "marketBias": "RISK_OFF"
+    },
+    {
+      "epic": "US100",
+      "symbol": "NAS100",
+      "direction": "SELL",
+      "confidence": 74,
+      "reasoning": "Trend bearish, RSI 68, MACD bearish crossover, price below EMA20 and EMA50",
+      "entry": 19850.0,
+      "stopLoss": 19920.0,
+      "takeProfit": 19700.0,
+      "tradingStyle": "DAYTRADING",
+      "marketBias": "RISK_ON"
     }
   ]
 }`;
