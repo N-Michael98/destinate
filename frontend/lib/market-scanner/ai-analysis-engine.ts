@@ -149,7 +149,13 @@ async function fetchStrategySignals(symbols: string[]): Promise<Map<string, Stra
       method: "POST",
       headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbols }),
-      signal: AbortSignal.timeout(25000), // Strategien brauchen etwas länger
+      // 60s (27.07. erhöht): 23 Symbole x bis zu 7 einzigartige yfinance-Fetches
+      // (nach Dedup-Fix in _load()) über 8 Worker-Threads, plus Backend-seitige
+      // Retries (bis +3s je Call bei transienten yfinance-Hängern) — 25s war
+      // zu knapp, führte zu wiederkehrenden Timeouts trotz Event-Loop- und
+      // Cache-Fix. Backend selbst kann nie unendlich hängen (Circuit-Breaker +
+      // max. 3 Retry-Versuche), daher ist ein grosszügigeres Client-Timeout sicher.
+      signal: AbortSignal.timeout(60000),
     });
     if (!res.ok) {
       console.warn(`[ai-engine] Strategies Backend Fehler: ${res.status} ${res.statusText}`);
