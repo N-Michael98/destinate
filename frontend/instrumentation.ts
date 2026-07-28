@@ -242,7 +242,14 @@ export async function register() {
         } catch { /* non-fatal */ }
 
         // Position monitor every 2min — Capital.com + IC Markets parallel
+        let positionMonitorRunning = false;
         setInterval(async () => {
+          if (positionMonitorRunning) {
+            console.warn("[position-monitor] Vorheriger Zyklus läuft noch — überspringe diesen Tick (Audit-Fund #2, 27.07.)");
+            return;
+          }
+          positionMonitorRunning = true;
+          try {
           console.log("[position-monitor] 2min Zyklus gestartet");
 
           // Capital.com: Journal-Sync — separat damit Fehler nicht trade-mgr blockieren
@@ -323,6 +330,9 @@ export async function register() {
               ]);
             }
           } catch { /* non-fatal */ }
+          } finally {
+            positionMonitorRunning = false;
+          }
         }, 2 * 60 * 1000);
       } catch { /* non-fatal */ }
 
@@ -336,9 +346,21 @@ export async function register() {
       // ── OrchestratorAgent — koordiniert alle Agents jeden 5min ───────────────
       try {
         const { runOrchestratorCycle } = await import("./lib/agents/orchestrator-agent");
-        setInterval(() => runOrchestratorCycle().catch(err =>
-          console.error("[orchestrator] Zyklus-Fehler:", err instanceof Error ? err.message : String(err))
-        ), 5 * 60_000);
+        let orchestratorRunning = false;
+        setInterval(async () => {
+          if (orchestratorRunning) {
+            console.warn("[orchestrator] Vorheriger Zyklus läuft noch — überspringe diesen Tick (Audit-Fund #2, 27.07.)");
+            return;
+          }
+          orchestratorRunning = true;
+          try {
+            await runOrchestratorCycle();
+          } catch (err) {
+            console.error("[orchestrator] Zyklus-Fehler:", err instanceof Error ? err.message : String(err));
+          } finally {
+            orchestratorRunning = false;
+          }
+        }, 5 * 60_000);
         console.log("[instrumentation] OrchestratorAgent gestartet (every 5min)");
       } catch { /* non-fatal */ }
 
