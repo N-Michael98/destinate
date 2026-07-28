@@ -1,6 +1,7 @@
+import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from services.talib_indicators import analyze_talib, talib_pattern_scan
 
 router = APIRouter()
@@ -21,15 +22,21 @@ async def talib_analyze_multi(req: MultiRequest):
     symbols = req.symbols[:30]
     interval = req.interval
 
-    # Parallel ausführen — alle Symbole gleichzeitig statt sequenziell
-    raw_list = []
+    # Parallel ausführen — alle Symbole gleichzeitig statt sequenziell.
+    # asyncio.wrap_future() statt future.result(): blockiert den Event-Loop
+    # NICHT (Audit-Fund #6, 27.07.).
     with ThreadPoolExecutor(max_workers=min(len(symbols), 12)) as executor:
-        futures = {executor.submit(analyze_talib, s, interval): s for s in symbols}
-        for future in as_completed(futures):
-            try:
-                raw_list.append(future.result())
-            except Exception as e:
-                raw_list.append({"symbol": futures[future], "error": str(e)})
+        futures = [executor.submit(analyze_talib, s, interval) for s in symbols]
+        gathered = await asyncio.gather(
+            *[asyncio.wrap_future(f) for f in futures], return_exceptions=True
+        )
+
+    raw_list = []
+    for sym, res in zip(symbols, gathered):
+        if isinstance(res, Exception):
+            raw_list.append({"symbol": sym, "error": str(res)})
+        else:
+            raw_list.append(res)
 
     results: dict = {}
     for item in raw_list:

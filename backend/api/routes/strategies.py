@@ -5,9 +5,10 @@ POST /api/v1/strategies/analyze/multi           → Alle 15 Strategien für mehr
 GET  /api/v1/strategies/list                    → Liste aller verfügbaren Strategien
 """
 
+import asyncio
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from services.trading_strategies import analyze_all_strategies, STRATEGIES
 
 router = APIRouter(prefix="/strategies", tags=["Trading Strategies"])
@@ -31,16 +32,22 @@ async def analyze_multi(req: MultiRequest):
         raise HTTPException(status_code=400, detail="Max 30 Symbole")
     symbols = [s.upper() for s in req.symbols]
 
-    # Parallel ausführen — alle Symbole gleichzeitig (15 Strategien pro Symbol)
-    results = []
+    # Parallel ausführen — alle Symbole gleichzeitig (15 Strategien pro Symbol).
+    # asyncio.wrap_future() statt future.result(): blockiert den Event-Loop
+    # NICHT (Audit-Fund #6, 27.07. — sonst hängt der ganze Service während
+    # dieser Route, alle anderen Requests warten mit).
     with ThreadPoolExecutor(max_workers=min(len(symbols), 8)) as executor:
-        futures = {executor.submit(analyze_all_strategies, s): s for s in symbols}
-        for future in as_completed(futures):
-            try:
-                results.append(future.result())
-            except Exception as e:
-                sym = futures[future]
-                print(f"[strategies] ⚠ {sym}: {e}")
+        futures = [executor.submit(analyze_all_strategies, s) for s in symbols]
+        gathered = await asyncio.gather(
+            *[asyncio.wrap_future(f) for f in futures], return_exceptions=True
+        )
+
+    results = []
+    for sym, res in zip(symbols, gathered):
+        if isinstance(res, Exception):
+            print(f"[strategies] ⚠ {sym}: {res}")
+        else:
+            results.append(res)
 
     print(f"[strategies] ✅ {len(results)}/{len(symbols)} Symbole analysiert")
     return {"results": {r["symbol"]: r for r in results}}
