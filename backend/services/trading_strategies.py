@@ -13,6 +13,7 @@ Kein Math.random(), keine Simulation.
 """
 
 import logging
+import time
 import numpy as np
 import pandas as pd
 import ta
@@ -23,17 +24,37 @@ logger = logging.getLogger(__name__)
 
 # ── Hilfsfunktionen ───────────────────────────────────────────────────────────
 
+# Kurzlebiger Cache für _load() (Audit-Fund #6 Folgefund, 27.07.): von den 16
+# Strategien nutzen mehrere dieselbe (interval, period)-Kombination (z.B. 4x
+# "4h"/"2mo", 4x "4h"/"3mo") — ohne Cache wird pro Symbol bis zu 16x statt nur
+# 7x (Anzahl echt unterschiedlicher Kombinationen) dieselbe Kerzenreihe erneut
+# von yfinance geholt. War die Ursache für die 25s-Timeouts bei Multi-Symbol-
+# Analysen, auch nachdem der Event-Loop nicht mehr blockiert (Fund #6).
+# TTL 60s reicht: 1h/4h/1d/15m-Kerzen ändern sich nicht schneller.
+_ohlcv_cache: dict[tuple[str, str, str], tuple[float, pd.DataFrame]] = {}
+_CACHE_TTL_SEC = 60
+
 def _load(symbol: str, interval: str = "1h", period: str = "3mo") -> pd.DataFrame:
+    key = (symbol, interval, period)
+    now = time.time()
+    cached = _ohlcv_cache.get(key)
+    if cached is not None and (now - cached[0]) < _CACHE_TTL_SEC:
+        return cached[1]
+
     candles = get_ohlcv(symbol, interval, period)
     if not candles or len(candles) < 30:
-        return pd.DataFrame()
-    df = pd.DataFrame(candles)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-    df.set_index("timestamp", inplace=True)
-    for col in ["open", "high", "low", "close", "volume"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df.dropna(subset=["close"])
+        df = pd.DataFrame()
+    else:
+        df = pd.DataFrame(candles)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        df.set_index("timestamp", inplace=True)
+        for col in ["open", "high", "low", "close", "volume"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["close"])
+
+    _ohlcv_cache[key] = (now, df)
+    return df
 
 
 def _last(series: pd.Series) -> Optional[float]:
