@@ -261,6 +261,7 @@ export async function capitalGetAccounts(
   try {
     const res = await fetch(`${DEMO_BASE}/accounts`, {
       headers: authHeaders(apiKey, cst, securityToken),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -350,6 +351,7 @@ export async function capitalPlaceOrder(
       method: "POST",
       headers: authHeaders(apiKey, cst, securityToken),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!res.ok) {
@@ -367,6 +369,7 @@ export async function capitalPlaceOrder(
       try {
         const confirmRes = await fetch(`${DEMO_BASE}/confirms/${dealReference}`, {
           headers: authHeaders(apiKey, cst, securityToken),
+          signal: AbortSignal.timeout(8000),
         });
         if (confirmRes.ok) {
           const confirm = (await confirmRes.json()) as Record<string, unknown>;
@@ -402,6 +405,7 @@ export async function capitalGetPositions(
   try {
     const res = await fetch(`${DEMO_BASE}/positions`, {
       headers: authHeaders(apiKey, cst, securityToken),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
@@ -448,6 +452,7 @@ export async function capitalUpdatePosition(
       method: "PUT",
       headers: authHeaders(apiKey, cst, securityToken),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
@@ -475,6 +480,7 @@ export async function capitalClosePartial(
       method: "POST",
       headers: authHeaders(apiKey, cst, securityToken),
       body: JSON.stringify({ epic, direction: oppositeDir, size: partialSize, orderType: "MARKET" }),
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
@@ -498,6 +504,7 @@ export async function capitalClosePosition(
     const res = await fetch(`${DEMO_BASE}/positions/${dealId}`, {
       method: "DELETE",
       headers: authHeaders(apiKey, cst, securityToken),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
@@ -542,7 +549,7 @@ export async function capitalGetAvailableMarkets(
     for (const type of instrumentTypes) {
       const res = await fetch(
         `${DEMO_BASE}/markets?instrumentTypes=${type}&limit=50`,
-        { headers: authHeaders(apiKey, cst, securityToken) }
+        { headers: authHeaders(apiKey, cst, securityToken), signal: AbortSignal.timeout(8000) }
       );
       if (!res.ok) continue;
 
@@ -581,7 +588,7 @@ export async function capitalSearchMarkets(
   try {
     const res = await fetch(
       `${DEMO_BASE}/markets?searchTerm=${encodeURIComponent(searchTerm)}&limit=20`,
-      { headers: authHeaders(apiKey, cst, securityToken) }
+      { headers: authHeaders(apiKey, cst, securityToken), signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
@@ -634,7 +641,7 @@ export async function capitalGetClosedPositions(
     const to = new Date().toISOString().slice(0, 19);
     const res = await fetch(
       `${DEMO_BASE}/history/activity?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=50`,
-      { headers: authHeaders(apiKey, cst, securityToken) }
+      { headers: authHeaders(apiKey, cst, securityToken), signal: AbortSignal.timeout(10000) }
     );
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
 
@@ -692,5 +699,6 @@ export async function capitalDeleteSession(
   await fetch(`${DEMO_BASE}/session`, {
     method: "DELETE",
     headers: authHeaders(apiKey, cst, securityToken),
+    signal: AbortSignal.timeout(5000),
   }).catch(() => {});
 }
