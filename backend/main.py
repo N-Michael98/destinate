@@ -18,6 +18,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def api_key_guard(request, call_next):
+    """Schützt /api/v1/* mit X-Backend-Key Header (27.07., Audit-Fund #1).
+    BACKEND_API_KEY leer -> alles offen (Fallback: nichts bricht ohne Config).
+    /health und / bleiben immer offen (UptimeRobot, Status-Anzeige)."""
+    if settings.BACKEND_API_KEY and request.url.path.startswith("/api/"):
+        if request.headers.get("X-Backend-Key") != settings.BACKEND_API_KEY:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    return await call_next(request)
+
 # Routes registrieren
 app.include_router(health.router)
 app.include_router(market.router,      prefix="/api/v1")

@@ -3,6 +3,8 @@
  * Used by GPT, Claude, Consensus, Strategy Evolution and Forward Testing.
  */
 
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
+
 const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
 
 export type PyPrice = {
@@ -41,7 +43,7 @@ export async function fetchPrices(symbols: string[]): Promise<PyPrice[]> {
   try {
     const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbols }),
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
@@ -68,7 +70,7 @@ export async function fetchIndicators(
   try {
     const res = await fetch(
       `${PYTHON_BASE}/api/v1/indicators/${symbol}?interval=${interval}&period=${period}`,
-      { cache: "no-store", signal: AbortSignal.timeout(5000) }
+      { cache: "no-store", signal: AbortSignal.timeout(5000), headers: pythonBackendAuthHeader() }
     );
     if (!res.ok) return null;
     return await res.json() as PyIndicators;
@@ -98,7 +100,7 @@ export async function fetchBacktest(
   try {
     const res = await fetch(`${PYTHON_BASE}/api/v1/backtest/run`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbol, interval, period, initial_balance: 10000 }),
       cache: "no-store",
       signal: AbortSignal.timeout(5000),

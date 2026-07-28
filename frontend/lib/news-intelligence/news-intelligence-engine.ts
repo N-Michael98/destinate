@@ -1,3 +1,5 @@
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
+
 interface NewsIntelligenceItem {
   id: string;
   title: string;
@@ -27,6 +29,7 @@ export async function getNewsIntelligence(): Promise<NewsIntelligenceItem[]> {
     const res = await fetch(`${PYTHON_BASE}/api/v1/sentiment/headlines`, {
       cache: "no-store",
       signal: AbortSignal.timeout(5000),
+      headers: pythonBackendAuthHeader(),
     });
     if (!res.ok) return [];
     const data = await res.json();

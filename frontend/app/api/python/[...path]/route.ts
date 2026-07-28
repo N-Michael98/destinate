@@ -1,5 +1,6 @@
 ﻿export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 
 async function proxy(request: Request, path: string[]) {
   const PYTHON_BASE = process.env.PYTHON_BACKEND_URL ?? "http://localhost:8000";
@@ -10,7 +11,7 @@ async function proxy(request: Request, path: string[]) {
   try {
     const init: RequestInit = {
       method: request.method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
     };

@@ -1,6 +1,7 @@
 // Real GPT + Claude analysis engine — uses stored API keys + Python Backend TA data
 import { getAISettings } from "../ai-config/ai-config-store";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
+import { pythonBackendAuthHeader } from "../python-backend/auth-header";
 
 export interface GPTMarketAnalysis {
   symbol: string;
@@ -85,7 +86,7 @@ async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSumma
   try {
     const res = await fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbols, interval: "1d" }),
       signal: AbortSignal.timeout(30000),
     });
@@ -146,7 +147,7 @@ async function fetchStrategySignals(symbols: string[]): Promise<Map<string, Stra
   try {
     const res = await fetch(`${PYTHON_BASE}/api/v1/strategies/analyze/multi`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbols }),
       signal: AbortSignal.timeout(25000), // Strategien brauchen etwas länger
     });
@@ -274,7 +275,7 @@ async function fetchStrategyPerformance(): Promise<string> {
   try {
     const res = await fetch(`${PYTHON_BASE}/api/v1/backtest/run`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbol: "EURUSD", interval: "1h", period: "1mo", strategy: "multi", initial_balance: 10000 }),
       signal: AbortSignal.timeout(8000),
     });
@@ -299,12 +300,12 @@ async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string
     // yfinance VALID_INTERVALS: 1h, 1d, 1wk — "4h" nicht unterstützt → "1wk" stattdessen
     const [r1h, r1wk] = await Promise.all([
       fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
         body: JSON.stringify({ symbols, interval: "1h" }),
         signal: AbortSignal.timeout(25000),
       }).then(r => r.ok ? r.json() as Promise<{ results?: Record<string, { trend: string; signal: string }> }> : null).catch(() => null),
       fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
         body: JSON.stringify({ symbols, interval: "1wk" }),
         signal: AbortSignal.timeout(25000),
       }).then(r => r.ok ? r.json() as Promise<{ results?: Record<string, { trend: string; signal: string }> }> : null).catch(() => null),

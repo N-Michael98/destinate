@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     ICMARKETS_CLIENT_ID: Optional[str] = None
     ICMARKETS_CLIENT_SECRET: Optional[str] = None
 
+    # Backend-API-Schutz (27.07.): X-Backend-Key Header, leer = offen (fail-safe)
+    BACKEND_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"

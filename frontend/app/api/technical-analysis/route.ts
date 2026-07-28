@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { cacheGetOrFetch } from "@/lib/cache/redis-cache";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 
 const DEFAULT_SYMBOLS = ["EURUSD", "XAUUSD", "BTCUSD", "NAS100", "GBPUSD", "OIL"];
 
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
           try {
             const res = await fetch(
               `${PYTHON_BASE}/api/v1/indicators/${symbol}?interval=${interval}&period=${period}`,
-              { cache: "no-store" }
+              { cache: "no-store", headers: pythonBackendAuthHeader() }
             );
             if (!res.ok) return { symbol, error: `HTTP ${res.status}` };
             return res.json();

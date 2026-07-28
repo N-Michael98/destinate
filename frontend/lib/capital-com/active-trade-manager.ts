@@ -10,6 +10,7 @@ import { getPrisma } from "../../app/lib/prisma";
 import {
   capitalGetPrices, capitalGetPositions, EPIC_MAP,
 } from "./capital-com-client";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 import { fetchPrices as pyFetchPrices } from "../python-bridge/python-data";
 import { getCapitalSession, isCapitalConnected } from "./capital-com-session";
 import { runRiskAgent, type PosMeta } from "../agents/risk-agent";
@@ -109,7 +110,7 @@ export async function runActiveTradeManager(): Promise<void> {
     try {
       const atrRes = await fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
         body: JSON.stringify({ symbols: symbolsNeeded, interval: "1h" }),
         signal: AbortSignal.timeout(15000),
       });

@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { cacheGetOrFetch } from "@/lib/cache/redis-cache";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 
 const DEFAULT_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "NAS100", "US30", "OIL"];
 
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
     const data = await cacheGetOrFetch(cacheKey, async () => {
       const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
         body: JSON.stringify({ symbols }),
         cache: "no-store",
         signal: AbortSignal.timeout(8000),

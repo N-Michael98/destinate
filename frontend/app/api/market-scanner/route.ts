@@ -5,6 +5,7 @@ import { capitalGetTopMarkets, capitalSearchMarkets, type CapitalMarket } from "
 import { analyzeMarkets } from "../../../lib/market-scanner/ai-analysis-engine";
 import { getAISettings } from "../../../lib/ai-config/ai-config-store";
 import { cacheGetOrFetch } from "../../../lib/cache/redis-cache";
+import { pythonBackendAuthHeader } from "../../../lib/python-backend/auth-header";
 
 export async function GET(request: Request) {
   try {
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       if (!missing.length || !PYTHON_BASE) return existing;
       try {
         const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
           body: JSON.stringify({ symbols: missing }),
           signal: AbortSignal.timeout(15000),
         });

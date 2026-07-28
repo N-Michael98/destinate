@@ -1,6 +1,7 @@
 import { calculateConfidence } from "./confidence-engine";
 import type { StrategyEvolutionScore } from "./evolution-types";
 import { getLearningAdjustmentFactor } from "@/lib/learning/trade-feedback-engine";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 
 // Jede Evolution-Strategie ist einer Python-Backtest-Strategie + Symbol zugeordnet
 const STRATEGY_DEFINITIONS = [
@@ -31,7 +32,7 @@ export async function generateLiveEvolutionScores(): Promise<StrategyEvolutionSc
     try {
       const res = await fetch(`${PYTHON_BASE}/api/v1/backtest/run`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
         body: JSON.stringify({
           symbol:   def.symbol,
           interval: def.interval,

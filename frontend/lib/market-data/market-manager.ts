@@ -1,6 +1,7 @@
 import { setMarketCache, getAllCachedMarkets, getMarketCacheStatus } from "./market-cache";
 import { defaultMarketWatchlist, HIGH_PRIORITY_SYMBOLS } from "./market-watchlist";
 import type { MarketSnapshot } from "./market-types";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 
 async function fetchRealPrices(): Promise<MarketSnapshot[]> {
   try {
@@ -40,7 +41,7 @@ async function fetchPythonPrices(): Promise<MarketSnapshot[]> {
     if (!PYTHON_BASE) return [];
     const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbols: HIGH_PRIORITY_SYMBOLS }),
       cache: "no-store",
       signal: AbortSignal.timeout(8000),

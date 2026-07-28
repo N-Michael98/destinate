@@ -1,4 +1,5 @@
 import type { NewsItem } from "./news-types";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 
 export async function getMockNewsFeed(): Promise<NewsItem[]> {
   // Versuche echte Headlines vom Python Backend (VADER + feedparser)
@@ -8,6 +9,7 @@ export async function getMockNewsFeed(): Promise<NewsItem[]> {
       const res = await fetch(`${PYTHON_BASE}/api/v1/sentiment/headlines`, {
         cache: "no-store",
         signal: AbortSignal.timeout(5000),
+        headers: pythonBackendAuthHeader(),
       });
       if (res.ok) {
         const data = await res.json();

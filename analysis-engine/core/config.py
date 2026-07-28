@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     # divine-warmth Backend (ATR, Indikatoren, Kurse)
     PYTHON_BACKEND_URL: str = ""
+    # Key um sich beim Backend zu authentifizieren (27.07., Audit-Fund #1).
+    # Muss mit dessen BACKEND_API_KEY übereinstimmen. Leer = kein Header (fail-safe).
+    BACKEND_API_KEY: str = ""
 
     # Claude AI Manager
     ANTHROPIC_API_KEY: str = ""

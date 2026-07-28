@@ -7,6 +7,8 @@
  * läuft das System normal weiter (TypeScript Trade Manager als Fallback).
  */
 
+import { pythonBackendAuthHeader } from "./auth-header";
+
 const BASE_URL = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
 
 function isConfigured(): boolean {
@@ -18,7 +20,7 @@ async function post<T = unknown>(path: string, body: unknown): Promise<T | null>
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     });
@@ -33,6 +35,7 @@ async function get<T = unknown>(path: string): Promise<T | null> {
   if (!isConfigured()) return null;
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
+      headers: pythonBackendAuthHeader(),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;

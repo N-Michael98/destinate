@@ -13,6 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { agentBus } from "./agent-bus";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 import { runAnalysisAgent } from "./analysis-agent";
 import { runExecutionAgent } from "./execution-agent";
 import { getDiagnosticsReport } from "./diagnostics-agent";
@@ -170,7 +171,7 @@ async function fetchMarkets(
       if (PYTHON_BASE) {
         const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
           body: JSON.stringify({ symbols: missingSymbols }),
           signal: AbortSignal.timeout(20000),
         });

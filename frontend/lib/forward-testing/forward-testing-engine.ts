@@ -1,4 +1,5 @@
 import { generateExecutionPositionTicketSyncReport } from "@/lib/execution-position-ticket-sync";
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 
 import {
   ForwardTestingReport,
@@ -41,7 +42,7 @@ export async function loadLivePricesFromPython(): Promise<void> {
     const symbols = Object.keys(BASE_PRICES);
     const res = await fetch(`${PYTHON_BASE}/api/v1/market/price/multi`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
       body: JSON.stringify({ symbols }),
       cache: "no-store",
     });
@@ -52,7 +53,7 @@ export async function loadLivePricesFromPython(): Promise<void> {
     }
     // ATR von Python laden für Risk-Distances
     for (const sym of symbols) {
-      const ir = await fetch(`${PYTHON_BASE}/api/v1/indicators/${sym}?interval=1h&period=1mo`, { cache: "no-store" });
+      const ir = await fetch(`${PYTHON_BASE}/api/v1/indicators/${sym}?interval=1h&period=1mo`, { cache: "no-store", headers: pythonBackendAuthHeader() });
       if (ir.ok) {
         const id = await ir.json();
         const atr = id.indicators?.atr;

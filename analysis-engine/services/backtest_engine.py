@@ -80,6 +80,7 @@ def _fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
         resp = httpx.get(
             f"{settings.PYTHON_BACKEND_URL}/api/v1/market/ohlcv/{symbol}",
             params={"interval": "1h", "period": "3mo"},
+            headers={"X-Backend-Key": settings.BACKEND_API_KEY} if settings.BACKEND_API_KEY else {},
             timeout=30,
         )
         if resp.status_code != 200:

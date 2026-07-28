@@ -4,6 +4,8 @@
  * Jede Funktion gibt { allowed: boolean; reason: string } zurück.
  */
 
+import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
+
 const PYTHON_BASE = () =>
   process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
 
@@ -41,6 +43,7 @@ export async function checkEconomicCalendar(symbol: string): Promise<FilterResul
 
     const res = await fetch(`${base}/api/v1/intelligence/calendar/blackout/${symbol}?window_min=30`, {
       signal: AbortSignal.timeout(3000),
+      headers: pythonBackendAuthHeader(),
     });
     if (!res.ok) return { allowed: true, reason: "" };
     const data = await res.json() as { blocked: boolean; reason: string | null };

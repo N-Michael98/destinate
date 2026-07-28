@@ -102,6 +102,7 @@ def _finbert_sentiment(text: str) -> dict | None:
         resp = httpx.post(
             f"{settings.PYTHON_BACKEND_URL}/api/v1/finbert/analyze/text",
             json={"text": text[:1500]},
+            headers={"X-Backend-Key": settings.BACKEND_API_KEY} if settings.BACKEND_API_KEY else {},
             timeout=90,  # erstes Model-Laden kann dauern
         )
         if resp.status_code == 200:
