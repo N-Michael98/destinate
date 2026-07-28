@@ -1,4 +1,5 @@
 // Server-side session store — keeps CST + X-SECURITY-TOKEN secure, never sent to client
+import crypto from "crypto";
 import { paperManagerCapital } from "../paper-trading/paper-singleton";
 import {
   capitalCreateSession,
@@ -7,6 +8,42 @@ import {
   type SessionResult,
   type AccountInfo,
 } from "./capital-com-client";
+
+// ── Credentials-Verschlüsselung (Audit-Fund #3, 27.07.) ──────────────────────
+// CREDENTIALS_ENCRYPTION_KEY nicht gesetzt -> Klartext wie bisher (fail-safe).
+// Format-Marker "v2:" unterscheidet neu (verschlüsselt) von alt (rohes JSON,
+// beginnt immer mit "{") — kein Rätselraten beim Lesen nötig.
+const ENC_PREFIX = "v2:";
+
+function getEncryptionKey(): Buffer | null {
+  const raw = process.env.CREDENTIALS_ENCRYPTION_KEY;
+  if (!raw) return null;
+  return crypto.createHash("sha256").update(raw).digest(); // immer exakt 32 Bytes
+}
+
+function encryptCredentials(plaintext: string): string {
+  const key = getEncryptionKey();
+  if (!key) return plaintext;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ENC_PREFIX + Buffer.concat([iv, tag, ciphertext]).toString("base64");
+}
+
+function decryptCredentials(stored: string): string {
+  if (!stored.startsWith(ENC_PREFIX)) return stored; // altes Klartext-Format
+  const key = getEncryptionKey();
+  if (!key) throw new Error("CREDENTIALS_ENCRYPTION_KEY fehlt — gespeicherte Credentials sind verschlüsselt, können aber nicht entschlüsselt werden");
+  const raw = Buffer.from(stored.slice(ENC_PREFIX.length), "base64");
+  const iv = raw.subarray(0, 12);
+  const tag = raw.subarray(12, 28);
+  const ciphertext = raw.subarray(28);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+}
+// ──────────────────────────────────────────────────────────────────────────
 
 // ── Redis session persistence ──────────────────────────────────────────────
 // Stores Capital.com session tokens in Redis so Cold Start can restore them
@@ -103,8 +140,15 @@ async function loadCredentials(): Promise<SavedCredentials | null> {
       SELECT data FROM "CapitalCredentials" WHERE id = 'singleton' LIMIT 1
     `;
     if (row && row.length > 0) {
-      const creds = JSON.parse(row[0].data) as SavedCredentials;
+      const json = decryptCredentials(row[0].data);
+      const creds = JSON.parse(json) as SavedCredentials;
       console.log(`[capital-com] credentials: using DB for ${creds.identifier}`);
+      // Opportunistische Migration: altes Klartext-Format bei nächster Gelegenheit
+      // verschlüsselt neu speichern, sobald ein Key gesetzt ist. Non-blocking,
+      // non-fatal — verzögert oder blockiert das Lesen nie.
+      if (!row[0].data.startsWith(ENC_PREFIX) && getEncryptionKey()) {
+        saveCredentials(creds).catch(() => {});
+      }
       return creds;
     }
     console.warn("[capital-com] credentials: not found in env vars or DB");
@@ -118,13 +162,13 @@ async function loadCredentials(): Promise<SavedCredentials | null> {
 async function saveCredentials(creds: SavedCredentials): Promise<void> {
   try {
     const db = await getPrisma();
-    const data = JSON.stringify(creds);
+    const data = encryptCredentials(JSON.stringify(creds));
     await db.$executeRawUnsafe(
       `INSERT INTO "CapitalCredentials" (id, data, "updatedAt") VALUES ('singleton', $1, NOW())
        ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
       data
     );
-    console.log(`[capital-com] credentials saved to DB for ${creds.identifier}`);
+    console.log(`[capital-com] credentials saved to DB for ${creds.identifier}${data.startsWith(ENC_PREFIX) ? " (verschlüsselt)" : ""}`);
   } catch (err) {
     console.error("[capital-com] saveCredentials FAILED:", err);
   }
