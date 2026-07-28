@@ -48,12 +48,15 @@ icmarkets_breaker = pybreaker.CircuitBreaker(
 )
 
 # ── yfinance Circuit Breaker ───────────────────────────────────────────────────
-# Toleranter — yfinance ist externe API
+# Toleranter — yfinance ist externe API. ValueError (ungültiges Interval/Period)
+# ist eine Input-Validierung, kein Zeichen dass yfinance down ist -> zählt nicht
+# als Fehler für den Breaker (Audit-Fund #4, 27.07.).
 yfinance_breaker = pybreaker.CircuitBreaker(
     fail_max=10,
     reset_timeout=120,
     name="yfinance",
     listeners=[_listener],
+    exclude=[ValueError],
 )
 
 # ── Telegram Circuit Breaker ───────────────────────────────────────────────────

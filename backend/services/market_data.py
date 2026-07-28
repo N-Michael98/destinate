@@ -2,6 +2,9 @@ import yfinance as yf
 import pandas as pd
 from typing import Optional
 
+from core.circuit_breaker import yfinance_breaker
+from core.retry import api_retry
+
 # Symbol-Mapping: Trading-Symbole → Yahoo Finance Symbole
 SYMBOL_MAP = {
     # Forex
@@ -48,6 +51,8 @@ VALID_PERIODS   = {"1d", "5d", "1mo", "2mo", "3mo", "6mo", "1y", "2y", "5y", "ma
 def _resolve(symbol: str) -> str:
     return SYMBOL_MAP.get(symbol.upper(), symbol.upper())
 
+@yfinance_breaker
+@api_retry()
 def get_current_price(symbol: str) -> dict:
     ticker = yf.Ticker(_resolve(symbol))
     info = ticker.fast_info
@@ -58,6 +63,8 @@ def get_current_price(symbol: str) -> dict:
         "currency": getattr(info, "currency", "USD"),
     }
 
+@yfinance_breaker
+@api_retry()
 def get_ohlcv(
     symbol: str,
     interval: str = "1h",
@@ -120,6 +127,11 @@ def get_ohlcv(
         })
     return records
 
+@yfinance_breaker
+@api_retry()
+def _download_multi(tickers: list[str]) -> pd.DataFrame:
+    return yf.download(tickers, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True)
+
 def get_multi_price(symbols: list[str]) -> list[dict]:
     if not symbols:
         return []
@@ -127,7 +139,7 @@ def get_multi_price(symbols: list[str]) -> list[dict]:
     tickers = [_resolve(s) for s in symbols]
     sym_map = {_resolve(s): s.upper() for s in symbols}
     try:
-        df = yf.download(tickers, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True)
+        df = _download_multi(tickers)
         results = []
         if len(tickers) == 1:
             # yf.download gibt bei 1 Symbol keinen MultiIndex zurück
