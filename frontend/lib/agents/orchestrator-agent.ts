@@ -70,6 +70,19 @@ interface OrchestratorDecision {
   pauseMinutes?: number;
 }
 
+let lastOrchestratorGateAlertAt = 0;
+async function alertAIGateFallback(gate: string, err: unknown): Promise<void> {
+  const now = Date.now();
+  if (now - lastOrchestratorGateAlertAt < 60 * 60 * 1000) return; // max 1x/Stunde
+  lastOrchestratorGateAlertAt = now;
+  try {
+    const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+    await sendTelegram(
+      `⚠️ AI-Sicherheitsgate "${gate}" nicht erreichbar — Fallback aktiv (Trades laufen ungeprüft weiter, andere Sicherheitsschichten bleiben aktiv). Fehler: ${err instanceof Error ? err.message : String(err)}`
+    );
+  } catch { /* non-fatal */ }
+}
+
 async function askAIManager(context: {
   openPositions: number;
   maxConcurrent: number;
@@ -106,6 +119,7 @@ Antworte NUR mit JSON:
     if (json) return JSON.parse(json) as OrchestratorDecision;
   } catch (err) {
     console.warn(`[orchestrator] AI Manager Fehler — Fallback proceed (${err})`);
+    await alertAIGateFallback("Orchestrator", err);
   }
   return { proceed: true, maxTradesThisCycle: 1, reason: "fallback" };
 }

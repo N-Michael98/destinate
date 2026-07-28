@@ -47,6 +47,19 @@ interface AIExecutionDecision {
   adjustedRiskPercent?: number;
 }
 
+let lastExecutionGateAlertAt = 0;
+async function alertAIGateFallback(gate: string, err: unknown): Promise<void> {
+  const now = Date.now();
+  if (now - lastExecutionGateAlertAt < 60 * 60 * 1000) return; // max 1x/Stunde
+  lastExecutionGateAlertAt = now;
+  try {
+    const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+    await sendTelegram(
+      `⚠️ AI-Sicherheitsgate "${gate}" nicht erreichbar — Fallback aktiv (Trades laufen ungeprüft weiter, andere Sicherheitsschichten bleiben aktiv). Fehler: ${err instanceof Error ? err.message : String(err)}`
+    );
+  } catch { /* non-fatal */ }
+}
+
 async function askAIManager(req: ExecutionAgentRequest): Promise<AIExecutionDecision> {
   try {
     const signalAge = req.signalGeneratedAt
@@ -81,6 +94,7 @@ Antworte NUR mit JSON:
     if (json) return JSON.parse(json) as AIExecutionDecision;
   } catch (err) {
     console.warn(`[exec-agent] AI Manager Fehler — Fallback approve (${err})`);
+    await alertAIGateFallback("ExecutionAgent", err);
   }
   // Fallback: beide Broker, kein Risiko-Override
   return { approve: true, brokers: ["CAPITAL", "IC_MARKETS"], reason: "fallback" };
