@@ -297,14 +297,20 @@ export async function register() {
                     const action = await pyPriceUpdate(tradeId, currentPrice).catch(() => ({ action: null }));
                     if (!action || action.action === null) continue;
                     if (action.action === "UPDATE_SL" && action.new_sl) {
-                      await capitalUpdatePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId, action.new_sl, undefined).catch(() => {});
-                      console.log(`[py-lifecycle] SL updated: ${symbol} -> ${action.new_sl}`);
+                      const r = await capitalUpdatePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId, action.new_sl, undefined)
+                        .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+                      if (r.ok) console.log(`[py-lifecycle] SL updated: ${symbol} -> ${action.new_sl}`);
+                      else console.error(`[py-lifecycle] ⚠ SL-Update FEHLGESCHLAGEN: ${symbol} -> ${action.new_sl} — ${r.error}`);
                     } else if (action.action === "CLOSE") {
-                      await capitalClosePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId).catch(() => {});
-                      console.log(`[py-lifecycle] Zeit-Exit: ${symbol}`);
+                      const r = await capitalClosePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId)
+                        .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+                      if (r.ok) console.log(`[py-lifecycle] Zeit-Exit: ${symbol}`);
+                      else console.error(`[py-lifecycle] ⚠ Zeit-Exit FEHLGESCHLAGEN: ${symbol} — ${r.error}`);
                     } else if (action.action === "PARTIAL_CLOSE" && action.volume) {
-                      await capitalClosePartial(sess.apiKey, sess.cst, sess.securityToken, pos.epic ?? "", pos.direction, action.volume).catch(() => {});
-                      console.log(`[py-lifecycle] Partial TP: ${symbol} vol=${action.volume}`);
+                      const r = await capitalClosePartial(sess.apiKey, sess.cst, sess.securityToken, pos.epic ?? "", pos.direction, action.volume)
+                        .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+                      if (r.ok) console.log(`[py-lifecycle] Partial TP: ${symbol} vol=${action.volume}`);
+                      else console.error(`[py-lifecycle] ⚠ Partial TP FEHLGESCHLAGEN: ${symbol} vol=${action.volume} — ${r.error}`);
                     }
                   }
                 }
