@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter
 from pydantic import BaseModel
 from services.backtesting_extended import run_ema_crossover_backtest, get_performance_report
@@ -11,8 +12,11 @@ class BacktestRequest(BaseModel):
 
 @router.post("/ema-crossover")
 async def backtest_ema(req: BacktestRequest):
-    return run_ema_crossover_backtest(req.symbol, req.fast, req.slow)
+    # run_in_executor: vectorbt-Backtest ist blockierend (Fund #6-Muster, 27.07.)
+    return await asyncio.get_event_loop().run_in_executor(
+        None, run_ema_crossover_backtest, req.symbol, req.fast, req.slow
+    )
 
 @router.get("/performance/{symbol}")
 async def performance_report(symbol: str):
-    return get_performance_report(symbol)
+    return await asyncio.get_event_loop().run_in_executor(None, get_performance_report, symbol)

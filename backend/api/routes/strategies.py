@@ -21,7 +21,9 @@ class MultiRequest(BaseModel):
 @router.get("/analyze/{symbol}")
 async def analyze_symbol(symbol: str):
     try:
-        return analyze_all_strategies(symbol.upper())
+        # run_in_executor: 15 Strategien synchron blockierten bisher den
+        # Event-Loop (gleiches Muster wie /analyze/multi, Fund #6, 27.07.).
+        return await asyncio.get_event_loop().run_in_executor(None, analyze_all_strategies, symbol.upper())
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

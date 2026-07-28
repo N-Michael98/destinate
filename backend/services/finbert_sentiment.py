@@ -69,10 +69,14 @@ def finbert_analyze_text(text: str) -> dict:
     return {"text": text[:80], **result}
 
 
-def finbert_symbol_sentiment(symbol: str) -> dict:
+def finbert_symbol_sentiment(symbol: str, all_headlines: Optional[list[dict]] = None) -> dict:
     """
     Holt RSS Headlines für ein Symbol und analysiert sie mit FinBERT.
     Gibt aggregiertes Sentiment + Einzel-Headlines zurück.
+    all_headlines optional vorgegeben (z.B. von finbert_multi_symbol, damit
+    dieselben RSS-Feeds nicht pro Symbol erneut geholt werden — Fund #6-
+    Folgefund, 27.07., gleiches Muster wie das _load()-Problem in
+    trading_strategies.py).
     """
     pipe = _get_pipeline()
     if pipe is None:
@@ -83,7 +87,8 @@ def finbert_symbol_sentiment(symbol: str) -> dict:
         }
 
     keywords = SYMBOL_KEYWORDS.get(symbol.upper(), [symbol.lower()])
-    all_headlines = fetch_headlines(max_per_feed=8)
+    if all_headlines is None:
+        all_headlines = fetch_headlines(max_per_feed=8)
 
     from services.sentiment_analysis import fetch_article_text
 
@@ -157,5 +162,6 @@ def finbert_symbol_sentiment(symbol: str) -> dict:
 
 
 def finbert_multi_symbol(symbols: list[str]) -> list[dict]:
-    """Analysiert mehrere Symbole mit FinBERT."""
-    return [finbert_symbol_sentiment(s) for s in symbols[:5]]
+    """Analysiert mehrere Symbole mit FinBERT — RSS-Feeds nur 1x geholt."""
+    all_headlines = fetch_headlines(max_per_feed=8)
+    return [finbert_symbol_sentiment(s, all_headlines) for s in symbols[:5]]

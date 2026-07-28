@@ -14,7 +14,7 @@ class MultiRequest(BaseModel):
 
 @router.get("/analyze/{symbol}")
 async def talib_analyze(symbol: str, interval: str = "1d"):
-    return analyze_talib(symbol, interval)
+    return await asyncio.get_event_loop().run_in_executor(None, analyze_talib, symbol, interval)
 
 
 @router.post("/analyze/multi")
@@ -86,4 +86,4 @@ async def talib_analyze_multi(req: MultiRequest):
 
 @router.get("/patterns/{symbol}")
 async def talib_patterns(symbol: str, interval: str = "1d"):
-    return talib_pattern_scan(symbol, interval)
+    return await asyncio.get_event_loop().run_in_executor(None, talib_pattern_scan, symbol, interval)

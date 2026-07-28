@@ -65,39 +65,9 @@ def get_current_price(symbol: str) -> dict:
 
 @yfinance_breaker
 @api_retry()
-def get_ohlcv(
-    symbol: str,
-    interval: str = "1h",
-    period: str = "5d",
-) -> list[dict]:
-    # "4h" is not a native yfinance interval — resample from 1h data
-    if interval == "4h":
-        candles_1h = get_ohlcv(symbol, "1h", period)
-        if not candles_1h:
-            return []
-        df_1h = pd.DataFrame(candles_1h)
-        df_1h["timestamp"] = pd.to_datetime(df_1h["timestamp"], utc=True)
-        df_1h = df_1h.set_index("timestamp")
-        df_4h = df_1h.resample("4h").agg({
-            "open":   "first",
-            "high":   "max",
-            "low":    "min",
-            "close":  "last",
-            "volume": "sum",
-        }).dropna(subset=["close"])
-        return [
-            {
-                "timestamp": ts.isoformat(),
-                "open":   round(float(row["open"]),   5),
-                "high":   round(float(row["high"]),   5),
-                "low":    round(float(row["low"]),    5),
-                "close":  round(float(row["close"]),  5),
-                "volume": int(row["volume"]),
-            }
-            for ts, row in df_4h.iterrows()
-            if pd.notna(row.get("close")) and float(row.get("close", 0)) > 0
-        ]
-
+def _fetch_ohlcv_single(symbol: str, interval: str, period: str) -> list[dict]:
+    """Ein einzelner, echter yfinance-Abruf (kein 4h-Resampling) — Retry+Breaker
+    greifen genau hier, EINMAL pro Aufruf."""
     if interval not in VALID_INTERVALS:
         raise ValueError(f"Invalid interval: {interval}")
     if period not in VALID_PERIODS:
@@ -126,6 +96,45 @@ def get_ohlcv(
             "volume": int(row["Volume"]),
         })
     return records
+
+
+def get_ohlcv(
+    symbol: str,
+    interval: str = "1h",
+    period: str = "5d",
+) -> list[dict]:
+    # "4h" is not a native yfinance interval — resample from 1h data.
+    # Ruft _fetch_ohlcv_single() DIREKT auf (nicht sich selbst rekursiv) —
+    # sonst würden Retry+Breaker doppelt greifen (bis zu 9 statt 3 Versuche
+    # bei transienten Fehlern, Nebenfund von Fund #4, 27.07.).
+    if interval == "4h":
+        candles_1h = _fetch_ohlcv_single(symbol, "1h", period)
+        if not candles_1h:
+            return []
+        df_1h = pd.DataFrame(candles_1h)
+        df_1h["timestamp"] = pd.to_datetime(df_1h["timestamp"], utc=True)
+        df_1h = df_1h.set_index("timestamp")
+        df_4h = df_1h.resample("4h").agg({
+            "open":   "first",
+            "high":   "max",
+            "low":    "min",
+            "close":  "last",
+            "volume": "sum",
+        }).dropna(subset=["close"])
+        return [
+            {
+                "timestamp": ts.isoformat(),
+                "open":   round(float(row["open"]),   5),
+                "high":   round(float(row["high"]),   5),
+                "low":    round(float(row["low"]),    5),
+                "close":  round(float(row["close"]),  5),
+                "volume": int(row["volume"]),
+            }
+            for ts, row in df_4h.iterrows()
+            if pd.notna(row.get("close")) and float(row.get("close", 0)) > 0
+        ]
+
+    return _fetch_ohlcv_single(symbol, interval, period)
 
 @yfinance_breaker
 @api_retry()

@@ -81,7 +81,10 @@ def _fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             f"{settings.PYTHON_BACKEND_URL}/api/v1/market/ohlcv/{symbol}",
             params={"interval": "1h", "period": "3mo"},
             headers={"X-Backend-Key": settings.BACKEND_API_KEY} if settings.BACKEND_API_KEY else {},
-            timeout=30,
+            # 45s (27.07. erhöht, Fund-#6-Folgefund #9): Backend-Route nutzt seit
+            # heute @api_retry() (bis 3 Versuche, ~3s Backoff) — 30s war knapper
+            # geworden als vor dem Retry-Fix.
+            timeout=45,
         )
         if resp.status_code != 200:
             _log_error(f"OHLCV {symbol}: HTTP {resp.status_code} — {resp.text[:100]}")
