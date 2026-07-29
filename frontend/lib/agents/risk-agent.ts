@@ -90,6 +90,45 @@ function getStyleThresholds(style: string): {
 
 const positionMeta: Map<string, PosMeta> = new Map();
 
+/**
+ * Persistiert Risiko-Zustand in Trade.notes (Generalkontroll-Fund 28.07.).
+ *
+ * Vorher lebten beSet/partialDone/trailSL NUR in der obigen Map — die ist nach
+ * jedem Redeploy/Neustart leer. active-trade-manager.ts LIEST zwar
+ * dbMeta.partialDone aus notes, aber niemand hat es je GESCHRIEBEN. Folge:
+ * nach einem Neustart galt "Teilgewinn noch nicht genommen" und der RiskAgent
+ * hat bei weiterhin >= Schwelle ein ZWEITES Mal 50% geschlossen.
+ * (Breakeven/Trailing waren nie betroffen — die prüfen zusätzlich den echten
+ * Stop beim Broker über alreadyAtBE bzw. meta.trailSL ?? liveSL.)
+ *
+ * Merged NUR die übergebenen Felder in das bestehende notes-JSON — entryContext,
+ * dealId, Slippage-Daten usw. bleiben unangetastet. Fire-and-forget + non-fatal:
+ * ein DB-Problem darf den Trading-Zyklus niemals blockieren oder abbrechen.
+ * "updatedAt" wird bewusst NICHT angefasst (Report-Zeiträume bleiben korrekt).
+ */
+function persistMeta(dealId: string, patch: Record<string, unknown>): void {
+  (async () => {
+    try {
+      const { getPrisma } = await import("../../app/lib/prisma");
+      const db = getPrisma();
+      const rows = await (db.$queryRawUnsafe as (q: string, ...a: unknown[]) => Promise<Array<{ id: number; notes: string }>>)(
+        `SELECT id, notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE $1 LIMIT 1`,
+        `%"dealId":"${dealId}"%`
+      );
+      if (!rows?.length) return;
+      let m: Record<string, unknown> = {};
+      try { m = JSON.parse(rows[0].notes) as Record<string, unknown>; } catch { m = {}; }
+      await db.$executeRawUnsafe(
+        `UPDATE "Trade" SET "notes" = $1 WHERE "id" = $2`,
+        JSON.stringify({ ...m, ...patch }),
+        rows[0].id
+      );
+    } catch (e) {
+      console.warn(`[risk-agent] Risiko-Zustand nicht persistiert (deal=${dealId}):`, e instanceof Error ? e.message : String(e));
+    }
+  })();
+}
+
 // ── AI Manager ────────────────────────────────────────────────────────────────
 
 let aiClient: Anthropic | null = null;
@@ -215,6 +254,7 @@ async function processPosition(
         const result = await capitalClosePartial(apiKey, cst, securityToken, epicForClose, direction, partialSize);
         if (result.ok) {
           positionMeta.set(dealId, { ...meta, partialDone: true });
+          persistMeta(dealId, { partialDone: true });
           agentBus.publish({
             type: "RISK:PARTIAL_TP",
             agentId: AGENT_ID,
@@ -224,7 +264,10 @@ async function processPosition(
           console.log(`[risk-agent] 💰 Partial TP: ${symbol} ${partialSize}/${rawSize} profit=${(profitPct*100).toFixed(2)}% (AI: ${aiDecision.reason})`);
         }
       } else {
+        // Position zu klein zum Halbieren — als erledigt merken, damit es nicht
+        // jeden Zyklus erneut versucht wird (auch über Neustarts hinweg).
         positionMeta.set(dealId, { ...meta, partialDone: true });
+        persistMeta(dealId, { partialDone: true });
       }
     }
   }
@@ -245,6 +288,7 @@ async function processPosition(
       const upd = await capitalUpdatePosition(apiKey, cst, securityToken, dealId, newSL, liveTP > 0 ? liveTP : undefined);
       if (upd.ok) {
         positionMeta.set(dealId, { ...meta, beSet: true, trailSL: newSL });
+        persistMeta(dealId, { beSet: true, trailSL: newSL });
         agentBus.publish({
           type: "RISK:BE_SET",
           agentId: AGENT_ID,
@@ -285,6 +329,7 @@ async function processPosition(
         const upd = await capitalUpdatePosition(apiKey, cst, securityToken, dealId, newTrailSL, liveTP > 0 ? liveTP : undefined);
         if (upd.ok) {
           positionMeta.set(dealId, { ...meta, beSet: newTrailSL >= entry, peakPrice: newPeak, trailSL: newTrailSL });
+          persistMeta(dealId, { beSet: newTrailSL >= entry, peakPrice: newPeak, trailSL: newTrailSL });
           agentBus.publish({
             type: "RISK:TRAIL_UPDATED",
             agentId: AGENT_ID,

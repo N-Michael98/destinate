@@ -200,9 +200,18 @@ export async function executeCapitalDemoOrder(
       }
     );
     if (result.ok || !result.error?.includes("size.minvalue")) break;
-    // Double size each attempt: 1 → 2 → 4 → 8 (or whatever multiplier needed)
-    size = Math.round(size * 2 * 10) / 10;
-    console.log(`[capital-com] size too small for ${epic}, retrying with size=${size}`);
+    // Verdoppeln, aber NIE über MAX_SIZE hinaus (Generalkontroll-Fund 28.07.):
+    // die Klemme aus calcPositionSize wurde hier vorher umgangen — bei 4
+    // Versuchen bis zu 8x der risikobasiert berechneten Grösse.
+    const doubled = Math.round(size * 2 * 10) / 10;
+    const maxAllowed = MAX_SIZE[epic];
+    const next = maxAllowed != null ? Math.min(doubled, maxAllowed) : doubled;
+    if (next <= size) {
+      console.warn(`[capital-com] ${epic}: Broker-Mindestgrösse liegt über MAX_SIZE (${maxAllowed}) — Order NICHT ausgeführt statt Risiko zu überschreiten`);
+      break;
+    }
+    size = next;
+    console.log(`[capital-com] size too small for ${epic}, retrying with size=${size} (max=${maxAllowed ?? "n/a"})`);
   }
 
   return {

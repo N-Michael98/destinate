@@ -143,10 +143,27 @@ export async function runICMarketsTradeManager(): Promise<void> {
         const partialResult = await icClosePartial(positionId, partialVol);
         if (partialResult.ok) {
           positionMeta.set(positionId, { ...meta, partialDone: true });
-          await db.$executeRawUnsafe(
-            `UPDATE "Trade" SET "updatedAt"=NOW() WHERE status='OPEN' AND notes LIKE $1`,
-            `%${positionId}%`
-          ).catch(() => {});
+          // icPartialDone in notes persistieren (Generalkontroll-Fund 28.07.):
+          // vorher wurde nur updatedAt gesetzt — der Merker lebte ausschliesslich
+          // in der Map und war nach jedem Neustart weg, wodurch ein zweiter
+          // Teilverkauf ausgelöst werden konnte. Merged, überschreibt nichts.
+          try {
+            const rows = await (db.$queryRawUnsafe as (q: string, ...a: unknown[]) => Promise<Array<{ id: number; notes: string }>>)(
+              `SELECT id, notes FROM "Trade" WHERE status='OPEN' AND notes LIKE $1 LIMIT 1`,
+              `%${positionId}%`
+            );
+            if (rows?.length) {
+              let m: Record<string, unknown> = {};
+              try { m = JSON.parse(rows[0].notes) as Record<string, unknown>; } catch { m = {}; }
+              await db.$executeRawUnsafe(
+                `UPDATE "Trade" SET "notes"=$1, "updatedAt"=NOW() WHERE "id"=$2`,
+                JSON.stringify({ ...m, icPartialDone: true }),
+                rows[0].id
+              );
+            }
+          } catch (e) {
+            console.warn(`[ic-trade-mgr] icPartialDone nicht persistiert (${positionId}):`, e instanceof Error ? e.message : String(e));
+          }
           console.log(`[ic-trade-mgr] 💰 Partial TP: ${symbol} closed ${partialVol} of ${pos.volume} at ${(progress*100)|0}% to TP`);
         }
       }
