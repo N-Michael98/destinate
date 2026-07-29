@@ -71,9 +71,52 @@ function resolveThreatLevel(
   return "NONE";
 }
 
-export function generateSecurityCenterReport(): SecurityCenterReport {
+/**
+ * Zählt die tatsächlich verbundenen Broker (Generalkontroll-Fund 28.07.):
+ * vorher stand hier fest `ks.triggered ? 0 : 2` — das Dashboard meldete also
+ * IMMER 2 aktive Sessions, auch wenn beide Broker down waren.
+ * Der Killswitch-Sonderfall entfällt dadurch von selbst: ist er aktiv, sind
+ * die Sessions real getrennt und die echte Prüfung liefert 0.
+ */
+async function countConnectedBrokers(): Promise<number> {
+  let n = 0;
+  try {
+    const { isCapitalConnected } = await import("@/lib/capital-com/capital-com-session");
+    if (isCapitalConnected()) n++;
+  } catch { /* non-fatal — zählt als nicht verbunden */ }
+  try {
+    const { isICMarketsConnected } = await import("@/lib/icmarkets/icmarkets-session");
+    if (isICMarketsConnected()) n++;
+  } catch { /* non-fatal */ }
+  return n;
+}
+
+/**
+ * Echte Anzahl offener Trades aus der DB (vorher fest `ks.triggered ? 0 : 3`).
+ * Wichtig: bei aktivem Killswitch NICHT 0 erzwingen — offene Positionen bleiben
+ * per User-Vorgabe bewusst offen (durch Broker-SL/TP geschützt), die alte
+ * 0-Anzeige wäre unter dem neuen Killswitch-Verhalten schlicht falsch.
+ */
+async function countOpenTrades(): Promise<number> {
+  try {
+    const { getPrisma } = await import("@/app/lib/prisma");
+    const rows = await (getPrisma().$queryRawUnsafe as (q: string) => Promise<Array<{ n: bigint | number }>>)(
+      `SELECT COUNT(*)::int AS n FROM "Trade" WHERE status = 'OPEN'`
+    );
+    return Number(rows?.[0]?.n ?? 0);
+  } catch (e) {
+    console.warn("[security-center] Offene Trades nicht zählbar:", e instanceof Error ? e.message : String(e));
+    return 0;
+  }
+}
+
+export async function generateSecurityCenterReport(): Promise<SecurityCenterReport> {
   const mw = generateMalwarebytesReport();
   const ks = getKillswitchReport();
+  const [brokerSessionsActive, openOrdersCount] = await Promise.all([
+    countConnectedBrokers(),
+    countOpenTrades(),
+  ]);
 
   const status = resolveSecurityStatus(
     mw.connectionStatus === "CONNECTED",
@@ -97,8 +140,8 @@ export function generateSecurityCenterReport(): SecurityCenterReport {
     killswitchArmed: ks.armed,
     killswitchTriggered: ks.triggered,
     telegramConfigured: !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
-    brokerSessionsActive: ks.triggered ? 0 : 2,
-    openOrdersCount: ks.triggered ? 0 : 3,
+    brokerSessionsActive,
+    openOrdersCount,
     permissions: PERMISSIONS,
     auditLog: auditLog.reverse(),
     lastScanAt: mw.lastScanAt,

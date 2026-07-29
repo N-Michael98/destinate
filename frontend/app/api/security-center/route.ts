@@ -4,7 +4,7 @@ import { generateSecurityCenterReport } from "../../../lib/security-center";
 
 export async function GET() {
   try {
-    const report = generateSecurityCenterReport();
+    const report = await generateSecurityCenterReport();
     return NextResponse.json({ ok: true, report });
   } catch (error) {
     return NextResponse.json(
