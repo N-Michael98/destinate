@@ -3,6 +3,8 @@
  * Survives server restarts and Railway redeploys.
  */
 
+import { isKillswitchActive } from "../killswitch/killswitch-engine";
+
 interface ICMarketsSession {
   accountId: string;
   balance: number;
@@ -80,6 +82,10 @@ export function isICMarketsConnected(): boolean {
 
 /** Called on server startup — restores session from Redis if available */
 export async function restoreICMarketsSessionFromRedis(): Promise<boolean> {
+  // Killswitch-Sperre (28.07.): bei aktivem Killswitch keine Session
+  // wiederherstellen — sonst zeigte die UI fälschlich "verbunden" an,
+  // obwohl der Killswitch die Broker als getrennt meldet.
+  if (isKillswitchActive()) return false;
   if (global.__icmarkets_session__) return true;
   const session = await loadFromRedis();
   if (session) {
@@ -92,6 +98,11 @@ export async function restoreICMarketsSessionFromRedis(): Promise<boolean> {
 
 /** Auto-reconnect using ICMARKETS_MCP_TOKEN from env — like Capital.com autoReconnect */
 export async function autoReconnectICMarkets(): Promise<{ ok: boolean; error?: string }> {
+  // Killswitch-Sperre (28.07.) — analog Capital.com, sonst kommt die Verbindung
+  // über den 2-Minuten-Keep-Alive von selbst zurück.
+  if (isKillswitchActive()) {
+    return { ok: false, error: "Killswitch aktiv — Reconnect gesperrt (/reset zum Entsperren)" };
+  }
   try {
     const { icGetAccount, isICMarketsConfigured } = await import("./icmarkets-client");
     if (!isICMarketsConfigured()) {
@@ -118,6 +129,7 @@ export async function autoReconnectICMarkets(): Promise<{ ok: boolean; error?: s
 
 /** Keep-alive ping — refreshes balance + re-initializes MCP session if dropped */
 export async function keepAliveICMarkets(): Promise<void> {
+  if (isKillswitchActive()) return; // Killswitch aktiv — keine Verbindung halten/aufbauen
   try {
     const { icGetAccount, isICMarketsConfigured } = await import("./icmarkets-client");
     if (!isICMarketsConfigured()) return;

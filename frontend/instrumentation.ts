@@ -248,6 +248,15 @@ export async function register() {
             console.warn("[position-monitor] Vorheriger Zyklus läuft noch — überspringe diesen Tick (Audit-Fund #2, 27.07.)");
             return;
           }
+          // Killswitch-Sperre (28.07.): kein Positions-Management solange aktiv.
+          // Offene Positionen bleiben bewusst offen (Broker-SL/TP schützen weiter).
+          try {
+            const { isKillswitchActive } = await import("./lib/killswitch");
+            if (isKillswitchActive()) {
+              console.warn("[position-monitor] 🔴 Killswitch aktiv — Zyklus übersprungen (/reset zum Entsperren)");
+              return;
+            }
+          } catch { /* non-fatal — im Zweifel weiterlaufen wie bisher */ }
           positionMonitorRunning = true;
           try {
           console.log("[position-monitor] 2min Zyklus gestartet");
@@ -358,6 +367,14 @@ export async function register() {
             console.warn("[orchestrator] Vorheriger Zyklus läuft noch — überspringe diesen Tick (Audit-Fund #2, 27.07.)");
             return;
           }
+          // Killswitch-Sperre (28.07.): keine neuen Trades solange aktiv.
+          try {
+            const { isKillswitchActive } = await import("./lib/killswitch");
+            if (isKillswitchActive()) {
+              console.warn("[orchestrator] 🔴 Killswitch aktiv — Zyklus übersprungen (/reset zum Entsperren)");
+              return;
+            }
+          } catch { /* non-fatal — im Zweifel weiterlaufen wie bisher */ }
           orchestratorRunning = true;
           try {
             await runOrchestratorCycle();

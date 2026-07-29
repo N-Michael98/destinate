@@ -1,6 +1,7 @@
 // Server-side session store — keeps CST + X-SECURITY-TOKEN secure, never sent to client
 import crypto from "crypto";
 import { paperManagerCapital } from "../paper-trading/paper-singleton";
+import { isKillswitchActive } from "../killswitch/killswitch-engine";
 import {
   capitalCreateSession,
   capitalGetAccounts,
@@ -259,9 +260,32 @@ export async function disconnectCapital(): Promise<void> {
   await clearCredentials();
 }
 
+/** Nur für den Killswitch (28.07.): trennt die Broker-Session, lässt aber die
+ *  gespeicherten Credentials UNANGETASTET — im Gegensatz zu disconnectCapital(),
+ *  das clearCredentials() aufruft und damit ein späteres /reset unmöglich machen
+ *  würde. Schliesst KEINE offenen Positionen (User-Vorgabe): die bleiben mit
+ *  ihren Broker-seitigen SL/TP bestehen. */
+export async function killswitchDisconnectCapital(): Promise<void> {
+  const s = global.__capital_session__;
+  if (s) {
+    await capitalDeleteSession(s.apiKey, s.cst, s.securityToken).catch(() => {});
+    global.__capital_session__ = null;
+  }
+  await clearSessionFromRedis();
+  global.__capital_last_error__ = null;
+  global.__capital_last_attempt__ = 0;
+  console.log("[killswitch] Capital.com-Session getrennt (Credentials bleiben erhalten)");
+}
+
 // Auto-reconnect with mutex + 30s cooldown on FAILED attempts only
 // After success: cooldown resets so session can be recovered immediately if it drops again
 export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: string }> {
+  // Killswitch-Sperre (28.07.): solange aktiv, darf sich das System NICHT
+  // wieder verbinden — sonst wäre die Verbindung nach spätestens 2 Minuten
+  // (Keep-Alive) von selbst zurück. Nach resetKillswitch() greift das wieder normal.
+  if (isKillswitchActive()) {
+    return { ok: false, error: "Killswitch aktiv — Reconnect gesperrt (/reset zum Entsperren)" };
+  }
   if (global.__capital_session__) return { ok: true };
 
   // Wait if another reconnect is in progress
@@ -331,6 +355,7 @@ export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: str
 // Keep-alive: ping Capital.com with GET /accounts every 2min to prevent session expiry
 // Called from instrumentation heartbeat
 export async function keepAliveCapital(): Promise<void> {
+  if (isKillswitchActive()) return; // Killswitch aktiv — keine Verbindung halten/aufbauen
   const session = global.__capital_session__;
   if (!session) {
     await autoReconnectCapital().catch(() => {});
