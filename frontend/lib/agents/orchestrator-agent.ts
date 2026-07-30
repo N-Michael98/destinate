@@ -396,9 +396,21 @@ export async function runOrchestratorCycle(): Promise<void> {
     console.log(`[orchestrator] Max Positionen erreicht (${openCount}/${maxConcurrent}) — übersprungen`);
     return;
   }
-  if (tradeLimitEnabled && dailyCount >= maxTradesPerDay) {
+  // Tageslimit — mit Bypass für sehr starke Signale.
+  // Generalkontroll-Fund 30.07.: tradeLimitBypassScore stand in der Oberfläche
+  // ("Limit erreicht → trotzdem Trade wenn Score ≥ Bypass-Wert"), wurde aber nur
+  // in einer vom Live-Loop NIE aufgerufenen API-Route gelesen — der Regler hatte
+  // also keinerlei Wirkung. Jetzt hier verdrahtet: bei erreichtem Limit wird der
+  // Zyklus nicht mehr sofort abgebrochen, sondern die Freigabe-Schwelle auf den
+  // Bypass-Wert angehoben. Nur Signale ab diesem Score kommen dann noch durch.
+  const bypassScore = settings.botSettings.tradeLimitBypassScore ?? 0;
+  const dailyLimitReached = tradeLimitEnabled && dailyCount >= maxTradesPerDay;
+  if (dailyLimitReached && bypassScore <= 0) {
     console.log(`[orchestrator] Tageslimit erreicht (${dailyCount}/${maxTradesPerDay}) — übersprungen`);
     return;
+  }
+  if (dailyLimitReached) {
+    console.log(`[orchestrator] Tageslimit erreicht (${dailyCount}/${maxTradesPerDay}) — nur noch Signale ab Score ${bypassScore}`);
   }
 
   // ── 3. Marktdaten holen ───────────────────────────────────────────────────
@@ -450,7 +462,18 @@ export async function runOrchestratorCycle(): Promise<void> {
   }
 
   // ── 6. Kandidaten filtern ──────────────────────────────────────────────────
-  const threshold = settings.botSettings.autoApproveThreshold ?? 71;
+  // Freigabe-Schwelle. "Min Signal Confidence" (riskSettings.minConfidenceScore)
+  // war ebenfalls ein Regler ohne Wirkung (Generalkontroll-Fund 30.07., im UI
+  // sichtbar, aber nur in einer ungenutzten API-Route gelesen). Jetzt aktiv,
+  // bewusst nur VERSCHÄRFEND: es gilt immer der strengere der beiden Werte,
+  // damit die Einstellung die bestehende Freigabe-Schwelle nie aufweichen kann.
+  const baseThreshold = Math.max(
+    settings.botSettings.autoApproveThreshold ?? 71,
+    settings.riskSettings?.minConfidenceScore ?? 0,
+  );
+  // Bei erreichtem Tageslimit gilt zusätzlich die (höhere) Bypass-Schwelle —
+  // siehe Kommentar beim Tageslimit oben.
+  const threshold = dailyLimitReached ? Math.max(baseThreshold, bypassScore) : baseThreshold;
   const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
 
   const candidates = analysisResult.approved.filter(o => {
@@ -491,7 +514,14 @@ export async function runOrchestratorCycle(): Promise<void> {
   // ── 7. Pro Kandidat: Filter → ExecutionAgent ──────────────────────────────
   const { runAllFilters, getVolatilityAdjustedRisk } = await import("../trading-filters/trade-filters");
   const currentBalance = session.balance > 0 ? session.balance : 10000;
-  const maxDailyLossPct = settings.riskSettings?.maxDailyDrawdownPct ?? 3.0;
+  // "Pause on Loss" war ein Regler ohne Wirkung (Generalkontroll-Fund 30.07.).
+  // Jetzt aktiv, aber bewusst nur VERSCHÄRFEND: ist er eingeschaltet, gilt der
+  // strengere der beiden Werte. Damit kann die Einstellung den bestehenden,
+  // funktionierenden Tagesverlust-Schutz niemals aufweichen.
+  const baseDailyLossPct = settings.riskSettings?.maxDailyDrawdownPct ?? 3.0;
+  const maxDailyLossPct = (settings.botSettings.pauseOnLoss && (settings.botSettings.pauseOnLossPercent ?? 0) > 0)
+    ? Math.min(baseDailyLossPct, settings.botSettings.pauseOnLossPercent)
+    : baseDailyLossPct;
   // Symbole normalisieren ("GBP/JPY" → "GBPJPY") — sonst greifen
   // Korrelations- und Duplikat-Checks nicht (Capital liefert teils mit Slash)
   // KORREKTUR 30.07.: capitalGetPositions() liefert bereits FLACHE Objekte
@@ -622,6 +652,11 @@ export async function runOrchestratorCycle(): Promise<void> {
       currentBalance,
       openPositions: openPositionsList,
       maxDailyLossPct,
+      // Generalkontroll-Funde 30.07.: beide Einstellungen existierten, waren
+      // aber nirgends implementiert — jetzt verdrahtet.
+      maxTotalDrawdownPct: settings.riskSettings?.maxTotalDrawdownPct,
+      maxExposurePct: settings.riskSettings?.maxExposurePct,
+      availableMargin: session.accounts?.[0]?.available,
     });
     if (!filterResult.allowed) {
       console.log(`[orchestrator] 🚫 ${candidate.symbol} GEBLOCKT [${filterResult.blockedBy}]: ${filterResult.reason}`);

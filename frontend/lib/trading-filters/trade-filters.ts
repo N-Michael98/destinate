@@ -206,7 +206,68 @@ export function checkLiquidity(
   return { allowed: true, reason: "" };
 }
 
-// ── 7. Volatility Scaling ─────────────────────────────────────────────────────
+// ── 6. Gesamt-Drawdown-Limit ─────────────────────────────────────────────────
+// Generalkontroll-Fund 30.07.: maxTotalDrawdownPct stand in den Einstellungen,
+// war aber NIRGENDS implementiert — es gab überhaupt keinen Gesamt-Drawdown-
+// Schutz. Gemessen wird vom höchsten je gesehenen Kontostand (Peak), das ist
+// die übliche Drawdown-Definition. Peak liegt in Redis, gleiches Muster wie
+// week_start_balance beim Wochenlimit.
+// Erster Lauf setzt den Peak auf den aktuellen Stand — dadurch kann ein
+// Altbestand niemals rückwirkend alles blockieren.
+export async function checkTotalDrawdownLimit(
+  currentBalance: number,
+  maxTotalDrawdownPct: number
+): Promise<FilterResult> {
+  if (currentBalance <= 0 || !maxTotalDrawdownPct || maxTotalDrawdownPct <= 0) {
+    return { allowed: true, reason: "" };
+  }
+  try {
+    const { cacheGet, cacheSet } = await import("../cache/redis-cache");
+    const KEY = "peak_balance";
+    const TTL = 365 * 24 * 60 * 60; // 1 Jahr
+    const stored = await cacheGet<{ peak: number }>(KEY);
+    const peak = stored?.peak ?? 0;
+
+    if (currentBalance > peak) {
+      await cacheSet(KEY, { peak: currentBalance }, TTL);
+      return { allowed: true, reason: "" }; // neuer Höchststand = kein Drawdown
+    }
+    if (peak <= 0) return { allowed: true, reason: "" };
+
+    const ddPct = ((peak - currentBalance) / peak) * 100;
+    if (ddPct >= maxTotalDrawdownPct) {
+      console.log(`[filter] 🛑 GESAMT-DRAWDOWN: -${ddPct.toFixed(2)}% vom Höchststand ${peak.toFixed(2)} >= ${maxTotalDrawdownPct}% — kein weiterer Trade`);
+      return { allowed: false, reason: `Gesamt-Drawdown-Limit: -${ddPct.toFixed(1)}% (Max: -${maxTotalDrawdownPct}%)` };
+    }
+    return { allowed: true, reason: "" };
+  } catch {
+    return { allowed: true, reason: "" }; // Redis weg → nicht blockieren (wie Wochenlimit)
+  }
+}
+
+// ── 7. Exposure-Limit (gebundene Margin) ─────────────────────────────────────
+// Generalkontroll-Fund 30.07.: maxExposurePct stand in den Einstellungen, war
+// aber NIRGENDS implementiert. Gerechnet wird mit den ECHTEN Broker-Werten:
+// Capital.com liefert balance und available (freie Margin) — gebundene Margin
+// ist die Differenz. Keine selbst erfundene Notional-Formel.
+export function checkExposureLimit(
+  balance: number,
+  available: number,
+  maxExposurePct: number
+): FilterResult {
+  if (!maxExposurePct || maxExposurePct <= 0) return { allowed: true, reason: "" };
+  if (balance <= 0 || available <= 0 || available > balance) {
+    return { allowed: true, reason: "" }; // Werte unplausibel → nicht blockieren
+  }
+  const usedPct = ((balance - available) / balance) * 100;
+  if (usedPct >= maxExposurePct) {
+    console.log(`[filter] 🛑 EXPOSURE-LIMIT: ${usedPct.toFixed(1)}% gebunden >= ${maxExposurePct}% — kein weiterer Trade`);
+    return { allowed: false, reason: `Exposure-Limit: ${usedPct.toFixed(1)}% gebunden (Max: ${maxExposurePct}%)` };
+  }
+  return { allowed: true, reason: "" };
+}
+
+// ── 8. Volatility Scaling ─────────────────────────────────────────────────────
 // Gibt adjustierten riskPercent zurück — kleiner bei hoher ATR
 export function getVolatilityAdjustedRisk(
   symbol: string,
@@ -239,8 +300,17 @@ export async function runAllFilters(params: {
   currentBalance: number;
   openPositions: OpenPosition[];
   maxDailyLossPct?: number;
+  /** Gesamt-Drawdown-Limit in % (Generalkontroll-Fund 30.07.). */
+  maxTotalDrawdownPct?: number;
+  /** Exposure-Limit in % gebundener Margin (Generalkontroll-Fund 30.07.). */
+  maxExposurePct?: number;
+  /** Freie Margin laut Broker — nötig für die Exposure-Prüfung. */
+  availableMargin?: number;
 }): Promise<{ allowed: boolean; blockedBy: string; reason: string }> {
-  const { symbol, direction, bid, spread, instrumentType, currentBalance, openPositions, maxDailyLossPct } = params;
+  const {
+    symbol, direction, bid, spread, instrumentType, currentBalance, openPositions,
+    maxDailyLossPct, maxTotalDrawdownPct, maxExposurePct, availableMargin,
+  } = params;
 
   // 1. Economic Calendar
   const calFilter = await checkEconomicCalendar(symbol);
@@ -258,7 +328,19 @@ export async function runAllFilters(params: {
   const weeklyFilter = await checkWeeklyLossLimit(currentBalance);
   if (!weeklyFilter.allowed) return { allowed: false, blockedBy: "WEEKLY_LOSS_LIMIT", reason: weeklyFilter.reason };
 
-  // 5. Liquidity
+  // 5. Gesamt-Drawdown (30.07.)
+  if (maxTotalDrawdownPct != null) {
+    const ddFilter = await checkTotalDrawdownLimit(currentBalance, maxTotalDrawdownPct);
+    if (!ddFilter.allowed) return { allowed: false, blockedBy: "TOTAL_DRAWDOWN_LIMIT", reason: ddFilter.reason };
+  }
+
+  // 6. Exposure / gebundene Margin (30.07.)
+  if (maxExposurePct != null && availableMargin != null) {
+    const expFilter = checkExposureLimit(currentBalance, availableMargin, maxExposurePct);
+    if (!expFilter.allowed) return { allowed: false, blockedBy: "EXPOSURE_LIMIT", reason: expFilter.reason };
+  }
+
+  // 7. Liquidity
   const liqFilter = checkLiquidity(symbol, bid, spread, instrumentType);
   if (!liqFilter.allowed) return { allowed: false, blockedBy: "LIQUIDITY", reason: liqFilter.reason };
 
