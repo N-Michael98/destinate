@@ -1,7 +1,13 @@
 /**
  * Professional Trading Filters
- * Alle 7 Filter werden VOR Execution in instrumentation.ts geprüft.
+ * Alle Filter werden VOR Execution in instrumentation.ts geprüft.
  * Jede Funktion gibt { allowed: boolean; reason: string } zurück.
+ *
+ * Stand 30.07.: 7 Filter aktiv — Economic Calendar, Korrelation, Tagesverlust,
+ * Wochenverlust, Gesamt-Drawdown (neu), Exposure/gebundene Margin (neu),
+ * Liquidität. Die beiden neuen schliessen die Lücke aus der Einstellungs-
+ * Inventur: maxTotalDrawdownPct und maxExposurePct standen in der Oberfläche,
+ * waren aber nirgends implementiert.
  */
 
 import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
