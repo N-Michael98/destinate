@@ -109,13 +109,30 @@ def _fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
         return None
 
 
-def _signals(close: pd.Series, strategy: str, p: dict) -> tuple[pd.Series, pd.Series]:
-    """Entry/Exit-Signale (long) für eine Strategie."""
+def _signals(close: pd.Series, strategy: str, p: dict) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Long- UND Short-Signale für eine Strategie.
+
+    Bis 30.07. lieferte diese Funktion ausschliesslich Long-Signale — dadurch
+    konnten der nächtliche Backtest, die Walk-Forward-Prüfung und alle darauf
+    aufbauenden Empfehlungen NIE bewerten, ob ein Short-Setup funktioniert
+    hätte. Bei fallenden Märkten zeigte die Auswertung nur "Long lief schlecht"
+    statt "Short hätte verdient". Das Live-Trading kann seit dem Prompt-Fix
+    short gehen — die Validierung war dafür blind.
+
+    Die Short-Signale sind jeweils das Spiegelbild der Long-Logik:
+      EMA_CROSS      Death Cross öffnet Short, Golden Cross schliesst ihn
+      RSI_REVERSION  überkauft (100-entry) öffnet Short, Rückkehr (100-exit) schliesst
+      BREAKOUT       Bruch nach unten öffnet Short, Ausbruch nach oben schliesst
+
+    Rückgabe: (entries, exits, short_entries, short_exits)
+    """
     if strategy == "EMA_CROSS":
         fast = close.ewm(span=p["fast"], adjust=False).mean()
         slow = close.ewm(span=p["slow"], adjust=False).mean()
-        entries = (fast > slow) & (fast.shift(1) <= slow.shift(1))
-        exits = (fast < slow) & (fast.shift(1) >= slow.shift(1))
+        golden = (fast > slow) & (fast.shift(1) <= slow.shift(1))
+        death = (fast < slow) & (fast.shift(1) >= slow.shift(1))
+        entries, exits = golden, death
+        short_entries, short_exits = death, golden
     elif strategy == "RSI_REVERSION":
         delta = close.diff()
         gain = delta.clip(lower=0).rolling(p["period"]).mean()
@@ -124,14 +141,24 @@ def _signals(close: pd.Series, strategy: str, p: dict) -> tuple[pd.Series, pd.Se
         rsi = 100 - 100 / (1 + rs)
         entries = (rsi < p["entry"]) & (rsi.shift(1) >= p["entry"])
         exits = (rsi > p["exit"]) & (rsi.shift(1) <= p["exit"])
+        # Spiegel: entry 30 -> Short bei 70, exit 55 -> Deckung bei 45
+        s_entry_lvl = 100 - p["entry"]
+        s_exit_lvl = 100 - p["exit"]
+        short_entries = (rsi > s_entry_lvl) & (rsi.shift(1) <= s_entry_lvl)
+        short_exits = (rsi < s_exit_lvl) & (rsi.shift(1) >= s_exit_lvl)
     elif strategy == "BREAKOUT":
         upper = close.rolling(p["entry_window"]).max().shift(1)
         lower = close.rolling(p["exit_window"]).min().shift(1)
         entries = close > upper
         exits = close < lower
+        short_entries = close < lower
+        short_exits = close > upper
     else:
         raise ValueError(f"Unbekannte Strategie: {strategy}")
-    return entries.fillna(False), exits.fillna(False)
+    return (
+        entries.fillna(False), exits.fillna(False),
+        short_entries.fillna(False), short_exits.fillna(False),
+    )
 
 
 # Fehler-Sammlung für Fern-Diagnose (landet im Redis-Summary)
@@ -148,12 +175,17 @@ def _run_single(close: pd.Series, strategy: str, params: dict, sl: float, tp: fl
     """Ein Backtest mit vectorbt. None bei Fehler."""
     try:
         import vectorbt as vbt
-        entries, exits = _signals(close, strategy, params)
-        if entries.sum() < 3:
-            _log_error(f"{strategy} {params}: nur {int(entries.sum())} Signale — übersprungen")
+        entries, exits, short_entries, short_exits = _signals(close, strategy, params)
+        # Long UND Short zusammen zählen (30.07.): vorher wurde ein Symbol
+        # verworfen, wenn es zu wenig LONG-Signale hatte — auch wenn es reichlich
+        # Short-Gelegenheiten gab.
+        total_entries = int(entries.sum()) + int(short_entries.sum())
+        if total_entries < 3:
+            _log_error(f"{strategy} {params}: nur {total_entries} Signale (long+short) — übersprungen")
             return None  # zu wenig Signale — nicht aussagekräftig
         pf = vbt.Portfolio.from_signals(
             close, entries, exits,
+            short_entries=short_entries, short_exits=short_exits,
             sl_stop=sl, tp_stop=tp,
             fees=0.0002, freq="1h", init_cash=10_000,
         )

@@ -666,7 +666,14 @@ each market's own data, never from habit or from these examples' direction:
       // Veto 3 (Entry-Engine Phase C): Entry Quality zeigt klar in die
       // Gegenrichtung UND hat solide Qualität (GOOD+) → blocken.
       const eq = sr?.entry_quality;
-      const gptDir = gpt.direction === "BUY" ? "LONG" : "SELL";
+      // KORREKTUR 30.07.: hier stand "SELL" statt "SHORT". entry_quality.direction
+      // kommt aus dem Backend-Konsens und ist IMMER "LONG"/"SHORT"/"NEUTRAL"
+      // (trading_strategies.py:1108, im TS-Typ Zeile 138 auch so deklariert).
+      // Der Vergleich "SHORT" !== "SELL" war damit bei JEDEM Verkaufssignal wahr —
+      // die Entry-Quality galt als Gegenrichtung, obwohl sie zustimmte, und
+      // Veto 3 hat den Trade blockiert. Einseitig gegen SHORT: bei BUY
+      // funktionierte "LONG" === "LONG" korrekt.
+      const gptDir = gpt.direction === "BUY" ? "LONG" : "SHORT";
       if (!blockReason && eq && (eq.tier === "GOOD" || eq.tier === "EXCELLENT")
           && eq.direction !== "NEUTRAL" && eq.direction !== gptDir) {
         blockReason = `Entry-Quality ${eq.score}/100 (${eq.tier}) zeigt ${eq.direction}, GPT will ${gpt.direction}`;
@@ -732,7 +739,10 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     const eqScore = (() => {
       const eq = strategyData.get(market.symbol)?.entry_quality;
       if (!eq || eq.direction === "NEUTRAL" || gpt.direction === "WAIT") return 0;
-      const gptDir = gpt.direction === "BUY" ? "LONG" : "SELL";
+      // KORREKTUR 30.07.: siehe Veto 3 oben — "SELL" statt "SHORT" verglichen.
+      // Folge hier: JEDES Verkaufssignal bekam -4 statt des Bonus (+8/+5/+2),
+      // also bis zu 12 Punkte Nachteil im finalScore gegenüber einem Kaufsignal.
+      const gptDir = gpt.direction === "BUY" ? "LONG" : "SHORT";
       if (eq.direction !== gptDir) return -4;                 // leichte Gegenrichtung
       return eq.tier === "EXCELLENT" ? 8 : eq.tier === "GOOD" ? 5 : eq.tier === "MODERATE" ? 2 : 0;
     })();
