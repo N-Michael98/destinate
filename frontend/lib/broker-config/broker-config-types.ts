@@ -51,6 +51,15 @@ export interface BotSettings {
     SCALPING: number;
     SWING: number;
   };
+  // ── Pyramiding (30.07.) — mehrere Positionen im selben Markt ──────────────
+  // Standard = aus / 1 Position pro Symbol, also exakt das bisherige Verhalten.
+  // Erst wenn der User es in den Einstellungen aktiviert, ändert sich etwas.
+  pyramidingEnabled: boolean;
+  /** Obergrenze offener Positionen PRO SYMBOL (1 = kein Pyramiding). */
+  maxPositionsPerSymbol: number;
+  /** Mindest-Confidence für eine Nachkauf-Position. 0 = keine eigene Schwelle,
+   *  dann gilt autoApproveThreshold (kein erfundener Zahlenwert im Code). */
+  pyramidingMinConfidence: number;
 }
 
 export interface RiskSettings {

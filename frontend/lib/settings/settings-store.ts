@@ -12,6 +12,11 @@ const DEFAULT_SETTINGS: SystemSettings = {
     tradeLimitEnabled: true,
     tradeLimitBypassScore: 80,
     maxTradesPerDayByStyle: { DAYTRADING: 3, SCALPING: 5, SWING: 2 },
+    // Pyramiding standardmässig AUS — bisheriges Verhalten (1 Position pro
+    // Symbol) bleibt unverändert, bis der User es in den Einstellungen aktiviert.
+    pyramidingEnabled: false,
+    maxPositionsPerSymbol: 1,
+    pyramidingMinConfidence: 0, // 0 = autoApproveThreshold verwenden
   },
   riskSettings: {
     maxRiskPerTradePct: 1.0,

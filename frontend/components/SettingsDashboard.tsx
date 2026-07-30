@@ -1083,6 +1083,75 @@ export default function SettingsDashboard() {
                 ON = Max Trades/Tag aktiv. Limit erreicht → trotzdem Trade wenn Score ≥ Bypass-Wert.
               </p>
             </div>
+
+            {/* ───── PYRAMIDING (30.07.) ───── */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
+                  Pyramiding
+                  <span style={{ marginLeft: "8px", fontSize: "9px", color: "#475569" }}>
+                    {(settings.botSettings.pyramidingEnabled ?? false) ? "— Nachkäufe erlaubt" : "— max 1 Position pro Markt"}
+                  </span>
+                </label>
+                <button
+                  onClick={() => updateBotField("pyramidingEnabled", !(settings.botSettings.pyramidingEnabled ?? false))}
+                  style={{
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: (settings.botSettings.pyramidingEnabled ?? false) ? "#10c96d" : "rgba(255,255,255,0.1)",
+                    position: "relative", transition: "background 0.15s",
+                  }}
+                >
+                  <div style={{
+                    width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: (settings.botSettings.pyramidingEnabled ?? false) ? "23px" : "3px",
+                    transition: "left 0.15s",
+                  }} />
+                </button>
+                <span style={{ fontSize: "12px", color: (settings.botSettings.pyramidingEnabled ?? false) ? "#10c96d" : "#64748b" }}>
+                  {(settings.botSettings.pyramidingEnabled ?? false) ? "ON" : "OFF"}
+                </span>
+              </div>
+              {(settings.botSettings.pyramidingEnabled ?? false) && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                    <span style={{ fontSize: "10px", color: "#64748b", whiteSpace: "nowrap", minWidth: "150px" }}>
+                      Max Positionen pro Markt
+                    </span>
+                    <input
+                      type="range" min={1} max={5} step={1}
+                      value={settings.botSettings.maxPositionsPerSymbol ?? 1}
+                      onChange={(e) => updateBotField("maxPositionsPerSymbol", Number(e.target.value))}
+                      style={{ flex: 1, accentColor: "#10c96d" }}
+                    />
+                    <span style={{ fontSize: "12px", color: "#10c96d", fontWeight: "bold", minWidth: "36px" }}>
+                      {settings.botSettings.maxPositionsPerSymbol ?? 1}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "10px", color: "#64748b", whiteSpace: "nowrap", minWidth: "150px" }}>
+                      Nachkauf ab Confidence ≥
+                    </span>
+                    <input
+                      type="range" min={0} max={99} step={1}
+                      value={settings.botSettings.pyramidingMinConfidence ?? 0}
+                      onChange={(e) => updateBotField("pyramidingMinConfidence", Number(e.target.value))}
+                      style={{ flex: 1, accentColor: "#10c96d" }}
+                    />
+                    <span style={{ fontSize: "12px", color: "#10c96d", fontWeight: "bold", minWidth: "60px", textAlign: "right" }}>
+                      {(settings.botSettings.pyramidingMinConfidence ?? 0) === 0
+                        ? `${settings.botSettings.autoApproveThreshold}%*`
+                        : `${settings.botSettings.pyramidingMinConfidence}%`}
+                    </span>
+                  </div>
+                </>
+              )}
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                Nachkauf im selben Markt nur wenn ALLE bestehenden Positionen auf Breakeven+ abgesichert sind,
+                die Richtung übereinstimmt (kein Hedging) und die Confidence die Schwelle erreicht.
+                {(settings.botSettings.pyramidingMinConfidence ?? 0) === 0 && " (*0 = Auto-Approve-Schwelle wird verwendet)"}
+              </p>
+            </div>
           </div>
         </div>
       )}

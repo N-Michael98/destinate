@@ -368,6 +368,20 @@ export async function runOrchestratorCycle(): Promise<void> {
   const posResult = posCheck; // bereits geholt im Session-Check oben
   const openCount = posResult?.positions?.length ?? 0;
 
+  // Fail-closed (30.07.): Ohne verlässliche Positionsliste darf KEIN neuer Trade
+  // eröffnet werden. Vorher fiel openCount bei einem fehlgeschlagenen Abruf
+  // stillschweigend auf 0 und openPositionsList auf [] — damit griffen weder
+  // das Positions-Limit noch der Duplikat-/Pyramiding-Schutz, und es konnten
+  // unkontrolliert gestapelte Positionen entstehen.
+  // capitalGetPositions() wirft bei HTTP-Fehlern nicht, sondern liefert
+  // {ok:false} OHNE positions — beide Fälle werden hier abgefangen.
+  // Die Überwachung offener Positionen läuft davon unberührt weiter (eigener
+  // 2-Minuten-Loop in instrumentation.ts).
+  if (!posResult?.ok || !Array.isArray(posResult.positions)) {
+    console.warn(`[orchestrator] ⛔ Offene Positionen nicht abrufbar (${posResult?.error ?? "Netzwerkfehler"}) — kein neuer Trade in diesem Zyklus`);
+    return;
+  }
+
   // Ausserhalb Session: keine neuen Trades
   const blockNewTrades = !isWithinTradingSession();
 
@@ -480,12 +494,52 @@ export async function runOrchestratorCycle(): Promise<void> {
   const maxDailyLossPct = settings.riskSettings?.maxDailyDrawdownPct ?? 3.0;
   // Symbole normalisieren ("GBP/JPY" → "GBPJPY") — sonst greifen
   // Korrelations- und Duplikat-Checks nicht (Capital liefert teils mit Slash)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const openPositionsList = (posResult?.positions ?? []).map((p: any) => ({
-    symbol: (p.market?.symbol as string | undefined)?.replace("/", "").toUpperCase(),
-    epic: (p.market?.epic as string | undefined)?.toUpperCase(),
-    direction: p.position?.direction as string | undefined,
+  // KORREKTUR 30.07.: capitalGetPositions() liefert bereits FLACHE Objekte
+  // (OpenPosition — symbol/epic/direction/openLevel/stopLevel auf oberster
+  // Ebene). Vorher wurde hier p.market?.symbol bzw. p.position?.direction
+  // gelesen — diese verschachtelte Capital.com-Rohform existiert nach der
+  // Umwandlung im Client gar nicht mehr. Dadurch waren ALLE Felder undefined
+  // und der Duplikat-Schutz hat NIE ausgelöst (Ursache der 3x USDCAD).
+  // Der any-Cast hatte den Compiler daran gehindert das zu melden — deshalb
+  // hier bewusst entfernt, damit so ein Fehler künftig auffliegt.
+  const openPositionsList = (posResult?.positions ?? []).map((p) => ({
+    dealId:     p.dealId,
+    symbol:     p.symbol?.replace("/", "").toUpperCase(),
+    epic:       p.epic?.toUpperCase(),
+    direction:  p.direction as string | undefined,
+    openLevel:  p.openLevel,
+    stopLevel:  p.stopLevel,
   }));
+
+  // Breakeven-Status der offenen Positionen — Quelle ist der beSet-Merker den
+  // der RiskAgent über persistMeta schreibt (seit 29.07. neustart-fest).
+  // Nur nötig wenn Pyramiding aktiv ist, sonst gar keine DB-Abfrage.
+  const beByDealId = new Map<string, boolean>();
+  if (settings.botSettings.pyramidingEnabled) {
+    try {
+      const { getPrisma } = await import("../../app/lib/prisma");
+      const rows = await (getPrisma().$queryRawUnsafe as (q: string) => Promise<Array<{ notes: string }>>)(
+        `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealId%'`
+      );
+      for (const r of rows ?? []) {
+        try {
+          const m = JSON.parse(r.notes) as Record<string, unknown>;
+          if (m.dealId) beByDealId.set(String(m.dealId), m.beSet === true);
+        } catch { /* einzelne kaputte notes überspringen */ }
+      }
+    } catch (e) {
+      console.warn("[orchestrator] BE-Status nicht ladbar — Pyramiding bleibt gesperrt:", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** Position gilt als abgesichert, wenn der RiskAgent Breakeven gesetzt hat
+   *  ODER der Stop live bereits am Einstieg oder darüber/darunter steht.
+   *  Unbekannt = NICHT abgesichert (fail-safe: dann kein Nachkauf). */
+  const isProtected = (p: { dealId?: string; direction?: string; openLevel?: number; stopLevel?: number | null }): boolean => {
+    if (p.dealId && beByDealId.get(p.dealId) === true) return true;
+    if (p.stopLevel == null || !p.openLevel) return false;
+    return p.direction === "BUY" ? p.stopLevel >= p.openLevel : p.stopLevel <= p.openLevel;
+  };
 
   let tradesThisCycle = 0;
 
@@ -501,16 +555,47 @@ export async function runOrchestratorCycle(): Promise<void> {
       console.log(`[orchestrator] 🔧 ${candidate.symbol}: Override aktiv — Style=${style}${override.slPct ? ` SL=${(override.slPct * 100).toFixed(1)}%` : ""}`);
     }
 
-    // Duplikat-Schutz: pro Symbol max. 1 offene Position.
-    // (3× GBPJPY gestapelt am 06.07. = 3% konzentriertes Risiko — nie wieder)
+    // ── Duplikat-Schutz / Pyramiding ──────────────────────────────────────
+    // Standard: max. 1 offene Position pro Symbol (3× GBPJPY gestapelt am
+    // 06.07. = konzentriertes Risiko — nie wieder).
+    // Mit aktiviertem Pyramiding sind mehrere erlaubt, aber NUR wenn jede
+    // bestehende Position bereits auf Breakeven+ abgesichert ist und die neue
+    // Analyse die konfigurierte Schwelle erreicht. Alle Werte kommen aus den
+    // Einstellungen — nichts ist im Code fest verdrahtet.
     const candSym = candidate.symbol.toUpperCase().replace("/", "");
     const candEpic = INSTRUMENT_META[candidate.symbol]?.epic?.toUpperCase();
-    const alreadyOpen = openPositionsList.some(p =>
+    const samePositions = openPositionsList.filter(p =>
       p.symbol === candSym || (candEpic && p.epic === candEpic)
     );
-    if (alreadyOpen) {
-      console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Position bereits offen (max 1 pro Symbol)`);
-      continue;
+
+    if (samePositions.length > 0) {
+      const pyrOn      = settings.botSettings.pyramidingEnabled ?? false;
+      const maxPerSym  = settings.botSettings.maxPositionsPerSymbol ?? 1;
+      // 0 = keine eigene Schwelle konfiguriert -> allgemeine Freigabe-Schwelle
+      const pyrMinConf = settings.botSettings.pyramidingMinConfidence || threshold;
+
+      if (!pyrOn || maxPerSym <= 1) {
+        console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Position bereits offen (Pyramiding aus)`);
+        continue;
+      }
+      if (samePositions.length >= maxPerSym) {
+        console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Limit ${samePositions.length}/${maxPerSym} Positionen pro Symbol erreicht`);
+        continue;
+      }
+      if (samePositions.some(p => p.direction !== candidate.gpt.direction)) {
+        console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — bestehende Position in Gegenrichtung (kein Hedging)`);
+        continue;
+      }
+      if (candidate.gpt.confidence < pyrMinConf) {
+        console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Confidence ${candidate.gpt.confidence} unter Pyramiding-Schwelle ${pyrMinConf}`);
+        continue;
+      }
+      const ungesichert = samePositions.filter(p => !isProtected(p));
+      if (ungesichert.length > 0) {
+        console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — ${ungesichert.length} bestehende Position(en) noch nicht auf Breakeven`);
+        continue;
+      }
+      console.log(`[orchestrator] 🔼 ${candidate.symbol}: Pyramiding erlaubt — ${samePositions.length}/${maxPerSym} offen, alle auf BE+, Confidence ${candidate.gpt.confidence} >= ${pyrMinConf}`);
     }
 
     // Analysis-Engine Score — TESTPHASE (User-Entscheid 15.07.): NUR LOGGEN,
