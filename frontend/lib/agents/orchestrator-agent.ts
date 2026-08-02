@@ -146,7 +146,17 @@ async function fetchMarkets(
   const capitalSymbols = new Set(capitalMarkets.map((m: CapitalMarket) => m.symbol));
   let missingSymbols = WATCHLIST.filter(s => !capitalSymbols.has(s));
 
-  let supplemented = [...capitalMarkets];
+  // KORREKTUR 02.08.: Die Hauptliste von Capital.com wurde vorher unverändert
+  // übernommen — OHNE Altersangabe. Damit galten ausgerechnet die meisten
+  // Märkte (laut Logs 14 von 22) für die Aktualitätsprüfung als "Alter
+  // unbekannt" und wurden nie geprüft. Jetzt wird das Alter aus dem echten
+  // Broker-Zeitstempel berechnet; fehlt dieser, bleibt es null (= unbekannt,
+  // wird gewarnt statt blockiert).
+  let supplemented: CapitalMarket[] = capitalMarkets.map((m: CapitalMarket) => ({
+    ...m,
+    ageMinutes: m.updateTime ? ageInMinutes(m.updateTime) : null,
+    priceSource: "CAPITAL" as const,
+  }));
 
   // ── Stufe 1: ECHTE Capital.com-Preise für fehlende Symbole ────────────────
   // In 5er-Gruppen mit Pause: Capital-Rate-Limit (~10 req/s) verwarf bei
@@ -248,6 +258,25 @@ async function fetchMarkets(
 
   const capitalTotal = capitalMarkets.length + realPriceAdded;
   console.log(`[orchestrator] Märkte: ${capitalTotal} Capital(echt) + ${supplemented.length - capitalTotal} Python(yfinance) = ${supplemented.length} total`);
+
+  // Kurs-Aktualität sichtbar machen (02.08.) — beantwortet bei JEDEM Zyklus
+  // die Frage "sind die Kurse wirklich live?" mit echten Zahlen statt
+  // Vermutung. Unbekanntes Alter wird bewusst getrennt ausgewiesen: das
+  // bedeutet, dass die Quelle keinen Zeitstempel geliefert hat.
+  {
+    const withAge = supplemented.filter(m => m.ageMinutes != null);
+    const unknown = supplemented.length - withAge.length;
+    if (withAge.length > 0) {
+      const ages = withAge.map(m => m.ageMinutes as number);
+      const avg = ages.reduce((a, b) => a + b, 0) / ages.length;
+      const oldest = withAge.reduce((a, b) => ((a.ageMinutes as number) > (b.ageMinutes as number) ? a : b));
+      console.log(
+        `[orchestrator] 🕐 Kurs-Alter: Ø ${avg.toFixed(1)} Min | ältester ${oldest.symbol} ${Math.round(oldest.ageMinutes as number)} Min | ohne Zeitstempel: ${unknown}`
+      );
+    } else {
+      console.warn(`[orchestrator] 🕐 Kurs-Alter: KEIN einziger Kurs hat einen Zeitstempel (${supplemented.length} Märkte) — Aktualität nicht prüfbar`);
+    }
+  }
   return supplemented;
 }
 
