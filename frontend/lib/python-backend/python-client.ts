@@ -11,7 +11,26 @@ import { pythonBackendAuthHeader } from "./auth-header";
 
 const BASE_URL = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
 
+// Diagnose (02.08.): exquisite-rejoicing bekommt seit Tagen alle ~2 Minuten
+// POST /api/v1/lifecycle/balance mit 401, während divine-warmth denselben
+// Aufruf im selben Takt mit 200 beantwortet. Die Quell-IPs (100.64.0.x) zeigen
+// auf einen Dienst im eigenen Railway-Netz, und lifecycle/balance wird im
+// ganzen Repo NUR von dieser Datei aufgerufen. Welche Ziel-URL dieses Modul
+// tatsächlich auflöst, war von aussen nicht feststellbar — deshalb hier eine
+// einmalige Ausgabe beim ersten Aufruf. Rein additiv, ändert kein Verhalten.
+// Der Schlüssel selbst wird NIEMALS geloggt, nur ob er vorhanden ist.
+let _diagLogged = false;
+function logTargetOnce(): void {
+  if (_diagLogged) return;
+  _diagLogged = true;
+  const usedNew = !!process.env.PYTHON_BACKEND_NEW_URL;
+  console.log(
+    `[py-client] Ziel=${BASE_URL || "(leer)"} | Quelle=${usedNew ? "PYTHON_BACKEND_NEW_URL" : "PYTHON_BACKEND_URL"} | Schlüssel vorhanden=${!!process.env.BACKEND_API_KEY}`
+  );
+}
+
 function isConfigured(): boolean {
+  logTargetOnce();
   return BASE_URL.length > 5;
 }
 
@@ -24,9 +43,16 @@ async function post<T = unknown>(path: string, body: unknown): Promise<T | null>
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return null;
+    // Fehlschläge waren bisher völlig still (02.08.) — deshalb fiel niemandem
+    // auf, dass ein Ziel dauerhaft mit 401 antwortet. Jetzt sichtbar, ohne das
+    // fehlertolerante Verhalten zu ändern (Rückgabe bleibt null).
+    if (!res.ok) {
+      console.warn(`[py-client] ${res.status} bei POST ${path} -> ${BASE_URL}`);
+      return null;
+    }
     return res.json() as Promise<T>;
-  } catch {
+  } catch (e) {
+    console.warn(`[py-client] POST ${path} fehlgeschlagen -> ${BASE_URL}:`, e instanceof Error ? e.message : String(e));
     return null;
   }
 }
@@ -38,7 +64,10 @@ async function get<T = unknown>(path: string): Promise<T | null> {
       headers: pythonBackendAuthHeader(),
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[py-client] ${res.status} bei GET ${path} -> ${BASE_URL}`);
+      return null;
+    }
     return res.json() as Promise<T>;
   } catch {
     return null;
