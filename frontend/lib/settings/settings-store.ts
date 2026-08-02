@@ -17,6 +17,11 @@ const DEFAULT_SETTINGS: SystemSettings = {
     pyramidingEnabled: false,
     maxPositionsPerSymbol: 1,
     pyramidingMinConfidence: 0, // 0 = autoApproveThreshold verwenden
+    // Kurs-Aktualität (02.08.): 30 Min ist bewusst grosszügig — ein aktiv
+    // gehandelter Markt tickt im Sekundentakt (live gemessen: BTCUSD 1 Min).
+    // Blockiert damit nur echte Fälle wie den Nikkei während europäischer
+    // Handelszeit (Tokio geschlossen, Kurs Stunden alt). 0 = Prüfung aus.
+    maxPriceAgeMinutes: 30,
   },
   riskSettings: {
     maxRiskPerTradePct: 1.0,

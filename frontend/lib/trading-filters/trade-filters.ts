@@ -273,7 +273,35 @@ export function checkExposureLimit(
   return { allowed: true, reason: "" };
 }
 
-// ── 8. Volatility Scaling ─────────────────────────────────────────────────────
+// ── 8. Kurs-Aktualität ───────────────────────────────────────────────────────
+// Fund 02.08.: Der yfinance-Rückfall stempelte JEDEN Kurs mit der aktuellen
+// Uhrzeit — ein 57 Stunden alter Nikkei-Kurs sah taufrisch aus. Da Einstieg,
+// SL und TP auf diesem Kurs berechnet werden, hätte ein veralteter Kurs zu
+// einem Einstieg auf falschem Niveau und sofort auslösendem Stop führen können.
+//
+// Blockiert wird NUR bei nachweislich veraltetem Kurs (minutengenauer
+// Zeitstempel vorhanden UND älter als erlaubt). Ist die Genauigkeit nur
+// tagesbasiert oder das Alter unbekannt, wird gewarnt statt blockiert —
+// sonst würden Instrumente ohne Minutendaten (z.B. zeitweise Gold/Öl)
+// grundlos vom Handel ausgeschlossen.
+export function checkPriceFreshness(
+  symbol: string,
+  ageMinutes: number | null | undefined,
+  maxAgeMinutes: number
+): FilterResult {
+  if (!maxAgeMinutes || maxAgeMinutes <= 0) return { allowed: true, reason: "" }; // 0 = aus
+  if (ageMinutes == null) {
+    console.warn(`[filter] ⏳ ${symbol}: Kurs-Alter unbekannt — nicht blockiert, aber ungeprüft`);
+    return { allowed: true, reason: "" };
+  }
+  if (ageMinutes > maxAgeMinutes) {
+    console.log(`[filter] 🛑 ${symbol} GEBLOCKT: Kurs ist ${Math.round(ageMinutes)} Min alt (max ${maxAgeMinutes}) — Markt vermutlich geschlossen`);
+    return { allowed: false, reason: `Kurs veraltet: ${Math.round(ageMinutes)} Min alt (max ${maxAgeMinutes})` };
+  }
+  return { allowed: true, reason: "" };
+}
+
+// ── 9. Volatility Scaling ─────────────────────────────────────────────────────
 // Gibt adjustierten riskPercent zurück — kleiner bei hoher ATR
 export function getVolatilityAdjustedRisk(
   symbol: string,
@@ -312,11 +340,23 @@ export async function runAllFilters(params: {
   maxExposurePct?: number;
   /** Freie Margin laut Broker — nötig für die Exposure-Prüfung. */
   availableMargin?: number;
+  /** Alter des Kurses in Minuten (02.08.). null/undefined = unbekannt. */
+  priceAgeMinutes?: number | null;
+  /** Erlaubtes Höchstalter in Minuten. 0 = Prüfung aus. */
+  maxPriceAgeMinutes?: number;
 }): Promise<{ allowed: boolean; blockedBy: string; reason: string }> {
   const {
     symbol, direction, bid, spread, instrumentType, currentBalance, openPositions,
     maxDailyLossPct, maxTotalDrawdownPct, maxExposurePct, availableMargin,
+    priceAgeMinutes, maxPriceAgeMinutes,
   } = params;
+
+  // 0. Kurs-Aktualität — ZUERST: ohne verlässlichen Kurs sind alle folgenden
+  //    Prüfungen (Spread, Verlustgrenzen) und die Einstiegsberechnung wertlos.
+  if (maxPriceAgeMinutes != null) {
+    const freshFilter = checkPriceFreshness(symbol, priceAgeMinutes, maxPriceAgeMinutes);
+    if (!freshFilter.allowed) return { allowed: false, blockedBy: "PRICE_STALE", reason: freshFilter.reason };
+  }
 
   // 1. Economic Calendar
   const calFilter = await checkEconomicCalendar(symbol);

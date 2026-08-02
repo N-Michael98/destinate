@@ -60,6 +60,11 @@ export interface BotSettings {
   /** Mindest-Confidence für eine Nachkauf-Position. 0 = keine eigene Schwelle,
    *  dann gilt autoApproveThreshold (kein erfundener Zahlenwert im Code). */
   pyramidingMinConfidence: number;
+  /** Höchstalter eines Kurses in Minuten, bis zu dem gehandelt werden darf
+   *  (02.08.). 0 = Prüfung aus. Greift nur bei minutengenau bekanntem Alter —
+   *  bei unbekanntem oder nur tagesgenauem Zeitstempel wird gewarnt, nicht
+   *  blockiert, damit Instrumente ohne Minutendaten nicht grundlos ausfallen. */
+  maxPriceAgeMinutes: number;
 }
 
 export interface RiskSettings {

@@ -36,6 +36,9 @@ export interface ScannerOpportunity {
   bid: number;
   ask: number;
   spread: number;
+  /** Alter des zugrundeliegenden Kurses in Minuten (02.08.). null = unbekannt.
+   *  Broker-Kurse sind live, yfinance-Rückfallkurse können Stunden alt sein. */
+  ageMinutes?: number | null;
   gpt: GPTMarketAnalysis;
   claude: ClaudeRiskAssessment;
   finalScore: number;
@@ -782,6 +785,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       bid: market.bid,
       ask: market.ask,
       spread: market.spread,
+      ageMinutes: (market as { ageMinutes?: number | null }).ageMinutes ?? null,
       gpt,
       claude,
       finalScore,

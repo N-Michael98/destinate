@@ -176,7 +176,7 @@ export async function capitalGetTopMarkets(
           bid,
           ask: offer,
           spread: Number((offer - bid).toFixed(5)),
-          updateTime: String(snap.updateTime ?? new Date().toISOString()),
+          updateTime: String(snap.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
         } as CapitalMarket;
       })
     );
@@ -318,7 +318,7 @@ export async function capitalGetPrices(
             bid,
             ask: offer,
             spread: Number((offer - bid).toFixed(5)),
-            updateTime: String(snapshot.updateTime ?? new Date().toISOString()),
+            updateTime: String(snapshot.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
           };
         } catch { return null; }
       })
@@ -532,7 +532,12 @@ export interface CapitalMarket {
   bid: number;
   ask: number;
   spread: number;
+  /** Echter Zeitpunkt des Kurses. Leer = unbekannt (NICHT als frisch werten). */
   updateTime: string;
+  /** Alter des Kurses in Minuten, sofern bekannt (02.08.). null = unbekannt. */
+  ageMinutes?: number | null;
+  /** Woher der Kurs stammt — Broker-Kurse sind live, yfinance kann alt sein. */
+  priceSource?: "CAPITAL" | "YFINANCE_FALLBACK";
 }
 
 // Fetch all available markets from Capital.com (by instrument type)
@@ -567,7 +572,7 @@ export async function capitalGetAvailableMarkets(
           bid,
           ask: offer,
           spread: Number((offer - bid).toFixed(5)),
-          updateTime: String(snap.updateTime ?? new Date().toISOString()),
+          updateTime: String(snap.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
         });
       }
     }
@@ -606,7 +611,7 @@ export async function capitalSearchMarkets(
         bid,
         ask: offer,
         spread: Number((offer - bid).toFixed(5)),
-        updateTime: String(snap.updateTime ?? new Date().toISOString()),
+        updateTime: String(snap.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
       };
     });
     return { ok: true, markets };

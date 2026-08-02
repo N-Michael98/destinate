@@ -126,6 +126,15 @@ Antworte NUR mit JSON:
 
 // ── Marktdaten holen ──────────────────────────────────────────────────────────
 
+/** Alter eines ISO-Zeitstempels in Minuten. null wenn nicht auswertbar —
+ *  der Aufrufer behandelt das als "unbekannt", NICHT als frisch (02.08.). */
+function ageInMinutes(iso: string): number | null {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const age = (Date.now() - t) / 60000;
+  return age >= 0 ? Number(age.toFixed(1)) : 0; // Zukunft (Zeitzonen-Drift) = frisch
+}
+
 async function fetchMarkets(
   apiKey: string, cst: string, secToken: string
 ): Promise<CapitalMarket[]> {
@@ -154,6 +163,12 @@ async function fetchMarkets(
         for (const p of pr?.prices ?? []) {
           const meta = INSTRUMENT_META[p.symbol];
           if (!meta || !(p.bid > 0 && p.ask > 0)) continue;
+          // Broker-Kurse sind live — trotzdem das Alter aus dem ECHTEN
+          // Capital-Zeitstempel berechnen (02.08.), damit die Aktualitäts-
+          // prüfung auch diesen Pfad abdeckt und nicht nur den yfinance-
+          // Rückfall. Fehlt der Zeitstempel, bleibt das Alter unbekannt
+          // (wird gewarnt, nicht blockiert) statt Frische vorzutäuschen.
+          const capAge = p.updateTime ? ageInMinutes(p.updateTime) : null;
           supplemented.push({
             epic: meta.epic,
             instrumentName: meta.name,
@@ -162,7 +177,9 @@ async function fetchMarkets(
             bid: p.bid,
             ask: p.ask,
             spread: p.spread,
-            updateTime: p.updateTime ?? new Date().toISOString(),
+            updateTime: p.updateTime ?? "",
+            ageMinutes: capAge,
+            priceSource: "CAPITAL",
           });
           realPriceAdded++;
         }
@@ -190,13 +207,24 @@ async function fetchMarkets(
           signal: AbortSignal.timeout(20000),
         });
         if (res.ok) {
-          const data = await res.json() as { prices?: Array<{ symbol: string; price: number | null }> };
+          const data = await res.json() as {
+            prices?: Array<{
+              symbol: string; price: number | null;
+              asOf?: string | null; ageMinutes?: number | null; asOfPrecision?: string | null;
+            }>
+          };
           for (const p of data.prices ?? []) {
             if (!p.price || p.price <= 0) continue;
             const meta = INSTRUMENT_META[p.symbol];
             if (!meta) continue;
             const spreadPct = meta.type === "CURRENCIES" ? 0.0002 : meta.type === "CRYPTOCURRENCIES" ? 0.001 : 0.0005;
             const half = p.price * spreadPct / 2;
+            // KORREKTUR 02.08.: hier stand `updateTime: new Date()` — JEDER
+            // Fallback-Preis wurde also mit der aktuellen Uhrzeit gestempelt,
+            // egal wie alt er wirklich war (ein 57 Stunden alter Nikkei-Kurs
+            // sah taufrisch aus). Jetzt kommt der ECHTE Zeitstempel aus dem
+            // Backend; nur wenn dieser fehlt, bleibt updateTime leer statt
+            // eine Aktualität vorzutäuschen.
             supplemented.push({
               epic: meta.epic,
               instrumentName: meta.name,
@@ -205,8 +233,13 @@ async function fetchMarkets(
               bid: Number((p.price - half).toFixed(5)),
               ask: Number((p.price + half).toFixed(5)),
               spread: Number((half * 2).toFixed(5)),
-              updateTime: new Date().toISOString(),
+              updateTime: p.asOf ?? "",
+              ageMinutes: p.ageMinutes ?? null,
+              priceSource: "YFINANCE_FALLBACK",
             });
+            if (p.ageMinutes != null && p.ageMinutes > 15) {
+              console.warn(`[orchestrator] ⏳ ${p.symbol}: Kurs ist ${Math.round(p.ageMinutes)} Min alt (${p.asOfPrecision ?? "?"}) — Markt vermutlich geschlossen`);
+            }
           }
         }
       }
@@ -657,6 +690,9 @@ export async function runOrchestratorCycle(): Promise<void> {
       maxTotalDrawdownPct: settings.riskSettings?.maxTotalDrawdownPct,
       maxExposurePct: settings.riskSettings?.maxExposurePct,
       availableMargin: session.accounts?.[0]?.available,
+      // Kurs-Aktualität (02.08.) — verhindert Einstiege auf veralteten Kursen
+      priceAgeMinutes: candidate.ageMinutes,
+      maxPriceAgeMinutes: settings.botSettings.maxPriceAgeMinutes,
     });
     if (!filterResult.allowed) {
       console.log(`[orchestrator] 🚫 ${candidate.symbol} GEBLOCKT [${filterResult.blockedBy}]: ${filterResult.reason}`);

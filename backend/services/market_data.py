@@ -1,5 +1,6 @@
 import yfinance as yf
 import pandas as pd
+from datetime import datetime, timezone
 from typing import Optional
 
 from core.circuit_breaker import yfinance_breaker
@@ -141,17 +142,145 @@ def get_ohlcv(
 def _download_multi(tickers: list[str]) -> pd.DataFrame:
     return yf.download(tickers, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True)
 
+
+@yfinance_breaker
+@api_retry()
+def _download_multi_intraday(tickers: list[str]) -> pd.DataFrame:
+    """1-Minuten-Kerzen — liefern im Gegensatz zur Tageskerze einen ECHTEN
+    Zeitstempel des letzten Kurses. Nötig, um Aktualität überhaupt messen zu
+    können (Fund 02.08.: vorher wurde jeder Preis im Frontend mit der aktuellen
+    Uhrzeit gestempelt, egal wie alt er war)."""
+    return yf.download(tickers, period="1d", interval="1m", auto_adjust=True, progress=False, threads=True)
+
+
+def _series_for(df: pd.DataFrame, ticker: str, single: bool):
+    """Close-Serie eines Tickers aus einem yfinance-DataFrame. None wenn leer."""
+    try:
+        if df is None or df.empty:
+            return None
+        if single:
+            close = df["Close"] if "Close" in df.columns else None
+            if close is None:
+                return None
+            # Bei einem Ticker kann Close selbst ein DataFrame mit einer Spalte sein
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            s = close.dropna()
+        else:
+            close_df = df["Close"] if "Close" in df.columns else df
+            if ticker not in close_df.columns:
+                return None
+            s = close_df[ticker].dropna()
+        return s if not s.empty else None
+    except Exception:
+        return None
+
+
+def _as_utc_iso(ts) -> Optional[str]:
+    """Pandas-Zeitstempel -> ISO-String in UTC. None wenn nicht konvertierbar."""
+    try:
+        dt = ts.to_pydatetime()
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    except Exception:
+        return None
+
 def get_multi_price(symbols: list[str]) -> list[dict]:
+    """Kurse mit ECHTEM Zeitstempel (asOf) und Alter in Minuten (ageMinutes).
+
+    Fund 02.08.: Vorher wurde nur die Tageskerze geholt und im Frontend mit der
+    aktuellen Uhrzeit gestempelt — ein 57 Stunden alter Nikkei-Kurs sah damit
+    taufrisch aus. Da die gesamte Analyse und jeder Einstieg auf diesen Kursen
+    beruht, muss messbar sein, wie alt ein Kurs wirklich ist.
+
+    Drei Stufen, damit KEIN Symbol verloren geht (live geprüft: Gold GC=F und
+    Öl CL=F liefern zeitweise gar keine 1-Minuten-Daten):
+      1. 1-Minuten-Kerzen  -> exakter Zeitstempel, frischester Kurs
+      2. Tageskerzen       -> nur für Symbole ohne 1m-Daten, Zeitstempel = Tag
+      3. Einzelabruf       -> bestehender Notfall-Rückfall, ohne Zeitstempel
+
+    asOfPrecision: "minute" = exakt | "day" = nur Tagesschluss | null = unbekannt.
+    Bei unbekanntem Zeitstempel bleibt ageMinutes None — der Aufrufer darf das
+    NICHT als "frisch" werten (fail-safe).
+    """
     if not symbols:
         return []
-    # Batch-Download: alle Symbole in einem einzigen yfinance-Request (viel schneller)
+    tickers = [_resolve(s) for s in symbols]
+    sym_map = {_resolve(s): s.upper() for s in symbols}
+    now = datetime.now(timezone.utc)
+    found: dict[str, dict] = {}
+
+    def _record(sym_original: str, price, ts, precision: Optional[str]) -> None:
+        as_of = _as_utc_iso(ts) if ts is not None else None
+        age = None
+        if as_of:
+            try:
+                age = round((now - datetime.fromisoformat(as_of)).total_seconds() / 60, 1)
+            except Exception:
+                age = None
+        found[sym_original] = {
+            "symbol": sym_original,
+            "price": round(float(price), 5) if price is not None else None,
+            "asOf": as_of,
+            "ageMinutes": age,
+            "asOfPrecision": precision,
+        }
+
+    # ── Stufe 1: 1-Minuten-Kerzen (exakter Zeitstempel) ──────────────────────
+    try:
+        df = _download_multi_intraday(tickers)
+        single = len(tickers) == 1
+        for ticker, sym_original in sym_map.items():
+            s = _series_for(df, ticker, single)
+            if s is not None:
+                _record(sym_original, s.iloc[-1], s.index[-1], "minute")
+    except Exception:
+        pass  # non-fatal — Stufe 2 fängt alles auf
+
+    # ── Stufe 2: Tageskerzen für alles was noch fehlt ────────────────────────
+    missing = [t for t, o in sym_map.items() if found.get(o, {}).get("price") is None]
+    if missing:
+        try:
+            df = _download_multi(missing)
+            single = len(missing) == 1
+            for ticker in missing:
+                sym_original = sym_map[ticker]
+                s = _series_for(df, ticker, single)
+                if s is not None:
+                    _record(sym_original, s.iloc[-1], s.index[-1], "day")
+        except Exception:
+            pass
+
+    # ── Stufe 3: Einzelabruf als letzter Rückfall ────────────────────────────
+    still_missing = [sym_map[t] for t in tickers if found.get(sym_map[t], {}).get("price") is None]
+    for sym_original in still_missing:
+        try:
+            single_res = get_current_price(sym_original)
+            found[sym_original] = {
+                "symbol": sym_original,
+                "price": single_res.get("price"),
+                "asOf": None,
+                "ageMinutes": None,   # unbekannt -> Aufrufer behandelt als NICHT frisch
+                "asOfPrecision": None,
+            }
+        except Exception as e:
+            found[sym_original] = {
+                "symbol": sym_original, "price": None, "asOf": None,
+                "ageMinutes": None, "asOfPrecision": None, "error": str(e),
+            }
+
+    return [found[sym_map[t]] for t in tickers]
+
+
+def _get_multi_price_legacy(symbols: list[str]) -> list[dict]:
+    """Alter Pfad — bleibt als Referenz erhalten, wird nicht mehr aufgerufen."""
     tickers = [_resolve(s) for s in symbols]
     sym_map = {_resolve(s): s.upper() for s in symbols}
     try:
         df = _download_multi(tickers)
         results = []
         if len(tickers) == 1:
-            # yf.download gibt bei 1 Symbol keinen MultiIndex zurück
             close = df["Close"] if "Close" in df.columns else None
             price = float(close.dropna().iloc[-1]) if close is not None and not close.dropna().empty else None
             results.append({"symbol": symbols[0].upper(), "price": round(price, 5) if price else None})

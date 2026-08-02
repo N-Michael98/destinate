@@ -1152,6 +1152,29 @@ export default function SettingsDashboard() {
                 {(settings.botSettings.pyramidingMinConfidence ?? 0) === 0 && " (*0 = Auto-Approve-Schwelle wird verwendet)"}
               </p>
             </div>
+
+            {/* ───── KURS-AKTUALITÄT (02.08.) ───── */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "10px", color: "#64748b", whiteSpace: "nowrap", minWidth: "175px", textTransform: "uppercase" }}>
+                  Kurs höchstens alt (Min)
+                </span>
+                <input
+                  type="range" min={0} max={120} step={5}
+                  value={settings.botSettings.maxPriceAgeMinutes ?? 30}
+                  onChange={(e) => updateBotField("maxPriceAgeMinutes", Number(e.target.value))}
+                  style={{ flex: 1, accentColor: "#00c3ff" }}
+                />
+                <span style={{ fontSize: "12px", color: "#00c3ff", fontWeight: "bold", minWidth: "50px", textAlign: "right" }}>
+                  {(settings.botSettings.maxPriceAgeMinutes ?? 30) === 0 ? "AUS" : `${settings.botSettings.maxPriceAgeMinutes ?? 30} Min`}
+                </span>
+              </div>
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                Kein Einstieg auf veralteten Kursen — sonst wird auf einem Preis von gestern gehandelt und der
+                Stop löst sofort aus. Ein aktiv gehandelter Markt tickt im Sekundentakt; blockiert also nur
+                geschlossene Märkte (z.B. Nikkei während europäischer Handelszeit). 0 = Prüfung aus.
+              </p>
+            </div>
           </div>
         </div>
       )}
