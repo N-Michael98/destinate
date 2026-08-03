@@ -273,33 +273,3 @@ def get_multi_price(symbols: list[str]) -> list[dict]:
     return [found[sym_map[t]] for t in tickers]
 
 
-def _get_multi_price_legacy(symbols: list[str]) -> list[dict]:
-    """Alter Pfad — bleibt als Referenz erhalten, wird nicht mehr aufgerufen."""
-    tickers = [_resolve(s) for s in symbols]
-    sym_map = {_resolve(s): s.upper() for s in symbols}
-    try:
-        df = _download_multi(tickers)
-        results = []
-        if len(tickers) == 1:
-            close = df["Close"] if "Close" in df.columns else None
-            price = float(close.dropna().iloc[-1]) if close is not None and not close.dropna().empty else None
-            results.append({"symbol": symbols[0].upper(), "price": round(price, 5) if price else None})
-        else:
-            close_df = df["Close"] if "Close" in df.columns else df
-            for ticker, sym_original in sym_map.items():
-                try:
-                    series = close_df[ticker].dropna() if ticker in close_df.columns else None
-                    price = float(series.iloc[-1]) if series is not None and not series.empty else None
-                    results.append({"symbol": sym_original, "price": round(price, 5) if price else None})
-                except Exception:
-                    results.append({"symbol": sym_original, "price": None})
-        return results
-    except Exception:
-        # Fallback: einzeln abrufen
-        results = []
-        for sym in symbols:
-            try:
-                results.append(get_current_price(sym))
-            except Exception as e:
-                results.append({"symbol": sym.upper(), "price": None, "error": str(e)})
-        return results
