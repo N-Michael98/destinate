@@ -588,6 +588,8 @@ each market's own data, never from habit or from these examples' direction:
 
   // ── Jedes Symbol verarbeiten ──────────────────────────────────────────────
   const opportunities: ScannerOpportunity[] = [];
+  // Zähler für den Signal-Trichter — siehe Erklärung bei der Auswertung unten.
+  const trichter = { gesamt: 0, echteAnalyse: 0, volleDaten: 0, richtung: 0, confidence: 0, slTp: 0, go: 0 };
 
   for (const market of validMarkets) {
     const ta = taData.get(market.symbol);
@@ -775,6 +777,19 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       && gpt.stopLoss > 0
       && gpt.takeProfit > 0;
 
+    // Trichter mitzählen (03.08.). Anlass: seit dem 30.06. entstand genau EIN
+    // Trade, und das Log meldet nur das Ergebnis ("30 WAIT") — an welcher der
+    // sieben Bedingungen die Märkte scheitern, war nicht erkennbar. Derselbe
+    // blinde Fleck wie heute früh bei den Capital-Epics: der Ausfall ist still.
+    // Reine Zählung, beeinflusst keine Entscheidung.
+    trichter.gesamt++;
+    if (isRealAnalysis) trichter.echteAnalyse++;
+    if (isRealAnalysis && hasFullData) trichter.volleDaten++;
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT") trichter.richtung++;
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= 70) trichter.confidence++;
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= 70 && gpt.stopLoss > 0 && gpt.takeProfit > 0) trichter.slTp++;
+    if (goSignal) trichter.go++;
+
     const taEntry = taData.get(market.symbol);
     opportunities.push({
       rank: 0,
@@ -805,6 +820,16 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       },
     });
   }
+
+  // Wo bleiben die Signale? Eine Zeile pro Zyklus, damit ein Engpass sofort
+  // sichtbar ist statt nur das Endergebnis. Gelesen von links nach rechts:
+  // jede Zahl ist die Menge, die BIS DAHIN alle Bedingungen erfüllt hat.
+  console.log(
+    `[ai-engine] 📊 Trichter: ${trichter.gesamt} Märkte → echte Analyse ${trichter.echteAnalyse}` +
+    ` → volle Daten ${trichter.volleDaten} → Richtung≠WAIT ${trichter.richtung}` +
+    ` → Confidence≥70 ${trichter.confidence} → SL/TP gesetzt ${trichter.slTp}` +
+    ` → Risiko-Freigabe (R/R≥1.5) ${trichter.go} = GO`
+  );
 
   return opportunities
     .sort((a, b) => b.finalScore - a.finalScore)
