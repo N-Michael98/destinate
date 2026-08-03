@@ -142,9 +142,45 @@ function getAI(): Anthropic {
 
 interface AIRiskDecision {
   action: "APPROVE" | "SKIP" | "ADJUST";
-  adjustedBeBuffer?: number;  // Override 15% default wenn AI anders entscheidet
+  adjustedBeBuffer?: number;      // Breakeven-Puffer als Anteil der Stop-Spanne
+  adjustedAtrFactor?: number;     // Trailing-Abstand als Vielfaches des ATR
+  adjustedPartialRatio?: number;  // Anteil der Position, der beim Teilgewinn geht
   reason: string;
 }
+
+/** Marktlage einer offenen Position — Grundlage für die AI-Entscheidung.
+ *  Alle Werte sind in processPosition() ohnehin schon berechnet; hier wird
+ *  nichts zusätzlich geholt, es entstehen also keine neuen Fehlerquellen. */
+interface MarktLage {
+  entry: number;
+  currentPrice: number;
+  profitPct: number;
+  atr: number;
+  slRange: number;
+  liveSL: number;
+  ageHours: number;
+  style: string;
+  confidence: number;
+}
+
+/** Hält einen AI-Wert in vertretbaren Grenzen. Ohne diese Klemme könnte ein
+ *  einziger Ausreisser der AI (oder eine kaputte Antwort) den Schutz aushebeln —
+ *  etwa ein Trailing-Abstand von 50 ATR, was praktisch "kein Stop" bedeutet. */
+function inGrenzen(wert: unknown, min: number, max: number): number | null {
+  // null/undefined/"" heisst "nicht angegeben" — dann gilt der Regelwert.
+  // Ohne diese Zeile würde Number(null) zu 0 und damit auf das Minimum
+  // geklemmt: ein ausdrückliches null der AI hätte den Trailing-Stop auf den
+  // engsten erlaubten Wert gesetzt statt auf die Stil-Vorgabe.
+  if (wert === null || wert === undefined || wert === "") return null;
+  const n = typeof wert === "number" ? wert : Number(wert);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(max, Math.max(min, n));
+}
+const GRENZEN = {
+  beBuffer:     { min: 0,    max: 0.50 },  // Anteil der Stop-Spanne
+  atrFactor:    { min: 0.5,  max: 4.0  },  // Vielfaches des ATR
+  partialRatio: { min: 0.25, max: 0.75 },  // Anteil der Position
+};
 
 async function askAIManager(
   symbol: string,
@@ -152,28 +188,64 @@ async function askAIManager(
   progress: number,
   confidence: number,
   action: "BREAKEVEN" | "TRAIL" | "PARTIAL_TP",
+  lage?: MarktLage,
 ): Promise<AIRiskDecision> {
   try {
     const ai = getAI();
+
+    // ERWEITERT 03.08. (Wunsch des Nutzers): Der Prompt enthielt bisher nur
+    // Symbol, Richtung, Fortschritt und Confidence — KEINE einzige Marktgrösse.
+    // Die AI sollte marktgerecht entscheiden, sah den Markt aber nicht. Jetzt
+    // bekommt sie die Lage, die der Agent ohnehin schon kennt.
+    const marktBlock = lage
+      ? `
+Einstieg: ${lage.entry} | aktuell: ${lage.currentPrice}
+Gewinn: ${(lage.profitPct * 100).toFixed(2)}%
+ATR: ${lage.atr.toFixed(5)} (${((lage.atr / Math.max(lage.currentPrice, 1e-9)) * 100).toFixed(2)}% vom Kurs — Mass für die aktuelle Schwankung)
+Stop-Spanne: ${lage.slRange.toFixed(5)} | Stop steht bei: ${lage.liveSL > 0 ? lage.liveSL : "keiner"}
+Position offen seit: ${lage.ageHours.toFixed(1)} Stunden
+Handelsstil: ${lage.style}`
+      : "";
+
     const msg = await ai.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 150,
+      max_tokens: 250,
       messages: [{
         role: "user",
-        content: `RiskAgent Entscheidung:
+        content: `Du steuerst das Risiko einer laufenden Position.
 Symbol: ${symbol} ${direction}
-Action: ${action}
-Progress to TP: ${(progress * 100).toFixed(1)}%
-Confidence: ${confidence}
+Anstehende Massnahme: ${action}
+Fortschritt Richtung Ziel: ${(progress * 100).toFixed(1)}%
+Confidence beim Einstieg: ${confidence}${marktBlock}
 
-Antworte NUR mit JSON: {"action":"APPROVE"|"SKIP"|"ADJUST","adjustedBeBuffer":0.15,"reason":"kurz"}
-APPROVE = normal ausführen, SKIP = nicht jetzt, ADJUST = angepassten Buffer verwenden.`
+Richte die Massnahme an der Marktlage aus:
+- Hohe Schwankung (grosser ATR im Verhältnis zum Kurs) → mehr Luft lassen, sonst wirft ein normaler Ausschlag die Position raus.
+- Ruhiger Markt → enger nachziehen und Gewinn früher sichern.
+- Position schon lange offen ohne Fortschritt → eher absichern als laufen lassen.
+
+Antworte NUR mit JSON:
+{"action":"APPROVE"|"SKIP"|"ADJUST","adjustedBeBuffer":0.15,"adjustedAtrFactor":1.5,"adjustedPartialRatio":0.5,"reason":"kurz"}
+APPROVE = mit den Standardwerten ausführen. SKIP = jetzt nicht. ADJUST = mit deinen Werten ausführen.
+Erlaubt: adjustedBeBuffer 0-0.5, adjustedAtrFactor 0.5-4.0, adjustedPartialRatio 0.25-0.75.
+Nur das Feld angeben, das zur anstehenden Massnahme passt.`
       }]
     });
 
     const text = (msg.content[0] as { type: string; text: string }).text.trim();
     const json = text.match(/\{[\s\S]*\}/)?.[0];
-    if (json) return JSON.parse(json) as AIRiskDecision;
+    if (json) {
+      const roh = JSON.parse(json) as Record<string, unknown>;
+      const akt = roh.action === "SKIP" || roh.action === "ADJUST" ? roh.action : "APPROVE";
+      // Jeden Zahlenwert durch die Klemme schicken. Fehlt er oder ist er
+      // unbrauchbar, bleibt er undefined und die Regel-Vorgabe greift.
+      return {
+        action: akt,
+        adjustedBeBuffer:     inGrenzen(roh.adjustedBeBuffer,     GRENZEN.beBuffer.min,     GRENZEN.beBuffer.max)     ?? undefined,
+        adjustedAtrFactor:    inGrenzen(roh.adjustedAtrFactor,    GRENZEN.atrFactor.min,    GRENZEN.atrFactor.max)    ?? undefined,
+        adjustedPartialRatio: inGrenzen(roh.adjustedPartialRatio, GRENZEN.partialRatio.min, GRENZEN.partialRatio.max) ?? undefined,
+        reason: typeof roh.reason === "string" ? roh.reason.slice(0, 120) : "",
+      };
+    }
   } catch (err) {
     console.warn(`[risk-agent] AI Manager nicht verfügbar — Rule-Based Fallback (${err})`);
   }
@@ -241,6 +313,13 @@ async function processPosition(
   const style = meta.tradingStyle.toUpperCase();
   const maxHours = STYLE_MAX_HOURS[style] ?? STYLE_MAX_HOURS.DAYTRADING;
   const ageHours = (Date.now() - new Date(pos.createdDate ?? Date.now()).getTime()) / 3_600_000;
+
+  // Marktlage für den AI Manager (03.08.). Rein aus bereits berechneten Werten
+  // zusammengesetzt — kein zusätzlicher Abruf, keine neue Fehlerquelle.
+  const lage: MarktLage = {
+    entry, currentPrice, profitPct, atr, slRange, liveSL, ageHours, style,
+    confidence: meta.confidence,
+  };
   if (ageHours >= maxHours) {
     const closeResult = await capitalClosePosition(apiKey, cst, securityToken, dealId);
     if (closeResult.ok) {
@@ -258,11 +337,18 @@ async function processPosition(
 
   // ── Partial TP — bei 1.0% Profit (Daytrading), 0.6% Scalping, 2.0% Swing ──
   if (!meta.partialDone && profitPct >= thresholds.partialPct) {
-    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "PARTIAL_TP");
+    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "PARTIAL_TP", lage);
 
     if (aiDecision.action !== "SKIP") {
       const rawSize = pos.size > 0 ? pos.size : 0;
-      const partialSize = rawSize >= 2 ? Math.floor(rawSize / 2) : 0;
+      // ERWEITERT 03.08.: Der Teilgewinn war immer starr die Hälfte. Die AI
+      // durfte zwar ADJUST antworten, ihr Wert verfiel aber ungenutzt — nur
+      // "nicht SKIP" wurde geprüft. Jetzt darf sie den Anteil bestimmen
+      // (0.25 bis 0.75, geklemmt); ohne brauchbaren Wert bleibt es die Hälfte.
+      const anteil = aiDecision.action === "ADJUST" && aiDecision.adjustedPartialRatio != null
+        ? aiDecision.adjustedPartialRatio
+        : 0.5;
+      const partialSize = rawSize >= 2 ? Math.floor(rawSize * anteil) : 0;
 
       if (partialSize > 0) {
         const epicForClose = EPIC_MAP[symbol] ?? epic ?? symbol;
@@ -289,7 +375,7 @@ async function processPosition(
 
   // ── Breakeven — bei 0.5% Profit (Daytrading), 0.3% Scalping, 1.0% Swing ──
   if (!beEffective && profitPct >= thresholds.bePct) {
-    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "BREAKEVEN");
+    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "BREAKEVEN", lage);
 
     // AI kann BE-Buffer anpassen (default 15%)
     const beBufferRatio = aiDecision.action === "ADJUST" && aiDecision.adjustedBeBuffer != null
@@ -328,30 +414,58 @@ async function processPosition(
     const newPeak = isBuy ? Math.max(prevPeak, currentPrice) : Math.min(prevPeak, currentPrice);
 
     // ATR-basierte Trail-Distanz (1.5× ATR für Daytrading)
-    const trailDistance = atr * thresholds.atrFactor;
-    const newTrailSL = isBuy
-      ? Math.max(newPeak - trailDistance, entry)
-      : Math.min(newPeak + trailDistance, entry);
+    const trailSLmitFaktor = (faktor: number) => {
+      const distanz = atr * faktor;
+      return isBuy
+        ? Math.max(newPeak - distanz, entry)
+        : Math.min(newPeak + distanz, entry);
+    };
+    const newTrailSL = trailSLmitFaktor(thresholds.atrFactor);
 
     const shouldUpdate = isBuy
       ? newTrailSL > currentTrailSL + beTol
       : newTrailSL < currentTrailSL - beTol;
 
     if (shouldUpdate) {
-      const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "TRAIL");
+      const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "TRAIL", lage);
 
       if (aiDecision.action !== "SKIP") {
-        const upd = await capitalUpdatePosition(apiKey, cst, securityToken, dealId, newTrailSL, liveTP > 0 ? liveTP : undefined);
+        // ERWEITERT 03.08.: Der Trailing-Abstand war starr an den Handelsstil
+        // gebunden (1.0/1.5/2.5× ATR). Die AI durfte ADJUST antworten, ihr Wert
+        // wurde aber nie verwendet. Jetzt darf sie den Abstand an die aktuelle
+        // Schwankung anpassen — in ruhigem Markt enger, in bewegtem weiter.
+        //
+        // Zwei Riegel dagegen, dass daraus eine Lockerung wird:
+        //   1. Der angepasste Stop muss dieselbe Bedingung erfüllen wie der
+        //      regelbasierte (shouldUpdate) — sonst gilt weiter der Regelwert.
+        //   2. Zusätzlich greift die Sicherung aus Fund C: ein Stop kann sich
+        //      am Broker ohnehin nur noch in Richtung Gewinn bewegen.
+        let trailSL = newTrailSL;
+        let genutzterFaktor = thresholds.atrFactor;
+        if (aiDecision.action === "ADJUST" && aiDecision.adjustedAtrFactor != null) {
+          const kandidat = trailSLmitFaktor(aiDecision.adjustedAtrFactor);
+          const kandidatOk = isBuy
+            ? kandidat > currentTrailSL + beTol
+            : kandidat < currentTrailSL - beTol;
+          if (kandidatOk) {
+            trailSL = kandidat;
+            genutzterFaktor = aiDecision.adjustedAtrFactor;
+          } else {
+            console.log(`[risk-agent] ↩ ${symbol}: AI-Trail-Faktor ${aiDecision.adjustedAtrFactor} wäre lockerer — Regelwert ${thresholds.atrFactor} bleibt`);
+          }
+        }
+
+        const upd = await capitalUpdatePosition(apiKey, cst, securityToken, dealId, trailSL, liveTP > 0 ? liveTP : undefined);
         if (upd.ok) {
-          positionMeta.set(dealId, { ...meta, beSet: newTrailSL >= entry, peakPrice: newPeak, trailSL: newTrailSL });
-          persistMeta(dealId, { beSet: newTrailSL >= entry, peakPrice: newPeak, trailSL: newTrailSL });
+          positionMeta.set(dealId, { ...meta, beSet: trailSL >= entry, peakPrice: newPeak, trailSL });
+          persistMeta(dealId, { beSet: trailSL >= entry, peakPrice: newPeak, trailSL });
           agentBus.publish({
             type: "RISK:TRAIL_UPDATED",
             agentId: AGENT_ID,
             timestamp: new Date().toISOString(),
-            payload: { dealId, symbol, direction, newTrailSL, newPeak, atr, aiReason: aiDecision.reason },
+            payload: { dealId, symbol, direction, newTrailSL: trailSL, newPeak, atr, atrFactor: genutzterFaktor, aiReason: aiDecision.reason },
           });
-          console.log(`[risk-agent] 📈 ATR Trail: ${symbol} peak=${newPeak.toFixed(5)} SL=${newTrailSL.toFixed(5)} ATR=${atr.toFixed(5)}×${thresholds.atrFactor}`);
+          console.log(`[risk-agent] 📈 ATR Trail: ${symbol} peak=${newPeak.toFixed(5)} SL=${trailSL.toFixed(5)} ATR=${atr.toFixed(5)}×${genutzterFaktor}${genutzterFaktor !== thresholds.atrFactor ? " (AI: " + aiDecision.reason + ")" : ""}`);
         }
       }
     } else if (newPeak !== prevPeak) {
