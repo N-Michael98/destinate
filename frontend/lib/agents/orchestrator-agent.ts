@@ -23,11 +23,18 @@ const AGENT_ID = "OrchestratorAgent";
 
 // ── Watchlist ─────────────────────────────────────────────────────────────────
 
+// ERWEITERT 03.08. auf 30 (vorher 22) — bewusste Entscheidung des Nutzers.
+// Hintergrund: die WATCHLIST diente hier nie als Filter, sondern nur dazu,
+// fehlende Symbole nachzuholen. Analysiert und gehandelt wurde immer alles,
+// was Capital.com lieferte. Solange die falschen Epics und das Ratenlimit nur
+// rund 10 Märkte durchliessen, fiel das nicht auf; nach deren Behebung kamen
+// plötzlich alle 30. Statt die Liste als Filter zu missbrauchen, deckt sie nun
+// offen, was tatsächlich gehandelt wird — Deklaration und Wirklichkeit gleich.
 const WATCHLIST = [
   "NAS100","SPX500","UK100","GER40","DJ30","JPN225",
   "XAUUSD","USOIL","UKOIL","XAGUSD","NATGAS",
-  "EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","EURGBP","GBPJPY","EURJPY",
-  "BTCUSD","ETHUSD",
+  "EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","GBPJPY","EURJPY",
+  "BTCUSD","ETHUSD","LTCUSD","XRPUSD","ADAUSD","SOLUSD","DOTUSD","LNKUSD","BNBUSD",
 ];
 
 const INSTRUMENT_META: Record<string, { epic: string; name: string; type: string }> = {
@@ -51,8 +58,16 @@ const INSTRUMENT_META: Record<string, { epic: string; name: string; type: string
   EURGBP: { epic: "EURGBP",      name: "EUR/GBP",      type: "CURRENCIES" },
   GBPJPY: { epic: "GBPJPY",      name: "GBP/JPY",      type: "CURRENCIES" },
   EURJPY: { epic: "EURJPY",      name: "EUR/JPY",      type: "CURRENCIES" },
+  NZDUSD: { epic: "NZDUSD",      name: "NZD/USD",      type: "CURRENCIES" },
   BTCUSD: { epic: "BTCUSD",      name: "Bitcoin",      type: "CRYPTOCURRENCIES" },
   ETHUSD: { epic: "ETHUSD",      name: "Ethereum",     type: "CRYPTOCURRENCIES" },
+  LTCUSD: { epic: "LTCUSD",      name: "Litecoin",     type: "CRYPTOCURRENCIES" },
+  XRPUSD: { epic: "XRPUSD",      name: "Ripple (XRP)", type: "CRYPTOCURRENCIES" },
+  ADAUSD: { epic: "ADAUSD",      name: "Cardano",      type: "CRYPTOCURRENCIES" },
+  SOLUSD: { epic: "SOLUSD",      name: "Solana",       type: "CRYPTOCURRENCIES" },
+  DOTUSD: { epic: "DOTUSD",      name: "Polkadot",     type: "CRYPTOCURRENCIES" },
+  LNKUSD: { epic: "LINKUSD",     name: "Chainlink",    type: "CRYPTOCURRENCIES" },
+  BNBUSD: { epic: "BNBUSD",      name: "BNB",          type: "CRYPTOCURRENCIES" },
 };
 
 // ── AI Manager ────────────────────────────────────────────────────────────────

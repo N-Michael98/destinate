@@ -38,11 +38,12 @@ export async function GET(request: Request) {
     }
 
     // ── Gemeinsame Watchlist + META für Supplement ───────────────────────────
+    // 30 statt 22 seit 03.08. — identisch zur WATCHLIST im Orchestrator
     const WATCHLIST_SYMBOLS = [
       "NAS100","SPX500","UK100","GER40","DJ30","JPN225",
       "XAUUSD","USOIL","UKOIL","XAGUSD","NATGAS",
-      "EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","EURGBP","GBPJPY","EURJPY",
-      "BTCUSD","ETHUSD",
+      "EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","GBPJPY","EURJPY",
+      "BTCUSD","ETHUSD","LTCUSD","XRPUSD","ADAUSD","SOLUSD","DOTUSD","LNKUSD","BNBUSD",
     ];
     const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
 
@@ -72,8 +73,12 @@ export async function GET(request: Request) {
             USDJPY:{epic:"USDJPY",name:"USD/JPY",type:"CURRENCIES"}, USDCHF:{epic:"USDCHF",name:"USD/CHF",type:"CURRENCIES"},
             AUDUSD:{epic:"AUDUSD",name:"AUD/USD",type:"CURRENCIES"}, USDCAD:{epic:"USDCAD",name:"USD/CAD",type:"CURRENCIES"},
             EURGBP:{epic:"EURGBP",name:"EUR/GBP",type:"CURRENCIES"}, GBPJPY:{epic:"GBPJPY",name:"GBP/JPY",type:"CURRENCIES"},
-            EURJPY:{epic:"EURJPY",name:"EUR/JPY",type:"CURRENCIES"},
+            EURJPY:{epic:"EURJPY",name:"EUR/JPY",type:"CURRENCIES"}, NZDUSD:{epic:"NZDUSD",name:"NZD/USD",type:"CURRENCIES"},
             BTCUSD:{epic:"BTCUSD",name:"Bitcoin",type:"CRYPTOCURRENCIES"}, ETHUSD:{epic:"ETHUSD",name:"Ethereum",type:"CRYPTOCURRENCIES"},
+            LTCUSD:{epic:"LTCUSD",name:"Litecoin",type:"CRYPTOCURRENCIES"}, XRPUSD:{epic:"XRPUSD",name:"Ripple (XRP)",type:"CRYPTOCURRENCIES"},
+            ADAUSD:{epic:"ADAUSD",name:"Cardano",type:"CRYPTOCURRENCIES"}, SOLUSD:{epic:"SOLUSD",name:"Solana",type:"CRYPTOCURRENCIES"},
+            DOTUSD:{epic:"DOTUSD",name:"Polkadot",type:"CRYPTOCURRENCIES"}, LNKUSD:{epic:"LINKUSD",name:"Chainlink",type:"CRYPTOCURRENCIES"},
+            BNBUSD:{epic:"BNBUSD",name:"BNB",type:"CRYPTOCURRENCIES"},
           };
           const meta = META[p.symbol];
           if (!meta) continue;

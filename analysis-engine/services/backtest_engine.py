@@ -31,12 +31,17 @@ REDIS_KEY_TRADE_STATS = "analysis:trade_stats"
 TTL = 26 * 60 * 60
 
 # Gleiche Watchlist wie der Orchestrator (destinate)
+# 03.08. von 22 auf 30 erweitert, parallel zum Orchestrator. Diese Märkte wurden
+# live schon immer gehandelt, sobald Capital.com sie lieferte — nur konnte er das
+# wegen falscher Epic-Namen nie. Sie müssen hier mitlaufen, sonst würden Märkte
+# gehandelt, für die es keinerlei Backtest-Beleg gibt.
 WATCHLIST = [
     "NAS100", "SPX500", "UK100", "GER40", "DJ30", "JPN225",
     "XAUUSD", "USOIL", "UKOIL", "XAGUSD", "NATGAS",
-    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD",
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD",
     "EURGBP", "GBPJPY", "EURJPY",
-    "BTCUSD", "ETHUSD",
+    "BTCUSD", "ETHUSD", "LTCUSD", "XRPUSD", "ADAUSD", "SOLUSD", "DOTUSD",
+    "LNKUSD", "BNBUSD",
 ]
 
 # ── Strategien (regelbasiert, entsprechen den Trading-Styles) ─────────────────
