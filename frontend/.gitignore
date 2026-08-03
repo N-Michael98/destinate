@@ -53,3 +53,11 @@ lib/data/mission-control-event-log.json
 
 # Autonomous Trading Evolution runtime memory
 lib/data/autonomous-trading-evolution-memory.json
+
+# Lokale Prisma-Entwicklungsdatenbank (Generalkontroll-Fund 03.08.)
+# Lag als unverfolgte Datei im Baum und war nur ein `git add .` davon entfernt,
+# im Repository zu landen — samt allem, was lokal darin gespeichert wurde.
+prisma/dev.db
+prisma/dev.db-journal
+*.sqlite
+*.sqlite3
