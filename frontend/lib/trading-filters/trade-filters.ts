@@ -279,11 +279,21 @@ export function checkExposureLimit(
 // SL und TP auf diesem Kurs berechnet werden, hätte ein veralteter Kurs zu
 // einem Einstieg auf falschem Niveau und sofort auslösendem Stop führen können.
 //
-// Blockiert wird NUR bei nachweislich veraltetem Kurs (minutengenauer
-// Zeitstempel vorhanden UND älter als erlaubt). Ist die Genauigkeit nur
-// tagesbasiert oder das Alter unbekannt, wird gewarnt statt blockiert —
-// sonst würden Instrumente ohne Minutendaten (z.B. zeitweise Gold/Öl)
-// grundlos vom Handel ausgeschlossen.
+// KORREKTUR 03.08.: Hier stand, tagesgenaue Zeitstempel würden nur gewarnt.
+// Das stimmte nicht — die Funktion bekommt die Genauigkeit gar nicht übergeben
+// und blockiert allein nach Alter. Tagesgenaue Kurse tragen den Zeitstempel
+// Mitternacht und sind damit bis zu 1440 Minuten "alt", werden also praktisch
+// immer blockiert. Das ist die sichere Richtung und bleibt so; nur die
+// Beschreibung war falsch und hätte jemanden verleiten können, den Schutz
+// "passend zum Kommentar" aufzuweichen.
+//
+// Tatsächliches Verhalten:
+//   Alter bekannt und grösser als erlaubt -> blockiert.
+//   Alter unbekannt (null)                -> Warnung, NICHT blockiert.
+//   Höchstalter 0                         -> Prüfung ganz aus.
+// Der Fall "Alter unbekannt" ist bewusst durchlässig, damit Instrumente ohne
+// Minutendaten nicht grundlos ausgeschlossen werden — er ist damit aber auch
+// die einzige Lücke dieses Schutzes.
 export function checkPriceFreshness(
   symbol: string,
   ageMinutes: number | null | undefined,
