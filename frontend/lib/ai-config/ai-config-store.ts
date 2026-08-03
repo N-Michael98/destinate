@@ -65,14 +65,26 @@ async function loadFromDB(): Promise<AISettings> {
   } catch { /* DB not ready → use defaults */ }
 
   // Railway Variables override DB — env vars take precedence
+  //
+  // KORREKTUR 03.08.: hier stand testStatus "OK", sobald die Variable existiert
+  // und länger als 20 Zeichen ist. Das war eine Behauptung, kein Ergebnis — es
+  // wurde nie ein Aufruf gemacht. Ein gesperrter, abgelaufener oder schlicht
+  // falscher Schlüssel wurde damit als "OK" angezeigt, und weil die Agenten
+  // umgekehrt NUR bei Fehlern etwas loggen, war von aussen nicht zu erkennen,
+  // ob die AI-Gates antworten oder seit Wochen still zurückfallen.
+  // "UNTESTED" ist bereits ein gültiger Wert und wird von der UI angezeigt.
+  // Echten Status liefert /api/ai-health — der ruft die Anbieter wirklich auf.
+  // `connected` bleibt bewusst true: davon hängt ab, ob überhaupt eine echte
+  // Analyse versucht wird (isRealAnalysis). Ein Schlüssel IST hinterlegt —
+  // ob er trägt, ist eine andere Frage und genau die, die getrennt gehört.
   const envOpenAI = process.env.OPENAI_API_KEY;
   const envAnthropic = process.env.ANTHROPIC_API_KEY;
   const envTelegram = process.env.TELEGRAM_BOT_TOKEN;
   if (envOpenAI && envOpenAI.length > 20) {
-    settings.openai = { ...settings.openai, apiKey: envOpenAI, connected: true, testStatus: "OK" };
+    settings.openai = { ...settings.openai, apiKey: envOpenAI, connected: true, testStatus: "UNTESTED" };
   }
   if (envAnthropic && envAnthropic.length > 20) {
-    settings.anthropic = { ...settings.anthropic, apiKey: envAnthropic, connected: true, testStatus: "OK" };
+    settings.anthropic = { ...settings.anthropic, apiKey: envAnthropic, connected: true, testStatus: "UNTESTED" };
   }
   if (envTelegram && envTelegram.length > 10) {
     settings.telegram = { ...settings.telegram, botToken: envTelegram, configured: true };
