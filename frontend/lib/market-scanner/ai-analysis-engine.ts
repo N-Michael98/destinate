@@ -396,10 +396,22 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
     "claude-sonnet-4-6": "claude-haiku-4-5-20251001",
     "claude-opus-4-8": "claude-haiku-4-5-20251001",
   };
-  const scanGptModel = CHEAP_GPT[ai.openai.model] ?? ai.openai.model;
-  const scanClaudeModel = CHEAP_CLAUDE[ai.anthropic.model] ?? ai.anthropic.model;
+  // KORREKTUR 03.08.: Diese Umschaltung war BEDINGUNGSLOS — wer in der UI
+  // gpt-4o wählte, bekam für den Scan trotzdem immer gpt-4o-mini. Die
+  // Modellwahl war für den Scanner damit wirkungslos, ohne dass es irgendwo
+  // abschaltbar war. Jetzt entscheidet die Einstellung botSettings
+  // .useFullModelsForScan; Standard false = unverändertes bisheriges Verhalten.
+  let sparen = true;
+  try {
+    const { getSettings } = await import("../settings/settings-store");
+    sparen = !(await getSettings()).botSettings?.useFullModelsForScan;
+  } catch { /* Einstellungen nicht lesbar → sparen wie bisher */ }
+  const scanGptModel = sparen ? (CHEAP_GPT[ai.openai.model] ?? ai.openai.model) : ai.openai.model;
+  const scanClaudeModel = sparen ? (CHEAP_CLAUDE[ai.anthropic.model] ?? ai.anthropic.model) : ai.anthropic.model;
   if (scanGptModel !== ai.openai.model || scanClaudeModel !== ai.anthropic.model) {
     console.log(`[ai-engine] 💰 Kosten-Guard: Scan nutzt ${scanGptModel} / ${scanClaudeModel} (Config: ${ai.openai.model} / ${ai.anthropic.model})`);
+  } else {
+    console.log(`[ai-engine] 🎯 Scan nutzt die konfigurierten Modelle: ${scanGptModel} / ${scanClaudeModel}`);
   }
 
   const validMarkets = markets.filter((m) => m.bid > 0).slice(0, 30);
@@ -584,6 +596,32 @@ each market's own data, never from habit or from these examples' direction:
       if (opp.epic) gptBatchResult[opp.epic] = opp;
     }
     console.log(`[ai-engine] GPT-Batch: ${raw ? `Antwort ${raw.length} Zeichen` : "KEINE ANTWORT (Call fehlgeschlagen)"} → ${Object.keys(gptBatchResult).length} Opportunities`);
+
+    // WARUM sagt GPT "WAIT"? (03.08.) Der Trichter zeigt seit heute, DASS alle
+    // 30 Märkte an dieser Stelle ausscheiden — nicht aber, an welcher der zwölf
+    // WAIT-Regeln im Prompt. Ohne diese Information wäre jede Prompt-Änderung
+    // geraten, und der Prompt entscheidet über echtes Geld.
+    // GPT liefert zu jedem Markt eine Begründung; hier werden die der
+    // WAIT-Entscheidungen ausgegeben. Reine Ausgabe, ändert nichts.
+    const alle = Object.values(gptBatchResult);
+    const warten = alle.filter((o) => o.direction === "WAIT");
+    if (alle.length > 0) {
+      const richtungen = alle.reduce<Record<string, number>>((acc, o) => {
+        const d = String(o.direction ?? "?");
+        acc[d] = (acc[d] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.log(
+        `[ai-engine] 🧭 GPT-Richtungen: ${Object.entries(richtungen).map(([d, n]) => `${d}=${n}`).join(" ")}`
+      );
+      for (const o of warten.slice(0, 5)) {
+        console.log(`[ai-engine] 🧭 WAIT ${o.symbol ?? o.epic}: ${String(o.reasoning ?? "(ohne Begründung)").slice(0, 180)}`);
+      }
+      // Falls GPT doch eine Richtung nennt: mit welcher Confidence scheitert sie?
+      for (const o of alle.filter((x) => x.direction && x.direction !== "WAIT").slice(0, 5)) {
+        console.log(`[ai-engine] 🧭 ${o.direction} ${o.symbol ?? o.epic}: conf=${o.confidence ?? "?"} sl=${o.stopLoss ?? "?"} tp=${o.takeProfit ?? "?"} — ${String(o.reasoning ?? "").slice(0, 120)}`);
+      }
+    }
   }
 
   // ── Jedes Symbol verarbeiten ──────────────────────────────────────────────

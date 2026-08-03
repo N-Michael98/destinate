@@ -65,6 +65,14 @@ export interface BotSettings {
    *  bei unbekanntem oder nur tagesgenauem Zeitstempel wird gewarnt, nicht
    *  blockiert, damit Instrumente ohne Minutendaten nicht grundlos ausfallen. */
   maxPriceAgeMinutes: number;
+  /** Modellwahl für den Routine-Scan (03.08.). Der Scanner läuft alle 5 Minuten
+   *  und schaltete das in der UI gewählte Modell BEDINGUNGSLOS auf das günstige
+   *  Pendant herunter (gpt-4o → gpt-4o-mini, Sonnet → Haiku) — ohne Schalter,
+   *  ohne Ausnahme. Die Modellwahl in den Einstellungen war für den Scan damit
+   *  wirkungslos. false = sparen wie bisher (Standard, unverändertes Verhalten).
+   *  true = das konfigurierte Modell wirklich verwenden. Kostet deutlich mehr
+   *  (gpt-4o ≈ 6× mini), kann aber differenzierter entscheiden. */
+  useFullModelsForScan: boolean;
 }
 
 export interface RiskSettings {

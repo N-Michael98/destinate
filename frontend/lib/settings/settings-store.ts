@@ -22,6 +22,9 @@ const DEFAULT_SETTINGS: SystemSettings = {
     // Blockiert damit nur echte Fälle wie den Nikkei während europäischer
     // Handelszeit (Tokio geschlossen, Kurs Stunden alt). 0 = Prüfung aus.
     maxPriceAgeMinutes: 30,
+    // Kosten-Guard bleibt standardmässig AN (false) — das ist exakt das
+    // bisherige Verhalten. Es ändert sich nichts, bis der User umschaltet.
+    useFullModelsForScan: false,
   },
   riskSettings: {
     maxRiskPerTradePct: 1.0,

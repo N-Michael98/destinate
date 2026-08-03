@@ -1084,6 +1084,40 @@ export default function SettingsDashboard() {
               </p>
             </div>
 
+            {/* ───── SCAN-MODELLE (03.08.) ───── */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
+                  Volle Modelle im Scan
+                  <span style={{ marginLeft: "8px", fontSize: "9px", color: "#475569" }}>
+                    {(settings.botSettings.useFullModelsForScan ?? false) ? "— konfiguriertes Modell wird genutzt" : "— Sparmodus (gpt-4o-mini / Haiku)"}
+                  </span>
+                </label>
+                <button
+                  onClick={() => updateBotField("useFullModelsForScan", !(settings.botSettings.useFullModelsForScan ?? false))}
+                  style={{
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: (settings.botSettings.useFullModelsForScan ?? false) ? "#10c96d" : "rgba(255,255,255,0.1)",
+                    position: "relative", transition: "background 0.15s",
+                  }}
+                >
+                  <div style={{
+                    width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: (settings.botSettings.useFullModelsForScan ?? false) ? "23px" : "3px",
+                    transition: "left 0.15s",
+                  }} />
+                </button>
+                <span style={{ fontSize: "12px", color: (settings.botSettings.useFullModelsForScan ?? false) ? "#10c96d" : "#64748b" }}>
+                  {(settings.botSettings.useFullModelsForScan ?? false) ? "ON" : "OFF"}
+                </span>
+              </div>
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                OFF = Routine-Scans nutzen die günstigen Modelle, egal was oben gewählt ist (bisheriges Verhalten).
+                ON = das gewählte Modell wird wirklich verwendet — differenziertere Entscheidungen, aber gpt-4o kostet rund 6× so viel wie mini.
+              </p>
+            </div>
+
             {/* ───── PYRAMIDING (30.07.) ───── */}
             <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
