@@ -105,14 +105,55 @@ app = FastAPI(
 )
 
 
+def _fingerabdruck(wert: str) -> str:
+    """Erkennungsmerkmal eines Schlüssels OHNE den Schlüssel selbst.
+
+    Anlass (03.08.): Ein Aufruf lief hartnäckig in 401, obwohl der Nutzer den
+    Schlüssel neu erzeugt, in Railway eingetragen und deployed hatte. Von aussen
+    war nicht feststellbar, WELCHEN Wert der Dienst tatsächlich erwartet — jede
+    Erklärung wäre Spekulation gewesen. Mit Länge sowie ersten und letzten drei
+    Zeichen lässt sich zweifelsfrei vergleichen, ohne das Geheimnis zu zeigen.
+    Erscheint nur im privaten Deploy-Log, nie in einer Antwort.
+    """
+    if not wert:
+        return "NICHT GESETZT"
+    return f"Laenge {len(wert)} | Anfang {wert[:3]}... | Ende ...{wert[-3:]}"
+
+
+# Beim Start einmal ausgeben, damit der erwartete Schlüssel mit dem lokal
+# verwendeten verglichen werden kann.
+_roh = settings.ANALYSIS_API_KEY
+logger.info(f"[config] ANALYSIS_API_KEY: {_fingerabdruck(_roh.strip())}")
+if _roh != _roh.strip():
+    logger.warning(
+        "[config] ANALYSIS_API_KEY enthaelt fuehrende oder abschliessende "
+        "Leerzeichen/Zeilenumbrueche — beim Einfuegen mitkopiert. Wird beim "
+        "Vergleich ignoriert, sollte in Railway aber bereinigt werden."
+    )
+
+
 @app.middleware("http")
 async def api_key_guard(request, call_next):
     """Schützt /api/v1/* mit X-Analysis-Key Header.
     ANALYSIS_API_KEY leer → alles offen (Fallback: nichts bricht ohne Config).
-    /health bleibt immer offen (UptimeRobot)."""
-    if settings.ANALYSIS_API_KEY and request.url.path.startswith("/api/"):
-        if request.headers.get("X-Analysis-Key") != settings.ANALYSIS_API_KEY:
+    /health bleibt immer offen (UptimeRobot).
+
+    KORREKTUR 03.08.: Vorher wurden beide Seiten roh verglichen. Ein einziges
+    beim Kopieren mitgenommenes Leerzeichen oder ein Zeilenumbruch — in einem
+    Web-Formular unsichtbar — führte zu einem dauerhaften 401, das wie ein
+    falscher Schlüssel aussah. Beide Seiten werden jetzt getrimmt. Das schwächt
+    nichts ab: ein Schlüssel mit absichtlichem Leerzeichen am Rand existiert
+    nicht, wohl aber der Tippfehler beim Einfügen.
+    """
+    erwartet = (settings.ANALYSIS_API_KEY or "").strip()
+    if erwartet and request.url.path.startswith("/api/"):
+        gesendet = (request.headers.get("X-Analysis-Key") or "").strip()
+        if gesendet != erwartet:
             from fastapi.responses import JSONResponse
+            logger.warning(
+                f"[auth] 401 fuer {request.url.path} — gesendet: "
+                f"{_fingerabdruck(gesendet)} | erwartet: {_fingerabdruck(erwartet)}"
+            )
             return JSONResponse(status_code=401, content={"error": "unauthorized"})
     return await call_next(request)
 
