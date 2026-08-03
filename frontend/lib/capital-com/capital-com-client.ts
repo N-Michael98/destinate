@@ -156,17 +156,30 @@ export async function capitalGetTopMarkets(
       return meta && filterTypes.some((t) => meta.type.includes(t));
     });
 
+    // Diagnose (03.08.): Symbole verschwanden hier still — sowohl bei HTTP-Fehler
+    // (`!res.ok`) als auch bei bid<=0 (Filter unten). Dadurch war nicht messbar,
+    // WARUM Capital z.B. NAS100 nicht liefert, obwohl es dort nachweislich live
+    // handelt (Chart des Nutzers, 03.08.). Gründe werden jetzt gesammelt und
+    // EINMAL pro Aufruf gebündelt ausgegeben — Verhalten bleibt unverändert.
+    const drops: string[] = [];
+
     const results = await Promise.allSettled(
       entries.map(async ([symbol, epic]) => {
         const res = await fetch(`${DEMO_BASE}/markets/${epic}`, {
           headers: authHeaders(apiKey, cst, securityToken),
           signal: AbortSignal.timeout(5000),
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          drops.push(`${symbol}(${epic}): HTTP ${res.status}`);
+          return null;
+        }
         const data = (await res.json()) as Record<string, unknown>;
         const snap = (data.snapshot ?? {}) as Record<string, unknown>;
         const bid = Number(snap.bid ?? 0);
         const offer = Number(snap.offer ?? bid);
+        if (!(bid > 0)) {
+          drops.push(`${symbol}(${epic}): bid=${bid} status=${String(snap.marketStatus ?? "?")}`);
+        }
         const meta = INSTRUMENT_META[symbol] ?? { name: symbol, type: "CURRENCIES" };
         return {
           epic,
@@ -181,14 +194,62 @@ export async function capitalGetTopMarkets(
       })
     );
 
+    for (const r of results) {
+      if (r.status === "rejected") {
+        drops.push(`Abbruch: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`);
+      }
+    }
+
     const markets = results
       .filter((r): r is PromiseFulfilledResult<CapitalMarket> => r.status === "fulfilled" && r.value !== null)
       .map((r) => r.value)
       .filter((m) => m.bid > 0);
 
+    if (drops.length > 0) {
+      console.warn(`[capital-markets] ${markets.length}/${entries.length} Märkte mit Kurs. Ohne Kurs: ${drops.join(" | ")}`);
+      const gotSymbols = new Set(markets.map((m) => m.symbol));
+      const failed = entries.map(([s]) => s).filter((s) => !gotSymbols.has(s));
+      void diagnoseEpicsOnce(apiKey, cst, securityToken, failed);
+    }
+
     return { ok: true, markets };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
+// ── Epic-Selbstauskunft (03.08.) ─────────────────────────────────────────────
+// Wenn ein Markt keinen Kurs liefert, gibt es genau zwei mögliche Ursachen:
+// das Epic in EPIC_MAP passt nicht zum Konto, oder der Markt ist wirklich zu.
+// Statt zu vermuten, fragen wir Capital selbst: die Markt-Suche liefert die
+// echten Epics samt Handelsstatus. Rein lesend (GET), läuft EINMAL pro Prozess,
+// nacheinander mit Pause (Ratenlimit), Fehler bleiben folgenlos.
+let _epicDiagDone = false;
+async function diagnoseEpicsOnce(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  failedSymbols: string[]
+): Promise<void> {
+  if (_epicDiagDone || failedSymbols.length === 0) return;
+  _epicDiagDone = true;
+  try {
+    for (const symbol of failedSymbols.slice(0, 12)) {
+      const term = INSTRUMENT_META[symbol]?.name ?? symbol;
+      const found = await capitalSearchMarkets(apiKey, cst, securityToken, term);
+      if (!found.ok || !found.markets?.length) {
+        console.warn(`[capital-epic] ${symbol}: Suche "${term}" ergab nichts (${found.error ?? "0 Treffer"})`);
+      } else {
+        const list = found.markets
+          .slice(0, 5)
+          .map((m) => `${m.epic}[${m.instrumentName}] bid=${m.bid}`)
+          .join(", ");
+        console.warn(`[capital-epic] ${symbol}: hinterlegt="${EPIC_MAP[symbol]}" | Capital kennt: ${list}`);
+      }
+      await new Promise((r) => setTimeout(r, 350)); // Ratenlimit schonen
+    }
+  } catch (e) {
+    console.warn("[capital-epic] Selbstauskunft fehlgeschlagen:", e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -300,19 +361,34 @@ export async function capitalGetPrices(
     // (sequentiell mit await-in-for führt bei >5 Symbolen zu Rate-Limit-Drops)
     const results = await Promise.all(
       symbols.map(async (symbol): Promise<MarketPrice | null> => {
+        // Diagnose (03.08.): Symbole wurden hier bisher STILL verworfen — bei
+        // unbekanntem Epic, HTTP-Fehler oder Bid/Ask=0 gleichermassen. Dadurch
+        // war nicht feststellbar, WARUM Capital z.B. NAS100 nicht liefert,
+        // obwohl es dort nachweislich live handelt (User-Chart 03.08.).
+        // Jetzt wird der konkrete Grund genannt; Verhalten unverändert (null).
         const epic = EPIC_MAP[symbol];
-        if (!epic) return null;
+        if (!epic) {
+          console.warn(`[capital-prices] ${symbol}: kein Epic in EPIC_MAP hinterlegt`);
+          return null;
+        }
         try {
           const res = await fetch(`${DEMO_BASE}/markets/${epic}`, {
             headers: authHeaders(apiKey, cst, securityToken),
             signal: AbortSignal.timeout(6000),
           });
-          if (!res.ok) return null;
+          if (!res.ok) {
+            console.warn(`[capital-prices] ${symbol} (Epic ${epic}): HTTP ${res.status} — Epic evtl. falsch oder nicht im Konto verfügbar`);
+            return null;
+          }
           const data = (await res.json()) as Record<string, unknown>;
           const snapshot = (data.snapshot ?? {}) as Record<string, unknown>;
           const bid = Number(snapshot.bid ?? 0);
           const offer = Number(snapshot.offer ?? 0);
-          if (bid <= 0 && offer <= 0) return null;
+          if (bid <= 0 && offer <= 0) {
+            const status = String(snapshot.marketStatus ?? "?");
+            console.warn(`[capital-prices] ${symbol} (Epic ${epic}): kein Kurs — bid=${bid} offer=${offer} marketStatus=${status}`);
+            return null;
+          }
           return {
             symbol,
             bid,
@@ -320,7 +396,10 @@ export async function capitalGetPrices(
             spread: Number((offer - bid).toFixed(5)),
             updateTime: String(snapshot.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
           };
-        } catch { return null; }
+        } catch (e) {
+          console.warn(`[capital-prices] ${symbol} (Epic ${epic}): Netzwerkfehler —`, e instanceof Error ? e.message : String(e));
+          return null;
+        }
       })
     );
     const prices = results.filter((p): p is MarketPrice => p !== null);
