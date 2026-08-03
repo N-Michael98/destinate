@@ -83,12 +83,12 @@ export const EPIC_MAP: Record<string, string> = {
   XAGUSD: "SILVER",
   USOIL: "OIL_CRUDE",
   UKOIL: "OIL_BRENT",
-  NATGAS: "NATURAL_GAS",
+  NATGAS: "NATURALGAS",  // war "NATURAL_GAS" (ohne Unterstrich) — siehe unten
   // Indices
   NAS100: "US100",
   SPX500: "US500",
   DJ30: "US30",
-  GER40: "GERMANY40",
+  GER40: "DE40",        // war "GERMANY40" — siehe unten
   UK100: "UK100",
   JPN225: "J225",       // war "JAPAN225" — siehe unten
   // Crypto
@@ -100,8 +100,15 @@ export const EPIC_MAP: Record<string, string> = {
   // eigene Marktsuche lieferte zu jedem Symbol den echten Epic mit exakt
   // passendem Instrumentnamen (z.B. BTCUSD[Bitcoin/USD], J225[Japan 225],
   // LINKUSD[ChainLink/USD]). Keine Vermutung, sondern Auskunft des Brokers.
-  // GERMANY40 und NATURAL_GAS standen unter demselben Verdacht, lösten aber
-  // KEIN 404 aus — sie sind korrekt und bleiben unverändert.
+  // NACHTRAG 03.08. 16:51: GERMANY40 und NATURAL_GAS hatte ich zunächst
+  // entlastet, weil sie im Zyklus 15:20 kein 404 auslösten. Das war ein
+  // Trugschluss — in jenem Zyklus wurden sie noch vom Ratenlimit abgefangen,
+  // und die Selbstauskunft läuft nur einmal je Prozess. Sobald alle anderen
+  // Epics stimmten und das Limit weg war, meldeten beide sauber HTTP 404,
+  // zweimal hintereinander (16:51 und 16:56). Die Marktsuche hatte die
+  // richtigen Namen schon genannt: DE40[Germany 40], NATURALGAS[Natural Gas].
+  // Lehre: das Fehlen eines 404 beweist nichts, solange ein anderer Fehler
+  // denselben Abruf abfangen kann.
   BTCUSD: "BTCUSD",     // war "BITCOIN"
   ETHUSD: "ETHUSD",     // war "ETHEREUM"
   LTCUSD: "LTCUSD",     // war "LITECOIN"
