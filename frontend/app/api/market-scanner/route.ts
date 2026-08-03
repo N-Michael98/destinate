@@ -64,7 +64,7 @@ export async function GET(request: Request) {
           const META: Record<string, { epic: string; name: string; type: string }> = {
             NAS100:{epic:"US100",name:"Nasdaq 100",type:"INDICES"}, SPX500:{epic:"US500",name:"S&P 500",type:"INDICES"},
             UK100:{epic:"UK100",name:"FTSE 100",type:"INDICES"}, GER40:{epic:"GERMANY40",name:"DAX 40",type:"INDICES"},
-            DJ30:{epic:"US30",name:"Dow Jones",type:"INDICES"}, JPN225:{epic:"JAPAN225",name:"Nikkei 225",type:"INDICES"},
+            DJ30:{epic:"US30",name:"Dow Jones",type:"INDICES"}, JPN225:{epic:"J225",name:"Nikkei 225",type:"INDICES"},
             XAUUSD:{epic:"GOLD",name:"Gold",type:"COMMODITIES"}, USOIL:{epic:"OIL_CRUDE",name:"Crude Oil",type:"COMMODITIES"},
             UKOIL:{epic:"OIL_BRENT",name:"Brent Oil",type:"COMMODITIES"}, XAGUSD:{epic:"SILVER",name:"Silver",type:"COMMODITIES"},
             NATGAS:{epic:"NATURAL_GAS",name:"Natural Gas",type:"COMMODITIES"},
@@ -73,7 +73,7 @@ export async function GET(request: Request) {
             AUDUSD:{epic:"AUDUSD",name:"AUD/USD",type:"CURRENCIES"}, USDCAD:{epic:"USDCAD",name:"USD/CAD",type:"CURRENCIES"},
             EURGBP:{epic:"EURGBP",name:"EUR/GBP",type:"CURRENCIES"}, GBPJPY:{epic:"GBPJPY",name:"GBP/JPY",type:"CURRENCIES"},
             EURJPY:{epic:"EURJPY",name:"EUR/JPY",type:"CURRENCIES"},
-            BTCUSD:{epic:"BITCOIN",name:"Bitcoin",type:"CRYPTOCURRENCIES"}, ETHUSD:{epic:"ETHEREUM",name:"Ethereum",type:"CRYPTOCURRENCIES"},
+            BTCUSD:{epic:"BTCUSD",name:"Bitcoin",type:"CRYPTOCURRENCIES"}, ETHUSD:{epic:"ETHUSD",name:"Ethereum",type:"CRYPTOCURRENCIES"},
           };
           const meta = META[p.symbol];
           if (!meta) continue;

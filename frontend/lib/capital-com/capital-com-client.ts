@@ -90,17 +90,27 @@ export const EPIC_MAP: Record<string, string> = {
   DJ30: "US30",
   GER40: "GERMANY40",
   UK100: "UK100",
-  JPN225: "JAPAN225",
+  JPN225: "J225",       // war "JAPAN225" — siehe unten
   // Crypto
-  BTCUSD: "BITCOIN",
-  ETHUSD: "ETHEREUM",
-  LTCUSD: "LITECOIN",
-  XRPUSD: "RIPPLE",
-  ADAUSD: "CARDANO",
-  SOLUSD: "SOLANA",
-  DOTUSD: "POLKADOT",
-  LNKUSD: "CHAINLINK",
-  BNBUSD: "BNB",
+  // KORREKTUR 03.08.: Diese zehn Epics existierten bei Capital.com NICHT.
+  // Jeder Abruf lief in HTTP 404, jede Order wäre abgelehnt worden — alle
+  // neun Kryptos und der Nikkei waren damit seit jeher tote Märkte, ihre
+  // Kurse kamen ausschliesslich aus dem yfinance-Rückfall.
+  // Bewiesen am 03.08. 15:20 im Betrieb: Abruf ergab HTTP 404, und Capitals
+  // eigene Marktsuche lieferte zu jedem Symbol den echten Epic mit exakt
+  // passendem Instrumentnamen (z.B. BTCUSD[Bitcoin/USD], J225[Japan 225],
+  // LINKUSD[ChainLink/USD]). Keine Vermutung, sondern Auskunft des Brokers.
+  // GERMANY40 und NATURAL_GAS standen unter demselben Verdacht, lösten aber
+  // KEIN 404 aus — sie sind korrekt und bleiben unverändert.
+  BTCUSD: "BTCUSD",     // war "BITCOIN"
+  ETHUSD: "ETHUSD",     // war "ETHEREUM"
+  LTCUSD: "LTCUSD",     // war "LITECOIN"
+  XRPUSD: "XRPUSD",     // war "RIPPLE"
+  ADAUSD: "ADAUSD",     // war "CARDANO"
+  SOLUSD: "SOLUSD",     // war "SOLANA"
+  DOTUSD: "DOTUSD",     // war "POLKADOT"
+  LNKUSD: "LINKUSD",    // war "CHAINLINK" — Capital schreibt LINKUSD, nicht LNKUSD
+  BNBUSD: "BNBUSD",     // war "BNB"
 };
 
 // Reverse map: epic → symbol

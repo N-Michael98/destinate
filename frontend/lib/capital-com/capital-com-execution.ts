@@ -56,10 +56,10 @@ const MIN_SIZE: Record<string, number> = {
   // Commodities
   GOLD: 0.1, SILVER: 0.1, OIL_CRUDE: 0.1, OIL_BRENT: 0.1, NATURAL_GAS: 0.1,
   // Indices
-  US100: 0.1, US500: 0.1, US30: 0.1, GERMANY40: 0.1, UK100: 0.1, JAPAN225: 0.1,
-  // Crypto
-  BITCOIN: 0.001, ETHEREUM: 0.01, LITECOIN: 0.1, RIPPLE: 1,
-  CARDANO: 1, SOLANA: 0.1, POLKADOT: 0.1, CHAINLINK: 0.1, BNB: 0.01,
+  US100: 0.1, US500: 0.1, US30: 0.1, GERMANY40: 0.1, UK100: 0.1, J225: 0.1,
+  // Crypto — Epics am 03.08. korrigiert (siehe EPIC_MAP), Werte unverändert
+  BTCUSD: 0.001, ETHUSD: 0.01, LTCUSD: 0.1, XRPUSD: 1,
+  ADAUSD: 1, SOLUSD: 0.1, DOTUSD: 0.1, LINKUSD: 0.1, BNBUSD: 0.01,
 };
 
 // Pip value per 1 unit of base currency
@@ -72,10 +72,10 @@ const PIP_VALUE_PER_UNIT: Record<string, number> = {
   // Commodities
   GOLD: 1, SILVER: 0.5, OIL_CRUDE: 1, OIL_BRENT: 1, NATURAL_GAS: 0.1,
   // Indices
-  US100: 1, US500: 1, US30: 1, GERMANY40: 1, UK100: 1, JAPAN225: 1,
-  // Crypto
-  BITCOIN: 1, ETHEREUM: 1, LITECOIN: 1, RIPPLE: 0.01,
-  CARDANO: 0.01, SOLANA: 1, POLKADOT: 1, CHAINLINK: 0.5, BNB: 1,
+  US100: 1, US500: 1, US30: 1, GERMANY40: 1, UK100: 1, J225: 1,
+  // Crypto — Epics am 03.08. korrigiert (siehe EPIC_MAP), Werte unverändert
+  BTCUSD: 1, ETHUSD: 1, LTCUSD: 1, XRPUSD: 0.01,
+  ADAUSD: 0.01, SOLUSD: 1, DOTUSD: 1, LINKUSD: 0.5, BNBUSD: 1,
 };
 
 // Default stop loss in points by trading style per epic
@@ -84,25 +84,25 @@ const DEFAULT_STOP_BY_STYLE: Record<string, Record<string, number>> = {
     EURUSD: 10, GBPUSD: 10, USDJPY: 10, USDCHF: 10, AUDUSD: 10,
     USDCAD: 10, NZDUSD: 10, EURGBP: 10, EURJPY: 15, GBPJPY: 15,
     GOLD: 5, SILVER: 0.20, OIL_CRUDE: 0.30, OIL_BRENT: 0.30, NATURAL_GAS: 0.10,
-    US100: 20, US500: 15, US30: 50, GERMANY40: 20, UK100: 15, JAPAN225: 30,
-    BITCOIN: 200, ETHEREUM: 20, LITECOIN: 2, RIPPLE: 0.02,
-    CARDANO: 0.01, SOLANA: 2, POLKADOT: 0.5, CHAINLINK: 0.5, BNB: 5,
+    US100: 20, US500: 15, US30: 50, GERMANY40: 20, UK100: 15, J225: 30,
+    BTCUSD: 200, ETHUSD: 20, LTCUSD: 2, XRPUSD: 0.02,
+    ADAUSD: 0.01, SOLUSD: 2, DOTUSD: 0.5, LINKUSD: 0.5, BNBUSD: 5,
   },
   DAYTRADING: {
     EURUSD: 25, GBPUSD: 25, USDJPY: 25, USDCHF: 25, AUDUSD: 25,
     USDCAD: 25, NZDUSD: 25, EURGBP: 25, EURJPY: 35, GBPJPY: 35,
     GOLD: 15, SILVER: 0.50, OIL_CRUDE: 0.80, OIL_BRENT: 0.80, NATURAL_GAS: 0.25,
-    US100: 50, US500: 35, US30: 120, GERMANY40: 50, UK100: 35, JAPAN225: 80,
-    BITCOIN: 600, ETHEREUM: 60, LITECOIN: 5, RIPPLE: 0.05,
-    CARDANO: 0.03, SOLANA: 5, POLKADOT: 1, CHAINLINK: 1, BNB: 15,
+    US100: 50, US500: 35, US30: 120, GERMANY40: 50, UK100: 35, J225: 80,
+    BTCUSD: 600, ETHUSD: 60, LTCUSD: 5, XRPUSD: 0.05,
+    ADAUSD: 0.03, SOLUSD: 5, DOTUSD: 1, LINKUSD: 1, BNBUSD: 15,
   },
   SWING: {
     EURUSD: 50, GBPUSD: 50, USDJPY: 50, USDCHF: 50, AUDUSD: 50,
     USDCAD: 50, NZDUSD: 50, EURGBP: 50, EURJPY: 70, GBPJPY: 70,
     GOLD: 30, SILVER: 1.00, OIL_CRUDE: 1.50, OIL_BRENT: 1.50, NATURAL_GAS: 0.50,
-    US100: 100, US500: 70, US30: 250, GERMANY40: 100, UK100: 70, JAPAN225: 150,
-    BITCOIN: 1500, ETHEREUM: 150, LITECOIN: 15, RIPPLE: 0.10,
-    CARDANO: 0.05, SOLANA: 10, POLKADOT: 2, CHAINLINK: 2, BNB: 30,
+    US100: 100, US500: 70, US30: 250, GERMANY40: 100, UK100: 70, J225: 150,
+    BTCUSD: 1500, ETHUSD: 150, LTCUSD: 15, XRPUSD: 0.10,
+    ADAUSD: 0.05, SOLUSD: 10, DOTUSD: 2, LINKUSD: 2, BNBUSD: 30,
   },
 };
 
@@ -122,10 +122,46 @@ const MAX_SIZE: Record<string, number> = {
   AUDUSD: 5000, USDCAD: 5000, NZDUSD: 5000, EURGBP: 5000,
   EURJPY: 5000, GBPJPY: 5000,
   GOLD: 5, SILVER: 50, OIL_CRUDE: 10, OIL_BRENT: 10, NATURAL_GAS: 100,
-  US100: 5, US500: 5, US30: 2, GERMANY40: 5, UK100: 5, JAPAN225: 2,
-  BITCOIN: 0.05, ETHEREUM: 0.5, LITECOIN: 10, RIPPLE: 500,
-  CARDANO: 500, SOLANA: 5, POLKADOT: 10, CHAINLINK: 10, BNB: 0.5,
+  US100: 5, US500: 5, US30: 2, GERMANY40: 5, UK100: 5, J225: 2,
+  BTCUSD: 0.05, ETHUSD: 0.5, LTCUSD: 10, XRPUSD: 500,
+  ADAUSD: 500, SOLUSD: 5, DOTUSD: 10, LINKUSD: 10, BNBUSD: 0.5,
 };
+
+// ── Selbstprüfung beim Start (03.08.) ────────────────────────────────────────
+// Anlass: neun Krypto-Epics und der Nikkei waren jahrelang falsch benannt.
+// Capital antwortete mit HTTP 404, die Märkte fielen still in den yfinance-
+// Rückfall, und niemand konnte es sehen. Beim Korrigieren wurde ausserdem klar,
+// wie leicht die nächste Lücke entsteht: das Epic ist Schlüssel in SECHS
+// Grössen- und Stop-Tabellen. Wird eine davon vergessen, greift bei genau
+// diesem Markt die MAX_SIZE-Klemme nicht mehr — die Position könnte um ein
+// Vielfaches zu gross werden, ohne dass irgendetwas fehlschlägt.
+//
+// Deshalb prüft das Modul sich beim Laden selbst. Die Prüfung ändert nichts
+// und bricht nichts ab; sie macht eine Lücke nur unübersehbar, statt sie bis
+// zur ersten falsch dimensionierten Order zu verstecken.
+function assertEpicTablesComplete(): void {
+  const tables: Record<string, Record<string, number>> = {
+    MIN_SIZE,
+    PIP_VALUE_PER_UNIT,
+    MAX_SIZE,
+    "DEFAULT_STOP.SCALPING":   DEFAULT_STOP_BY_STYLE.SCALPING,
+    "DEFAULT_STOP.DAYTRADING": DEFAULT_STOP_BY_STYLE.DAYTRADING,
+    "DEFAULT_STOP.SWING":      DEFAULT_STOP_BY_STYLE.SWING,
+  };
+  const luecken: string[] = [];
+  for (const [symbol, epic] of Object.entries(EPIC_MAP)) {
+    for (const [name, table] of Object.entries(tables)) {
+      if (table[epic] == null) luecken.push(`${symbol}(${epic}) fehlt in ${name}`);
+    }
+  }
+  if (luecken.length > 0) {
+    console.error(
+      `[capital-exec] ⚠️ LÜCKE in den Epic-Tabellen — betroffene Märkte werden ohne ` +
+      `Grössen-/Stop-Vorgabe gehandelt: ${luecken.join(" | ")}`
+    );
+  }
+}
+assertEpicTablesComplete();
 
 function calcPositionSize(
   epic: string,
