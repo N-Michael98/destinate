@@ -306,9 +306,37 @@ export async function register() {
                     const action = await pyPriceUpdate(tradeId, currentPrice).catch(() => ({ action: null }));
                     if (!action || action.action === null) continue;
                     if (action.action === "UPDATE_SL" && action.new_sl) {
-                      const r = await capitalUpdatePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId, action.new_sl, undefined)
+                      // Generalkontroll-Fund C (03.08.): ZWEI Systeme schreiben
+                      // denselben Stop. Kurz zuvor lief in diesem Zyklus schon
+                      // runActiveTradeManager() -> runRiskAgent(), der ebenfalls
+                      // capitalUpdatePosition aufruft. Der Python-Lifecycle läuft
+                      // DANACH und gewinnt damit immer. Sein eigener Schutz gegen
+                      // Rückwärtsbewegung (trade_lifecycle_manager.py:241) vergleicht
+                      // nur gegen die EIGENE Erinnerung, nicht gegen den echten
+                      // Broker-Stop — er konnte einen bereits enger gezogenen Stop
+                      // wieder lockern und damit Absicherung zurücknehmen.
+                      //
+                      // pos.stopLevel stammt aus capitalGetPositions() weiter oben,
+                      // also NACH dem RiskAgent — es ist der echte, aktuelle Stop.
+                      // Ein Stop darf sich ab jetzt nur noch in Richtung Gewinn
+                      // bewegen, egal welches System ihn setzen will.
+                      const liveSL = typeof pos.stopLevel === "number" && pos.stopLevel > 0 ? pos.stopLevel : null;
+                      const isBuyPos = pos.direction === "BUY";
+                      const istEnger = liveSL === null
+                        || (isBuyPos ? action.new_sl > liveSL : action.new_sl < liveSL);
+                      if (!istEnger) {
+                        console.log(`[py-lifecycle] ${symbol}: SL ${action.new_sl} wäre lockerer als der bestehende ${liveSL} — nicht angewendet`);
+                        continue;
+                      }
+                      // Take-Profit ausdrücklich mitgeben (03.08.). Vorher stand hier
+                      // undefined; ob Capital.com einen fehlenden limitLevel als
+                      // "unverändert" oder als "löschen" auffasst, ist nicht belegt.
+                      // Mit dem echten Wert ist das Ergebnis in beiden Fällen gleich.
+                      // Der RiskAgent macht es an seinen beiden Stellen genauso.
+                      const liveTP = typeof pos.profitLevel === "number" && pos.profitLevel > 0 ? pos.profitLevel : undefined;
+                      const r = await capitalUpdatePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId, action.new_sl, liveTP)
                         .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
-                      if (r.ok) console.log(`[py-lifecycle] SL updated: ${symbol} -> ${action.new_sl}`);
+                      if (r.ok) console.log(`[py-lifecycle] SL updated: ${symbol} ${liveSL ?? "kein"} -> ${action.new_sl}`);
                       else console.error(`[py-lifecycle] ⚠ SL-Update FEHLGESCHLAGEN: ${symbol} -> ${action.new_sl} — ${r.error}`);
                     } else if (action.action === "CLOSE") {
                       const r = await capitalClosePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId)

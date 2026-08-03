@@ -218,7 +218,22 @@ async function processPosition(
     ? (liveSL > 0 && liveSL >= entry - beZone)
     : (liveSL > 0 && liveSL <= entry + beZone);
   const beEffective = meta.beSet || alreadyAtBE;
-  const currentTrailSL = meta.trailSL ?? (liveSL > 0 ? liveSL : (isBuy ? entry - slRange : entry + slRange));
+  // Generalkontroll-Fund C (03.08.): Bezugspunkt fürs Trailing war allein die
+  // EIGENE Erinnerung (meta.trailSL), der echte Broker-Stop nur als Rückfall,
+  // wenn gar keine Erinnerung vorlag. Der Python-Lifecycle bewegt denselben
+  // Stop im selben 2-Minuten-Zyklus. Zog Python enger nach, wusste dieser
+  // Agent nichts davon und konnte den Stop wieder zurückholen:
+  // Erinnerung 105, Broker schon auf 108, neu berechnet 106 -> 106 > 105 ist
+  // wahr, also wurde 106 geschrieben und die Absicherung von 108 auf 106
+  // gelockert.
+  // Jetzt gilt immer der ENGERE von beiden. Damit kann sich ein Stop nur noch
+  // in Richtung Gewinn bewegen, egal welches System ihn zuletzt gesetzt hat.
+  // (Der Breakeven-Block braucht das nicht: alreadyAtBE oben prüft bereits den
+  // echten Broker-Stop und überspringt, wenn dieser schon abgesichert ist.)
+  const trailFallback = liveSL > 0 ? liveSL : (isBuy ? entry - slRange : entry + slRange);
+  const currentTrailSL = meta.trailSL == null
+    ? trailFallback
+    : (isBuy ? Math.max(meta.trailSL, trailFallback) : Math.min(meta.trailSL, trailFallback));
 
   console.log(`[risk-agent] ${symbol} ${direction} entry=${entry} cur=${currentPrice} profit=${(profitPct*100).toFixed(2)}% atr=${atr.toFixed(5)} be=${beEffective}`);
 
