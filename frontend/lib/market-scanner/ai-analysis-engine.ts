@@ -519,6 +519,14 @@ Analyze these live markets with REAL technical indicator data from TA-Lib (1D + 
 
 ${marketList}
 
+CALIBRATION: WAIT is for genuinely unclear situations, not a safe default. If a
+market satisfies its direction rules, name that direction with an honest
+confidence — even a moderate one. Your judgment is not the last gate: every
+direction you name still has to clear a separate risk review, a confidence
+threshold, a minimum reward/risk ratio and several independent filters before
+anything is traded. Answering WAIT for every market is itself a bad analysis,
+because it means none of the available information was used.
+
 CRITICAL RULES — violations = bad analysis:
 - ONLY recommend BUY if 1D trend=BULLISH OR signal=BUY/STRONG_BUY. If trend=BEARISH → SELL or WAIT.
 - ONLY recommend SELL if 1D trend=BEARISH OR signal=SELL/STRONG_SELL. If trend=BULLISH → BUY or WAIT.
@@ -530,10 +538,18 @@ CRITICAL RULES — violations = bad analysis:
 - If strategies=SHORT with >60% confidence AND trend=BEARISH → strong SELL signal
 - If strategies and trend DISAGREE → reduce confidence by 15 or go WAIT
 - SUPPORT/RESISTANCE (highest priority — overrides trend signals):
-  * distToRes < 1.0 ATR → price is AT resistance → NO BUY. Either WAIT for a
-    confirmed breakout followed by a retest, or consider SELL on rejection.
-  * distToSup < 1.0 ATR → price is AT support → NO SELL. Either WAIT for a
-    confirmed breakdown followed by a retest, or consider BUY on bounce.
+  * distToRes and distToSup are numbers measured IN ATR UNITS. Compare them
+    numerically. A value of 1.76 or 2.33 is NOT "near" — the rules below apply
+    ONLY when the number is strictly below 1.0. If distToRes >= 1.0 there is
+    room to the upside and this rule must not block anything. Same for
+    distToSup >= 1.0 on the downside. Do not describe a distance above 1.0 ATR
+    as "near".
+  * distToRes < 1.0 ATR → price is AT resistance → NO BUY. If the 1D trend is
+    ALSO bearish, this is a textbook SELL setup — take the SELL rather than
+    WAIT, unless something else clearly contradicts it.
+  * distToSup < 1.0 ATR → price is AT support → NO SELL. If the 1D trend is
+    ALSO bullish, this is a textbook BUY setup — take the BUY rather than
+    WAIT, unless something else clearly contradicts it.
   * Never buy into resistance or sell into support just because the trend agrees.
   * Also treat the Bollinger band edges (bb=[lower..upper]) as dynamic zones.
 - ADX < 20 = weak/ranging trend → trend-following setups are unreliable, prefer
@@ -544,9 +560,11 @@ CRITICAL RULES — violations = bad analysis:
 - EMA200: only take BUY when price > ema200, SELL when price < ema200, unless a
   clear reversal pattern (bullPat/bearPat) confirms otherwise.
 - ENTRY QUALITY (entryQuality=score/100): this aggregates strategy consensus,
-  market structure/BOS, S/R context and confidence. If it disagrees with your
-  direction, or tier is WEAK, reduce confidence by 15 or WAIT. Prefer setups
-  where entryQuality is GOOD or EXCELLENT and agrees with your direction.
+  market structure/BOS, S/R context and confidence. Only tier WEAK, or a tier
+  that actively disagrees with your direction, is a reason to reduce confidence
+  by 15. MODERATE on its own is NOT a reason to WAIT — it is the normal case.
+  Prefer setups where entryQuality is GOOD or EXCELLENT and agrees with your
+  direction, but do not require it.
 - Minimum R:R ratio 1.5 — if no clean setup → WAIT
 - stopLoss MUST be below entry for BUY, above entry for SELL
 - Place stopLoss beyond the relevant S/R zone, not inside it
