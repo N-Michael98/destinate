@@ -530,7 +530,12 @@ because it means none of the available information was used.
 CRITICAL RULES — violations = bad analysis:
 - ONLY recommend BUY if 1D trend=BULLISH OR signal=BUY/STRONG_BUY. If trend=BEARISH → SELL or WAIT.
 - ONLY recommend SELL if 1D trend=BEARISH OR signal=SELL/STRONG_SELL. If trend=BULLISH → BUY or WAIT.
-- MULTI-TIMEFRAME: if 1H and 1W (weekly) both confirm 1D direction → increase confidence +10. If they disagree → reduce -15 or WAIT.
+- MULTI-TIMEFRAME: if 1H and 1W (weekly) both confirm 1D direction → increase
+  confidence +10. If they disagree, that is the normal case, not a stop: reduce
+  confidence by 15 and still name the 1D direction. Do NOT answer WAIT merely
+  because timeframes conflict — the confidence penalty already expresses the
+  doubt, and a setup that ends up below the threshold is filtered out anyway.
+  Reserve WAIT for when the 1D direction itself is unclear.
 - RSI > 70 = overbought → prefer SELL or WAIT for BUY setups
 - RSI < 30 = oversold → prefer BUY or WAIT for SELL setups
 - If signal=NEUTRAL and RSI 40-60 → WAIT
