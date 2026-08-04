@@ -93,7 +93,7 @@ anderer Fehler denselben Pfad abfangen kann.
 
 ## Snapshot kritischer Werte
 
-Der neunte Prüfer hält 258 Zahlen und Texte fest, die über Risiko entscheiden:
+Der neunte Prüfer hält 266 Zahlen und Texte fest, die über Risiko entscheiden:
 alle Grössen- und Stop-Tabellen, die Standardwerte der Einstellungen, die
 Exit-Schwellen und Haltedauern, die Klemmen des AI Managers, die Prüfsumme des
 GPT-Regelteils und die Reihenfolge der Filterkette.

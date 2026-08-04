@@ -82,6 +82,25 @@ function erfasse() {
       regelZeilen: (regelText.match(/^- /gm) || []).length,
       waitErwaehnungen: (regelText.match(/WAIT/g) || []).length,
       pruefsumme: crypto.createHash("sha256").update(regelText).digest("hex").slice(0, 16),
+      // LÜCKE GESCHLOSSEN 04.08.: Erfasst war nur der Regelteil BIS
+      // "Return ONLY valid JSON". Das Antwortschema danach war ungeschützt —
+      // beim Entfernen von marketBias verschwand ein Feld daraus, und der
+      // Snapshot blieb still. Dabei bestimmt genau dieses Schema, welche
+      // Felder GPT liefert und damit was Richtung, Stop und Ziel setzt.
+      antwortFelder: (() => {
+        const a = engine.indexOf('"opportunities": [');
+        if (a < 0) return ["SCHEMA NICHT GEFUNDEN"];
+        const start = engine.lastIndexOf("{", a);
+        let tiefe = 0, ende = -1;
+        for (let i = start; i < engine.length; i++) {
+          if (engine[i] === "{") tiefe++;
+          else if (engine[i] === "}") { tiefe--; if (tiefe === 0) { ende = i; break; } }
+        }
+        try {
+          const o = JSON.parse(engine.slice(start, ende + 1));
+          return Object.keys(o.opportunities?.[0] ?? {});
+        } catch { return ["SCHEMA UNGUELTIG"]; }
+      })(),
     },
     filterReihenfolge: [...filters.matchAll(/blockedBy:\s*"([A-Z_]+)"/g)].map((m) => m[1]),
   };

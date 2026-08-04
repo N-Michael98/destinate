@@ -13,7 +13,6 @@ export interface GPTMarketAnalysis {
   stopLoss: number;
   takeProfit: number;
   tradingStyle: "SCALPING" | "DAYTRADING" | "SWING";
-  marketBias: string;
   source: "GPT_REAL" | "GPT_SIMULATED";
 }
 
@@ -251,7 +250,6 @@ function noSignal(market: CapitalMarket): GPTMarketAnalysis {
     stopLoss: 0,
     takeProfit: 0,
     tradingStyle: "DAYTRADING",
-    marketBias: "NEUTRAL",
     source: "GPT_SIMULATED",
   };
 }
@@ -626,8 +624,7 @@ each market's own data, never from habit or from these examples' direction:
       "entry": 2340.5,
       "stopLoss": 2328.0,
       "takeProfit": 2365.0,
-      "tradingStyle": "DAYTRADING",
-      "marketBias": "RISK_OFF"
+      "tradingStyle": "DAYTRADING"
     },
     {
       "epic": "US100",
@@ -638,8 +635,7 @@ each market's own data, never from habit or from these examples' direction:
       "entry": 19850.0,
       "stopLoss": 19920.0,
       "takeProfit": 19700.0,
-      "tradingStyle": "DAYTRADING",
-      "marketBias": "RISK_ON"
+      "tradingStyle": "DAYTRADING"
     }
   ]
 }`;
@@ -707,7 +703,6 @@ each market's own data, never from habit or from these examples' direction:
         stopLoss: gptData.stopLoss ?? 0,
         takeProfit: gptData.takeProfit ?? 0,
         tradingStyle: (gptData.tradingStyle ?? "DAYTRADING") as GPTMarketAnalysis["tradingStyle"],
-        marketBias: gptData.marketBias ?? "NEUTRAL",
         source: "GPT_REAL",
       };
     } else if (hasGPT) {
@@ -728,7 +723,6 @@ each market's own data, never from habit or from these examples' direction:
         stopLoss: dir === "BUY" ? market.bid - slRange : market.ask + slRange,
         takeProfit: dir === "BUY" ? market.ask + slRange * 2 : market.bid - slRange * 2,
         tradingStyle: "DAYTRADING",
-        marketBias: ta.trend === "BULLISH" ? "RISK_ON" : "RISK_OFF",
         source: "GPT_SIMULATED",
       };
     } else {

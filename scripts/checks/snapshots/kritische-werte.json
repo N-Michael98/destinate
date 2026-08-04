@@ -1,6 +1,6 @@
 {
   "hinweis": "Von scripts/checks/snapshot.js erzeugt. Nicht von Hand ändern — mit --update neu schreiben.",
-  "erstelltAm": "2026-08-04T19:51:31.185Z",
+  "erstelltAm": "2026-08-04T20:06:06.476Z",
   "werte": {
     "epicMap": {
       "EURUSD": "EURUSD",
@@ -288,7 +288,18 @@
     "gptPrompt": {
       "regelZeilen": 19,
       "waitErwaehnungen": 16,
-      "pruefsumme": "a34e12a0a045fb1c"
+      "pruefsumme": "a34e12a0a045fb1c",
+      "antwortFelder": [
+        "epic",
+        "symbol",
+        "direction",
+        "confidence",
+        "reasoning",
+        "entry",
+        "stopLoss",
+        "takeProfit",
+        "tradingStyle"
+      ]
     },
     "filterReihenfolge": [
       "PRICE_STALE",
