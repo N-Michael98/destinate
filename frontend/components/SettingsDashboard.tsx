@@ -1084,6 +1084,42 @@ export default function SettingsDashboard() {
               </p>
             </div>
 
+            {/* ───── GEMESSENER KONSENS (04.08.) ───── */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
+                  Gemessener Konsens darf handeln
+                  <span style={{ marginLeft: "8px", fontSize: "9px", color: "#475569" }}>
+                    {(settings.botSettings.allowMeasuredConsensus ?? false) ? "— auch wenn GPT WAIT sagt" : "— GPT hat das letzte Wort"}
+                  </span>
+                </label>
+                <button
+                  onClick={() => updateBotField("allowMeasuredConsensus", !(settings.botSettings.allowMeasuredConsensus ?? false))}
+                  style={{
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: (settings.botSettings.allowMeasuredConsensus ?? false) ? "#10c96d" : "rgba(255,255,255,0.1)",
+                    position: "relative", transition: "background 0.15s",
+                  }}
+                >
+                  <div style={{
+                    width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: (settings.botSettings.allowMeasuredConsensus ?? false) ? "23px" : "3px",
+                    transition: "left 0.15s",
+                  }} />
+                </button>
+                <span style={{ fontSize: "12px", color: (settings.botSettings.allowMeasuredConsensus ?? false) ? "#10c96d" : "#64748b" }}>
+                  {(settings.botSettings.allowMeasuredConsensus ?? false) ? "ON" : "OFF"}
+                </span>
+              </div>
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                ON = ein Trade entsteht auch ohne GPT-Richtung, aber nur wenn ALLE vier zutreffen:
+                TA-Lib meldet STRONG_BUY/STRONG_SELL · Strategie-Konsens gleiche Richtung mit ≥70 ·
+                Entry-Quality gleiche Richtung mit Tier GOOD/EXCELLENT · GPT sagt WAIT statt der Gegenrichtung.
+                Alle sieben nachgelagerten Prüfungen gelten unverändert. OFF = GPT behält das letzte Wort (bisheriges Verhalten).
+              </p>
+            </div>
+
             {/* ───── WALK-FORWARD-ROBUSTHEIT (04.08.) ───── */}
             <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>

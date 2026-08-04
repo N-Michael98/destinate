@@ -84,6 +84,17 @@ export interface BotSettings {
    *  Lauf vom 03.08. lagen die zwischen 3 und 44 — das ist dünn. Vor dem
    *  Einschalten einen Lauf mit mehr Daten abwarten. */
   blockOverfitMarkets: boolean;
+  /** Gemessener Konsens darf handeln, wenn GPT "WAIT" sagt (04.08.).
+   *  Bis dahin war GPTs Urteil absolut: sagte es WAIT, war der Markt erledigt,
+   *  egal was TA-Lib, die sechzehn Strategien und die Entry-Quality messen.
+   *  true = ein Trade entsteht auch ohne GPT-Richtung, aber NUR wenn alle vier
+   *  zutreffen: TA-Lib meldet STRONG_BUY/STRONG_SELL, der Strategie-Konsens
+   *  zeigt dieselbe Richtung mit Confidence >= 70, die Entry-Quality zeigt
+   *  dieselbe Richtung mit Tier GOOD oder EXCELLENT, und GPT sagt WAIT statt
+   *  der Gegenrichtung (ein Widerspruch bleibt bindend). Alle sieben
+   *  nachgelagerten Tore gelten unverändert.
+   *  false = GPT behält das letzte Wort (Standard, unverändertes Verhalten). */
+  allowMeasuredConsensus: boolean;
 }
 
 export interface RiskSettings {

@@ -13,7 +13,9 @@ export interface GPTMarketAnalysis {
   stopLoss: number;
   takeProfit: number;
   tradingStyle: "SCALPING" | "DAYTRADING" | "SWING";
-  source: "GPT_REAL" | "GPT_SIMULATED";
+  /** MEASURED_CONSENSUS (04.08.): Richtung stammt nicht von GPT, sondern aus
+   *  der Einigkeit von TA-Lib, Strategie-Konsens und Entry-Quality. */
+  source: "GPT_REAL" | "GPT_SIMULATED" | "MEASURED_CONSENSUS";
 }
 
 export interface ClaudeRiskAssessment {
@@ -431,10 +433,14 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
   // abschaltbar war. Jetzt entscheidet die Einstellung botSettings
   // .useFullModelsForScan; Standard false = unverändertes bisheriges Verhalten.
   let sparen = true;
+  // Gemessener Konsens (04.08.) — standardmässig AUS, siehe Erklärung unten.
+  let messkonsensAktiv = false;
   try {
     const { getSettings } = await import("../settings/settings-store");
-    sparen = !(await getSettings()).botSettings?.useFullModelsForScan;
-  } catch { /* Einstellungen nicht lesbar → sparen wie bisher */ }
+    const st = await getSettings();
+    sparen = !st.botSettings?.useFullModelsForScan;
+    messkonsensAktiv = st.botSettings?.allowMeasuredConsensus === true;
+  } catch { /* Einstellungen nicht lesbar → sparen, kein Messkonsens */ }
   const scanGptModel = sparen ? (CHEAP_GPT[ai.openai.model] ?? ai.openai.model) : ai.openai.model;
   const scanClaudeModel = sparen ? (CHEAP_CLAUDE[ai.anthropic.model] ?? ai.anthropic.model) : ai.anthropic.model;
   if (scanGptModel !== ai.openai.model || scanClaudeModel !== ai.anthropic.model) {
@@ -730,6 +736,55 @@ each market's own data, never from habit or from these examples' direction:
       gpt = noSignal(market);
     }
 
+    // ── Gemessener Konsens (04.08.) ──────────────────────────────────────────
+    // Bis heute galt: sagt GPT "WAIT", ist der Markt erledigt — unabhängig
+    // davon, was TA-Lib, die sechzehn Strategien und die Entry-Quality messen.
+    // Diese Messwerte gingen zwar in den Prompt, waren dort aber blosser Text,
+    // den das Modell verwerfen durfte. Der einzige Code-Weg, der eine Richtung
+    // direkt aus TA-Lib ableitet (oben), setzt source="GPT_SIMULATED" und kann
+    // wegen isRealAnalysis nie zu einem Trade führen.
+    //
+    // Entscheidung des Nutzers 04.08.: die Messung darf übernehmen — aber nur
+    // bei Einigkeit ALLER drei Quellen und nur, wenn GPT nicht widerspricht.
+    // Standardmässig ausgeschaltet; alle sieben nachgelagerten Tore gelten
+    // unverändert weiter (echtes Chance-Risiko, Confidence-Schwelle, Meta-AI,
+    // Auto-Approve, Filterkette, Broker-Stops, Grössen-Klemme).
+    if (messkonsensAktiv && gpt.direction === "WAIT" && ta && ta.atr > 0) {
+      const sr = strategyData.get(market.symbol);
+      const eq = sr?.entry_quality;
+      const richtung: "BUY" | "SELL" | null =
+        ta.signal === "STRONG_BUY" ? "BUY" : ta.signal === "STRONG_SELL" ? "SELL" : null;
+      const alsStrategie = richtung === "BUY" ? "LONG" : "SHORT";
+
+      const einig =
+        richtung !== null &&                                   // 1. TA-Lib STRONG
+        sr?.consensus === alsStrategie && sr.consensus_conf >= 70 &&  // 2. Strategien einig
+        eq?.direction === alsStrategie &&                      // 3. Entry-Quality einig
+        (eq.tier === "GOOD" || eq.tier === "EXCELLENT");
+
+      if (einig && richtung) {
+        // Stop und Ziel aus dem ATR — dieselbe Berechnung wie im bestehenden
+        // TA-Lib-Rückfall. Abstand 1.5x ATR zum Stop, 3x zum Ziel: das ergibt
+        // ein Chance-Risiko von 2.0 und besteht die 1.5er-Hürde von selbst.
+        const slRange = ta.atr * 1.5;
+        // Confidence bewusst als schwächstes Glied, nicht als Mittelwert —
+        // sie muss die Schwellen des Nutzers aus eigener Kraft schaffen.
+        const conf = Math.round(Math.min(sr!.consensus_conf, eq!.score));
+        gpt = {
+          symbol: market.symbol, epic: market.epic,
+          direction: richtung,
+          confidence: conf,
+          reasoning: `Gemessener Konsens: TA-Lib ${ta.signal}, Strategien ${sr!.consensus} (${sr!.consensus_conf}), Entry-Quality ${eq!.tier} ${eq!.score} — GPT sagte WAIT`,
+          entry: richtung === "BUY" ? market.ask : market.bid,
+          stopLoss: richtung === "BUY" ? market.ask - slRange : market.bid + slRange,
+          takeProfit: richtung === "BUY" ? market.ask + slRange * 2 : market.bid - slRange * 2,
+          tradingStyle: "DAYTRADING",
+          source: "MEASURED_CONSENSUS",
+        };
+        console.log(`[ai-engine] 🧮 ${market.symbol}: gemessener Konsens ${richtung} conf=${conf} — TA=${ta.signal}, Strategien=${sr!.consensus}(${sr!.consensus_conf}), EQ=${eq!.tier}(${eq!.score})`);
+      }
+    }
+
     // ── Veto-Prüfung (Schritt 4, 26.07.) ────────────────────────────────────
     // Vorher mussten VIER Bedingungen gleichzeitig zutreffen (ta.trend UND
     // ta.signal UND Strategie-Konsens UND conf>=60) — das griff praktisch nie.
@@ -854,7 +909,8 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     // goSignal: NUR wenn GPT-Key aktiv + Python Backend geantwortet hat + echte Analyse
     // GPT_SIMULATED = TA-Lib Fallback ohne GPT → kein Trade
     // GPT_REAL ohne TA-Lib-Daten (pythonBackendOk=false) → kein Trade
-    const isRealAnalysis = gpt.source === "GPT_REAL" && hasGPT && pythonBackendOk;
+    const isRealAnalysis = (gpt.source === "GPT_REAL" || gpt.source === "MEASURED_CONSENSUS")
+      && hasGPT && pythonBackendOk;
 
     // Qualitäts-Gate: DIESES Symbol braucht vollständige Daten (TA-Lib UND
     // Strategie-Konsens). Fehlt eine Ebene (Timeout, yfinance-Lücke), wird

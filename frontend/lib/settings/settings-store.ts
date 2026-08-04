@@ -28,6 +28,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
     // Standard AUS: die Walk-Forward-Ergebnisse werden angezeigt, sperren aber
     // nichts. Bisheriges Verhalten bleibt damit unverändert.
     blockOverfitMarkets: false,
+    // Standard AUS: GPT behält das letzte Wort, bisheriges Verhalten unverändert.
+    allowMeasuredConsensus: false,
   },
   riskSettings: {
     maxRiskPerTradePct: 1.0,
