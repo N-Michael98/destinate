@@ -256,10 +256,41 @@ function noSignal(market: CapitalMarket): GPTMarketAnalysis {
   };
 }
 
-function simulateClaude(gpt: GPTMarketAnalysis): ClaudeRiskAssessment {
-  const rrRatio = gpt.direction !== "WAIT" && gpt.stopLoss > 0
-    ? Math.abs(gpt.takeProfit - gpt.entry) / Math.abs(gpt.entry - gpt.stopLoss)
-    : 0;
+/**
+ * Chance-Risiko-Verhältnis am TATSÄCHLICHEN Einstiegskurs.
+ *
+ * KORREKTUR 04.08.: Gerechnet wurde bisher mit `gpt.entry` — einer Zahl, die
+ * das Modell selbst nennt und die nichts kosten muss. Die Order läuft aber zum
+ * echten Marktpreis (orchestrator-agent.ts: ask bei BUY, bid bei SELL).
+ *
+ * Belegt am Fall EUR/JPY vom 04.08. 21:41: GPT meldete SELL mit Stop 182.5 und
+ * Ziel 180.5 und kam durch die Prüfung. Damit R/R >= 1.5 herauskommt, muss der
+ * genannte Einstieg bei mindestens 181.70 gelegen haben — der Markt stand aber
+ * bei 180.64. Am echten Einstieg ergibt sich ein Verhältnis von 0.075, also ein
+ * ZWANZIGFACH schlechteres als geprüft wurde. Ziel 0.15 Punkte entfernt, Stop
+ * 1.85 Punkte.
+ *
+ * Jetzt entscheidet der Kurs, zu dem wirklich gekauft oder verkauft wird.
+ */
+function realesChanceRisiko(
+  gpt: GPTMarketAnalysis,
+  markt: { bid: number; ask: number },
+): number {
+  if (gpt.direction === "WAIT" || !(gpt.stopLoss > 0) || !(gpt.takeProfit > 0)) return 0;
+  const einstieg = gpt.direction === "BUY" ? (markt.ask || markt.bid) : (markt.bid || markt.ask);
+  if (!(einstieg > 0)) return 0;
+  const risiko = Math.abs(einstieg - gpt.stopLoss);
+  const chance = Math.abs(gpt.takeProfit - einstieg);
+  if (!(risiko > 0)) return 0;
+  // Stop auf der falschen Seite des Einstiegs -> unbrauchbares Setup.
+  const stopFalsch = gpt.direction === "BUY" ? gpt.stopLoss >= einstieg : gpt.stopLoss <= einstieg;
+  const zielFalsch = gpt.direction === "BUY" ? gpt.takeProfit <= einstieg : gpt.takeProfit >= einstieg;
+  if (stopFalsch || zielFalsch) return 0;
+  return chance / risiko;
+}
+
+function simulateClaude(gpt: GPTMarketAnalysis, markt: { bid: number; ask: number }): ClaudeRiskAssessment {
+  const rrRatio = realesChanceRisiko(gpt, markt);
   const riskScore = Math.max(10, 80 - gpt.confidence);
   return {
     symbol: gpt.symbol,
@@ -571,6 +602,13 @@ CRITICAL RULES — violations = bad analysis:
   Prefer setups where entryQuality is GOOD or EXCELLENT and agrees with your
   direction, but do not require it.
 - Minimum R:R ratio 1.5 — if no clean setup → WAIT
+- ENTRY: the order fills at the CURRENT market price, not at a level you pick.
+  Set "entry" to the quoted ask for BUY and to the quoted bid for SELL — both
+  are given per market above. Never invent a better entry that the market has
+  not reached. Stop and target must make sense FROM THAT PRICE: measured from
+  it, the distance to the target must be at least 1.5× the distance to the stop.
+  If that is not achievable at the current price, answer WAIT — a setup that
+  only works at a price we cannot get is not a setup.
 - stopLoss MUST be below entry for BUY, above entry for SELL
 - Place stopLoss beyond the relevant S/R zone, not inside it
 - Max SL distances: GOLD=15pts, EURUSD=0.0040, NAS100=200pts, USOIL=2.0, BTCUSD=1000
@@ -759,7 +797,9 @@ each market's own data, never from habit or from these examples' direction:
     // Claude Risk Assessment
     let claude: ClaudeRiskAssessment;
     if (hasClaude && gpt.direction !== "WAIT" && gpt.stopLoss > 0) {
-      const rrRatio = Math.abs(gpt.takeProfit - gpt.entry) / Math.abs(gpt.entry - gpt.stopLoss);
+      // Am ECHTEN Einstiegskurs gerechnet, nicht an GPTs genannter Zahl —
+      // siehe realesChanceRisiko(). Claude bekommt denselben Wert zu sehen.
+      const rrRatio = realesChanceRisiko(gpt, market);
       const taContext = ta ? `\nTA-Lib confirms: trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} signal=${ta.signal}` : "";
       const prompt = `You are a professional risk manager for a forex/CFD trading firm.
 
@@ -767,7 +807,8 @@ Assess this trade setup:
 - Instrument: ${market.instrumentName} (${market.epic})
 - Direction: ${gpt.direction}
 - Current bid/ask: ${market.bid} / ${market.ask}
-- Entry: ${gpt.entry} | Stop Loss: ${gpt.stopLoss} | Take Profit: ${gpt.takeProfit}
+- Actual entry (this is where the order fills): ${gpt.direction === "BUY" ? market.ask : market.bid}
+- Stop Loss: ${gpt.stopLoss} | Take Profit: ${gpt.takeProfit}
 - GPT Confidence: ${gpt.confidence}%
 - R/R Ratio: ${rrRatio.toFixed(2)}
 - Trading Style: ${gpt.tradingStyle}${taContext}
@@ -797,7 +838,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         source: "CLAUDE_REAL",
       };
     } else {
-      claude = simulateClaude(gpt);
+      claude = simulateClaude(gpt, market);
     }
 
     // Entry-Engine Phase C: kleiner Bonus/Malus aus Entry Quality, wenn sie mit

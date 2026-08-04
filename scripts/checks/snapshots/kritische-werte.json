@@ -1,6 +1,6 @@
 {
   "hinweis": "Von scripts/checks/snapshot.js erzeugt. Nicht von Hand ändern — mit --update neu schreiben.",
-  "erstelltAm": "2026-08-04T19:31:07.931Z",
+  "erstelltAm": "2026-08-04T19:51:31.185Z",
   "werte": {
     "epicMap": {
       "EURUSD": "EURUSD",
@@ -286,9 +286,9 @@
       }
     },
     "gptPrompt": {
-      "regelZeilen": 18,
-      "waitErwaehnungen": 15,
-      "pruefsumme": "d0b7e4478bcd50a6"
+      "regelZeilen": 19,
+      "waitErwaehnungen": 16,
+      "pruefsumme": "a34e12a0a045fb1c"
     },
     "filterReihenfolge": [
       "PRICE_STALE",
