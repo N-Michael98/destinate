@@ -107,8 +107,14 @@ function vergleiche(alt, neu, pfad = "") {
 
 module.exports = function pruefe() {
   const aktuell = erfasse();
-  const anzahl = Object.values(aktuell).reduce(
-    (n, v) => n + (Array.isArray(v) ? v.length : typeof v === "object" ? Object.keys(v).length : 1), 0);
+  // Blattwerte zählen, nicht nur die oberste Ebene: aiGrenzen und
+  // exitSchwellen sind verschachtelt, eine flache Zählung meldete 246 statt
+  // 258 und stimmte damit nicht mit der eigenen Dokumentation überein.
+  const zaehle = (v) =>
+    Array.isArray(v) ? v.length
+    : v !== null && typeof v === "object" ? Object.values(v).reduce((n, x) => n + zaehle(x), 0)
+    : 1;
+  const anzahl = zaehle(aktuell);
 
   if (!fs.existsSync(DATEI)) {
     return { titel: "Snapshot kritischer Werte", funde: [`Kein Snapshot vorhanden — anlegen mit: node scripts/checks/snapshot.js --update`] };
