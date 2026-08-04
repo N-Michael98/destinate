@@ -26,6 +26,10 @@ const pruefer = [
   // 03.08. nachgezogen: beim ersten Bau des Netzes fehlten backend/ und
   // analysis-engine/ vollständig — zwei von drei Diensten waren ungeschützt.
   ["python-services", require("./python-services")],
+  // 03.08. ergänzt: die übrigen Prüfer sichern STRUKTUREN. Sie merken nicht,
+  // wenn jemand einen WERT ändert — vorgeführt an MAX_SIZE BTCUSD 0.05 → 5.0,
+  // dem hundertfachen Risiko, bei dem das ganze Netz grün blieb.
+  ["snapshot", require("./snapshot")],
 ];
 
 const nurDieser = process.argv[2];

@@ -90,3 +90,24 @@ Die Handelslogik liegt in **TypeScript**, nicht in Python. Es gibt kein
 Behauptungen über das Verhalten des Systems gehören mit Beleg versehen — Codestelle,
 Messung oder Logzeile. Das Ausbleiben eines Fehlers beweist nichts, solange ein
 anderer Fehler denselben Pfad abfangen kann.
+
+## Snapshot kritischer Werte
+
+Der neunte Prüfer hält 258 Zahlen und Texte fest, die über Risiko entscheiden:
+alle Grössen- und Stop-Tabellen, die Standardwerte der Einstellungen, die
+Exit-Schwellen und Haltedauern, die Klemmen des AI Managers, die Prüfsumme des
+GPT-Regelteils und die Reihenfolge der Filterkette.
+
+Die übrigen Prüfer sichern **Strukturen** — dass ein Eintrag existiert. Sie
+merken nicht, wenn jemand seinen **Wert** ändert. Vorgeführt: `MAX_SIZE` für
+BTCUSD von 0.05 auf 5.0, das hundertfache Risiko, und das ganze Netz blieb grün.
+
+Wird ein Wert bewusst geändert, den Snapshot mitziehen:
+
+```bash
+node scripts/checks/snapshot.js --update
+```
+
+Die Datei `scripts/checks/snapshots/kritische-werte.json` gehört ins Repository.
+Eine Änderung daran ist im Diff sichtbar und gehört im Commit begründet — genau
+das ist der Zweck. Nie von Hand bearbeiten.
