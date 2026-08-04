@@ -125,17 +125,45 @@ class TestTradeState:
 # 3. BREAKEVEN TESTS
 # ══════════════════════════════════════════════════════════════════════════════
 
+# KORREKTUR 03.08.: Diese Tests liefen bis heute NIE — pytest fehlte im venv,
+# obwohl es in requirements.txt steht. Drei von ihnen schlugen beim ersten Lauf
+# fehl, alle aus demselben Grund: on_price_update() gibt EINE Aktion je Aufruf
+# zurück, und der Teilgewinn steht in der Kette vor Breakeven und Trailing
+# (Zeit-Exit → Partial → Breakeven → Trailing). Bei 70 % Fortschritt ist die
+# Partial-Schwelle von 50 % ebenfalls erfüllt, also gewinnt sie und die
+# Funktion kehrt zurück, bevor Breakeven geprüft wird.
+#
+# Nachgewiesen, dass der CODE richtig ist: über vier Zyklen mit demselben Preis
+# ergibt sich PARTIAL_CLOSE → UPDATE_SL 1.1000 (Breakeven) → UPDATE_SL 1.1033
+# (Trailing) → nichts mehr. Es geht also nichts verloren, es verteilt sich nur
+# auf mehrere Durchläufe. Deshalb wurden die TESTS angepasst, nicht die
+# Handelslogik: wer Breakeven prüfen will, muss den Teilgewinn vorher als
+# erledigt markieren, sonst misst er die falsche Stufe.
 class TestBreakeven:
     @pytest.mark.asyncio
     async def test_breakeven_triggered_at_threshold(self):
         mgr = TradeLifecycleManager()
         t = make_trade(entry=1.1000, stop_loss=1.0970, take_profit=1.1060, confidence=80)
-        mgr.register_trade(t)
+        t.partial_done = True  # Teilgewinn bereits genommen — isoliert die BE-Stufe
+        mgr._trades["T001"] = t
         # BE bei 70% → 70% × 0.006 + 1.1000 = 1.1042
         be_price = 1.1000 + 0.006 * 0.70
         result = await mgr.on_price_update("T001", be_price + 0.0001)
         assert result["action"] == "UPDATE_SL"
         assert abs(result["new_sl"] - 1.1000) < 0.0001
+
+    @pytest.mark.asyncio
+    async def test_partial_kommt_vor_breakeven(self):
+        """Belegt die Reihenfolge ausdrücklich: bei 70 % ist auch die
+        Partial-Schwelle erfüllt, und der Teilgewinn kommt zuerst."""
+        mgr = TradeLifecycleManager()
+        t = make_trade(entry=1.1000, stop_loss=1.0970, take_profit=1.1060, confidence=80)
+        mgr.register_trade(t)
+        erst = await mgr.on_price_update("T001", 1.1000 + 0.006 * 0.75)
+        assert erst["action"] == "PARTIAL_CLOSE"
+        dann = await mgr.on_price_update("T001", 1.1000 + 0.006 * 0.75)
+        assert dann["action"] == "UPDATE_SL"
+        assert abs(dann["new_sl"] - 1.1000) < 0.0001
 
     @pytest.mark.asyncio
     async def test_breakeven_not_triggered_before_threshold(self):
@@ -165,7 +193,8 @@ class TestBreakeven:
             direction="SELL", entry=1.1000,
             stop_loss=1.1030, take_profit=1.0940, confidence=80
         )
-        mgr.register_trade(t)
+        t.partial_done = True  # siehe Hinweis oben: isoliert die BE-Stufe
+        mgr._trades["T001"] = t
         # SELL: Preis muss FALLEN → 70% von range = 1.1000 - 0.006*0.70 = 1.0958
         be_price = 1.1000 - 0.006 * 0.75
         result = await mgr.on_price_update("T001", be_price)
@@ -182,6 +211,7 @@ class TestTrailingStop:
         mgr = TradeLifecycleManager()
         t = make_trade(entry=1.1000, stop_loss=1.0970, take_profit=1.1060, confidence=80)
         t.be_set = True
+        t.partial_done = True  # sonst gewinnt der Teilgewinn, siehe Hinweis oben
         t.trail_sl = 1.1000
         t.current_sl = 1.1000
         mgr._trades["T001"] = t
@@ -195,6 +225,7 @@ class TestTrailingStop:
         mgr = TradeLifecycleManager()
         t = make_trade(entry=1.1000, stop_loss=1.0970, take_profit=1.1060, confidence=80)
         t.be_set = True
+        t.partial_done = True  # sonst gewinnt der Teilgewinn, siehe Hinweis oben
         t.trail_sl = 1.1000
         t.current_sl = 1.1000
         mgr._trades["T001"] = t

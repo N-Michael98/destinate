@@ -1,0 +1,17 @@
+# Python-Bytecode (Generalkontroll-Fund 03.08.)
+# 15 .pyc-Dateien waren eingecheckt, ohne dass eine .gitignore sie abdeckte.
+# Sie sind maschinen- und versionsgebunden (cpython-314), werden von Python
+# automatisch neu erzeugt und machten jeden `git status` unlesbar. Seit der
+# Regressionsprüfer sie bei jedem Lauf neu schreibt, wäre der Arbeitsbaum
+# ausserdem nach jeder Prüfung "verändert".
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtuelle Umgebungen
+venv/
+.venv/
+
+# Lokale Datenbanken
+*.sqlite
+*.sqlite3

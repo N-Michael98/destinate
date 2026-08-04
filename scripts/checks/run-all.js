@@ -23,6 +23,9 @@ const pruefer = [
   ["ai-clamp",       require("./ai-clamp")],
   ["safety-nets",    require("./safety-nets")],
   ["secrets",        require("./secrets")],
+  // 03.08. nachgezogen: beim ersten Bau des Netzes fehlten backend/ und
+  // analysis-engine/ vollständig — zwei von drei Diensten waren ungeschützt.
+  ["python-services", require("./python-services")],
 ];
 
 const nurDieser = process.argv[2];
