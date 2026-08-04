@@ -73,6 +73,17 @@ export interface BotSettings {
    *  true = das konfigurierte Modell wirklich verwenden. Kostet deutlich mehr
    *  (gpt-4o ≈ 6× mini), kann aber differenzierter entscheiden. */
   useFullModelsForScan: boolean;
+  /** Märkte meiden, die der Walk-Forward als überangepasst meldet (04.08.).
+   *  Der Walk-Forward optimiert auf einem Abschnitt der Historie und misst auf
+   *  dem folgenden, ungesehenen; bricht ein Markt dabei ein, war der gute Wert
+   *  blosse Kurvenanpassung. Bis zur Einführung dieser Einstellung wurden die
+   *  Ergebnisse NUR im Telegram-Bericht angezeigt und beeinflussten den Handel
+   *  nie. false = anzeigen, aber nicht sperren (Standard, unverändertes
+   *  Verhalten). true = betroffene Märkte überspringen.
+   *  ACHTUNG: die Aussagekraft hängt an der Zahl der Out-of-Sample-Trades. Im
+   *  Lauf vom 03.08. lagen die zwischen 3 und 44 — das ist dünn. Vor dem
+   *  Einschalten einen Lauf mit mehr Daten abwarten. */
+  blockOverfitMarkets: boolean;
 }
 
 export interface RiskSettings {

@@ -553,7 +553,32 @@ export async function runOrchestratorCycle(): Promise<void> {
   const threshold = dailyLimitReached ? Math.max(baseThreshold, bypassScore) : baseThreshold;
   const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
 
+  // Walk-Forward-Robustheit (04.08.). Bis heute landeten diese Ergebnisse NUR
+  // im Telegram-Bericht (periodic_report.py) — kein Handelspfad hat sie je
+  // gelesen. Jetzt sind sie hier sichtbar; gesperrt wird aber nur, wenn die
+  // Einstellung blockOverfitMarkets ausdrücklich eingeschaltet ist
+  // (Standard: aus). Ist der Lauf zu alt, fehlgeschlagen oder Redis nicht
+  // erreichbar, kommt null zurück und es ändert sich nichts.
+  let ueberangepasst: string[] = [];
+  try {
+    const { getWalkforwardRobustheit } = await import("../analysis-engine/insights-reader");
+    const wf = await getWalkforwardRobustheit();
+    if (wf) {
+      const sperren = settings.botSettings.blockOverfitMarkets === true;
+      console.log(
+        `[orchestrator] 🔬 Walk-Forward (${wf.alterTage} Tage alt): robust ${wf.robust.length} [${wf.robust.join(", ") || "-"}] | ` +
+        `Überanpassungsverdacht ${wf.ueberangepasst.length} [${wf.ueberangepasst.join(", ") || "-"}] — ` +
+        `${sperren ? "werden GESPERRT" : "nur Hinweis, nicht gesperrt"}`
+      );
+      if (sperren) ueberangepasst = wf.ueberangepasst;
+    }
+  } catch { /* non-fatal — ohne Robustheitsdaten läuft alles wie bisher */ }
+
   const candidates = analysisResult.approved.filter(o => {
+    if (ueberangepasst.includes(o.symbol)) {
+      console.log(`[orchestrator] 🔬 ${o.symbol} übersprungen — Walk-Forward meldet Überanpassung`);
+      return false;
+    }
     if (o.gpt.confidence < threshold) return false;
     const s = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
     if ((global.__daily_trades__?.byStyle[s] ?? 0) >= ((styleLimit as Record<string, number>)[s] ?? 999)) return false;

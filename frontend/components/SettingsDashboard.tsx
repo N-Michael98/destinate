@@ -1084,6 +1084,42 @@ export default function SettingsDashboard() {
               </p>
             </div>
 
+            {/* ───── WALK-FORWARD-ROBUSTHEIT (04.08.) ───── */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
+                  Überangepasste Märkte sperren
+                  <span style={{ marginLeft: "8px", fontSize: "9px", color: "#475569" }}>
+                    {(settings.botSettings.blockOverfitMarkets ?? false) ? "— werden übersprungen" : "— nur Hinweis im Log"}
+                  </span>
+                </label>
+                <button
+                  onClick={() => updateBotField("blockOverfitMarkets", !(settings.botSettings.blockOverfitMarkets ?? false))}
+                  style={{
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: (settings.botSettings.blockOverfitMarkets ?? false) ? "#10c96d" : "rgba(255,255,255,0.1)",
+                    position: "relative", transition: "background 0.15s",
+                  }}
+                >
+                  <div style={{
+                    width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: (settings.botSettings.blockOverfitMarkets ?? false) ? "23px" : "3px",
+                    transition: "left 0.15s",
+                  }} />
+                </button>
+                <span style={{ fontSize: "12px", color: (settings.botSettings.blockOverfitMarkets ?? false) ? "#10c96d" : "#64748b" }}>
+                  {(settings.botSettings.blockOverfitMarkets ?? false) ? "ON" : "OFF"}
+                </span>
+              </div>
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                Der Walk-Forward optimiert auf einem Teil der Historie und misst auf dem folgenden, ungesehenen.
+                Bricht ein Markt dabei ein, war der gute Wert blosse Kurvenanpassung.
+                OFF = Ergebnis wird nur im Log angezeigt (bisheriges Verhalten). ON = betroffene Märkte werden übersprungen.
+                Hinweis: die Aussagekraft hängt an der Zahl der Out-of-Sample-Trades — im Lauf vom 03.08. lagen die zwischen 3 und 44.
+              </p>
+            </div>
+
             {/* ───── SCAN-MODELLE (03.08.) ───── */}
             <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>

@@ -25,6 +25,9 @@ const DEFAULT_SETTINGS: SystemSettings = {
     // Kosten-Guard bleibt standardmässig AN (false) — das ist exakt das
     // bisherige Verhalten. Es ändert sich nichts, bis der User umschaltet.
     useFullModelsForScan: false,
+    // Standard AUS: die Walk-Forward-Ergebnisse werden angezeigt, sperren aber
+    // nichts. Bisheriges Verhalten bleibt damit unverändert.
+    blockOverfitMarkets: false,
   },
   riskSettings: {
     maxRiskPerTradePct: 1.0,
