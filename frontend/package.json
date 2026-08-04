@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check": "node ../scripts/checks/run-all.js",
+    "verify": "tsc --noEmit && node ../scripts/checks/run-all.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
