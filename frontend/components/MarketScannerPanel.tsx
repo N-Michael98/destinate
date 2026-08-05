@@ -378,7 +378,7 @@ export default function MarketScannerPanel() {
               {/* Style + source badges */}
               <div style={{ display: "flex", gap: "4px", marginBottom: "8px" }}>
                 <span style={{ fontSize: "9px", padding: "1px 5px", borderRadius: "3px", background: "rgba(99,102,241,0.15)", color: "#a5b4fc" }}>{opp.gpt.tradingStyle}</span>
-                <span style={{ fontSize: "9px", padding: "1px 5px", borderRadius: "3px", background: opp.gpt.source === "GPT_REAL" ? "rgba(16,185,129,0.15)" : "rgba(100,116,139,0.1)", color: opp.gpt.source === "GPT_REAL" ? "#10b981" : "#475569" }}>{opp.gpt.source}</span>
+                <span style={{ fontSize: "9px", padding: "1px 5px", borderRadius: "3px", background: opp.gpt.source === "GPT_REAL" ? "rgba(16,185,129,0.15)" : opp.gpt.source === "MEASURED_CONSENSUS" ? "rgba(59,130,246,0.15)" : "rgba(100,116,139,0.1)", color: opp.gpt.source === "GPT_REAL" ? "#10b981" : opp.gpt.source === "MEASURED_CONSENSUS" ? "#3b82f6" : "#475569" }}>{opp.gpt.source}</span>
                 <span style={{ fontSize: "9px", padding: "1px 5px", borderRadius: "3px", background: opp.claude.source === "CLAUDE_REAL" ? "rgba(168,85,247,0.15)" : "rgba(100,116,139,0.1)", color: opp.claude.source === "CLAUDE_REAL" ? "#a855f7" : "#475569" }}>{opp.claude.source}</span>
               </div>
 

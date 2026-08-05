@@ -12,6 +12,11 @@ __pycache__/
 venv/
 .venv/
 
-# Lokale Datenbanken
+# Lokale Datenbanken (Generalkontroll-Fund 05.08.)
+# *.db fehlte: frontend/dev.db lag seit Commit 288e235 EINGECHECKT im Repo —
+# 24 KB SQLite mit vier Trade- und zwei PaperOrder-Zeilen. Keine Zugangsdaten,
+# aber eine Datenbank gehoert nicht ins Repository. Die frueher ergaenzte
+# Regel in frontend/.gitignore galt nur fuer prisma/dev.db und griff hier nicht.
+*.db
 *.sqlite
 *.sqlite3

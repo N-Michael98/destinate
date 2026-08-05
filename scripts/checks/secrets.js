@@ -46,14 +46,17 @@ module.exports = function pruefe() {
     for (const f of verfolgt) funde.push(`${f} ist im Repository eingecheckt`);
   } catch { funde.push("git ls-files nicht ausführbar — .env-Prüfung übersprungen"); }
 
-  // Lokale Datenbank darf nicht eincheckbar sein.
-  if (exists("frontend/prisma/dev.db")) {
-    try {
-      execSync("git check-ignore -q frontend/prisma/dev.db", { cwd: require("./_lib").ROOT });
-    } catch {
-      funde.push("frontend/prisma/dev.db liegt im Baum und ist NICHT in .gitignore");
-    }
-  }
+  // Datenbanken und Archive duerfen nicht im Repository liegen.
+  // ERWEITERT 05.08.: geprueft wurde nur frontend/prisma/dev.db. Dabei lag
+  // frontend/dev.db seit Commit 288e235 EINGECHECKT im Repo — eine zweite
+  // Datenbank an anderer Stelle, die genau deshalb durchgerutscht ist. Jetzt
+  // wird nach Endung gesucht statt nach einem festen Pfad.
+  try {
+    const verfolgt = execSync("git ls-files", { cwd: require("./_lib").ROOT, encoding: "utf8" })
+      .split("\n")
+      .filter((f) => /\.(db|sqlite|sqlite3|bak|dump|pem|p12|pfx)$/i.test(f.trim()));
+    for (const f of verfolgt) funde.push(`${f} ist im Repository eingecheckt (Datenbank/Zertifikat gehoert nicht dorthin)`);
+  } catch { funde.push("git ls-files nicht ausfuehrbar — Datenbank-Pruefung uebersprungen"); }
 
   return { titel: `Geheimnisse (${dateien.length} Dateien)`, funde };
 };
