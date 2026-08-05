@@ -691,6 +691,10 @@ each market's own data, never from habit or from these examples' direction:
   const opportunities: ScannerOpportunity[] = [];
   // Zähler für den Signal-Trichter — siehe Erklärung bei der Auswertung unten.
   const trichter = { gesamt: 0, echteAnalyse: 0, volleDaten: 0, richtung: 0, confidence: 0, slTp: 0, go: 0 };
+  // Trichter des gemessenen Konsenses (05.08.): Er löste im ersten Betriebstag
+  // kein einziges Mal aus, und an welcher der vier Bedingungen es scheitert,
+  // war nicht erkennbar. Rein zählend, beeinflusst nichts.
+  const konsens = { gptWait: 0, taStark: 0, strategienEinig: 0, qualitaetEinig: 0 };
 
   for (const market of validMarkets) {
     const ta = taData.get(market.symbol);
@@ -749,12 +753,18 @@ each market's own data, never from habit or from these examples' direction:
     // Standardmässig ausgeschaltet; alle sieben nachgelagerten Tore gelten
     // unverändert weiter (echtes Chance-Risiko, Confidence-Schwelle, Meta-AI,
     // Auto-Approve, Filterkette, Broker-Stops, Grössen-Klemme).
-    if (messkonsensAktiv && gpt.direction === "WAIT" && ta && ta.atr > 0) {
+    if (gpt.direction === "WAIT" && ta && ta.atr > 0) {
       const sr = strategyData.get(market.symbol);
       const eq = sr?.entry_quality;
       const richtung: "BUY" | "SELL" | null =
         ta.signal === "STRONG_BUY" ? "BUY" : ta.signal === "STRONG_SELL" ? "SELL" : null;
       const alsStrategie = richtung === "BUY" ? "LONG" : "SHORT";
+
+      // Mitzählen, unabhängig davon ob die Einstellung an ist — sonst weiss
+      // niemand, ob sich das Einschalten überhaupt lohnen würde.
+      konsens.gptWait++;
+      if (richtung !== null) konsens.taStark++;
+      if (richtung !== null && sr?.consensus === alsStrategie && sr.consensus_conf >= 70) konsens.strategienEinig++;
 
       const einig =
         richtung !== null &&                                   // 1. TA-Lib STRONG
@@ -762,7 +772,8 @@ each market's own data, never from habit or from these examples' direction:
         eq?.direction === alsStrategie &&                      // 3. Entry-Quality einig
         (eq.tier === "GOOD" || eq.tier === "EXCELLENT");
 
-      if (einig && richtung) {
+      if (einig) konsens.qualitaetEinig++;
+      if (messkonsensAktiv && einig && richtung) {
         // Stop und Ziel aus dem ATR — dieselbe Berechnung wie im bestehenden
         // TA-Lib-Rückfall. Abstand 1.5x ATR zum Stop, 3x zum Ziel: das ergibt
         // ein Chance-Risiko von 2.0 und besteht die 1.5er-Hürde von selbst.
@@ -981,6 +992,11 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     ` → volle Daten ${trichter.volleDaten} → Richtung≠WAIT ${trichter.richtung}` +
     ` → Confidence≥70 ${trichter.confidence} → SL/TP gesetzt ${trichter.slTp}` +
     ` → Risiko-Freigabe (R/R≥1.5) ${trichter.go} = GO`
+  );
+  console.log(
+    `[ai-engine] 🧮 Konsens-Trichter: ${konsens.gptWait} mit GPT-WAIT → TA-Lib STRONG ${konsens.taStark}` +
+    ` → Strategien einig≥70 ${konsens.strategienEinig} → Entry-Quality GOOD/EXCELLENT ${konsens.qualitaetEinig}` +
+    ` = handelbar (Regler ist ${messkonsensAktiv ? "AN" : "AUS"})`
   );
 
   return opportunities
