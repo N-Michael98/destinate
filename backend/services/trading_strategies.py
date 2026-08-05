@@ -67,6 +67,43 @@ def _atr(df: pd.DataFrame, period: int = 14) -> float:
     return val or float(df["close"].iloc[-1]) * 0.005
 
 
+def _swing_points(df: pd.DataFrame, links: int = 3, rechts: int = 3) -> tuple[Optional[float], Optional[float]]:
+    """Letztes BESTÄTIGTES Swing-Tief und Swing-Hoch.
+
+    Ein Swing-Tief ist eine Kerze, deren Low niedriger ist als das aller
+    `links` Kerzen davor UND aller `rechts` Kerzen danach. Erst dadurch ist es
+    bestätigt — die letzten `rechts` Kerzen können deshalb naturgemäss noch
+    kein Swing sein. Das ist gewollt: ein unbestätigter Wendepunkt taugt nicht
+    als Stop-Grundlage.
+
+    Eingeführt 05.08. für den Struktur-Stop. Bisher kamen Stops ausschliesslich
+    aus GPT (frei genannte Zahl) oder aus ATR x 1.5 (rein statistisch). Ein Stop
+    unterhalb des letzten Swing-Tiefs ist dagegen am Kursverlauf begründet.
+
+    Bewusst NICHT wiederverwendet wurde die Swing-Suche in
+    strategy_ict_smart_money(): die prüft mit h[i-3:i+2] drei Kerzen davor, aber
+    nur EINE danach. Fuer ein BOS-Signal ist das vertretbar, fuer einen Stop
+    waere es zu locker — ein einziger Ausschlag wuerde genuegen.
+
+    Rueckgabe: (letztes Swing-Tief, letztes Swing-Hoch) — je None, wenn keines
+    gefunden wurde.
+    """
+    if df is None or df.empty or len(df) < links + rechts + 2:
+        return None, None
+    h = df["high"].values
+    l = df["low"].values
+    tief = hoch = None
+    # Von hinten nach vorne: das ZULETZT bestaetigte Swing zuerst finden.
+    for i in range(len(l) - rechts - 1, links - 1, -1):
+        if tief is None and l[i] == min(l[i - links:i + rechts + 1]):
+            tief = float(l[i])
+        if hoch is None and h[i] == max(h[i - links:i + rechts + 1]):
+            hoch = float(h[i])
+        if tief is not None and hoch is not None:
+            break
+    return tief, hoch
+
+
 def _neutral(reason: str) -> dict:
     return {"signal": "NEUTRAL", "confidence": 0, "entry": 0, "sl": 0, "tp": 0, "reasoning": reason}
 
@@ -394,6 +431,11 @@ def strategy_support_resistance(symbol: str) -> dict:
 
     # Schritt 2 (26.07.): S/R-Levels EXPLIZIT mitgeben (nicht nur im Text) —
     # damit der Scanner/GPT die konkreten Zonen und den Abstand kennt.
+    # Struktur-Punkte (05.08.): support/resistance oben sind Hoch und Tief der
+    # letzten 50 Kerzen, also die SPANNE — nicht der letzte Wendepunkt. Fuer
+    # einen Stop "unter dem letzten Tief" braucht es echte Swing-Punkte.
+    swing_low, swing_high = _swing_points(df)
+
     levels = {
         "support": round(float(support_zone), 6),
         "resistance": round(float(resistance_zone), 6),
@@ -403,6 +445,13 @@ def strategy_support_resistance(symbol: str) -> dict:
         # Zonen-Richtung, erst Breakout/Rejection + Retest abwarten)
         "dist_to_resistance_atr": round((resistance_zone - price) / atr, 2) if atr > 0 else None,
         "dist_to_support_atr": round((price - support_zone) / atr, 2) if atr > 0 else None,
+        # Letzter BESTAETIGTER Wendepunkt (3 Kerzen links und rechts tiefer bzw.
+        # hoeher). None, wenn keiner gefunden wurde — der Aufrufer faellt dann
+        # auf die bisherige ATR-Rechnung zurueck.
+        "swing_low": round(swing_low, 6) if swing_low is not None else None,
+        "swing_high": round(swing_high, 6) if swing_high is not None else None,
+        "swing_low_dist_atr": round((price - swing_low) / atr, 2) if swing_low is not None and atr > 0 else None,
+        "swing_high_dist_atr": round((swing_high - price) / atr, 2) if swing_high is not None and atr > 0 else None,
     }
 
     if near_support and rsi and rsi < 45:
@@ -753,7 +802,11 @@ def strategy_ict_smart_money(symbol: str) -> dict:
     price = float(c[-1])
 
     # ── Break of Structure ────────────────────────────────────────────────
-    # Swing High: Kerze deren High höher als 3 Kerzen davor + danach
+    # Swing High: Kerze deren High hoeher ist als das der 3 Kerzen davor und
+    # der EINEN danach (h[i-3:i+2]). Bewusst asymmetrisch und so belassen —
+    # fuer ein BOS-Signal reicht diese lockere Bestaetigung. Der Kommentar
+    # behauptete frueher "3 davor + danach", was nicht stimmte (Fund 05.08.).
+    # Fuer Stops wird stattdessen _swing_points() benutzt, das beidseitig prueft.
     swing_highs = []
     swing_lows  = []
     for i in range(3, len(h) - 1):

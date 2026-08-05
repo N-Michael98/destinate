@@ -134,6 +134,12 @@ interface StrategyResult {
     atr: number;
     dist_to_resistance_atr: number | null;
     dist_to_support_atr: number | null;
+    /** Letzter BESTÄTIGTER Wendepunkt (05.08.) — Grundlage für den
+     *  Struktur-Stop. null, wenn keiner gefunden wurde. */
+    swing_low?: number | null;
+    swing_high?: number | null;
+    swing_low_dist_atr?: number | null;
+    swing_high_dist_atr?: number | null;
   } | null;
   // Entry-Engine Phase B (26.07.): aggregierter Einstiegs-Qualitätsscore
   entry_quality?: {
@@ -505,6 +511,12 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
       const srZones = lv
         ? ` | SR: support=${lv.support} resistance=${lv.resistance} distToRes=${lv.dist_to_resistance_atr ?? "?"}ATR distToSup=${lv.dist_to_support_atr ?? "?"}ATR`
         : "";
+      // Struktur-Punkte (05.08.): support/resistance oben sind Hoch und Tief
+      // der Spanne. swingLow/swingHigh sind der LETZTE bestaetigte Wendepunkt —
+      // die uebliche Grundlage fuer einen Stop ("unter dem letzten Tief").
+      const swingInfo = lv && (lv.swing_low != null || lv.swing_high != null)
+        ? ` | swingLow=${lv.swing_low ?? "?"}(${lv.swing_low_dist_atr ?? "?"}ATR) swingHigh=${lv.swing_high ?? "?"}(${lv.swing_high_dist_atr ?? "?"}ATR)`
+        : "";
       // Phase C (26.07.): Entry Quality Score in den Prompt
       const eq = sr?.entry_quality;
       const eqInfo = eq && eq.tier !== "NO_SIGNAL"
@@ -517,7 +529,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
             (sr.active ?? []).slice(0, 6).map(a => `${a.strategy}=${a.signal}(${a.confidence})`).join(", ")
           }`
         : sr ? ` | strategies=NEUTRAL(${sr.neutral_votes}/${sr.total_strategies} neutral)` : "";
-      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${regimeText}${srZones}${eqInfo}${mtfInfo}${stInfo}`;
+      return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${regimeText}${srZones}${swingInfo}${eqInfo}${mtfInfo}${stInfo}`;
     }).join("\n");
 
     const stratPerfLine = stratPerfSummary ? `\nSystem performance context: ${stratPerfSummary}` : "";
@@ -613,6 +625,13 @@ CRITICAL RULES — violations = bad analysis:
   it, the distance to the target must be at least 1.5× the distance to the stop.
   If that is not achievable at the current price, answer WAIT — a setup that
   only works at a price we cannot get is not a setup.
+- STOP PLACEMENT: swingLow and swingHigh are the last CONFIRMED turning points
+  in the price (three candles lower/higher on both sides). Place the stop just
+  BEYOND them, not inside: for BUY slightly below swingLow, for SELL slightly
+  above swingHigh. A stop inside the recent range gets hit by normal noise. If
+  no swing is given, or it sits further than 3 ATR away, fall back to roughly
+  1.5 ATR from entry. Never place the stop CLOSER than 1.5 ATR to entry, even
+  if the swing is nearer — a tighter stop is not rewarded and risks rejection.
 - stopLoss MUST be below entry for BUY, above entry for SELL
 - Place stopLoss beyond the relevant S/R zone, not inside it
 - Max SL distances: GOLD=15pts, EURUSD=0.0040, NAS100=200pts, USOIL=2.0, BTCUSD=1000
@@ -774,10 +793,64 @@ each market's own data, never from habit or from these examples' direction:
 
       if (einig) konsens.qualitaetEinig++;
       if (messkonsensAktiv && einig && richtung) {
-        // Stop und Ziel aus dem ATR — dieselbe Berechnung wie im bestehenden
-        // TA-Lib-Rückfall. Abstand 1.5x ATR zum Stop, 3x zum Ziel: das ergibt
-        // ein Chance-Risiko von 2.0 und besteht die 1.5er-Hürde von selbst.
-        const slRange = ta.atr * 1.5;
+        // Stop und Ziel. Grundabstand 1.5x ATR, Ziel 2x davon: Chance-Risiko
+        // 2.0, besteht die 1.5er-Hürde von selbst.
+        //
+        // STRUKTUR-STOP (05.08.): liegt ein bestätigter Wendepunkt vor, wird
+        // der Stop dahinter gelegt statt rein statistisch aus ATR. Begründung:
+        // ein Stop bei "1.5 ATR" steht an einer Stelle, die im Kursverlauf
+        // nichts bedeutet — normale Schwankung holt ihn ab. Der letzte Swing
+        // ist dagegen der Punkt, ab dem die Annahme des Trades widerlegt ist:
+        // fällt der Kurs unter das letzte bestätigte Tief, war die
+        // Aufwärtsstruktur falsch.
+        //
+        // Puffer 0.25 ATR, damit der Stop HINTER dem Wendepunkt liegt und
+        // nicht genau darauf — dort liegen die Stops aller anderen.
+        //
+        // Die Struktur darf den Stop nur WEITER machen, nie enger (Math.max).
+        // Grund: genau dort liegt der Nutzen. Ist der Wendepunkt weiter weg als
+        // 1.5 ATR, sitzt der ATR-Stop INNERHALB der Struktur und wird von
+        // normaler Schwankung abgeholt — das ist der Fehler, den der
+        // Struktur-Stop behebt. Ist der Wendepunkt näher, liegt der ATR-Stop
+        // ohnehin schon dahinter; ihn dann zu verengen brächte nichts und wäre
+        // riskant: für den Mindest-Stop-Abstand des Brokers gibt es im ganzen
+        // System keinen Riegel (geprüft 05.08. in capital-com-execution.ts und
+        // -client.ts — der Wert geht ungeprüft als stopLevel raus). Der Broker
+        // liefert ihn zwar in dealingRules.minStopOrProfitDistance mit, die
+        // Antwort wird aber nur auf snapshot ausgewertet. So herum gebaut,
+        // entsteht die Frage gar nicht erst: der Abstand wird nie kleiner als
+        // das, was dieser Pfad vorher schon erzeugt hat.
+        //
+        // Obergrenze 3.0 ATR bleibt: ein weit entfernter Wendepunkt ergäbe ein
+        // Risiko, das die Positionsgrösse unbrauchbar klein macht. Darüber
+        // bleibt es beim ATR-Abstand. Der Wert wirkt NUR auf den Abstand — die
+        // Grössen-Klemme (MAX_SIZE) bleibt unberührt.
+        const atrRange = ta.atr * 1.5;
+        const lvKons = sr!.levels;
+        const strukturPunkt = richtung === "BUY" ? lvKons?.swing_low : lvKons?.swing_high;
+        // Vom ECHTEN Einstiegskurs gerechnet, nicht vom Mittelkurs — sonst
+        // stimmt der Abstand um den halben Spread nicht (gleicher Fehler, den
+        // realesChanceRisiko() behoben hat).
+        const einstieg = richtung === "BUY" ? market.ask : market.bid;
+        let slRange = atrRange;
+        let stopHerkunft = "ATR x1.5";
+        if (strukturPunkt != null && ta.atr > 0) {
+          // Puffer 0.25 ATR, damit der Stop HINTER dem Wendepunkt liegt und
+          // nicht genau darauf — dort liegen die Stops aller anderen.
+          const roh = richtung === "BUY" ? einstieg - strukturPunkt : strukturPunkt - einstieg;
+          const mitPuffer = roh + ta.atr * 0.25;
+          const inAtr = mitPuffer / ta.atr;
+          if (roh > 0 && inAtr <= 3.0 && mitPuffer > atrRange) {
+            slRange = mitPuffer;
+            stopHerkunft = `Struktur @${strukturPunkt} (${inAtr.toFixed(2)} ATR)`;
+          } else if (roh > 0 && inAtr > 3.0) {
+            stopHerkunft = `ATR x1.5 (Struktur @${strukturPunkt} = ${inAtr.toFixed(2)} ATR zu weit)`;
+          } else if (roh > 0) {
+            stopHerkunft = `ATR x1.5 (liegt bereits hinter Struktur @${strukturPunkt})`;
+          } else {
+            stopHerkunft = `ATR x1.5 (Struktur @${strukturPunkt} auf falscher Seite)`;
+          }
+        }
         // Confidence bewusst als schwächstes Glied, nicht als Mittelwert —
         // sie muss die Schwellen des Nutzers aus eigener Kraft schaffen.
         const conf = Math.round(Math.min(sr!.consensus_conf, eq!.score));
@@ -785,14 +858,14 @@ each market's own data, never from habit or from these examples' direction:
           symbol: market.symbol, epic: market.epic,
           direction: richtung,
           confidence: conf,
-          reasoning: `Gemessener Konsens: TA-Lib ${ta.signal}, Strategien ${sr!.consensus} (${sr!.consensus_conf}), Entry-Quality ${eq!.tier} ${eq!.score} — GPT sagte WAIT`,
-          entry: richtung === "BUY" ? market.ask : market.bid,
-          stopLoss: richtung === "BUY" ? market.ask - slRange : market.bid + slRange,
-          takeProfit: richtung === "BUY" ? market.ask + slRange * 2 : market.bid - slRange * 2,
+          reasoning: `Gemessener Konsens: TA-Lib ${ta.signal}, Strategien ${sr!.consensus} (${sr!.consensus_conf}), Entry-Quality ${eq!.tier} ${eq!.score} — GPT sagte WAIT | Stop: ${stopHerkunft}`,
+          entry: einstieg,
+          stopLoss: richtung === "BUY" ? einstieg - slRange : einstieg + slRange,
+          takeProfit: richtung === "BUY" ? einstieg + slRange * 2 : einstieg - slRange * 2,
           tradingStyle: "DAYTRADING",
           source: "MEASURED_CONSENSUS",
         };
-        console.log(`[ai-engine] 🧮 ${market.symbol}: gemessener Konsens ${richtung} conf=${conf} — TA=${ta.signal}, Strategien=${sr!.consensus}(${sr!.consensus_conf}), EQ=${eq!.tier}(${eq!.score})`);
+        console.log(`[ai-engine] 🧮 ${market.symbol}: gemessener Konsens ${richtung} conf=${conf} — TA=${ta.signal}, Strategien=${sr!.consensus}(${sr!.consensus_conf}), EQ=${eq!.tier}(${eq!.score}), Stop=${stopHerkunft}`);
       }
     }
 

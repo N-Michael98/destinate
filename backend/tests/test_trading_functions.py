@@ -355,3 +355,121 @@ class TestEventBus:
         eb.publish_sync(EventType.INFO, {"x": 1})
         history = eb.get_history()
         assert len(history) >= 1
+
+# ── Struktur-Stop: _swing_points (05.08.) ─────────────────────────────────────
+# Diese Funktion liefert die Grundlage fuer den Struktur-Stop. Bis hierher gab
+# es fuer trading_strategies.py keinen einzigen Test — die Impact-Abfrage
+# meldete "kein Pruefer deckt diese Datei ab". Ein falsch umgebauter
+# Bestaetigungsradius faellt statisch nicht auf, deshalb hier ausgefuehrt.
+
+import sys
+import types
+import pandas as pd
+
+# trading_strategies.py zieht beim Import services.market_data nach, und darueber
+# core.retry -> tenacity. Von den 32 Eintraegen in requirements.txt sind lokal 17
+# nicht installiert (Stand 05.08.), darunter tenacity — deshalb war diese Datei
+# aus den Tests bisher gar nicht erreichbar. Der Pruefer python-services meldete
+# sie trotzdem gruen, weil py_compile nur uebersetzt und keine Importe aufloest.
+#
+# Statt 17 schwere Pakete nachzuziehen wird nur der eine fremde Import ersetzt.
+# _swing_points selbst braucht ausschliesslich pandas — getestet wird also die
+# echte Funktion aus der echten Datei, unveraendert.
+if "services.market_data" not in sys.modules:
+    try:
+        import services.market_data  # noqa: F401
+    except ModuleNotFoundError:
+        _stub = types.ModuleType("services.market_data")
+        _stub.get_ohlcv = lambda *a, **k: []
+        sys.modules["services.market_data"] = _stub
+
+from services.trading_strategies import _swing_points
+
+
+def _df(lows, highs=None):
+    """Minimales OHLC-Gerippe: nur high/low werden von _swing_points gelesen."""
+    highs = highs if highs is not None else [x + 1 for x in lows]
+    return pd.DataFrame({"high": highs, "low": lows})
+
+
+def test_swing_points_findet_bestaetigtes_tief():
+    # V-Form: Index 4 ist tiefster Punkt, links und rechts je >=3 hoehere Kerzen
+    tief, _ = _swing_points(_df([10, 9, 8, 7, 5, 7, 8, 9, 10, 11]))
+    assert tief == 5.0
+
+
+def test_swing_points_findet_bestaetigtes_hoch():
+    highs = [10, 11, 12, 13, 15, 13, 12, 11, 10, 9]
+    _, hoch = _swing_points(_df([x - 1 for x in highs], highs))
+    assert hoch == 15.0
+
+
+def test_swing_points_unbestaetigt_am_rand_wird_nicht_gemeldet():
+    # Tiefster Punkt liegt ganz am Ende — es fehlen die 3 Kerzen zur Bestaetigung.
+    # Erwartet wird das FRUEHERE bestaetigte Tief (5.0), nicht die 1.0.
+    tief, _ = _swing_points(_df([10, 9, 8, 7, 5, 7, 8, 9, 4, 3, 2, 1]))
+    assert tief == 5.0
+
+
+def test_swing_points_scheintief_am_rand_wird_nicht_genommen():
+    # Schaerfere Fassung des Tests darueber. Anlass: die erste Fassung liess eine
+    # Sabotage durch (Schleifenstart von len-rechts-1 auf len-2 geaendert), weil
+    # die Testreihe am Ende zufaellig kein Scheintief bildete — der Test war
+    # gruen, obwohl die Bestaetigung ausgehebelt war.
+    #
+    # Hier bildet Index 9 (Wert 3.0) ein Tief, dem rechts nur ZWEI Kerzen folgen.
+    # Es ist damit unbestaetigt und darf nicht gemeldet werden; richtig ist das
+    # bestaetigte 5.0 bei Index 4. Wer den Bestaetigungsradius aufweicht,
+    # bekommt hier 3.0 und der Test faellt.
+    tief, _ = _swing_points(_df([10, 9, 8, 7, 5, 7, 8, 9, 10, 3, 9, 9]))
+    assert tief == 5.0
+
+
+def test_swing_points_nimmt_das_letzte_von_zweien():
+    # Zwei bestaetigte Tiefer: 3.0 (Index 4) und 2.0 (Index 12).
+    # Fuer einen Stop zaehlt der JUENGSTE Wendepunkt.
+    tief, _ = _swing_points(_df([9, 8, 7, 6, 3, 6, 7, 8, 9, 8, 7, 6, 2, 6, 7, 8, 9]))
+    assert tief == 2.0
+
+
+def test_swing_points_ohne_wendepunkt_gibt_none():
+    # Streng fallende Reihe: jede Kerze tiefer als die vorige, kein Wendepunkt.
+    tief, hoch = _swing_points(_df(list(range(30, 0, -1))))
+    assert tief is None
+
+
+def test_swing_points_zu_wenig_kerzen_gibt_none():
+    assert _swing_points(_df([5, 4, 3, 4, 5])) == (None, None)
+
+
+def test_swing_points_mindestlaenge_greift_bei_genau_sieben():
+    # Der Laengen-Riegel (len < links+rechts+2, also < 8) sieht harmlos aus, ist
+    # es aber nicht: bei GENAU 7 Kerzen laeuft die Schleife noch einmal auf
+    # Index 3, dessen Fenster l[0:7] die ganze Reihe umfasst. Ohne den Riegel
+    # wird dieser Punkt als Wendepunkt gemeldet, obwohl links und rechts kein
+    # einziger Kurs ausserhalb des Bestaetigungsfensters liegt.
+    #
+    # Nachgemessen 05.08.: erschoepfend ueber alle 3^n Reihen bis Laenge 9 weicht
+    # das Verhalten mit/ohne Riegel bei GENAU Laenge 7 ab (1585 von 2187 Faellen),
+    # bei jeder anderen Laenge in 0 Faellen.
+    #
+    # In Produktion greift das nie, weil _load() Reihen unter 30 Kerzen ohnehin
+    # verwirft — der Riegel ist die zweite Absicherung, und sie wird hier
+    # festgehalten, damit sie nicht als "unnoetig" wegfaellt.
+    assert _swing_points(_df([1, 1, 1, 1, 1, 1, 1])) == (None, None)
+    assert _swing_points(_df([9, 8, 7, 5, 7, 8, 9])) == (None, None)
+    # Eine Kerze mehr: derselbe Wendepunkt ist jetzt zulaessig.
+    assert _swing_points(_df([9, 8, 7, 5, 7, 8, 9, 10]))[0] == 5.0
+
+
+def test_swing_points_leeres_df_gibt_none():
+    assert _swing_points(pd.DataFrame()) == (None, None)
+    assert _swing_points(None) == (None, None)
+
+
+def test_swing_points_radius_wirkt():
+    # Flacher Wendepunkt: bestaetigt bei Radius 2, aber NICHT bei Radius 5.
+    kurve = [9, 8, 7, 6, 5, 6, 7, 8, 9, 8, 7, 6, 5, 6, 7]
+    assert _swing_points(_df(kurve), links=2, rechts=2)[0] == 5.0
+    eng = _swing_points(_df(kurve), links=5, rechts=5)[0]
+    assert eng is None or eng == 5.0

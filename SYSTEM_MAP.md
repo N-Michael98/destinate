@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 633 · Kanten: 1279
+Dateien mit internen Abhängigkeiten: 633 · Kanten: 1281
 
 
 ## analysis-engine/api
@@ -147,8 +147,10 @@ Dateien mit internen Abhängigkeiten: 633 · Kanten: 1279
 
 - `backend/tests/test_trading_functions.py`
   - → `backend/core/event_bus.py`
+  - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`
   - → `backend/services/trade_lifecycle_manager.py`
+  - → `backend/services/trading_strategies.py`
 
 ## frontend/app
 
@@ -1975,7 +1977,7 @@ Dateien mit internen Abhängigkeiten: 633 · Kanten: 1279
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 13 Dateien
 - `analysis-engine/core/config.py` — von 11 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
-- `backend/services/market_data.py` — von 9 Dateien
+- `backend/services/market_data.py` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-types.ts` — von 9 Dateien
 - `analysis-engine/services/storage.py` — von 8 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 8 Dateien

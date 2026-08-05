@@ -1,6 +1,6 @@
 {
   "hinweis": "Von scripts/checks/snapshot.js erzeugt. Nicht von Hand ändern — mit --update neu schreiben.",
-  "erstelltAm": "2026-08-04T20:06:06.476Z",
+  "erstelltAm": "2026-08-05T20:51:41.280Z",
   "werte": {
     "epicMap": {
       "EURUSD": "EURUSD",
@@ -286,9 +286,9 @@
       }
     },
     "gptPrompt": {
-      "regelZeilen": 19,
+      "regelZeilen": 20,
       "waitErwaehnungen": 16,
-      "pruefsumme": "a34e12a0a045fb1c",
+      "pruefsumme": "b270093a33654f2d",
       "antwortFelder": [
         "epic",
         "symbol",
@@ -310,6 +310,13 @@
       "TOTAL_DRAWDOWN_LIMIT",
       "EXPOSURE_LIMIT",
       "LIQUIDITY"
-    ]
+    ],
+    "strukturStop": {
+      "atrFaktor": 1.5,
+      "puffer": 0.25,
+      "obergrenzeAtr": 3,
+      "zielFaktor": 2,
+      "nurWeiter": true
+    }
   }
 }

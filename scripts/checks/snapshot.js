@@ -103,6 +103,26 @@ function erfasse() {
       })(),
     },
     filterReihenfolge: [...filters.matchAll(/blockedBy:\s*"([A-Z_]+)"/g)].map((m) => m[1]),
+    // Struktur-Stop (05.08.): der gemessene Konsens legt seinen Stop hinter den
+    // letzten bestaetigten Wendepunkt statt rein aus ATR. Drei Zahlen
+    // entscheiden dabei ueber das Risiko je Trade, und keine davon war bisher
+    // erfasst: der Grundfaktor, der Puffer hinter dem Wendepunkt und die
+    // Obergrenze, ab der die Struktur verworfen wird. Wer die Obergrenze von
+    // 3.0 auf 30 zieht, verdoppelt bis verzehnfacht den Stop-Abstand — kein
+    // anderer Pruefer wuerde das bemerken, weil die STRUKTUR unveraendert bleibt.
+    strukturStop: (() => {
+      const b = engine.slice(engine.indexOf("const atrRange = ta.atr"));
+      if (!b) return { "BLOCK NICHT GEFUNDEN": true };
+      const z = (re) => { const m = b.match(re); return m ? +m[1] : null; };
+      return {
+        atrFaktor:    z(/const atrRange = ta\.atr \* ([\d.]+)/),
+        puffer:       z(/const mitPuffer = roh \+ ta\.atr \* ([\d.]+)/),
+        obergrenzeAtr: z(/inAtr <= ([\d.]+)/),
+        zielFaktor:   z(/takeProfit: richtung === "BUY" \? einstieg \+ slRange \* ([\d.]+)/),
+        // Die Invariante selbst: die Struktur darf nur WEITER machen, nie enger.
+        nurWeiter:    /mitPuffer > atrRange/.test(b),
+      };
+    })(),
   };
 }
 
