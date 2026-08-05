@@ -1,0 +1,1983 @@
+# System-Karte
+
+**Erzeugt von `scripts/checks/system-map.js` — nicht von Hand ändern.**
+Neu erzeugen: `node scripts/checks/system-map.js --update`
+
+Sie zeigt, **wer wen aufruft** — gelesen aus den Importen im Code, statische
+und dynamische. Sie zeigt NICHT, welche Dateien über gemeinsame *Werte* oder
+gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
+
+Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
+
+Dateien mit internen Abhängigkeiten: 633 · Kanten: 1279
+
+
+## analysis-engine/api
+
+- `analysis-engine/api/routes/data.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/ai_learning.py`
+  - → `analysis-engine/services/backtest_engine.py`
+  - → `analysis-engine/services/backup.py`
+  - → `analysis-engine/services/data_collector.py`
+  - → `analysis-engine/services/news_intel.py`
+  - → `analysis-engine/services/periodic_report.py`
+  - → `analysis-engine/services/recommendations.py`
+  - → `analysis-engine/services/storage.py`
+  - → `analysis-engine/services/walk_forward.py`
+- `analysis-engine/api/routes/health.py`
+  - → `analysis-engine/core/config.py`
+- `analysis-engine/api/routes/insights.py`
+  - → `analysis-engine/core/config.py`
+
+## analysis-engine/main.py
+
+- `analysis-engine/main.py`
+  - → `analysis-engine/api/routes/__init__.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/ai_learning.py`
+  - → `analysis-engine/services/backtest_engine.py`
+  - → `analysis-engine/services/backup.py`
+  - → `analysis-engine/services/data_collector.py`
+  - → `analysis-engine/services/news_intel.py`
+  - → `analysis-engine/services/periodic_report.py`
+  - → `analysis-engine/services/recommendations.py`
+  - → `analysis-engine/services/walk_forward.py`
+
+## analysis-engine/services
+
+- `analysis-engine/services/ai_learning.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/backtest_engine.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/backup.py`
+  - → `analysis-engine/core/config.py`
+- `analysis-engine/services/data_collector.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/news_intel.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/periodic_report.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/recommendations.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/storage.py`
+  - → `analysis-engine/core/config.py`
+- `analysis-engine/services/walk_forward.py`
+  - → `analysis-engine/services/backtest_engine.py`
+  - → `analysis-engine/services/storage.py`
+
+## backend/api
+
+- `backend/api/routes/advanced.py`
+  - → `backend/services/advanced_analysis.py`
+- `backend/api/routes/backtest_extended.py`
+  - → `backend/services/backtesting_extended.py`
+- `backend/api/routes/backtesting.py`
+  - → `backend/services/backtesting.py`
+- `backend/api/routes/dukascopy.py`
+  - → `backend/services/dukascopy.py`
+- `backend/api/routes/events.py`
+  - → `backend/core/event_bus.py`
+- `backend/api/routes/finbert.py`
+  - → `backend/services/finbert_sentiment.py`
+- `backend/api/routes/health.py`
+  - → `backend/core/config.py`
+- `backend/api/routes/indicators.py`
+  - → `backend/services/indicators.py`
+- `backend/api/routes/intelligence.py`
+  - → `backend/services/market_intelligence.py`
+- `backend/api/routes/lifecycle.py`
+  - → `backend/services/market_mapper.py`
+  - → `backend/services/trade_lifecycle_manager.py`
+- `backend/api/routes/market.py`
+  - → `backend/services/market_data.py`
+- `backend/api/routes/sentiment.py`
+  - → `backend/services/sentiment_analysis.py`
+- `backend/api/routes/strategies.py`
+  - → `backend/services/trading_strategies.py`
+- `backend/api/routes/system.py`
+  - → `backend/core/circuit_breaker.py`
+  - → `backend/services/fast_analytics.py`
+- `backend/api/routes/talib_analysis.py`
+  - → `backend/services/talib_indicators.py`
+
+## backend/main.py
+
+- `backend/main.py`
+  - → `backend/api/routes/__init__.py`
+  - → `backend/core/config.py`
+  - → `backend/services/telegram_alerts.py`
+
+## backend/services
+
+- `backend/services/advanced_analysis.py`
+  - → `backend/services/market_data.py`
+- `backend/services/backtesting.py`
+  - → `backend/services/market_data.py`
+- `backend/services/backtesting_extended.py`
+  - → `backend/services/market_data.py`
+- `backend/services/fast_analytics.py`
+  - → `backend/services/market_data.py`
+- `backend/services/finbert_sentiment.py`
+  - → `backend/services/sentiment_analysis.py`
+- `backend/services/indicators.py`
+  - → `backend/services/market_data.py`
+- `backend/services/market_data.py`
+  - → `backend/core/circuit_breaker.py`
+  - → `backend/core/retry.py`
+- `backend/services/market_intelligence.py`
+  - → `backend/services/market_data.py`
+  - → `backend/services/market_mapper.py`
+- `backend/services/talib_indicators.py`
+  - → `backend/services/market_data.py`
+- `backend/services/telegram_alerts.py`
+  - → `backend/core/event_bus.py`
+- `backend/services/trade_lifecycle_manager.py`
+  - → `backend/core/event_bus.py`
+  - → `backend/services/market_mapper.py`
+- `backend/services/trading_strategies.py`
+  - → `backend/services/market_data.py`
+
+## backend/tests
+
+- `backend/tests/test_trading_functions.py`
+  - → `backend/core/event_bus.py`
+  - → `backend/services/market_mapper.py`
+  - → `backend/services/trade_lifecycle_manager.py`
+
+## frontend/app
+
+- `frontend/app/ai-assistant/helpers.ts`
+  - → `frontend/app/data/markets.ts`
+- `frontend/app/ai-assistant/page.tsx`
+  - → `frontend/app/data/journalAnalytics.ts`
+  - → `frontend/app/data/tradeUtils.ts`
+  - → `frontend/app/services/openai.ts`
+- `frontend/app/api/adaptive-broker-weighting/route.ts`
+  - → `frontend/lib/adaptive-broker-weighting/index.ts`
+- `frontend/app/api/ai-config/route.ts`
+  - → `frontend/lib/ai-config/index.ts`
+- `frontend/app/api/ai-execution-scheduler/route.ts`
+  - → `frontend/lib/ai-execution-scheduler/index.ts`
+- `frontend/app/api/ai-paper-trader/learning/route.ts`
+  - → `frontend/lib/ai-agent/learning-engine.ts`
+- `frontend/app/api/ai-paper-trader/market-regime/route.ts`
+  - → `frontend/lib/ai-agent/market-regime-engine.ts`
+- `frontend/app/api/ai-paper-trader/memory/route.ts`
+  - → `frontend/lib/ai-agent/memory/agent-memory.ts`
+- `frontend/app/api/ai-paper-trader/outcomes/route.ts`
+  - → `frontend/lib/ai-agent/trade-outcome-tracker.ts`
+- `frontend/app/api/ai-paper-trader/run/route.ts`
+  - → `frontend/lib/ai-agent/ai-paper-trader.ts`
+- `frontend/app/api/ai-paper-trader/strategy-library/route.ts`
+  - → `frontend/lib/ai-agent/strategy-library.ts`
+- `frontend/app/api/ai-paper-trader/strategy/route.ts`
+  - → `frontend/lib/ai-agent/strategy-evolution.ts`
+- `frontend/app/api/auth/change-password/route.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+  - → `frontend/lib/auth/jwt.ts`
+- `frontend/app/api/auth/change-username/route.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+  - → `frontend/lib/auth/jwt.ts`
+- `frontend/app/api/auth/login/route.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+  - → `frontend/lib/auth/jwt.ts`
+- `frontend/app/api/auth/me/route.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+  - → `frontend/lib/auth/jwt.ts`
+- `frontend/app/api/auth/register/route.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+- `frontend/app/api/auth/users/route.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+  - → `frontend/lib/auth/jwt.ts`
+- `frontend/app/api/auto-execute/route.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-execution.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/lib/icmarkets/icmarkets-execution.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/market-scanner/ai-analysis-engine.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/app/api/autonomous-broker-optimization/route.ts`
+  - → `frontend/lib/autonomous-broker-optimization/index.ts`
+- `frontend/app/api/autonomous-evolution-strategy-weight-sync/route.ts`
+  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/index.ts`
+- `frontend/app/api/autonomous-evolution-trade-approval-sync/route.ts`
+  - → `frontend/lib/autonomous-evolution-trade-approval-sync/index.ts`
+- `frontend/app/api/autonomous-trading-evolution-memory/route.ts`
+  - → `frontend/lib/autonomous-trading-evolution-memory/index.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+- `frontend/app/api/autonomous-trading-evolution/route.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+- `frontend/app/api/bank-institutional-intelligence/route.ts`
+  - → `frontend/lib/bank-institutional-intelligence/index.ts`
+- `frontend/app/api/broker-evolution-intelligence/route.ts`
+  - → `frontend/lib/broker-evolution-intelligence/index.ts`
+- `frontend/app/api/broker-execution-quality-learning/route.ts`
+  - → `frontend/lib/broker-execution-quality-learning/index.ts`
+- `frontend/app/api/broker-health-dual-broker-sync/route.ts`
+  - → `frontend/lib/broker-health-dual-broker-sync/index.ts`
+- `frontend/app/api/broker-health-monitor/route.ts`
+  - → `frontend/lib/broker-health-monitor/index.ts`
+- `frontend/app/api/broker-performance-memory/route.ts`
+  - → `frontend/lib/broker-performance-memory/index.ts`
+- `frontend/app/api/broker-reputation-memory/route.ts`
+  - → `frontend/lib/broker-reputation-memory/index.ts`
+- `frontend/app/api/broker-routing-capitalcom-sync/route.ts`
+  - → `frontend/lib/broker-routing-capitalcom-sync/index.ts`
+- `frontend/app/api/broker-routing-dual-broker-sync/route.ts`
+  - → `frontend/lib/broker-routing-dual-broker-sync/index.ts`
+- `frontend/app/api/broker-routing-icmarkets-sync/route.ts`
+  - → `frontend/lib/broker-routing-icmarkets-sync/index.ts`
+- `frontend/app/api/broker-routing-layer/route.ts`
+  - → `frontend/lib/broker-routing-layer/index.ts`
+- `frontend/app/api/broker-selection-routing-sync/route.ts`
+  - → `frontend/lib/broker-selection-routing-sync/index.ts`
+- `frontend/app/api/capital-com/execute/route.ts`
+  - → `frontend/lib/capital-com/capital-com-execution.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+- `frontend/app/api/capital-com/markets/route.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+- `frontend/app/api/capital-com/positions/route.ts`
+  - → `frontend/lib/capital-com/capital-com-execution.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+- `frontend/app/api/capital-com/route.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/index.ts`
+- `frontend/app/api/capital-com/sync-journal/route.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+- `frontend/app/api/claude-risk/assess/route.ts`
+  - → `frontend/lib/ai-config/ai-config-store.ts`
+  - → `frontend/lib/claude-risk-engine/index.ts`
+  - → `frontend/lib/python-bridge/python-data.ts`
+- `frontend/app/api/consensus/decision/route.ts`
+  - → `frontend/lib/consensus-engine/index.ts`
+  - → `frontend/lib/python-bridge/python-data.ts`
+- `frontend/app/api/debug-pnl/route.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+- `frontend/app/api/dependency-scanner/route.ts`
+  - → `frontend/lib/dependency-scanner/index.ts`
+- `frontend/app/api/diagnostics-agent/route.ts`
+  - → `frontend/lib/agents/diagnostics-agent.ts`
+- `frontend/app/api/dual-broker-execution-queue-sync/route.ts`
+  - → `frontend/lib/dual-broker-execution-queue-sync/index.ts`
+- `frontend/app/api/dual-broker-orchestrator/route.ts`
+  - → `frontend/lib/dual-broker-orchestrator/index.ts`
+- `frontend/app/api/dynamic-market-data/route.ts`
+  - → `frontend/lib/market-universe/dynamic-market-data.ts`
+- `frontend/app/api/dynamic-position-allocation/route.ts`
+  - → `frontend/lib/dynamic-position-allocation/index.ts`
+- `frontend/app/api/economic-calendar/route.ts`
+  - → `frontend/lib/economic-calendar/index.ts`
+- `frontend/app/api/evolution-allocation-portfolio-sync/route.ts`
+  - → `frontend/lib/evolution-allocation-portfolio-sync/index.ts`
+- `frontend/app/api/evolution-allocation/route.ts`
+  - → `frontend/lib/evolution-allocation/index.ts`
+- `frontend/app/api/evolution-feedback-strategy-evolution-sync/route.ts`
+  - → `frontend/lib/evolution-feedback-strategy-evolution-sync/index.ts`
+- `frontend/app/api/evolution-governance/route.ts`
+  - → `frontend/lib/evolution-governance/index.ts`
+- `frontend/app/api/execution-position-ticket-sync/route.ts`
+  - → `frontend/lib/execution-position-ticket-sync/index.ts`
+- `frontend/app/api/execution-queue-engine/route.ts`
+  - → `frontend/lib/portfolio-brain/execution-queue-engine.ts`
+- `frontend/app/api/execution-queue-position-sync/route.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/execution-queue-position-sync/index.ts`
+- `frontend/app/api/execution-queue-ticket-generator-sync/route.ts`
+  - → `frontend/lib/execution-queue-ticket-generator-sync/index.ts`
+- `frontend/app/api/execution-ticket-paper-order-sync/route.ts`
+  - → `frontend/lib/execution-ticket-paper-order-sync/index.ts`
+- `frontend/app/api/execution/queue/route.ts`
+  - → `frontend/lib/execution-preparation/index.ts`
+- `frontend/app/api/execution/tickets/route.ts`
+  - → `frontend/lib/execution-preparation/index.ts`
+- `frontend/app/api/forward-testing/route.ts`
+  - → `frontend/app/lib/prisma.ts`
+- `frontend/app/api/gpt-analyst/analyze/route.ts`
+  - → `frontend/lib/ai-config/ai-config-store.ts`
+  - → `frontend/lib/gpt-analyst-engine/index.ts`
+  - → `frontend/lib/python-bridge/python-data.ts`
+- `frontend/app/api/icmarkets/connect/route.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/app/api/icmarkets/disconnect/route.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+- `frontend/app/api/icmarkets/execute/route.ts`
+  - → `frontend/lib/icmarkets/icmarkets-execution.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+- `frontend/app/api/icmarkets/status/route.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+- `frontend/app/api/icmarkets/symbols/route.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+- `frontend/app/api/institutional-portfolio-brain-sync/route.ts`
+  - → `frontend/lib/institutional-portfolio-brain-sync/index.ts`
+- `frontend/app/api/learning-feedback-integration/route.ts`
+  - → `frontend/lib/learning-feedback-integration/index.ts`
+- `frontend/app/api/learning/analyze/route.ts`
+  - → `frontend/lib/learning/trade-feedback-engine.ts`
+- `frontend/app/api/learning/status/route.ts`
+  - → `frontend/lib/learning/trade-feedback-engine.ts`
+- `frontend/app/api/market-data/prices/route.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/app/api/market-data/status/route.ts`
+  - → `frontend/lib/market-data-engine/index.ts`
+- `frontend/app/api/market-data/symbols/route.ts`
+  - → `frontend/lib/market-data-engine/index.ts`
+- `frontend/app/api/market-regime-sync/route.ts`
+  - → `frontend/lib/market-universe/market-regime-sync.ts`
+- `frontend/app/api/market-regime/classify/route.ts`
+  - → `frontend/lib/market-data-engine/index.ts`
+  - → `frontend/lib/market-regime-engine/index.ts`
+- `frontend/app/api/market-scanner/route.ts`
+  - → `frontend/lib/ai-config/ai-config-store.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/market-scanner/ai-analysis-engine.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/app/api/market-universe/route.ts`
+  - → `frontend/lib/market-universe/market-universe.ts`
+- `frontend/app/api/mission-control/audit/route.ts`
+  - → `frontend/lib/mission-control/event-log.ts`
+  - → `frontend/lib/mission-control/system-audit.ts`
+- `frontend/app/api/mission-control/events/route.ts`
+  - → `frontend/lib/mission-control/event-log.ts`
+- `frontend/app/api/mission-control/health/route.ts`
+  - → `frontend/lib/ai-config/index.ts`
+  - → `frontend/lib/broker-health-monitor/index.ts`
+  - → `frontend/lib/dependency-scanner/index.ts`
+  - → `frontend/lib/evolution-governance/index.ts`
+  - → `frontend/lib/execution-preparation/index.ts`
+  - → `frontend/lib/learning-feedback-integration/index.ts`
+  - → `frontend/lib/market-data-engine/index.ts`
+  - → `frontend/lib/market-universe/opportunity-scanner.ts`
+  - → `frontend/lib/mission-control-endpoint-registry.ts`
+  - → `frontend/lib/mission-control/event-log.ts`
+  - → `frontend/lib/portfolio-brain/brain-manager.ts`
+- `frontend/app/api/mission-control/recovery/route.ts`
+  - → `frontend/lib/mission-control/recovery-tracker.ts`
+- `frontend/app/api/multi-strategy-competition/route.ts`
+  - → `frontend/lib/multi-strategy-competition/index.ts`
+- `frontend/app/api/multi-style-consensus-trade-approval-sync/route.ts`
+  - → `frontend/lib/multi-style-consensus-trade-approval-sync/index.ts`
+- `frontend/app/api/multi-style-consensus-unified-decision-sync/route.ts`
+  - → `frontend/lib/multi-style-consensus-unified-decision-sync/index.ts`
+- `frontend/app/api/multi-style-consensus/route.ts`
+  - → `frontend/lib/multi-style-consensus/index.ts`
+- `frontend/app/api/multi-timeframe-trade-approval-sync/route.ts`
+  - → `frontend/lib/multi-timeframe-trade-approval-sync/index.ts`
+- `frontend/app/api/multi-timeframe-trading-style-analysis/route.ts`
+  - → `frontend/lib/multi-timeframe-trading-style-analysis/index.ts`
+- `frontend/app/api/multi-timeframe-unified-decision-sync/route.ts`
+  - → `frontend/lib/multi-timeframe-unified-decision-sync/index.ts`
+- `frontend/app/api/mutation-competition/route.ts`
+  - → `frontend/lib/mutation-competition/index.ts`
+- `frontend/app/api/news-intelligence/route.ts`
+  - → `frontend/lib/news-intelligence/news-intelligence-engine.ts`
+- `frontend/app/api/opportunity-scanner/route.ts`
+  - → `frontend/lib/market-universe/opportunity-scanner.ts`
+- `frontend/app/api/outcome-learning-auto-update/route.ts`
+  - → `frontend/lib/outcome-learning-auto-update/index.ts`
+- `frontend/app/api/outcome-learning-evolution-feedback-sync/route.ts`
+  - → `frontend/lib/outcome-learning-evolution-feedback-sync/index.ts`
+- `frontend/app/api/paper-account-performance-sync/route.ts`
+  - → `frontend/lib/paper-account-performance-sync/index.ts`
+- `frontend/app/api/paper-orders/[id]/route.ts`
+  - → `frontend/app/lib/prisma.ts`
+- `frontend/app/api/paper-orders/route.ts`
+  - → `frontend/app/lib/prisma.ts`
+- `frontend/app/api/paper-position-account-sync/route.ts`
+  - → `frontend/lib/paper-position-account-sync/index.ts`
+- `frontend/app/api/paper-trading-execution-engine/route.ts`
+  - → `frontend/lib/portfolio-brain/paper-trading-execution-engine.ts`
+- `frontend/app/api/paper/account/route.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/app/api/paper/history/route.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/app/api/paper/market-update/route.ts`
+  - → `frontend/lib/learning/trade-feedback-engine.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/app/api/paper/orders/route.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/app/api/paper/performance/route.ts`
+  - → `frontend/lib/paper-trading/paper-performance.ts`
+- `frontend/app/api/paper/positions/route.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/app/api/paper/status/route.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/app/api/performance-outcome-learning-sync/route.ts`
+  - → `frontend/lib/performance-outcome-learning-sync/index.ts`
+- `frontend/app/api/portfolio-brain-adaptive-confidence/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-adaptive-confidence.ts`
+- `frontend/app/api/portfolio-brain-adaptive-learning/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-adaptive-learning.ts`
+- `frontend/app/api/portfolio-brain-broker-selection-sync/route.ts`
+  - → `frontend/lib/portfolio-brain-broker-selection-sync/index.ts`
+- `frontend/app/api/portfolio-brain-decision-memory/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-decision-memory.ts`
+- `frontend/app/api/portfolio-brain-evolution-sync/route.ts`
+  - → `frontend/lib/portfolio-brain-evolution-sync/index.ts`
+- `frontend/app/api/portfolio-brain-learning/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-learning.ts`
+- `frontend/app/api/portfolio-brain-outcome-learning-sync/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-outcome-learning-sync.ts`
+- `frontend/app/api/portfolio-brain-outcomes/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-outcomes.ts`
+- `frontend/app/api/portfolio-brain-self-evolution/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-self-evolution.ts`
+- `frontend/app/api/portfolio-brain-strategy-sync/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-strategy-sync.ts`
+- `frontend/app/api/portfolio-brain-unified-decision/route.ts`
+  - → `frontend/lib/portfolio-brain-unified-decision/index.ts`
+- `frontend/app/api/portfolio-brain/route.ts`
+  - → `frontend/lib/portfolio-brain/brain-manager.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-memory.ts`
+- `frontend/app/api/portfolio-intelligence/route.ts`
+  - → `frontend/lib/portfolio-intelligence/index.ts`
+- `frontend/app/api/portfolio-risk-management/route.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-risk-management.ts`
+- `frontend/app/api/position-sizing-evolution-sync/route.ts`
+  - → `frontend/lib/position-sizing-evolution-sync/index.ts`
+- `frontend/app/api/python/[...path]/route.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/app/api/regime-ai-sync/route.ts`
+  - → `frontend/lib/regime-ai-sync/index.ts`
+- `frontend/app/api/security-center/killswitch/route.ts`
+  - → `frontend/lib/killswitch/index.ts`
+  - → `frontend/lib/telegram-notifications/index.ts`
+- `frontend/app/api/security-center/malwarebytes/route.ts`
+  - → `frontend/lib/malwarebytes-integration/index.ts`
+- `frontend/app/api/security-center/route.ts`
+  - → `frontend/lib/security-center/index.ts`
+- `frontend/app/api/security-center/telegram/route.ts`
+  - → `frontend/lib/telegram-notifications/index.ts`
+- `frontend/app/api/security/log-event/route.ts`
+  - → `frontend/lib/security-watchdog/security-event-logger.ts`
+- `frontend/app/api/settings/route.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/settings/index.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+- `frontend/app/api/smart-broker-execution-sync/route.ts`
+  - → `frontend/lib/smart-broker-execution-sync/index.ts`
+- `frontend/app/api/smart-broker-selection/route.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/app/api/species-broker-execution-sync/route.ts`
+  - → `frontend/lib/species-broker-execution-sync/index.ts`
+- `frontend/app/api/species-broker-routing-sync/route.ts`
+  - → `frontend/lib/species-broker-routing-sync/index.ts`
+- `frontend/app/api/species-capital-allocation/route.ts`
+  - → `frontend/lib/species-capital-allocation/index.ts`
+- `frontend/app/api/species-execution-center-sync/route.ts`
+  - → `frontend/lib/species-execution-center-sync/index.ts`
+- `frontend/app/api/species-execution-queue-integration/route.ts`
+  - → `frontend/lib/species-execution-queue-integration/index.ts`
+- `frontend/app/api/species-execution-queue/route.ts`
+  - → `frontend/lib/species-execution-queue/index.ts`
+- `frontend/app/api/species-execution-ticket-generator/route.ts`
+  - → `frontend/lib/species-execution-ticket-generator/index.ts`
+- `frontend/app/api/species-extinction/route.ts`
+  - → `frontend/lib/species-extinction/index.ts`
+- `frontend/app/api/species-live-execution-bridge/route.ts`
+  - → `frontend/lib/species-live-execution-bridge/index.ts`
+- `frontend/app/api/species-position-sizing/route.ts`
+  - → `frontend/lib/species-position-sizing/index.ts`
+- `frontend/app/api/species-survival/route.ts`
+  - → `frontend/lib/species-survival/index.ts`
+- `frontend/app/api/species-trade-allocation/route.ts`
+  - → `frontend/lib/species-trade-allocation/index.ts`
+- `frontend/app/api/species-trade-approval-sync/route.ts`
+  - → `frontend/lib/species-trade-approval-sync/index.ts`
+- `frontend/app/api/strategy-breeding/route.ts`
+  - → `frontend/lib/strategy-breeding/index.ts`
+- `frontend/app/api/strategy-broker-intelligence/route.ts`
+  - → `frontend/lib/strategy-broker-intelligence/index.ts`
+- `frontend/app/api/strategy-evolution-autonomous-sync/route.ts`
+  - → `frontend/lib/strategy-evolution-autonomous-sync/index.ts`
+- `frontend/app/api/strategy-evolution-intelligence/route.ts`
+  - → `frontend/lib/strategy-evolution-intelligence/index.ts`
+  - → `frontend/lib/strategy-evolution/evolution-engine.ts`
+- `frontend/app/api/strategy-lifecycle/route.ts`
+  - → `frontend/lib/strategy-lifecycle/index.ts`
+- `frontend/app/api/strategy-mutation/route.ts`
+  - → `frontend/lib/strategy-mutation/index.ts`
+- `frontend/app/api/strategy-opportunity-sync/route.ts`
+  - → `frontend/lib/market-universe/strategy-opportunity-sync.ts`
+- `frontend/app/api/strategy-ranking/route.ts`
+  - → `frontend/lib/strategy-ranking/index.ts`
+- `frontend/app/api/strategy-species-classification/route.ts`
+  - → `frontend/lib/strategy-species-classification/index.ts`
+- `frontend/app/api/strategy-universe-registry/route.ts`
+  - → `frontend/lib/strategy-universe-registry/index.ts`
+- `frontend/app/api/strategy-weight-auto-rebalancing/route.ts`
+  - → `frontend/lib/strategy-weight-auto-rebalancing/index.ts`
+- `frontend/app/api/strategy-weight-portfolio-brain-sync/route.ts`
+  - → `frontend/lib/strategy-weight-portfolio-brain-sync/index.ts`
+- `frontend/app/api/technical-analysis/route.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/app/api/telegram/test/route.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/app/api/telegram/webhook/route.ts`
+  - → `frontend/lib/analysis-engine/overrides-store.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/killswitch/index.ts`
+  - → `frontend/lib/security-watchdog/ip-blocklist.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/app/api/trade-approval-engine/route.ts`
+  - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
+- `frontend/app/api/trade-approval-execution-queue-sync/route.ts`
+  - → `frontend/lib/trade-approval-execution-queue-sync/index.ts`
+- `frontend/app/api/trade-outcome-feedback-engine/route.ts`
+  - → `frontend/lib/portfolio-brain/trade-outcome-feedback-engine.ts`
+- `frontend/app/api/trades/[id]/route.ts`
+  - → `frontend/app/lib/prisma.ts`
+- `frontend/app/api/trades/route.ts`
+  - → `frontend/app/lib/prisma.ts`
+- `frontend/app/api/trading-style-priority-engine/route.ts`
+  - → `frontend/lib/trading-style-priority-engine/index.ts`
+- `frontend/app/api/trading-style-priority-trade-approval-sync/route.ts`
+  - → `frontend/lib/trading-style-priority-trade-approval-sync/index.ts`
+- `frontend/app/api/trading-style-priority-unified-decision-sync/route.ts`
+  - → `frontend/lib/trading-style-priority-unified-decision-sync/index.ts`
+- `frontend/app/api/unified-decision-trade-approval-sync/route.ts`
+  - → `frontend/lib/unified-decision-trade-approval-sync/index.ts`
+- `frontend/app/api/validation-agent/route.ts`
+  - → `frontend/lib/agents/validation-agent.ts`
+- `frontend/app/data/journalAnalytics.ts`
+  - → `frontend/app/data/trades.ts`
+- `frontend/app/data/tradeUtils.ts`
+  - → `frontend/app/data/trades.ts`
+- `frontend/app/generated/prisma/browser.ts`
+  - → `frontend/app/generated/prisma/enums.ts`
+  - → `frontend/app/generated/prisma/internal/prismaNamespaceBrowser.ts`
+- `frontend/app/generated/prisma/client.ts`
+  - → `frontend/app/generated/prisma/enums.ts`
+  - → `frontend/app/generated/prisma/internal/class.ts`
+  - → `frontend/app/generated/prisma/internal/prismaNamespace.ts`
+- `frontend/app/generated/prisma/commonInputTypes.ts`
+  - → `frontend/app/generated/prisma/enums.ts`
+  - → `frontend/app/generated/prisma/internal/prismaNamespace.ts`
+- `frontend/app/generated/prisma/internal/class.ts`
+  - → `frontend/app/generated/prisma/internal/prismaNamespace.ts`
+- `frontend/app/generated/prisma/internal/prismaNamespace.ts`
+  - → `frontend/app/generated/prisma/internal/class.ts`
+  - → `frontend/app/generated/prisma/models.ts`
+- `frontend/app/generated/prisma/internal/prismaNamespaceBrowser.ts`
+  - → `frontend/app/generated/prisma/internal/prismaNamespace.ts`
+  - → `frontend/app/generated/prisma/models.ts`
+- `frontend/app/generated/prisma/models.ts`
+  - → `frontend/app/generated/prisma/commonInputTypes.ts`
+  - → `frontend/app/generated/prisma/models/PaperOrder.ts`
+  - → `frontend/app/generated/prisma/models/Trade.ts`
+- `frontend/app/generated/prisma/models/PaperOrder.ts`
+  - → `frontend/app/generated/prisma/enums.ts`
+  - → `frontend/app/generated/prisma/internal/prismaNamespace.ts`
+- `frontend/app/generated/prisma/models/Trade.ts`
+  - → `frontend/app/generated/prisma/enums.ts`
+  - → `frontend/app/generated/prisma/internal/prismaNamespace.ts`
+- `frontend/app/market-intelligence/[market]/page.tsx`
+  - → `frontend/app/data/markets.ts`
+- `frontend/app/market-intelligence/page.tsx`
+  - → `frontend/app/data/markets.ts`
+- `frontend/app/page.tsx`
+  - → `frontend/components/AIAgentControlCenter.tsx`
+  - → `frontend/components/BrokerCenterPanel.tsx`
+  - → `frontend/components/EvolutionCenterPanel.tsx`
+  - → `frontend/components/ExecutionCenterPanel.tsx`
+  - → `frontend/components/ForwardTestingCenter.tsx`
+  - → `frontend/components/LiveExecutionMonitor.tsx`
+  - → `frontend/components/MarketScannerPanel.tsx`
+  - → `frontend/components/PaperTradingCenter.tsx`
+  - → `frontend/components/PaperTradingDashboardPanel.tsx`
+  - → `frontend/components/PerformanceCharts.tsx`
+  - → `frontend/components/PortfolioBrainCenterPanel.tsx`
+  - → `frontend/components/SecurityCenterDashboard.tsx`
+  - → `frontend/components/SettingsDashboard.tsx`
+  - → `frontend/components/SidebarIcon.tsx`
+  - → `frontend/components/SystemHealthCheck.tsx`
+  - → `frontend/components/TechnicalIndicatorsPanel.tsx`
+  - → `frontend/components/UnifiedMissionControlDashboard.tsx`
+
+## frontend/components
+
+- `frontend/components/EvolutionCenterPanel.tsx`
+  - → `frontend/components/charts/index.ts`
+- `frontend/components/ForwardTestingCenter.tsx`
+  - → `frontend/components/ExecutionPositionTicketSyncPanel.tsx`
+  - → `frontend/components/ExecutionQueuePositionSyncPanel.tsx`
+  - → `frontend/components/PerformanceCharts.tsx`
+- `frontend/components/MissionControlAlertHistoryPanel.tsx`
+  - → `frontend/lib/mission-control/alert-history.ts`
+- `frontend/components/MissionControlAlertLayer.tsx`
+  - → `frontend/lib/mission-control-telegram-alerts.ts`
+  - → `frontend/lib/mission-control/live-alert-source-mapping.ts`
+- `frontend/components/MissionControlRegistryGroupDashboard.tsx`
+  - → `frontend/lib/mission-control-endpoint-registry.ts`
+- `frontend/components/PortfolioBrainCenterPanel.tsx`
+  - → `frontend/components/charts/index.ts`
+- `frontend/components/SettingsDashboard.tsx`
+  - → `frontend/lib/ai-config/index.ts`
+  - → `frontend/lib/broker-config/index.ts`
+- `frontend/components/TechnicalIndicatorsPanel.tsx`
+  - → `frontend/lib/technical-indicators/index.ts`
+- `frontend/components/UnifiedMissionControlDashboard.tsx`
+  - → `frontend/components/BacktestingPanel.tsx`
+  - → `frontend/components/HealthScannerMonitorPanel.tsx`
+  - → `frontend/components/LearningFeedbackPanel.tsx`
+  - → `frontend/components/LiveMarketWidget.tsx`
+  - → `frontend/components/MissionControlAlertHistoryPanel.tsx`
+  - → `frontend/components/MissionControlAlertLayer.tsx`
+  - → `frontend/components/MissionControlAuditPanel.tsx`
+  - → `frontend/components/MissionControlEventTimelinePanel.tsx`
+  - → `frontend/components/MissionControlRecoveryPanel.tsx`
+  - → `frontend/components/MissionControlRegistryGroupDashboard.tsx`
+  - → `frontend/components/mission-control-health-charts.tsx`
+  - → `frontend/lib/mission-control-endpoint-registry.ts`
+- `frontend/components/charts/AllocationDonutChart.tsx`
+  - → `frontend/components/charts/BaseChartCard.tsx`
+- `frontend/components/charts/MetricBarChart.tsx`
+  - → `frontend/components/charts/BaseChartCard.tsx`
+- `frontend/components/charts/PerformanceLineChart.tsx`
+  - → `frontend/components/charts/BaseChartCard.tsx`
+- `frontend/components/charts/index.ts`
+  - → `frontend/components/charts/AllocationDonutChart.tsx`
+  - → `frontend/components/charts/BaseChartCard.tsx`
+  - → `frontend/components/charts/MetricBarChart.tsx`
+  - → `frontend/components/charts/PerformanceLineChart.tsx`
+
+## frontend/instrumentation.ts
+
+- `frontend/instrumentation.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/agents/diagnostics-agent.ts`
+  - → `frontend/lib/agents/orchestrator-agent.ts`
+  - → `frontend/lib/ai-agent/memory/agent-memory.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+  - → `frontend/lib/capital-com/active-trade-manager.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/lib/icmarkets/icmarkets-journal-sync.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/icmarkets/icmarkets-trade-manager.ts`
+  - → `frontend/lib/killswitch/index.ts`
+  - → `frontend/lib/learning/learning-store.ts`
+  - → `frontend/lib/mission-control/event-log.ts`
+  - → `frontend/lib/paper-trading/paper-history.ts`
+  - → `frontend/lib/python-backend/python-client.ts`
+  - → `frontend/lib/security-watchdog/claude-watchdog.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+
+## frontend/lib
+
+- `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-engine.ts`
+  - → `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-types.ts`
+  - → `frontend/lib/broker-execution-quality-learning/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/adaptive-broker-weighting/index.ts`
+  - → `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-engine.ts`
+  - → `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-types.ts`
+- `frontend/lib/adaptive-confidence/confidence-adjuster.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-types.ts`
+- `frontend/lib/adaptive-confidence/confidence-engine.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-adjuster.ts`
+- `frontend/lib/adaptive-confidence/confidence-history.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-types.ts`
+- `frontend/lib/adaptive-confidence/confidence-manager.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-adjuster.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-engine.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-history.ts`
+- `frontend/lib/adaptive-confidence/index.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-adjuster.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-engine.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-history.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-manager.ts`
+  - → `frontend/lib/adaptive-confidence/confidence-types.ts`
+- `frontend/lib/agents/analysis-agent.ts`
+  - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/market-scanner/ai-analysis-engine.ts`
+- `frontend/lib/agents/diagnostics-agent.ts`
+  - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/agents/execution-agent.ts`
+  - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/capital-com/capital-com-execution.ts`
+  - → `frontend/lib/icmarkets/icmarkets-execution.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/agents/orchestrator-agent.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/agents/analysis-agent.ts`
+  - → `frontend/lib/agents/diagnostics-agent.ts`
+  - → `frontend/lib/agents/execution-agent.ts`
+  - → `frontend/lib/analysis-engine/insights-reader.ts`
+  - → `frontend/lib/analysis-engine/overrides-store.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+  - → `frontend/lib/python-backend/python-client.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+  - → `frontend/lib/trading-filters/trade-filters.ts`
+- `frontend/lib/agents/risk-agent.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/agents/validation-agent.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/ai-agent/ai-paper-trader.ts`
+  - → `frontend/lib/ai-agent/adaptive-confidence-engine.ts`
+  - → `frontend/lib/ai-agent/claude-risk.ts`
+  - → `frontend/lib/ai-agent/consensus-engine.ts`
+  - → `frontend/lib/ai-agent/gpt-analyst.ts`
+  - → `frontend/lib/ai-agent/learning-engine.ts`
+  - → `frontend/lib/ai-agent/memory/agent-memory.ts`
+  - → `frontend/lib/ai-agent/strategy-evolution.ts`
+  - → `frontend/lib/economic-calendar/index.ts`
+  - → `frontend/lib/news-intelligence/news-intelligence-engine.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+  - → `frontend/lib/portfolio-intelligence/index.ts`
+- `frontend/lib/ai-agent/claude-risk.ts`
+  - → `frontend/lib/ai-agent/gpt-analyst.ts`
+- `frontend/lib/ai-agent/consensus-engine.ts`
+  - → `frontend/lib/ai-agent/claude-risk.ts`
+  - → `frontend/lib/ai-agent/gpt-analyst.ts`
+- `frontend/lib/ai-agent/gpt-analyst.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/ai-agent/learning-engine.ts`
+  - → `frontend/lib/ai-agent/memory/agent-memory.ts`
+- `frontend/lib/ai-agent/market-regime-engine.ts`
+  - → `frontend/lib/ai-agent/learning-engine.ts`
+  - → `frontend/lib/ai-agent/memory/agent-memory.ts`
+  - → `frontend/lib/ai-agent/trade-outcome-tracker.ts`
+- `frontend/lib/ai-agent/memory/agent-memory.ts`
+  - → `frontend/lib/db-store.ts`
+- `frontend/lib/ai-agent/strategy-evolution.ts`
+  - → `frontend/lib/ai-agent/learning-engine.ts`
+  - → `frontend/lib/ai-agent/market-regime-engine.ts`
+  - → `frontend/lib/ai-agent/memory/agent-memory.ts`
+  - → `frontend/lib/ai-agent/strategy-library.ts`
+  - → `frontend/lib/ai-agent/trade-outcome-tracker.ts`
+- `frontend/lib/ai-agent/trade-outcome-tracker.ts`
+  - → `frontend/lib/ai-agent/memory/agent-memory.ts`
+  - → `frontend/lib/paper-trading/paper-history.ts`
+- `frontend/lib/ai-config/ai-config-store.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/ai-config/ai-config-types.ts`
+- `frontend/lib/ai-config/index.ts`
+  - → `frontend/lib/ai-config/ai-config-store.ts`
+  - → `frontend/lib/ai-config/ai-config-types.ts`
+- `frontend/lib/ai-execution-scheduler/index.ts`
+  - → `frontend/lib/ai-execution-scheduler/ai-execution-scheduler-types.ts`
+- `frontend/lib/ai-memory/index.ts`
+  - → `frontend/lib/ai-memory/market-memory.ts`
+  - → `frontend/lib/ai-memory/memory-manager.ts`
+  - → `frontend/lib/ai-memory/memory-types.ts`
+  - → `frontend/lib/ai-memory/strategy-memory.ts`
+  - → `frontend/lib/ai-memory/trade-memory.ts`
+- `frontend/lib/ai-memory/market-memory.ts`
+  - → `frontend/lib/ai-memory/memory-types.ts`
+- `frontend/lib/ai-memory/memory-manager.ts`
+  - → `frontend/lib/ai-memory/market-memory.ts`
+  - → `frontend/lib/ai-memory/strategy-memory.ts`
+  - → `frontend/lib/ai-memory/trade-memory.ts`
+- `frontend/lib/ai-memory/strategy-memory.ts`
+  - → `frontend/lib/ai-memory/memory-types.ts`
+- `frontend/lib/ai-memory/trade-memory.ts`
+  - → `frontend/lib/ai-memory/memory-types.ts`
+- `frontend/lib/analysis-engine/insights-reader.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+- `frontend/lib/analysis-engine/overrides-store.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+- `frontend/lib/auth/auth-store.ts`
+  - → `frontend/app/lib/prisma.ts`
+- `frontend/lib/auth/index.ts`
+  - → `frontend/lib/auth/auth-store.ts`
+  - → `frontend/lib/auth/jwt.ts`
+- `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-engine.ts`
+  - → `frontend/lib/adaptive-broker-weighting/index.ts`
+  - → `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/autonomous-broker-optimization/index.ts`
+  - → `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-engine.ts`
+  - → `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-types.ts`
+- `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-engine.ts`
+  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-types.ts`
+  - → `frontend/lib/autonomous-trading-evolution-memory/index.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+  - → `frontend/lib/strategy-ranking/index.ts`
+- `frontend/lib/autonomous-evolution-strategy-weight-sync/index.ts`
+  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-engine.ts`
+  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-types.ts`
+- `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-engine.ts`
+  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/index.ts`
+  - → `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-types.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+  - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
+- `frontend/lib/autonomous-evolution-trade-approval-sync/index.ts`
+  - → `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-engine.ts`
+  - → `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-types.ts`
+- `frontend/lib/autonomous-trading-evolution-memory/autonomous-trading-evolution-memory-types.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+- `frontend/lib/autonomous-trading-evolution-memory/autonomous-trading-evolution-memory.ts`
+  - → `frontend/lib/autonomous-trading-evolution-memory/autonomous-trading-evolution-memory-types.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+  - → `frontend/lib/db-store.ts`
+- `frontend/lib/autonomous-trading-evolution-memory/index.ts`
+  - → `frontend/lib/autonomous-trading-evolution-memory/autonomous-trading-evolution-memory-types.ts`
+  - → `frontend/lib/autonomous-trading-evolution-memory/autonomous-trading-evolution-memory.ts`
+- `frontend/lib/autonomous-trading-evolution/autonomous-trading-evolution-engine.ts`
+  - → `frontend/lib/autonomous-trading-evolution/autonomous-trading-evolution-types.ts`
+  - → `frontend/lib/evolution-governance/index.ts`
+  - → `frontend/lib/species-survival/index.ts`
+  - → `frontend/lib/strategy-breeding/index.ts`
+  - → `frontend/lib/strategy-mutation/index.ts`
+  - → `frontend/lib/strategy-ranking/index.ts`
+- `frontend/lib/autonomous-trading-evolution/index.ts`
+  - → `frontend/lib/autonomous-trading-evolution/autonomous-trading-evolution-engine.ts`
+  - → `frontend/lib/autonomous-trading-evolution/autonomous-trading-evolution-types.ts`
+- `frontend/lib/bank-institutional-intelligence/index.ts`
+  - → `frontend/lib/bank-institutional-intelligence/bank-institutional-types.ts`
+- `frontend/lib/broker-config/broker-config-data.ts`
+  - → `frontend/lib/broker-config/broker-config-types.ts`
+- `frontend/lib/broker-config/index.ts`
+  - → `frontend/lib/broker-config/broker-config-data.ts`
+  - → `frontend/lib/broker-config/broker-config-types.ts`
+- `frontend/lib/broker-evolution-intelligence/broker-evolution-intelligence-engine.ts`
+  - → `frontend/lib/broker-evolution-intelligence/broker-evolution-intelligence-types.ts`
+  - → `frontend/lib/broker-reputation-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-evolution-intelligence/broker-evolution-intelligence-types.ts`
+  - → `frontend/lib/broker-reputation-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-evolution-intelligence/index.ts`
+  - → `frontend/lib/broker-evolution-intelligence/broker-evolution-intelligence-engine.ts`
+  - → `frontend/lib/broker-evolution-intelligence/broker-evolution-intelligence-types.ts`
+- `frontend/lib/broker-execution-quality-learning/broker-execution-quality-learning-engine.ts`
+  - → `frontend/lib/broker-execution-quality-learning/broker-execution-quality-learning-types.ts`
+  - → `frontend/lib/dynamic-position-allocation/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-execution-quality-learning/broker-execution-quality-learning-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-execution-quality-learning/index.ts`
+  - → `frontend/lib/broker-execution-quality-learning/broker-execution-quality-learning-engine.ts`
+  - → `frontend/lib/broker-execution-quality-learning/broker-execution-quality-learning-types.ts`
+- `frontend/lib/broker-health-dual-broker-sync/index.ts`
+  - → `frontend/lib/broker-health-dual-broker-sync/broker-health-dual-broker-types.ts`
+- `frontend/lib/broker-health-monitor/index.ts`
+  - → `frontend/lib/broker-health-monitor/broker-health-monitor-types.ts`
+- `frontend/lib/broker-performance-memory/broker-performance-memory-engine.ts`
+  - → `frontend/lib/broker-performance-memory/broker-performance-memory-types.ts`
+  - → `frontend/lib/broker-reputation-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-performance-memory/broker-performance-memory-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-performance-memory/index.ts`
+  - → `frontend/lib/broker-performance-memory/broker-performance-memory-engine.ts`
+  - → `frontend/lib/broker-performance-memory/broker-performance-memory-types.ts`
+- `frontend/lib/broker-reputation-memory/broker-reputation-memory-engine.ts`
+  - → `frontend/lib/autonomous-broker-optimization/index.ts`
+  - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-reputation-memory/broker-reputation-memory-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/broker-reputation-memory/index.ts`
+  - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-engine.ts`
+  - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-types.ts`
+- `frontend/lib/broker-routing-capitalcom-sync/index.ts`
+  - → `frontend/lib/broker-routing-capitalcom-sync/broker-routing-capitalcom-types.ts`
+- `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-engine.ts`
+  - → `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-types.ts`
+  - → `frontend/lib/broker-selection-routing-sync/index.ts`
+- `frontend/lib/broker-routing-dual-broker-sync/index.ts`
+  - → `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-engine.ts`
+  - → `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-types.ts`
+- `frontend/lib/broker-routing-icmarkets-sync/index.ts`
+  - → `frontend/lib/broker-routing-icmarkets-sync/broker-routing-icmarkets-types.ts`
+- `frontend/lib/broker-routing-layer/index.ts`
+  - → `frontend/lib/broker-routing-layer/broker-routing-types.ts`
+- `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-engine.ts`
+  - → `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-types.ts`
+  - → `frontend/lib/portfolio-brain-broker-selection-sync/index.ts`
+- `frontend/lib/broker-selection-routing-sync/index.ts`
+  - → `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-engine.ts`
+  - → `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-types.ts`
+- `frontend/lib/brokers/auth/auth-manager.ts`
+  - → `frontend/lib/brokers/auth/capital-demo.ts`
+  - → `frontend/lib/brokers/auth/icmarkets-demo.ts`
+- `frontend/lib/brokers/auth/index.ts`
+  - → `frontend/lib/brokers/auth/auth-manager.ts`
+  - → `frontend/lib/brokers/auth/capital-demo.ts`
+  - → `frontend/lib/brokers/auth/icmarkets-demo.ts`
+- `frontend/lib/brokers/capital/connector.ts`
+  - → `frontend/lib/brokers/shared/broker.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+- `frontend/lib/brokers/capital/types.ts`
+  - → `frontend/lib/brokers/shared/broker.ts`
+- `frontend/lib/brokers/icmarkets/connector.ts`
+  - → `frontend/lib/brokers/shared/broker.ts`
+- `frontend/lib/brokers/icmarkets/types.ts`
+  - → `frontend/lib/brokers/shared/broker.ts`
+- `frontend/lib/brokers/index.ts`
+  - → `frontend/lib/brokers/capital/connector.ts`
+  - → `frontend/lib/brokers/capital/types.ts`
+  - → `frontend/lib/brokers/icmarkets/connector.ts`
+  - → `frontend/lib/brokers/icmarkets/types.ts`
+  - → `frontend/lib/brokers/shared/broker.ts`
+- `frontend/lib/capital-com/active-trade-manager.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/agents/risk-agent.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+  - → `frontend/lib/python-bridge/python-data.ts`
+- `frontend/lib/capital-com/capital-com-execution.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+- `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/killswitch/killswitch-engine.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/capital-com/index.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+- `frontend/lib/claude-integration/claude-drawdown-review.ts`
+  - → `frontend/lib/claude-integration/claude-types.ts`
+- `frontend/lib/claude-integration/claude-manager.ts`
+  - → `frontend/lib/claude-integration/claude-client.ts`
+  - → `frontend/lib/claude-integration/claude-drawdown-review.ts`
+  - → `frontend/lib/claude-integration/claude-portfolio-review.ts`
+  - → `frontend/lib/claude-integration/claude-risk-review.ts`
+- `frontend/lib/claude-integration/claude-portfolio-review.ts`
+  - → `frontend/lib/claude-integration/claude-types.ts`
+- `frontend/lib/claude-integration/claude-risk-review.ts`
+  - → `frontend/lib/claude-integration/claude-types.ts`
+- `frontend/lib/claude-integration/index.ts`
+  - → `frontend/lib/claude-integration/claude-client.ts`
+  - → `frontend/lib/claude-integration/claude-drawdown-review.ts`
+  - → `frontend/lib/claude-integration/claude-manager.ts`
+  - → `frontend/lib/claude-integration/claude-portfolio-review.ts`
+  - → `frontend/lib/claude-integration/claude-risk-review.ts`
+  - → `frontend/lib/claude-integration/claude-types.ts`
+- `frontend/lib/claude-risk-engine/claude-risk-manager.ts`
+  - → `frontend/lib/claude-risk-engine/drawdown-checker.ts`
+  - → `frontend/lib/claude-risk-engine/exposure-checker.ts`
+  - → `frontend/lib/claude-risk-engine/position-size-checker.ts`
+  - → `frontend/lib/claude-risk-engine/risk-reasoning-builder.ts`
+  - → `frontend/lib/claude-risk-engine/risk-types.ts`
+  - → `frontend/lib/claude-risk-engine/volatility-risk-checker.ts`
+- `frontend/lib/claude-risk-engine/drawdown-checker.ts`
+  - → `frontend/lib/claude-risk-engine/risk-types.ts`
+- `frontend/lib/claude-risk-engine/exposure-checker.ts`
+  - → `frontend/lib/claude-risk-engine/risk-types.ts`
+- `frontend/lib/claude-risk-engine/index.ts`
+  - → `frontend/lib/claude-risk-engine/claude-risk-manager.ts`
+  - → `frontend/lib/claude-risk-engine/drawdown-checker.ts`
+  - → `frontend/lib/claude-risk-engine/exposure-checker.ts`
+  - → `frontend/lib/claude-risk-engine/position-size-checker.ts`
+  - → `frontend/lib/claude-risk-engine/risk-reasoning-builder.ts`
+  - → `frontend/lib/claude-risk-engine/risk-types.ts`
+  - → `frontend/lib/claude-risk-engine/volatility-risk-checker.ts`
+- `frontend/lib/claude-risk-engine/position-size-checker.ts`
+  - → `frontend/lib/claude-risk-engine/risk-types.ts`
+- `frontend/lib/claude-risk-engine/volatility-risk-checker.ts`
+  - → `frontend/lib/claude-risk-engine/risk-types.ts`
+- `frontend/lib/consensus-engine/confidence-engine.ts`
+  - → `frontend/lib/consensus-engine/consensus-types.ts`
+- `frontend/lib/consensus-engine/consensus-builder.ts`
+  - → `frontend/lib/consensus-engine/confidence-engine.ts`
+  - → `frontend/lib/consensus-engine/consensus-types.ts`
+  - → `frontend/lib/consensus-engine/trade-validator.ts`
+  - → `frontend/lib/consensus-engine/vote-calculator.ts`
+- `frontend/lib/consensus-engine/consensus-manager.ts`
+  - → `frontend/lib/consensus-engine/consensus-builder.ts`
+  - → `frontend/lib/consensus-engine/consensus-types.ts`
+- `frontend/lib/consensus-engine/index.ts`
+  - → `frontend/lib/consensus-engine/confidence-engine.ts`
+  - → `frontend/lib/consensus-engine/consensus-builder.ts`
+  - → `frontend/lib/consensus-engine/consensus-manager.ts`
+  - → `frontend/lib/consensus-engine/consensus-types.ts`
+  - → `frontend/lib/consensus-engine/trade-validator.ts`
+  - → `frontend/lib/consensus-engine/vote-calculator.ts`
+- `frontend/lib/consensus-engine/trade-validator.ts`
+  - → `frontend/lib/consensus-engine/consensus-types.ts`
+- `frontend/lib/consensus-engine/vote-calculator.ts`
+  - → `frontend/lib/consensus-engine/consensus-types.ts`
+- `frontend/lib/consensus-intelligence/agent-signal.ts`
+  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
+- `frontend/lib/consensus-intelligence/claude-risk-signal.ts`
+  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
+- `frontend/lib/consensus-intelligence/conflict-detector.ts`
+  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
+- `frontend/lib/consensus-intelligence/consensus-manager.ts`
+  - → `frontend/lib/consensus-intelligence/agent-signal.ts`
+  - → `frontend/lib/consensus-intelligence/claude-risk-signal.ts`
+  - → `frontend/lib/consensus-intelligence/conflict-detector.ts`
+  - → `frontend/lib/consensus-intelligence/decision-matrix.ts`
+  - → `frontend/lib/consensus-intelligence/gpt-signal.ts`
+- `frontend/lib/consensus-intelligence/decision-matrix.ts`
+  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
+- `frontend/lib/consensus-intelligence/gpt-signal.ts`
+  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
+- `frontend/lib/consensus-intelligence/index.ts`
+  - → `frontend/lib/consensus-intelligence/agent-signal.ts`
+  - → `frontend/lib/consensus-intelligence/claude-risk-signal.ts`
+  - → `frontend/lib/consensus-intelligence/conflict-detector.ts`
+  - → `frontend/lib/consensus-intelligence/consensus-manager.ts`
+  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
+  - → `frontend/lib/consensus-intelligence/decision-matrix.ts`
+  - → `frontend/lib/consensus-intelligence/gpt-signal.ts`
+- `frontend/lib/db-store.ts`
+  - → `frontend/app/lib/prisma.ts`
+- `frontend/lib/demo-agent/agent-brain.ts`
+  - → `frontend/lib/demo-agent/agent-types.ts`
+- `frontend/lib/demo-agent/demo-agent-manager.ts`
+  - → `frontend/lib/demo-agent/agent-brain.ts`
+  - → `frontend/lib/demo-agent/agent-consensus.ts`
+  - → `frontend/lib/demo-agent/trade-planner.ts`
+- `frontend/lib/demo-agent/index.ts`
+  - → `frontend/lib/demo-agent/agent-brain.ts`
+  - → `frontend/lib/demo-agent/agent-consensus.ts`
+  - → `frontend/lib/demo-agent/agent-memory.ts`
+  - → `frontend/lib/demo-agent/agent-types.ts`
+  - → `frontend/lib/demo-agent/demo-agent-manager.ts`
+  - → `frontend/lib/demo-agent/trade-planner.ts`
+- `frontend/lib/demo-agent/trade-planner.ts`
+  - → `frontend/lib/demo-agent/agent-types.ts`
+- `frontend/lib/demo-execution/execution-engine.ts`
+  - → `frontend/lib/demo-execution/order-generator.ts`
+- `frontend/lib/demo-execution/execution-manager.ts`
+  - → `frontend/lib/demo-execution/execution-engine.ts`
+- `frontend/lib/demo-execution/index.ts`
+  - → `frontend/lib/demo-execution/execution-engine.ts`
+  - → `frontend/lib/demo-execution/execution-manager.ts`
+  - → `frontend/lib/demo-execution/execution-types.ts`
+  - → `frontend/lib/demo-execution/order-generator.ts`
+  - → `frontend/lib/demo-execution/position-tracker.ts`
+- `frontend/lib/demo-execution/order-generator.ts`
+  - → `frontend/lib/demo-execution/execution-types.ts`
+- `frontend/lib/demo-execution/position-tracker.ts`
+  - → `frontend/lib/demo-execution/execution-types.ts`
+- `frontend/lib/dependency-scanner/dependency-scanner-engine.ts`
+  - → `frontend/lib/dependency-scanner/dependency-scanner-types.ts`
+- `frontend/lib/dependency-scanner/index.ts`
+  - → `frontend/lib/dependency-scanner/dependency-scanner-engine.ts`
+  - → `frontend/lib/dependency-scanner/dependency-scanner-types.ts`
+- `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-engine.ts`
+  - → `frontend/lib/broker-routing-dual-broker-sync/index.ts`
+  - → `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-types.ts`
+- `frontend/lib/dual-broker-execution-queue-sync/index.ts`
+  - → `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-engine.ts`
+  - → `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-types.ts`
+- `frontend/lib/dual-broker-orchestrator/index.ts`
+  - → `frontend/lib/dual-broker-orchestrator/dual-broker-orchestrator-types.ts`
+- `frontend/lib/dynamic-position-allocation/dynamic-position-allocation-engine.ts`
+  - → `frontend/lib/dynamic-position-allocation/dynamic-position-allocation-types.ts`
+  - → `frontend/lib/position-sizing-evolution-sync/index.ts`
+  - → `frontend/lib/smart-broker-execution-sync/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/dynamic-position-allocation/dynamic-position-allocation-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/dynamic-position-allocation/index.ts`
+  - → `frontend/lib/dynamic-position-allocation/dynamic-position-allocation-engine.ts`
+  - → `frontend/lib/dynamic-position-allocation/dynamic-position-allocation-types.ts`
+- `frontend/lib/economic-calendar/economic-calendar-engine.ts`
+  - → `frontend/lib/economic-calendar/economic-calendar-types.ts`
+- `frontend/lib/economic-calendar/index.ts`
+  - → `frontend/lib/economic-calendar/economic-calendar-engine.ts`
+  - → `frontend/lib/economic-calendar/economic-calendar-types.ts`
+- `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-engine.ts`
+  - → `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-types.ts`
+- `frontend/lib/evolution-allocation-portfolio-sync/index.ts`
+  - → `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-engine.ts`
+  - → `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-types.ts`
+- `frontend/lib/evolution-allocation/evolution-allocation-engine.ts`
+  - → `frontend/lib/evolution-allocation/evolution-allocation-types.ts`
+  - → `frontend/lib/evolution-governance/index.ts`
+- `frontend/lib/evolution-allocation/index.ts`
+  - → `frontend/lib/evolution-allocation/evolution-allocation-engine.ts`
+  - → `frontend/lib/evolution-allocation/evolution-allocation-types.ts`
+- `frontend/lib/evolution-feedback-strategy-evolution-sync/evolution-feedback-strategy-evolution-sync-engine.ts`
+  - → `frontend/lib/evolution-feedback-strategy-evolution-sync/evolution-feedback-strategy-evolution-sync-types.ts`
+  - → `frontend/lib/outcome-learning-evolution-feedback-sync/index.ts`
+  - → `frontend/lib/strategy-evolution-intelligence/index.ts`
+- `frontend/lib/evolution-feedback-strategy-evolution-sync/index.ts`
+  - → `frontend/lib/evolution-feedback-strategy-evolution-sync/evolution-feedback-strategy-evolution-sync-engine.ts`
+  - → `frontend/lib/evolution-feedback-strategy-evolution-sync/evolution-feedback-strategy-evolution-sync-types.ts`
+- `frontend/lib/evolution-governance/evolution-governance-engine.ts`
+  - → `frontend/lib/evolution-governance/evolution-governance-types.ts`
+- `frontend/lib/evolution-governance/index.ts`
+  - → `frontend/lib/evolution-governance/evolution-governance-engine.ts`
+  - → `frontend/lib/evolution-governance/evolution-governance-types.ts`
+- `frontend/lib/execution-position-ticket-sync/execution-position-ticket-sync-engine.ts`
+  - → `frontend/lib/execution-position-ticket-sync/execution-position-ticket-sync-types.ts`
+  - → `frontend/lib/execution-queue-position-sync/index.ts`
+- `frontend/lib/execution-position-ticket-sync/execution-position-ticket-sync-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/execution-position-ticket-sync/index.ts`
+  - → `frontend/lib/execution-position-ticket-sync/execution-position-ticket-sync-engine.ts`
+  - → `frontend/lib/execution-position-ticket-sync/execution-position-ticket-sync-types.ts`
+- `frontend/lib/execution-preparation/execution-manager.ts`
+  - → `frontend/lib/execution-preparation/execution-queue.ts`
+  - → `frontend/lib/execution-preparation/execution-types.ts`
+  - → `frontend/lib/execution-preparation/order-validator.ts`
+  - → `frontend/lib/execution-preparation/risk-lock.ts`
+- `frontend/lib/execution-preparation/execution-queue.ts`
+  - → `frontend/lib/execution-preparation/execution-types.ts`
+- `frontend/lib/execution-preparation/index.ts`
+  - → `frontend/lib/execution-preparation/execution-manager.ts`
+  - → `frontend/lib/execution-preparation/execution-queue.ts`
+  - → `frontend/lib/execution-preparation/execution-types.ts`
+  - → `frontend/lib/execution-preparation/order-validator.ts`
+  - → `frontend/lib/execution-preparation/risk-lock.ts`
+  - → `frontend/lib/execution-preparation/trade-ticket-builder.ts`
+- `frontend/lib/execution-preparation/order-validator.ts`
+  - → `frontend/lib/execution-preparation/execution-types.ts`
+- `frontend/lib/execution-preparation/risk-lock.ts`
+  - → `frontend/lib/execution-preparation/execution-types.ts`
+- `frontend/lib/execution-preparation/trade-ticket-builder.ts`
+  - → `frontend/lib/execution-preparation/execution-types.ts`
+- `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-engine.ts`
+  - → `frontend/lib/dynamic-position-allocation/index.ts`
+  - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-types.ts`
+- `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/execution-queue-position-sync/index.ts`
+  - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-engine.ts`
+  - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-types.ts`
+- `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-engine.ts`
+  - → `frontend/lib/dual-broker-execution-queue-sync/index.ts`
+  - → `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-types.ts`
+- `frontend/lib/execution-queue-ticket-generator-sync/index.ts`
+  - → `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-engine.ts`
+  - → `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-types.ts`
+- `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-engine.ts`
+  - → `frontend/lib/execution-position-ticket-sync/index.ts`
+  - → `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-types.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/execution-ticket-paper-order-sync/index.ts`
+  - → `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-engine.ts`
+  - → `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-types.ts`
+- `frontend/lib/feedback-engine/confidence-feedback.ts`
+  - → `frontend/lib/feedback-engine/feedback-types.ts`
+- `frontend/lib/feedback-engine/feedback-manager.ts`
+  - → `frontend/lib/feedback-engine/confidence-feedback.ts`
+  - → `frontend/lib/feedback-engine/strategy-feedback.ts`
+  - → `frontend/lib/feedback-engine/trade-feedback.ts`
+- `frontend/lib/feedback-engine/index.ts`
+  - → `frontend/lib/feedback-engine/confidence-feedback.ts`
+  - → `frontend/lib/feedback-engine/feedback-manager.ts`
+  - → `frontend/lib/feedback-engine/feedback-types.ts`
+  - → `frontend/lib/feedback-engine/strategy-feedback.ts`
+  - → `frontend/lib/feedback-engine/trade-feedback.ts`
+- `frontend/lib/feedback-engine/trade-feedback.ts`
+  - → `frontend/lib/feedback-engine/feedback-types.ts`
+- `frontend/lib/forward-testing/forward-testing-engine.ts`
+  - → `frontend/lib/execution-position-ticket-sync/index.ts`
+  - → `frontend/lib/forward-testing/forward-testing-types.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/lib/forward-testing/index.ts`
+  - → `frontend/lib/forward-testing/forward-testing-engine.ts`
+  - → `frontend/lib/forward-testing/forward-testing-types.ts`
+- `frontend/lib/forward-testing/result-analyzer.ts`
+  - → `frontend/lib/forward-testing/test-types.ts`
+- `frontend/lib/forward-testing/strategy-score.ts`
+  - → `frontend/lib/forward-testing/test-types.ts`
+- `frontend/lib/forward-testing/test-manager.ts`
+  - → `frontend/lib/forward-testing/test-planner.ts`
+- `frontend/lib/forward-testing/test-planner.ts`
+  - → `frontend/lib/forward-testing/test-types.ts`
+- `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
+  - → `frontend/lib/gpt-analyst-engine/bias-detector.ts`
+  - → `frontend/lib/gpt-analyst-engine/entry-planner.ts`
+  - → `frontend/lib/gpt-analyst-engine/reasoning-builder.ts`
+  - → `frontend/lib/gpt-analyst-engine/risk-reward-planner.ts`
+- `frontend/lib/gpt-analyst-engine/index.ts`
+  - → `frontend/lib/gpt-analyst-engine/analyst-types.ts`
+  - → `frontend/lib/gpt-analyst-engine/bias-detector.ts`
+  - → `frontend/lib/gpt-analyst-engine/entry-planner.ts`
+  - → `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
+  - → `frontend/lib/gpt-analyst-engine/reasoning-builder.ts`
+  - → `frontend/lib/gpt-analyst-engine/risk-reward-planner.ts`
+- `frontend/lib/icmarkets-connector/account-sync.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-types.ts`
+- `frontend/lib/icmarkets-connector/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-types.ts`
+- `frontend/lib/icmarkets-connector/icmarkets-manager.ts`
+  - → `frontend/lib/icmarkets-connector/account-sync.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-types.ts`
+  - → `frontend/lib/icmarkets-connector/order-firewall.ts`
+  - → `frontend/lib/icmarkets-connector/position-sync.ts`
+- `frontend/lib/icmarkets-connector/index.ts`
+  - → `frontend/lib/icmarkets-connector/account-sync.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-manager.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-types.ts`
+  - → `frontend/lib/icmarkets-connector/order-firewall.ts`
+  - → `frontend/lib/icmarkets-connector/position-sync.ts`
+- `frontend/lib/icmarkets-connector/order-firewall.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-types.ts`
+- `frontend/lib/icmarkets-connector/position-sync.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets-connector/icmarkets-types.ts`
+- `frontend/lib/icmarkets/icmarkets-execution.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+- `frontend/lib/icmarkets/icmarkets-journal-sync.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+- `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/killswitch/killswitch-engine.ts`
+- `frontend/lib/icmarkets/icmarkets-trade-manager.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/institutional-portfolio-brain-sync/index.ts`
+  - → `frontend/lib/institutional-portfolio-brain-sync/institutional-sync-types.ts`
+- `frontend/lib/intelligence/economic-calendar.ts`
+  - → `frontend/lib/intelligence/news-types.ts`
+- `frontend/lib/intelligence/index.ts`
+  - → `frontend/lib/intelligence/economic-calendar.ts`
+  - → `frontend/lib/intelligence/intelligence-manager.ts`
+  - → `frontend/lib/intelligence/news-cache.ts`
+  - → `frontend/lib/intelligence/news-provider.ts`
+  - → `frontend/lib/intelligence/news-types.ts`
+  - → `frontend/lib/intelligence/sentiment-engine.ts`
+- `frontend/lib/intelligence/intelligence-manager.ts`
+  - → `frontend/lib/intelligence/economic-calendar.ts`
+  - → `frontend/lib/intelligence/news-cache.ts`
+  - → `frontend/lib/intelligence/news-provider.ts`
+  - → `frontend/lib/intelligence/sentiment-engine.ts`
+- `frontend/lib/intelligence/news-cache.ts`
+  - → `frontend/lib/intelligence/news-types.ts`
+- `frontend/lib/intelligence/news-provider.ts`
+  - → `frontend/lib/intelligence/news-types.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/lib/intelligence/sentiment-engine.ts`
+  - → `frontend/lib/intelligence/news-types.ts`
+- `frontend/lib/killswitch/index.ts`
+  - → `frontend/lib/killswitch/killswitch-engine.ts`
+  - → `frontend/lib/killswitch/killswitch-types.ts`
+- `frontend/lib/killswitch/killswitch-engine.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/killswitch/killswitch-types.ts`
+- `frontend/lib/learning-feedback-integration/index.ts`
+  - → `frontend/lib/learning-feedback-integration/learning-feedback-engine.ts`
+  - → `frontend/lib/learning-feedback-integration/learning-feedback-types.ts`
+- `frontend/lib/learning-feedback-integration/learning-feedback-engine.ts`
+  - → `frontend/lib/learning-feedback-integration/learning-feedback-types.ts`
+- `frontend/lib/learning-reports/agent-review.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+- `frontend/lib/learning-reports/claude-review.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+- `frontend/lib/learning-reports/consensus-review.ts`
+  - → `frontend/lib/learning-reports/agent-review.ts`
+  - → `frontend/lib/learning-reports/claude-review.ts`
+  - → `frontend/lib/learning-reports/gpt-review.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+- `frontend/lib/learning-reports/daily-report.ts`
+  - → `frontend/lib/learning-reports/consensus-review.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+- `frontend/lib/learning-reports/gpt-review.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+- `frontend/lib/learning-reports/index.ts`
+  - → `frontend/lib/learning-reports/agent-review.ts`
+  - → `frontend/lib/learning-reports/claude-review.ts`
+  - → `frontend/lib/learning-reports/consensus-review.ts`
+  - → `frontend/lib/learning-reports/daily-report.ts`
+  - → `frontend/lib/learning-reports/gpt-review.ts`
+  - → `frontend/lib/learning-reports/monthly-report.ts`
+  - → `frontend/lib/learning-reports/report-manager.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+  - → `frontend/lib/learning-reports/weekly-report.ts`
+- `frontend/lib/learning-reports/monthly-report.ts`
+  - → `frontend/lib/learning-reports/consensus-review.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+- `frontend/lib/learning-reports/report-manager.ts`
+  - → `frontend/lib/learning-reports/agent-review.ts`
+  - → `frontend/lib/learning-reports/claude-review.ts`
+  - → `frontend/lib/learning-reports/consensus-review.ts`
+  - → `frontend/lib/learning-reports/daily-report.ts`
+  - → `frontend/lib/learning-reports/gpt-review.ts`
+  - → `frontend/lib/learning-reports/monthly-report.ts`
+  - → `frontend/lib/learning-reports/weekly-report.ts`
+- `frontend/lib/learning-reports/weekly-report.ts`
+  - → `frontend/lib/learning-reports/consensus-review.ts`
+  - → `frontend/lib/learning-reports/report-types.ts`
+- `frontend/lib/learning-scheduler/daily-scheduler.ts`
+  - → `frontend/lib/learning-scheduler/scheduler-types.ts`
+- `frontend/lib/learning-scheduler/index.ts`
+  - → `frontend/lib/learning-scheduler/daily-scheduler.ts`
+  - → `frontend/lib/learning-scheduler/learning-cycle.ts`
+  - → `frontend/lib/learning-scheduler/monthly-scheduler.ts`
+  - → `frontend/lib/learning-scheduler/scheduler-manager.ts`
+  - → `frontend/lib/learning-scheduler/scheduler-types.ts`
+  - → `frontend/lib/learning-scheduler/weekly-scheduler.ts`
+- `frontend/lib/learning-scheduler/monthly-scheduler.ts`
+  - → `frontend/lib/learning-scheduler/scheduler-types.ts`
+- `frontend/lib/learning-scheduler/scheduler-manager.ts`
+  - → `frontend/lib/learning-scheduler/daily-scheduler.ts`
+  - → `frontend/lib/learning-scheduler/learning-cycle.ts`
+  - → `frontend/lib/learning-scheduler/monthly-scheduler.ts`
+  - → `frontend/lib/learning-scheduler/weekly-scheduler.ts`
+- `frontend/lib/learning-scheduler/weekly-scheduler.ts`
+  - → `frontend/lib/learning-scheduler/scheduler-types.ts`
+- `frontend/lib/learning/learning-store.ts`
+  - → `frontend/lib/db-store.ts`
+- `frontend/lib/learning/trade-feedback-engine.ts`
+  - → `frontend/lib/learning/learning-store.ts`
+  - → `frontend/lib/paper-trading/paper-history.ts`
+- `frontend/lib/malwarebytes-integration/index.ts`
+  - → `frontend/lib/malwarebytes-integration/malwarebytes-engine.ts`
+  - → `frontend/lib/malwarebytes-integration/malwarebytes-types.ts`
+- `frontend/lib/malwarebytes-integration/malwarebytes-engine.ts`
+  - → `frontend/lib/malwarebytes-integration/malwarebytes-types.ts`
+- `frontend/lib/market-data-engine/index.ts`
+  - → `frontend/lib/market-data-engine/feed-router.ts`
+  - → `frontend/lib/market-data-engine/market-data-manager.ts`
+  - → `frontend/lib/market-data-engine/market-health.ts`
+  - → `frontend/lib/market-data-engine/market-types.ts`
+  - → `frontend/lib/market-data-engine/price-cache.ts`
+  - → `frontend/lib/market-data-engine/symbol-registry.ts`
+- `frontend/lib/market-data-engine/market-data-manager.ts`
+  - → `frontend/lib/market-data-engine/market-health.ts`
+  - → `frontend/lib/market-data-engine/price-cache.ts`
+- `frontend/lib/market-data-engine/market-health.ts`
+  - → `frontend/lib/market-data-engine/market-types.ts`
+- `frontend/lib/market-data-engine/price-cache.ts`
+  - → `frontend/lib/market-data-engine/market-types.ts`
+- `frontend/lib/market-data/index.ts`
+  - → `frontend/lib/market-data/market-cache.ts`
+  - → `frontend/lib/market-data/market-manager.ts`
+  - → `frontend/lib/market-data/market-provider.ts`
+  - → `frontend/lib/market-data/market-types.ts`
+  - → `frontend/lib/market-data/market-watchlist.ts`
+- `frontend/lib/market-data/market-cache.ts`
+  - → `frontend/lib/market-data/market-types.ts`
+- `frontend/lib/market-data/market-manager.ts`
+  - → `frontend/lib/market-data/market-cache.ts`
+  - → `frontend/lib/market-data/market-types.ts`
+  - → `frontend/lib/market-data/market-watchlist.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/lib/market-data/market-provider.ts`
+  - → `frontend/lib/market-data/market-types.ts`
+- `frontend/lib/market-regime-engine/index.ts`
+  - → `frontend/lib/market-regime-engine/regime-classifier.ts`
+  - → `frontend/lib/market-regime-engine/regime-manager.ts`
+  - → `frontend/lib/market-regime-engine/regime-types.ts`
+  - → `frontend/lib/market-regime-engine/risk-regime-detector.ts`
+  - → `frontend/lib/market-regime-engine/trend-detector.ts`
+  - → `frontend/lib/market-regime-engine/volatility-detector.ts`
+- `frontend/lib/market-regime-engine/regime-classifier.ts`
+  - → `frontend/lib/market-regime-engine/regime-types.ts`
+  - → `frontend/lib/market-regime-engine/risk-regime-detector.ts`
+  - → `frontend/lib/market-regime-engine/trend-detector.ts`
+  - → `frontend/lib/market-regime-engine/volatility-detector.ts`
+- `frontend/lib/market-regime-engine/regime-manager.ts`
+  - → `frontend/lib/market-regime-engine/regime-classifier.ts`
+- `frontend/lib/market-regime-engine/risk-regime-detector.ts`
+  - → `frontend/lib/market-regime-engine/regime-types.ts`
+- `frontend/lib/market-regime-engine/trend-detector.ts`
+  - → `frontend/lib/market-regime-engine/regime-types.ts`
+- `frontend/lib/market-regime-engine/volatility-detector.ts`
+  - → `frontend/lib/market-regime-engine/regime-types.ts`
+- `frontend/lib/market-regime/index.ts`
+  - → `frontend/lib/market-regime/news-regime.ts`
+  - → `frontend/lib/market-regime/regime-manager.ts`
+  - → `frontend/lib/market-regime/regime-types.ts`
+  - → `frontend/lib/market-regime/risk-regime.ts`
+  - → `frontend/lib/market-regime/trend-regime.ts`
+  - → `frontend/lib/market-regime/volatility-regime.ts`
+- `frontend/lib/market-regime/news-regime.ts`
+  - → `frontend/lib/market-regime/regime-types.ts`
+- `frontend/lib/market-regime/regime-manager.ts`
+  - → `frontend/lib/market-regime/news-regime.ts`
+  - → `frontend/lib/market-regime/regime-types.ts`
+  - → `frontend/lib/market-regime/risk-regime.ts`
+  - → `frontend/lib/market-regime/trend-regime.ts`
+  - → `frontend/lib/market-regime/volatility-regime.ts`
+- `frontend/lib/market-regime/risk-regime.ts`
+  - → `frontend/lib/market-regime/regime-types.ts`
+- `frontend/lib/market-regime/trend-regime.ts`
+  - → `frontend/lib/market-regime/regime-types.ts`
+- `frontend/lib/market-regime/volatility-regime.ts`
+  - → `frontend/lib/market-regime/regime-types.ts`
+- `frontend/lib/market-scanner/ai-analysis-engine.ts`
+  - → `frontend/lib/ai-config/ai-config-store.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+- `frontend/lib/market-universe/dynamic-market-data.ts`
+  - → `frontend/lib/market-universe/opportunity-scanner.ts`
+- `frontend/lib/market-universe/market-regime-sync.ts`
+  - → `frontend/lib/market-universe/market-universe.ts`
+- `frontend/lib/market-universe/opportunity-scanner.ts`
+  - → `frontend/lib/market-universe/market-regime-sync.ts`
+- `frontend/lib/market-universe/strategy-opportunity-sync.ts`
+  - → `frontend/lib/market-universe/opportunity-scanner.ts`
+- `frontend/lib/mission-control/event-log.ts`
+  - → `frontend/lib/db-store.ts`
+- `frontend/lib/mission-control/health-scanner.ts`
+  - → `frontend/lib/mission-control-endpoint-registry.ts`
+- `frontend/lib/mission-control/live-alert-source-mapping.ts`
+  - → `frontend/lib/mission-control-telegram-alerts.ts`
+- `frontend/lib/mission-control/recovery-tracker.ts`
+  - → `frontend/lib/mission-control/event-log.ts`
+- `frontend/lib/mission-control/system-audit.ts`
+  - → `frontend/lib/mission-control-endpoint-registry.ts`
+- `frontend/lib/multi-strategy-competition/index.ts`
+  - → `frontend/lib/multi-strategy-competition/multi-strategy-competition-engine.ts`
+  - → `frontend/lib/multi-strategy-competition/multi-strategy-competition-types.ts`
+- `frontend/lib/multi-strategy-competition/multi-strategy-competition-engine.ts`
+  - → `frontend/lib/multi-strategy-competition/multi-strategy-competition-types.ts`
+  - → `frontend/lib/strategy-ranking/index.ts`
+- `frontend/lib/multi-strategy-competition/multi-strategy-competition-types.ts`
+  - → `frontend/lib/broker-performance-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+  - → `frontend/lib/strategy-broker-intelligence/index.ts`
+- `frontend/lib/multi-style-consensus-trade-approval-sync/index.ts`
+  - → `frontend/lib/multi-style-consensus-trade-approval-sync/multi-style-consensus-trade-approval-engine.ts`
+  - → `frontend/lib/multi-style-consensus-trade-approval-sync/multi-style-consensus-trade-approval-types.ts`
+- `frontend/lib/multi-style-consensus-trade-approval-sync/multi-style-consensus-trade-approval-engine.ts`
+  - → `frontend/lib/multi-style-consensus-trade-approval-sync/multi-style-consensus-trade-approval-types.ts`
+  - → `frontend/lib/multi-style-consensus/index.ts`
+- `frontend/lib/multi-style-consensus-unified-decision-sync/index.ts`
+  - → `frontend/lib/multi-style-consensus-unified-decision-sync/multi-style-consensus-unified-decision-engine.ts`
+  - → `frontend/lib/multi-style-consensus-unified-decision-sync/multi-style-consensus-unified-decision-types.ts`
+- `frontend/lib/multi-style-consensus-unified-decision-sync/multi-style-consensus-unified-decision-engine.ts`
+  - → `frontend/lib/multi-style-consensus-trade-approval-sync/index.ts`
+  - → `frontend/lib/multi-style-consensus-unified-decision-sync/multi-style-consensus-unified-decision-types.ts`
+- `frontend/lib/multi-style-consensus/index.ts`
+  - → `frontend/lib/multi-style-consensus/multi-style-consensus-engine.ts`
+  - → `frontend/lib/multi-style-consensus/multi-style-consensus-types.ts`
+- `frontend/lib/multi-style-consensus/multi-style-consensus-engine.ts`
+  - → `frontend/lib/multi-style-consensus/multi-style-consensus-types.ts`
+  - → `frontend/lib/trading-style-priority-engine/index.ts`
+- `frontend/lib/multi-timeframe-trade-approval-sync/index.ts`
+  - → `frontend/lib/multi-timeframe-trade-approval-sync/multi-timeframe-trade-approval-types.ts`
+- `frontend/lib/multi-timeframe-trading-style-analysis/index.ts`
+  - → `frontend/lib/multi-timeframe-trading-style-analysis/multi-timeframe-types.ts`
+- `frontend/lib/multi-timeframe-unified-decision-sync/index.ts`
+  - → `frontend/lib/multi-timeframe-unified-decision-sync/multi-timeframe-unified-decision-types.ts`
+- `frontend/lib/mutation-competition/index.ts`
+  - → `frontend/lib/mutation-competition/mutation-competition-engine.ts`
+  - → `frontend/lib/mutation-competition/mutation-competition-types.ts`
+- `frontend/lib/mutation-competition/mutation-competition-engine.ts`
+  - → `frontend/lib/mutation-competition/mutation-competition-types.ts`
+  - → `frontend/lib/strategy-mutation/index.ts`
+- `frontend/lib/news-intelligence/news-intelligence-engine.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/lib/openai-integration/gpt-learning-review.ts`
+  - → `frontend/lib/openai-integration/openai-client.ts`
+  - → `frontend/lib/openai-integration/openai-types.ts`
+- `frontend/lib/openai-integration/gpt-market-analyst.ts`
+  - → `frontend/lib/openai-integration/openai-client.ts`
+  - → `frontend/lib/openai-integration/openai-types.ts`
+- `frontend/lib/openai-integration/gpt-strategy-review.ts`
+  - → `frontend/lib/openai-integration/openai-client.ts`
+  - → `frontend/lib/openai-integration/openai-types.ts`
+- `frontend/lib/openai-integration/index.ts`
+  - → `frontend/lib/openai-integration/gpt-learning-review.ts`
+  - → `frontend/lib/openai-integration/gpt-market-analyst.ts`
+  - → `frontend/lib/openai-integration/gpt-strategy-review.ts`
+  - → `frontend/lib/openai-integration/openai-client.ts`
+  - → `frontend/lib/openai-integration/openai-manager.ts`
+  - → `frontend/lib/openai-integration/openai-types.ts`
+- `frontend/lib/openai-integration/openai-client.ts`
+  - → `frontend/lib/openai-integration/openai-types.ts`
+- `frontend/lib/openai-integration/openai-manager.ts`
+  - → `frontend/lib/openai-integration/gpt-learning-review.ts`
+  - → `frontend/lib/openai-integration/gpt-market-analyst.ts`
+  - → `frontend/lib/openai-integration/gpt-strategy-review.ts`
+  - → `frontend/lib/openai-integration/openai-client.ts`
+- `frontend/lib/outcome-learning-auto-update/index.ts`
+  - → `frontend/lib/outcome-learning-auto-update/outcome-learning-types.ts`
+- `frontend/lib/outcome-learning-evolution-feedback-sync/index.ts`
+  - → `frontend/lib/outcome-learning-evolution-feedback-sync/outcome-learning-evolution-feedback-sync-engine.ts`
+  - → `frontend/lib/outcome-learning-evolution-feedback-sync/outcome-learning-evolution-feedback-sync-types.ts`
+- `frontend/lib/outcome-learning-evolution-feedback-sync/outcome-learning-evolution-feedback-sync-engine.ts`
+  - → `frontend/lib/outcome-learning-evolution-feedback-sync/outcome-learning-evolution-feedback-sync-types.ts`
+  - → `frontend/lib/performance-outcome-learning-sync/index.ts`
+- `frontend/lib/paper-account-performance-sync/index.ts`
+  - → `frontend/lib/paper-account-performance-sync/paper-account-performance-sync-engine.ts`
+  - → `frontend/lib/paper-account-performance-sync/paper-account-performance-sync-types.ts`
+- `frontend/lib/paper-account-performance-sync/paper-account-performance-sync-engine.ts`
+  - → `frontend/lib/paper-account-performance-sync/paper-account-performance-sync-types.ts`
+  - → `frontend/lib/paper-position-account-sync/index.ts`
+  - → `frontend/lib/paper-trading/paper-history.ts`
+- `frontend/lib/paper-position-account-sync/index.ts`
+  - → `frontend/lib/paper-position-account-sync/paper-position-account-sync-engine.ts`
+  - → `frontend/lib/paper-position-account-sync/paper-position-account-sync-types.ts`
+- `frontend/lib/paper-position-account-sync/paper-position-account-sync-engine.ts`
+  - → `frontend/lib/paper-position-account-sync/paper-position-account-sync-types.ts`
+  - → `frontend/lib/paper-trading/paper-singleton.ts`
+- `frontend/lib/paper-trading/index.ts`
+  - → `frontend/lib/paper-trading/paper-account-manager.ts`
+  - → `frontend/lib/paper-trading/paper-history.ts`
+  - → `frontend/lib/paper-trading/paper-order-manager.ts`
+  - → `frontend/lib/paper-trading/paper-pnl-engine.ts`
+  - → `frontend/lib/paper-trading/paper-position-manager.ts`
+  - → `frontend/lib/paper-trading/paper-trading-manager.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/paper-trading/paper-account-manager.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/paper-trading/paper-history.ts`
+  - → `frontend/lib/db-store.ts`
+- `frontend/lib/paper-trading/paper-order-manager.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/paper-trading/paper-performance.ts`
+  - → `frontend/lib/paper-trading/paper-history.ts`
+- `frontend/lib/paper-trading/paper-pnl-engine.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/paper-trading/paper-position-manager.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/paper-trading/paper-singleton.ts`
+  - → `frontend/lib/paper-trading/paper-trading-manager.ts`
+- `frontend/lib/paper-trading/paper-trading-manager.ts`
+  - → `frontend/lib/paper-trading/paper-account-manager.ts`
+  - → `frontend/lib/paper-trading/paper-history.ts`
+  - → `frontend/lib/paper-trading/paper-order-manager.ts`
+  - → `frontend/lib/paper-trading/paper-pnl-engine.ts`
+  - → `frontend/lib/paper-trading/paper-position-manager.ts`
+  - → `frontend/lib/paper-trading/paper-types.ts`
+- `frontend/lib/performance-outcome-learning-sync/index.ts`
+  - → `frontend/lib/performance-outcome-learning-sync/performance-outcome-learning-sync-engine.ts`
+  - → `frontend/lib/performance-outcome-learning-sync/performance-outcome-learning-sync-types.ts`
+- `frontend/lib/performance-outcome-learning-sync/performance-outcome-learning-sync-engine.ts`
+  - → `frontend/lib/paper-account-performance-sync/index.ts`
+  - → `frontend/lib/performance-outcome-learning-sync/performance-outcome-learning-sync-types.ts`
+- `frontend/lib/performance-tracker/equity-performance.ts`
+  - → `frontend/lib/performance-tracker/performance-types.ts`
+- `frontend/lib/performance-tracker/index.ts`
+  - → `frontend/lib/performance-tracker/equity-performance.ts`
+  - → `frontend/lib/performance-tracker/performance-manager.ts`
+  - → `frontend/lib/performance-tracker/performance-types.ts`
+  - → `frontend/lib/performance-tracker/strategy-performance.ts`
+  - → `frontend/lib/performance-tracker/trade-performance.ts`
+- `frontend/lib/performance-tracker/performance-manager.ts`
+  - → `frontend/lib/performance-tracker/equity-performance.ts`
+  - → `frontend/lib/performance-tracker/strategy-performance.ts`
+  - → `frontend/lib/performance-tracker/trade-performance.ts`
+- `frontend/lib/performance-tracker/strategy-performance.ts`
+  - → `frontend/lib/performance-tracker/trade-performance.ts`
+- `frontend/lib/performance-tracker/trade-performance.ts`
+  - → `frontend/lib/performance-tracker/performance-types.ts`
+- `frontend/lib/portfolio-brain-broker-selection-sync/index.ts`
+  - → `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-engine.ts`
+  - → `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-types.ts`
+- `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-engine.ts`
+  - → `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-types.ts`
+  - → `frontend/lib/portfolio-brain-evolution-sync/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/portfolio-brain-evolution-sync/index.ts`
+  - → `frontend/lib/portfolio-brain-evolution-sync/portfolio-brain-evolution-sync-engine.ts`
+  - → `frontend/lib/portfolio-brain-evolution-sync/portfolio-brain-evolution-sync-types.ts`
+- `frontend/lib/portfolio-brain-evolution-sync/portfolio-brain-evolution-sync-engine.ts`
+  - → `frontend/lib/autonomous-trading-evolution-memory/index.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+  - → `frontend/lib/evolution-governance/index.ts`
+  - → `frontend/lib/multi-style-consensus-unified-decision-sync/index.ts`
+  - → `frontend/lib/portfolio-brain-evolution-sync/portfolio-brain-evolution-sync-types.ts`
+  - → `frontend/lib/strategy-evolution-autonomous-sync/index.ts`
+- `frontend/lib/portfolio-brain-unified-decision/index.ts`
+  - → `frontend/lib/portfolio-brain-unified-decision/portfolio-brain-unified-decision-types.ts`
+- `frontend/lib/portfolio-brain/brain-decision.ts`
+  - → `frontend/lib/portfolio-brain/brain-types.ts`
+- `frontend/lib/portfolio-brain/brain-inputs.ts`
+  - → `frontend/lib/portfolio-brain/brain-types.ts`
+  - → `frontend/lib/portfolio-intelligence/index.ts`
+- `frontend/lib/portfolio-brain/brain-manager.ts`
+  - → `frontend/lib/portfolio-brain/brain-decision.ts`
+  - → `frontend/lib/portfolio-brain/brain-inputs.ts`
+  - → `frontend/lib/portfolio-brain/brain-safety.ts`
+  - → `frontend/lib/portfolio-brain/brain-types.ts`
+- `frontend/lib/portfolio-brain/brain-safety.ts`
+  - → `frontend/lib/portfolio-brain/brain-types.ts`
+- `frontend/lib/portfolio-brain/execution-queue-engine.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
+- `frontend/lib/portfolio-brain/index.ts`
+  - → `frontend/lib/portfolio-brain/brain-decision.ts`
+  - → `frontend/lib/portfolio-brain/brain-inputs.ts`
+  - → `frontend/lib/portfolio-brain/brain-manager.ts`
+  - → `frontend/lib/portfolio-brain/brain-safety.ts`
+  - → `frontend/lib/portfolio-brain/brain-types.ts`
+- `frontend/lib/portfolio-brain/paper-trading-execution-engine.ts`
+  - → `frontend/lib/portfolio-brain/execution-queue-engine.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-adaptive-confidence.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-outcome-learning-sync.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-strategy-sync.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-adaptive-learning.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-learning.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-outcomes.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-decision-memory.ts`
+  - → `frontend/lib/db-store.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-strategy-sync.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-learning.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-memory.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-memory.ts`
+  - → `frontend/lib/portfolio-brain/brain-types.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-outcome-learning-sync.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-decision-memory.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-outcomes.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-memory.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-self-evolution.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-adaptive-confidence.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-outcome-learning-sync.ts`
+- `frontend/lib/portfolio-brain/portfolio-brain-strategy-sync.ts`
+  - → `frontend/lib/market-universe/strategy-opportunity-sync.ts`
+- `frontend/lib/portfolio-brain/portfolio-risk-management.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-adaptive-confidence.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-self-evolution.ts`
+- `frontend/lib/portfolio-brain/trade-approval-engine.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-adaptive-confidence.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-self-evolution.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-brain-strategy-sync.ts`
+  - → `frontend/lib/portfolio-brain/portfolio-risk-management.ts`
+- `frontend/lib/portfolio-brain/trade-outcome-feedback-engine.ts`
+  - → `frontend/lib/portfolio-brain/paper-trading-execution-engine.ts`
+- `frontend/lib/portfolio-intelligence/allocation-engine.ts`
+  - → `frontend/lib/portfolio-intelligence/portfolio-types.ts`
+- `frontend/lib/portfolio-intelligence/correlation-risk.ts`
+  - → `frontend/lib/portfolio-intelligence/portfolio-types.ts`
+- `frontend/lib/portfolio-intelligence/exposure-analyzer.ts`
+  - → `frontend/lib/portfolio-intelligence/portfolio-types.ts`
+- `frontend/lib/portfolio-intelligence/index.ts`
+  - → `frontend/lib/portfolio-intelligence/allocation-engine.ts`
+  - → `frontend/lib/portfolio-intelligence/correlation-risk.ts`
+  - → `frontend/lib/portfolio-intelligence/exposure-analyzer.ts`
+  - → `frontend/lib/portfolio-intelligence/portfolio-manager.ts`
+  - → `frontend/lib/portfolio-intelligence/portfolio-types.ts`
+- `frontend/lib/portfolio-intelligence/portfolio-manager.ts`
+  - → `frontend/lib/portfolio-intelligence/allocation-engine.ts`
+  - → `frontend/lib/portfolio-intelligence/correlation-risk.ts`
+  - → `frontend/lib/portfolio-intelligence/exposure-analyzer.ts`
+  - → `frontend/lib/portfolio-intelligence/portfolio-types.ts`
+- `frontend/lib/position-sizing-evolution-sync/index.ts`
+  - → `frontend/lib/position-sizing-evolution-sync/position-sizing-evolution-sync-engine.ts`
+  - → `frontend/lib/position-sizing-evolution-sync/position-sizing-evolution-sync-types.ts`
+- `frontend/lib/position-sizing-evolution-sync/position-sizing-evolution-sync-engine.ts`
+  - → `frontend/lib/portfolio-brain-evolution-sync/index.ts`
+  - → `frontend/lib/position-sizing-evolution-sync/position-sizing-evolution-sync-types.ts`
+- `frontend/lib/python-backend/python-client.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/lib/python-bridge/python-data.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/lib/regime-ai-sync/index.ts`
+  - → `frontend/lib/regime-ai-sync/regime-ai-sync-engine.ts`
+  - → `frontend/lib/regime-ai-sync/regime-ai-sync-types.ts`
+- `frontend/lib/regime-ai-sync/regime-ai-sync-engine.ts`
+  - → `frontend/lib/claude-risk-engine/claude-risk-manager.ts`
+  - → `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
+  - → `frontend/lib/market-data-engine/index.ts`
+  - → `frontend/lib/market-regime-engine/index.ts`
+  - → `frontend/lib/regime-ai-sync/regime-ai-sync-types.ts`
+- `frontend/lib/security-center/index.ts`
+  - → `frontend/lib/security-center/security-center-engine.ts`
+  - → `frontend/lib/security-center/security-center-types.ts`
+- `frontend/lib/security-center/security-center-engine.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/killswitch/index.ts`
+  - → `frontend/lib/malwarebytes-integration/index.ts`
+  - → `frontend/lib/security-center/security-center-types.ts`
+- `frontend/lib/security-watchdog/claude-watchdog.ts`
+  - → `frontend/lib/killswitch/index.ts`
+  - → `frontend/lib/security-watchdog/ip-blocklist.ts`
+  - → `frontend/lib/security-watchdog/security-event-logger.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/security-watchdog/ip-blocklist.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+- `frontend/lib/security-watchdog/security-event-logger.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+- `frontend/lib/settings/index.ts`
+  - → `frontend/lib/settings/settings-store.ts`
+- `frontend/lib/settings/settings-store.ts`
+  - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/broker-config/index.ts`
+- `frontend/lib/smart-broker-execution-sync/index.ts`
+  - → `frontend/lib/smart-broker-execution-sync/smart-broker-execution-sync-engine.ts`
+  - → `frontend/lib/smart-broker-execution-sync/smart-broker-execution-sync-types.ts`
+- `frontend/lib/smart-broker-execution-sync/smart-broker-execution-sync-engine.ts`
+  - → `frontend/lib/smart-broker-execution-sync/smart-broker-execution-sync-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/smart-broker-execution-sync/smart-broker-execution-sync-types.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/smart-broker-selection/index.ts`
+  - → `frontend/lib/smart-broker-selection/smart-broker-selection-engine.ts`
+  - → `frontend/lib/smart-broker-selection/smart-broker-selection-types.ts`
+- `frontend/lib/smart-broker-selection/smart-broker-selection-engine.ts`
+  - → `frontend/lib/smart-broker-selection/smart-broker-selection-types.ts`
+- `frontend/lib/species-broker-execution-sync/index.ts`
+  - → `frontend/lib/species-broker-execution-sync/species-broker-execution-sync-engine.ts`
+  - → `frontend/lib/species-broker-execution-sync/species-broker-execution-sync-types.ts`
+- `frontend/lib/species-broker-execution-sync/species-broker-execution-sync-engine.ts`
+  - → `frontend/lib/species-broker-execution-sync/species-broker-execution-sync-types.ts`
+- `frontend/lib/species-broker-routing-sync/index.ts`
+  - → `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-engine.ts`
+  - → `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-types.ts`
+- `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-engine.ts`
+  - → `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-types.ts`
+- `frontend/lib/species-capital-allocation/index.ts`
+  - → `frontend/lib/species-capital-allocation/species-capital-allocation-engine.ts`
+  - → `frontend/lib/species-capital-allocation/species-capital-allocation-types.ts`
+- `frontend/lib/species-capital-allocation/species-capital-allocation-engine.ts`
+  - → `frontend/lib/species-capital-allocation/species-capital-allocation-types.ts`
+- `frontend/lib/species-execution-center-sync/index.ts`
+  - → `frontend/lib/species-execution-center-sync/species-execution-center-sync-engine.ts`
+  - → `frontend/lib/species-execution-center-sync/species-execution-center-sync-types.ts`
+- `frontend/lib/species-execution-center-sync/species-execution-center-sync-engine.ts`
+  - → `frontend/lib/species-execution-center-sync/species-execution-center-sync-types.ts`
+- `frontend/lib/species-execution-queue-integration/index.ts`
+  - → `frontend/lib/species-execution-queue-integration/species-execution-queue-integration-engine.ts`
+  - → `frontend/lib/species-execution-queue-integration/species-execution-queue-integration-types.ts`
+- `frontend/lib/species-execution-queue-integration/species-execution-queue-integration-engine.ts`
+  - → `frontend/lib/species-execution-queue-integration/species-execution-queue-integration-types.ts`
+- `frontend/lib/species-execution-queue/index.ts`
+  - → `frontend/lib/species-execution-queue/species-execution-queue-engine.ts`
+  - → `frontend/lib/species-execution-queue/species-execution-queue-types.ts`
+- `frontend/lib/species-execution-queue/species-execution-queue-engine.ts`
+  - → `frontend/lib/species-execution-queue/species-execution-queue-types.ts`
+- `frontend/lib/species-execution-ticket-generator/index.ts`
+  - → `frontend/lib/species-execution-ticket-generator/species-execution-ticket-generator-engine.ts`
+  - → `frontend/lib/species-execution-ticket-generator/species-execution-ticket-generator-types.ts`
+- `frontend/lib/species-execution-ticket-generator/species-execution-ticket-generator-engine.ts`
+  - → `frontend/lib/species-execution-ticket-generator/species-execution-ticket-generator-types.ts`
+- `frontend/lib/species-extinction/index.ts`
+  - → `frontend/lib/species-extinction/species-extinction-engine.ts`
+  - → `frontend/lib/species-extinction/species-extinction-types.ts`
+- `frontend/lib/species-extinction/species-extinction-engine.ts`
+  - → `frontend/lib/species-extinction/species-extinction-types.ts`
+- `frontend/lib/species-live-execution-bridge/index.ts`
+  - → `frontend/lib/species-live-execution-bridge/species-live-execution-bridge-engine.ts`
+  - → `frontend/lib/species-live-execution-bridge/species-live-execution-bridge-types.ts`
+- `frontend/lib/species-live-execution-bridge/species-live-execution-bridge-engine.ts`
+  - → `frontend/lib/species-live-execution-bridge/species-live-execution-bridge-types.ts`
+- `frontend/lib/species-position-sizing/index.ts`
+  - → `frontend/lib/species-position-sizing/species-position-sizing-engine.ts`
+  - → `frontend/lib/species-position-sizing/species-position-sizing-types.ts`
+- `frontend/lib/species-position-sizing/species-position-sizing-engine.ts`
+  - → `frontend/lib/species-position-sizing/species-position-sizing-types.ts`
+- `frontend/lib/species-survival/index.ts`
+  - → `frontend/lib/species-survival/species-survival-engine.ts`
+  - → `frontend/lib/species-survival/species-survival-types.ts`
+- `frontend/lib/species-survival/species-survival-engine.ts`
+  - → `frontend/lib/species-survival/species-survival-types.ts`
+- `frontend/lib/species-trade-allocation/index.ts`
+  - → `frontend/lib/species-trade-allocation/species-trade-allocation-engine.ts`
+  - → `frontend/lib/species-trade-allocation/species-trade-allocation-types.ts`
+- `frontend/lib/species-trade-allocation/species-trade-allocation-engine.ts`
+  - → `frontend/lib/species-trade-allocation/species-trade-allocation-types.ts`
+- `frontend/lib/species-trade-approval-sync/index.ts`
+  - → `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-engine.ts`
+  - → `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-types.ts`
+- `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-engine.ts`
+  - → `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-types.ts`
+- `frontend/lib/strategy-breeding/index.ts`
+  - → `frontend/lib/strategy-breeding/strategy-breeding-engine.ts`
+  - → `frontend/lib/strategy-breeding/strategy-breeding-types.ts`
+- `frontend/lib/strategy-breeding/strategy-breeding-engine.ts`
+  - → `frontend/lib/mutation-competition/index.ts`
+  - → `frontend/lib/strategy-breeding/strategy-breeding-types.ts`
+- `frontend/lib/strategy-broker-intelligence/index.ts`
+  - → `frontend/lib/strategy-broker-intelligence/strategy-broker-intelligence-engine.ts`
+  - → `frontend/lib/strategy-broker-intelligence/strategy-broker-intelligence-types.ts`
+- `frontend/lib/strategy-broker-intelligence/strategy-broker-intelligence-engine.ts`
+  - → `frontend/lib/broker-performance-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+  - → `frontend/lib/strategy-broker-intelligence/strategy-broker-intelligence-types.ts`
+- `frontend/lib/strategy-broker-intelligence/strategy-broker-intelligence-types.ts`
+  - → `frontend/lib/broker-performance-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+- `frontend/lib/strategy-evolution-autonomous-sync/index.ts`
+  - → `frontend/lib/strategy-evolution-autonomous-sync/strategy-evolution-autonomous-sync-engine.ts`
+  - → `frontend/lib/strategy-evolution-autonomous-sync/strategy-evolution-autonomous-sync-types.ts`
+- `frontend/lib/strategy-evolution-autonomous-sync/strategy-evolution-autonomous-sync-engine.ts`
+  - → `frontend/lib/autonomous-trading-evolution/index.ts`
+  - → `frontend/lib/evolution-feedback-strategy-evolution-sync/index.ts`
+  - → `frontend/lib/strategy-evolution-autonomous-sync/strategy-evolution-autonomous-sync-types.ts`
+- `frontend/lib/strategy-evolution-intelligence/index.ts`
+  - → `frontend/lib/strategy-evolution-intelligence/strategy-evolution-engine.ts`
+  - → `frontend/lib/strategy-evolution-intelligence/strategy-evolution-types.ts`
+- `frontend/lib/strategy-evolution-intelligence/strategy-evolution-engine.ts`
+  - → `frontend/lib/strategy-evolution-intelligence/strategy-evolution-types.ts`
+  - → `frontend/lib/strategy-lifecycle/index.ts`
+- `frontend/lib/strategy-evolution/evolution-engine.ts`
+  - → `frontend/lib/learning/trade-feedback-engine.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+  - → `frontend/lib/strategy-evolution/confidence-engine.ts`
+  - → `frontend/lib/strategy-evolution/evolution-types.ts`
+- `frontend/lib/strategy-evolution/evolution-manager.ts`
+  - → `frontend/lib/strategy-evolution/evolution-engine.ts`
+  - → `frontend/lib/strategy-evolution/market-adapter.ts`
+  - → `frontend/lib/strategy-evolution/strategy-ranker.ts`
+- `frontend/lib/strategy-evolution/index.ts`
+  - → `frontend/lib/strategy-evolution/confidence-engine.ts`
+  - → `frontend/lib/strategy-evolution/evolution-engine.ts`
+  - → `frontend/lib/strategy-evolution/evolution-manager.ts`
+  - → `frontend/lib/strategy-evolution/evolution-types.ts`
+  - → `frontend/lib/strategy-evolution/market-adapter.ts`
+  - → `frontend/lib/strategy-evolution/strategy-ranker.ts`
+- `frontend/lib/strategy-evolution/market-adapter.ts`
+  - → `frontend/lib/strategy-evolution/evolution-types.ts`
+- `frontend/lib/strategy-evolution/strategy-ranker.ts`
+  - → `frontend/lib/strategy-evolution/evolution-types.ts`
+- `frontend/lib/strategy-lifecycle/index.ts`
+  - → `frontend/lib/strategy-lifecycle/strategy-lifecycle-engine.ts`
+  - → `frontend/lib/strategy-lifecycle/strategy-lifecycle-types.ts`
+- `frontend/lib/strategy-lifecycle/strategy-lifecycle-engine.ts`
+  - → `frontend/lib/multi-strategy-competition/index.ts`
+  - → `frontend/lib/strategy-lifecycle/strategy-lifecycle-types.ts`
+- `frontend/lib/strategy-mutation/index.ts`
+  - → `frontend/lib/strategy-mutation/strategy-mutation-engine.ts`
+  - → `frontend/lib/strategy-mutation/strategy-mutation-types.ts`
+- `frontend/lib/strategy-mutation/strategy-mutation-engine.ts`
+  - → `frontend/lib/strategy-evolution-intelligence/index.ts`
+  - → `frontend/lib/strategy-mutation/strategy-mutation-types.ts`
+- `frontend/lib/strategy-ranking/index.ts`
+  - → `frontend/lib/strategy-ranking/strategy-ranking-engine.ts`
+  - → `frontend/lib/strategy-ranking/strategy-ranking-types.ts`
+- `frontend/lib/strategy-ranking/strategy-ranking-engine.ts`
+  - → `frontend/lib/strategy-broker-intelligence/index.ts`
+  - → `frontend/lib/strategy-ranking/strategy-ranking-types.ts`
+  - → `frontend/lib/strategy-universe-registry/index.ts`
+- `frontend/lib/strategy-ranking/strategy-ranking-types.ts`
+  - → `frontend/lib/broker-performance-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+  - → `frontend/lib/strategy-broker-intelligence/index.ts`
+  - → `frontend/lib/strategy-universe-registry/index.ts`
+- `frontend/lib/strategy-species-classification/index.ts`
+  - → `frontend/lib/strategy-species-classification/strategy-species-classification-engine.ts`
+  - → `frontend/lib/strategy-species-classification/strategy-species-classification-types.ts`
+- `frontend/lib/strategy-species-classification/strategy-species-classification-engine.ts`
+  - → `frontend/lib/strategy-species-classification/strategy-species-classification-types.ts`
+- `frontend/lib/strategy-universe-registry/index.ts`
+  - → `frontend/lib/strategy-universe-registry/strategy-universe-registry-engine.ts`
+  - → `frontend/lib/strategy-universe-registry/strategy-universe-registry-types.ts`
+- `frontend/lib/strategy-universe-registry/strategy-universe-registry-engine.ts`
+  - → `frontend/lib/broker-performance-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+  - → `frontend/lib/strategy-universe-registry/strategy-universe-registry-types.ts`
+- `frontend/lib/strategy-universe-registry/strategy-universe-registry-types.ts`
+  - → `frontend/lib/broker-performance-memory/index.ts`
+  - → `frontend/lib/smart-broker-selection/index.ts`
+  - → `frontend/lib/strategy-broker-intelligence/index.ts`
+- `frontend/lib/strategy-weight-auto-rebalancing/index.ts`
+  - → `frontend/lib/strategy-weight-auto-rebalancing/strategy-weight-types.ts`
+- `frontend/lib/strategy-weight-portfolio-brain-sync/index.ts`
+  - → `frontend/lib/strategy-weight-portfolio-brain-sync/strategy-weight-portfolio-brain-sync-types.ts`
+- `frontend/lib/technical-indicators/index.ts`
+  - → `frontend/lib/technical-indicators/technical-indicators-engine.ts`
+  - → `frontend/lib/technical-indicators/technical-indicators-types.ts`
+- `frontend/lib/telegram-notifications/index.ts`
+  - → `frontend/lib/telegram-notifications/telegram-engine.ts`
+  - → `frontend/lib/telegram-notifications/telegram-types.ts`
+- `frontend/lib/telegram-notifications/telegram-engine.ts`
+  - → `frontend/lib/telegram-notifications/telegram-types.ts`
+- `frontend/lib/trade-approval-execution-queue-sync/index.ts`
+  - → `frontend/lib/trade-approval-execution-queue-sync/trade-approval-execution-queue-types.ts`
+- `frontend/lib/trading-filters/trade-filters.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/python-backend/auth-header.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/trading-style-priority-engine/index.ts`
+  - → `frontend/lib/trading-style-priority-engine/trading-style-priority-types.ts`
+- `frontend/lib/trading-style-priority-trade-approval-sync/index.ts`
+  - → `frontend/lib/trading-style-priority-trade-approval-sync/trading-style-priority-trade-approval-types.ts`
+- `frontend/lib/trading-style-priority-unified-decision-sync/index.ts`
+  - → `frontend/lib/trading-style-priority-unified-decision-sync/trading-style-priority-unified-decision-types.ts`
+- `frontend/lib/tradingview-integration/index.ts`
+  - → `frontend/lib/tradingview-integration/chart-provider.ts`
+  - → `frontend/lib/tradingview-integration/datafeed-plan.ts`
+  - → `frontend/lib/tradingview-integration/symbol-mapper.ts`
+  - → `frontend/lib/tradingview-integration/tradingview-manager.ts`
+  - → `frontend/lib/tradingview-integration/tradingview-types.ts`
+  - → `frontend/lib/tradingview-integration/widget-config.ts`
+- `frontend/lib/tradingview-integration/tradingview-manager.ts`
+  - → `frontend/lib/tradingview-integration/widget-config.ts`
+- `frontend/lib/tradingview-integration/widget-config.ts`
+  - → `frontend/lib/tradingview-integration/tradingview-types.ts`
+- `frontend/lib/unified-decision-trade-approval-sync/index.ts`
+  - → `frontend/lib/unified-decision-trade-approval-sync/unified-decision-trade-approval-types.ts`
+
+## frontend/middleware.ts
+
+- `frontend/middleware.ts`
+  - → `frontend/lib/security-watchdog/ip-blocklist.ts`
+  - → `frontend/lib/security-watchdog/security-event-logger.ts`
+
+## frontend/next-env.d.ts
+
+- `frontend/next-env.d.ts`
+  - → `frontend/.next/types/routes.d.ts`
+
+## Am häufigsten benutzt (Änderung hier trifft am meisten)
+
+- `frontend/lib/smart-broker-selection/index.ts` — von 26 Dateien
+- `frontend/lib/capital-com/capital-com-session.ts` — von 20 Dateien
+- `frontend/app/lib/prisma.ts` — von 20 Dateien
+- `frontend/lib/capital-com/capital-com-client.ts` — von 17 Dateien
+- `frontend/lib/python-backend/auth-header.ts` — von 15 Dateien
+- `frontend/lib/icmarkets/icmarkets-session.ts` — von 13 Dateien
+- `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
+- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 13 Dateien
+- `analysis-engine/core/config.py` — von 11 Dateien
+- `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
+- `backend/services/market_data.py` — von 9 Dateien
+- `frontend/lib/paper-trading/paper-types.ts` — von 9 Dateien
+- `analysis-engine/services/storage.py` — von 8 Dateien
+- `frontend/lib/auth/auth-store.ts` — von 8 Dateien
+- `frontend/lib/settings/settings-store.ts` — von 8 Dateien
+

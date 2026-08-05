@@ -30,6 +30,9 @@ const pruefer = [
   // wenn jemand einen WERT ändert — vorgeführt an MAX_SIZE BTCUSD 0.05 → 5.0,
   // dem hundertfachen Risiko, bei dem das ganze Netz grün blieb.
   ["snapshot", require("./snapshot")],
+  // 05.08. ergaenzt: wer haengt an wem. Erzeugt aus den Importen, damit die
+  // Karte nicht veralten kann — eine falsche Karte waere schlimmer als keine.
+  ["system-map", require("./system-map")],
 ];
 
 const nurDieser = process.argv[2];

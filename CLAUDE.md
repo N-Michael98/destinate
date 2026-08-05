@@ -111,3 +111,34 @@ node scripts/checks/snapshot.js --update
 Die Datei `scripts/checks/snapshots/kritische-werte.json` gehört ins Repository.
 Eine Änderung daran ist im Diff sichtbar und gehört im Commit begründet — genau
 das ist der Zweck. Nie von Hand bearbeiten.
+
+## Vor einer Änderung: wer hängt daran?
+
+```bash
+node scripts/checks/system-map.js --impact lib/agents/risk-agent.ts
+```
+
+Antwortet mit: wer diese Datei benutzt (direkt und über Umwege), was sie selbst
+braucht, und welche Prüfer sie absichern. **Bei Dateien mit erhöhtem Risiko vor
+der Änderung ausführen** — genau dort ist wiederholt etwas übersehen worden,
+weil eine Abhängigkeit nicht bekannt war.
+
+Die Karte `SYSTEM_MAP.md` wird aus den Importen **erzeugt**, nicht von Hand
+gepflegt — statische und dynamische (`await import(...)`, davon gibt es über
+neunzig). Der zehnte Prüfer meldet jede neue oder entfernte Abhängigkeit
+namentlich. Nach einer beabsichtigten Änderung mitziehen:
+
+```bash
+node scripts/checks/system-map.js --update
+```
+
+Selbstprüfung des Auflösers (muss 0 offene melden):
+
+```bash
+node scripts/checks/system-map.js --audit
+```
+
+**Was die Karte nicht kann:** Sie zeigt, wer wen aufruft. Kopplung über
+gemeinsame *Werte* (Epic-Namen über acht Tabellen) oder gemeinsame *Ressourcen*
+(zwei Systeme schreiben denselben Broker-Stop) sieht sie nicht — dafür sind die
+übrigen Prüfer da. Sie ergänzt sie, sie ersetzt sie nicht.
