@@ -39,12 +39,22 @@ async def talib_analyze_multi(req: MultiRequest):
             raw_list.append(res)
 
     results: dict = {}
+    # FEHLER MITGEBEN (06.08.): bisher wurde der Grund NUR hier ins Log dieses
+    # Dienstes geschrieben und dann verworfen. Im Frontend kam eine leere Liste
+    # an, und dessen Meldung riet: "TA-Lib fehlend (kein yfinance-Mapping?)".
+    # Am 06.08. stand diese Zeile für alle 30 Symbole im Log — nachgemessen sind
+    # aber ALLE 30 in SYMBOL_MAP eingetragen und liefern über yfinance Daten.
+    # Die Vermutung im Logtext war also falsch und hat die Suche in die falsche
+    # Richtung geschickt. Der echte Grund lag im Log des ANDEREN Dienstes.
+    # Deshalb wird er jetzt mitgeschickt: gleiche Antwort, ein Feld mehr.
+    fehler: dict = {}
     for item in raw_list:
         sym = item.get("symbol")
         if not sym:
             continue
         if "error" in item:
             print(f"[talib] ⚠ {sym}: {item['error']}")
+            fehler[sym] = str(item["error"])[:200]
             continue
         momentum = item.get("momentum", {})
         trend    = item.get("trend", {})
@@ -81,7 +91,15 @@ async def talib_analyze_multi(req: MultiRequest):
             "patterns_bearish": patterns.get("bearish", []),
         }
     print(f"[talib] ✅ {len(results)}/{len(symbols)} Symbole analysiert")
-    return {"results": results}
+    if fehler:
+        # Gleiche Gründe zusammenfassen — 30x derselbe Text hilft niemandem.
+        gezaehlt: dict = {}
+        for grund in fehler.values():
+            gezaehlt[grund] = gezaehlt.get(grund, 0) + 1
+        zusammenfassung = " | ".join(f"{n}x {g}" for g, n in
+                                     sorted(gezaehlt.items(), key=lambda x: -x[1]))
+        print(f"[talib] ⛔ {len(fehler)}/{len(symbols)} ohne Ergebnis: {zusammenfassung}")
+    return {"results": results, "fehler": fehler}
 
 
 @router.get("/patterns/{symbol}")

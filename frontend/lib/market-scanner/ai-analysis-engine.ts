@@ -98,15 +98,38 @@ async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSumma
       console.warn(`[ai-engine] TA-Lib Backend Fehler: ${res.status} ${res.statusText}`);
       return result;
     }
-    const data = await res.json() as { results?: Record<string, TAlibSummary> };
+    const data = await res.json() as {
+      results?: Record<string, TAlibSummary>;
+      // Seit 06.08.: das Backend schickt den Grund je Symbol mit.
+      fehler?: Record<string, string>;
+    };
     const received = Object.keys(data.results ?? {}).length;
     console.log(`[ai-engine] TA-Lib: ${received}/${symbols.length} Symbole analysiert`);
     for (const [sym, ta] of Object.entries(data.results ?? {})) {
       result.set(sym, ta);
     }
-    // Fehlende Symbole loggen
-    const missing = symbols.filter(s => !result.has(s));
-    if (missing.length > 0) console.warn(`[ai-engine] TA-Lib fehlend (kein yfinance-Mapping?): ${missing.join(", ")}`);
+    // Fehlende Symbole MIT GRUND melden.
+    //
+    // Vorher stand hier "(kein yfinance-Mapping?)" — eine Vermutung im Logtext.
+    // Am 06.08. erschien genau diese Zeile für alle 30 Symbole, während TA-Lib
+    // 0/30 lieferte. Nachgemessen: alle 30 stehen in SYMBOL_MAP und liefern über
+    // yfinance Kerzen (1d/6mo geprüft). Die Vermutung war falsch und hat die
+    // Fehlersuche in die falsche Richtung geschickt. Ein Log darf nicht raten.
+    const missing = symbols.filter((s) => !result.has(s));
+    if (missing.length > 0) {
+      const gruende = data.fehler ?? {};
+      const gezaehlt = new Map<string, number>();
+      for (const sym of missing) {
+        const g = gruende[sym] ?? "Backend nannte keinen Grund";
+        gezaehlt.set(g, (gezaehlt.get(g) ?? 0) + 1);
+      }
+      const zusammenfassung = [...gezaehlt.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([g, n]) => `${n}x "${g}"`)
+        .join(" | ");
+      console.warn(`[ai-engine] TA-Lib ohne Ergebnis für ${missing.length}/${symbols.length}: ${zusammenfassung}`);
+      console.warn(`[ai-engine] TA-Lib betroffen: ${missing.join(", ")}`);
+    }
   } catch (e) { console.warn("[ai-engine] TA-Lib fetch fehlgeschlagen:", e); }
   return result;
 }
@@ -474,7 +497,16 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
     console.warn("[ai-engine] ⛔ Kein GPT-Key — kein Trade möglich. Analyse wird fortgesetzt aber goSignal=false für alle.");
   }
   if (!pythonBackendOk) {
-    console.warn(`[ai-engine] ⛔ Python Backend nicht erreichbar oder zu wenige TA-Lib Daten (${taData.size}/${symbols.length}) — kein Trade möglich.`);
+    // "nicht erreichbar ODER zu wenige Daten" waren zwei sehr verschiedene
+    // Lagen in einem Satz — mit gegensätzlichen Konsequenzen. Am 06.08. war
+    // das Backend nachweislich erreichbar (Strategien 30/30 im selben Zyklus),
+    // trotzdem las sich die Zeile wie ein Ausfall. Jetzt wird unterschieden;
+    // strategyData ist der Zeuge, denn beide Abrufe gehen an denselben Dienst.
+    const backendHatGeantwortet = strategyData.size > 0;
+    const lage = backendHatGeantwortet
+      ? `Backend ERREICHBAR (Strategien ${strategyData.size}/${symbols.length}), aber TA-Lib liefert nur ${taData.size}/${symbols.length}`
+      : "Backend antwortete WEDER bei TA-Lib NOCH bei den Strategien";
+    console.warn(`[ai-engine] ⛔ ${lage} — unter der 50%-Schwelle, kein Trade möglich.`);
   }
 
   // ── GPT Batch Analyse mit echten TA-Daten ────────────────────────────────
