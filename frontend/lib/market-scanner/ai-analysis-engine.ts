@@ -83,8 +83,35 @@ interface TAlibSummary {
   patterns_bearish?: string[];
 }
 
+/** Eine Ausnahme auf EINE Logzeile bringen.
+ *
+ *  Anlass (06.08., aus dem Betriebslog): `console.warn("...", e)` mit der
+ *  DOMException aus `AbortSignal.timeout()` erzeugte 33 Zeilen — eine Meldung,
+ *  fuenf Stapelzeilen und die 25 DOMException-Konstanten von INDEX_SIZE_ERR
+ *  bis DATA_CLONE_ERR. Fuer die eine Information "der Abruf lief in die Zeit".
+ *  Zweimal im selben Zyklus gesehen (19:53:42 und 19:58:41) = 66 Zeilen.
+ *
+ *  Das ist dieselbe Fehlerklasse, die uns am 06.08. 159 Meldungen gekostet hat
+ *  (Railway-Grenze 500 Zeilen/s): Laerm verdraengt die Zeile, auf die es
+ *  ankommt. Name und Meldung bleiben vollstaendig erhalten, der Stapel bei
+ *  einem Timeout sagt ohnehin nichts — er zeigt nur, wo gewartet wurde.
+ */
+function fehlerText(e: unknown): string {
+  if (e instanceof Error) {
+    const ursache = (e as { cause?: unknown }).cause;
+    const zusatz = ursache instanceof Error ? ` (Ursache: ${ursache.name}: ${ursache.message})`
+                 : ursache != null ? ` (Ursache: ${String(ursache).slice(0, 120)})` : "";
+    return `${e.name}: ${e.message}${zusatz}`;
+  }
+  return String(e).slice(0, 200);
+}
+
 async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSummary>> {
   const result = new Map<string, TAlibSummary>();
+  // Dauer messen (06.08.): der Strategien-Abruf lief zweimal in den 60s-Timeout,
+  // und NIRGENDS stand, wie lange er tatsaechlich braucht. Ohne diese Zahl waere
+  // jede Entscheidung — Zeitgrenze anheben oder Arbeit verringern — geraten.
+  const begonnen = Date.now();
   const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
   if (!PYTHON_BASE) return result;
   try {
@@ -104,7 +131,7 @@ async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSumma
       fehler?: Record<string, string>;
     };
     const received = Object.keys(data.results ?? {}).length;
-    console.log(`[ai-engine] TA-Lib: ${received}/${symbols.length} Symbole analysiert`);
+    console.log(`[ai-engine] TA-Lib: ${received}/${symbols.length} Symbole analysiert in ${Date.now() - begonnen}ms`);
     for (const [sym, ta] of Object.entries(data.results ?? {})) {
       result.set(sym, ta);
     }
@@ -130,7 +157,7 @@ async function fetchTALibData(symbols: string[]): Promise<Map<string, TAlibSumma
       console.warn(`[ai-engine] TA-Lib ohne Ergebnis für ${missing.length}/${symbols.length}: ${zusammenfassung}`);
       console.warn(`[ai-engine] TA-Lib betroffen: ${missing.join(", ")}`);
     }
-  } catch (e) { console.warn("[ai-engine] TA-Lib fetch fehlgeschlagen:", e); }
+  } catch (e) { console.warn(`[ai-engine] TA-Lib fetch fehlgeschlagen nach ${Date.now() - begonnen}ms: ${fehlerText(e)}`); }
   return result;
 }
 
@@ -175,6 +202,7 @@ interface StrategyResult {
 
 async function fetchStrategySignals(symbols: string[]): Promise<Map<string, StrategyResult>> {
   const result = new Map<string, StrategyResult>();
+  const begonnen = Date.now();
   const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
   if (!PYTHON_BASE) return result;
   try {
@@ -196,11 +224,11 @@ async function fetchStrategySignals(symbols: string[]): Promise<Map<string, Stra
     }
     const data = await res.json() as { results?: Record<string, StrategyResult> };
     const received = Object.keys(data.results ?? {}).length;
-    console.log(`[ai-engine] Strategies: ${received}/${symbols.length} Symbole analysiert`);
+    console.log(`[ai-engine] Strategies: ${received}/${symbols.length} Symbole analysiert in ${Date.now() - begonnen}ms (Zeitgrenze 60000ms)`);
     for (const [sym, sr] of Object.entries(data.results ?? {})) {
       result.set(sym, sr);
     }
-  } catch (e) { console.warn("[ai-engine] Strategies fetch fehlgeschlagen:", e); }
+  } catch (e) { console.warn(`[ai-engine] Strategies fetch fehlgeschlagen nach ${Date.now() - begonnen}ms: ${fehlerText(e)}`); }
   return result;
 }
 
@@ -362,6 +390,7 @@ async function fetchStrategyPerformance(): Promise<string> {
 // ── Feature 6: Multi-Timeframe TA-Lib ────────────────────────────────────────
 async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string, string>> {
   const result = new Map<string, string>();
+  const begonnen = Date.now();
   const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
   if (!PYTHON_BASE || !symbols.length) return result;
   try {
@@ -386,7 +415,14 @@ async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string
         result.set(sym, `1H:${t1h?.trend ?? "?"}/${t1h?.signal ?? "?"} 1W:${t1wk?.trend ?? "?"}/${t1wk?.signal ?? "?"}`);
       }
     }
-  } catch { /* non-fatal */ }
+  } catch (e) {
+    // War bis 06.08. ein stiller catch. Dieser Abruf gehoert zu demselben
+    // Schwall wie TA-Lib und die Strategien (30 Symbole x 2 Intervalle) und
+    // faellt deshalb unter denselben Bedingungen aus — nur sah man es nie.
+    // Der Ausfall bleibt folgenlos (Prompt ohne Multi-Timeframe-Zeile), aber
+    // er darf nicht unsichtbar sein.
+    console.warn(`[ai-engine] Multi-Timeframe fehlgeschlagen nach ${Date.now() - begonnen}ms: ${fehlerText(e)}`);
+  }
   return result;
 }
 
