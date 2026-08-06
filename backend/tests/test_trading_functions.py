@@ -473,3 +473,145 @@ def test_swing_points_radius_wirkt():
     assert _swing_points(_df(kurve), links=2, rechts=2)[0] == 5.0
     eng = _swing_points(_df(kurve), links=5, rechts=5)[0]
     assert eng is None or eng == 5.0
+
+# ── Log-Flut: Fehler werden gezaehlt statt wiederholt (06.08.) ────────────────
+# Anlass, nachgerechnet aus dem Betriebslog vom 06.08.: bei offenem
+# yfinance-Schalter entstanden 960 Zeilen in EINER Sekunde. Railways Grenze
+# liegt bei 500/s, gemeldet wurden "Messages dropped: 159". Verworfen wurden
+# ausgerechnet die Zeilen mit dem AUSLOESENDEN Fehler — die eigene Beweislage
+# war damit zerstoert. Diese Tests halten die Gegenmassnahme fest.
+
+import logging as _logging
+import services.trading_strategies as _TS
+from core.circuit_breaker import TradingCircuitBreakerListener, _fehler_zustand
+
+
+class _Faenger(_logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.zeilen = []
+
+    def emit(self, record):
+        self.zeilen.append(record.getMessage())
+
+
+def _mit_strategien(faelscher):
+    """Alle Strategien durch faelscher ersetzen, Logzeilen einsammeln."""
+    faenger = _Faenger()
+    _TS.logger.addHandler(faenger)
+    echt = dict(_TS.STRATEGIES)
+    _TS.STRATEGIES.clear()
+    _TS.STRATEGIES.update({k: faelscher(k) for k in echt})
+    try:
+        ergebnis = _TS.analyze_all_strategies("EURUSD")
+    finally:
+        _TS.STRATEGIES.clear()
+        _TS.STRATEGIES.update(echt)
+        _TS.logger.removeHandler(faenger)
+    return ergebnis, faenger.zeilen
+
+
+def test_strategien_fehler_ergeben_genau_eine_zeile():
+    def alle_kaputt(name):
+        def f(sym):
+            raise RuntimeError("Timeout not elapsed yet, circuit breaker still open")
+        return f
+
+    ergebnis, zeilen = _mit_strategien(alle_kaputt)
+    # 16 Strategien scheitern -> frueher 16 Zeilen, jetzt genau eine.
+    assert len(zeilen) == 1, f"erwartet 1 Zeile, bekam {len(zeilen)}"
+    assert "16/16 fehlgeschlagen" in zeilen[0]
+    assert "circuit breaker still open" in zeilen[0]
+    # Das Ergebnis bleibt vollstaendig — nur das Logging ist knapper.
+    assert ergebnis["total_strategies"] == len(_TS.STRATEGIES)
+
+
+def test_strategien_verschiedene_ursachen_bleiben_sichtbar():
+    """Zusammenfassen darf keine Ursache verschlucken."""
+    def gemischt(name):
+        def f(sym):
+            if name in ("price_action", "momentum"):
+                raise ValueError("Zu wenig Daten")
+            raise RuntimeError("Timeout not elapsed yet, circuit breaker still open")
+        return f
+
+    _, zeilen = _mit_strategien(gemischt)
+    assert len(zeilen) == 1
+    assert "Zu wenig Daten" in zeilen[0]
+    assert "circuit breaker still open" in zeilen[0]
+    assert "price_action" in zeilen[0] and "momentum" in zeilen[0]
+
+
+def test_strategien_ohne_fehler_loggen_nichts():
+    _, zeilen = _mit_strategien(lambda name: (lambda sym: _TS._neutral("ok")))
+    assert zeilen == []
+
+
+class _FakeCB:
+    def __init__(self, name):
+        self.name = name
+
+
+class _FakeState:
+    def __init__(self, name):
+        self.name = name
+
+
+def _breaker_zeilen(aufrufe, stufe="error"):
+    faenger = _Faenger()
+    log = _logging.getLogger("core.circuit_breaker")
+    log.addHandler(faenger)
+    alt = log.level
+    log.setLevel(_logging.DEBUG)
+    _fehler_zustand.pop("test_cb", None)
+    try:
+        aufrufe()
+    finally:
+        log.removeHandler(faenger)
+        log.setLevel(alt)
+        _fehler_zustand.pop("test_cb", None)
+    return faenger.zeilen
+
+
+def test_breaker_drosselt_gleiche_fehler():
+    hoerer = TradingCircuitBreakerListener()
+    cb = _FakeCB("test_cb")
+    zeilen = _breaker_zeilen(
+        lambda: [hoerer.failure(cb, RuntimeError("HTTPError 429")) for _ in range(300)]
+    )
+    assert len(zeilen) == 1, f"300 gleiche Fehler ergaben {len(zeilen)} Zeilen"
+    assert "429" in zeilen[0]
+
+
+def test_breaker_laesst_neue_ursache_sofort_durch():
+    """Eine ANDERE Ursache darf nie unterdrueckt werden."""
+    hoerer = TradingCircuitBreakerListener()
+    cb = _FakeCB("test_cb")
+
+    def ablauf():
+        for _ in range(50):
+            hoerer.failure(cb, RuntimeError("HTTPError 429"))
+        hoerer.failure(cb, RuntimeError("ConnectionResetError"))
+
+    zeilen = _breaker_zeilen(ablauf)
+    assert len(zeilen) == 2
+    assert "429" in zeilen[0]
+    assert "ConnectionResetError" in zeilen[1]
+    # Die unterdrueckten werden mitgezaehlt, nicht verschwiegen.
+    assert "49 weitere" in zeilen[1]
+
+
+def test_breaker_zustandswechsel_wird_nie_gedrosselt():
+    """Der Zustandswechsel ist die wichtigste Zeile — immer vollstaendig."""
+    hoerer = TradingCircuitBreakerListener()
+    cb = _FakeCB("test_cb")
+    faenger = _Faenger()
+    log = _logging.getLogger("core.circuit_breaker")
+    log.addHandler(faenger)
+    log.setLevel(_logging.DEBUG)
+    try:
+        for _ in range(5):
+            hoerer.state_change(cb, _FakeState("closed"), _FakeState("open"))
+    finally:
+        log.removeHandler(faenger)
+    assert len(faenger.zeilen) == 5

@@ -1035,12 +1035,42 @@ def analyze_all_strategies(symbol: str) -> dict:
     sym = symbol.upper()
     results: dict[str, dict] = {}
 
+    # EINE Zeile je Symbol statt einer je Strategie (06.08.).
+    #
+    # Anlass, nachgerechnet: faellt eine gemeinsame Ursache aus — etwa der
+    # yfinance-Sicherungsschalter — scheitern ALLE 16 Strategien mit demselben
+    # Satz. Bei 30 Symbolen sind das 480 identische Zeilen in derselben Sekunde.
+    # Zusammen mit den TA-Lib-Zeilen (30 x 2 x 3 Abrufe = 180) ergibt das 660.
+    # Railways Grenze liegt bei 500/s; am 06.08. 18:22:36 stand im Log
+    # "rate limit of 500 logs/sec reached ... Messages dropped: 159".
+    # 660 - 500 = 160 gegenueber 159 gemeldet — die Rechnung geht auf.
+    #
+    # Das ist nicht nur Laerm: verworfen wurden ausgerechnet die Zeilen, die den
+    # AUSLOESENDEN yfinance-Fehler genannt haetten. Wir haben uns die eigene
+    # Beweislage zerstoert. Gleiche Meldungen werden deshalb gezaehlt statt
+    # wiederholt — die Information bleibt vollstaendig, die Zeilenzahl faellt
+    # von bis zu 16 auf 1 je Symbol.
+    fehler: list[tuple[str, str]] = []
     for name, fn in STRATEGIES.items():
         try:
             results[name] = fn(sym)
         except Exception as e:
-            logger.warning(f"[strategies] {sym}/{name} Fehler: {e}")
+            fehler.append((name, str(e)))
             results[name] = _neutral(f"Fehler: {str(e)[:60]}")
+
+    if fehler:
+        gruppen: dict[str, list[str]] = {}
+        for name, meldung in fehler:
+            gruppen.setdefault(meldung[:120], []).append(name)
+        teile = [
+            f'{len(namen)}x "{meldung}" ({", ".join(sorted(namen)[:3])}'
+            + (", ..." if len(namen) > 3 else "") + ")"
+            for meldung, namen in sorted(gruppen.items(), key=lambda x: -len(x[1]))
+        ]
+        logger.warning(
+            f"[strategies] {sym}: {len(fehler)}/{len(STRATEGIES)} fehlgeschlagen — "
+            + " | ".join(teile)
+        )
 
     # Aggregierter Score
     long_count  = sum(1 for r in results.values() if r["signal"] == "LONG")

@@ -53,7 +53,13 @@ async def talib_analyze_multi(req: MultiRequest):
         if not sym:
             continue
         if "error" in item:
-            print(f"[talib] ⚠ {sym}: {item['error']}")
+            # Die Einzelzeile je Symbol ist am 06.08. entfallen: sie war eine
+            # WIEDERHOLUNG dessen, was analyze_talib() eine Ebene tiefer schon
+            # geloggt hat, und trug bei 30 Symbolen x 3 Abrufen (1d/1h/1wk) 90
+            # der 660 Zeilen bei, mit denen wir Railways Grenze von 500/s
+            # gerissen und 159 eigene Meldungen verloren haben. Der Grund geht
+            # nicht verloren: er steht unten zusammengefasst UND wird seit heute
+            # im Feld "fehler" an das Frontend mitgegeben.
             fehler[sym] = str(item["error"])[:200]
             continue
         momentum = item.get("momentum", {})
