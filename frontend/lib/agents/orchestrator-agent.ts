@@ -574,16 +574,44 @@ export async function runOrchestratorCycle(): Promise<void> {
     }
   } catch { /* non-fatal — ohne Robustheitsdaten läuft alles wie bisher */ }
 
+  // JEDER Ausschluss wird benannt (06.08.).
+  //
+  // Vorher meldeten zwei der drei Bedingungen GAR NICHTS und am Ende stand nur
+  // "Keine Kandidaten nach Filter". Belegt im Betriebslog 06.08. 22:21: die
+  // Analyse gab NAS100 und GBPUSD mit conf=70 frei, der Zyklus endete direkt
+  // danach ohne einen einzigen Hinweis, welche Bedingung gegriffen hat und mit
+  // welchem Wert. Von aussen war das nicht von einem Fehler zu unterscheiden.
+  //
+  // Reine Ausgabe — an den Bedingungen selbst ist NICHTS geaendert.
+  const verworfen: string[] = [];
   const candidates = analysisResult.approved.filter(o => {
     if (ueberangepasst.includes(o.symbol)) {
       console.log(`[orchestrator] 🔬 ${o.symbol} übersprungen — Walk-Forward meldet Überanpassung`);
+      verworfen.push(`${o.symbol}: Walk-Forward-Überanpassung`);
       return false;
     }
-    if (o.gpt.confidence < threshold) return false;
+    if (o.gpt.confidence < threshold) {
+      verworfen.push(
+        `${o.symbol}: Confidence ${o.gpt.confidence} < Schwelle ${threshold}` +
+        ` (autoApprove ${settings.botSettings.autoApproveThreshold ?? 71},` +
+        ` minConfidence ${settings.riskSettings?.minConfidenceScore ?? 0}` +
+        `${dailyLimitReached ? `, Tageslimit erreicht → Bypass ${bypassScore}` : ""})`
+      );
+      return false;
+    }
     const s = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
-    if ((global.__daily_trades__?.byStyle[s] ?? 0) >= ((styleLimit as Record<string, number>)[s] ?? 999)) return false;
+    const heute = global.__daily_trades__?.byStyle[s] ?? 0;
+    const grenze = (styleLimit as Record<string, number>)[s] ?? 999;
+    if (heute >= grenze) {
+      verworfen.push(`${o.symbol}: Tageslimit ${s} erreicht (${heute}/${grenze})`);
+      return false;
+    }
     return true;
   });
+
+  if (verworfen.length > 0) {
+    console.log(`[orchestrator] 🚫 ${verworfen.length} von ${analysisResult.approved.length} freigegebenen Signalen verworfen: ${verworfen.join(" | ")}`);
+  }
 
   if (!candidates.length) {
     console.log("[orchestrator] Keine Kandidaten nach Filter — Zyklus beendet");
