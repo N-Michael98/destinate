@@ -483,7 +483,8 @@ def test_swing_points_radius_wirkt():
 
 import logging as _logging
 import services.trading_strategies as _TS
-from core.circuit_breaker import TradingCircuitBreakerListener, _fehler_zustand
+from core.circuit_breaker import TradingCircuitBreakerListener
+from core.log_drossel import zuruecksetzen as _drossel_reset
 
 
 class _Faenger(_logging.Handler):
@@ -563,13 +564,13 @@ def _breaker_zeilen(aufrufe, stufe="error"):
     log.addHandler(faenger)
     alt = log.level
     log.setLevel(_logging.DEBUG)
-    _fehler_zustand.pop("test_cb", None)
+    _drossel_reset("breaker:test_cb")
     try:
         aufrufe()
     finally:
         log.removeHandler(faenger)
         log.setLevel(alt)
-        _fehler_zustand.pop("test_cb", None)
+        _drossel_reset("breaker:test_cb")
     return faenger.zeilen
 
 
@@ -615,3 +616,108 @@ def test_breaker_zustandswechsel_wird_nie_gedrosselt():
     finally:
         log.removeHandler(faenger)
     assert len(faenger.zeilen) == 5
+
+# ── Log-Drossel und Wiederhol-Ausgabe (06.08.) ───────────────────────────────
+
+from core.log_drossel import gedrosselt, zuruecksetzen as _drossel_zuruecksetzen
+from core.retry import api_retry
+
+
+def _sammler():
+    zeilen = []
+    return zeilen, zeilen.append
+
+
+def test_drossel_zaehlt_gleiche_meldungen():
+    _drossel_zuruecksetzen("t1")
+    zeilen, schreib = _sammler()
+    for _ in range(300):
+        gedrosselt(schreib, "t1", "immer derselbe Text")
+    assert len(zeilen) == 1
+
+
+def test_drossel_laesst_geaenderten_text_sofort_durch():
+    """Eine NEUE Ursache darf nie unterdrueckt werden."""
+    _drossel_zuruecksetzen("t2")
+    zeilen, schreib = _sammler()
+    for _ in range(50):
+        gedrosselt(schreib, "t2", "Ursache A")
+    gedrosselt(schreib, "t2", "Ursache B")
+    assert len(zeilen) == 2
+    assert "Ursache A" in zeilen[0]
+    assert "Ursache B" in zeilen[1]
+    assert "49 weitere" in zeilen[1], "Unterdrueckte muessen mitgezaehlt werden"
+
+
+def test_drossel_trennt_schluessel():
+    _drossel_zuruecksetzen()
+    zeilen, schreib = _sammler()
+    gedrosselt(schreib, "a", "gleicher Text")
+    gedrosselt(schreib, "b", "gleicher Text")
+    assert len(zeilen) == 2, "verschiedene Quellen duerfen sich nicht drosseln"
+
+
+def test_retry_ausgabe_ist_gedrosselt():
+    """300 Abrufe mit je 2 Wiederholungen ergaben 600 Zeilen.
+
+    FALLE, in die der erste Entwurf lief: die Versuchsnummer stand nur im TEXT.
+    Der wechselt dadurch bei jedem Aufruf zwischen "Versuch 1" und "Versuch 2",
+    die Drossel wertete das als neue Ursache und liess ALLE 600 durch — die
+    Behebung war wirkungslos. Erst die Nummer im SCHLUESSEL wirkt. Genau das
+    haelt dieser Test fest.
+    """
+    _drossel_zuruecksetzen()
+    zeilen, _ = _sammler()
+
+    class Faenger(_logging.Handler):
+        def emit(self, record):
+            zeilen.append(record.getMessage())
+
+    log = _logging.getLogger("core.retry")
+    faenger = Faenger()
+    log.addHandler(faenger)
+    log.setLevel(_logging.DEBUG)
+
+    @api_retry(min_wait=0, max_wait=0)
+    def scheitert():
+        raise ConnectionError("Verbindung weg")
+
+    try:
+        for _ in range(300):
+            try:
+                scheitert()
+            except ConnectionError:
+                pass
+    finally:
+        log.removeHandler(faenger)
+
+    assert len(zeilen) == 2, f"erwartet 2 Zeilen (je Versuchsstufe eine), bekam {len(zeilen)}"
+
+
+def test_retry_verhalten_bleibt_unveraendert():
+    """Die Drosselung darf NUR die Ausgabe aendern, nie das Wiederholen."""
+    versuche = {"n": 0}
+
+    @api_retry(min_wait=0, max_wait=0)
+    def passend():
+        versuche["n"] += 1
+        raise ConnectionError("x")
+
+    try:
+        passend()
+    except ConnectionError:
+        pass
+    assert versuche["n"] == 3, "stop_after_attempt(3) muss weiterhin gelten"
+
+    versuche["n"] = 0
+
+    @api_retry(min_wait=0, max_wait=0)
+    def unpassend():
+        versuche["n"] += 1
+        raise RuntimeError("nicht in retry_if_exception_type")
+
+    try:
+        unpassend()
+    except RuntimeError:
+        pass
+    assert versuche["n"] == 1, "nicht gelistete Ausnahmen duerfen nicht wiederholt werden"

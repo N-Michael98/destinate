@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 633 · Kanten: 1282
+Dateien mit internen Abhängigkeiten: 635 · Kanten: 1286
 
 
 ## analysis-engine/api
@@ -106,6 +106,13 @@ Dateien mit internen Abhängigkeiten: 633 · Kanten: 1282
 - `backend/api/routes/talib_analysis.py`
   - → `backend/services/talib_indicators.py`
 
+## backend/core
+
+- `backend/core/circuit_breaker.py`
+  - → `backend/core/log_drossel.py`
+- `backend/core/retry.py`
+  - → `backend/core/log_drossel.py`
+
 ## backend/main.py
 
 - `backend/main.py`
@@ -148,6 +155,8 @@ Dateien mit internen Abhängigkeiten: 633 · Kanten: 1282
 - `backend/tests/test_trading_functions.py`
   - → `backend/core/circuit_breaker.py`
   - → `backend/core/event_bus.py`
+  - → `backend/core/log_drossel.py`
+  - → `backend/core/retry.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`
   - → `backend/services/trade_lifecycle_manager.py`

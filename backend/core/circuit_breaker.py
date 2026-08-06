@@ -6,10 +6,10 @@ Nach Timeout → Circuit halbgeöffnet → testet erneut.
 """
 
 import logging
-import threading
-import time
 import pybreaker
 from datetime import datetime
+
+from core.log_drossel import gedrosselt
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,6 @@ logger = logging.getLogger(__name__)
 # werden. state_change() bleibt ungedrosselt: der Zustandswechsel ist die
 # wichtigste Zeile ueberhaupt.
 _FEHLER_FENSTER_SEC = 5.0
-_fehler_zustand: dict[str, dict] = {}
-_fehler_sperre = threading.Lock()
 
 
 class TradingCircuitBreakerListener(pybreaker.CircuitBreakerListener):
@@ -46,27 +44,15 @@ class TradingCircuitBreakerListener(pybreaker.CircuitBreakerListener):
         )
 
     def failure(self, cb, exc):
-        text = str(exc)[:200]
-        jetzt = time.monotonic()
-        with _fehler_sperre:
-            z = _fehler_zustand.setdefault(
-                cb.name, {"zuletzt": 0.0, "unterdrueckt": 0, "text": None}
-            )
-            gleicher_text = z["text"] == text
-            zu_frisch = (jetzt - z["zuletzt"]) < _FEHLER_FENSTER_SEC
-            if gleicher_text and zu_frisch:
-                z["unterdrueckt"] += 1
-                return
-            unterdrueckt = z["unterdrueckt"]
-            z.update({"zuletzt": jetzt, "unterdrueckt": 0, "text": text})
-
-        zusatz = (
-            f" (+{unterdrueckt} weitere gleiche in den letzten "
-            f"{_FEHLER_FENSTER_SEC:.0f}s unterdrückt)"
-            if unterdrueckt
-            else ""
+        # Gedrosselt: der erste Fehler eines Schwalls steht vollstaendig da,
+        # gleiche Wiederholungen werden gezaehlt, ein ANDERER Text kommt sofort
+        # durch. Siehe core/log_drossel.py fuer die Begruendung.
+        gedrosselt(
+            logger.error,
+            f"breaker:{cb.name}",
+            f"[circuit-breaker] {cb.name} Fehler: {str(exc)[:200]}",
+            _FEHLER_FENSTER_SEC,
         )
-        logger.error(f"[circuit-breaker] {cb.name} Fehler: {text}{zusatz}")
 
     def success(self, cb):
         pass  # Kein Log bei Erfolg — zu viel Output
