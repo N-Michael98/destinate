@@ -1125,6 +1125,20 @@ def analyze_all_strategies(symbol: str) -> dict:
         "all":             results,
         "levels":          sr_levels,
         "entry_quality":   entry_quality,
+        # WIE VIELE Strategien sind GESCHEITERT (06.08.).
+        #
+        # Ohne diese Zahl ist "alle 16 NEUTRAL, weil keine ein Setup sieht"
+        # nicht von "alle 16 NEUTRAL, weil kein einziger Kurs geladen wurde"
+        # zu unterscheiden. Beides ergab bisher denselben Rueckgabewert, und die
+        # Route meldete in beiden Faellen ERFOLG.
+        #
+        # Belegt am 06.08. 21:34: "[ai-engine] Strategies: 30/30 Symbole
+        # analysiert in 88ms" — 88 Millisekunden fuer 30 Symbole x 16
+        # Strategien, also 0.18ms je Strategie. Da war kein Kurs dabei; der
+        # yfinance-Schalter stand offen ("Too Many Requests. Rate limited.").
+        # Das Frontend sah trotzdem strategyData.has(symbol) === true.
+        "fehlgeschlagen":  len(fehler),
+        "fehler_gruende":  {name: meldung[:120] for name, meldung in fehler[:5]},
     }
 
 

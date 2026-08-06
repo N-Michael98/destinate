@@ -721,3 +721,76 @@ def test_retry_verhalten_bleibt_unveraendert():
     except RuntimeError:
         pass
     assert versuche["n"] == 1, "nicht gelistete Ausnahmen duerfen nicht wiederholt werden"
+
+# ── Gescheiterte Strategien werden gezaehlt (06.08.) ─────────────────────────
+# Anlass: das Backend meldete "30/30 Symbole analysiert in 88ms", waehrend
+# JEDE der 16 Strategien je Symbol an "Too Many Requests. Rate limited."
+# gescheitert war. Rueckgabe und Erfolgsmeldung sahen aus wie ein gesunder
+# Lauf; das Frontend akzeptierte das als vollstaendige Daten. Ohne diese Zahl
+# ist "alle NEUTRAL, weil kein Setup" nicht von "alle NEUTRAL, weil kein Kurs"
+# zu unterscheiden.
+
+
+def _mit_allen(faelscher):
+    echt = dict(_TS.STRATEGIES)
+    _TS.STRATEGIES.clear()
+    _TS.STRATEGIES.update({k: faelscher(k) for k in echt})
+    try:
+        return _TS.analyze_all_strategies("GBPUSD")
+    finally:
+        _TS.STRATEGIES.clear()
+        _TS.STRATEGIES.update(echt)
+
+
+def _wirft(meldung):
+    def bauen(name):
+        def f(sym):
+            raise RuntimeError(meldung)
+        return f
+    return bauen
+
+
+def test_gescheiterte_strategien_werden_gezaehlt():
+    r = _mit_allen(_wirft("Too Many Requests. Rate limited. Try after a while."))
+    assert r["fehlgeschlagen"] == r["total_strategies"] == len(_TS.STRATEGIES)
+    assert r["fehler_gruende"], "Gruende muessen mitgegeben werden"
+    assert "Rate limited" in list(r["fehler_gruende"].values())[0]
+
+
+def test_neutral_ohne_fehler_ist_kein_ausfall():
+    """Der entscheidende Unterschied: alle NEUTRAL, aber alle GELAUFEN.
+
+    Das ist ein voellig normaler Marktzustand und darf NICHT wie ein Ausfall
+    behandelt werden — sonst blockiert das Qualitaets-Tor ruhige Maerkte.
+    """
+    r = _mit_allen(lambda name: (lambda sym: _TS._neutral("kein Setup")))
+    assert r["fehlgeschlagen"] == 0
+    assert r["consensus"] == "NEUTRAL"
+    assert r["fehler_gruende"] == {}
+
+
+def test_teilweise_gescheitert_wird_genau_gezaehlt():
+    namen = list(_TS.STRATEGIES)
+    kaputt = set(namen[:9])
+
+    def gemischt(name):
+        if name in kaputt:
+            def f(sym):
+                raise RuntimeError("Rate limited")
+            return f
+        return lambda sym: _TS._neutral("ok")
+
+    r = _mit_allen(gemischt)
+    assert r["fehlgeschlagen"] == 9
+    assert r["total_strategies"] == len(namen)
+    # Die 50%-Schwelle des Frontends: 7 von 16 gelaufen = 44% -> Tor bleibt zu.
+    gelaufen = (r["total_strategies"] - r["fehlgeschlagen"]) / r["total_strategies"]
+    assert gelaufen < 0.5
+
+
+def test_fehler_gruende_bleiben_begrenzt():
+    """Nicht alle 16 Gruende mitschicken — fuenf reichen zur Diagnose."""
+    r = _mit_allen(_wirft("x" * 500))
+    assert len(r["fehler_gruende"]) <= 5
+    for meldung in r["fehler_gruende"].values():
+        assert len(meldung) <= 120

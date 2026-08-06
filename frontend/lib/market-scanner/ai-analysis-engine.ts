@@ -192,6 +192,10 @@ interface StrategyResult {
     swing_high_dist_atr?: number | null;
   } | null;
   // Entry-Engine Phase B (26.07.): aggregierter Einstiegs-Qualitätsscore
+  /** Wie viele der Strategien GESCHEITERT sind (06.08.). Fehlt das Feld,
+   *  ist das Backend aelter — dann wird wie bisher verfahren. */
+  fehlgeschlagen?: number;
+  fehler_gruende?: Record<string, string>;
   entry_quality?: {
     score: number;                                    // 0-100
     tier: "EXCELLENT" | "GOOD" | "MODERATE" | "WEAK" | "NO_SIGNAL";
@@ -1068,9 +1072,33 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     // Strategie-Konsens). Fehlt eine Ebene (Timeout, yfinance-Lücke), wird
     // das Symbol in diesem Zyklus nicht gehandelt — statt still mit halber
     // Analyse. Nächster Zyklus (5 Min) versucht es automatisch neu.
-    const hasFullData = !!ta && strategyData.has(market.symbol);
+    // STRATEGIEN MUESSEN AUCH DATEN GEHABT HABEN (06.08.).
+    //
+    // Vorher stand hier nur strategyData.has(symbol) — das prueft, OB der
+    // Eintrag da ist, nicht ob er auf Kursen beruht. Belegt am 06.08. 21:34:
+    // bei offenem yfinance-Schalter meldete das Backend "30/30 Symbole
+    // analysiert in 88ms", obwohl alle 16 Strategien je Symbol mit
+    // "Too Many Requests" gescheitert waren. levels war null, entry_quality
+    // NO_SIGNAL — und das Tor haette den Trade trotzdem durchgelassen, sobald
+    // TA-Lib fuer sich wieder lieferte. Der Kommentar oben versprach
+    // "TA-Lib UND Strategie-Konsens"; gehalten hat er nur die erste Haelfte.
+    //
+    // Schwelle 50% — dieselbe, die fuer TA-Lib schon gilt (pythonBackendOk).
+    // Bewusst KEINE neue Zahl erfunden. Ein Symbol, bei dem mehr als die
+    // Haelfte der Strategien gescheitert ist, hat keinen Konsens, sondern nur
+    // Rauschen. Fehlt das Feld (aelteres Backend), bleibt es beim bisherigen
+    // Verhalten — kein Bruch waehrend eines Rollouts.
+    const srDaten = strategyData.get(market.symbol);
+    const strategienOk = (() => {
+      if (!srDaten) return false;
+      const gesamt = srDaten.total_strategies ?? 0;
+      const kaputt = srDaten.fehlgeschlagen;
+      if (kaputt == null || gesamt <= 0) return true;   // altes Backend
+      return (gesamt - kaputt) / gesamt >= 0.5;
+    })();
+    const hasFullData = !!ta && strategienOk;
     if (!hasFullData && isRealAnalysis && gpt.direction !== "WAIT") {
-      console.log(`[ai-engine] 🔒 ${market.symbol}: unvollständige Analyse (TA=${!!ta}, Strategien=${strategyData.has(market.symbol)}) — kein goSignal diesen Zyklus`);
+      console.log(`[ai-engine] 🔒 ${market.symbol}: unvollständige Analyse (TA=${!!ta}, Strategien=${strategienOk}${srDaten?.fehlgeschlagen ? ` — ${srDaten.fehlgeschlagen}/${srDaten.total_strategies} gescheitert: ${Object.values(srDaten.fehler_gruende ?? {})[0] ?? "?"}` : ""}) — kein goSignal diesen Zyklus`);
     }
 
     const goSignal = isRealAnalysis
