@@ -1,9 +1,12 @@
+import threading
+import time
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timezone
 from typing import Optional
 
 from core.circuit_breaker import yfinance_breaker
+from core.takt import warte as takt_warte
 from core.retry import api_retry
 
 # Symbol-Mapping: Trading-Symbole → Yahoo Finance Symbole
@@ -55,6 +58,7 @@ def _resolve(symbol: str) -> str:
 @yfinance_breaker
 @api_retry()
 def get_current_price(symbol: str) -> dict:
+    takt_warte()
     ticker = yf.Ticker(_resolve(symbol))
     info = ticker.fast_info
     price = getattr(info, "last_price", None)
@@ -63,6 +67,24 @@ def get_current_price(symbol: str) -> dict:
         "price": round(float(price), 5) if price else None,
         "currency": getattr(info, "currency", "USD"),
     }
+
+# Gemeinsamer Kerzen-Cache (06.08.).
+#
+# Es gab bisher NUR einen Cache in trading_strategies._load(). talib_indicators
+# hatte keinen, market_data auch nicht. Folge, nachgemessen: die Kombination
+# (1d, 6mo) wird pro Zyklus ZWEIMAL vom Netz geholt — einmal von der
+# TA-Lib-Route, einmal von den Strategien. Dazu fragt der Positions-Monitor alle
+# 2 Minuten erneut fuer jede offene Position.
+#
+# Hier an der NETZGRENZE ist die richtige Stelle: jeder Aufrufer profitiert,
+# nicht nur einer. TTL 60s ist keine neue Zahl — es ist dieselbe, die in
+# trading_strategies seit dem 27.07. laeuft, mit derselben Begruendung:
+# 1h/4h/1d/1wk-Kerzen aendern sich nicht schneller. Der LIVE-Kurs kommt ohnehin
+# nicht von hier, sondern von Capital.com.
+_kerzen_cache: dict[tuple[str, str, str], tuple[float, list[dict]]] = {}
+_KERZEN_TTL_SEC = 60
+_kerzen_sperre = threading.Lock()
+
 
 @yfinance_breaker
 @api_retry()
@@ -74,6 +96,20 @@ def _fetch_ohlcv_single(symbol: str, interval: str, period: str) -> list[dict]:
     if period not in VALID_PERIODS:
         raise ValueError(f"Invalid period: {period}")
 
+    # Takt (06.08.): erst hier warten, nicht vor der Gueltigkeitspruefung —
+    # ein ungueltiges Intervall soll sofort werfen und keinen Platz im Takt
+    # verbrauchen. Und erst NACH dem Sicherungsschalter: steht der offen, wird
+    # der Aufruf ohnehin abgewiesen, da waere Warten reine Zeitverschwendung.
+    schluessel = (symbol.upper(), interval, period)
+    jetzt = time.monotonic()
+    with _kerzen_sperre:
+        treffer = _kerzen_cache.get(schluessel)
+        if treffer is not None and (jetzt - treffer[0]) < _KERZEN_TTL_SEC:
+            # Kopie zurueckgeben: der Aufrufer darf die Liste nicht im Cache
+            # veraendern koennen.
+            return list(treffer[1])
+
+    takt_warte()
     ticker = yf.Ticker(_resolve(symbol))
     df: pd.DataFrame = ticker.history(period=period, interval=interval)
 
@@ -83,6 +119,9 @@ def _fetch_ohlcv_single(symbol: str, interval: str, period: str) -> list[dict]:
     if df.empty and interval == "1h":
         df = ticker.history(period="5d", interval="1d")
     if df.empty:
+        # Leeres Ergebnis NICHT zwischenspeichern — sonst haelt ein einzelner
+        # Aussetzer das Symbol eine Minute lang leer, obwohl der naechste
+        # Versuch geliefert haette.
         return []
 
     df.index = pd.to_datetime(df.index)
@@ -96,7 +135,9 @@ def _fetch_ohlcv_single(symbol: str, interval: str, period: str) -> list[dict]:
             "close":  round(float(row["Close"]),  5),
             "volume": int(row["Volume"]),
         })
-    return records
+    with _kerzen_sperre:
+        _kerzen_cache[schluessel] = (time.monotonic(), records)
+    return list(records)
 
 
 def get_ohlcv(
@@ -140,12 +181,14 @@ def get_ohlcv(
 @yfinance_breaker
 @api_retry()
 def _download_multi(tickers: list[str]) -> pd.DataFrame:
+    takt_warte()
     return yf.download(tickers, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True)
 
 
 @yfinance_breaker
 @api_retry()
 def _download_multi_intraday(tickers: list[str]) -> pd.DataFrame:
+    takt_warte()
     """1-Minuten-Kerzen — liefern im Gegensatz zur Tageskerze einen ECHTEN
     Zeitstempel des letzten Kurses. Nötig, um Aktualität überhaupt messen zu
     können (Fund 02.08.: vorher wurde jeder Preis im Frontend mit der aktuellen

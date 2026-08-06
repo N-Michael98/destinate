@@ -794,3 +794,290 @@ def test_fehler_gruende_bleiben_begrenzt():
     assert len(r["fehler_gruende"]) <= 5
     for meldung in r["fehler_gruende"].values():
         assert len(meldung) <= 120
+
+# ── Taktgeber und Kerzen-Cache (06.08.) ──────────────────────────────────────
+# Anlass, bewiesen aus dem Betriebslog:
+#   [circuit-breaker] yfinance Fehler: Too Many Requests. Rate limited.
+# Ein Scan-Zyklus feuerte rund 300 Abrufe gleichzeitig los. Der Takt verteilt
+# sie, der Cache spart die doppelten. Beides ist wirkungslos, wenn es still
+# ausgebaut wird — deshalb diese Tests.
+
+import time as _time
+import threading as _threading
+from core import takt as _takt
+
+
+def test_takt_haelt_die_rate_ein():
+    _takt.zuruecksetzen(rate=50.0)
+    t0 = _time.monotonic()
+    for _ in range(50):
+        _takt.warte()
+    dauer = _time.monotonic() - t0
+    _takt.zuruecksetzen(rate=7.0)
+    # 50 Abrufe bei 50/s == rund 1 Sekunde. Grosszuegige Grenzen, damit der
+    # Test auf langsamen Rechnern nicht flackert — aber "gar keine Bremse"
+    # (unter 0.5s) faellt sicher auf.
+    assert 0.6 <= dauer <= 2.5, f"50 Abrufe bei 50/s dauerten {dauer:.2f}s"
+
+
+def test_takt_wird_unter_faeden_nicht_zur_reihenschaltung():
+    """Der Abstand wird UNTER der Sperre vergeben, aber NICHT darin abgewartet.
+
+    Wird das umgebaut und in der Sperre geschlafen, stehen alle Faeden
+    hintereinander und der Durchsatz bricht ein.
+    """
+    _takt.zuruecksetzen(rate=200.0)
+    t0 = _time.monotonic()
+
+    def arbeit():
+        for _ in range(10):
+            _takt.warte()
+
+    faeden = [_threading.Thread(target=arbeit) for _ in range(20)]
+    for f in faeden:
+        f.start()
+    for f in faeden:
+        f.join()
+    dauer = _time.monotonic() - t0
+    _takt.zuruecksetzen(rate=7.0)
+    # 200 Abrufe bei 200/s == rund 1s. Bei echter Reihenschaltung waere es
+    # deutlich mehr.
+    assert dauer <= 3.0, f"200 Abrufe ueber 20 Faeden dauerten {dauer:.2f}s"
+
+
+def test_takt_abschaltbar():
+    _takt.zuruecksetzen(rate=0.0)
+    t0 = _time.monotonic()
+    for _ in range(500):
+        _takt.warte()
+    dauer = _time.monotonic() - t0
+    _takt.zuruecksetzen(rate=7.0)
+    assert dauer < 0.5, "rate=0 muss ohne Wartezeit durchlaufen"
+
+
+def test_takt_standardwert_ist_sieben():
+    """Die 7 stammt aus der 60s-Zeitgrenze des Strategien-Abrufs (300/7 ~ 43s).
+
+    Wird sie geaendert, muss diese Rechnung neu gemacht werden — der Test
+    haelt die Zahl fest, damit sie nicht nebenbei verrutscht.
+    """
+    assert _takt._STANDARD_RATE == 7.0
+
+
+def _fake_yf(zaehler):
+    import pandas as pd
+    import numpy as np
+
+    class FakeTicker:
+        def __init__(self, t):
+            self.t = t
+
+        def history(self, period, interval):
+            zaehler["n"] += 1
+            idx = pd.date_range("2026-01-01", periods=50, freq="1D", tz="UTC")
+            return pd.DataFrame(
+                {"Open": np.arange(50.0), "High": np.arange(50.0) + 1,
+                 "Low": np.arange(50.0) - 1, "Close": np.arange(50.0),
+                 "Volume": np.ones(50) * 100},
+                index=idx,
+            )
+
+    return type("m", (), {"Ticker": FakeTicker})()
+
+
+def test_kerzen_cache_spart_den_zweiten_abruf():
+    import services.market_data as MD
+    zaehler = {"n": 0}
+    echt = MD.yf
+    MD.yf = _fake_yf(zaehler)
+    MD._kerzen_cache.clear()
+    _takt.zuruecksetzen(rate=0.0)
+    try:
+        a = MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")
+        b = MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")
+    finally:
+        MD.yf = echt
+        MD._kerzen_cache.clear()
+        _takt.zuruecksetzen(rate=7.0)
+    assert zaehler["n"] == 1, "der zweite Abruf muss aus dem Cache kommen"
+    assert a == b
+    assert a is not b, "der Aufrufer darf die Liste im Cache nicht halten"
+
+
+def test_kerzen_cache_gibt_keine_veraenderbare_referenz():
+    """Die Rueckgabe AUS DEM CACHE muss eine Kopie sein.
+
+    Erste Fassung dieses Tests war zu schwach und liess eine Sabotage durch:
+    sie veraenderte die Rueckgabe des ERSTEN Aufrufs — die kommt aber vom
+    Ablegepfad und ist ohnehin schon eine Kopie. Getroffen wird der Fehler nur,
+    wenn die Rueckgabe eines CACHE-TREFFERS veraendert und danach ein dritter
+    Aufruf geprueft wird.
+    """
+    import services.market_data as MD
+    zaehler = {"n": 0}
+    echt = MD.yf
+    MD.yf = _fake_yf(zaehler)
+    MD._kerzen_cache.clear()
+    _takt.zuruecksetzen(rate=0.0)
+    try:
+        # BEIDE Wege veraendern: den Ablegepfad (erster Aufruf) UND den
+        # Cache-Treffer. Die erste Fassung prueft nur einen davon und liess
+        # die Sabotage "Ablage gibt Original-Liste" durch.
+        erster = MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")     # legt ab
+        laenge_vorher = len(erster)
+        erster.append({"manipuliert": "ablage"})
+        aus_cache = MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")  # Treffer
+        assert len(aus_cache) == laenge_vorher, "Ablagepfad gab eine veraenderbare Referenz"
+        aus_cache.append({"manipuliert": "treffer"})
+        dritter = MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")
+    finally:
+        MD.yf = echt
+        MD._kerzen_cache.clear()
+        _takt.zuruecksetzen(rate=7.0)
+    assert zaehler["n"] == 1, "es durfte nur EIN Netzabruf stattfinden"
+    assert len(dritter) == laenge_vorher, "Cache wurde ueber die Rueckgabe veraendert"
+    assert not any("manipuliert" in x for x in dritter)
+
+
+def test_echter_abruf_geht_durch_den_takt():
+    """_fetch_ohlcv_single MUSS den Taktgeber aufrufen.
+
+    Ohne diesen Test bleibt gruen, wer takt_warte() aus market_data entfernt —
+    genau das ist beim Sabotage-Lauf am 06.08. durchgerutscht, weil die
+    Cache-Tests den Takt selbst abschalten.
+    """
+    import services.market_data as MD
+    zaehler = {"n": 0}
+    gerufen = {"n": 0}
+    echt_yf, echt_warte = MD.yf, MD.takt_warte
+    MD.yf = _fake_yf(zaehler)
+
+    def zaehlende_warte():
+        gerufen["n"] += 1
+        return 0.0
+
+    MD.takt_warte = zaehlende_warte
+    MD._kerzen_cache.clear()
+    try:
+        MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")
+        MD._fetch_ohlcv_single("GBPUSD", "1d", "6mo")
+        MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")   # aus dem Cache
+    finally:
+        MD.yf, MD.takt_warte = echt_yf, echt_warte
+        MD._kerzen_cache.clear()
+    assert zaehler["n"] == 2, "zwei echte Netzabrufe erwartet"
+    assert gerufen["n"] == 2, (
+        f"der Takt wurde {gerufen['n']}x gerufen, erwartet 2 — "
+        "je echtem Netzabruf einmal, fuer den Cache-Treffer gar nicht"
+    )
+
+
+def test_kerzen_cache_dauer_bleibt_bei_60_sekunden():
+    """Die 60s sind KEINE frei gewaehlte Zahl.
+
+    Es ist dieselbe Dauer, die trading_strategies._load() seit dem 27.07.
+    benutzt, mit derselben Begruendung: 1h/4h/1d/1wk-Kerzen aendern sich nicht
+    schneller. Der LIVE-Kurs kommt ohnehin von Capital.com, nicht von hier.
+    Wer die Dauer streckt, verschiebt still, wie alt die Daten sein duerfen, auf
+    denen gehandelt wird — das darf nicht unbemerkt passieren.
+    """
+    import services.market_data as MD
+    assert MD._KERZEN_TTL_SEC == 60
+    assert MD._KERZEN_TTL_SEC == _TS._CACHE_TTL_SEC, (
+        "Backend-Cache und Strategie-Cache muessen dieselbe Dauer haben"
+    )
+
+
+def test_kerzen_cache_trennt_die_kombinationen():
+    import services.market_data as MD
+    zaehler = {"n": 0}
+    echt = MD.yf
+    MD.yf = _fake_yf(zaehler)
+    MD._kerzen_cache.clear()
+    _takt.zuruecksetzen(rate=0.0)
+    try:
+        MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")
+        MD._fetch_ohlcv_single("EURUSD", "1h", "3mo")
+        MD._fetch_ohlcv_single("GBPUSD", "1d", "6mo")
+    finally:
+        MD.yf = echt
+        MD._kerzen_cache.clear()
+        _takt.zuruecksetzen(rate=7.0)
+    assert zaehler["n"] == 3, "verschiedene Kombinationen duerfen sich nicht teilen"
+
+def test_takt_liest_die_umgebungsvariable():
+    """YFINANCE_CALLS_PER_SEC muss wirken — sonst ist der Wert nicht einstellbar
+    und man kaeme im Betrieb nicht mehr an die Rate heran.
+    """
+    import os
+    import importlib
+    from core import takt as t_modul
+
+    vorher = os.environ.get("YFINANCE_CALLS_PER_SEC")
+    try:
+        os.environ["YFINANCE_CALLS_PER_SEC"] = "3"
+        importlib.reload(t_modul)
+        assert t_modul.stand()["rate_je_sekunde"] == 3.0
+
+        os.environ["YFINANCE_CALLS_PER_SEC"] = "unsinn"
+        importlib.reload(t_modul)
+        assert t_modul.stand()["rate_je_sekunde"] == t_modul._STANDARD_RATE,             "ein unlesbarer Wert muss auf den Standard zurueckfallen, nicht abstuerzen"
+
+        os.environ["YFINANCE_CALLS_PER_SEC"] = "0"
+        importlib.reload(t_modul)
+        assert t_modul.stand()["rate_je_sekunde"] == 0.0, "0 muss abschalten"
+    finally:
+        if vorher is None:
+            os.environ.pop("YFINANCE_CALLS_PER_SEC", None)
+        else:
+            os.environ["YFINANCE_CALLS_PER_SEC"] = vorher
+        importlib.reload(t_modul)
+        # market_data haelt eine eigene Referenz auf warte() — nach dem Reload
+        # neu binden, sonst zeigt sie auf das alte Modul.
+        import services.market_data as MD
+        MD.takt_warte = t_modul.warte
+
+
+def test_leeres_ergebnis_wird_nicht_zwischengespeichert():
+    """Ein einzelner Aussetzer darf das Symbol nicht eine Minute lang leer halten.
+
+    yfinance liefert gelegentlich einen leeren Rahmen zurueck. Wuerde der im
+    Cache landen, waere das Symbol bis zum Ablauf der TTL tot — obwohl der
+    naechste Versuch geliefert haette.
+    """
+    import pandas as pd
+    import services.market_data as MD
+
+    zaehler = {"n": 0}
+
+    class LeerTicker:
+        def __init__(self, t):
+            self.t = t
+
+        def history(self, period, interval):
+            zaehler["n"] += 1
+            return pd.DataFrame()
+
+    echt = MD.yf
+    MD.yf = type("m", (), {"Ticker": LeerTicker})()
+    MD._kerzen_cache.clear()
+    _takt.zuruecksetzen(rate=0.0)
+    try:
+        a = MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")
+        nach_erstem = dict(MD._kerzen_cache)      # Zustand SICHERN, siehe unten
+        versuche_erster = zaehler["n"]
+        b = MD._fetch_ohlcv_single("EURUSD", "1d", "6mo")
+        versuche_gesamt = zaehler["n"]
+    finally:
+        MD.yf = echt
+        MD._kerzen_cache.clear()
+        _takt.zuruecksetzen(rate=7.0)
+
+    # FALLE, in die die erste Fassung lief: das finally leerte den Cache, BEVOR
+    # geprueft wurde — der Test konnte gar nicht fehlschlagen und liess die
+    # Sabotage "leere Antwort wird zwischengespeichert" durch. Deshalb wird der
+    # Zustand jetzt INNERHALB des try gesichert.
+    assert a == [] and b == []
+    assert ("EURUSD", "1d", "6mo") not in nach_erstem,         "ein leeres Ergebnis darf NICHT im Cache landen"
+    # Der zweite Aufruf muss erneut ans Netz gegangen sein, nicht in den Cache.
+    assert versuche_gesamt > versuche_erster,         f"zweiter Aufruf kam aus dem Cache ({versuche_erster} -> {versuche_gesamt} Versuche)"

@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 635 · Kanten: 1286
+Dateien mit internen Abhängigkeiten: 636 · Kanten: 1291
 
 
 ## analysis-engine/api
@@ -102,6 +102,7 @@ Dateien mit internen Abhängigkeiten: 635 · Kanten: 1286
   - → `backend/services/trading_strategies.py`
 - `backend/api/routes/system.py`
   - → `backend/core/circuit_breaker.py`
+  - → `backend/core/takt.py`
   - → `backend/services/fast_analytics.py`
 - `backend/api/routes/talib_analysis.py`
   - → `backend/services/talib_indicators.py`
@@ -128,6 +129,10 @@ Dateien mit internen Abhängigkeiten: 635 · Kanten: 1286
   - → `backend/services/market_data.py`
 - `backend/services/backtesting_extended.py`
   - → `backend/services/market_data.py`
+- `backend/services/dukascopy.py`
+  - → `backend/core/circuit_breaker.py`
+  - → `backend/core/retry.py`
+  - → `backend/core/takt.py`
 - `backend/services/fast_analytics.py`
   - → `backend/services/market_data.py`
 - `backend/services/finbert_sentiment.py`
@@ -137,6 +142,7 @@ Dateien mit internen Abhängigkeiten: 635 · Kanten: 1286
 - `backend/services/market_data.py`
   - → `backend/core/circuit_breaker.py`
   - → `backend/core/retry.py`
+  - → `backend/core/takt.py`
 - `backend/services/market_intelligence.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`

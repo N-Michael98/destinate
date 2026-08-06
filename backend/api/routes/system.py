@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from core.circuit_breaker import get_all_status
+from core.takt import stand as takt_stand
 from services.fast_analytics import fast_indicators, fast_multi_symbol, fast_correlation_matrix
 
 router = APIRouter()
@@ -20,7 +21,10 @@ class CorrelationRequest(BaseModel):
 
 @router.get("/circuit-breakers")
 def circuit_breaker_status():
-    return get_all_status()
+    # Takt mitgeben (06.08.): der Sicherungsschalter sagt, DASS yfinance
+    # blockt — der Takt sagt, wie stark wir selbst drosseln. Beides zusammen
+    # ist der ganze Befund. Reine Anzeige, keine Entscheidung haengt daran.
+    return {**get_all_status(), "yfinance_takt": takt_stand()}
 
 
 # ── Polars Fast Analytics ──────────────────────────────────────────────────────

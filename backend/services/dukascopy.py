@@ -9,6 +9,24 @@ import yfinance as yf
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+from core.circuit_breaker import yfinance_breaker
+from core.retry import api_retry
+from core.takt import warte as takt_warte
+
+
+# Diese Datei rief yfinance als EINZIGE ohne Sicherungsschalter, ohne Retry und
+# ohne Takt auf (Fund 06.08.). Sie haengt nur an der Route /api/v1/dukascopy und
+# gehoert damit nicht zum Scan-Zyklus — sie war also nicht die Ursache des
+# Ratenlimits. Ungeschuetzt bleiben soll sie trotzdem nicht: ein Aufruf von
+# aussen kann sonst genau in dem Moment zuschlagen, in dem der Schalter gerade
+# wieder zumacht, und ihn erneut aufreissen.
+@yfinance_breaker
+@api_retry()
+def _laden(ticker: str, start_dt, end_dt) -> pd.DataFrame:
+    takt_warte()
+    return yf.download(ticker, start=start_dt, end=end_dt, interval="1m",
+                       progress=False, auto_adjust=True)
+
 SYMBOL_MAP = {
     "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "USDJPY=X",
     "USDCHF": "USDCHF=X", "XAUUSD": "GC=F",     "BTCUSD": "BTC-USD",
@@ -32,7 +50,7 @@ def get_tick_data(symbol: str, hours: int = 6, end: Optional[datetime] = None) -
     end_dt = end or datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(hours=period_hours)
     try:
-        df = yf.download(ticker, start=start_dt, end=end_dt, interval="1m", progress=False, auto_adjust=True)
+        df = _laden(ticker, start_dt, end_dt)
         if df is None or df.empty:
             return []
 
