@@ -176,11 +176,64 @@ def _log_error(msg: str) -> None:
         _ERRORS.append(msg)
 
 
-def _run_single(close: pd.Series, strategy: str, params: dict, sl: float, tp: float) -> dict | None:
-    """Ein Backtest mit vectorbt. None bei Fehler."""
+def _vorlauf(strategy: str, params: dict) -> int:
+    """Wie viele Balken braucht der Indikator, bevor er verlaesslich ist.
+
+    Gebraucht fuer den Walk-Forward: dessen Test-Abschnitt begann bisher KALT,
+    also mit einem Indikator, der bei null anfaengt. NACHGEMESSEN (07.08.,
+    3000 Balken, Testfenster 500):
+
+      EMA_CROSS slow=21   kalt 16 Signale, warm 12  -> 4 ERFUNDENE (+33 %)
+      EMA_CROSS slow=50   kalt 12, warm 10          -> 2 erfundene
+      BREAKOUT  ew=55     kalt 100, warm 106        -> 6 FEHLENDE
+      RSI       p=14      kalt 31, warm 32          -> 1 fehlendes
+
+    Der gleitende Durchschnitt laeuft aus dem Stand los und kreuzt sich dabei
+    scheinbar — er ERFINDET Signale. Die rollenden Fenster liefern anfangs
+    nichts und VERLIEREN welche. Beides verzerrt genau die Zahl, auf der das
+    Urteil "robust" beruht.
+
+    KEINE Informationsdurchsickerung: Vorlauf benutzt ausschliesslich
+    VERGANGENE Balken relativ zum Testfenster — genau das, was im Livebetrieb
+    auch vorliegt. Leakage waere Zukunftswissen, das hier nicht entsteht.
+    """
+    if strategy == "EMA_CROSS":
+        return int(params.get("slow", 26))
+    if strategy == "RSI_REVERSION":
+        return int(params.get("period", 14))
+    if strategy == "BREAKOUT":
+        return max(int(params.get("entry_window", 20)), int(params.get("exit_window", 10)))
+    return 0
+
+
+# Faktor 3, gemessen und nicht gewaehlt: der groesste tatsaechliche Bedarf lag
+# bei 105 Balken fuer EMA slow=50, also dem 2.1-fachen des Parameters. Faktor 3
+# deckt das mit Reserve. Gegengeprueft ueber 15 Kursverlaeufe (5 Startwerte x
+# 3 Volatilitaeten, je 10 Parametersaetze): 150 Vergleiche, 0 Abweichungen zum
+# Ergebnis mit vollem Vorlauf.
+VORLAUF_FAKTOR = 3
+
+
+def _run_single(close: pd.Series, strategy: str, params: dict, sl: float, tp: float,
+                ab_index: int = 0) -> dict | None:
+    """Ein Backtest mit vectorbt. None bei Fehler.
+
+    ab_index (07.08.): Balken VOR diesem Index dienen nur als Vorlauf fuer die
+    Indikatoren — dort wird nicht eingestiegen. Standard 0 = unveraendertes
+    bisheriges Verhalten, damit der naechtliche Backtest gleich bleibt.
+    """
     try:
         import vectorbt as vbt
         entries, exits, short_entries, short_exits = _signals(close, strategy, params)
+        if ab_index > 0:
+            # Nur Einstiege sperren. Ausstiege koennen ohne Position ohnehin
+            # nichts ausloesen, und sie zu sperren wuerde eine im Testfenster
+            # eroeffnete Position am Schliessen hindern.
+            vor_dem_fenster = np.arange(len(close)) < ab_index
+            entries = entries.copy()
+            short_entries = short_entries.copy()
+            entries[vor_dem_fenster] = False
+            short_entries[vor_dem_fenster] = False
         # Long UND Short zusammen zählen (30.07.): vorher wurde ein Symbol
         # verworfen, wenn es zu wenig LONG-Signale hatte — auch wenn es reichlich
         # Short-Gelegenheiten gab.

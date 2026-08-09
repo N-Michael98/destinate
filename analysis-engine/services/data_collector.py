@@ -39,6 +39,58 @@ def _exit_grund(notes: str | None) -> str:
         return "OHNE_ANGABE"
 
 
+def _spread_je_symbol(rows: list[tuple]) -> dict:
+    """Gemessener Spread je Markt aus den eigenen Trades (07.08.).
+
+    WARUM: der Backtest rechnet heute nur mit fees=0.0002 (0.02 % je Seite).
+    Der SPREAD fehlt — bei CFDs oft der groesste Kostenblock. Ohne ihn sieht
+    jede Strategie besser aus als sie ist, und ROBUST_MIN_PF = 1.2 im
+    Walk-Forward ist eine absolute Schwelle, auf die das direkt durchschlaegt.
+
+    MESSEN, NICHT ANWENDEN: der Spread wird hier nur erhoben und mit der
+    Stichprobengroesse gemeldet. Angewendet wird er erst, wenn sichtbar ist,
+    dass genug Beobachtungen je Markt vorliegen — bei rund 3 Trades je Markt in
+    30 Tagen waere ein Median heute reine Zufallszahl. Die Entscheidung
+    braucht die Zahl, nicht eine Schaetzung davon.
+
+    Rueckgabe je Symbol: Median-Spread absolut, in Prozent des Einstiegs, und
+    die Zahl der Beobachtungen — damit sofort erkennbar ist, wie belastbar es ist.
+    """
+    roh: dict[str, list[tuple[float, float]]] = {}
+    for market, _dir, _strat, _res, _pnl, _date, notes in rows:
+        if not notes:
+            continue
+        try:
+            ctx = (json.loads(notes) or {}).get("entryContext") or {}
+        except (ValueError, TypeError):
+            continue
+        spread = ctx.get("spread")
+        bid = ctx.get("bid")
+        if not isinstance(spread, (int, float)) or spread <= 0:
+            continue
+        if not isinstance(bid, (int, float)) or bid <= 0:
+            continue
+        roh.setdefault(market or "UNKNOWN", []).append((float(spread), float(bid)))
+
+    def median(werte: list[float]) -> float:
+        w = sorted(werte)
+        n = len(w)
+        if n == 0:
+            return 0.0
+        return w[n // 2] if n % 2 else (w[n // 2 - 1] + w[n // 2]) / 2
+
+    ergebnis = {}
+    for markt, paare in roh.items():
+        spreads = [s for s, _ in paare]
+        prozente = [s / b * 100 for s, b in paare]
+        ergebnis[markt] = {
+            "medianSpread": round(median(spreads), 6),
+            "medianSpreadPct": round(median(prozente), 4),
+            "beobachtungen": len(paare),
+        }
+    return ergebnis
+
+
 def _aggregate(rows: list[tuple]) -> dict:
     """rows: (market, direction, strategy, result, profitLoss, date, notes)"""
     by_market: dict[str, dict] = {}
@@ -104,15 +156,20 @@ def run_data_collector() -> None:
            ORDER BY date DESC'''
     )
 
+    spreads = _spread_je_symbol(rows)
     stats = {
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "allTime": _aggregate(rows),
         "last30d": _aggregate(rows_30d),
         "sampleSize": {"allTime": len(rows), "last30d": len(rows_30d)},
+        # Nur erhoben, noch NICHT als Kosten angewendet — siehe _spread_je_symbol
+        "spreadBySymbol": spreads,
     }
 
     ok = redis_set_json(REDIS_KEY_TRADE_STATS, stats, TTL)
+    genug = sum(1 for e in spreads.values() if e["beobachtungen"] >= 10)
     logger.info(
         f"[data-collector] fertig — {len(rows)} Trades total, "
-        f"{len(rows_30d)} in 30d, Redis={'ok' if ok else 'FEHLER'}"
+        f"{len(rows_30d)} in 30d, Spread gemessen fuer {len(spreads)} Maerkte "
+        f"(davon {genug} mit >= 10 Beobachtungen), Redis={'ok' if ok else 'FEHLER'}"
     )

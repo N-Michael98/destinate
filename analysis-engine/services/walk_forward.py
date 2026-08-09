@@ -27,7 +27,7 @@ from loguru import logger
 
 from services.backtest_engine import (
     WATCHLIST, BASE_PARAMS, DIAGNOSE_PARAMS, SL_TP_VARIANTS,
-    _fetch_ohlcv, _run_single, _find_diagnose_symbols,
+    VORLAUF_FAKTOR, _fetch_ohlcv, _run_single, _find_diagnose_symbols, _vorlauf,
 )
 from services.storage import redis_get_json, redis_set_json
 
@@ -42,20 +42,50 @@ ROBUST_MIN_PF = 1.2
 # Grössere Lücke als das = Overfitting-Verdacht
 OVERFIT_GAP_RATIO = 0.5  # out-of-sample < 50% des in-sample PF
 
+# Mindestzahl Trades, damit ein Parametersatz ueberhaupt gewaehlt werden darf
+# (07.08.). Vorher gewann der hoechste ProfitFactor — auch wenn er auf zwei
+# Trades beruhte. Genau so entsteht Ueberanpassung: bei wenigen Trades ist ein
+# hoher Faktor Zufall, kein Nachweis.
+#
+# Die 10 ist KEINE neue Zahl: recommendations.py verlangt seit dem 30.07.
+# MIN_BT_TRADES = 10, bevor ein Backtest-Ergebnis einen Vorschlag begruenden
+# darf. Dieselbe Huerde gilt jetzt schon bei der Auswahl.
+MIN_TRADES_FUER_AUSWAHL = 10
+
 
 def _best_on_slice(close: pd.Series, param_sets: dict, sl_tp_list: list) -> dict | None:
     """Testet die Parameter-Matrix auf EINEM Datenausschnitt, gibt die beste
-    Kombination nach ProfitFactor zurück (None wenn nichts auswertbar)."""
+    Kombination nach ProfitFactor zurück (None wenn nichts auswertbar).
+
+    Seit 07.08. mit Mindest-Trade-Zahl: ein Parametersatz mit weniger als
+    MIN_TRADES_FUER_AUSWAHL Trades darf nicht gewinnen, egal wie hoch sein
+    ProfitFactor ist. Vorher konnte ein Faktor aus zwei Trades die Auswahl
+    bestimmen — und genau dieser Wert wurde dann als "in-sample" gemeldet und
+    dem Out-of-Sample gegenuebergestellt.
+
+    Faellt kein Satz ueber die Huerde, wird KEINER gewaehlt (None). Das ist
+    gewollt: lieber kein Urteil als eines auf drei Trades. Der Fold wird dann
+    uebersprungen und im Ergebnis als solcher gezaehlt.
+    """
     best = None
+    verworfen_wenig_trades = 0
     for strategy, param_list in param_sets.items():
         for params in param_list:
             for sltp in sl_tp_list:
                 r = _run_single(close, strategy, params, sltp["sl"], sltp["tp"])
                 if r is None:
                     continue
+                if r.get("trades", 0) < MIN_TRADES_FUER_AUSWAHL:
+                    verworfen_wenig_trades += 1
+                    continue
                 r["strategy"] = strategy
                 if best is None or r["profitFactor"] > best["profitFactor"]:
                     best = r
+    if best is None and verworfen_wenig_trades:
+        logger.info(
+            f"[walk-forward] kein Parametersatz mit >= {MIN_TRADES_FUER_AUSWAHL} Trades "
+            f"({verworfen_wenig_trades} verworfen) — Fold nicht auswertbar"
+        )
     return best
 
 
@@ -76,21 +106,41 @@ def _evaluate_walk_forward(symbol: str, df: pd.DataFrame, is_diagnose: bool) -> 
         if train_end < 100 or test_end <= train_end:
             continue
         train_close = close.iloc[:train_end]
-        test_close = close.iloc[train_end:test_end]
 
         best_in_sample = _best_on_slice(train_close, param_sets, sl_tp_list)
         if best_in_sample is None:
             continue
 
+        # VORLAUF FUER DEN TESTABSCHNITT (07.08.).
+        #
+        # Bisher begann der Test bei train_end — mit einem Indikator, der dort
+        # bei null anfaengt. Nachgemessen verzerrt das in BEIDE Richtungen:
+        # der gleitende Durchschnitt erfindet Kreuzungen (EMA slow=21: 16 statt
+        # 12 Signale, +33 %), die rollenden Fenster verlieren welche (BREAKOUT
+        # ew=55: 100 statt 106). Beides trifft genau die Zahl, aus der das
+        # Urteil "robust" entsteht.
+        #
+        # Jetzt bekommt der Testabschnitt Balken davor als Vorlauf, aber
+        # EINGESTIEGEN wird erst ab train_end (ab_index). Das ist KEINE
+        # Informationsdurchsickerung: benutzt werden nur Balken, die zum
+        # jeweiligen Testzeitpunkt bereits in der Vergangenheit lagen — genau
+        # wie im Livebetrieb, wo der Indikator warm ist.
+        vorlauf = _vorlauf(best_in_sample["strategy"], best_in_sample["params"]) * VORLAUF_FAKTOR
+        warm_start = max(0, train_end - vorlauf)
+        test_close = close.iloc[warm_start:test_end]
+        ab_index = train_end - warm_start
+
         # Denselben Parametersatz OHNE erneute Optimierung auf den
         # ungesehenen Testabschnitt anwenden — das ist der Kern von WFO.
         out_sample = _run_single(
             test_close, best_in_sample["strategy"], best_in_sample["params"],
-            best_in_sample["sl"], best_in_sample["tp"],
+            best_in_sample["sl"], best_in_sample["tp"], ab_index=ab_index,
         )
 
         fold_results.append({
             "trainFrac": train_frac, "testFrac": test_frac,
+            # Nachvollziehbar machen, wie viel Vorlauf benutzt wurde
+            "vorlaufBalken": ab_index,
             "strategy": best_in_sample["strategy"], "params": best_in_sample["params"],
             "inSampleProfitFactor": best_in_sample["profitFactor"],
             "inSampleWinRate": best_in_sample["winRate"],

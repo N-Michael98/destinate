@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 637 · Kanten: 1294
+Dateien mit internen Abhängigkeiten: 637 · Kanten: 1296
 
 
 ## analysis-engine/api
@@ -74,9 +74,11 @@ Dateien mit internen Abhängigkeiten: 637 · Kanten: 1294
 ## analysis-engine/tests
 
 - `analysis-engine/tests/test_analysis_engine.py`
+  - → `analysis-engine/services/backtest_engine.py`
   - → `analysis-engine/services/data_collector.py`
   - → `analysis-engine/services/periodic_report.py`
   - → `analysis-engine/services/recommendations.py`
+  - → `analysis-engine/services/walk_forward.py`
 
 ## backend/api
 
