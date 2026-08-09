@@ -1081,3 +1081,68 @@ def test_leeres_ergebnis_wird_nicht_zwischengespeichert():
     assert ("EURUSD", "1d", "6mo") not in nach_erstem,         "ein leeres Ergebnis darf NICHT im Cache landen"
     # Der zweite Aufruf muss erneut ans Netz gegangen sein, nicht in den Cache.
     assert versuche_gesamt > versuche_erster,         f"zweiter Aufruf kam aus dem Cache ({versuche_erster} -> {versuche_gesamt} Versuche)"
+
+
+# ── Einheitlicher 4h-Zeitraum (07.08.) ───────────────────────────────────────
+
+def test_alle_4h_strategien_nutzen_denselben_zeitraum():
+    """Sonst holt jede Variante einen EIGENEN Netzabruf.
+
+    Der Cache trennt nach (Symbol, Intervall, Zeitraum). Drei verschiedene
+    4h-Zeitraeume bedeuteten drei 1h-Abrufe je Symbol statt einem — 90 statt
+    30 je Zyklus. Bei 30 Symbolen sind das 60 unnoetige Abrufe gegen eine
+    Datenquelle, die uns nachweislich begrenzt ("Too Many Requests", 06.08.).
+
+    Vor der Vereinheitlichung nachgemessen: 32 Symbole x 7 betroffene
+    Strategien = 224 Faelle, ALT gegen NEU. Kein einziges abweichendes Signal,
+    keine abweichende Confidence; Unterschiede nur in sl/tp (max 0.021 %), und
+    diese Felder erreichen keine Entscheidung.
+
+    Wer hier einen anderen Zeitraum einfuehrt, macht die Ersparnis zunichte —
+    still, denn funktionieren wuerde es weiterhin.
+    """
+    import inspect
+    import re as _re
+
+    zeitraeume = {}
+    for name, fn in _TS.STRATEGIES.items():
+        try:
+            quelle = inspect.getsource(fn)
+        except (OSError, TypeError):
+            continue
+        for intervall, zeitraum in _re.findall(
+            r'_load\(symbol,\s*"([^"]+)",\s*"([^"]+)"\)', quelle
+        ):
+            if intervall == "4h":
+                zeitraeume.setdefault(zeitraum, []).append(name)
+
+    assert zeitraeume, "keine 4h-Strategie gefunden — Muster stimmt nicht mehr"
+    assert len(zeitraeume) == 1, (
+        f"4h-Strategien nutzen {len(zeitraeume)} verschiedene Zeitraeume: "
+        f"{ {k: sorted(v) for k, v in zeitraeume.items()} } — "
+        "jeder zusaetzliche kostet 30 Netzabrufe je Zyklus"
+    )
+    assert "3mo" in zeitraeume, f"erwartet 3mo, gefunden {list(zeitraeume)}"
+
+
+def test_anzahl_verschiedener_kerzenabrufe_bleibt_klein():
+    """Die Zahl der verschiedenen (Intervall, Zeitraum) bestimmt die Netzlast.
+
+    Fuenf Kombinationen x 30 Symbole = 150 Abrufe je Zyklus fuer die
+    Strategien. Jede weitere Kombination kostet 30 zusaetzliche. Der Test haelt
+    die Zahl fest, damit sie nicht unbemerkt waechst.
+    """
+    import inspect
+    import re as _re
+
+    kombis = set()
+    for fn in _TS.STRATEGIES.values():
+        try:
+            quelle = inspect.getsource(fn)
+        except (OSError, TypeError):
+            continue
+        kombis.update(_re.findall(r'_load\(symbol,\s*"([^"]+)",\s*"([^"]+)"\)', quelle))
+    assert len(kombis) <= 5, (
+        f"{len(kombis)} verschiedene Kerzenabrufe: {sorted(kombis)} — "
+        f"das sind {len(kombis) * 30} Netzabrufe je Zyklus"
+    )

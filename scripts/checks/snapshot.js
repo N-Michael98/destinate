@@ -44,6 +44,7 @@ function erfasse() {
   const risk     = read("frontend/lib/agents/risk-agent.ts");
   const engine   = read("frontend/lib/market-scanner/ai-analysis-engine.ts");
   const filters  = read("frontend/lib/trading-filters/trade-filters.ts");
+  const strategien = read("backend/services/trading_strategies.py");
   const stopBlk  = objectBlock(exec, "const DEFAULT_STOP_BY_STYLE");
 
   // Der GPT-Prompt bestimmt Richtung, Stop und Ziel jedes Trades. Eine stille
@@ -110,6 +111,19 @@ function erfasse() {
     // Obergrenze, ab der die Struktur verworfen wird. Wer die Obergrenze von
     // 3.0 auf 30 zieht, verdoppelt bis verzehnfacht den Stop-Abstand — kein
     // anderer Pruefer wuerde das bemerken, weil die STRUKTUR unveraendert bleibt.
+    // Welche Kerzen die Strategien SEHEN (07.08.).
+    //
+    // Jede (Intervall, Zeitraum)-Kombination ist ein eigener Netzabruf je
+    // Symbol — fuenf Kombinationen sind 150 Abrufe je Zyklus gegen eine
+    // Datenquelle, die uns nachweislich begrenzt. Wichtiger noch: der Zeitraum
+    // bestimmt, wie viel Vorlauf ein Indikator hat, also WELCHE Zahlen die
+    // Strategie liefert. Ein pytest-Test haelt die ANZAHL klein; hier steht,
+    // welche es genau sind — eine Verschiebung ist dann im Diff sichtbar und
+    // muss im Commit begruendet werden.
+    kerzenabrufe: [...strategien.matchAll(/_load\(symbol,\s*"([^"]+)",\s*"([^"]+)"\)/g)]
+      .map((m) => `${m[1]}/${m[2]}`)
+      .filter((x, i, a) => a.indexOf(x) === i)
+      .sort(),
     strukturStop: (() => {
       const b = engine.slice(engine.indexOf("const atrRange = ta.atr"));
       if (!b) return { "BLOCK NICHT GEFUNDEN": true };

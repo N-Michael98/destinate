@@ -31,6 +31,26 @@ logger = logging.getLogger(__name__)
 # von yfinance geholt. War die Ursache für die 25s-Timeouts bei Multi-Symbol-
 # Analysen, auch nachdem der Event-Loop nicht mehr blockiert (Fund #6).
 # TTL 60s reicht: 1h/4h/1d/15m-Kerzen ändern sich nicht schneller.
+#
+# EINHEITLICHER 4h-ZEITRAUM (07.08.): die 4h-Strategien holten drei
+# verschiedene Zeitraeume (1mo, 2mo, 3mo). Jeder loest einen EIGENEN
+# 1h-Netzabruf aus, weil der Cache nach (Symbol, Intervall, Zeitraum) trennt —
+# also 3 Abrufe je Symbol statt einem, 90 statt 30 je Zyklus.
+#
+# NACHGEMESSEN, bevor geaendert wurde (32 Symbole x 7 betroffene Strategien =
+# 224 Faelle, echte Kurse):
+#   SIGNAL:      224 von 224 identisch
+#   alle Felder: 211 identisch, 13 unterschieden sich NUR in sl/tp,
+#                groesste Abweichung 0.021 % (NAS100 price_action)
+# Und diese sl/tp erreichen nachweislich KEINE Entscheidung: best_strategy
+# kommt im Frontend nicht vor (0 Treffer), der GPT-Prompt nutzt aus
+# sr.active nur strategy/signal/confidence, und _compute_entry_quality liest
+# "sl"/"tp" kein einziges Mal (0 Vorkommen im Funktionskoerper).
+#
+# Zuerst versucht und VERWORFEN: den laengsten Zeitraum holen und auf den
+# kuerzeren zuschneiden. Der Schnittpunkt laesst sich nicht aus dem Namen
+# berechnen — yfinance setzt den Fensteranfang anders (gemessen: EURUSD 66,
+# BTCUSD 25, NAS100 17 Balken Abweichung). Das waere NICHT neutral gewesen.
 _ohlcv_cache: dict[tuple[str, str, str], tuple[float, pd.DataFrame]] = {}
 _CACHE_TTL_SEC = 60
 
@@ -126,7 +146,7 @@ def strategy_price_action(symbol: str) -> dict:
     Analyse der letzten 3 Kerzen: Higher Highs/Lower Lows, Inside Bars, Pin Bars.
     Saubere Trendstruktur ohne Indikatoren.
     """
-    df = _load(symbol, "4h", "1mo")
+    df = _load(symbol, "4h", "3mo")
     if df.empty or len(df) < 10:
         return _neutral("Zu wenig Daten")
 
@@ -216,7 +236,7 @@ def strategy_breakout(symbol: str) -> dict:
     """
     Donchian Channel 20-Perioden Breakout + Volumen-Bestätigung.
     """
-    df = _load(symbol, "4h", "2mo")
+    df = _load(symbol, "4h", "3mo")
     if df.empty or len(df) < 25:
         return _neutral("Zu wenig Daten")
 
@@ -298,7 +318,7 @@ def strategy_momentum(symbol: str) -> dict:
     """
     RSI-Momentum + ROC (Rate of Change) + MACD Histogram Momentum.
     """
-    df = _load(symbol, "4h", "2mo")
+    df = _load(symbol, "4h", "3mo")
     if df.empty or len(df) < 30:
         return _neutral("Zu wenig Daten")
 
@@ -474,7 +494,7 @@ def strategy_candlestick_patterns(symbol: str) -> dict:
     """
     TA-Lib Candlestick Pattern Recognition: Hammer, Engulfing, Morning/Evening Star, Doji.
     """
-    df = _load(symbol, "4h", "1mo")
+    df = _load(symbol, "4h", "3mo")
     if df.empty or len(df) < 10:
         return _neutral("Zu wenig Daten")
 
@@ -636,7 +656,7 @@ def strategy_bb_squeeze(symbol: str) -> dict:
     Bollinger Band Squeeze: wenn BB-Breite < 20-Bar Minimum → Vola-Ausbruch erwartet.
     Richtung via EMA-Trend.
     """
-    df = _load(symbol, "4h", "2mo")
+    df = _load(symbol, "4h", "3mo")
     if df.empty or len(df) < 25:
         return _neutral("Zu wenig Daten")
 
@@ -686,7 +706,7 @@ def strategy_rsi_divergence(symbol: str) -> dict:
     """
     Bullische/Bärische RSI-Divergenz: Preis macht neues Low/High aber RSI nicht.
     """
-    df = _load(symbol, "4h", "2mo")
+    df = _load(symbol, "4h", "3mo")
     if df.empty or len(df) < 30:
         return _neutral("Zu wenig Daten")
 
@@ -790,7 +810,7 @@ def strategy_ict_smart_money(symbol: str) -> dict:
     BOS: wenn Preis über letztes Swing-High bricht (bullish) oder unter Swing-Low (bearish).
     FVG: Lücke zwischen Kerze[-3].high und Kerze[-1].low (bullish) oder umgekehrt.
     """
-    df = _load(symbol, "4h", "1mo")
+    df = _load(symbol, "4h", "3mo")
     if df.empty or len(df) < 20:
         return _neutral("Zu wenig Daten")
 
