@@ -37,15 +37,17 @@ if "loguru" not in sys.modules:
 
 # services.storage ersetzen — die Testdaten werden je Test gesetzt
 _ZEILEN: list = []
+_REDIS: dict = {}
 if "services.storage" not in sys.modules:
     _st = types.ModuleType("services.storage")
     _st.pg_query = lambda *a, **k: _ZEILEN
-    _st.redis_get_json = lambda *a, **k: None
+    _st.redis_get_json = lambda k: _REDIS.get(k)
     _st.redis_set_json = lambda *a, **k: True
     sys.modules["services.storage"] = _st
 
 from services.data_collector import _aggregate, _exit_grund          # noqa: E402
 from services.periodic_report import _exit_reason_breakdown          # noqa: E402
+from services.recommendations import _build_recommendations          # noqa: E402
 
 
 def _notiz(grund=None, **rest):
@@ -152,3 +154,94 @@ def test_report_trennt_alte_trades_ab():
 def test_report_ohne_daten_faellt_nicht_um():
     _ZEILEN[:] = []
     assert _exit_reason_breakdown(7) == {}
+
+
+# ── Vorschlaege duerfen dem Walk-Forward nicht widersprechen (07.08.) ────────
+# ANLASS, belegt aus dem Telegram-Bericht vom 09.08.: alle DREI Vorschlaege des
+# Tages (DJ30, USDCAD, UK100) standen im selben Wochen-Report unter
+# "Overfitting-Verdacht". recommendations.py las den Walk-Forward gar nicht.
+
+from datetime import datetime, timedelta, timezone   # noqa: E402
+
+
+def _lage(ueberangepasst=("DJ30", "USDCAD", "UK100"), status="done",
+          alter_tage=3.1, mit_walkforward=True):
+    _REDIS.clear()
+    _REDIS["analysis:trade_stats"] = {"last30d": {"byMarket": {
+        "DJ30":   {"trades": 3,  "winRate": 0.0,  "pnl": -30.04},
+        "USDCAD": {"trades": 13, "winRate": 14.3, "pnl": -27.14},
+        "UK100":  {"trades": 8,  "winRate": 0.0,  "pnl": -16.8},
+        "EURUSD": {"trades": 5,  "winRate": 20.0, "pnl": -9.0},
+    }}}
+    _REDIS["analysis:backtests"] = {"bestPerSymbol": {
+        "DJ30":   {"strategy": "RSI_REVERSION", "params": {}, "winRate": 66.7,
+                   "profitFactor": 1.58, "trades": 12, "sl": 0.02, "tp": 0.04},
+        "USDCAD": {"strategy": "EMA_CROSS", "params": {}, "winRate": 32.0,
+                   "profitFactor": 1.52, "trades": 25, "sl": 0.01, "tp": 0.02},
+        "UK100":  {"strategy": "RSI_REVERSION", "params": {}, "winRate": 81.2,
+                   "profitFactor": 4.11, "trades": 16, "sl": 0.02, "tp": 0.04},
+        "EURUSD": {"strategy": "EMA_CROSS", "params": {}, "winRate": 55.0,
+                   "profitFactor": 1.60, "trades": 20, "sl": 0.01, "tp": 0.02},
+    }}
+    if mit_walkforward:
+        _REDIS["analysis:walkforward"] = {
+            "status": status,
+            "updatedAt": (datetime.now(timezone.utc)
+                          - timedelta(days=alter_tage)).isoformat(),
+            "overfitWarningSymbols": list(ueberangepasst),
+            "robustSymbols": ["EURUSD"],
+        }
+
+
+def test_vorschlaege_halten_ueberangepasste_maerkte_zurueck():
+    """Der Fall vom 09.08.: 3 von 3 Vorschlaegen waren ueberangepasst."""
+    _lage()
+    recs, zurueck = _build_recommendations()
+    assert sorted(zurueck) == ["DJ30", "UK100", "USDCAD"]
+    assert [r["symbol"] for r in recs] == ["EURUSD"]
+
+
+def test_vorschlaege_ohne_walkforward_wie_bisher():
+    """Ein fehlender Walk-Forward darf die Vorschlaege NICHT stilllegen.
+
+    Sonst faellt bei einem Redis-Aussetzer oder einem abgestuerzten Lauf die
+    ganze Empfehlungs-Engine still aus — schlimmer als der Widerspruch.
+    """
+    _lage(mit_walkforward=False)
+    recs, zurueck = _build_recommendations()
+    assert zurueck == []
+    assert len(recs) == 4
+
+
+def test_vorschlaege_ignorieren_zu_alten_walkforward():
+    """Sieben Tage — dieselbe Grenze wie insights-reader.ts im Frontend."""
+    _lage(alter_tage=8.0)
+    recs, zurueck = _build_recommendations()
+    assert zurueck == [], "ein 8 Tage alter Lauf darf nicht mehr filtern"
+    assert len(recs) == 4
+
+    _lage(alter_tage=6.9)
+    recs, zurueck = _build_recommendations()
+    assert len(zurueck) == 3, "ein 6.9 Tage alter Lauf muss noch filtern"
+
+
+def test_vorschlaege_ignorieren_unfertigen_walkforward():
+    for status in ["running", "error", ""]:
+        _lage(status=status)
+        recs, zurueck = _build_recommendations()
+        assert zurueck == [], f"status={status} darf nicht filtern"
+
+
+def test_vorschlaege_ohne_warnung_bleiben_vollstaendig():
+    _lage(ueberangepasst=())
+    recs, zurueck = _build_recommendations()
+    assert zurueck == []
+    assert len(recs) == 4
+
+
+def test_vorschlaege_halten_nur_die_gemeldeten_zurueck():
+    _lage(ueberangepasst=("UK100",))
+    recs, zurueck = _build_recommendations()
+    assert zurueck == ["UK100"]
+    assert "UK100" not in [r["symbol"] for r in recs]
+    assert len(recs) == 3
