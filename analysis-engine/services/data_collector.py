@@ -8,6 +8,7 @@ Ergebnis → Redis `analysis:trade_stats` (Grundlage für Forward-Test
 Validator und AI Learning Manager in Phase 4).
 """
 
+import json
 from datetime import datetime, timezone
 
 from loguru import logger
@@ -18,10 +19,31 @@ REDIS_KEY_TRADE_STATS = "analysis:trade_stats"
 TTL = 26 * 60 * 60  # 26h — überlappt den 4h-Zyklus grosszügig
 
 
+def _exit_grund(notes: str | None) -> str:
+    """Ausstiegsgrund aus den Notizen holen (07.08.).
+
+    Der Tracker leitet ihn seit dem 07.08. aus dem ECHTEN Schlusskurs ab
+    (ZIEL / STOP / DAZWISCHEN). Vorher stand dort eine fest verdrahtete Null,
+    und es war nicht feststellbar, WARUM ein Trade endete. Ohne diese
+    Unterscheidung laesst sich nicht beantworten, warum die Stufe GOOD im
+    Wochen-Report bei 66,7 % Treffern trotzdem Verlust macht.
+
+    Alte Trades haben das Feld nicht — die zaehlen als "OHNE_ANGABE" und
+    verfaelschen dadurch keine der anderen Gruppen.
+    """
+    if not notes:
+        return "OHNE_ANGABE"
+    try:
+        return str((json.loads(notes) or {}).get("exitReason") or "OHNE_ANGABE")
+    except (ValueError, TypeError):
+        return "OHNE_ANGABE"
+
+
 def _aggregate(rows: list[tuple]) -> dict:
-    """rows: (market, direction, strategy, result, profitLoss, date)"""
+    """rows: (market, direction, strategy, result, profitLoss, date, notes)"""
     by_market: dict[str, dict] = {}
     by_strategy: dict[str, dict] = {}
+    by_exit: dict[str, dict] = {}
     total = {"trades": 0, "wins": 0, "losses": 0, "pnl": 0.0}
 
     def bump(bucket: dict, key: str, result: str, pnl: float):
@@ -33,10 +55,11 @@ def _aggregate(rows: list[tuple]) -> dict:
             e["losses"] += 1
         e["pnl"] = round(e["pnl"] + pnl, 2)
 
-    for market, _direction, strategy, result, pnl, _date in rows:
+    for market, _direction, strategy, result, pnl, _date, notes in rows:
         pnl = float(pnl or 0)
         bump(by_market, market or "UNKNOWN", result, pnl)
         bump(by_strategy, (strategy or "Unclassified").upper(), result, pnl)
+        bump(by_exit, _exit_grund(notes), result, pnl)
         total["trades"] += 1
         if result == "WIN":
             total["wins"] += 1
@@ -57,6 +80,7 @@ def _aggregate(rows: list[tuple]) -> dict:
         "total": total,
         "byMarket": with_winrate(by_market),
         "byStrategy": with_winrate(by_strategy),
+        "byExitReason": with_winrate(by_exit),
     }
 
 
@@ -65,7 +89,7 @@ def run_data_collector() -> None:
 
     # Letzte 500 geschlossene Trades (read-only!)
     rows = pg_query(
-        '''SELECT market, direction, strategy, result, "profitLoss", date
+        '''SELECT market, direction, strategy, result, "profitLoss", date, notes
            FROM "Trade"
            WHERE status = 'CLOSED'
            ORDER BY date DESC
@@ -74,7 +98,7 @@ def run_data_collector() -> None:
 
     # Letzte 30 Tage separat (aktuellere Sicht für Forward-Testing)
     rows_30d = pg_query(
-        '''SELECT market, direction, strategy, result, "profitLoss", date
+        '''SELECT market, direction, strategy, result, "profitLoss", date, notes
            FROM "Trade"
            WHERE status = 'CLOSED' AND date >= NOW() - INTERVAL '30 days'
            ORDER BY date DESC'''

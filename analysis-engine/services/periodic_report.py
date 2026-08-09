@@ -49,6 +49,48 @@ def _stats_for_window(days_back_start: int, days_back_end: int) -> dict:
     return {"total": total, "bySymbol": by_symbol}
 
 
+def _exit_reason_breakdown(days: int) -> dict:
+    """WinRate/PnL gruppiert nach AUSSTIEGSGRUND (07.08.).
+
+    Der Tracker leitet ihn seit dem 07.08. aus dem echten Schlusskurs ab:
+    ZIEL / STOP / DAZWISCHEN. Vorher stand dort eine fest verdrahtete Null.
+
+    WARUM das im Bericht steht: der Wochen-Report vom 09.08. zeigte fuer die
+    Stufe GOOD 66,7 % Treffer und trotzdem -9,82 PnL. Das heisst, die Verlierer
+    sind groesser als die Gewinner — aber ob das an fruehen Ausstiegen, am
+    Zeit-Exit oder an der Stop-Weite liegt, war mit den vorhandenen Daten NICHT
+    zu beantworten. Diese Aufteilung beantwortet es.
+
+    Alte Trades haben das Feld nicht; sie erscheinen als OHNE_ANGABE und
+    verfaelschen die anderen Gruppen dadurch nicht.
+    """
+    import json as _json
+    rows = pg_query(
+        '''SELECT result, "profitLoss", notes
+           FROM "Trade"
+           WHERE status = 'CLOSED'
+             AND "updatedAt" >= NOW() - INTERVAL '%s days' ''' % int(days)
+    )
+    gruende: dict[str, dict] = {}
+    for result, pnl, notes in rows:
+        grund = "OHNE_ANGABE"
+        try:
+            grund = str((_json.loads(notes) or {}).get("exitReason") or "OHNE_ANGABE")
+        except Exception:
+            pass
+        e = gruende.setdefault(grund, {"trades": 0, "wins": 0, "losses": 0, "pnl": 0.0})
+        e["trades"] += 1
+        if result == "WIN":
+            e["wins"] += 1
+        elif result == "LOSS":
+            e["losses"] += 1
+        e["pnl"] = round(e["pnl"] + float(pnl or 0), 2)
+    for e in gruende.values():
+        decided = e["wins"] + e["losses"]
+        e["winRate"] = round(e["wins"] / decided * 100, 1) if decided else None
+    return gruende
+
+
 def _entry_quality_breakdown(days: int) -> dict:
     """Entry-Engine Phase D: WinRate/PnL gruppiert nach Entry-Quality-Tier.
     Liest den Tier aus notes.entryContext.entryQualityTier (seit 26.07.)."""
@@ -161,6 +203,24 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
             sign = "+" if e["pnl"] >= 0 else ""
             lines.append(f"• {tier}: {e['trades']} Trades, WR {wr}, {sign}{e['pnl']}")
         lines.append("<i>Wenn GOOD/EXCELLENT besser abschneiden → Engine wirkt, Schwelle anheben.</i>")
+        lines.append("")
+
+    # Ausstiegsgrund (07.08.) — beantwortet, WARUM Trades enden
+    gruende = _exit_reason_breakdown(days)
+    benannt = {k: v for k, v in gruende.items() if k != "OHNE_ANGABE"}
+    if benannt:
+        lines.append("<b>🚪 Nach Ausstiegsgrund:</b>")
+        reihenfolge = ["ZIEL", "DAZWISCHEN", "STOP", "KEIN_SCHLUSSKURS", "UNBEKANNT"]
+        for grund in sorted(benannt.keys(),
+                            key=lambda x: reihenfolge.index(x) if x in reihenfolge else 99):
+            e = benannt[grund]
+            wr = f"{e['winRate']}%" if e.get("winRate") is not None else "n/a"
+            vz = "+" if e["pnl"] >= 0 else ""
+            lines.append(f"• {grund}: {e['trades']} Trades, WR {wr}, {vz}{e['pnl']}")
+        ohne = gruende.get("OHNE_ANGABE", {}).get("trades", 0)
+        if ohne:
+            lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 07.08.).</i>")
+        lines.append("<i>DAZWISCHEN = weder Ziel noch Stop, also Zeit-Exit, Trailing oder Teilschliessung.</i>")
         lines.append("")
 
     lines.append(f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC")

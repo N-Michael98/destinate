@@ -106,6 +106,14 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // transaction.dealId. Also: (epic, openPrice) → P&L.
     const { EPIC_MAP } = await import("./capital-com-client");
     const pnlByEpicOpen = new Map<string, number>();
+    // SCHLUSSKURS mitnehmen (07.08.). Capital liefert ihn in derselben
+    // Aktivitaet (details.closeLevel) — bisher wurde er geholt und weggeworfen:
+    // weiter unten stand hart "closeLevel = 0". Damit war nicht feststellbar,
+    // WARUM ein Trade endete (Ziel, Stop, Zeit-Exit, Trailing). Genau diese
+    // Frage steht offen, seit der Wochen-Report zeigte, dass die Stufe GOOD
+    // bei 66,7 % Treffern trotzdem Verlust macht.
+    // KEIN zusaetzlicher HTTP-Aufruf: dieselbe Schleife, dasselbe details-Objekt.
+    const closeByEpicOpen = new Map<string, number>();
     try {
       const from = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 19);
       const to = new Date().toISOString().slice(0, 19);
@@ -125,10 +133,15 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           const details = (a.details ?? {}) as Record<string, unknown>;
           const openPrice = Number(details.openPrice ?? 0);
           const epic = String(a.epic ?? details.epic ?? "");
-          if (openPrice > 0 && epic) pnlByEpicOpen.set(`${epic}|${openPrice.toFixed(5)}`, pnl);
+          if (openPrice > 0 && epic) {
+            const schluessel = `${epic}|${openPrice.toFixed(5)}`;
+            pnlByEpicOpen.set(schluessel, pnl);
+            const closeLevel = Number(details.closeLevel ?? details.level ?? 0);
+            if (closeLevel > 0) closeByEpicOpen.set(schluessel, closeLevel);
+          }
         }
       }
-      console.log(`[trade-tracker] P&L-Map: ${pnlByDealId.size} tx, ${pnlByEpicOpen.size} epic|openPrice`);
+      console.log(`[trade-tracker] P&L-Map: ${pnlByDealId.size} tx, ${pnlByEpicOpen.size} epic|openPrice, ${closeByEpicOpen.size} mit Schlusskurs`);
     } catch (e) {
       console.warn(`[trade-tracker] Activity-Fetch fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -184,7 +197,35 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       // Update notes with close data
       let updatedMeta: Record<string, unknown> = {};
       try { updatedMeta = JSON.parse(trade.notes); } catch { updatedMeta = {}; }
-      updatedMeta.closeLevel = 0;
+      // AUSSTIEGSGRUND ABLEITEN (07.08.).
+      //
+      // Hier stand "updatedMeta.closeLevel = 0" — eine fest verdrahtete Null,
+      // obwohl der echte Schlusskurs eine Schleife weiter oben schon vorliegt.
+      // Der Trade kennt stopLoss und takeProfit; mit dem echten Schlusskurs
+      // laesst sich daraus ableiten, WARUM er endete — ohne neues Datenfeld.
+      //
+      // exitPosition ist die objektive Zahl: 0 = am Stop, 1 = am Ziel. Sie
+      // bleibt auch dann brauchbar, wenn die Einteilung unten spaeter anders
+      // gezogen wird. Die 5 %-Toleranz ist die einzige gewaehlte Zahl hier:
+      // gross genug fuer Schlupf beim Schliessen, klein genug, um einen
+      // Trailing-Ausstieg nahe am Ziel nicht faelschlich als "Ziel" zu zaehlen.
+      const schlusskurs = closeByEpicOpen.get(openKey) ?? null;
+      let exitPosition: number | null = null;
+      let exitReason = "UNBEKANNT";
+      const spanne = Number(trade.takeProfit) - Number(trade.stopLoss);
+      if (schlusskurs !== null && Number.isFinite(spanne) && Math.abs(spanne) > 0) {
+        // Fuer SELL liegt das Ziel UNTER dem Stop — die Formel dreht sich mit,
+        // weil spanne dann negativ ist. 0 bleibt Stop, 1 bleibt Ziel.
+        exitPosition = (schlusskurs - Number(trade.stopLoss)) / spanne;
+        if (exitPosition >= 0.95) exitReason = "ZIEL";
+        else if (exitPosition <= 0.05) exitReason = "STOP";
+        else exitReason = "DAZWISCHEN";
+      } else if (schlusskurs === null) {
+        exitReason = "KEIN_SCHLUSSKURS";
+      }
+      updatedMeta.closeLevel = schlusskurs ?? 0;
+      updatedMeta.exitPosition = exitPosition !== null ? Number(exitPosition.toFixed(4)) : null;
+      updatedMeta.exitReason = exitReason;
       updatedMeta.closedAt = new Date().toISOString();
 
       await db.$executeRawUnsafe(
@@ -194,7 +235,7 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
         JSON.stringify(updatedMeta),
         trade.id
       );
-      console.log(`[trade-tracker] Closed: ${trade.market} ${trade.direction} → ${result_str} P&L=${profitLoss} deal=${meta.dealId}`);
+      console.log(`[trade-tracker] Closed: ${trade.market} ${trade.direction} → ${result_str} P&L=${profitLoss} | Ausstieg: ${exitReason}${exitPosition !== null ? ` (${(exitPosition * 100).toFixed(0)}% zwischen Stop und Ziel)` : ""} deal=${meta.dealId}`);
       try {
         const { notifyTradeClosed } = await import("../telegram-notifications/telegram-sender");
         await notifyTradeClosed({

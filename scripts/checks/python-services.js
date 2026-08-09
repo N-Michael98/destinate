@@ -129,24 +129,54 @@ module.exports = function pruefe() {
   }
 
   // ── Teil 2: Laufen die vorhandenen Tests? ─────────────────────────────────
+  //
+  // ERWEITERT 07.08.: geprüft wurde nur backend/tests. analysis-engine hatte
+  // KEINEN einzigen Test — dort entsteht aber die Lerngrundlage des Systems
+  // (Trade-Statistiken, Ausstiegsgründe, Wochen-Report). py_compile findet dort
+  // Syntaxfehler, aber keinen falschen Zähler; wer Trades falsch gruppiert,
+  // verfälscht jede spätere Auswertung, ohne dass etwas rot wird.
+  // Jetzt laufen BEIDE Suiten, und die Summe steht im Titel.
   let testZahl = 0;
-  if (!exists("backend/tests/test_trading_functions.py")) {
-    funde.push("backend/tests/test_trading_functions.py fehlt");
-  } else {
+  // Die Liste wird GEFUNDEN, nicht gepflegt.
+  //
+  // Erster Entwurf hatte sie fest verdrahtet — beim Sabotage-Lauf liess sich die
+  // analysis-engine-Suite einfach aus dem Array streichen, und nichts wurde rot:
+  // wo nichts läuft, kann auch nichts fehlschlagen. Eine Liste, die jemand
+  // stillschweigend kürzen kann, ist kein Schutz. Jetzt wird jedes
+  // <dienst>/tests/-Verzeichnis erkannt und ausgeführt.
+  // Die Regel kommt aus der STRUKTUR: jeder Dienst mit Python-Quelltext braucht
+  // Tests. Damit lässt sich weder ein Eintrag aus einer Liste streichen noch ein
+  // tests/-Verzeichnis löschen, ohne dass der Prüfer rot wird — beide Wege sind
+  // im Sabotage-Lauf am 07.08. zuerst durchgerutscht.
+  const suiten = gruppen.filter(([, dateien]) => dateien.length > 0).map(([d]) => d);
+  for (const dienst of suiten) {
+    const testDir = path.join(ROOT, dienst, "tests");
+    if (!fs.existsSync(testDir)) {
+      funde.push(`${dienst} hat Python-Quelltext, aber kein tests/-Verzeichnis`);
+      continue;
+    }
+    const testDateien = fs.readdirSync(testDir).filter((f) => /^test_.*\.py$/.test(f));
+    if (testDateien.length === 0) {
+      funde.push(`${dienst}/tests/ enthält keine test_*.py`);
+      continue;
+    }
     try {
       const aus = execSync(`"${py}" -m pytest tests/ -q --no-header -p no:warnings`, {
-        cwd: path.join(ROOT, "backend"), stdio: "pipe", encoding: "utf8",
+        cwd: path.join(ROOT, dienst), stdio: "pipe", encoding: "utf8",
       });
       const m = aus.match(/(\d+) passed/);
-      testZahl = m ? Number(m[1]) : 0;
-      if (testZahl === 0) funde.push("pytest lief, meldet aber 0 bestandene Tests");
+      const n = m ? Number(m[1]) : 0;
+      testZahl += n;
+      if (n === 0) funde.push(`${dienst}: pytest lief, meldet aber 0 bestandene Tests`);
     } catch (e) {
       const aus = (e.stdout?.toString() || "") + (e.stderr?.toString() || "");
       if (/No module named pytest/i.test(aus)) {
         funde.push(`pytest nicht installiert — nachholen: "${py}" -m pip install pytest==8.3.4 pytest-asyncio==0.24.0`);
       } else {
         const zeilen = aus.split("\n").filter((z) => /^FAILED|^ERROR/.test(z));
-        funde.push(...(zeilen.length ? zeilen.map((z) => `pytest: ${z.trim()}`) : [`pytest fehlgeschlagen: ${aus.split("\n").slice(-3).join(" ").trim()}`]));
+        funde.push(...(zeilen.length
+          ? zeilen.map((z) => `${dienst} pytest: ${z.trim()}`)
+          : [`${dienst} pytest fehlgeschlagen: ${aus.split("\n").slice(-3).join(" ").trim()}`]));
       }
     }
   }
