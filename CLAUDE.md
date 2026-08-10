@@ -33,8 +33,14 @@ die Kontrolle am laufenden System — er fängt nur ab, was sich statisch
 feststellen lässt.
 
 Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweislich
-an (7 von 7). Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht
-werden — ein Prüfer, der nie rot wird, ist wertlos.
+an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
+Prüfer, der nie rot wird, ist wertlos.
+
+**Eine Ausnahme seit dem 10.08.:** der elfte Prüfer `exit-schwellen` **rechnet**.
+Er übersetzt `risk-agent.ts` und ruft `wirksameSchwellen()` wirklich auf — 29
+Rechnungen über fünf gemessene Märkte. Damit fällt dort auch ein subtil falscher
+Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle), der strukturell
+unauffällig bliebe. Für alle anderen Pfade gilt der Absatz oben weiter.
 
 ## Vorgehen bei Änderungen
 
@@ -93,7 +99,7 @@ anderer Fehler denselben Pfad abfangen kann.
 
 ## Snapshot kritischer Werte
 
-Der neunte Prüfer hält 272 Zahlen und Texte fest, die über Risiko entscheiden:
+Der neunte Prüfer hält 289 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
 alle Grössen- und Stop-Tabellen, die Standardwerte der Einstellungen, die
 Exit-Schwellen und Haltedauern, die Klemmen des AI Managers, die Prüfsumme des
 GPT-Regelteils, die Reihenfolge der Filterkette und die Konstanten des
@@ -102,6 +108,14 @@ Struktur-Stops.
 Die übrigen Prüfer sichern **Strukturen** — dass ein Eintrag existiert. Sie
 merken nicht, wenn jemand seinen **Wert** ändert. Vorgeführt: `MAX_SIZE` für
 BTCUSD von 0.05 auf 5.0, das hundertfache Risiko, und das ganze Netz blieb grün.
+
+Seit dem 10.08. auch **Schalter** (`true`/`false`). Bis dahin hielt der Snapshot
+ausschliesslich Zahlen — damit war kein einziger Schalter gesichert:
+`pyramidingEnabled`, `blockOverfitMarkets`, `allowMeasuredConsensus`,
+`useFullModelsForScan`, `tradeLimitEnabled`, `pauseOnLoss`,
+`exitThresholdsRelativeToStop`. Jeder liess sich im Standardwert umdrehen, und
+das ganze Netz blieb grün — `tradeLimitEnabled` auf `false` heisst kein
+Tageslimit.
 
 Wird ein Wert bewusst geändert, den Snapshot mitziehen:
 
