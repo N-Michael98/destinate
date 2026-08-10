@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 639 · Kanten: 1307
+Dateien mit internen Abhängigkeiten: 639 · Kanten: 1308
 
 
 ## analysis-engine/api
@@ -1007,6 +1007,7 @@ Dateien mit internen Abhängigkeiten: 639 · Kanten: 1307
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
   - → `frontend/lib/python-bridge/python-data.ts`
+  - → `frontend/lib/settings/settings-store.ts`
 - `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
@@ -2017,7 +2018,7 @@ Dateien mit internen Abhängigkeiten: 639 · Kanten: 1307
 - `backend/services/market_data.py` — von 11 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 9 Dateien
+- `frontend/lib/settings/settings-store.ts` — von 9 Dateien
 - `frontend/lib/paper-trading/paper-types.ts` — von 9 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 8 Dateien
-- `frontend/lib/settings/settings-store.ts` — von 8 Dateien
 

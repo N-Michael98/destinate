@@ -424,7 +424,10 @@ export default function SettingsDashboard() {
     await postAction({ action: "update_bot", patch: { [field]: value } });
   };
 
-  const updateRiskField = async (field: string, value: number) => {
+  // unknown statt number (10.08.): die Ausstiegs-Schwellen brauchen einen
+  // Schalter (boolean) neben den R-Werten (number). Gleiche Signatur wie
+  // updateBotField — ein zweiter Helfer daneben wäre nur eine Kopie.
+  const updateRiskField = async (field: string, value: unknown) => {
     await postAction({ action: "update_risk", patch: { [field]: value } });
   };
 
@@ -1187,6 +1190,74 @@ export default function SettingsDashboard() {
               <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
                 OFF = Routine-Scans nutzen die günstigen Modelle, egal was oben gewählt ist (bisheriges Verhalten).
                 ON = das gewählte Modell wird wirklich verwendet — differenziertere Entscheidungen, aber gpt-4o kostet rund 6× so viel wie mini.
+              </p>
+            </div>
+
+            {/* ───── AUSSTIEGS-SCHWELLEN RELATIV ZUM STOP (10.08., Stufe 2) ───── */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
+                  Ausstiegs-Schwellen relativ zum Stop
+                  <span style={{ marginLeft: "8px", fontSize: "9px", color: "#475569" }}>
+                    {(settings.riskSettings.exitThresholdsRelativeToStop ?? false) ? "— zählen in R" : "— feste Kursprozente"}
+                  </span>
+                </label>
+                <button
+                  onClick={() => updateRiskField("exitThresholdsRelativeToStop", !(settings.riskSettings.exitThresholdsRelativeToStop ?? false))}
+                  style={{
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: (settings.riskSettings.exitThresholdsRelativeToStop ?? false) ? "#10c96d" : "rgba(255,255,255,0.1)",
+                    position: "relative", transition: "background 0.15s",
+                  }}
+                >
+                  <div style={{
+                    width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: (settings.riskSettings.exitThresholdsRelativeToStop ?? false) ? "23px" : "3px",
+                    transition: "left 0.15s",
+                  }} />
+                </button>
+                <span style={{ fontSize: "12px", color: (settings.riskSettings.exitThresholdsRelativeToStop ?? false) ? "#10c96d" : "#64748b" }}>
+                  {(settings.riskSettings.exitThresholdsRelativeToStop ?? false) ? "ON" : "OFF"}
+                </span>
+              </div>
+
+              {(settings.riskSettings.exitThresholdsRelativeToStop ?? false) && (
+                <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
+                  {([
+                    ["breakevenAtR", "Breakeven", 1.0],
+                    ["partialAtR", "Teilgewinn", 1.5],
+                    ["trailAtR", "Trailing ab", 1.0],
+                  ] as const).map(([feld, beschriftung, standard]) => (
+                    <div key={feld} style={{ flex: 1 }}>
+                      <label style={{ fontSize: "9px", color: "#64748b", display: "block", marginBottom: "4px" }}>
+                        {beschriftung} (R)
+                      </label>
+                      <input
+                        type="number" step="0.1" min="0.2" max="5"
+                        value={settings.riskSettings[feld] ?? standard}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v)) void updateRiskField(feld, v);
+                        }}
+                        style={{
+                          width: "100%", padding: "6px 8px", fontSize: "12px", fontFamily: "monospace",
+                          background: "rgba(0,0,0,0.3)", color: "#e2e8f0",
+                          border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px",
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                1 R = der volle Stop-Abstand. Bei 1,0 R hat der Trade genau seinen Einsatz verdient; das Ziel liegt bei 2 R.
+                OFF = die Schwellen zählen in Kursprozent (0,5 % / 1,0 % / 1,5 % bei Daytrading) — bisheriges Verhalten.
+                ON = sie zählen in R und wirken damit in jedem Markt gleich.
+                Gemessen am 10.08. über alle 30 Symbole: mit festen Prozenten greift der Breakeven bei UKOIL nach 0,06 R,
+                bei EURGBP erst nach 1,04 R — Faktor 17,6. In 29 von 30 Märkten also, BEVOR der Trade seinen Einsatz verdient hat.
+                Werte ausserhalb 0,2–5,0 R werden geklemmt.
               </p>
             </div>
 

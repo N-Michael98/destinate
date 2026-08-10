@@ -37,6 +37,19 @@ const DEFAULT_SETTINGS: SystemSettings = {
     maxTotalDrawdownPct: 10.0,
     maxExposurePct: 20.0,
     minConfidenceScore: 65,
+    // Standard AUS: die Schwellen zählen weiter in Kursprozent, bisheriges
+    // Verhalten bleibt damit unverändert. Erst wenn der User umschaltet,
+    // zählen sie in R (Vielfache des Stop-Abstands) — siehe RiskSettings.
+    exitThresholdsRelativeToStop: false,
+    // Verankert am Ziel, das der Code selbst setzt (takeProfit = 2 R):
+    //   1,0 R  Breakeven — ab hier kann der Trade nicht mehr verlieren
+    //   1,5 R  Teilgewinn — drei Viertel des Wegs zum Ziel
+    //   1,0 R  Trailing beginnt, sobald die Position abgesichert ist
+    // Das sind Ausgangswerte, keine optimierten. Ob sie stimmen, zeigen die
+    // Ausstiegsgründe über einige Wochen (byExitReason im Wochenreport).
+    breakevenAtR: 1.0,
+    partialAtR: 1.5,
+    trailAtR: 1.0,
   },
   connections: [
     { brokerKey: "CAPITAL_COM", connected: false, accountId: null, accountMode: "DEMO", lastConnectedAt: null, error: null },

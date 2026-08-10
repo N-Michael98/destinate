@@ -47,6 +47,10 @@ export interface RiskAgentContext {
   priceMap: Map<string, PriceData>;
   dbMeta: Map<string, PosMeta>;
   atrMap: Map<string, number>;
+  /** Stufe 2 (10.08.): Ausstiegs-Schwellen relativ zum Stop.
+   *  Fehlt das Feld, gelten die festen Kursprozente wie bisher — der
+   *  Aufrufer muss also nichts tun, damit sich nichts ändert. */
+  exitSchwellen?: ExitSchwellenEinstellung;
 }
 
 // ── Konfiguration ─────────────────────────────────────────────────────────────
@@ -182,6 +186,76 @@ const GRENZEN = {
   partialRatio: { min: 0.25, max: 0.75 },  // Anteil der Position
 };
 
+// ── Ausstiegs-Schwellen relativ zum Stop (Stufe 2, 10.08.) ───────────────────
+
+/** Grenzen für die R-Werte aus den Einstellungen.
+ *
+ *  Warum geklemmt: die Werte kommen aus einem Eingabefeld. Eine 0 würde jede
+ *  Absicherung sofort auslösen, eine 50 sie nie. Dieselbe Überlegung wie bei
+ *  GRENZEN für die AI-Werte — nur dass hier ein Tippfehler die Quelle ist. */
+const R_GRENZEN = { min: 0.2, max: 5.0 };
+
+export interface ExitSchwellenEinstellung {
+  exitThresholdsRelativeToStop: boolean;
+  breakevenAtR: number;
+  partialAtR: number;
+  trailAtR: number;
+}
+
+/** Rechnet die R-Schwellen in dieselbe Grösse um, in der der Agent bereits
+ *  denkt: Kursbewegung in Prozent vom Einstieg.
+ *
+ *  WOZU. getStyleThresholds() liefert feste Kursprozente (DAYTRADING 0,5 % /
+ *  1,0 % / 1,5 %). Der Stop ist aber 1,5 × ATR, und ATR im Verhältnis zum Kurs
+ *  liegt zwischen den Märkten weit auseinander. Gemessen am 10.08. über alle
+ *  30 Symbole, ATR(14) auf Tageskerzen:
+ *
+ *      UKOIL   Stop 8,47 % vom Kurs -> Breakeven greift nach 0,06 R
+ *      USOIL   Stop 8,22 %          -> 0,06 R
+ *      BTCUSD  Stop 3,21 %          -> 0,16 R
+ *      EURUSD  Stop 0,73 %          -> 0,69 R
+ *      EURGBP  Stop 0,48 %          -> 1,04 R
+ *
+ *  Faktor 17,6 zwischen dem engsten und dem weitesten Markt. In 29 von 30
+ *  Märkten greift die Absicherung, BEVOR der Trade seinen eigenen Einsatz
+ *  verdient hat — auf UKOIL nimmt der Teilgewinn die halbe Position bei 0,12 R
+ *  heraus, während das volle Risiko noch im Markt steht.
+ *
+ *  Ist der Schalter aus, wird NICHTS umgerechnet: die Regelwerte gehen
+ *  unverändert zurück. Das ist exakt das bisherige Verhalten.
+ *
+ *  @param regel     Werte aus getStyleThresholds()
+ *  @param slRange   Stop-Abstand in Kurseinheiten (schon berechnet)
+ *  @param entry     Einstiegskurs
+ */
+export function wirksameSchwellen(
+  regel: { bePct: number; partialPct: number; trailPct: number; atrFactor: number },
+  slRange: number,
+  entry: number,
+  einstellung: ExitSchwellenEinstellung | undefined,
+): { bePct: number; partialPct: number; trailPct: number; atrFactor: number; relativ: boolean } {
+  if (!einstellung?.exitThresholdsRelativeToStop) {
+    return { ...regel, relativ: false };
+  }
+  // Ohne belastbaren Stop-Abstand oder Einstieg gäbe die Umrechnung Unsinn
+  // (Division durch null, Infinity). Dann lieber die Regelwerte — die haben
+  // seit jeher gegriffen. Stillschweigend etwas Kaputtes zu rechnen wäre die
+  // schlechtere Antwort.
+  if (!(slRange > 0) || !(entry > 0) || !Number.isFinite(slRange / entry)) {
+    return { ...regel, relativ: false };
+  }
+  const stopAnteil = slRange / entry;   // Stop-Abstand als Anteil vom Einstieg
+  const r = (wert: number) =>
+    Math.min(R_GRENZEN.max, Math.max(R_GRENZEN.min, Number.isFinite(wert) ? wert : 1));
+  return {
+    bePct:      r(einstellung.breakevenAtR) * stopAnteil,
+    partialPct: r(einstellung.partialAtR)   * stopAnteil,
+    trailPct:   r(einstellung.trailAtR)     * stopAnteil,
+    atrFactor:  regel.atrFactor,   // der Trailing-Abstand bleibt unberührt
+    relativ: true,
+  };
+}
+
 async function askAIManager(
   symbol: string,
   direction: string,
@@ -267,7 +341,7 @@ async function processPosition(
   const currentPrice = isBuy ? prices.bid : prices.ask;
   if (!currentPrice || currentPrice <= 0) return;
 
-  const thresholds = getStyleThresholds(meta.tradingStyle);
+  const regelSchwellen = getStyleThresholds(meta.tradingStyle);
   const liveSL = stopLevel != null ? stopLevel : 0;
   const liveTP = profitLevel != null ? profitLevel : 0;
 
@@ -275,6 +349,11 @@ async function processPosition(
     ? Math.abs(entry - liveSL)
     : (DEFAULT_SL_RANGE[symbol] ?? entry * 0.005);
   if (slRange < 0.000001) return;
+
+  // Stufe 2 (10.08.): Schwellen relativ zum Stop, wenn eingeschaltet.
+  // Steht nach slRange, weil die Umrechnung genau diesen Abstand braucht.
+  // Schalter aus -> regelSchwellen unverändert, bisheriges Verhalten.
+  const thresholds = wirksameSchwellen(regelSchwellen, slRange, entry, ctx.exitSchwellen);
 
   // Echter Profit in % — unabhängig von TP-Distanz
   const profitPct = isBuy
@@ -307,7 +386,12 @@ async function processPosition(
     ? trailFallback
     : (isBuy ? Math.max(meta.trailSL, trailFallback) : Math.min(meta.trailSL, trailFallback));
 
-  console.log(`[risk-agent] ${symbol} ${direction} entry=${entry} cur=${currentPrice} profit=${(profitPct*100).toFixed(2)}% atr=${atr.toFixed(5)} be=${beEffective}`);
+  // Fortschritt in R mitschreiben (Stufe 2, 10.08.). Ohne diese Zahl liesse
+  // sich hinterher nicht belegen, ob die Schwellen richtig liegen — genau die
+  // Frage, die dieser Umbau aufwirft. profitPct ist Kursbewegung vom Einstieg,
+  // slRange/entry der Stop-Abstand in derselben Einheit.
+  const fortschrittR = profitPct / (slRange / entry);
+  console.log(`[risk-agent] ${symbol} ${direction} entry=${entry} cur=${currentPrice} profit=${(profitPct*100).toFixed(2)}% (${fortschrittR.toFixed(2)}R) atr=${atr.toFixed(5)} be=${beEffective}${thresholds.relativ ? ` [Schwellen relativ: BE ${(thresholds.bePct*100).toFixed(2)}% Teil ${(thresholds.partialPct*100).toFixed(2)}% Trail ${(thresholds.trailPct*100).toFixed(2)}%]` : ""}`);
 
   // ── Zeit-Exit ──────────────────────────────────────────────────────────────
   const style = meta.tradingStyle.toUpperCase();

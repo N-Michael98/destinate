@@ -33,6 +33,13 @@ const pruefer = [
   // 05.08. ergaenzt: wer haengt an wem. Erzeugt aus den Importen, damit die
   // Karte nicht veralten kann — eine falsche Karte waere schlimmer als keine.
   ["system-map", require("./system-map")],
+  // 10.08. ergaenzt: der erste Pruefer, der RECHNET statt nur zu schauen.
+  // Alle zehn darueber sehen Struktur — ein Riegel, der vorhanden, aber subtil
+  // falsch umgebaut wurde, faellt ihnen nicht auf (steht so auch in CLAUDE.md).
+  // Bei den Ausstiegs-Schwellen waere genau das teuer: ein vertauschtes
+  // Vorzeichen oder ein Faktor statt eines Divisors bliebe strukturell
+  // unauffaellig und wirkte am offenen Geld.
+  ["exit-schwellen", require("./exit-schwellen")],
 ];
 
 const nurDieser = process.argv[2];

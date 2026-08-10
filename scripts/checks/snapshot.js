@@ -33,6 +33,21 @@ function zahlen(block) {
   for (const m of ohneKommentare.matchAll(/([A-Za-z][A-Za-z0-9_]*)\s*:\s*(-?[0-9.]+)/g)) {
     out[m[1]] = Number(m[2]);
   }
+  // ERWEITERT 10.08.: auch true/false erfassen.
+  //
+  // Bis heute hielt der Snapshot ausschliesslich ZAHLEN — und damit war KEIN
+  // EINZIGER SCHALTER gesichert. pyramidingEnabled, blockOverfitMarkets,
+  // allowMeasuredConsensus, useFullModelsForScan, tradeLimitEnabled,
+  // pauseOnLoss: jeder davon liess sich im Standardwert umdrehen, und das
+  // ganze Netz blieb gruen. Das sind Schalter, die ueber Handelsverhalten
+  // entscheiden — pyramidingEnabled auf true heisst mehrere Positionen je
+  // Symbol, tradeLimitEnabled auf false heisst kein Tageslimit.
+  //
+  // Aufgefallen beim Einbau von exitThresholdsRelativeToStop (Stufe 2), der
+  // aus demselben Grund ungeschuetzt gewesen waere.
+  for (const m of ohneKommentare.matchAll(/([A-Za-z][A-Za-z0-9_]*)\s*:\s*(true|false)\b/g)) {
+    out[m[1]] = m[2] === "true";
+  }
   return out;
 }
 
@@ -77,6 +92,11 @@ function erfasse() {
     // Eine flache Erfassung überschrieb min/max bei jeder Gruppe und behielt nur
     // die letzte — statt sechs Werten blieben zwei übrig, und die Klemmen für
     // Breakeven-Puffer und Trailing wären ungeschützt geblieben.
+    // Klemme der R-Werte aus den Einstellungen (Stufe 2, 10.08.). Ohne sie
+    // würde ein Tippfehler im Eingabefeld — eine 0 oder eine 50 — jede
+    // Absicherung sofort oder nie auslösen. Im Sabotage-Lauf liess sie sich
+    // auf { min: 0, max: 1000 } aufweiten, ohne dass etwas rot wurde.
+    rGrenzen: zahlen(objectBlock(risk, "const R_GRENZEN")),
     aiGrenzen: [...objectBlock(risk, "const GRENZEN").matchAll(/(\w+):\s*\{\s*min:\s*(-?[\d.]+),\s*max:\s*(-?[\d.]+)/g)]
       .reduce((a, m) => (a[m[1]] = { min: +m[2], max: +m[3] }, a), {}),
     gptPrompt: {

@@ -1,6 +1,6 @@
 {
   "hinweis": "Von scripts/checks/snapshot.js erzeugt. Nicht von Hand ändern — mit --update neu schreiben.",
-  "erstelltAm": "2026-08-09T17:01:16.489Z",
+  "erstelltAm": "2026-08-10T19:12:09.138Z",
   "werte": {
     "epicMap": {
       "EURUSD": "EURUSD",
@@ -237,14 +237,24 @@
       "SWING": 2,
       "maxPositionsPerSymbol": 1,
       "pyramidingMinConfidence": 0,
-      "maxPriceAgeMinutes": 30
+      "maxPriceAgeMinutes": 30,
+      "pauseOnLoss": true,
+      "tradeLimitEnabled": true,
+      "pyramidingEnabled": false,
+      "useFullModelsForScan": false,
+      "blockOverfitMarkets": false,
+      "allowMeasuredConsensus": false
     },
     "riskDefaults": {
       "maxRiskPerTradePct": 1,
       "maxDailyDrawdownPct": 3,
       "maxTotalDrawdownPct": 10,
       "maxExposurePct": 20,
-      "minConfidenceScore": 65
+      "minConfidenceScore": 65,
+      "breakevenAtR": 1,
+      "partialAtR": 1.5,
+      "trailAtR": 1,
+      "exitThresholdsRelativeToStop": false
     },
     "exitSchwellen": {
       "SCALPING": {
@@ -270,6 +280,10 @@
       "SCALPING": 4,
       "DAYTRADING": 24,
       "SWING": 168
+    },
+    "rGrenzen": {
+      "min": 0.2,
+      "max": 5
     },
     "aiGrenzen": {
       "beBuffer": {

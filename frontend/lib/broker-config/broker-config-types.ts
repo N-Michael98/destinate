@@ -103,6 +103,30 @@ export interface RiskSettings {
   maxTotalDrawdownPct: number;
   maxExposurePct: number;
   minConfidenceScore: number;
+
+  // ── Ausstiegs-Schwellen relativ zum Stop (Stufe 2, 10.08.) ────────────────
+  //
+  // Breakeven, Teilgewinn und Trailing lösen bisher bei FESTEN Kursprozenten
+  // aus (risk-agent.ts getStyleThresholds: 0,5 % / 1,0 % / 1,5 % bei
+  // DAYTRADING). Der Stop ist aber 1,5 × ATR — und ATR im Verhältnis zum Kurs
+  // liegt zwischen den Märkten weit auseinander. Gemessen am 10.08. über alle
+  // 30 Symbole (ATR(14) auf Tageskerzen): der Breakeven greift bei UKOIL nach
+  // 0,06 R, bei EURGBP erst nach 1,04 R — Faktor 17,6. Dieselbe Regel wirkt in
+  // 29 von 30 Märkten, BEVOR der Trade seinen eigenen Einsatz verdient hat.
+  //
+  // Ist der Schalter an, zählen die Schwellen in R (Vielfache des
+  // Stop-Abstands) statt in Kursprozent. Damit wirkt dieselbe Regel in jedem
+  // Markt gleich.
+  //
+  // STANDARD AUS: das ändert Handelsverhalten. Solange der Schalter aus ist,
+  // läuft alles exakt wie bisher.
+  exitThresholdsRelativeToStop: boolean;
+  // Vielfache des Stop-Abstands. 1 R = der Trade hat genau seinen Einsatz
+  // verdient. Verankert am Ziel, das der Code selbst setzt: takeProfit liegt
+  // bei 2 R (ai-analysis-engine.ts).
+  breakevenAtR: number;
+  partialAtR: number;
+  trailAtR: number;
 }
 
 export interface SystemSettings {

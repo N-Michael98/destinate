@@ -13,7 +13,7 @@ import {
 import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 import { fetchPrices as pyFetchPrices } from "../python-bridge/python-data";
 import { getCapitalSession, isCapitalConnected } from "./capital-com-session";
-import { runRiskAgent, type PosMeta } from "../agents/risk-agent";
+import { runRiskAgent, type PosMeta, type ExitSchwellenEinstellung } from "../agents/risk-agent";
 
 export async function runActiveTradeManager(): Promise<void> {
   console.log("[trade-mgr] gestartet");
@@ -126,7 +126,27 @@ export async function runActiveTradeManager(): Promise<void> {
     } catch { /* non-fatal — Fallback auf slRange*0.5 im RiskAgent */ }
   }
 
-  // ── 5. RiskAgent ausführen ────────────────────────────────────────────────
+  // ── 5. Ausstiegs-Schwellen aus den Einstellungen (Stufe 2, 10.08.) ────────
+  // EINMAL je Zyklus geladen, nicht je Position — der RiskAgent läuft in einer
+  // Schleife über alle offenen Positionen. Schlägt das Laden fehl, bleibt das
+  // Feld leer und es gelten die festen Kursprozente wie bisher: ein
+  // DB-Problem darf niemals die Absicherung laufender Trades ändern.
+  let exitSchwellen: ExitSchwellenEinstellung | undefined;
+  try {
+    const { getSettings } = await import("../settings/settings-store");
+    const s = await getSettings();
+    exitSchwellen = {
+      exitThresholdsRelativeToStop: s.riskSettings.exitThresholdsRelativeToStop,
+      breakevenAtR: s.riskSettings.breakevenAtR,
+      partialAtR: s.riskSettings.partialAtR,
+      trailAtR: s.riskSettings.trailAtR,
+    };
+  } catch (e) {
+    console.warn("[trade-mgr] Einstellungen nicht geladen — feste Kursprozente bleiben:",
+      e instanceof Error ? e.message : String(e));
+  }
+
+  // ── 6. RiskAgent ausführen ────────────────────────────────────────────────
   await runRiskAgent({
     apiKey: session.apiKey,
     cst: session.cst,
@@ -135,5 +155,6 @@ export async function runActiveTradeManager(): Promise<void> {
     priceMap,
     dbMeta,
     atrMap,
+    exitSchwellen,
   });
 }

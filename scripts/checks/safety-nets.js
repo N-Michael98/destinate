@@ -16,6 +16,8 @@ module.exports = function pruefe() {
   const instr   = read("frontend/instrumentation.ts");
   const exec    = read("frontend/lib/capital-com/capital-com-execution.ts");
   const engine  = read("frontend/lib/market-scanner/ai-analysis-engine.ts");
+  const atm     = read("frontend/lib/capital-com/active-trade-manager.ts");
+  const risk    = read("frontend/lib/agents/risk-agent.ts");
 
   const pruefungen = [
     ["Kurs-Frische-Filter läuft als erster Filter", /checkPriceFreshness\(symbol, priceAgeMinutes, maxPriceAgeMinutes\)/, filters],
@@ -31,6 +33,13 @@ module.exports = function pruefe() {
     ["Kein Signal ohne Stop-Loss",                  /gpt\.stopLoss > 0/, engine],
     ["Kein Signal ohne Take-Profit",                /gpt\.takeProfit > 0/, engine],
     ["Signal-Trichter wird gezählt",                /trichter\.go\+\+/, engine],
+    // Stufe 2 (10.08.). Beide Zeilen liessen sich im Sabotage-Lauf ersatzlos
+    // streichen, ohne dass etwas rot wurde: die Einstellung kam dann nie beim
+    // RiskAgent an, der Schalter in der Oberfläche wäre wirkungslos gewesen —
+    // und zwar STILL, weil das Ausbleiben einer Umrechnung genauso aussieht
+    // wie "Schalter steht auf AUS".
+    ["Ausstiegs-Schwellen werden an den RiskAgent übergeben", /exitSchwellen,?\s*\}\)/, atm],
+    ["Ausstiegs-Schwellen werden im RiskAgent angewandt",     /wirksameSchwellen\(regelSchwellen,/, risk],
   ];
 
   for (const [name, muster, src] of pruefungen) {
