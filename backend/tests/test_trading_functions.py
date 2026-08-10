@@ -1326,3 +1326,225 @@ def test_strategien_laufen_auf_mitgegebenen_kerzen():
         _TS.get_ohlcv = echt
     assert zaehler["n"] == 0, "die Strategie hat trotzdem Kurse geholt"
     assert r["signal"] in ("LONG", "SHORT", "NEUTRAL")
+
+
+# ── Historischer Konsens (07.08., Stufe 4 Schritt 2) ─────────────────────────
+# Hier wird NICHTS nachgebaut: analyze_all_strategies() ist dieselbe Funktion
+# wie live und bekommt ueber den Kerzen-Haken die Daten des jeweiligen
+# Zeitpunkts. Die Gefahr liegt woanders — dass ein Balken Daten aus der ZUKUNFT
+# sieht, oder dass eine Strategie ohne ihre echten Daten still NEUTRAL sagt.
+
+
+import services.strategie_historie as _SH                             # noqa: E402
+
+
+def _reihe(n=500, freq="4h", start="2026-01-01"):
+    idx = pd.date_range(start, periods=n, freq=freq, tz="UTC")
+    return pd.DataFrame(
+        {"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 10.0},
+        index=idx,
+    )
+
+
+def test_historie_liest_den_bedarf_aus_dem_quelltext():
+    """Eine Liste von Hand wuerde beim naechsten Umbau still veralten — dann
+    bekaeme eine Strategie historisch andere Daten als live."""
+    bedarf = _SH.benoetigte_intervalle()
+    assert "4h" in bedarf and "3mo" in bedarf["4h"]
+    assert "15m" in bedarf, "scalping wurde nicht erkannt"
+    zuordnung = _SH.strategien_je_intervall()
+    alle = {name for namen in zuordnung.values() for name in namen}
+    assert alle == set(_TS.STRATEGIES), (
+        f"nicht jede Strategie ist zugeordnet: fehlt {set(_TS.STRATEGIES) - alle}"
+    )
+
+
+def test_historie_tabellen_decken_den_bedarf():
+    """Fehlt ein Eintrag, faellt es erst im Betrieb auf — als leerer Rahmen."""
+    bedarf = _SH.benoetigte_intervalle()
+    zeitraeume = {z for menge in bedarf.values() for z in menge}
+    assert zeitraeume <= set(_SH.ZEITRAUM_DAUER), (
+        f"Zeitraum ohne Dauer: {zeitraeume - set(_SH.ZEITRAUM_DAUER)}"
+    )
+    assert set(bedarf) <= set(_SH.ABRUF_ZEITRAUM), (
+        f"Intervall ohne Abruf-Zeitraum: {set(bedarf) - set(_SH.ABRUF_ZEITRAUM)}"
+    )
+
+
+def test_kerzenschnitt_sieht_nie_in_die_zukunft():
+    """Der eine Fehler, der eine Rueckrechnung wertlos macht."""
+    df = _reihe()
+    schnitt = _SH.Kerzenschnitt({"4h": df})
+    for i in [50, 200, 499]:
+        schnitt.jetzt = df.index[i]
+        teil = schnitt("X", "4h", "3mo")
+        assert bool((teil.index <= df.index[i]).all()), f"Zukunftsdaten bei Balken {i}"
+        assert teil.index[-1] == df.index[i]
+
+
+def test_kerzenschnitt_meldet_zu_kurze_historie():
+    """Wenn die Reihe spaeter anfaengt als angefordert, MUSS das vermerkt
+    werden — sonst rechnet die Strategie mit weniger Geschichte als live,
+    ohne dass es jemand erfaehrt."""
+    df = _reihe()
+    schnitt = _SH.Kerzenschnitt({"4h": df})
+    schnitt.jetzt = df.index[5]
+    schnitt("X", "4h", "3mo")
+    assert ("4h", "3mo") in schnitt.unvollstaendig
+
+    schnitt.unvollstaendig.clear()
+    schnitt.jetzt = df.index[-1]
+    schnitt("X", "4h", "5d")
+    assert ("4h", "5d") not in schnitt.unvollstaendig, "5 Tage waren abgedeckt"
+
+
+def test_kerzenschnitt_meldet_fehlendes_intervall():
+    schnitt = _SH.Kerzenschnitt({"4h": _reihe()})
+    schnitt.jetzt = pd.Timestamp("2026-02-01", tz="UTC")
+    leer = schnitt("X", "15m", "5d")
+    assert leer.empty
+    assert ("15m", "5d") in schnitt.unvollstaendig
+
+
+def test_kerzenschnitt_meldet_unbekannten_zeitraum():
+    schnitt = _SH.Kerzenschnitt({"4h": _reihe()})
+    schnitt.jetzt = _reihe().index[300]
+    teil = schnitt("X", "4h", "99mo")
+    assert not teil.empty, "lieber alles bis jetzt als nichts"
+    assert ("4h", "99mo") in schnitt.unvollstaendig
+
+
+def test_historie_meldet_luecken_statt_sie_zu_verschweigen():
+    """Der Kern der Vorgabe: scalping darf NICHT still auf falschen Daten
+    laufen. Fehlt sein 15m-Fenster, muss das gezaehlt und benannt werden.
+
+    yfinance liefert 15m nur 60 Tage zurueck (gemessen 07.08.) — bei laengeren
+    Fenstern ist die Luecke unvermeidbar. Verschweigen waere sie nicht.
+    """
+    lang = _reihe(n=600, freq="4h", start="2026-01-01")
+    kurz = _reihe(n=200, freq="15min", start="2026-03-28")   # deckt nur das Ende
+
+    def falsches_get_ohlcv(symbol, intervall, zeitraum):
+        quelle = {"4h": lang, "1d": lang, "1h": lang, "15m": kurz}.get(intervall)
+        if quelle is None:
+            return []
+        return [
+            {"timestamp": t.isoformat(), "open": float(r["open"]), "high": float(r["high"]),
+             "low": float(r["low"]), "close": float(r["close"]), "volume": float(r["volume"])}
+            for t, r in quelle.iterrows()
+        ]
+
+    echt = _SH.get_ohlcv
+    _SH.get_ohlcv = falsches_get_ohlcv
+    try:
+        r = _SH.konsens_historie("EURUSD", tage=30)
+    finally:
+        _SH.get_ohlcv = echt
+
+    assert r["status"] == "ok"
+    assert r["balken"] > 0
+    luecken = r["strategienMitLuecken"]
+    assert "scalping" in luecken, "die 15m-Luecke wurde verschwiegen"
+    assert luecken["scalping"]["balkenOhneDaten"] > 0
+    assert 0 < luecken["scalping"]["anteil"] <= 1
+
+
+def test_historie_liefert_gleich_lange_reihen():
+    """Ungleiche Laengen wuerden die spaetere Auswertung still verschieben —
+    Kurs und Konsens gehoerten dann zu verschiedenen Zeitpunkten."""
+    basis = _reihe(n=400)
+
+    def falsches_get_ohlcv(symbol, intervall, zeitraum):
+        return [
+            {"timestamp": t.isoformat(), "open": float(r["open"]), "high": float(r["high"]),
+             "low": float(r["low"]), "close": float(r["close"]), "volume": float(r["volume"])}
+            for t, r in basis.iterrows()
+        ]
+
+    echt = _SH.get_ohlcv
+    _SH.get_ohlcv = falsches_get_ohlcv
+    try:
+        r = _SH.konsens_historie("EURUSD", tage=10)
+    finally:
+        _SH.get_ohlcv = echt
+
+    laengen = {
+        len(r["zeitstempel"]), len(r["kurs"]), len(r["konsens"]),
+        len(r["konsensConf"]), len(r["entryQualityTier"]), len(r["entryQualityScore"]),
+    }
+    assert len(laengen) == 1, f"Reihen verschieden lang: {laengen}"
+    assert r["balken"] == len(r["zeitstempel"])
+
+
+def test_historie_ohne_daten_stuerzt_nicht_ab():
+    echt = _SH.get_ohlcv
+    _SH.get_ohlcv = lambda *a, **k: []
+    try:
+        r = _SH.konsens_historie("EURUSD", tage=10)
+    finally:
+        _SH.get_ohlcv = echt
+    assert r["status"] == "keine_daten"
+    assert r["hinweise"], "ohne Daten muss ein Grund dastehen"
+
+
+def test_historie_hinterlaesst_keinen_haken():
+    """Nach dem Lauf muss der Kerzen-Haken wieder weg sein — sonst bekaeme der
+    naechste Live-Scan in diesem Faden historische Daten."""
+    basis = _reihe(n=300)
+    echt = _SH.get_ohlcv
+    _SH.get_ohlcv = lambda s, i, p: [
+        {"timestamp": t.isoformat(), "open": 1.0, "high": 2.0, "low": 0.5,
+         "close": 1.5, "volume": 10.0} for t in basis.index
+    ]
+    try:
+        _SH.konsens_historie("EURUSD", tage=5)
+    finally:
+        _SH.get_ohlcv = echt
+    assert getattr(_TS._kerzen_haken, "quelle", None) is None
+
+
+def test_historie_endpunkt_begrenzt_das_fenster():
+    """Die Rechenzeit faellt im Livedienst an — rund 52 ms je Balken.
+
+    Ohne obere Grenze koennte ein einziger Aufruf mit tage=100000 den Dienst
+    minutenlang beschaeftigen, waehrend er alle 5 Minuten den Live-Scan
+    bedienen soll. Die Grenze ist der Schutz davor; ohne Test war sie im
+    Sabotage-Lauf entfernbar, ohne dass etwas rot wurde.
+
+    Geprueft werden nur UNGUELTIGE Werte — die werfen, bevor irgendein Kurs
+    geholt wird. Der Test braucht deshalb kein Netz.
+    """
+    from fastapi import HTTPException
+    from api.routes.strategies import (
+        strategie_historie, MAX_FENSTER_TAGE, STANDARD_FENSTER_TAGE,
+    )
+
+    assert 1 <= STANDARD_FENSTER_TAGE <= MAX_FENSTER_TAGE
+
+    for tage in [0, -1, -100, MAX_FENSTER_TAGE + 1, 100000]:
+        with pytest.raises(HTTPException) as info:
+            asyncio.run(strategie_historie("EURUSD", tage=tage))
+        assert info.value.status_code == 400, f"tage={tage} wurde durchgelassen"
+
+
+def test_historie_endpunkt_blockiert_den_event_loop_nicht():
+    """Die Rechnung MUSS in einem eigenen Faden laufen.
+
+    konsens_historie() rechnet je nach Fenster Sekunden bis Minuten. Laeuft das
+    direkt im Event-Loop, warten ALLE anderen Anfragen dieses Dienstes mit —
+    auch die des Live-Scans. Genau dieser Fehler wurde am 27.07. als
+    Audit-Fund #6 an mehreren Routen behoben.
+
+    Ein Verhaltenstest greift hier nicht: ob der Loop blockiert, zeigt sich
+    beim direkten Aufruf nicht. Geprueft wird deshalb die Struktur — dasselbe
+    Vorgehen, mit dem safety-nets die Riegel des Handelspfads sichert.
+    """
+    import inspect
+    from api.routes import strategies as _routen
+
+    quelle = inspect.getsource(_routen.strategie_historie)
+    assert "run_in_executor" in quelle, (
+        "der historische Lauf blockiert den Event-Loop — alle anderen Anfragen "
+        "dieses Dienstes warten mit (Audit-Fund #6, 27.07.)"
+    )
+    assert "await" in quelle

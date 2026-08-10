@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 637 · Kanten: 1296
+Dateien mit internen Abhängigkeiten: 638 · Kanten: 1301
 
 
 ## analysis-engine/api
@@ -108,6 +108,7 @@ Dateien mit internen Abhängigkeiten: 637 · Kanten: 1296
 - `backend/api/routes/sentiment.py`
   - → `backend/services/sentiment_analysis.py`
 - `backend/api/routes/strategies.py`
+  - → `backend/services/strategie_historie.py`
   - → `backend/services/trading_strategies.py`
 - `backend/api/routes/system.py`
   - → `backend/core/circuit_breaker.py`
@@ -155,6 +156,8 @@ Dateien mit internen Abhängigkeiten: 637 · Kanten: 1296
 - `backend/services/market_intelligence.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`
+- `backend/services/strategie_historie.py`
+  - → `backend/services/market_data.py`
 - `backend/services/talib_indicators.py`
   - → `backend/services/market_data.py`
 - `backend/services/telegram_alerts.py`
@@ -168,12 +171,15 @@ Dateien mit internen Abhängigkeiten: 637 · Kanten: 1296
 ## backend/tests
 
 - `backend/tests/test_trading_functions.py`
+  - → `backend/api/routes/__init__.py`
+  - → `backend/api/routes/strategies.py`
   - → `backend/core/circuit_breaker.py`
   - → `backend/core/event_bus.py`
   - → `backend/core/log_drossel.py`
   - → `backend/core/retry.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`
+  - → `backend/services/strategie_historie.py`
   - → `backend/services/trade_lifecycle_manager.py`
   - → `backend/services/trading_strategies.py`
 
@@ -2001,8 +2007,8 @@ Dateien mit internen Abhängigkeiten: 637 · Kanten: 1296
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 13 Dateien
 - `analysis-engine/core/config.py` — von 11 Dateien
+- `backend/services/market_data.py` — von 11 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
-- `backend/services/market_data.py` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-types.ts` — von 9 Dateien
 - `analysis-engine/services/storage.py` — von 8 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 8 Dateien

@@ -3,6 +3,7 @@ Trading Strategies API Routes
 GET  /api/v1/strategies/analyze/{symbol}        → Alle 15 Strategien für 1 Symbol
 POST /api/v1/strategies/analyze/multi           → Alle 15 Strategien für mehrere Symbole
 GET  /api/v1/strategies/list                    → Liste aller verfügbaren Strategien
+GET  /api/v1/strategies/historie/{symbol}       → 16-Strategien-Konsens rückgerechnet
 """
 
 import asyncio
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from concurrent.futures import ThreadPoolExecutor
 from services.trading_strategies import analyze_all_strategies, STRATEGIES
+from services.strategie_historie import konsens_historie
 
 router = APIRouter(prefix="/strategies", tags=["Trading Strategies"])
 
@@ -78,3 +80,38 @@ async def list_strategies():
             "supply_demand":      "Supply & Demand: Impulszonen-Identifikation (4h)",
         }
     }
+
+
+# ── Historischer Konsens (Stufe 4, Schritt 2 — 07.08.) ───────────────────────
+
+MAX_FENSTER_TAGE = 180
+STANDARD_FENSTER_TAGE = 90
+
+
+@router.get("/historie/{symbol}")
+async def strategie_historie(symbol: str, tage: int = STANDARD_FENSTER_TAGE):
+    """Laesst den ECHTEN 16-Strategien-Konsens durch die Vergangenheit laufen.
+
+    Bisher pruefte der Walk-Forward drei einfache Strategien auf
+    Schlusskursen — gehandelt werden 16. "UK100 robust" sagte deshalb nichts
+    ueber unsere Live-Kette aus. Hier laeuft dieselbe Funktion wie live
+    (analyze_all_strategies), nur mit den Daten des jeweiligen Zeitpunkts.
+
+    tage: Laenge des Fensters, EINSTELLBAR. Die Rechenzeit faellt in diesem
+    Dienst an, der alle 5 Minuten auch den Live-Scan bedient — gemessen rund
+    52 ms je Balken, also etwa 14 s fuer 60 Tage auf 4h-Takt. Ueber den
+    Parameter laesst sich das ohne Codeaenderung drosseln.
+
+    Der Aufruf laeuft in einem eigenen Faden (run_in_executor): sonst wuerde
+    die Rechnung den Event-Loop blockieren und ALLE anderen Anfragen dieses
+    Dienstes warten lassen — derselbe Fehler, der am 27.07. als Audit-Fund #6
+    behoben wurde.
+    """
+    if tage < 1 or tage > MAX_FENSTER_TAGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"tage muss zwischen 1 und {MAX_FENSTER_TAGE} liegen",
+        )
+    sym = symbol.upper()
+    schleife = asyncio.get_event_loop()
+    return await schleife.run_in_executor(None, konsens_historie, sym, tage)
