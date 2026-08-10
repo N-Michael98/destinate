@@ -13,7 +13,9 @@ Kein Math.random(), keine Simulation.
 """
 
 import logging
+import threading
 import time
+from contextlib import contextmanager
 import numpy as np
 import pandas as pd
 import ta
@@ -54,7 +56,56 @@ logger = logging.getLogger(__name__)
 _ohlcv_cache: dict[tuple[str, str, str], tuple[float, pd.DataFrame]] = {}
 _CACHE_TTL_SEC = 60
 
+# ── Kerzenquelle umlenken (07.08., Stufe 4 Schritt 1) ────────────────────────
+#
+# WOZU: Um zu pruefen, ob der 16-Strategien-Konsens historisch getaugt haette,
+# muss jede Strategie an JEDEM vergangenen Balken laufen — mit den Daten, die
+# es zu DIESEM Zeitpunkt gab. Heute holt _load() die Kerzen selbst vom Netz und
+# liefert immer den AKTUELLEN Stand. Damit ist keine Rueckrechnung moeglich.
+#
+# WIE: ein Faden-eigener Haken. Ist er nicht gesetzt — und im Livebetrieb ist er
+# das nie —, laeuft _load() Zeile fuer Zeile wie bisher. Der einzige Unterschied
+# im Livepfad ist EIN getattr() am Anfang.
+#
+# Bewusst threading.local und nicht global: die Routen rechnen in einem
+# ThreadPoolExecutor. Ein globaler Schalter wuerde einen laufenden Live-Scan im
+# Nachbarfaden auf historische Daten umbiegen — genau die Art stiller
+# Vertauschung, die hier nichts zu suchen hat.
+#
+# Der Cache wird bei gesetzter Quelle WEDER GELESEN NOCH GEFUELLT. Sonst
+# landeten historische Ausschnitte im Cache und der naechste Live-Scan bekaeme
+# sie serviert.
+_kerzen_haken = threading.local()
+
+
+def setze_kerzenquelle(quelle) -> None:
+    """quelle: aufrufbar (symbol, interval, period) -> DataFrame, oder None.
+
+    Wirkt NUR im aufrufenden Faden. None stellt das normale Verhalten her.
+    Fuer den Regelfall lieber kerzenquelle() benutzen — das raeumt selbst auf.
+    """
+    _kerzen_haken.quelle = quelle
+
+
+@contextmanager
+def kerzenquelle(quelle):
+    """Setzt die Quelle fuer diesen Block und stellt danach den Vorzustand her —
+    auch wenn dazwischen eine Ausnahme fliegt."""
+    vorher = getattr(_kerzen_haken, "quelle", None)
+    _kerzen_haken.quelle = quelle
+    try:
+        yield
+    finally:
+        _kerzen_haken.quelle = vorher
+
+
 def _load(symbol: str, interval: str = "1h", period: str = "3mo") -> pd.DataFrame:
+    quelle = getattr(_kerzen_haken, "quelle", None)
+    if quelle is not None:
+        # Historischer Lauf: weder Netz noch Cache.
+        df = quelle(symbol, interval, period)
+        return df if df is not None else pd.DataFrame()
+
     key = (symbol, interval, period)
     now = time.time()
     cached = _ohlcv_cache.get(key)

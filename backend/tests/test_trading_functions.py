@@ -1146,3 +1146,183 @@ def test_anzahl_verschiedener_kerzenabrufe_bleibt_klein():
         f"{len(kombis)} verschiedene Kerzenabrufe: {sorted(kombis)} — "
         f"das sind {len(kombis) * 30} Netzabrufe je Zyklus"
     )
+
+
+# ── Umlenkbare Kerzenquelle (07.08., Stufe 4 Schritt 1) ──────────────────────
+# WOZU: um den 16-Strategien-Konsens rueckrechnen zu koennen, muss jede
+# Strategie an jedem vergangenen Balken mit den Daten VON DAMALS laufen.
+# Die Gefahr dabei ist nicht die Rueckrechnung selbst, sondern dass sie in den
+# Livebetrieb durchschlaegt: ein historischer Ausschnitt im Live-Cache, oder
+# ein Live-Scan im Nachbarfaden, der ploetzlich alte Kerzen sieht.
+
+
+import threading as _threading                                        # noqa: E402
+
+
+def _falsche_kerzen(zeilen=50, wert=1.5):
+    def quelle(symbol, interval, period):
+        return pd.DataFrame({
+            "open": [wert] * zeilen, "high": [wert + 1] * zeilen,
+            "low": [wert - 1] * zeilen, "close": [wert] * zeilen,
+            "volume": [10.0] * zeilen,
+        })
+    return quelle
+
+
+def _zaehlendes_get_ohlcv(zaehler):
+    def get(symbol, interval, period):
+        zaehler["n"] += 1
+        werte = list(range(100, 200))
+        stempel = pd.date_range("2026-01-01", periods=len(werte), freq="1h", tz="UTC")
+        return [
+            {"timestamp": t.isoformat(), "open": float(v), "high": float(v + 1),
+             "low": float(v - 1), "close": float(v), "volume": 100}
+            for t, v in zip(stempel, werte)
+        ]
+    return get
+
+
+def test_kerzenquelle_ohne_haken_bleibt_alles_wie_bisher():
+    """Der Livepfad darf sich um kein Verhalten unterscheiden."""
+    zaehler = {"n": 0}
+    echt = _TS.get_ohlcv
+    _TS.get_ohlcv = _zaehlendes_get_ohlcv(zaehler)
+    _TS._ohlcv_cache.clear()
+    try:
+        a = _TS._load("EURUSD", "1h", "3mo")
+        b = _TS._load("EURUSD", "1h", "3mo")
+    finally:
+        _TS.get_ohlcv = echt
+        _TS._ohlcv_cache.clear()
+    assert zaehler["n"] == 1, "der Cache greift nicht mehr"
+    assert len(a) == len(b) == 100
+
+
+def test_kerzenquelle_umgeht_netz_und_cache():
+    """Historische Laeufe duerfen den Live-Cache NICHT fuellen.
+
+    Sonst bekaeme der naechste Live-Scan einen alten Ausschnitt serviert und
+    wuerde auf Kursen von gestern handeln — ohne dass irgendwo etwas auffaellt.
+    """
+    zaehler = {"n": 0}
+    echt = _TS.get_ohlcv
+    _TS.get_ohlcv = _zaehlendes_get_ohlcv(zaehler)
+    _TS._ohlcv_cache.clear()
+    try:
+        with _TS.kerzenquelle(_falsche_kerzen()):
+            d = _TS._load("EURUSD", "1h", "3mo")
+        cache_danach = len(_TS._ohlcv_cache)
+    finally:
+        _TS.get_ohlcv = echt
+        _TS._ohlcv_cache.clear()
+    assert zaehler["n"] == 0, "trotz Quelle wurde das Netz befragt"
+    assert cache_danach == 0, "der historische Ausschnitt ist im Live-Cache gelandet"
+    assert len(d) == 50
+
+
+def test_kerzenquelle_raeumt_auch_bei_ausnahme_auf():
+    zaehler = {"n": 0}
+    echt = _TS.get_ohlcv
+    _TS.get_ohlcv = _zaehlendes_get_ohlcv(zaehler)
+    _TS._ohlcv_cache.clear()
+    try:
+        try:
+            with _TS.kerzenquelle(_falsche_kerzen()):
+                raise RuntimeError("Absicht")
+        except RuntimeError:
+            pass
+        zaehler["n"] = 0
+        _TS._load("EURUSD", "1h", "3mo")
+    finally:
+        _TS.get_ohlcv = echt
+        _TS._ohlcv_cache.clear()
+    assert zaehler["n"] == 1, "der Haken blieb nach der Ausnahme gesetzt"
+
+
+def test_kerzenquelle_wirkt_nur_im_eigenen_faden():
+    """Die Routen rechnen in einem ThreadPoolExecutor.
+
+    Waere der Haken global, wuerde ein historischer Lauf einen gleichzeitig
+    laufenden Live-Scan im Nachbarfaden auf alte Daten umbiegen. Genau diese
+    stille Vertauschung darf nicht moeglich sein.
+    """
+    zaehler = {"n": 0}
+    echt = _TS.get_ohlcv
+    _TS.get_ohlcv = _zaehlendes_get_ohlcv(zaehler)
+    _TS._ohlcv_cache.clear()
+    import time as _zeit
+    ergebnis = {}
+    fehler = []
+
+    # Faeden schlucken Ausnahmen still. Ohne diesen Faenger stirbt der Faden
+    # unbemerkt und der Test scheitert spaeter an einem KeyError, der nichts
+    # ueber die Ursache sagt — genau das ist beim ersten Lauf passiert
+    # (fehlender time-Import). Der Faenger nennt den echten Grund.
+    def gefangen(fn):
+        def lauf():
+            try:
+                fn()
+            except BaseException as e:
+                fehler.append(f"{type(e).__name__}: {e}")
+        return lauf
+
+    def historisch():
+        with _TS.kerzenquelle(_falsche_kerzen()):
+            _zeit.sleep(0.15)
+            ergebnis["hist"] = len(_TS._load("EURUSD", "1h", "3mo"))
+
+    def live():
+        _zeit.sleep(0.05)
+        ergebnis["live"] = len(_TS._load("GBPUSD", "1h", "3mo"))
+
+    try:
+        f1 = _threading.Thread(target=gefangen(historisch))
+        f2 = _threading.Thread(target=gefangen(live))
+        f1.start(); f2.start(); f1.join(); f2.join()
+    finally:
+        _TS.get_ohlcv = echt
+        _TS._ohlcv_cache.clear()
+
+    assert not fehler, f"ein Faden ist gestorben: {fehler}"
+    assert ergebnis["hist"] == 50, "der historische Faden bekam keine Quelldaten"
+    assert ergebnis["live"] == 100, "der Live-Faden wurde auf historische Daten umgebogen"
+
+
+def test_kerzenquelle_verschachtelt_und_zurueckgesetzt():
+    with _TS.kerzenquelle(_falsche_kerzen(50)):
+        aussen = len(_TS._load("X", "1h", "3mo"))
+        with _TS.kerzenquelle(_falsche_kerzen(7)):
+            innen = len(_TS._load("X", "1h", "3mo"))
+        zurueck = len(_TS._load("X", "1h", "3mo"))
+    assert (aussen, innen, zurueck) == (50, 7, 50)
+
+
+def test_kerzenquelle_vertraegt_leere_antwort():
+    """Gibt die Quelle nichts her, muss ein leerer Rahmen kommen — kein Absturz.
+    Die Strategien pruefen alle auf df.empty."""
+    with _TS.kerzenquelle(lambda s, i, p: None):
+        leer = _TS._load("X", "1h", "3mo")
+    assert leer.empty
+
+
+def test_strategien_laufen_auf_mitgegebenen_kerzen():
+    """Der eigentliche Zweck: eine echte Strategie auf fremden Kerzen."""
+    import numpy as _np
+    _np.random.seed(4)
+    n = 300
+    c = 100 * _np.exp(_np.cumsum(_np.random.normal(0, 0.004, n)))
+    df = pd.DataFrame({
+        "open": c, "high": c + 0.5, "low": c - 0.5, "close": c,
+        "volume": _np.full(n, 1000.0),
+    }, index=pd.date_range("2026-01-01", periods=n, freq="4h", tz="UTC"))
+
+    zaehler = {"n": 0}
+    echt = _TS.get_ohlcv
+    _TS.get_ohlcv = _zaehlendes_get_ohlcv(zaehler)
+    try:
+        with _TS.kerzenquelle(lambda s, i, p: df):
+            r = _TS.STRATEGIES["price_action"]("EGAL")
+    finally:
+        _TS.get_ohlcv = echt
+    assert zaehler["n"] == 0, "die Strategie hat trotzdem Kurse geholt"
+    assert r["signal"] in ("LONG", "SHORT", "NEUTRAL")
