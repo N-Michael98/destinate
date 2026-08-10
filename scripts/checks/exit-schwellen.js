@@ -23,6 +23,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 const { ROOT } = require("./_lib");
 
 // getStyleThresholds DAYTRADING — der Regelwert, gegen den verglichen wird
@@ -39,22 +40,26 @@ const MAERKTE = [
 
 const nahe = (a, b, tol = 1e-9) => Math.abs(a - b) < tol;
 
-function ladeFunktion(funde) {
+/** Übersetzt eine TypeScript-Datei und führt sie mit gestellten Importen aus. */
+function ladeModul(relPfad, funde) {
   const tsPfad = path.join(ROOT, "frontend", "node_modules", "typescript");
   if (!fs.existsSync(tsPfad)) {
     funde.push("typescript nicht gefunden — nachholen: cd frontend && npm install");
     return null;
   }
   const ts = require(tsPfad);
-  const datei = path.join(ROOT, "frontend", "lib", "agents", "risk-agent.ts");
+  const datei = path.join(ROOT, "frontend", relPfad);
   const js = ts.transpileModule(fs.readFileSync(datei, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
 
   const modul = { exports: {} };
+  // "then" MUSS undefined bleiben, sonst hält ein await den Stellvertreter für
+  // ein Promise, ruft dessen then() auf — und der Prüfer hängt. Genau das
+  // passiert beim dynamischen Prisma-Import in settings-store.
   const stellvertreter = () => new Proxy(function () {}, {
-    get: () => stellvertreter(),
-    apply: () => undefined,
+    get: (_z, prop) => (prop === "then" || typeof prop === "symbol" ? undefined : stellvertreter()),
+    apply: () => { throw new Error("keine Datenbank im Prüfstand"); },
     construct: () => ({}),
   });
   try {
@@ -62,14 +67,20 @@ function ladeFunktion(funde) {
       modul.exports, stellvertreter, modul, datei, path.dirname(datei),
     );
   } catch (e) {
-    funde.push(`risk-agent.ts liess sich nicht ausfuehren: ${e.message}`);
+    funde.push(`${relPfad} liess sich nicht ausfuehren: ${e.message}`);
     return null;
   }
-  if (typeof modul.exports.wirksameSchwellen !== "function") {
+  return modul.exports;
+}
+
+function ladeFunktion(funde) {
+  const m = ladeModul("lib/agents/risk-agent.ts", funde);
+  if (!m) return null;
+  if (typeof m.wirksameSchwellen !== "function") {
     funde.push("wirksameSchwellen wird nicht exportiert — Schwellen sind ungeprueft");
     return null;
   }
-  return modul.exports.wirksameSchwellen;
+  return m.wirksameSchwellen;
 }
 
 module.exports = function pruefe() {
@@ -158,5 +169,21 @@ module.exports = function pruefe() {
       r !== null && r.bePct === REGEL.bePct && r.relativ === false, JSON.stringify(r));
   }
 
-  return { titel: `Ausstiegs-Schwellen (${geprueft} Rechnungen, 5 Märkte)`, funde };
+  // 6. DIE KETTE. Alles oben prüft die Rechnung. Ob der Schalter dort
+  //    ankommt — Oberfläche → Einstellungen → RiskAgent — sagt es nicht.
+  //    Eigener Prozess, weil getSettings asynchron ist und run-all synchron
+  //    läuft (gleiches Vorgehen wie python-services mit pytest).
+  try {
+    const aus = execFileSync(process.execPath, [path.join(__dirname, "_exit-kette.js")], {
+      encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000,
+    });
+    const zeile = aus.trim().split("\n").filter(Boolean).pop();
+    const erg = JSON.parse(zeile);
+    geprueft += 12;
+    for (const f of erg.funde) funde.push(f);
+  } catch (e) {
+    funde.push(`Kette nicht prüfbar: ${(e.stderr || e.message || "").toString().slice(0, 200)}`);
+  }
+
+  return { titel: `Ausstiegs-Schwellen (${geprueft} Rechnungen, 5 Märkte + Kette)`, funde };
 };
