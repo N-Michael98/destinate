@@ -101,6 +101,27 @@ def trigger_walk_forward(bg: BackgroundTasks):
     return {"started": True, "job": "walkforward", "check": "/api/v1/walkforward"}
 
 
+@router.get("/konsens")
+def get_konsens():
+    """Bewertung des ECHTEN 16-Strategien-Konsenses (Stufe 4, Schritt 3)."""
+    from services.konsens_auswertung import REDIS_KEY_KONSENS
+    data = redis_get_json(REDIS_KEY_KONSENS)
+    return {"available": data is not None, "data": data}
+
+
+@router.post("/run/konsens")
+def trigger_konsens(bg: BackgroundTasks):
+    """Konsens-Auswertung manuell auslösen.
+
+    Dauert lange: je Symbol läuft in divine-warmth der volle 16-Strategien-
+    Konsens über jeden Balken des Fensters (gemessen rund 52 ms je Balken).
+    """
+    from services.konsens_auswertung import run_konsens_auswertung, FENSTER_TAGE
+    bg.add_task(run_konsens_auswertung)
+    return {"started": True, "job": "konsens", "fensterTage": FENSTER_TAGE,
+            "check": "/api/v1/konsens"}
+
+
 @router.get("/comms-check")
 def comms_check():
     """Verbindungs-Check: beweist jede Kommunikations-Strecke mit echten Daten."""

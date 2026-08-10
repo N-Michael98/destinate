@@ -246,6 +246,12 @@ def konsens_historie(symbol: str, tage: int = 90, takt_intervall: str = "4h") ->
     # Je Strategie zaehlen, an wie vielen Balken sie NICHT mit ihren echten
     # Daten rechnen konnte.
     ohne_daten: dict[str, int] = {name: 0 for name in TS.STRATEGIES}
+    # Dasselbe je BALKEN. Die Summe allein genuegt nicht: die 15m-Grenze von
+    # yfinance liegt bei 60 Tagen, die Luecke von scalping sitzt deshalb
+    # geschlossen am ANFANG des Fensters. Der Konsens der fruehen Balken ist
+    # also aus weniger Strategien gebildet als der der spaeten — wer das
+    # auswertet, muss beides trennen koennen.
+    ohne_daten_je_balken: list[int] = []
 
     for zeitpunkt, zeile in balken.iterrows():
         schnitt.jetzt = zeitpunkt
@@ -253,9 +259,21 @@ def konsens_historie(symbol: str, tage: int = 90, takt_intervall: str = "4h") ->
         with TS.kerzenquelle(schnitt):
             ergebnis = TS.analyze_all_strategies(symbol)
 
+        # Erst sammeln, dann zaehlen — JE BALKEN HOECHSTENS EINMAL je Strategie.
+        # Heute macht keine Strategie zwei _load-Aufrufe (nachgeprueft), aber
+        # sobald eine Multi-Timeframe-Strategie einen zweiten bekommt, wuerde
+        # direktes Hochzaehlen sie an einem Balken doppelt zaehlen und "anteil"
+        # ueber 1 treiben — die Ehrlichkeitszahl waere dann falsch.
+        betroffen: set[str] = set()
         for schluessel in schnitt.unvollstaendig:
-            for name in zuordnung.get(schluessel, []):
-                ohne_daten[name] += 1
+            betroffen.update(zuordnung.get(schluessel, []))
+        for name in betroffen:
+            # .get statt [name]: die Zuordnung stammt zwar aus STRATEGIES, aber
+            # ein Name, der dort nicht steht, darf den ganzen Lauf nicht mit
+            # KeyError abbrechen. Er taucht dann im Bericht auf — das ist die
+            # nuetzlichere Antwort als ein Absturz.
+            ohne_daten[name] = ohne_daten.get(name, 0) + 1
+        ohne_daten_je_balken.append(len(betroffen))
 
         zeitstempel.append(zeitpunkt.isoformat())
         kurse.append(round(float(zeile["close"]), 6))
@@ -290,5 +308,10 @@ def konsens_historie(symbol: str, tage: int = 90, takt_intervall: str = "4h") ->
         "entryQualityScore": eq_score,
         # Ehrlichkeit ueber die Datenlage — siehe Modulkopf.
         "strategienMitLuecken": luecken,
+        # Je Balken: wie viele Strategien konnten nicht mit echten Daten
+        # rechnen. Gleich lang wie "konsens". Ohne diese Reihe koennte die
+        # Auswertung nicht trennen, ob ein Ergebnis aus dem vollstaendigen oder
+        # aus dem ausgeduennten Teil des Fensters stammt.
+        "strategienOhneDaten": ohne_daten_je_balken,
         "hinweise": hinweise,
     }

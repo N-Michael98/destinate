@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 638 · Kanten: 1301
+Dateien mit internen Abhängigkeiten: 639 · Kanten: 1307
 
 
 ## analysis-engine/api
@@ -20,6 +20,7 @@ Dateien mit internen Abhängigkeiten: 638 · Kanten: 1301
   - → `analysis-engine/services/backtest_engine.py`
   - → `analysis-engine/services/backup.py`
   - → `analysis-engine/services/data_collector.py`
+  - → `analysis-engine/services/konsens_auswertung.py`
   - → `analysis-engine/services/news_intel.py`
   - → `analysis-engine/services/periodic_report.py`
   - → `analysis-engine/services/recommendations.py`
@@ -39,6 +40,7 @@ Dateien mit internen Abhängigkeiten: 638 · Kanten: 1301
   - → `analysis-engine/services/backtest_engine.py`
   - → `analysis-engine/services/backup.py`
   - → `analysis-engine/services/data_collector.py`
+  - → `analysis-engine/services/konsens_auswertung.py`
   - → `analysis-engine/services/news_intel.py`
   - → `analysis-engine/services/periodic_report.py`
   - → `analysis-engine/services/recommendations.py`
@@ -55,6 +57,10 @@ Dateien mit internen Abhängigkeiten: 638 · Kanten: 1301
 - `analysis-engine/services/backup.py`
   - → `analysis-engine/core/config.py`
 - `analysis-engine/services/data_collector.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/konsens_auswertung.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/backtest_engine.py`
   - → `analysis-engine/services/storage.py`
 - `analysis-engine/services/news_intel.py`
   - → `analysis-engine/core/config.py`
@@ -76,6 +82,7 @@ Dateien mit internen Abhängigkeiten: 638 · Kanten: 1301
 - `analysis-engine/tests/test_analysis_engine.py`
   - → `analysis-engine/services/backtest_engine.py`
   - → `analysis-engine/services/data_collector.py`
+  - → `analysis-engine/services/konsens_auswertung.py`
   - → `analysis-engine/services/periodic_report.py`
   - → `analysis-engine/services/recommendations.py`
   - → `analysis-engine/services/walk_forward.py`
@@ -2006,11 +2013,11 @@ Dateien mit internen Abhängigkeiten: 638 · Kanten: 1301
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 13 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 13 Dateien
-- `analysis-engine/core/config.py` — von 11 Dateien
+- `analysis-engine/core/config.py` — von 12 Dateien
 - `backend/services/market_data.py` — von 11 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
+- `analysis-engine/services/storage.py` — von 9 Dateien
 - `frontend/lib/paper-trading/paper-types.ts` — von 9 Dateien
-- `analysis-engine/services/storage.py` — von 8 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 8 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 8 Dateien
 

@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # X-Analysis-Key mit diesem Wert. Leer = offen (Fallback, nichts bricht).
     ANALYSIS_API_KEY: str = ""
 
+    # Fensterlänge der Konsens-Auswertung in Tagen (Stufe 4, Schritt 3).
+    # Über die Umgebung einstellbar, weil die Rechnung in divine-warmth
+    # anfällt — dem Dienst, der alle 5 Minuten auch den Live-Scan bedient.
+    # 0 = Standard (90) verwenden.
+    KONSENS_FENSTER_TAGE: int = 0
+
     class Config:
         env_file = ".env"
         extra = "ignore"

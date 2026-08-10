@@ -141,6 +141,75 @@ def _send(text: str) -> None:
         logger.warning(f"[report] Telegram fehlgeschlagen: {e}")
 
 
+def _konsens_abschnitt() -> list[str]:
+    """Ergebnis der Konsens-Auswertung (Stufe 4, Schritt 3 — 07.08.).
+
+    Der Walk-Forward darüber prüft DREI einfache Strategien auf Schlusskursen.
+    Gehandelt werden 16. Dieser Abschnitt zeigt, was der ECHTE Konsens in der
+    Vergangenheit getragen hätte — und zwar als VORTEIL gegenüber der
+    Marktbewegung im selben Zeitraum. Die rohe Rendite allein wäre wertlos: in
+    einem steigenden Markt sieht ein Dauer-LONG glänzend aus, ohne etwas
+    geleistet zu haben.
+
+    Ohne diesen Abschnitt läge das Ergebnis nur in Redis und niemand sähe es.
+    """
+    daten = redis_get_json("analysis:konsens")
+    if not daten or daten.get("status") != "done":
+        return []
+    ergebnisse = daten.get("results") or {}
+    if not ergebnisse:
+        return []
+
+    zeilen = ["<b>🧭 Konsens-Auswertung (die 16 echten Strategien):</b>"]
+
+    # Nach Vorteil auf dem Daytrading-Horizont sortiert, beide Richtungen
+    # zusammengefasst — gewichtet mit der Zahl der Fälle, sonst zieht eine
+    # Richtung mit 3 Fällen das Bild.
+    bewertet: list[tuple[str, float, int, int]] = []
+    for symbol, e in ergebnisse.items():
+        tag = (e.get("horizonte") or {}).get("daytrading_24h", {}).get("alle")
+        if not tag:
+            continue
+        summe = anzahl = 0.0
+        for richtung in ("LONG", "SHORT"):
+            d = tag.get(richtung) or {}
+            summe += d.get("vorteilPct", 0.0) * d.get("n", 0)
+            anzahl += d.get("n", 0)
+        if anzahl:
+            bewertet.append((symbol, summe / anzahl, e.get("bloeckeGesamt", 0),
+                             e.get("balken", 0)))
+    if not bewertet:
+        return []
+    bewertet.sort(key=lambda x: x[1], reverse=True)
+
+    for symbol, vorteil, bloecke, balken in bewertet[:5]:
+        vz = "+" if vorteil >= 0 else ""
+        zeilen.append(f"• {symbol}: {vz}{vorteil:.3f}% Vorteil ({bloecke} Blöcke)")
+    schwach = [s for s, v, _, _ in bewertet if v < 0]
+    if schwach:
+        zeilen.append(f"⚠️ Ohne Vorteil: {', '.join(schwach[:8])}"
+                      + (" …" if len(schwach) > 8 else ""))
+
+    # Die Datenlage gehört daneben, nicht in eine Fussnote: yfinance liefert
+    # 15m nur 60 Tage, scalping fehlt deshalb über weite Teile des Fensters.
+    luecken = sorted({
+        name
+        for e in ergebnisse.values()
+        for name in (e.get("strategienMitLuecken") or {})
+    })
+    if luecken:
+        zeilen.append(f"<i>Ohne volle Daten im Zeitraum: {', '.join(luecken)} "
+                      f"(yfinance liefert 15m nur 60 Tage).</i>")
+    zeilen.append(
+        f"<i>Vorteil = Rendite nach dem Signal MINUS Marktbewegung im selben "
+        f"Zeitraum. Fenster {daten.get('fensterTage')} Tage. Blöcke, nicht "
+        f"Balken, sind die ehrliche Fallzahl — der Konsens hält über viele "
+        f"Balken an.</i>"
+    )
+    zeilen.append("")
+    return zeilen
+
+
 def _build_report(days: int, title: str, compare_previous: bool, show_walk_forward: bool = False) -> str:
     current = _stats_for_window(days, 0)
     lines = [f"📊 <b>{title}</b>", ""]
@@ -190,6 +259,8 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
                 lines.append("Keine Symbole mit klarem Ergebnis diese Woche.")
             lines.append("<i>Nur bei 'Robust' die Backtest-Erkenntnisse fürs Live-Trading vertrauen.</i>")
             lines.append("")
+
+        lines.extend(_konsens_abschnitt())
 
     # Entry-Engine Phase D: Auswertung nach Entry-Quality-Tier
     tiers = _entry_quality_breakdown(days)

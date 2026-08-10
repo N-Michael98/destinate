@@ -81,6 +81,16 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_walk_forward, "cron", day_of_week="sat", hour=3, minute=0,
                           id="walk-forward", misfire_grace_time=3600)
 
+        # Konsens-Auswertung (Stufe 4, Schritt 3): wöchentlich Samstag 05:00 UTC.
+        # Zwei Stunden nach dem Walk-Forward, damit die Last in divine-warmth
+        # sich nicht überlagert — dort läuft je Balken der volle
+        # 16-Strategien-Konsens, und derselbe Dienst bedient alle 5 Minuten den
+        # Live-Scan. Vor den Sonntags-Jobs (04:00 Empfehlungen, 06:00 Report),
+        # damit deren Ergebnis diese Auswertung bereits kennt.
+        from services.konsens_auswertung import run_konsens_auswertung
+        scheduler.add_job(run_konsens_auswertung, "cron", day_of_week="sat", hour=5, minute=0,
+                          id="konsens", misfire_grace_time=3600)
+
         scheduler.start()
         logger.info("Scheduler gestartet — data-collector (4h), news-intel (2h), backtest (02:00), ai-learning (03:30)")
     except Exception as e:

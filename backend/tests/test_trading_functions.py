@@ -1449,6 +1449,84 @@ def test_historie_meldet_luecken_statt_sie_zu_verschweigen():
     assert 0 < luecken["scalping"]["anteil"] <= 1
 
 
+def test_historie_zaehlt_luecken_je_balken():
+    """Die Summe je Strategie genuegt nicht.
+
+    yfinance liefert 15m nur 60 Tage — die Luecke von scalping sitzt deshalb
+    geschlossen am ANFANG des Fensters. Der Konsens der fruehen Balken ist aus
+    weniger Strategien gebildet als der der spaeten. Wer das auswertet, muss
+    beide Teile trennen koennen, sonst vergleicht er Ungleiches.
+    """
+    lang = _reihe(n=600, freq="4h", start="2026-01-01")
+    kurz = _reihe(n=200, freq="15min", start="2026-03-28")   # nur das Ende
+
+    def falsches_get_ohlcv(symbol, intervall, zeitraum):
+        quelle = {"4h": lang, "1d": lang, "1h": lang, "15m": kurz}.get(intervall)
+        if quelle is None:
+            return []
+        return [
+            {"timestamp": t.isoformat(), "open": 1.0, "high": 2.0, "low": 0.5,
+             "close": 1.5, "volume": 10.0} for t in quelle.index
+        ]
+
+    echt = _SH.get_ohlcv
+    _SH.get_ohlcv = falsches_get_ohlcv
+    try:
+        r = _SH.konsens_historie("EURUSD", tage=30)
+    finally:
+        _SH.get_ohlcv = echt
+
+    reihe = r["strategienOhneDaten"]
+    assert len(reihe) == r["balken"], "Reihe passt nicht zu den Balken"
+    assert max(reihe) > 0, "die Luecke wurde je Balken nicht vermerkt"
+    # Der Anfang muss staerker betroffen sein als das Ende — genau das ist der
+    # Grund, warum die Summe allein irrefuehrt.
+    haelfte = len(reihe) // 2
+    assert sum(reihe[:haelfte]) > sum(reihe[haelfte:]), (
+        f"Luecken nicht am Anfang: vorne {sum(reihe[:haelfte])}, "
+        f"hinten {sum(reihe[haelfte:])}"
+    )
+
+
+def test_historie_zaehlt_eine_strategie_je_balken_nur_einmal():
+    """Sonst kaeme ein Anteil ueber 1 heraus.
+
+    Heute macht keine Strategie zwei _load-Aufrufe. Sobald eine
+    Multi-Timeframe-Strategie einen zweiten bekommt und beide Abrufe
+    unvollstaendig sind, wuerde direktes Hochzaehlen sie an EINEM Balken
+    zweimal zaehlen. Geprueft wird deshalb mit einer erfundenen Zuordnung,
+    die genau diesen Fall herstellt.
+    """
+    basis = _reihe(n=400)
+
+    def falsches_get_ohlcv(symbol, intervall, zeitraum):
+        if intervall != "4h":
+            return []          # alles ausser dem Takt fehlt -> Luecken
+        return [
+            {"timestamp": t.isoformat(), "open": 1.0, "high": 2.0, "low": 0.5,
+             "close": 1.5, "volume": 10.0} for t in basis.index
+        ]
+
+    echte_zuordnung = _SH.strategien_je_intervall
+    echt = _SH.get_ohlcv
+    # Dieselbe Strategie haengt an zwei verschiedenen Abrufen — beide fehlen.
+    _SH.strategien_je_intervall = lambda: {
+        ("1d", "1y"): ["doppelt"],
+        ("15m", "5d"): ["doppelt"],
+    }
+    _SH.get_ohlcv = falsches_get_ohlcv
+    try:
+        r = _SH.konsens_historie("EURUSD", tage=10)
+    finally:
+        _SH.strategien_je_intervall = echte_zuordnung
+        _SH.get_ohlcv = echt
+
+    reihe = r["strategienOhneDaten"]
+    assert max(reihe) == 1, (
+        f"eine Strategie wurde an einem Balken mehrfach gezaehlt: max={max(reihe)}"
+    )
+
+
 def test_historie_liefert_gleich_lange_reihen():
     """Ungleiche Laengen wuerden die spaetere Auswertung still verschieben —
     Kurs und Konsens gehoerten dann zu verschiedenen Zeitpunkten."""

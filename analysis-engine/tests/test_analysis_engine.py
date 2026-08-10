@@ -14,8 +14,11 @@ pruefbar ist. Getestet wird die ECHTE Funktion aus der echten Datei.
 """
 
 import json
+import re
 import sys
 import types
+
+import pytest
 from pathlib import Path
 
 # Wurzel der Engine in den Suchpfad — die Dienste importieren "services.x"
@@ -78,8 +81,10 @@ if "core.config" not in sys.modules:
     sys.modules["core.config"] = _cfg
 
 from services.data_collector import _aggregate, _exit_grund, _spread_je_symbol   # noqa: E402
-from services.periodic_report import _exit_reason_breakdown          # noqa: E402
+from services.periodic_report import (_exit_reason_breakdown,        # noqa: E402
+                                      _konsens_abschnitt, _build_report)
 from services.recommendations import _build_recommendations          # noqa: E402
+import services.konsens_auswertung as _KA                        # noqa: E402
 
 
 def _notiz(grund=None, **rest):
@@ -476,3 +481,513 @@ def test_walkforward_gibt_vorlauf_weiter():
     # Der Vorlauf steht auch im Ergebnis, damit er nachvollziehbar bleibt.
     assert all("vorlaufBalken" in f for f in ergebnis["folds"])
     assert any(f["vorlaufBalken"] > 0 for f in ergebnis["folds"])
+
+
+# -- Konsens-Auswertung (07.08., Stufe 4 Schritt 3) ---------------------------
+# Gemessen wird die Vorwaertsrendite nach einem Signal. Die drei Fehler, die so
+# eine Auswertung wertlos machen, stehen im Modulkopf — hier wird jeder einzeln
+# geprueft: Rand in die Zukunft, fehlende Basis, Ueberlappung als Fallzahl.
+
+
+def _historie(kurse, konsens, conf=None, tiers=None, ohne_daten=None, status="ok"):
+    n = len(kurse)
+    return {
+        "symbol": "TEST", "status": status, "kurs": kurse, "konsens": konsens,
+        "konsensConf": conf if conf is not None else [80] * n,
+        "entryQualityTier": tiers if tiers is not None else ["A"] * n,
+        "strategienOhneDaten": ohne_daten if ohne_daten is not None else [0] * n,
+        "fensterTage": 90, "taktIntervall": "4h", "von": None, "bis": None,
+        "strategienMitLuecken": {}, "hinweise": [],
+    }
+
+
+def test_konsens_rendite_am_rand_ist_none_nicht_null():
+    """Die letzten Balken haben keine Zukunft.
+
+    Wer sie als Nullrendite zaehlt, zieht jeden Mittelwert Richtung null UND
+    meldet mehr Faelle, als es gibt. Das ist der Fehler, der eine
+    Rueckrechnung am unauffaelligsten verfaelscht.
+    """
+    kurse = [100.0, 110.0, 121.0]
+    assert _KA._vorwaerts_rendite(kurse, 0, 1) == pytest.approx(0.10)
+    assert _KA._vorwaerts_rendite(kurse, 2, 1) is None, "Rand nicht erkannt"
+    assert _KA._vorwaerts_rendite(kurse, 1, 5) is None
+    assert _KA._vorwaerts_rendite([0.0, 5.0], 0, 1) is None, "Division durch null"
+
+
+def test_konsens_zaehlt_bloecke_statt_nur_balken():
+    """500 Balken sind keine 500 unabhaengigen Faelle."""
+    assert _KA.bloecke([]) == []
+    assert _KA.bloecke(["LONG"]) == [(0, 0, "LONG")]
+    folge = ["LONG", "LONG", "LONG", "NEUTRAL", "SHORT", "SHORT", "LONG"]
+    assert _KA.bloecke(folge) == [
+        (0, 2, "LONG"), (3, 3, "NEUTRAL"), (4, 5, "SHORT"), (6, 6, "LONG"),
+    ]
+
+
+def test_konsens_sell_gewinnt_bei_fallendem_kurs():
+    """Ohne Vorzeichenwechsel waere jedes Short-Signal als Verlust gebucht."""
+    fallend = [100.0 * (0.99 ** i) for i in range(60)]
+    r = _KA.bewerte_historie(_historie(fallend, ["SHORT"] * 60))
+    tag = r["horizonte"]["daytrading_24h"]["alle"]["SHORT"]
+    assert tag["mittelPct"] > 0, f"SELL im Abwaertstrend als Verlust gebucht: {tag}"
+    assert tag["trefferPct"] == 100.0
+
+
+def test_konsens_ohne_vorteil_bleibt_bei_null():
+    """DER Test.
+
+    Ein Konsens, der in einem steigenden Markt IMMER BUY sagt, sieht mit
+    blossen Renditen glaenzend aus — er hat aber nichts geleistet. Erst der
+    Vergleich mit derselben Bewegung ueber alle Balken zeigt das. Ohne diese
+    Basis waere die ganze Auswertung eine Trendmessung mit anderem Namen.
+    """
+    steigend = [100.0 * (1.01 ** i) for i in range(80)]
+    r = _KA.bewerte_historie(_historie(steigend, ["LONG"] * 80))
+    tag = r["horizonte"]["daytrading_24h"]["alle"]["LONG"]
+    assert tag["mittelPct"] > 5, "die rohe Rendite muss hoch aussehen"
+    assert tag["basisPct"] == pytest.approx(tag["mittelPct"], abs=0.01)
+    assert abs(tag["vorteilPct"]) < 0.01, (
+        f"Dauer-BUY im Aufwaertstrend meldet Vorteil {tag['vorteilPct']}% "
+        f"— die Basis wird nicht abgezogen"
+    )
+
+
+def test_konsens_erkennt_echten_vorteil():
+    """Gegenprobe: wenn das Signal wirklich trifft, MUSS Vorteil entstehen.
+
+    Ohne diese Gegenprobe wuerde eine Auswertung, die immer 0 liefert, den
+    Test oben ebenfalls bestehen.
+    """
+    # Kurs pendelt; BUY steht nur vor den Anstiegen.
+    kurse, konsens = [], []
+    for i in range(60):
+        kurse.append(100.0 + (10.0 if i % 2 else 0.0))
+        konsens.append("LONG" if i % 2 == 0 else "NEUTRAL")
+    r = _KA.bewerte_historie(_historie(kurse, konsens))
+    eins = r["horizonte"]["scalping_4h"]["alle"]["LONG"]
+    assert eins["vorteilPct"] > 5, f"echter Vorteil nicht erkannt: {eins}"
+
+
+def test_konsens_trennt_vollstaendige_von_luechenhaften_balken():
+    """yfinance liefert 15m nur 60 Tage — die Luecke sitzt am Anfang.
+
+    Wenn beide Teile nicht getrennt werden, mischt die Auswertung einen
+    Konsens aus 16 Strategien mit einem aus 15.
+    """
+    kurse = [100.0 + i for i in range(60)]
+    ohne = [3] * 30 + [0] * 30          # erste Haelfte ausgeduennt
+    r = _KA.bewerte_historie(_historie(kurse, ["LONG"] * 60, ohne_daten=ohne))
+    assert r["balken"] == 60
+    assert r["balkenVollstaendig"] == 30
+    alle = r["horizonte"]["daytrading_24h"]["alle"]["LONG"]
+    voll = r["horizonte"]["daytrading_24h"]["vollstaendig"]["LONG"]
+    assert voll["n"] < alle["n"], "es wird nicht getrennt"
+    assert voll["n"] > 0
+
+
+def test_konsens_meldet_fehlende_luechenreihe_statt_sie_zu_erfinden():
+    """Ein aelteres Backend liefert die Reihe nicht. Dann gilt alles als
+    vollstaendig — aber das muss DASTEHEN, sonst liest es sich wie ein Befund."""
+    h = _historie([100.0 + i for i in range(40)], ["LONG"] * 40)
+    del h["strategienOhneDaten"]
+    r = _KA.bewerte_historie(h)
+    assert r["balkenVollstaendig"] == 40
+    assert any("strategienOhneDaten" in x for x in r["hinweise"]), (
+        "die fehlende Reihe wurde stillschweigend als 'alles vollstaendig' verbucht"
+    )
+
+
+def test_konsens_lehnt_ungleiche_reihen_ab():
+    """Ungleich lange Reihen wuerden Kurs und Entscheidung gegeneinander
+    verschieben — jede folgende Zahl waere falsch, ohne aufzufallen."""
+    h = _historie([100.0] * 40, ["LONG"] * 30)
+    r = _KA.bewerte_historie(h)
+    assert r["status"] == "unbrauchbar"
+
+
+def test_konsens_reicht_fehlerstatus_durch():
+    r = _KA.bewerte_historie({"status": "keine_daten", "hinweise": ["4h: keine Kerzen"]})
+    assert r["status"] == "keine_daten"
+    assert r["hinweise"]
+
+
+def test_konsens_staffelt_an_den_schwellen_der_einstellungen():
+    """75 und 81 sind keine runden Zahlen, sondern die Freigabe-Schwellen.
+
+    Liegen die Schnitte woanders, beantwortet die Staffelung nicht die Frage,
+    fuer die sie gebaut wurde.
+    """
+    grenzen = [u for u, _ in _KA.KONFIDENZ_STUFEN]
+    assert 75 in grenzen and 81 in grenzen, f"Schwellen fehlen: {grenzen}"
+    # luecken- und ueberschneidungsfrei
+    for (_, oben), (unten_next, _) in zip(_KA.KONFIDENZ_STUFEN, _KA.KONFIDENZ_STUFEN[1:]):
+        assert oben == unten_next, f"Luecke/Ueberschneidung bei {oben}/{unten_next}"
+
+    kurse = [100.0 + i for i in range(60)]
+    conf = [70] * 30 + [85] * 30
+    r = _KA.bewerte_historie(_historie(kurse, ["LONG"] * 60, conf=conf))
+    stufen = r["konfidenz"]["stufen"]
+    assert stufen["70-74"]["n"] > 0 and stufen["81-89"]["n"] > 0
+    assert stufen["0-59"]["n"] == 0
+
+
+def test_konsens_horizonte_stammen_aus_den_echten_zeit_exits():
+    """risk-agent.ts: SCALPING 4h, DAYTRADING 24h, SWING 168h.
+
+    Auf 4h-Takt sind das 1, 6 und 42 Balken. Ein frei gewaehlter Horizont
+    wuerde etwas messen, das das System nie gehalten haette.
+    """
+    assert _KA.HORIZONTE == {"scalping_4h": 1, "daytrading_24h": 6, "swing_168h": 42}
+
+
+def test_konsens_klemmt_das_fenster_auf_die_grenze_des_backends():
+    """Ohne Klemme antwortet divine-warmth auf JEDES Symbol mit HTTP 400 —
+    der Lauf liefert dann stillschweigend gar nichts."""
+    echt = _KA.settings
+    _KA.settings = types.SimpleNamespace(KONSENS_FENSTER_TAGE=5000)
+    try:
+        assert _KA._fensterlaenge() == _KA.MAX_FENSTER_TAGE
+        _KA.settings = types.SimpleNamespace(KONSENS_FENSTER_TAGE=0)
+        assert _KA._fensterlaenge() == _KA.STANDARD_FENSTER_TAGE
+        _KA.settings = types.SimpleNamespace(KONSENS_FENSTER_TAGE=30)
+        assert _KA._fensterlaenge() == 30
+    finally:
+        _KA.settings = echt
+
+
+def test_konsens_kennzahlen_bei_leerer_liste():
+    """n=0 darf nicht durch null teilen und muss als n=0 erkennbar bleiben."""
+    assert _KA._kennzahlen([]) == {"n": 0, "mittelPct": 0.0, "medianPct": 0.0,
+                                   "trefferPct": 0.0}
+    assert _KA._kennzahlen([0.01, 0.03])["medianPct"] == pytest.approx(2.0)
+    assert _KA._kennzahlen([0.01, 0.02, 0.09])["medianPct"] == pytest.approx(2.0)
+
+
+def test_konsens_etiketten_stimmen_mit_dem_backend_ueberein():
+    """Cross-Service-Riegel — der Fund vom 07.08.
+
+    Der erste Entwurf dieses Moduls suchte nach "BUY"/"SELL". Der Konsens
+    vergibt aber "LONG"/"SHORT". Kein Unittest hat das gefunden: sie bekamen
+    die erfundenen Etiketten mit, gegen die sie geschrieben waren. In
+    Produktion haette die Auswertung fuer JEDES Symbol n=0 gemeldet — das
+    sieht aus wie ein Ergebnis ("keine Signale") und ist doch Blindheit.
+
+    Geprueft wird deshalb gegen den QUELLTEXT des Backends. Wird dort
+    umbenannt, wird das hier rot — nicht erst nach dem naechsten Wochenlauf.
+    """
+    quelle = (_WURZEL.parent / "backend" / "services" / "trading_strategies.py")
+    assert quelle.exists(), f"Backend-Quelle nicht gefunden: {quelle}"
+    text = quelle.read_text(encoding="utf-8")
+
+    # Die Zuweisungen in analyze_all_strategies()
+    vergeben = set(re.findall(r'^\s*consensus = "([A-Z_]+)"', text, re.M))
+    assert vergeben, "keine consensus-Zuweisung im Backend gefunden"
+
+    erwartet = set(_KA.RICHTUNGEN) | {_KA.NEUTRAL}
+    assert vergeben == erwartet, (
+        f"Backend vergibt {sorted(vergeben)}, die Auswertung sucht "
+        f"{sorted(erwartet)} — jedes nicht gesuchte Etikett wird stillschweigend "
+        f"uebergangen"
+    )
+
+
+def test_konsens_meldet_unbekannte_etiketten_statt_still_null_zu_zaehlen():
+    """Der Riegel gegen das stille Nichts.
+
+    Zaehlt die Auswertung ueberall n=0, sieht das aus wie "keine Signale".
+    Ein unbekanntes Etikett muss deshalb im Ergebnis DASTEHEN.
+    """
+    kurse = [100.0 + i for i in range(40)]
+    r = _KA.bewerte_historie(_historie(kurse, ["BUY"] * 40))
+    assert r["status"] == "ok"
+    assert r.get("unbekannteEtiketten") == ["BUY"], (
+        f"unbekanntes Etikett nicht gemeldet: {r.get('unbekannteEtiketten')}"
+    )
+    assert any("kein einziges Signal" in h for h in r["hinweise"]), (
+        "n=0 ueberall wurde nicht als solches benannt"
+    )
+
+
+def test_konsens_lauf_geht_durch_und_landet_in_redis():
+    """Der ganze Lauf, einmal durchgespielt.
+
+    Warum ausgerechnet dieser Test: der KeyError in der Log-Zeile
+    (tag["BUY"] statt tag["LONG"]) sass in _run_konsens_auswertung_inner —
+    einer Funktion, die KEIN Test beruehrt hat. Alle 15 Rechen-Tests waren
+    gruen, und der erste echte Wochenlauf waere trotzdem abgestuerzt.
+    Rechenlogik zu pruefen genuegt nicht, wenn die Verdrahtung ungeprueft ist.
+    """
+    kurse = [100.0 + i * 0.5 for i in range(80)]
+    konsens = (["LONG"] * 40) + (["SHORT"] * 40)
+
+    aufgerufen = []
+
+    def falsches_hole(symbol, tage=None):
+        aufgerufen.append(symbol)
+        return _historie(kurse, konsens)
+
+    geschrieben = {}
+
+    echt_hole, echt_redis = _KA.hole_historie, _KA.redis_set_json
+    echt_watchlist, echt_pause = _KA.WATCHLIST, _KA.PAUSE_SEK
+    _KA.hole_historie = falsches_hole
+    _KA.redis_set_json = lambda k, v, ttl: geschrieben.update({k: v}) or True
+    _KA.WATCHLIST = ["EURUSD", "BTCUSD"]
+    _KA.PAUSE_SEK = 0
+    try:
+        _KA.run_konsens_auswertung()      # Wrapper — faengt Abstuerze ab
+    finally:
+        _KA.hole_historie, _KA.redis_set_json = echt_hole, echt_redis
+        _KA.WATCHLIST, _KA.PAUSE_SEK = echt_watchlist, echt_pause
+
+    end = geschrieben[_KA.REDIS_KEY_KONSENS]
+    assert end["status"] == "done", (
+        f"Lauf abgestuerzt statt durchgelaufen: {end.get('error')}"
+    )
+    assert aufgerufen == ["EURUSD", "BTCUSD"]
+    assert end["symbole"] == 2
+    assert set(end["results"]) == {"EURUSD", "BTCUSD"}
+    assert end["results"]["EURUSD"]["horizonte"]["daytrading_24h"]["alle"]["LONG"]["n"] > 0
+
+    # Muss sich nach Redis schreiben lassen — ein nicht serialisierbarer Wert
+    # faellt sonst erst im Betrieb auf.
+    json.dumps(end)
+
+
+def test_konsens_lauf_ueberlebt_ein_kaputtes_symbol():
+    """Ein Symbol ohne Daten darf die uebrigen 29 nicht mitnehmen."""
+    kurse = [100.0 + i for i in range(60)]
+
+    def falsches_hole(symbol, tage=None):
+        if symbol == "KAPUTT":
+            return None
+        if symbol == "LEER":
+            return {"status": "keine_daten", "hinweise": ["4h: keine Kerzen"]}
+        return _historie(kurse, ["LONG"] * 60)
+
+    geschrieben = {}
+    echt_hole, echt_redis = _KA.hole_historie, _KA.redis_set_json
+    echt_watchlist, echt_pause = _KA.WATCHLIST, _KA.PAUSE_SEK
+    _KA.hole_historie = falsches_hole
+    _KA.redis_set_json = lambda k, v, ttl: geschrieben.update({k: v}) or True
+    _KA.WATCHLIST = ["KAPUTT", "EURUSD", "LEER", "BTCUSD"]
+    _KA.PAUSE_SEK = 0
+    try:
+        _KA.run_konsens_auswertung()
+    finally:
+        _KA.hole_historie, _KA.redis_set_json = echt_hole, echt_redis
+        _KA.WATCHLIST, _KA.PAUSE_SEK = echt_watchlist, echt_pause
+
+    end = geschrieben[_KA.REDIS_KEY_KONSENS]
+    assert end["status"] == "done"
+    assert set(end["results"]) == {"EURUSD", "BTCUSD"}, (
+        f"kaputte Symbole haben den Lauf verfaelscht: {sorted(end['results'])}"
+    )
+
+
+def test_konsens_holt_vom_richtigen_endpunkt():
+    """Die Strecke zwischen den Diensten — ungeprueft bis 07.08.
+
+    Genau hier sass der Fund des Tages (BUY/SELL statt LONG/SHORT): an der
+    Naht zwischen zwei Diensten, die jeder fuer sich getestet waren. Ein
+    falscher Pfad oder ein fehlender Auth-Header faellt beim Rechnen nie auf —
+    nur im Wochenlauf, und dort als "keine Daten".
+    """
+    gesehen = {}
+
+    class _Antwort:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"status": "ok", "symbol": "EURUSD"}
+
+    def falsches_get(url, params=None, headers=None, timeout=None):
+        gesehen.update(url=url, params=params, headers=headers, timeout=timeout)
+        return _Antwort()
+
+    echt_httpx, echt_settings = _KA.httpx, _KA.settings
+    _KA.httpx = types.SimpleNamespace(get=falsches_get)
+    _KA.settings = types.SimpleNamespace(
+        PYTHON_BACKEND_URL="http://backend:8000", BACKEND_API_KEY="geheim"
+    )
+    try:
+        r = _KA.hole_historie("EURUSD", tage=42)
+    finally:
+        _KA.httpx, _KA.settings = echt_httpx, echt_settings
+
+    assert r == {"status": "ok", "symbol": "EURUSD"}
+    assert gesehen["url"] == "http://backend:8000/api/v1/strategies/historie/EURUSD", (
+        f"falscher Pfad: {gesehen['url']}"
+    )
+    assert gesehen["params"] == {"tage": 42}
+    assert gesehen["headers"] == {"X-Backend-Key": "geheim"}, (
+        "ohne diesen Header antwortet divine-warmth mit 401 (Audit-Fund #1, 27.07.)"
+    )
+    # Der Lauf rechnet je Balken den vollen Konsens — ein knapper Timeout wirft
+    # Arbeit weg, nachdem sie geleistet wurde.
+    assert gesehen["timeout"] >= 300, f"Timeout zu knapp: {gesehen['timeout']}"
+
+
+def test_konsens_hole_gibt_bei_fehler_none_statt_muell():
+    """None heisst 'ueberspringen'. Ein halbes Ergebnis waere schlimmer."""
+    echt_httpx, echt_settings = _KA.httpx, _KA.settings
+    _KA.settings = types.SimpleNamespace(PYTHON_BACKEND_URL="http://b", BACKEND_API_KEY="")
+
+    class _Fehler:
+        status_code = 500
+        text = "boom"
+
+        @staticmethod
+        def json():
+            return {}
+
+    try:
+        _KA.httpx = types.SimpleNamespace(get=lambda *a, **k: _Fehler())
+        assert _KA.hole_historie("EURUSD") is None, "HTTP 500 nicht erkannt"
+
+        def _wirft(*a, **k):
+            raise ConnectionError("kein Netz")
+
+        _KA.httpx = types.SimpleNamespace(get=_wirft)
+        assert _KA.hole_historie("EURUSD") is None, "Ausnahme nicht abgefangen"
+
+        # Ohne konfiguriertes Backend gar nicht erst anfragen
+        _KA.settings = types.SimpleNamespace(PYTHON_BACKEND_URL="", BACKEND_API_KEY="")
+        _KA.httpx = types.SimpleNamespace(get=_wirft)
+        assert _KA.hole_historie("EURUSD") is None
+    finally:
+        _KA.httpx, _KA.settings = echt_httpx, echt_settings
+
+
+def _konsens_redis(eintraege):
+    """Baut die Redis-Struktur, wie run_konsens_auswertung sie ablegt."""
+    results = {}
+    for symbol, (vorteil_long, n_long, vorteil_short, n_short, luecken) in eintraege.items():
+        results[symbol] = {
+            "balken": 300, "bloeckeGesamt": 60,
+            "strategienMitLuecken": luecken,
+            "horizonte": {"daytrading_24h": {"alle": {
+                "LONG": {"n": n_long, "vorteilPct": vorteil_long},
+                "SHORT": {"n": n_short, "vorteilPct": vorteil_short},
+            }}},
+        }
+    return {"status": "done", "fensterTage": 90, "results": results}
+
+
+def test_report_zeigt_die_konsens_auswertung():
+    """Ohne diesen Abschnitt laege das Ergebnis nur in Redis.
+
+    Eine Messung, die niemand sieht, ist nicht fertig — der Wochenreport ist
+    das, was tatsaechlich gelesen wird.
+    """
+    _REDIS["analysis:konsens"] = _konsens_redis({
+        "BTCUSD": (0.30, 100, 0.20, 100, {}),
+        "EURUSD": (-0.05, 80, -0.03, 80, {"scalping": {"balkenOhneDaten": 82,
+                                                       "anteil": 0.42}}),
+    })
+    try:
+        zeilen = _konsens_abschnitt()
+    finally:
+        _REDIS.pop("analysis:konsens", None)
+
+    text = "\n".join(zeilen)
+    assert "Konsens-Auswertung" in text
+    assert "BTCUSD" in text and "EURUSD" in text
+    # Bestes zuerst
+    assert text.index("BTCUSD") < text.index("EURUSD"), "nicht nach Vorteil sortiert"
+    assert "Ohne Vorteil" in text and "EURUSD" in text.split("Ohne Vorteil")[1]
+    # Die Datenlage gehoert daneben, nicht in eine Fussnote
+    assert "scalping" in text, "die Luecke wurde im Report verschwiegen"
+    assert "60 Tage" in text
+    # Bloecke statt Balken als Fallzahl
+    assert "Bl" in text and "cke" in text
+
+
+def test_report_gewichtet_den_vorteil_nach_faellen():
+    """Sonst zieht eine Richtung mit 3 Faellen das ganze Bild.
+
+    Symbol A: LONG +2.0 bei 5 Faellen, SHORT -0.5 bei 195 Faellen.
+    Ungewichtet waere der Schnitt +0.75 — tatsaechlich ist er negativ.
+    """
+    _REDIS["analysis:konsens"] = _konsens_redis({
+        "A": (2.0, 5, -0.5, 195, {}),
+        "B": (0.10, 100, 0.10, 100, {}),
+    })
+    try:
+        zeilen = _konsens_abschnitt()
+    finally:
+        _REDIS.pop("analysis:konsens", None)
+    text = "\n".join(zeilen)
+    assert text.index("B:") < text.index("A:"), (
+        f"ungewichtet sortiert — 5 Faelle schlagen 195:\n{text}"
+    )
+    assert "A" in text.split("Ohne Vorteil")[1], "A muesste unter 'Ohne Vorteil' stehen"
+
+
+def test_report_schweigt_ohne_konsens_daten():
+    """Kein Lauf, kein Abschnitt — statt einer leeren Ueberschrift."""
+    _REDIS.pop("analysis:konsens", None)
+    assert _konsens_abschnitt() == []
+    _REDIS["analysis:konsens"] = {"status": "running", "progress": "3/30"}
+    try:
+        assert _konsens_abschnitt() == [], "laufender Lauf als Ergebnis gemeldet"
+        _REDIS["analysis:konsens"] = {"status": "done", "results": {}}
+        assert _konsens_abschnitt() == []
+
+        # Ein LAUFENDER Eintrag MIT Teilergebnissen. Heute schreibt
+        # _run_konsens_auswertung_inner waehrend des Laufs keine results mit —
+        # deshalb griff bisher schon die results-Pruefung und der Statusriegel
+        # blieb ungeprueft (Sabotage-Lauf 07.08.: durchgerutscht). Sobald
+        # jemand Zwischenstaende mitschreibt, entscheidet allein der Status
+        # darueber, ob ein halbfertiger Lauf als fertig im Report landet.
+        laeuft = _konsens_redis({"BTCUSD": (0.30, 100, 0.20, 100, {})})
+        laeuft["status"] = "running"
+        _REDIS["analysis:konsens"] = laeuft
+        assert _konsens_abschnitt() == [], (
+            "ein laufender Lauf mit Teilergebnissen wurde als fertig gemeldet"
+        )
+
+        # Abgestuerzter Lauf ebenso
+        kaputt = _konsens_redis({"BTCUSD": (0.30, 100, 0.20, 100, {})})
+        kaputt["status"] = "error"
+        _REDIS["analysis:konsens"] = kaputt
+        assert _konsens_abschnitt() == [], "abgestuerzter Lauf als Ergebnis gemeldet"
+    finally:
+        _REDIS.pop("analysis:konsens", None)
+
+
+def test_report_haengt_den_konsens_abschnitt_wirklich_ein():
+    """Der Abschnitt muss im FERTIGEN Report stehen, nicht nur existieren.
+
+    Im Sabotage-Lauf am 07.08. liess sich der Aufruf aus _build_report
+    ersatzlos streichen, ohne dass ein Test rot wurde: die drei Tests darueber
+    riefen _konsens_abschnitt() direkt auf. Eine Funktion, die niemand
+    aufruft, besteht ihre eigenen Tests tadellos — und liefert nichts.
+    Dieselbe Luecke wie beim run_in_executor des Backend-Endpunkts.
+    """
+    _ZEILEN.clear()          # keine Trades -> kurzer Report, stoert nicht
+    _REDIS["analysis:konsens"] = _konsens_redis({"BTCUSD": (0.30, 100, 0.20, 100, {})})
+    try:
+        text = _build_report(7, "Test", compare_previous=False, show_walk_forward=True)
+    finally:
+        _REDIS.pop("analysis:konsens", None)
+
+    assert "Konsens-Auswertung" in text, (
+        "der Abschnitt wird nicht in den Report eingehaengt — er existiert nur"
+    )
+    assert "BTCUSD" in text
+
+
+def test_report_ohne_walkforward_flagge_keinen_konsens():
+    """Der Monatsreport setzt show_walk_forward=False. Dann darf auch der
+    Konsens-Abschnitt nicht auftauchen — sonst steht er doppelt im System."""
+    _ZEILEN.clear()
+    _REDIS["analysis:konsens"] = _konsens_redis({"BTCUSD": (0.30, 100, 0.20, 100, {})})
+    try:
+        text = _build_report(30, "Test", compare_previous=False, show_walk_forward=False)
+    finally:
+        _REDIS.pop("analysis:konsens", None)
+    assert "Konsens-Auswertung" not in text
