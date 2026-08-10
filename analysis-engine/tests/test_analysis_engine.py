@@ -991,3 +991,64 @@ def test_report_ohne_walkforward_flagge_keinen_konsens():
     finally:
         _REDIS.pop("analysis:konsens", None)
     assert "Konsens-Auswertung" not in text
+
+
+def test_konsens_pfad_stimmt_mit_dem_backend_ueberein():
+    """Der zweite Cross-Service-Riegel: der PFAD.
+
+    Die Engine baut ihn als Zeichenkette zusammen, das Backend setzt ihn aus
+    zwei Praefixen zusammen (include_router prefix + APIRouter prefix). Der
+    Endpunkt-Test im Backend ruft die Funktion DIREKT auf und beruehrt den Pfad
+    gar nicht. Wird ein Praefix geaendert, antwortet divine-warmth mit 404, die
+    Auswertung ueberspringt jedes Symbol — und keine Suite wird rot.
+
+    Dieselbe Naht wie beim LONG/SHORT-Fund: zwei Dienste, jeder fuer sich
+    getestet, dazwischen niemand.
+    """
+    backend = _WURZEL.parent / "backend"
+    haupt = (backend / "main.py").read_text(encoding="utf-8")
+    routen = (backend / "api" / "routes" / "strategies.py").read_text(encoding="utf-8")
+
+    m = re.search(
+        r"include_router\(\s*strategies\.router\s*,\s*prefix=[\"']([^\"']+)[\"']",
+        haupt,
+    )
+    assert m, "include_router(strategies.router, prefix=...) nicht gefunden"
+    aussen = m.group(1)
+
+    m = re.search(r'APIRouter\(prefix="([^"]+)"', routen)
+    assert m, "APIRouter(prefix=...) in strategies.py nicht gefunden"
+    innen = m.group(1)
+
+    m = re.search(r'@router\.get\("(/historie/\{symbol\})"\)', routen)
+    assert m, "Route /historie/{symbol} nicht gefunden"
+    eigen = m.group(1)
+
+    echt = f"{aussen}{innen}{eigen}".replace("{symbol}", "EURUSD")
+
+    # Was die Engine tatsaechlich anfragt
+    gesehen = {}
+
+    class _A:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"status": "ok"}
+
+    echt_httpx, echt_settings = _KA.httpx, _KA.settings
+    _KA.httpx = types.SimpleNamespace(
+        get=lambda url, **k: (gesehen.update(url=url), _A())[1]
+    )
+    _KA.settings = types.SimpleNamespace(PYTHON_BACKEND_URL="", BACKEND_API_KEY="")
+    _KA.settings.PYTHON_BACKEND_URL = "http://b"
+    try:
+        _KA.hole_historie("EURUSD")
+    finally:
+        _KA.httpx, _KA.settings = echt_httpx, echt_settings
+
+    gebaut = gesehen["url"].replace("http://b", "")
+    assert gebaut == echt, (
+        f"Pfade laufen auseinander — Engine fragt {gebaut}, Backend bedient {echt}"
+    )
