@@ -91,6 +91,64 @@ def _exit_reason_breakdown(days: int) -> dict:
     return gruende
 
 
+def _ai_manager_breakdown(days: int) -> dict:
+    """WinRate/PnL gruppiert danach, WAS DER AI MANAGER an der Position tat (10.08.).
+
+    WARUM das hier steht: der AI Manager darf seit dem 03.08. Breakeven-Puffer,
+    Trailing-Abstand und Teilgewinn-Anteil an der Marktlage ausrichten — und
+    er darf eine Massnahme mit SKIP ganz verhindern. Sein Grund (aiReason) ging
+    bis zum 10.08. in eine Logzeile und in eine Event-Nutzlast, die NIEMAND
+    liest. Es gab also keine Rueckkopplung: niemand konnte messen, ob ein SKIP
+    oder ein ADJUST sich gelohnt hat. Die AI entschied, ohne je nachgerechnet
+    zu werden.
+
+    Seit dem 10.08. haelt der RiskAgent seine Entscheidungen in Trade.notes
+    fest (aiZusammenfassung). Hier werden sie gegen das ERGEBNIS derselben
+    Position gestellt — Entscheidung und Ausgang in einer Zeile.
+
+    Gruppen:
+      NUR_APPROVE  die AI hat nur zugestimmt (Regelwerte gegolten)
+      MIT_ADJUST   sie hat mindestens einmal eigene Werte gesetzt
+      MIT_SKIP     sie hat mindestens einmal eine Massnahme verhindert
+      OHNE_ANGABE  Trades von vor dem 10.08. — verfaelschen nichts
+
+    MIT_SKIP und MIT_ADJUST koennen sich ueberschneiden; SKIP gewinnt, weil das
+    der staerkere Eingriff ist (die Massnahme fand gar nicht statt).
+    """
+    import json as _json
+    rows = pg_query(
+        '''SELECT result, "profitLoss", notes
+           FROM "Trade"
+           WHERE status = 'CLOSED'
+             AND "updatedAt" >= NOW() - INTERVAL '%s days' ''' % int(days)
+    )
+    gruppen: dict[str, dict] = {}
+    for result, pnl, notes in rows:
+        gruppe = "OHNE_ANGABE"
+        try:
+            z = (_json.loads(notes) or {}).get("aiZusammenfassung") or {}
+            if z:
+                if int(z.get("SKIP") or 0) > 0:
+                    gruppe = "MIT_SKIP"
+                elif int(z.get("ADJUST") or 0) > 0:
+                    gruppe = "MIT_ADJUST"
+                elif int(z.get("APPROVE") or 0) > 0:
+                    gruppe = "NUR_APPROVE"
+        except Exception:
+            pass
+        e = gruppen.setdefault(gruppe, {"trades": 0, "wins": 0, "losses": 0, "pnl": 0.0})
+        e["trades"] += 1
+        if result == "WIN":
+            e["wins"] += 1
+        elif result == "LOSS":
+            e["losses"] += 1
+        e["pnl"] = round(e["pnl"] + float(pnl or 0), 2)
+    for e in gruppen.values():
+        entschieden = e["wins"] + e["losses"]
+        e["winRate"] = round(e["wins"] / entschieden * 100, 1) if entschieden else None
+    return gruppen
+
+
 def _entry_quality_breakdown(days: int) -> dict:
     """Entry-Engine Phase D: WinRate/PnL gruppiert nach Entry-Quality-Tier.
     Liest den Tier aus notes.entryContext.entryQualityTier (seit 26.07.)."""
@@ -274,6 +332,26 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
             sign = "+" if e["pnl"] >= 0 else ""
             lines.append(f"• {tier}: {e['trades']} Trades, WR {wr}, {sign}{e['pnl']}")
         lines.append("<i>Wenn GOOD/EXCELLENT besser abschneiden → Engine wirkt, Schwelle anheben.</i>")
+        lines.append("")
+
+    # Was der AI Manager an den Positionen tat (10.08.) — beantwortet, ob sein
+    # Eingreifen etwas gebracht hat. Bis dahin gab es dazu KEINE Zahl.
+    ai = _ai_manager_breakdown(days)
+    ai_bewertet = {k: v for k, v in ai.items() if k != "OHNE_ANGABE"}
+    if ai_bewertet:
+        lines.append("<b>🤖 Nach Eingriff des AI Managers:</b>")
+        reihenfolge = ["NUR_APPROVE", "MIT_ADJUST", "MIT_SKIP"]
+        for gruppe in sorted(ai_bewertet.keys(),
+                             key=lambda x: reihenfolge.index(x) if x in reihenfolge else 99):
+            e = ai_bewertet[gruppe]
+            wr = f"{e['winRate']}%" if e.get("winRate") is not None else "n/a"
+            vz = "+" if e["pnl"] >= 0 else ""
+            lines.append(f"• {gruppe}: {e['trades']} Trades, WR {wr}, {vz}{e['pnl']}")
+        ohne = ai.get("OHNE_ANGABE", {}).get("trades", 0)
+        if ohne:
+            lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 10.08.).</i>")
+        lines.append("<i>MIT_SKIP = die AI hat mindestens eine Massnahme verhindert. "
+                     "Schneidet diese Gruppe schlechter ab als NUR_APPROVE, greift sie zu oft ein.</i>")
         lines.append("")
 
     # Ausstiegsgrund (07.08.) — beantwortet, WARUM Trades enden

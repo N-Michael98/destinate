@@ -62,6 +62,10 @@ export async function runActiveTradeManager(): Promise<void> {
           peakPrice:    m.peakPrice ?? null,
           confidence:   m.confidence ?? 72,
           tradingStyle: m.tradingStyle ?? m.strategy ?? "DAYTRADING",
+          // Letzter Eingriff des Python-Lifecycle an derselben Position
+          // (10.08.). Der AI Manager entschied bisher, ohne zu wissen, dass
+          // ein zweites System kurz zuvor den Stop bewegt hatte.
+          fremdAktion: m.fremdAktion ?? null,
         });
       }
     } catch { /* skip */ }

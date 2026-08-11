@@ -149,5 +149,85 @@ module.exports = function pruefe() {
   pruefe1("die Marktlage nennt der AI das Ziel nicht (liveTP)",
     /liveTP:\s*number/.test(risk) && /Ziel steht bei/.test(risk));
 
+  // ── Teil 5: der Zustands-Zaehler (10.08.) ─────────────────────────────────
+  //
+  // Fiel die AI aus, entstand eine console.warn-Zeile und APPROVE — sonst
+  // nichts. Ein stummer Ausfall ueber Tage war nur in Logzeilen sichtbar.
+  const st = ladeTsModul("lib/agents/ai-manager-status.ts");
+  if (st.fehler) {
+    funde.push(st.fehler);
+  } else if (typeof st.exports.meldeAIEntscheidung !== "function"
+          || typeof st.exports.getAIManagerStatus !== "function") {
+    funde.push("ai-manager-status exportiert nicht melde/get — der Ausfall bliebe unsichtbar");
+  } else {
+    const { meldeAIEntscheidung, getAIManagerStatus, resetAIManagerStatus, AUSFALL_AB_FEHLERN } = st.exports;
+    resetAIManagerStatus();
+    pruefe1("frisch gestartet meldet nicht 'noch nicht gefragt' (null)",
+      getAIManagerStatus().erreichbar === null, String(getAIManagerStatus().erreichbar));
+    meldeAIEntscheidung("BREAKEVEN", "APPROVE");
+    pruefe1("eine Antwort macht ihn nicht erreichbar", getAIManagerStatus().erreichbar === true);
+    for (let i = 0; i < AUSFALL_AB_FEHLERN; i++) meldeAIEntscheidung("TRAIL", "FALLBACK", "kein Guthaben");
+    const aus = getAIManagerStatus();
+    pruefe1(`${AUSFALL_AB_FEHLERN} Fehlschlaege in Folge gelten nicht als Ausfall`,
+      aus.erreichbar === false, String(aus.erreichbar));
+    pruefe1("der Fehlergrund wird nicht festgehalten", (aus.letzterFehler || "").includes("Guthaben"));
+    pruefe1("der Fallback-Anteil wird nicht berechnet", aus.fallbackAnteilPct > 0);
+    meldeAIEntscheidung("BREAKEVEN", "SKIP");
+    pruefe1("nach einer Antwort erholt er sich nicht",
+      getAIManagerStatus().erreichbar === true && getAIManagerStatus().fehlerInFolge === 0);
+    // Zaehlen darf niemals werfen — es laeuft mitten im Handelszyklus.
+    for (const arg of [null, undefined, "QUATSCH", 42]) {
+      let geworfen = false;
+      try { meldeAIEntscheidung(arg, arg); } catch { geworfen = true; }
+      pruefe1(`meldeAIEntscheidung(${String(arg)}) wirft — das wuerde den Zyklus abbrechen`, !geworfen);
+    }
+    resetAIManagerStatus();
+  }
+  // Verdrahtung: meldet askAIManager wirklich, und faellt der Diagnostics-Agent auf?
+  // ZWEI Meldestellen, beide gezaehlt: der catch-Zweig UND der Fall "Antwort
+  // kam an, enthielt aber kein JSON". Der zweite ist der heimtueckischere —
+  // eine kaputte Antwort sah bis zum 10.08. aus wie ein erfolgreiches APPROVE.
+  // Erster Entwurf pruefte nur, OB irgendwo gemeldet wird; im Sabotage-Lauf
+  // liess sich damit eine der beiden Stellen ersatzlos streichen.
+  const fallbackMeldungen = (risk.match(/meldeAIEntscheidung\(action,\s*"FALLBACK"/g) || []).length;
+  pruefe1("nicht beide Ausfall-Wege melden (catch UND Antwort ohne JSON)",
+    fallbackMeldungen === 2, `${fallbackMeldungen} von 2`);
+  pruefe1("askAIManager meldet erfolgreiche Entscheidungen nicht",
+    /meldeAIEntscheidung\(action,\s*akt\)/.test(risk));
+  const diag = read("frontend/lib/agents/diagnostics-agent.ts");
+  pruefe1("der Diagnostics-Agent meldet einen AI-Ausfall nicht",
+    /AI_MANAGER_AUSFALL/.test(diag) && /getAIManagerStatus\(\)/.test(diag));
+
+  // ── Teil 6: Rueckkopplung und Fremd-Eingriff (10.08.) ─────────────────────
+  // Auf die SCHREIBSTELLE pruefen, nicht auf das Wort: "aiZusammenfassung"
+  // steht auch im Kommentar der Funktion. Im Sabotage-Lauf blieb das Feld
+  // deshalb entfernbar, ohne dass etwas rot wurde.
+  pruefe1("die AI-Entscheidung wird nicht bei der Position festgehalten",
+    /aiZusammenfassung:\s*zaehler/.test(risk) && /merkeAIEntscheidung\(dealId/.test(risk));
+  const rufeMerke = (risk.match(/merkeAIEntscheidung\(dealId,/g) || []).length;
+  pruefe1("nicht alle drei Massnahmen halten ihre Entscheidung fest",
+    rufeMerke === 3, `${rufeMerke} von 3`);
+  const bericht = read("analysis-engine/services/periodic_report.py");
+  pruefe1("niemand wertet die AI-Entscheidungen aus (Wochenreport)",
+    /_ai_manager_breakdown/.test(bericht) && /aiZusammenfassung/.test(bericht));
+  pruefe1("der Wochenreport haengt den AI-Abschnitt nicht ein",
+    /ai = _ai_manager_breakdown\(days\)/.test(bericht));
+  const instr2 = read("frontend/instrumentation.ts");
+  // DREI Aktionen des Python-Lifecycle greifen in dieselbe Position ein:
+  // Stop nachziehen, Teilgewinn, Zeit-Exit. Jede muss vermerkt werden, sonst
+  // entscheidet die AI beim naechsten Mal ueber einen Zustand, den sie nicht
+  // kennt. Gezaehlt statt nur gesucht — sonst bliebe eine streichbar.
+  const fremdMeldungen = (instr2.match(/merkeFremdAktion\(tradeId/g) || []).length;
+  pruefe1("nicht alle drei Eingriffe des Python-Lifecycle werden vermerkt",
+    fremdMeldungen === 3, `${fremdMeldungen} von 3 (Stop, Teilgewinn, Zeit-Exit)`);
+  pruefe1("der Fremd-Eingriff erreicht die Marktlage nicht",
+    /fremdAktion:\s*meta\.fremdAktion/.test(risk)
+    && /fremdAktion:\s*dbEntry\?\.fremdAktion/.test(risk));
+  pruefe1("der Fremd-Eingriff steht nicht im Prompt",
+    /ein zweites System verwaltet dieselbe Position/.test(risk));
+  const atm = read("frontend/lib/capital-com/active-trade-manager.ts");
+  pruefe1("active-trade-manager liest fremdAktion nicht aus den Notizen",
+    /fremdAktion:\s*m\.fremdAktion/.test(atm));
+
   return { titel: `AI-Klemme (${geprueft} Rechnungen, echte Funktion)`, funde };
 };

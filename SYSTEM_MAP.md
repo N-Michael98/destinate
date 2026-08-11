@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 639 · Kanten: 1309
+Dateien mit internen Abhängigkeiten: 640 · Kanten: 1312
 
 
 ## analysis-engine/api
@@ -204,6 +204,8 @@ Dateien mit internen Abhängigkeiten: 639 · Kanten: 1309
   - → `frontend/lib/ai-config/index.ts`
 - `frontend/app/api/ai-execution-scheduler/route.ts`
   - → `frontend/lib/ai-execution-scheduler/index.ts`
+- `frontend/app/api/ai-manager-status/route.ts`
+  - → `frontend/lib/agents/ai-manager-status.ts`
 - `frontend/app/api/ai-paper-trader/learning/route.ts`
   - → `frontend/lib/ai-agent/learning-engine.ts`
 - `frontend/app/api/ai-paper-trader/market-regime/route.ts`
@@ -767,6 +769,7 @@ Dateien mit internen Abhängigkeiten: 639 · Kanten: 1309
   - → `frontend/lib/market-scanner/ai-analysis-engine.ts`
 - `frontend/lib/agents/diagnostics-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/agents/ai-manager-status.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/agents/execution-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
@@ -794,6 +797,7 @@ Dateien mit internen Abhängigkeiten: 639 · Kanten: 1309
 - `frontend/lib/agents/risk-agent.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/agents/ai-manager-status.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/agents/validation-agent.ts`

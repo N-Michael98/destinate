@@ -376,12 +376,28 @@ export async function register() {
                       const liveTP = typeof pos.profitLevel === "number" && pos.profitLevel > 0 ? pos.profitLevel : undefined;
                       const r = await capitalUpdatePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId, action.new_sl, liveTP)
                         .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
-                      if (r.ok) console.log(`[py-lifecycle] SL updated: ${symbol} ${liveSL ?? "kein"} -> ${action.new_sl}`);
+                      if (r.ok) {
+                        console.log(`[py-lifecycle] SL updated: ${symbol} ${liveSL ?? "kein"} -> ${action.new_sl}`);
+                        // Dem AI Manager mitteilen, dass hier ein zweites System
+                        // eingegriffen hat (10.08.). Er entschied bisher ueber
+                        // Positionen, deren Absicherung Python kurz zuvor
+                        // veraendert hatte, ohne davon zu wissen.
+                        try {
+                          const { merkeFremdAktion } = await import("./lib/agents/risk-agent");
+                          merkeFremdAktion(tradeId, `Python-Lifecycle zog den Stop auf ${action.new_sl}`);
+                        } catch { /* non-fatal */ }
+                      }
                       else console.error(`[py-lifecycle] ⚠ SL-Update FEHLGESCHLAGEN: ${symbol} -> ${action.new_sl} — ${r.error}`);
                     } else if (action.action === "CLOSE") {
                       const r = await capitalClosePosition(sess.apiKey, sess.cst, sess.securityToken, tradeId)
                         .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
-                      if (r.ok) console.log(`[py-lifecycle] Zeit-Exit: ${symbol}`);
+                      if (r.ok) {
+                        console.log(`[py-lifecycle] Zeit-Exit: ${symbol}`);
+                        try {
+                          const { merkeFremdAktion } = await import("./lib/agents/risk-agent");
+                          merkeFremdAktion(tradeId, "Python-Lifecycle schloss die Position (Zeit-Exit)");
+                        } catch { /* non-fatal */ }
+                      }
                       else console.error(`[py-lifecycle] ⚠ Zeit-Exit FEHLGESCHLAGEN: ${symbol} — ${r.error}`);
                     } else if (action.action === "PARTIAL_CLOSE" && action.volume) {
                       // ZWEI Systeme nehmen Teilgewinn (Fund 10.08.). Kurz zuvor
@@ -401,7 +417,7 @@ export async function register() {
                       // `teilgewinn` sie WIRKLICH ausführen kann. Eine
                       // eingebettete if-Kette hier wäre nur vorhanden, nicht
                       // bewiesen.
-                      const { teilgewinnErlaubt, merkeTeilgewinn } = await import("./lib/agents/risk-agent");
+                      const { teilgewinnErlaubt, merkeTeilgewinn, merkeFremdAktion } = await import("./lib/agents/risk-agent");
                       const offen = typeof pos.size === "number" ? pos.size : 0;
                       const urteil = teilgewinnErlaubt(tradeId, action.volume, offen, schonTeilgewonnen);
                       if (!urteil.erlaubt) {
@@ -417,6 +433,7 @@ export async function register() {
                         // derselbe Fehler, nur andersherum.
                         try {
                           merkeTeilgewinn(tradeId, action.volume);
+                          merkeFremdAktion(tradeId, `Python-Lifecycle nahm Teilgewinn ueber ${action.volume}`);
                         } catch (e) {
                           console.warn("[py-lifecycle] Teilgewinn nicht vermerkt:", e instanceof Error ? e.message : String(e));
                         }

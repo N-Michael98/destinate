@@ -11,6 +11,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { agentBus } from "./agent-bus";
+import { meldeAIEntscheidung } from "./ai-manager-status";
 import {
   capitalUpdatePosition,
   capitalClosePosition,
@@ -32,6 +33,9 @@ export interface PosMeta {
   peakPrice: number | null;
   confidence: number;
   tradingStyle: string;
+  /** Letzter Eingriff eines ANDEREN Systems an derselben Position (10.08.).
+   *  Optional, damit bestehende Aufrufer unveraendert bleiben. */
+  fremdAktion?: { zeit: string; text: string } | null;
 }
 
 export interface PriceData {
@@ -133,6 +137,75 @@ function persistMeta(dealId: string, patch: Record<string, unknown>): void {
   })();
 }
 
+/**
+ * Hält eine AI-Entscheidung bei der Position fest (10.08.).
+ *
+ * WOZU. Der Grund der AI (aiReason) ging bisher in eine Logzeile und in eine
+ * Event-Nutzlast — und wurde von NIEMANDEM gelesen. Der Diagnostics-Agent ist
+ * einziger Zuhörer am Bus und wertet ihn nicht aus. Damit gab es keine
+ * Rückkopplung: niemand konnte messen, ob ein SKIP oder ein ADJUST sich
+ * gelohnt hat. Die AI durfte entscheiden, ohne dass ihre Entscheidungen je
+ * nachgerechnet wurden.
+ *
+ * Jetzt landen sie in Trade.notes, neben dem Ausstiegsgrund. Damit stehen
+ * Entscheidung und Ergebnis in derselben Zeile, und die Analysis-Engine kann
+ * beides gruppieren (aiEntscheidungen im Wochenreport).
+ *
+ * ZWEI FELDER MIT ABSICHT:
+ *   aiZusammenfassung  Zähler je Ausgang — überlebt die Deckelung und ist das,
+ *                      worauf ausgewertet wird
+ *   aiEntscheidungen   die letzten 10 im Klartext, zum Nachlesen im Einzelfall
+ *
+ * Ohne Deckelung würde TRAIL das Feld fluten: Breakeven und Teilgewinn fallen
+ * je einmal an, ein Trailing-Stop kann sich dutzende Male bewegen.
+ */
+function merkeAIEntscheidung(
+  dealId: string,
+  massnahme: "BREAKEVEN" | "TRAIL" | "PARTIAL_TP",
+  aktion: "APPROVE" | "SKIP" | "ADJUST",
+  grund: string,
+): void {
+  (async () => {
+    try {
+      const { getPrisma } = await import("../../app/lib/prisma");
+      const db = getPrisma();
+      const rows = await (db.$queryRawUnsafe as (q: string, ...a: unknown[]) => Promise<Array<{ id: number; notes: string }>>)(
+        `SELECT id, notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE $1 LIMIT 1`,
+        `%"dealId":"${dealId}"%`
+      );
+      if (!rows?.length) return;
+      let m: Record<string, unknown> = {};
+      try { m = JSON.parse(rows[0].notes) as Record<string, unknown>; } catch { m = {}; }
+
+      const bisher = Array.isArray(m.aiEntscheidungen)
+        ? (m.aiEntscheidungen as unknown[]).slice(-9)
+        : [];
+      const zaehler = (typeof m.aiZusammenfassung === "object" && m.aiZusammenfassung !== null
+        ? m.aiZusammenfassung
+        : {}) as Record<string, number>;
+      zaehler[aktion] = (Number(zaehler[aktion]) || 0) + 1;
+
+      await db.$executeRawUnsafe(
+        `UPDATE "Trade" SET "notes" = $1 WHERE "id" = $2`,
+        JSON.stringify({
+          ...m,
+          aiZusammenfassung: zaehler,
+          aiEntscheidungen: [...bisher, {
+            zeit: new Date().toISOString(),
+            massnahme, aktion, grund: (grund || "").slice(0, 80),
+          }],
+        }),
+        rows[0].id
+      );
+    } catch (e) {
+      // Non-fatal, wie persistMeta: eine Datenbankstörung darf die Absicherung
+      // einer laufenden Position niemals aufhalten.
+      console.warn(`[risk-agent] AI-Entscheidung nicht festgehalten (deal=${dealId}):`,
+        e instanceof Error ? e.message : String(e));
+    }
+  })();
+}
+
 // ── AI Manager ────────────────────────────────────────────────────────────────
 
 let aiClient: Anthropic | null = null;
@@ -169,6 +242,11 @@ interface MarktLage {
   ageHours: number;
   style: string;
   confidence: number;
+  /** Was ein ANDERES System zuletzt an dieser Position tat (10.08.).
+   *  Der Python-Lifecycle bearbeitet dieselben Capital.com-Positionen und
+   *  fragt den AI Manager nie — ohne diesen Hinweis entscheidet sie blind
+   *  über eine Absicherung, die jemand anders gerade verändert hat. */
+  fremdAktion?: { zeit: string; text: string } | null;
 }
 
 /** Hält einen AI-Wert in vertretbaren Grenzen. Ohne diese Klemme könnte ein
@@ -326,7 +404,10 @@ ATR: ${lage.atr.toFixed(5)} (${((lage.atr / Math.max(lage.currentPrice, 1e-9)) *
 Stop-Spanne: ${lage.slRange.toFixed(5)} | Stop steht bei: ${lage.liveSL > 0 ? lage.liveSL : "keiner"}
 Ziel steht bei: ${lage.liveTP > 0 ? lage.liveTP : `keines gesetzt (gerechnet wird mit 2× Stop-Spanne)`}
 Position offen seit: ${lage.ageHours.toFixed(1)} Stunden
-Handelsstil: ${lage.style}`
+Handelsstil: ${lage.style}${lage.fremdAktion?.text
+        ? `
+ACHTUNG, ein zweites System verwaltet dieselbe Position: ${lage.fremdAktion.text} (${lage.fremdAktion.zeit}). Berücksichtige das — die Absicherung kann bereits enger stehen, als es hier aussieht.`
+        : ""}`
       : "";
 
     const msg = await ai.messages.create({
@@ -360,6 +441,7 @@ Nur das Feld angeben, das zur anstehenden Massnahme passt.`
       const akt = roh.action === "SKIP" || roh.action === "ADJUST" ? roh.action : "APPROVE";
       // Jeden Zahlenwert durch die Klemme schicken. Fehlt er oder ist er
       // unbrauchbar, bleibt er undefined und die Regel-Vorgabe greift.
+      meldeAIEntscheidung(action, akt);
       return {
         action: akt,
         adjustedBeBuffer:     inGrenzen(roh.adjustedBeBuffer,     GRENZEN.beBuffer.min,     GRENZEN.beBuffer.max)     ?? undefined,
@@ -368,8 +450,13 @@ Nur das Feld angeben, das zur anstehenden Massnahme passt.`
         reason: typeof roh.reason === "string" ? roh.reason.slice(0, 120) : "",
       };
     }
+    // Antwort kam an, enthielt aber kein JSON — zaehlt als Ausfall, nicht als
+    // Zustimmung. Sonst sieht eine kaputte Antwort aus wie ein APPROVE.
+    meldeAIEntscheidung(action, "FALLBACK", "Antwort ohne JSON");
   } catch (err) {
-    console.warn(`[risk-agent] AI Manager nicht verfügbar — Rule-Based Fallback (${err})`);
+    const text = err instanceof Error ? err.message : String(err);
+    meldeAIEntscheidung(action, "FALLBACK", text);
+    console.warn(`[risk-agent] AI Manager nicht verfügbar — Rule-Based Fallback (${text})`);
   }
   // Fallback: immer approven (Rule-Based läuft weiter)
   return { action: "APPROVE", reason: "fallback" };
@@ -451,6 +538,7 @@ async function processPosition(
   const lage: MarktLage = {
     entry, currentPrice, profitPct, atr, slRange, liveSL, liveTP, ageHours, style,
     confidence: meta.confidence,
+    fremdAktion: meta.fremdAktion ?? null,
   };
   // Fortschritt Richtung Ziel — EINMAL berechnet, an alle drei AI-Aufrufe.
   // Bis zum 10.08. bekam die AI hier profitPct, beschriftet als "Fortschritt
@@ -475,6 +563,7 @@ async function processPosition(
   // ── Partial TP — bei 1.0% Profit (Daytrading), 0.6% Scalping, 2.0% Swing ──
   if (!meta.partialDone && profitPct >= thresholds.partialPct) {
     const aiDecision = await askAIManager(symbol, direction, zielFortschritt, meta.confidence, "PARTIAL_TP", lage);
+    merkeAIEntscheidung(dealId, "PARTIAL_TP", aiDecision.action, aiDecision.reason);
 
     if (aiDecision.action !== "SKIP") {
       const rawSize = pos.size > 0 ? pos.size : 0;
@@ -523,6 +612,7 @@ async function processPosition(
   // ── Breakeven — bei 0.5% Profit (Daytrading), 0.3% Scalping, 1.0% Swing ──
   if (!beEffective && profitPct >= thresholds.bePct) {
     const aiDecision = await askAIManager(symbol, direction, zielFortschritt, meta.confidence, "BREAKEVEN", lage);
+    merkeAIEntscheidung(dealId, "BREAKEVEN", aiDecision.action, aiDecision.reason);
 
     // AI kann BE-Buffer anpassen (default 15%)
     const beBufferRatio = aiDecision.action === "ADJUST" && aiDecision.adjustedBeBuffer != null
@@ -575,6 +665,7 @@ async function processPosition(
 
     if (shouldUpdate) {
       const aiDecision = await askAIManager(symbol, direction, zielFortschritt, meta.confidence, "TRAIL", lage);
+      merkeAIEntscheidung(dealId, "TRAIL", aiDecision.action, aiDecision.reason);
 
       if (aiDecision.action !== "SKIP") {
         // ERWEITERT 03.08.: Der Trailing-Abstand war starr an den Handelsstil
@@ -649,6 +740,12 @@ export async function runRiskAgent(ctx: RiskAgentContext): Promise<void> {
       peakPrice:    dbEntry?.peakPrice ?? mem.peakPrice,
       confidence:   dbEntry?.confidence ?? mem.confidence,
       tradingStyle: dbEntry?.tradingStyle ?? mem.tradingStyle,
+      // NUR aus der Datenbank: der Vermerk stammt vom Python-Lifecycle, der
+      // seinen Eingriff in Trade.notes schreibt. Die Map dieses Prozesses weiss
+      // davon nichts. Ohne diese Zeile bliebe das Feld undefined und der
+      // Hinweis erreichte die AI nie — und weil es optional ist, hätte auch
+      // tsc nichts gemeldet.
+      fremdAktion:  dbEntry?.fremdAktion ?? null,
     };
 
     try {
@@ -783,6 +880,28 @@ export function teilgewinnErlaubt(
  * ob wirklich etwas geschlossen wurde (siehe den else-Zweig beim Teilgewinn:
  * dort wird der Merker gesetzt, ohne dass ein Verkauf stattfand).
  */
+/**
+ * Vermerkt, dass ein ANDERES System an dieser Position gehandelt hat (10.08.).
+ *
+ * WOZU. Auf denselben Capital.com-Positionen arbeitet im selben 2-Minuten-Zyklus
+ * auch der Python-Lifecycle: er zieht Stops nach, nimmt Teilgewinn und schliesst
+ * bei Zeit-Exit. Er fragt den AI Manager nie — und der AI Manager erfuhr
+ * umgekehrt nie, dass dort jemand eingegriffen hat. Er entschied also über eine
+ * Position, deren Absicherung ein zweites System kurz zuvor verändert hatte,
+ * ohne das zu wissen.
+ *
+ * BEWUSST NICHT UMGEKEHRT GELÖST: dem AI Manager ein Veto über den
+ * Python-Lifecycle zu geben, würde die Absicherung SCHWÄCHEN — ein SKIP könnte
+ * dann einen schützenden Stop verhindern. Der Backstop bleibt regelbasiert und
+ * unantastbar; die AI wird informiert, nicht ermächtigt.
+ */
+export function merkeFremdAktion(dealId: string, beschreibung: string): void {
+  if (!dealId || !beschreibung) return;
+  persistMeta(dealId, {
+    fremdAktion: { zeit: new Date().toISOString(), text: beschreibung.slice(0, 120) },
+  });
+}
+
 export function merkeTeilgewinn(dealId: string, partialSize: number): void {
   if (!dealId || !(partialSize > 0)) return;
   const vorher = positionMeta.get(dealId) ?? {

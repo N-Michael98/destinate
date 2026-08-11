@@ -10,6 +10,7 @@
  */
 
 import { agentBus, type AgentEvent, type AgentEventType } from "./agent-bus";
+import { getAIManagerStatus } from "./ai-manager-status";
 
 const AGENT_ID = "DiagnosticsAgent";
 
@@ -195,6 +196,33 @@ function checkAgentHealth(): void {
       console.log(`[diag-agent] ✅ ${agentId} wieder aktiv`);
     }
   }
+
+  // ── Fällt der Exit-AI-Manager aus? (10.08.) ────────────────────────────────
+  //
+  // Bis heute war ein Ausfall UNSICHTBAR: askAIManager fing ihn ab, lieferte
+  // APPROVE, und es entstand eine console.warn-Zeile. Das System handelte dann
+  // rein regelbasiert weiter — richtig, aber niemand erfuhr davon. Ein toter
+  // Agent wird seit jeher gemeldet; ein tauber AI Manager nicht.
+  //
+  // erreichbar === false heisst: mindestens AUSFALL_AB_FEHLERN Fehlschläge in
+  // Folge. null (noch nie gefragt) ist ausdrücklich KEIN Ausfall — ohne offene
+  // Position wird der Manager gar nicht gerufen.
+  try {
+    const aiStatus = getAIManagerStatus();
+    if (aiStatus.erreichbar === false) {
+      recordAnomaly(
+        "AI_MANAGER_AUSFALL",
+        `${aiStatus.fehlerInFolge} Fehlschläge in Folge, zuletzt: ${aiStatus.letzterFehler ?? "?"}`,
+        "RiskAgent",
+      );
+      sendDiagnosticsAlert(
+        `🤖 Exit-AI-Manager antwortet nicht\n`
+        + `${aiStatus.fehlerInFolge} Fehlschläge in Folge (Fallback-Anteil ${aiStatus.fallbackAnteilPct} %).\n`
+        + `Grund: ${aiStatus.letzterFehler ?? "unbekannt"}\n`
+        + `Die Absicherung läuft weiter — aber rein regelbasiert, ohne Anpassung an die Marktlage.`
+      ).catch(() => {});
+    }
+  } catch { /* Diagnose darf nie der Grund sein, warum etwas scheitert */ }
 }
 
 // ── Report generieren ─────────────────────────────────────────────────────────
