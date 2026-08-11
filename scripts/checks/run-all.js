@@ -40,6 +40,11 @@ const pruefer = [
   // Vorzeichen oder ein Faktor statt eines Divisors bliebe strukturell
   // unauffaellig und wirkte am offenen Geld.
   ["exit-schwellen", require("./exit-schwellen")],
+  // 10.08. ergaenzt: ZWEI Systeme nahmen Teilgewinn auf derselben Position,
+  // mit getrennten Merkern und ohne voneinander zu wissen — der Python-Teil
+  // mit einer Groesse aus der Registrierung, die nach dem ersten Teilverkauf
+  // die ganze Restposition geschlossen haette. Fuehrt die Entscheidung aus.
+  ["teilgewinn", require("./teilgewinn")],
 ];
 
 const nurDieser = process.argv[2];

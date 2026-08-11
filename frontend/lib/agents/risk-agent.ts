@@ -439,7 +439,14 @@ async function processPosition(
         const result = await capitalClosePartial(apiKey, cst, securityToken, epicForClose, direction, partialSize);
         if (result.ok) {
           positionMeta.set(dealId, { ...meta, partialDone: true });
-          persistMeta(dealId, { partialDone: true });
+          // partialSize MIT festhalten (10.08.). Grund: partialDone wird auch
+          // im else-Zweig unten gesetzt, wenn die Position zu klein zum
+          // Halbieren war und GAR NICHTS geschlossen wurde. Wer den Merker
+          // allein liest, kann beides nicht unterscheiden — und der
+          // Python-Lifecycle in instrumentation.ts muss genau das können,
+          // sonst nimmt er entweder ein zweites Mal Teilgewinn oder er lässt
+          // für kleine Positionen einen aus, der heute funktioniert.
+          persistMeta(dealId, { partialDone: true, partialSize });
           agentBus.publish({
             type: "RISK:PARTIAL_TP",
             agentId: AGENT_ID,
@@ -451,8 +458,11 @@ async function processPosition(
       } else {
         // Position zu klein zum Halbieren — als erledigt merken, damit es nicht
         // jeden Zyklus erneut versucht wird (auch über Neustarts hinweg).
+        // partialSize AUSDRÜCKLICH 0: hier wurde nichts geschlossen. Der
+        // Python-Lifecycle darf seinen eigenen Teilgewinn dann noch nehmen —
+        // er rechnet mit kleineren Stückelungen als dieser Zweig.
         positionMeta.set(dealId, { ...meta, partialDone: true });
-        persistMeta(dealId, { partialDone: true });
+        persistMeta(dealId, { partialDone: true, partialSize: 0 });
       }
     }
   }
@@ -612,4 +622,121 @@ export async function runRiskAgent(ctx: RiskAgentContext): Promise<void> {
 
 export function getRiskAgentState(): Map<string, PosMeta> {
   return new Map(positionMeta);
+}
+
+/**
+ * Liest aus Trade.notes, welche Positionen schon einen ECHTEN Teilgewinn
+ * hinter sich haben (10.08.).
+ *
+ * Als eigene Funktion, nicht als Schleife in instrumentation.ts: dort liesse
+ * sie sich nicht ausführen. Im Sabotage-Lauf war die eingebettete Fassung
+ * abschaltbar (`if (false)`), ohne dass etwas rot wurde — der Riegel hätte
+ * dann nie gegriffen, weil die Menge immer leer geblieben wäre.
+ *
+ * `partialSize > 0` ist der Kern: partialDone allein wird auch gesetzt, wenn
+ * die Position zu klein zum Halbieren war und GAR NICHTS geschlossen wurde.
+ * Dort soll der Python-Teilgewinn weiter greifen — er rechnet mit kleineren
+ * Stückelungen.
+ */
+export function teilgewinnStand(
+  zeilen: ReadonlyArray<{ notes: string | null }> | null | undefined,
+): Set<string> {
+  const menge = new Set<string>();
+  for (const zeile of zeilen ?? []) {
+    if (!zeile?.notes) continue;
+    try {
+      const m = JSON.parse(zeile.notes) as {
+        dealId?: string; partialDone?: boolean; partialSize?: number;
+      };
+      if (m.dealId && m.partialDone && (m.partialSize ?? 0) > 0) {
+        menge.add(String(m.dealId));
+      }
+    } catch {
+      // Eine kaputte Notiz darf die übrigen nicht mitnehmen — sonst fiele der
+      // Riegel für ALLE Positionen aus, weil eine einzige Zeile Unsinn enthält.
+    }
+  }
+  return menge;
+}
+
+/**
+ * Darf ein FREMDES System (Python-Lifecycle) hier Teilgewinn nehmen? (10.08.)
+ *
+ * Als eigene Funktion, nicht als eingebettete if-Kette in instrumentation.ts:
+ * dort liesse sie sich nicht ausführen und damit auch nicht beweisen. Der
+ * Prüfer `teilgewinn` ruft genau diese Funktion auf.
+ *
+ * DAS PROBLEM. Im selben 2-Minuten-Zyklus läuft erst runActiveTradeManager()
+ * -> runRiskAgent(), danach der Python-Lifecycle. Beide nehmen Teilgewinn,
+ * beide führen einen eigenen Merker, keiner kennt den anderen:
+ *   RiskAgent  partialDone in Trade.notes, überlebt Neustarts
+ *   Python     trade.partial_done nur im Arbeitsspeicher des Backends
+ * Und trade.size im Python-Lifecycle stammt aus der REGISTRIERUNG und wird nie
+ * aktualisiert. Nach einem Teilgewinn des RiskAgent ist die gewünschte Menge
+ * deshalb auf eine Grösse bezogen, die es nicht mehr gibt — sie schliesst die
+ * ganze Restposition statt der Hälfte, und die Position läuft nie bis zum Ziel
+ * bei 2 R.
+ *
+ * @param dealId            Position beim Broker
+ * @param gewuenschteMenge  was der Python-Lifecycle schliessen will
+ * @param offeneGroesse     was beim Broker JETZT wirklich offen ist (pos.size)
+ * @param schonTeilgewonnen dealIds mit bereits erfolgtem ECHTEN Teilgewinn
+ */
+export function teilgewinnErlaubt(
+  dealId: string,
+  gewuenschteMenge: number,
+  offeneGroesse: number,
+  schonTeilgewonnen: ReadonlySet<string>,
+): { erlaubt: boolean; grund: string } {
+  if (!dealId) return { erlaubt: false, grund: "keine dealId" };
+  if (!(gewuenschteMenge > 0)) {
+    return { erlaubt: false, grund: `unbrauchbare Menge ${gewuenschteMenge}` };
+  }
+  // Riegel 1: der RiskAgent war schon dran.
+  if (schonTeilgewonnen.has(dealId)) {
+    return { erlaubt: false, grund: "der RiskAgent hat den Teilgewinn bereits genommen" };
+  }
+  // Riegel 2: niemals mehr schliessen als offen ist. Ein "Teil"-Gewinn, der
+  // 100 % schliesst, ist eine Vollschliessung unter falschem Namen. Greift auch
+  // dann, wenn Riegel 1 wegen eines Datenbank-Aussetzers leer blieb.
+  if (!(offeneGroesse > 0)) {
+    return { erlaubt: false, grund: `offene Grösse unbekannt (${offeneGroesse})` };
+  }
+  if (gewuenschteMenge >= offeneGroesse) {
+    return {
+      erlaubt: false,
+      grund: `${gewuenschteMenge} >= offene Grösse ${offeneGroesse} — würde die ganze Position schliessen`,
+    };
+  }
+  return { erlaubt: true, grund: "" };
+}
+
+/**
+ * Vermerkt einen Teilgewinn, den ein ANDERES System genommen hat (10.08.).
+ *
+ * Aufrufer ist der Python-Lifecycle-Zweig in instrumentation.ts. Ohne diesen
+ * Vermerk nähme dieser Agent im nächsten Zyklus seinerseits noch einen
+ * Teilgewinn — beide führten bis heute getrennte Merker und keiner kannte den
+ * anderen. Ergebnis wären zwei Teilverkäufe auf derselben Position.
+ *
+ * Geschrieben wird BEIDES:
+ *   positionMeta  wirkt sofort im laufenden Prozess (runRiskAgent liest es
+ *                 über mem, und partialDone gewinnt dort als TRUE aus beiden
+ *                 Quellen)
+ *   Trade.notes   überlebt einen Neustart — genau das kann der Python-Merker
+ *                 nicht, der liegt nur im Arbeitsspeicher des Backends
+ *
+ * partialSize wird mitgeschrieben, weil partialDone allein nicht unterscheidet,
+ * ob wirklich etwas geschlossen wurde (siehe den else-Zweig beim Teilgewinn:
+ * dort wird der Merker gesetzt, ohne dass ein Verkauf stattfand).
+ */
+export function merkeTeilgewinn(dealId: string, partialSize: number): void {
+  if (!dealId || !(partialSize > 0)) return;
+  const vorher = positionMeta.get(dealId) ?? {
+    beSet: false, partialDone: false, trailSL: null, peakPrice: null,
+    confidence: 72, tradingStyle: "DAYTRADING",
+  };
+  positionMeta.set(dealId, { ...vorher, partialDone: true });
+  persistMeta(dealId, { partialDone: true, partialSize });
+  console.log(`[risk-agent] Teilgewinn von aussen vermerkt: deal=${dealId} vol=${partialSize}`);
 }

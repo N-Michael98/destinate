@@ -297,6 +297,46 @@ export async function register() {
                   for (const p of priceResult?.prices ?? []) {
                     if (p.symbol) priceMap.set(p.symbol, (p.bid + p.ask) / 2);
                   }
+
+                  // Welche Positionen haben schon einen ECHTEN Teilgewinn
+                  // hinter sich? (10.08.) Der RiskAgent lief in diesem Zyklus
+                  // kurz zuvor und hat seinen Teilgewinn in Trade.notes
+                  // vermerkt. Der Python-Lifecycle weiss davon nichts: sein
+                  // partial_done liegt nur im Arbeitsspeicher, und sein
+                  // trade.size stammt aus der REGISTRIERUNG und wird nie
+                  // aktualisiert. Ohne diese Abfrage nimmt er ein zweites Mal
+                  // Teilgewinn — mit einer Menge, die auf die inzwischen
+                  // halbierte Position bezogen die ganze Restposition schliesst.
+                  //
+                  // partialSize > 0 verlangt, nicht nur partialDone: der
+                  // RiskAgent setzt den Merker auch, wenn die Position zu klein
+                  // zum Halbieren war und er NICHTS geschlossen hat. Dort soll
+                  // der Python-Teilgewinn weiter greifen — er rechnet mit
+                  // kleineren Stückelungen.
+                  //
+                  // Schlägt die Abfrage fehl, bleibt die Menge leer und der
+                  // Riegel greift nicht. Das ist Absicht: der zweite Riegel
+                  // unten (nie mehr schliessen als offen ist) fängt den teuren
+                  // Fall ohnehin ab, und ein DB-Aussetzer soll keinen
+                  // funktionierenden Teilgewinn abschalten.
+                  // Das Auswerten selbst liegt in teilgewinnStand() im
+                  // RiskAgent — als Funktion, damit der Prüfer `teilgewinn` sie
+                  // WIRKLICH ausführen kann. Als Schleife hier war sie im
+                  // Sabotage-Lauf abschaltbar, ohne dass etwas rot wurde.
+                  let schonTeilgewonnen = new Set<string>();
+                  try {
+                    const { getPrisma } = await import("./app/lib/prisma");
+                    const { teilgewinnStand } = await import("./lib/agents/risk-agent");
+                    const db = getPrisma();
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const rows = await (db.$queryRawUnsafe as any)(
+                      `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealId%'`
+                    ) as Array<{ notes: string }>;
+                    schonTeilgewonnen = teilgewinnStand(rows);
+                  } catch (e) {
+                    console.warn("[py-lifecycle] Teilgewinn-Stand nicht lesbar — Riegel greift diesen Zyklus nicht:",
+                      e instanceof Error ? e.message : String(e));
+                  }
                   for (const pos of positions) {
                     const tradeId = pos.dealId;
                     if (!tradeId) continue;
@@ -344,10 +384,45 @@ export async function register() {
                       if (r.ok) console.log(`[py-lifecycle] Zeit-Exit: ${symbol}`);
                       else console.error(`[py-lifecycle] ⚠ Zeit-Exit FEHLGESCHLAGEN: ${symbol} — ${r.error}`);
                     } else if (action.action === "PARTIAL_CLOSE" && action.volume) {
+                      // ZWEI Systeme nehmen Teilgewinn (Fund 10.08.). Kurz zuvor
+                      // lief in diesem Zyklus runActiveTradeManager() ->
+                      // runRiskAgent(), der ebenfalls capitalClosePartial ruft.
+                      // Beide führen getrennte Merker, keiner kennt den anderen:
+                      //   RiskAgent   partialDone in Trade.notes (überlebt Neustart)
+                      //   Python      trade.partial_done nur im Arbeitsspeicher
+                      // Schlimmer noch: trade.size im Python-Lifecycle stammt aus
+                      // der REGISTRIERUNG und wird nie aktualisiert. Nach einem
+                      // Teilgewinn des RiskAgent ist action.volume deshalb auf
+                      // eine Grösse bezogen, die es nicht mehr gibt — und
+                      // schliesst die ganze Restposition statt der Hälfte.
+                      //
+                      // Die Entscheidung liegt in teilgewinnErlaubt() im
+                      // RiskAgent — als eigene Funktion, damit der Prüfer
+                      // `teilgewinn` sie WIRKLICH ausführen kann. Eine
+                      // eingebettete if-Kette hier wäre nur vorhanden, nicht
+                      // bewiesen.
+                      const { teilgewinnErlaubt, merkeTeilgewinn } = await import("./lib/agents/risk-agent");
+                      const offen = typeof pos.size === "number" ? pos.size : 0;
+                      const urteil = teilgewinnErlaubt(tradeId, action.volume, offen, schonTeilgewonnen);
+                      if (!urteil.erlaubt) {
+                        console.warn(`[py-lifecycle] ${symbol}: Teilgewinn nicht ausgeführt — ${urteil.grund}`);
+                        continue;
+                      }
                       const r = await capitalClosePartial(sess.apiKey, sess.cst, sess.securityToken, pos.epic ?? "", pos.direction, action.volume)
                         .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
-                      if (r.ok) console.log(`[py-lifecycle] Partial TP: ${symbol} vol=${action.volume}`);
-                      else console.error(`[py-lifecycle] ⚠ Partial TP FEHLGESCHLAGEN: ${symbol} vol=${action.volume} — ${r.error}`);
+                      if (r.ok) {
+                        console.log(`[py-lifecycle] Partial TP: ${symbol} vol=${action.volume} von ${offen}`);
+                        // In Trade.notes vermerken, sonst nimmt der RiskAgent im
+                        // nächsten Zyklus seinerseits noch einen Teilgewinn —
+                        // derselbe Fehler, nur andersherum.
+                        try {
+                          merkeTeilgewinn(tradeId, action.volume);
+                        } catch (e) {
+                          console.warn("[py-lifecycle] Teilgewinn nicht vermerkt:", e instanceof Error ? e.message : String(e));
+                        }
+                      } else {
+                        console.error(`[py-lifecycle] ⚠ Partial TP FEHLGESCHLAGEN: ${symbol} vol=${action.volume} — ${r.error}`);
+                      }
                     }
                   }
                 }

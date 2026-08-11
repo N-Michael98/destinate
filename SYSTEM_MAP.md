@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 639 · Kanten: 1308
+Dateien mit internen Abhängigkeiten: 639 · Kanten: 1309
 
 
 ## analysis-engine/api
@@ -715,6 +715,7 @@ Dateien mit internen Abhängigkeiten: 639 · Kanten: 1308
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/diagnostics-agent.ts`
   - → `frontend/lib/agents/orchestrator-agent.ts`
+  - → `frontend/lib/agents/risk-agent.ts`
   - → `frontend/lib/ai-agent/memory/agent-memory.ts`
   - → `frontend/lib/auth/auth-store.ts`
   - → `frontend/lib/capital-com/active-trade-manager.ts`
