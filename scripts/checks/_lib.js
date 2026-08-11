@@ -57,4 +57,49 @@ function keysOf(block) {
   return [...block.matchAll(/([A-Z0-9_]+)\s*:/g)].map((m) => m[1]);
 }
 
-module.exports = { ROOT, read, exists, sourceFiles, objectBlock, keysOf };
+/** Übersetzt eine TypeScript-Datei und führt sie mit gestellten Importen aus.
+ *
+ *  WOZU. Die Prüfer sehen sonst nur STRUKTUR — ob ein Riegel dasteht. Ob er
+ *  RICHTIG rechnet, sieht keiner. Vorgeführt am 10.08.: die AI-Klemme liess
+ *  sich auf `return n;` reduzieren (also vollständig entfernen) und ai-clamp
+ *  blieb grün, weil dieser Prüfer eine eigene KOPIE der Klemme testete statt
+ *  der echten. Ein Nachbau prüft sich selbst.
+ *
+ *  Das Projekt hat keinen TypeScript-Testläufer (kein jest, kein vitest, kein
+ *  tsx). Deshalb dieser Weg: TypeScripts eigener Transpiler, danach ausführen
+ *  mit einem gestellten require. Damit läuft der ECHTE Quelltext.
+ *
+ *  "then" muss beim Stellvertreter undefined bleiben, sonst hält ein await ihn
+ *  für ein Promise, ruft dessen then() auf und der Prüfer hängt still.
+ *
+ *  @param relPfad  Pfad ab frontend/, z.B. "lib/agents/risk-agent.ts"
+ *  @returns { exports } oder { fehler } — nie ein Wurf, damit ein Prüfer
+ *           daraus einen Befund machen kann statt abzustürzen.
+ */
+function ladeTsModul(relPfad) {
+  const tsPfad = path.join(ROOT, "frontend", "node_modules", "typescript");
+  if (!fs.existsSync(tsPfad)) {
+    return { fehler: "typescript nicht gefunden — nachholen: cd frontend && npm install" };
+  }
+  const datei = path.join(ROOT, "frontend", relPfad);
+  if (!fs.existsSync(datei)) return { fehler: `${relPfad} existiert nicht` };
+  try {
+    const ts = require(tsPfad);
+    const js = ts.transpileModule(fs.readFileSync(datei, "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText;
+    const modul = { exports: {} };
+    const stellvertreter = () => new Proxy(function () {}, {
+      get: (_z, prop) => (prop === "then" || typeof prop === "symbol" ? undefined : stellvertreter()),
+      apply: () => { throw new Error("keine Aussenwelt im Prüfstand"); },
+      construct: () => ({}),
+    });
+    new Function("exports", "require", "module", "__filename", "__dirname", js)(
+      modul.exports, stellvertreter, modul, datei, path.dirname(datei));
+    return { exports: modul.exports };
+  } catch (e) {
+    return { fehler: `${relPfad} liess sich nicht ausführen: ${e.message}` };
+  }
+}
+
+module.exports = { ROOT, read, exists, sourceFiles, objectBlock, keysOf, ladeTsModul };

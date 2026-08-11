@@ -162,6 +162,10 @@ interface MarktLage {
   atr: number;
   slRange: number;
   liveSL: number;
+  // Ergänzt 10.08.: die AI wurde nach dem "Fortschritt Richtung Ziel" gefragt,
+  // erfuhr aber nur, wo der STOP steht — das Ziel selbst kannte sie nicht.
+  // Damit war die Zahl für sie nicht nachvollziehbar und auch nicht korrigierbar.
+  liveTP: number;
   ageHours: number;
   style: string;
   confidence: number;
@@ -170,7 +174,7 @@ interface MarktLage {
 /** Hält einen AI-Wert in vertretbaren Grenzen. Ohne diese Klemme könnte ein
  *  einziger Ausreisser der AI (oder eine kaputte Antwort) den Schutz aushebeln —
  *  etwa ein Trailing-Abstand von 50 ATR, was praktisch "kein Stop" bedeutet. */
-function inGrenzen(wert: unknown, min: number, max: number): number | null {
+export function inGrenzen(wert: unknown, min: number, max: number): number | null {
   // null/undefined/"" heisst "nicht angegeben" — dann gilt der Regelwert.
   // Ohne diese Zeile würde Number(null) zu 0 und damit auf das Minimum
   // geklemmt: ein ausdrückliches null der AI hätte den Trailing-Stop auf den
@@ -256,6 +260,49 @@ export function wirksameSchwellen(
   };
 }
 
+/**
+ * Fortschritt der Position Richtung ZIEL, als Anteil (1.0 = Ziel erreicht).
+ *
+ * WOZU (Fund 10.08.). Der Prompt des AI Managers schrieb "Fortschritt Richtung
+ * Ziel" — bekam aber profitPct, also die blosse Kursbewegung in Prozent. Das
+ * sind zwei verschiedene Grössen, und der Unterschied hängt am Markt.
+ * Nachgerechnet im Moment, in dem der Breakeven auslöst (profitPct = 0,5 %):
+ *
+ *      UKOIL   Prompt sagte 0,5 %  —  tatsächlich  2,9 %   Faktor  5,9
+ *      NAS100  Prompt sagte 0,5 %  —  tatsächlich  8,5 %   Faktor 16,9
+ *      USDCAD  Prompt sagte 0,5 %  —  tatsächlich 35,7 %   Faktor 71,4
+ *      EURGBP  Prompt sagte 0,5 %  —  tatsächlich 51,9 %   Faktor 103,8
+ *
+ * Die AI soll beurteilen, ob eine Position schon weit genug ist, und bekam
+ * dafür eine Zahl, die je nach Markt um Faktor 6 bis 104 danebenlag.
+ *
+ * DIE FORMEL IST NICHT NEU, sondern die, die im System schon zweimal steht:
+ * trade_lifecycle_manager.py (total_range / progress) und
+ * icmarkets-trade-manager.ts rechnen exakt so, samt Rückfall auf slRange * 2,
+ * wenn kein Take-Profit gesetzt ist. Eine dritte, eigene Rechnung wäre genau
+ * die Sorte Abweichung, die später niemand mehr erklären kann.
+ *
+ * @param profitPct  Kursbewegung vom Einstieg, bereits richtungsbereinigt
+ * @param entry      Einstiegskurs
+ * @param liveTP     Take-Profit beim Broker; 0 = keiner gesetzt
+ * @param slRange    Stop-Abstand in Kurseinheiten (Rückfall: Ziel = 2 R)
+ */
+export function fortschrittZumZiel(
+  profitPct: number,
+  entry: number,
+  liveTP: number,
+  slRange: number,
+): number {
+  if (!Number.isFinite(profitPct) || !(entry > 0)) return 0;
+  const zielSpanne = liveTP > 0 ? Math.abs(liveTP - entry) : slRange * 2;
+  if (!(zielSpanne > 0) || !Number.isFinite(zielSpanne)) return 0;
+  // profitPct ist der Anteil vom Einstieg — mal entry ergibt die absolute
+  // Bewegung, in derselben Einheit wie zielSpanne. Bei SELL ist profitPct
+  // bereits richtungsbereinigt, deshalb braucht es hier keine Fallunterscheidung.
+  const wert = (profitPct * entry) / zielSpanne;
+  return Number.isFinite(wert) ? wert : 0;
+}
+
 async function askAIManager(
   symbol: string,
   direction: string,
@@ -277,6 +324,7 @@ Einstieg: ${lage.entry} | aktuell: ${lage.currentPrice}
 Gewinn: ${(lage.profitPct * 100).toFixed(2)}%
 ATR: ${lage.atr.toFixed(5)} (${((lage.atr / Math.max(lage.currentPrice, 1e-9)) * 100).toFixed(2)}% vom Kurs — Mass für die aktuelle Schwankung)
 Stop-Spanne: ${lage.slRange.toFixed(5)} | Stop steht bei: ${lage.liveSL > 0 ? lage.liveSL : "keiner"}
+Ziel steht bei: ${lage.liveTP > 0 ? lage.liveTP : `keines gesetzt (gerechnet wird mit 2× Stop-Spanne)`}
 Position offen seit: ${lage.ageHours.toFixed(1)} Stunden
 Handelsstil: ${lage.style}`
       : "";
@@ -401,9 +449,14 @@ async function processPosition(
   // Marktlage für den AI Manager (03.08.). Rein aus bereits berechneten Werten
   // zusammengesetzt — kein zusätzlicher Abruf, keine neue Fehlerquelle.
   const lage: MarktLage = {
-    entry, currentPrice, profitPct, atr, slRange, liveSL, ageHours, style,
+    entry, currentPrice, profitPct, atr, slRange, liveSL, liveTP, ageHours, style,
     confidence: meta.confidence,
   };
+  // Fortschritt Richtung Ziel — EINMAL berechnet, an alle drei AI-Aufrufe.
+  // Bis zum 10.08. bekam die AI hier profitPct, beschriftet als "Fortschritt
+  // Richtung Ziel": je nach Markt um Faktor 6 bis 104 daneben (siehe
+  // fortschrittZumZiel).
+  const zielFortschritt = fortschrittZumZiel(profitPct, entry, liveTP, slRange);
   if (ageHours >= maxHours) {
     const closeResult = await capitalClosePosition(apiKey, cst, securityToken, dealId);
     if (closeResult.ok) {
@@ -421,7 +474,7 @@ async function processPosition(
 
   // ── Partial TP — bei 1.0% Profit (Daytrading), 0.6% Scalping, 2.0% Swing ──
   if (!meta.partialDone && profitPct >= thresholds.partialPct) {
-    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "PARTIAL_TP", lage);
+    const aiDecision = await askAIManager(symbol, direction, zielFortschritt, meta.confidence, "PARTIAL_TP", lage);
 
     if (aiDecision.action !== "SKIP") {
       const rawSize = pos.size > 0 ? pos.size : 0;
@@ -469,7 +522,7 @@ async function processPosition(
 
   // ── Breakeven — bei 0.5% Profit (Daytrading), 0.3% Scalping, 1.0% Swing ──
   if (!beEffective && profitPct >= thresholds.bePct) {
-    const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "BREAKEVEN", lage);
+    const aiDecision = await askAIManager(symbol, direction, zielFortschritt, meta.confidence, "BREAKEVEN", lage);
 
     // AI kann BE-Buffer anpassen (default 15%)
     const beBufferRatio = aiDecision.action === "ADJUST" && aiDecision.adjustedBeBuffer != null
@@ -521,7 +574,7 @@ async function processPosition(
       : newTrailSL < currentTrailSL - beTol;
 
     if (shouldUpdate) {
-      const aiDecision = await askAIManager(symbol, direction, profitPct, meta.confidence, "TRAIL", lage);
+      const aiDecision = await askAIManager(symbol, direction, zielFortschritt, meta.confidence, "TRAIL", lage);
 
       if (aiDecision.action !== "SKIP") {
         // ERWEITERT 03.08.: Der Trailing-Abstand war starr an den Handelsstil
