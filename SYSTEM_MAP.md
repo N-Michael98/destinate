@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 640 · Kanten: 1315
+Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
 
 
 ## analysis-engine/api
@@ -115,6 +115,8 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1315
 - `backend/api/routes/sentiment.py`
   - → `backend/services/sentiment_analysis.py`
 - `backend/api/routes/strategies.py`
+  - → `backend/services/chartmuster.py`
+  - → `backend/services/market_data.py`
   - → `backend/services/strategie_historie.py`
   - → `backend/services/trading_strategies.py`
 - `backend/api/routes/system.py`
@@ -184,6 +186,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1315
   - → `backend/core/event_bus.py`
   - → `backend/core/log_drossel.py`
   - → `backend/core/retry.py`
+  - → `backend/services/chartmuster.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`
   - → `backend/services/strategie_historie.py`
@@ -2023,7 +2026,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1315
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 13 Dateien
 - `analysis-engine/core/config.py` — von 12 Dateien
-- `backend/services/market_data.py` — von 11 Dateien
+- `backend/services/market_data.py` — von 12 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 9 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 9 Dateien

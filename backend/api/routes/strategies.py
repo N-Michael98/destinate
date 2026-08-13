@@ -4,6 +4,7 @@ GET  /api/v1/strategies/analyze/{symbol}        → Alle 15 Strategien für 1 Sy
 POST /api/v1/strategies/analyze/multi           → Alle 15 Strategien für mehrere Symbole
 GET  /api/v1/strategies/list                    → Liste aller verfügbaren Strategien
 GET  /api/v1/strategies/historie/{symbol}       → 16-Strategien-Konsens rückgerechnet
+GET  /api/v1/strategies/muster/{symbol}         → Chartmuster im Kursverlauf
 """
 
 import asyncio
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 from concurrent.futures import ThreadPoolExecutor
 from services.trading_strategies import analyze_all_strategies, STRATEGIES
 from services.strategie_historie import konsens_historie
+from services.chartmuster import erkenne_muster
 
 router = APIRouter(prefix="/strategies", tags=["Trading Strategies"])
 
@@ -115,3 +117,39 @@ async def strategie_historie(symbol: str, tage: int = STANDARD_FENSTER_TAGE):
     sym = symbol.upper()
     schleife = asyncio.get_event_loop()
     return await schleife.run_in_executor(None, konsens_historie, sym, tage)
+
+
+# ── Chartmuster (10.08.) ─────────────────────────────────────────────────────
+
+ERLAUBTE_INTERVALLE = {"15m", "1h", "4h", "1d"}
+
+
+@router.get("/muster/{symbol}")
+async def chartmuster(symbol: str, interval: str = "4h"):
+    """Erkennt Doppeltop/-boden, Schulter-Kopf-Schulter und Dreiecke.
+
+    MELDET NUR. Dieses Ergebnis stimmt in keinem Konsens mit und loest kein
+    Signal aus. Ob ein erkanntes Muster etwas taugt, muss erst gemessen werden
+    — dafuer gibt es seit Stufe 4 die Konsens-Rueckrechnung. Ein Muster handeln
+    zu lassen, bevor es gemessen wurde, waere derselbe Fehler wie eine Kennzahl
+    ohne Vergleichswert.
+
+    Laeuft im eigenen Faden: die Wendepunkt-Suche geht ueber alle Kerzen, und
+    dieser Dienst bedient alle 5 Minuten auch den Live-Scan (Audit-Fund #6).
+    """
+    if interval not in ERLAUBTE_INTERVALLE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"interval muss eines von {sorted(ERLAUBTE_INTERVALLE)} sein",
+        )
+    sym = symbol.upper()
+
+    def _lauf():
+        from services.market_data import get_ohlcv
+        from services.strategie_historie import _als_frame
+        df = _als_frame(get_ohlcv(sym, interval, "3mo"))
+        ergebnis = erkenne_muster(df)
+        return {"symbol": sym, "interval": interval, "kerzen": len(df), **ergebnis}
+
+    schleife = asyncio.get_event_loop()
+    return await schleife.run_in_executor(None, _lauf)

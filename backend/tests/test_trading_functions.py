@@ -1626,3 +1626,360 @@ def test_historie_endpunkt_blockiert_den_event_loop_nicht():
         "dieses Dienstes warten mit (Audit-Fund #6, 27.07.)"
     )
     assert "await" in quelle
+
+
+# ── Chartmuster (10.08.) ─────────────────────────────────────────────────────
+# Die Muster bestehen aus WENDEPUNKTEN, und die Regel dafuer gibt es im System
+# schon (_swing_points im Handelspfad). alle_swings() verwendet dieselbe Regel,
+# liefert aber die ganze Reihe statt nur den letzten Punkt. Diese Doppelung ist
+# der gefaehrlichste Teil des Moduls — deshalb wird sie hier gegen das Original
+# geprueft, nicht bloss behauptet.
+
+import services.chartmuster as _CM                                   # noqa: E402
+
+
+def _kerzen(hochs, tiefs=None, schluss=None):
+    """Baut einen Kerzensatz aus Hoch-/Tief-Reihen."""
+    n = len(hochs)
+    tiefs = tiefs if tiefs is not None else [h - 1.0 for h in hochs]
+    schluss = schluss if schluss is not None else [(h + t) / 2 for h, t in zip(hochs, tiefs)]
+    idx = pd.date_range("2026-01-01", periods=n, freq="4h", tz="UTC")
+    return pd.DataFrame(
+        {"open": schluss, "high": hochs, "low": tiefs, "close": schluss,
+         "volume": [10.0] * n},
+        index=idx,
+    )
+
+
+def test_muster_swing_regel_stimmt_mit_dem_handelspfad_ueberein():
+    """DER wichtigste Test dieses Moduls.
+
+    alle_swings() ist eine zweite Fassung derselben Regel, die _swing_points()
+    im Handelspfad benutzt. Eine zweite, leicht andere Wendepunkt-Definition
+    waere genau die Sorte Abweichung, die spaeter niemand mehr erklaeren kann.
+    Geprueft wird deshalb auf mehreren Reihen, dass der LETZTE Punkt aus beiden
+    Wegen identisch ist.
+    """
+    import random
+    random.seed(4711)
+    for lauf in range(12):
+        n = 60
+        hochs = [100 + random.uniform(-6, 6) for _ in range(n)]
+        tiefs = [h - random.uniform(0.5, 3.0) for h in hochs]
+        df = _kerzen(hochs, tiefs)
+
+        tief_orig, hoch_orig = _TS._swing_points(df)
+        punkte = _CM.alle_swings(df)
+        letztes_tief = next((p["kurs"] for p in reversed(punkte) if p["art"] == "tief"), None)
+        letztes_hoch = next((p["kurs"] for p in reversed(punkte) if p["art"] == "hoch"), None)
+
+        assert letztes_tief == tief_orig, (
+            f"Lauf {lauf}: Swing-Tief weicht ab — alle_swings {letztes_tief}, "
+            f"_swing_points {tief_orig}"
+        )
+        assert letztes_hoch == hoch_orig, (
+            f"Lauf {lauf}: Swing-Hoch weicht ab — alle_swings {letztes_hoch}, "
+            f"_swing_points {hoch_orig}"
+        )
+
+
+def test_muster_swings_sind_bestaetigt():
+    """Die letzten Kerzen koennen naturgemaess keinen Wendepunkt tragen —
+    sonst waere er unbestaetigt und taugte nicht als Grundlage."""
+    hochs = [100] * 20 + [110] + [100] * 3      # Spitze ganz am Ende
+    df = _kerzen(hochs)
+    punkte = _CM.alle_swings(df)
+    for p in punkte:
+        assert p["index"] <= len(df) - 1 - _CM.SWING_RECHTS, (
+            f"unbestaetigter Wendepunkt bei Index {p['index']} von {len(df)}"
+        )
+
+
+def test_muster_doppeltop_wird_erkannt():
+    """Zwei Hochs auf gleicher Hoehe, dazwischen ein Tief."""
+    hochs = ([100] * 5 + [120] + [100] * 5 + [98] + [100] * 5 + [120]
+             + [100] * 5 + [100] * 4)
+    tiefs = [h - 1 for h in hochs]
+    tiefs[11] = 80                               # deutliche Einbuchtung
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    namen = [m["muster"] for m in r["muster"]]
+    assert "DOPPELTOP" in namen, f"nicht erkannt — {r['grund']}, swings={r['swings']}"
+    dt = next(m for m in r["muster"] if m["muster"] == "DOPPELTOP")
+    assert dt["richtung"] == "SHORT"
+    assert dt["nackenlinie"] < 100
+
+
+def test_muster_doppelboden_ist_das_spiegelbild():
+    tiefs = ([100] * 5 + [80] + [100] * 5 + [102] + [100] * 5 + [80]
+             + [100] * 5 + [100] * 4)
+    hochs = [t + 1 for t in tiefs]
+    hochs[11] = 120
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    namen = [m["muster"] for m in r["muster"]]
+    assert "DOPPELBODEN" in namen, f"nicht erkannt — {r['grund']}, swings={r['swings']}"
+    db = next(m for m in r["muster"] if m["muster"] == "DOPPELBODEN")
+    assert db["richtung"] == "LONG"
+
+
+def test_muster_zwei_verschiedene_hochs_sind_kein_doppeltop():
+    """Gegenprobe: liegen die Hochs NICHT auf gleicher Hoehe, ist es keines.
+
+    Ohne diese Pruefung bestuende der Test oben auch dann, wenn die Erkennung
+    einfach jedes Hochpaar meldet.
+    """
+    hochs = ([100] * 5 + [120] + [100] * 5 + [98] + [100] * 5 + [150]
+             + [100] * 5 + [100] * 4)
+    tiefs = [h - 1 for h in hochs]
+    tiefs[11] = 80
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    assert "DOPPELTOP" not in [m["muster"] for m in r["muster"]], (
+        "120 und 150 wurden als 'gleiche Hoehe' gewertet"
+    )
+
+
+def test_muster_sks_verlangt_einen_echten_kopf():
+    """Drei Hochs, das mittlere deutlich hoeher."""
+    hochs = ([100] * 5 + [120] + [100] * 5 + [95] + [100] * 3 + [145]
+             + [100] * 3 + [96] + [100] * 3 + [120] + [100] * 5)
+    tiefs = [h - 1 for h in hochs]
+    tiefs[11] = 85
+    tiefs[19] = 86
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    namen = [m["muster"] for m in r["muster"]]
+    assert "SKS" in namen, f"nicht erkannt — {r['grund']}, swings={r['swings']}"
+    sks = next(m for m in r["muster"] if m["muster"] == "SKS")
+    assert sks["richtung"] == "SHORT"
+    assert len(sks["punkte"]) == 3
+    # Der Kopf MUSS in der Mitte liegen und der hoechste sein.
+    kurse = [p["kurs"] for p in sks["punkte"]]
+    assert kurse[1] == max(kurse), f"Kopf nicht der hoechste: {kurse}"
+
+
+def test_muster_drei_gleiche_hochs_sind_kein_sks():
+    """Gegenprobe: ohne erhoehten Kopf ist es kein Schulter-Kopf-Schulter."""
+    hochs = ([100] * 5 + [120] + [100] * 5 + [95] + [100] * 3 + [121]
+             + [100] * 3 + [96] + [100] * 3 + [120] + [100] * 5)
+    tiefs = [h - 1 for h in hochs]
+    tiefs[11] = 85
+    tiefs[19] = 86
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    assert "SKS" not in [m["muster"] for m in r["muster"]], (
+        "121 gegen 120 wurde als Kopf gewertet"
+    )
+
+
+def test_muster_toleranz_haengt_am_atr_nicht_am_prozent():
+    """Der Kern der Masseinheit.
+
+    Dieselbe Formation in einem ruhigen und in einem bewegten Markt muss
+    GLEICH bewertet werden. In Kursprozent gemessen waere sie es nicht — ueber
+    die 30 Symbole liegt der Faktor bei 17,6 zwischen ruhigstem und bewegtestem
+    Markt (gemessen 10.08.).
+    """
+    atr_klein = 1.0
+    atr_gross = 10.0
+    # 3 Einheiten Abstand: bei ATR 1 zu viel, bei ATR 10 innerhalb der Toleranz.
+    assert not _CM._gleich_auf(100, 103, atr_klein)
+    assert _CM._gleich_auf(100, 103, atr_gross)
+    # Ohne ATR darf NICHTS als gleich gelten — sonst entstuenden Muster aus
+    # fehlenden Daten.
+    assert not _CM._gleich_auf(100, 100, 0)
+    assert not _CM._gleich_auf(100, 100, None)
+
+
+def test_muster_meldet_immer_einen_grund():
+    """Ein leeres Ergebnis ohne Begruendung ist im Betrieb nicht von einem
+    Ausfall zu unterscheiden."""
+    leer = _CM.erkenne_muster(pd.DataFrame())
+    assert leer["muster"] == [] and leer["grund"]
+    kurz = _CM.erkenne_muster(_kerzen([100] * 5))
+    assert kurz["muster"] == [] and kurz["grund"]
+    flach = _CM.erkenne_muster(_kerzen([100] * 60))
+    assert flach["muster"] == [] and flach["grund"], "flacher Markt ohne Grund"
+
+
+def test_muster_dreieck_verlangt_verengung():
+    """Eine Reihe von Wendepunkten ist noch kein Dreieck."""
+    # Verengend: Hochs fallen, Tiefs steigen
+    hochs = ([100] * 4 + [140] + [100] * 4 + [90] + [100] * 4 + [125]
+             + [100] * 4 + [95] + [100] * 4 + [115] + [100] * 4 + [98] + [100] * 5)
+    tiefs = [h - 1 for h in hochs]
+    for i in (9, 19, 29):
+        tiefs[i] = hochs[i] - 1
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    namen = [m["muster"] for m in r["muster"]]
+    assert any(n.startswith("DREIECK") for n in namen), (
+        f"verengende Formation nicht als Dreieck erkannt — {r['grund']}, "
+        f"swings={r['swings']}"
+    )
+    # Ein Dreieck darf NIE als bestaetigt gelten — es gibt erst mit dem
+    # Ausbruch eine Richtung.
+    for m in r["muster"]:
+        if m["muster"].startswith("DREIECK"):
+            assert m["bestaetigt"] is False
+
+
+def test_muster_bestaetigung_verlangt_den_bruch():
+    """Ein Muster ohne Bruch der Nackenlinie ist eine Vermutung, kein Muster."""
+    hochs = ([100] * 5 + [120] + [100] * 5 + [98] + [100] * 5 + [120]
+             + [100] * 5 + [100] * 4)
+    tiefs = [h - 1 for h in hochs]
+    tiefs[11] = 80
+    # Schluss deutlich UEBER der Nackenlinie -> nicht bestaetigt
+    df_offen = _kerzen(hochs, tiefs, schluss=[105.0] * len(hochs))
+    r1 = _CM.erkenne_muster(df_offen)
+    dt1 = next((m for m in r1["muster"] if m["muster"] == "DOPPELTOP"), None)
+    assert dt1 is not None and dt1["bestaetigt"] is False
+
+    # Schluss UNTER der Nackenlinie -> bestaetigt
+    schluss = [105.0] * len(hochs)
+    schluss[-1] = 70.0
+    df_zu = _kerzen(hochs, tiefs, schluss=schluss)
+    r2 = _CM.erkenne_muster(df_zu)
+    dt2 = next((m for m in r2["muster"] if m["muster"] == "DOPPELTOP"), None)
+    assert dt2 is not None and dt2["bestaetigt"] is True
+
+
+def test_muster_endpunkt_prueft_das_intervall():
+    """Ein freies Intervall wuerde yfinance-Abrufe erzeugen, die es nicht gibt."""
+    import asyncio as _aio
+    from fastapi import HTTPException
+    from api.routes.strategies import chartmuster, ERLAUBTE_INTERVALLE
+
+    for schlecht in ["1m", "99h", "", "4H "]:
+        try:
+            _aio.run(chartmuster("EURUSD", schlecht))
+            raise AssertionError(f"Intervall {schlecht!r} wurde akzeptiert")
+        except HTTPException as e:
+            assert e.status_code == 400
+    assert "4h" in ERLAUBTE_INTERVALLE
+
+
+def test_muster_endpunkt_blockiert_den_event_loop_nicht():
+    """Die Wendepunkt-Suche geht ueber alle Kerzen. Laeuft das im Event-Loop,
+    warten ALLE anderen Anfragen dieses Dienstes mit (Audit-Fund #6)."""
+    import inspect
+    from api.routes import strategies as _routen
+    quelle = inspect.getsource(_routen.chartmuster)
+    assert "run_in_executor" in quelle, (
+        "die Mustererkennung blockiert den Event-Loop"
+    )
+
+
+def test_muster_nackenlinie_liegt_zwischen_den_hochs():
+    """Gegenprobe zur Nackenlinie.
+
+    Im Sabotage-Lauf (10.08.) liess sich die Bedingung "das Tief muss ZWISCHEN
+    den beiden Hochs liegen" ersatzlos streichen, ohne dass ein Test rot wurde:
+    in meinen Testdaten lag das tiefste Tief ohnehin dazwischen. Hier liegt ein
+    NOCH TIEFERES Tief ausserhalb — wird es als Nackenlinie genommen, ist das
+    Muster falsch vermessen und die Bestaetigung kaeme viel zu spaet.
+    """
+    # NACHGEMESSEN: die Wendepunkte liegen bei 5 (hoch), 11 (tief), 17 (hoch),
+    # 23 (tief). Ein Tief bei Index 2 waere KEIN Wendepunkt — es braucht drei
+    # Kerzen davor. Der erste Anlauf dieses Tests scheiterte genau daran und
+    # bewies deshalb nichts.
+    hochs = ([100] * 5 + [120] + [100] * 5 + [98] + [100] * 5 + [120]
+             + [100] * 5 + [100] * 8)
+    tiefs = [h - 1 for h in hochs]
+    tiefs[11] = 80          # die ECHTE Nackenlinie, ZWISCHEN den Hochs
+    tiefs[23] = 40          # viel tiefer, aber NACH dem zweiten Hoch
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    dt = next((m for m in r["muster"] if m["muster"] == "DOPPELTOP"), None)
+    assert dt is not None, f"Doppeltop nicht erkannt — {r['grund']}"
+    assert dt["nackenlinie"] == 80, (
+        f"Nackenlinie {dt['nackenlinie']} statt 80 — es wurde ein Tief "
+        f"ausserhalb der beiden Hochs genommen"
+    )
+
+
+def test_muster_ohne_verengung_kein_dreieck():
+    """Gegenprobe zum Dreieck.
+
+    Eine Reihe von Wendepunkten ist noch keine Formation. Im Sabotage-Lauf
+    liess sich die Verengungs-Bedingung streichen, ohne dass etwas rot wurde —
+    dann waere jede Zickzack-Bewegung ein Dreieck gewesen.
+    """
+    # ZWEI Reihen, die sich NUR in der Verengung unterscheiden — alles andere
+    # ist gleich. Sonst bewiese der Test nicht, dass es an der Verengung liegt.
+    # Beide nachgemessen: die erste ergibt DREIECK_SYMMETRISCH, die zweite
+    # nichts, obwohl die Form (fallende Hochs, steigende Tiefs) in beiden passt.
+    def _reihe(h1, h2, t1, t2):
+        hh, tt = [], []
+        for i in range(60):
+            if i == 7:    hh.append(h1); tt.append(h1 - 1)
+            elif i == 17: hh.append(t1 + 1); tt.append(t1)
+            elif i == 27: hh.append(h2); tt.append(h2 - 1)
+            elif i == 37: hh.append(t2 + 1); tt.append(t2)
+            else:         hh.append(100.0); tt.append(99.0)
+        return _kerzen(hh, tt)
+
+    eng = _CM.erkenne_muster(_reihe(130.0, 115.0, 70.0, 85.0))
+    assert any(m["muster"].startswith("DREIECK") for m in eng["muster"]), (
+        f"deutlich verengende Formation nicht erkannt — {eng['grund']}"
+    )
+
+    weit = _CM.erkenne_muster(_reihe(130.0, 128.0, 70.0, 72.0))
+    namen = [m["muster"] for m in weit["muster"]]
+    assert not any(n.startswith("DREIECK") for n in namen), (
+        f"kaum verengende Formation wurde als Dreieck gewertet: {namen}"
+    )
+
+
+def test_muster_kein_treffer_nennt_trotzdem_einen_grund():
+    """Der Fall, der im Sabotage-Lauf durchrutschte.
+
+    Der frueheren Pruefung genuegten Reihen, die schon vorher abbrechen (keine
+    Kerzen, kein ATR, zu wenige Wendepunkte) — die haben ihren Grund an einer
+    anderen Stelle. Hier laeuft die Erkennung VOLLSTAENDIG durch, findet aber
+    nichts. Ohne Grund waere das im Betrieb nicht von einem Ausfall zu
+    unterscheiden.
+    """
+    # AUFWEITENDE Zickzack-Bewegung: Wendepunkte gibt es reichlich, aber
+    # keine Formation — die Hochs STEIGEN (also kein Dreieck, das verlangt
+    # fallende oder gleiche Hochs) und liegen alle auf verschiedener Hoehe
+    # (also weder Doppeltop noch Schulter-Kopf-Schulter).
+    hoch_stufen = [130.0, 160.0, 195.0, 235.0]
+    tief_stufen = [70.0, 45.0, 15.0, -20.0]
+    hochs, tiefs = [], []
+    for i in range(80):
+        if i % 20 == 5:
+            hochs.append(hoch_stufen[i // 20]); tiefs.append(hoch_stufen[i // 20] - 1)
+        elif i % 20 == 15:
+            hochs.append(tief_stufen[i // 20] + 1); tiefs.append(tief_stufen[i // 20])
+        else:
+            hochs.append(100.0); tiefs.append(99.0)
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    assert r["swings"] >= 2, f"Testdaten liefern zu wenige Wendepunkte: {r['swings']}"
+    assert r["muster"] == [], f"unerwartetes Muster: {[m['muster'] for m in r['muster']]}"
+    assert r["grund"], "Erkennung lief vollstaendig durch, meldet aber keinen Grund"
+
+
+def test_muster_doppelboden_nackenlinie_liegt_zwischen_den_tiefs():
+    """Dieselbe Gegenprobe wie beim Doppeltop, fuer die Spiegelseite.
+
+    Im Sabotage-Lauf liess sich auch hier die Bedingung 'das Hoch muss ZWISCHEN
+    den beiden Tiefs liegen' streichen. Beide Seiten brauchen ihre eigene
+    Pruefung — ein Riegel, den nur die eine Haelfte hat, ist kein Riegel.
+    """
+    tiefs = ([100] * 5 + [80] + [100] * 5 + [102] + [100] * 5 + [80]
+             + [100] * 5 + [100] * 8)
+    hochs = [t + 1 for t in tiefs]
+    hochs[11] = 120         # die ECHTE Nackenlinie, ZWISCHEN den Tiefs
+    hochs[23] = 200         # viel hoeher, aber NACH dem zweiten Tief
+    df = _kerzen(hochs, tiefs)
+    r = _CM.erkenne_muster(df)
+    db = next((m for m in r["muster"] if m["muster"] == "DOPPELBODEN"), None)
+    assert db is not None, f"Doppelboden nicht erkannt — {r['grund']}"
+    assert db["nackenlinie"] == 120, (
+        f"Nackenlinie {db['nackenlinie']} statt 120 — es wurde ein Hoch "
+        f"ausserhalb der beiden Tiefs genommen"
+    )
