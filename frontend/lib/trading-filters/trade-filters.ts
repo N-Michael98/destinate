@@ -354,10 +354,14 @@ export async function runAllFilters(params: {
   priceAgeMinutes?: number | null;
   /** Erlaubtes Höchstalter in Minuten. 0 = Prüfung aus. */
   maxPriceAgeMinutes?: number;
+  /** Wochenverlust-Grenze in % (10.08.). Fehlt sie, gilt der bisherige
+   *  Standardwert 6.0 — der Aufrufer muss also nichts tun, damit alles
+   *  bleibt wie es war. */
+  maxWeeklyLossPct?: number;
 }): Promise<{ allowed: boolean; blockedBy: string; reason: string }> {
   const {
     symbol, direction, bid, spread, instrumentType, currentBalance, openPositions,
-    maxDailyLossPct, maxTotalDrawdownPct, maxExposurePct, availableMargin,
+    maxDailyLossPct, maxTotalDrawdownPct, maxExposurePct, availableMargin, maxWeeklyLossPct,
     priceAgeMinutes, maxPriceAgeMinutes,
   } = params;
 
@@ -381,7 +385,7 @@ export async function runAllFilters(params: {
   if (!lossFilter.allowed) return { allowed: false, blockedBy: "DAILY_LOSS_LIMIT", reason: lossFilter.reason };
 
   // 4. Weekly Drawdown Guard
-  const weeklyFilter = await checkWeeklyLossLimit(currentBalance);
+  const weeklyFilter = await checkWeeklyLossLimit(currentBalance, maxWeeklyLossPct);
   if (!weeklyFilter.allowed) return { allowed: false, blockedBy: "WEEKLY_LOSS_LIMIT", reason: weeklyFilter.reason };
 
   // 5. Gesamt-Drawdown (30.07.)

@@ -1435,6 +1435,9 @@ export default function SettingsDashboard() {
               { label: "Max Risk Per Trade (%)", field: "maxRiskPerTradePct", value: settings.riskSettings.maxRiskPerTradePct, min: 0.1, max: 5, step: 0.1, color: "#10c96d" },
               { label: "Max Daily Drawdown (%)", field: "maxDailyDrawdownPct", value: settings.riskSettings.maxDailyDrawdownPct, min: 0.5, max: 10, step: 0.5, color: "#fbbf24" },
               { label: "Max Total Drawdown (%)", field: "maxTotalDrawdownPct", value: settings.riskSettings.maxTotalDrawdownPct, min: 1, max: 30, step: 1, color: "#f87171" },
+              // 10.08. ergaenzt: die Wochengrenze war als einzige der drei Verlust-Limits
+              // nicht einstellbar — sie stand als Standardwert in einer Funktionssignatur.
+              { label: "Max Weekly Loss (%)", field: "maxWeeklyLossPct", value: settings.riskSettings.maxWeeklyLossPct, min: 1, max: 30, step: 0.5, color: "#f59e0b" },
               { label: "Max Portfolio Exposure (%)", field: "maxExposurePct", value: settings.riskSettings.maxExposurePct, min: 5, max: 100, step: 5, color: "#a5b4fc" },
               // min ab 10.08. aus MIN_SIGNAL_CONFIDENCE statt fest 30 (derselbe Fund wie
               // beim Auto-Approve-Regler): dieser Wert geht per Math.max in dieselbe

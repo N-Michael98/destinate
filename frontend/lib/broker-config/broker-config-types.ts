@@ -126,6 +126,14 @@ export interface RiskSettings {
   maxTotalDrawdownPct: number;
   maxExposurePct: number;
   minConfidenceScore: number;
+  /** Wochenverlust-Grenze in % (10.08.).
+   *
+   *  Stand bis heute als Standardwert direkt in der Signatur von
+   *  checkWeeklyLossLimit (6.0) und wurde vom einzigen Aufrufer nicht
+   *  uebergeben — der Wert war damit nirgends einstellbar. Seine beiden
+   *  Geschwister sind es seit jeher: Tagesverlust 3 % und Gesamt-Drawdown
+   *  10 % stehen in den Einstellungen. Nur der Wochenwert nicht. */
+  maxWeeklyLossPct: number;
 
   // ── Ausstiegs-Schwellen relativ zum Stop (Stufe 2, 10.08.) ────────────────
   //

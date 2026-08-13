@@ -25,6 +25,11 @@ module.exports = function pruefe() {
     ["Duplikat-/Pyramiding-Schutz verdrahtet",      /pyramidingEnabled/, orch],
     ["Gesamt-Drawdown-Grenze verdrahtet",           /maxTotalDrawdownPct:\s*settings\.riskSettings/, orch],
     ["Exposure-Grenze verdrahtet",                  /maxExposurePct:\s*settings\.riskSettings/, orch],
+    // 10.08.: die dritte Verlust-Grenze war als einzige NICHT einstellbar — sie
+    // stand als Standardwert in der Signatur von checkWeeklyLossLimit, und der
+    // einzige Aufrufer uebergab nichts. Jetzt neben ihren beiden Geschwistern.
+    ["Wochenverlust-Grenze verdrahtet",             /maxWeeklyLossPct:\s*settings\.riskSettings/, orch],
+    ["Wochenverlust-Grenze erreicht den Filter",    /checkWeeklyLossLimit\(currentBalance,\s*maxWeeklyLossPct\)/, filters],
     ["Killswitch sperrt den Orchestrator",          /isKillswitchActive\(\)/, instr],
     ["Reentranz-Sperre Orchestrator",               /orchestratorRunning/, instr],
     ["Reentranz-Sperre Positions-Monitor",          /positionMonitorRunning/, instr],

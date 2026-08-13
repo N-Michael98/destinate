@@ -813,6 +813,10 @@ export async function runOrchestratorCycle(): Promise<void> {
       // Kurs-Aktualität (02.08.) — verhindert Einstiege auf veralteten Kursen
       priceAgeMinutes: candidate.ageMinutes,
       maxPriceAgeMinutes: settings.botSettings.maxPriceAgeMinutes,
+      // Wochenverlust-Grenze (10.08.): stand bis heute als Standardwert in der
+      // Signatur des Filters und wurde nie uebergeben — als einziges der drei
+      // Verlust-Limits war sie nicht einstellbar.
+      maxWeeklyLossPct: settings.riskSettings?.maxWeeklyLossPct,
     });
     if (!filterResult.allowed) {
       console.log(`[orchestrator] 🚫 ${candidate.symbol} GEBLOCKT [${filterResult.blockedBy}]: ${filterResult.reason}`);
