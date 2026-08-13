@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import {
   ALL_BROKER_PROFILES,
+  MIN_SIGNAL_CONFIDENCE,
   type SystemSettings,
   type BrokerKey,
   type AccountMode,
@@ -978,7 +979,10 @@ export default function SettingsDashboard() {
               {[
                 { label: "Max Trades / Day", field: "maxTradesPerDay", value: settings.botSettings.maxTradesPerDay, min: 1, max: 50 },
                 { label: "Max Concurrent Positions", field: "maxConcurrentPositions", value: settings.botSettings.maxConcurrentPositions, min: 1, max: 10 },
-                { label: "Auto-Approve Threshold (%)", field: "autoApproveThreshold", value: settings.botSettings.autoApproveThreshold, min: 50, max: 99 },
+                // min ab 10.08. aus MIN_SIGNAL_CONFIDENCE statt fest 50: die Signalkette
+                // verwirft alles darunter an drei Stellen, der Regler zeigte also
+                // einen Bereich an, den es nicht gab.
+                { label: `Auto-Approve Threshold (%) — ab ${MIN_SIGNAL_CONFIDENCE}`, field: "autoApproveThreshold", value: settings.botSettings.autoApproveThreshold, min: MIN_SIGNAL_CONFIDENCE, max: 99 },
                 { label: "Pause on Loss (%)", field: "pauseOnLossPercent", value: settings.botSettings.pauseOnLossPercent, min: 0.5, max: 20 },
               ].map((item) => (
                 <div key={item.field} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
@@ -1432,7 +1436,11 @@ export default function SettingsDashboard() {
               { label: "Max Daily Drawdown (%)", field: "maxDailyDrawdownPct", value: settings.riskSettings.maxDailyDrawdownPct, min: 0.5, max: 10, step: 0.5, color: "#fbbf24" },
               { label: "Max Total Drawdown (%)", field: "maxTotalDrawdownPct", value: settings.riskSettings.maxTotalDrawdownPct, min: 1, max: 30, step: 1, color: "#f87171" },
               { label: "Max Portfolio Exposure (%)", field: "maxExposurePct", value: settings.riskSettings.maxExposurePct, min: 5, max: 100, step: 5, color: "#a5b4fc" },
-              { label: "Min Signal Confidence (%)", field: "minConfidenceScore", value: settings.riskSettings.minConfidenceScore, min: 30, max: 99, step: 1, color: "#00c3ff" },
+              // min ab 10.08. aus MIN_SIGNAL_CONFIDENCE statt fest 30 (derselbe Fund wie
+              // beim Auto-Approve-Regler): dieser Wert geht per Math.max in dieselbe
+              // Rechnung — er kann nur VERSCHAERFEN. Alles unter der Untergrenze der
+              // Signalkette wird verschluckt und hatte nie eine Wirkung.
+              { label: `Min Signal Confidence (%) — ab ${MIN_SIGNAL_CONFIDENCE}`, field: "minConfidenceScore", value: settings.riskSettings.minConfidenceScore, min: MIN_SIGNAL_CONFIDENCE, max: 99, step: 1, color: "#00c3ff" },
             ].map((item) => (
               <div key={item.field} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "16px" }}>
                 <label style={{ fontSize: "10px", color: "#64748b", display: "block", marginBottom: "8px", textTransform: "uppercase" }}>

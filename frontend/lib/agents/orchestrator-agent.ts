@@ -18,6 +18,7 @@ import { runAnalysisAgent } from "./analysis-agent";
 import { runExecutionAgent } from "./execution-agent";
 import { getDiagnosticsReport } from "./diagnostics-agent";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
+import { MIN_SIGNAL_CONFIDENCE } from "../broker-config";
 
 const AGENT_ID = "OrchestratorAgent";
 
@@ -393,6 +394,28 @@ function isWithinTradingSession(): boolean {
 
 // ── Hauptzyklus ───────────────────────────────────────────────────────────────
 
+/**
+ * Die Auto-Approve-Schwelle, die WIRKLICH gilt (10.08.).
+ *
+ * Ein gespeicherter Wert unter MIN_SIGNAL_CONFIDENCE hat keine Wirkung: die
+ * Signalkette verwirft solche Signale schon vorher an drei Stellen. Der Regler
+ * beginnt seit heute bei 70, aber ein aelterer gespeicherter Wert (oder ein
+ * direkter API-Aufruf) kann darunter liegen. Dann wird das GEMELDET statt
+ * stillschweigend hingenommen — ein Wert, der nicht wirkt und niemandem
+ * auffaellt, ist genau die Klasse Fehler, die hier behoben wird.
+ */
+function wirksameApproveSchwelle(gespeichert: number | undefined): number {
+  const wert = gespeichert ?? 71;
+  if (wert < MIN_SIGNAL_CONFIDENCE) {
+    console.warn(
+      `[orchestrator] Auto-Approve-Schwelle ${wert} liegt unter der Untergrenze `
+      + `${MIN_SIGNAL_CONFIDENCE} der Signalkette — sie wirkt nicht. `
+      + `Es gilt weiterhin ${MIN_SIGNAL_CONFIDENCE}.`);
+    return MIN_SIGNAL_CONFIDENCE;
+  }
+  return wert;
+}
+
 export async function runOrchestratorCycle(): Promise<void> {
   console.log(`[orchestrator] Zyklus gestartet`);
 
@@ -545,7 +568,7 @@ export async function runOrchestratorCycle(): Promise<void> {
   // bewusst nur VERSCHÄRFEND: es gilt immer der strengere der beiden Werte,
   // damit die Einstellung die bestehende Freigabe-Schwelle nie aufweichen kann.
   const baseThreshold = Math.max(
-    settings.botSettings.autoApproveThreshold ?? 71,
+    wirksameApproveSchwelle(settings.botSettings.autoApproveThreshold),
     settings.riskSettings?.minConfidenceScore ?? 0,
   );
   // Bei erreichtem Tageslimit gilt zusätzlich die (höhere) Bypass-Schwelle —
@@ -593,7 +616,7 @@ export async function runOrchestratorCycle(): Promise<void> {
     if (o.gpt.confidence < threshold) {
       verworfen.push(
         `${o.symbol}: Confidence ${o.gpt.confidence} < Schwelle ${threshold}` +
-        ` (autoApprove ${settings.botSettings.autoApproveThreshold ?? 71},` +
+        ` (autoApprove ${wirksameApproveSchwelle(settings.botSettings.autoApproveThreshold)},` +
         ` minConfidence ${settings.riskSettings?.minConfidenceScore ?? 0}` +
         `${dailyLimitReached ? `, Tageslimit erreicht → Bypass ${bypassScore}` : ""})`
       );

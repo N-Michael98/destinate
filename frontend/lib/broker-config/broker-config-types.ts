@@ -97,6 +97,29 @@ export interface BotSettings {
   allowMeasuredConsensus: boolean;
 }
 
+/**
+ * Untergrenze für die Confidence eines Signals (10.08.).
+ *
+ * WOZU. Der Regler "Auto-Approve Threshold" liess Werte von 50 bis 99 zu. Bevor
+ * ein Signal diesen Regler überhaupt erreicht, wird es aber schon verworfen:
+ * die Signalkette verlangt an DREI Stellen `confidence >= 70`
+ *   ai-analysis-engine.ts  simulateClaude (approved)
+ *   ai-analysis-engine.ts  goSignal
+ *   analysis-agent.ts      Filterung der goSignals
+ * Werte zwischen 50 und 69 hatten deshalb KEINERLEI Wirkung — der Regler zeigte
+ * eine Einstellmöglichkeit an, die es nicht gab.
+ *
+ * Die Zahl steht jetzt an EINER Stelle und wird von allen benutzt: von den drei
+ * Riegeln, vom Regler als Minimum, und vom Orchestrator, der warnt, wenn ein
+ * gespeicherter Wert darunter liegt.
+ *
+ * BEWUSST NICHT GESENKT. Die 70 tiefer zu legen wäre kein Anzeigefehler mehr,
+ * sondern eine Erhöhung des Risikos: es würden Signale gehandelt, die das System
+ * bisher als zu unsicher verworfen hat. Das ist eine Entscheidung des Nutzers,
+ * keine Aufräumarbeit.
+ */
+export const MIN_SIGNAL_CONFIDENCE = 70;
+
 export interface RiskSettings {
   maxRiskPerTradePct: number;
   maxDailyDrawdownPct: number;

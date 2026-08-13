@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 640 · Kanten: 1312
+Dateien mit internen Abhängigkeiten: 640 · Kanten: 1315
 
 
 ## analysis-engine/api
@@ -765,6 +765,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1312
   - → `frontend/lib/adaptive-confidence/confidence-types.ts`
 - `frontend/lib/agents/analysis-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/broker-config/index.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/market-scanner/ai-analysis-engine.ts`
 - `frontend/lib/agents/diagnostics-agent.ts`
@@ -785,6 +786,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1312
   - → `frontend/lib/agents/execution-agent.ts`
   - → `frontend/lib/analysis-engine/insights-reader.ts`
   - → `frontend/lib/analysis-engine/overrides-store.ts`
+  - → `frontend/lib/broker-config/index.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
@@ -1500,6 +1502,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1312
   - → `frontend/lib/market-regime/regime-types.ts`
 - `frontend/lib/market-scanner/ai-analysis-engine.ts`
   - → `frontend/lib/ai-config/ai-config-store.ts`
+  - → `frontend/lib/broker-config/index.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/python-backend/auth-header.ts`

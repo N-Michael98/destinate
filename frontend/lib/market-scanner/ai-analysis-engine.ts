@@ -1,6 +1,7 @@
 // Real GPT + Claude analysis engine — uses stored API keys + Python Backend TA data
 import { getAISettings } from "../ai-config/ai-config-store";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
+import { MIN_SIGNAL_CONFIDENCE } from "../broker-config";
 import { pythonBackendAuthHeader } from "../python-backend/auth-header";
 
 export interface GPTMarketAnalysis {
@@ -355,7 +356,7 @@ function simulateClaude(gpt: GPTMarketAnalysis, markt: { bid: number; ask: numbe
   const riskScore = Math.max(10, 80 - gpt.confidence);
   return {
     symbol: gpt.symbol,
-    approved: gpt.direction !== "WAIT" && gpt.confidence >= 70 && rrRatio >= 1.5,
+    approved: gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && rrRatio >= 1.5,
     riskScore,
     maxRiskPercent: riskScore > 60 ? 0.5 : 1.0,
     reasoning: `Risk assessment: confidence=${gpt.confidence}% R/R=${rrRatio.toFixed(2)}`,
@@ -1104,7 +1105,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     const goSignal = isRealAnalysis
       && hasFullData
       && claude.approved
-      && gpt.confidence >= 70
+      && gpt.confidence >= MIN_SIGNAL_CONFIDENCE
       && gpt.direction !== "WAIT"
       && gpt.stopLoss > 0
       && gpt.takeProfit > 0;
@@ -1118,8 +1119,8 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     if (isRealAnalysis) trichter.echteAnalyse++;
     if (isRealAnalysis && hasFullData) trichter.volleDaten++;
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT") trichter.richtung++;
-    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= 70) trichter.confidence++;
-    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= 70 && gpt.stopLoss > 0 && gpt.takeProfit > 0) trichter.slTp++;
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE) trichter.confidence++;
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && gpt.stopLoss > 0 && gpt.takeProfit > 0) trichter.slTp++;
     if (goSignal) trichter.go++;
 
     const taEntry = taData.get(market.symbol);

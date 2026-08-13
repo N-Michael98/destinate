@@ -45,6 +45,10 @@ const pruefer = [
   // mit einer Groesse aus der Registrierung, die nach dem ersten Teilverkauf
   // die ganze Restposition geschlossen haette. Fuehrt die Entscheidung aus.
   ["teilgewinn", require("./teilgewinn")],
+  // 10.08. ergaenzt: ZWEI Regler boten Werte an, die keinerlei Wirkung hatten —
+  // die Signalkette verwirft alles unter 70 an drei Stellen. Ein Regler, der
+  // etwas anzeigt, das er nicht kann, fuehrt zu falschen Entscheidungen.
+  ["signal-untergrenze", require("./signal-untergrenze")],
 ];
 
 const nurDieser = process.argv[2];

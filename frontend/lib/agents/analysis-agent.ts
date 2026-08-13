@@ -14,6 +14,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { agentBus } from "./agent-bus";
 import { analyzeMarkets, type ScannerOpportunity } from "../market-scanner/ai-analysis-engine";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
+import { MIN_SIGNAL_CONFIDENCE } from "../broker-config";
 
 const AGENT_ID = "AnalysisAgent";
 
@@ -124,7 +125,7 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
   console.log(`[analysis-agent] ${opportunities.length} Opportunities gefunden`);
 
   // ── Schritt 2: Nur GO-Signale mit ausreichender Confidence weiterbewerten ──
-  const goSignals = opportunities.filter(o => o.goSignal && o.gpt.confidence >= 70);
+  const goSignals = opportunities.filter(o => o.goSignal && o.gpt.confidence >= MIN_SIGNAL_CONFIDENCE);
 
   // ── Schritt 3: Meta-AI bewertet Top-Kandidaten ────────────────────────────
   const metaDecisions = await runMetaAnalysis(goSignals);
