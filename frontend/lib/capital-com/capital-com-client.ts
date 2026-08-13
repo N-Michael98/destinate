@@ -49,6 +49,11 @@ export interface OrderResult {
   status?: string;
   error?: string;
   openLevel?: number; // actual fill price from /confirms
+  /** Die Order wurde abgeschickt, der Bestaetigungsschritt war aber nicht
+   *  lesbar (10.08.). ok bleibt true, weil die Order live sein KANN — sie als
+   *  Fehlschlag zu melden waere gefaehrlicher, ein Aufrufer koennte sie erneut
+   *  senden und die Position verdoppeln. */
+  unbestaetigt?: boolean;
 }
 
 export interface OpenPosition {
@@ -449,6 +454,137 @@ export async function capitalGetPrices(
   }
 }
 
+// ── Mindest-Stop-Abstand des Brokers (10.08.) ────────────────────────────────
+//
+// Capital.com schreibt je Markt vor, wie nah ein Stop am Kurs stehen darf, und
+// liefert die Regel bei jedem Marktabruf in dealingRules.minStopOrProfitDistance
+// mit. Ausgewertet wurde bisher NUR data.snapshot (die Kurse) — die Regel wurde
+// nie angeschaut, und unser Stop ging ungeprueft raus.
+//
+// WAS DABEI WIRKLICH PASSIERT, nachgeprueft statt vermutet: der Broker nimmt
+// eine Order mit zu engem Stop nicht etwa ohne Stop an, sondern LEHNT SIE AB.
+// Der Bestaetigungsschritt oben faengt das als REJECTED ab. Die Folge ist also
+// kein ungeschuetzter Trade, sondern ein verlorener — mit einem Fehlercode, den
+// niemand einordnen kann. Diese Pruefung macht daraus eine klare Meldung, bevor
+// die Order ueberhaupt rausgeht.
+//
+// WAS HIER BEWUSST NICHT GERATEN WIRD: die Regel kommt mit einer Einheit.
+// "PERCENTAGE" ist eindeutig in einen Kursabstand umzurechnen. Bei "POINTS"
+// haengt die Umrechnung an der Punktgroesse des Instruments, und die laesst
+// sich ohne echte Broker-Antwort nicht belegen. Statt zu raten wird der Rohwert
+// mitgeschrieben und die Pruefung uebersprungen — sie blockiert dann nichts.
+// Sobald ein echter Lauf die Werte zeigt, ist die Umrechnung belegbar
+// nachzutragen. Ein geratener Riegel waere schlimmer als keiner: er wuerde
+// gueltige Orders abweisen.
+
+export interface MarktRegeln {
+  epic: string;
+  /** Mindestabstand in KURSEINHEITEN. null = aus der Antwort nicht ableitbar. */
+  minStopDistanz: number | null;
+  einheit: string;
+  rohwert: number | null;
+  bid: number;
+  offer: number;
+}
+
+/** Rechnet die Broker-Regel in einen Kursabstand um.
+ *
+ *  Als eigene Funktion, damit der Pruefer sie AUSFUEHREN kann — eingebettet
+ *  waere sie nur vorhanden, nicht bewiesen. */
+export function mindestAbstandAusRegel(
+  einheit: unknown,
+  wert: unknown,
+  referenzkurs: number,
+): number | null {
+  const w = typeof wert === "number" ? wert : Number(wert);
+  if (!Number.isFinite(w) || w <= 0) return null;
+  const e = String(einheit ?? "").toUpperCase();
+  if (e === "PERCENTAGE") {
+    if (!(referenzkurs > 0) || !Number.isFinite(referenzkurs)) return null;
+    return (referenzkurs * w) / 100;
+  }
+  // POINTS und alles andere: nicht belegbar umrechenbar — siehe Kommentar oben.
+  return null;
+}
+
+/** Steht der Stop weit genug vom Kurs weg?
+ *
+ *  Prueft NUR, es wird nichts verschoben. Den Stop automatisch aufzuweiten
+ *  waere gefaehrlich: die Positionsgroesse ist fuer den urspruenglichen
+ *  Abstand gerechnet, ein weiterer Stop bedeutet mehr Risiko als erlaubt.
+ *  Lieber die Order gar nicht senden als sie mit falschem Risiko senden. */
+export function stopAbstandGenug(
+  stopLevel: number,
+  richtung: "BUY" | "SELL",
+  referenzkurs: number,
+  minDistanz: number | null,
+): { ok: boolean; abstand: number; grund: string } {
+  if (minDistanz == null) {
+    return { ok: true, abstand: 0, grund: "keine belegbare Regel — nicht geprueft" };
+  }
+  if (!(referenzkurs > 0) || !Number.isFinite(referenzkurs) || !Number.isFinite(stopLevel)) {
+    return { ok: true, abstand: 0, grund: "Kurs oder Stop unbrauchbar — nicht geprueft" };
+  }
+  // Stop auf der falschen Seite faengt realesChanceRisiko() schon ab; hier
+  // zaehlt nur der Abstand, deshalb der Betrag.
+  const abstand = Math.abs(referenzkurs - stopLevel);
+  // Relative Toleranz gegen Gleitkomma-Rauschen: |100 - 99.9| ergibt in
+  // Binaerdarstellung 0.09999999999999432 und waere gegen eine Regel von 0.1
+  // knapp zu klein. Eine gueltige Order deswegen abzuweisen waere ein
+  // selbstgemachter Fehler — der Broker rechnet ohnehin mit begrenzter
+  // Genauigkeit. 1e-9 relativ ist weit unter jeder echten Kursbewegung und
+  // kann keinen wirklich zu engen Stop durchlassen.
+  if (abstand >= minDistanz * (1 - 1e-9)) {
+    return { ok: true, abstand, grund: "" };
+  }
+  return {
+    ok: false,
+    abstand,
+    grund: `Stop ${stopLevel} liegt ${abstand.toFixed(5)} vom Kurs ${referenzkurs} entfernt, `
+      + `der Broker verlangt mindestens ${minDistanz.toFixed(5)} (${richtung})`,
+  };
+}
+
+// Regeln je Epic zwischenspeichern — sie aendern sich selten, und der
+// Positions-Monitor laeuft alle zwei Minuten.
+const regelCache = new Map<string, { regeln: MarktRegeln; bis: number }>();
+const REGEL_TTL_MS = 10 * 60 * 1000;
+
+export async function capitalMarktRegeln(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  epic: string,
+): Promise<MarktRegeln | null> {
+  const zwischen = regelCache.get(epic);
+  if (zwischen && zwischen.bis > Date.now()) return zwischen.regeln;
+  try {
+    const res = await fetch(`${DEMO_BASE}/markets/${epic}`, {
+      headers: authHeaders(apiKey, cst, securityToken),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Record<string, unknown>;
+    const snap = (data.snapshot ?? {}) as Record<string, unknown>;
+    const regeln = (data.dealingRules ?? {}) as Record<string, unknown>;
+    const min = (regeln.minStopOrProfitDistance ?? {}) as Record<string, unknown>;
+    const bid = Number(snap.bid ?? 0);
+    const offer = Number(snap.offer ?? bid);
+    const referenz = bid > 0 ? (bid + offer) / 2 : 0;
+    const ergebnis: MarktRegeln = {
+      epic,
+      minStopDistanz: mindestAbstandAusRegel(min.unit, min.value, referenz),
+      einheit: String(min.unit ?? "unbekannt"),
+      rohwert: min.value != null ? Number(min.value) : null,
+      bid, offer,
+    };
+    regelCache.set(epic, { regeln: ergebnis, bis: Date.now() + REGEL_TTL_MS });
+    return ergebnis;
+  } catch {
+    return null;
+  }
+}
+
 // Place a market order on Capital.com DEMO
 export async function capitalPlaceOrder(
   apiKey: string,
@@ -465,6 +601,30 @@ export async function capitalPlaceOrder(
     };
     if (order.stopLevel != null) body.stopLevel = order.stopLevel;
     if (order.profitLevel != null) body.profitLevel = order.profitLevel;
+
+    // Mindest-Stop-Abstand des Brokers pruefen, BEVOR die Order rausgeht
+    // (10.08.). Vorher ging der Stop ungeprueft raus; ein zu enger fuehrte zu
+    // einer Ablehnung mit einem Fehlercode, den niemand einordnen konnte.
+    // Der Aufruf ist zwischengespeichert (10 Minuten je Epic) und laesst die
+    // Order durch, wenn die Regel nicht belegbar ist — ein geratener Riegel
+    // wuerde gueltige Orders abweisen.
+    if (order.stopLevel != null) {
+      const regeln = await capitalMarktRegeln(apiKey, cst, securityToken, order.epic);
+      if (regeln) {
+        const referenz = regeln.bid > 0 ? (regeln.bid + regeln.offer) / 2 : 0;
+        const urteil = stopAbstandGenug(order.stopLevel, order.direction, referenz, regeln.minStopDistanz);
+        if (!urteil.ok) {
+          console.warn(`[capital] Order ${order.epic} nicht gesendet — ${urteil.grund}`);
+          return { ok: false, error: `Mindest-Stop-Abstand verletzt: ${urteil.grund}` };
+        }
+        if (regeln.minStopDistanz == null && regeln.rohwert != null) {
+          // Sichtbar machen, was der Broker wirklich schickt — damit die
+          // Umrechnung fuer diese Einheit spaeter BELEGT statt geraten wird.
+          console.log(`[capital] ${order.epic}: Mindestabstand-Regel nicht umrechenbar `
+            + `(${regeln.rohwert} ${regeln.einheit}) — Stop ungeprueft gesendet`);
+        }
+      }
+    }
 
     const res = await fetch(`${DEMO_BASE}/positions`, {
       method: "POST",
@@ -483,6 +643,7 @@ export async function capitalPlaceOrder(
     const dealReference = String(data.dealReference ?? "");
 
     // Capital.com requires a confirm step to get the real dealId and verify acceptance
+    let bestaetigungsFehler = "";
     if (dealReference) {
       await new Promise((r) => setTimeout(r, 800)); // brief wait for backend to process
       try {
@@ -490,6 +651,9 @@ export async function capitalPlaceOrder(
           headers: authHeaders(apiKey, cst, securityToken),
           signal: AbortSignal.timeout(8000),
         });
+        if (!confirmRes.ok) {
+          bestaetigungsFehler = `HTTP ${confirmRes.status}`;
+        }
         if (confirmRes.ok) {
           const confirm = (await confirmRes.json()) as Record<string, unknown>;
           const status = String(confirm.status ?? "");
@@ -501,14 +665,39 @@ export async function capitalPlaceOrder(
           const openLevel = Number(confirm.level ?? confirm.openLevel ?? 0);
           return { ok: true, dealReference, dealId, status: "OPENED", openLevel: openLevel > 0 ? openLevel : undefined };
         }
-      } catch { /* non-fatal — fall through to reference */ }
+      } catch (e) {
+        bestaetigungsFehler = e instanceof Error ? e.message : String(e);
+      }
     }
 
+    // HIER LANDET, WER NICHT BESTAETIGEN KONNTE (Fund 10.08.).
+    //
+    // Bis heute meldete diese Stelle `status: "OPENED"` — also "Order steht" —
+    // obwohl der Bestaetigungsschritt gar nicht gelesen werden konnte. Eine
+    // echte Ablehnung faengt der Block oben zwar ab; aber ein Zeitfehler, ein
+    // HTTP-Fehler oder ein Netzabbruch beim Bestaetigen sahen exakt aus wie ein
+    // Erfolg. Das System hielt dann eine Position fuer offen, ueber die es
+    // nichts wusste.
+    //
+    // ok BLEIBT true, und das ist Absicht: die Order kann sehr wohl live sein.
+    // Sie als Fehlschlag zu melden waere gefaehrlicher — ein Aufrufer koennte
+    // sie erneut senden und die Position verdoppeln. Gemeldet wird deshalb die
+    // UNSICHERHEIT, nicht ein erfundenes Ergebnis.
+    if (dealReference) {
+      console.warn(
+        `[capital] Order ${dealReference} NICHT bestaetigt${bestaetigungsFehler ? ` (${bestaetigungsFehler})` : ""}`
+        + ` — Status unbekannt. Die Order kann live sein; nicht erneut senden.`
+      );
+    }
     return {
       ok: true,
       dealReference,
       dealId: String(data.dealId ?? dealReference),
-      status: "OPENED",
+      status: dealReference ? "UNBESTAETIGT" : "OPENED",
+      unbestaetigt: dealReference ? true : undefined,
+      error: dealReference
+        ? `Bestaetigung nicht lesbar${bestaetigungsFehler ? `: ${bestaetigungsFehler}` : ""}`
+        : undefined,
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Network error" };

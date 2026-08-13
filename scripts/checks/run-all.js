@@ -49,6 +49,11 @@ const pruefer = [
   // die Signalkette verwirft alles unter 70 an drei Stellen. Ein Regler, der
   // etwas anzeigt, das er nicht kann, fuehrt zu falschen Entscheidungen.
   ["signal-untergrenze", require("./signal-untergrenze")],
+  // 10.08. ergaenzt: eine Order galt als erfolgreich, obwohl der
+  // Bestaetigungsschritt gar nicht gelesen werden konnte — ein unbekannter
+  // Ausgang sah aus wie ein Erfolg. Dazu der Mindest-Stop-Abstand des Brokers,
+  // der nie ausgewertet wurde.
+  ["order-bestaetigung", require("./order-bestaetigung")],
 ];
 
 const nurDieser = process.argv[2];
