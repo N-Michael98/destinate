@@ -2139,3 +2139,50 @@ def test_musterhistorie_endpunkt_blockiert_den_event_loop_nicht():
     import inspect
     from api.routes import strategies as _routen
     assert "run_in_executor" in inspect.getsource(_routen.muster_rueckrechnung)
+
+
+def test_muster_dreieck_ausbruch_gibt_die_richtung():
+    """DER FUND vom 10.08.: Dreiecke waren nie bestaetigt und damit NIE messbar.
+
+    Ueber alle 30 Symbole: 3485 Erkennungen, null Messungen — die
+    Rueckrechnung zaehlt nur bestaetigte Muster als Richtung. Etwas zu bauen,
+    das sich nicht ueberpruefen laesst, ist halbe Arbeit.
+
+    Die Richtung kommt vom AUSBRUCH, nicht von der Form: ein steigendes
+    Dreieck kann nach unten aufloesen. Wer die Form als Richtung nimmt, misst
+    seine Erwartung statt der Beobachtung.
+    """
+    def reihe(schluss_am_ende):
+        hh, tt = [], []
+        for i in range(60):
+            if i == 7:    hh.append(130.0); tt.append(129.0)
+            elif i == 17: hh.append(71.0);  tt.append(70.0)
+            elif i == 27: hh.append(115.0); tt.append(114.0)
+            elif i == 37: hh.append(86.0);  tt.append(85.0)
+            else:         hh.append(100.0); tt.append(99.0)
+        c = [100.0] * 60
+        c[-1] = schluss_am_ende
+        return _kerzen(hh, tt, c)
+
+    # Innerhalb der Spanne -> nicht bestaetigt, keine Richtung
+    drin = next((m for m in _CM.erkenne_muster(reihe(100.0))["muster"]
+                 if m["muster"].startswith("DREIECK")), None)
+    assert drin is not None, "Dreieck bei Schluss innerhalb der Spanne nicht erkannt"
+    assert drin["bestaetigt"] is False and drin["richtung"] == "NEUTRAL"
+
+    # Ausbruch nach OBEN -> LONG
+    hoch = next((m for m in _CM.erkenne_muster(reihe(140.0))["muster"]
+                 if m["muster"].startswith("DREIECK")), None)
+    assert hoch is not None and hoch["bestaetigt"] is True, "Ausbruch nach oben nicht erkannt"
+    assert hoch["richtung"] == "LONG", hoch["richtung"]
+    assert 100.0 < hoch["obergrenze"] <= 130.0
+
+    # Ausbruch nach UNTEN -> SHORT, obwohl die Form dieselbe ist
+    tief = next((m for m in _CM.erkenne_muster(reihe(60.0))["muster"]
+                 if m["muster"].startswith("DREIECK")), None)
+    assert tief is not None and tief["bestaetigt"] is True, "Ausbruch nach unten nicht erkannt"
+    assert tief["richtung"] == "SHORT", (
+        f"Form gab die Richtung statt des Ausbruchs: {tief['muster']} -> {tief['richtung']}"
+    )
+    # Die FORM muss dabei dieselbe bleiben — nur die Richtung haengt am Ausbruch.
+    assert hoch["form"] == tief["form"]

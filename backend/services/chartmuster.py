@@ -248,15 +248,38 @@ def dreieck(punkte: list[dict], df: pd.DataFrame, atr: float) -> Optional[dict]:
     else:
         return None
 
+    ober = max(h1["kurs"], h2["kurs"])
+    unter = min(t1["kurs"], t2["kurs"])
+
+    # DER AUSBRUCH (ergaenzt 10.08.). Bis dahin stand hier fest "bestaetigt:
+    # False" — mit der Folge, dass Dreiecke zwar erkannt, aber NIE gemessen
+    # werden konnten: die Rueckrechnung zaehlt nur bestaetigte Muster als
+    # Richtung. Nachgewiesen ueber alle 30 Symbole: 3485 Erkennungen, null
+    # Messungen. Etwas zu bauen, das sich nicht ueberpruefen laesst, ist halbe
+    # Arbeit.
+    #
+    # Die Form (symmetrisch/steigend/fallend) sagt nur, WIE sich die Spanne
+    # verengt. Die Richtung kommt vom Ausbruch selbst — ein steigendes Dreieck
+    # kann nach unten aufloesen. Deshalb wird "richtung" hier ueberschrieben:
+    # was vorher dastand, war die ERWARTUNG, nicht die Beobachtung.
+    schluss = float(df["close"].iloc[-1])
+    if schluss > ober:
+        bestaetigt, richtung = True, "LONG"
+    elif schluss < unter:
+        bestaetigt, richtung = True, "SHORT"
+    else:
+        bestaetigt, richtung = False, "NEUTRAL"
+
     return {
         "muster": f"DREIECK_{form}",
         "richtung": richtung,
+        "form": form,
         "punkte": [h1, h2, t1, t2],
-        "obergrenze": max(h1["kurs"], h2["kurs"]),
-        "untergrenze": min(t1["kurs"], t2["kurs"]),
-        # Ein Dreieck gilt erst als aufgeloest, wenn der Kurs ausbricht.
-        "bestaetigt": False,
-        "hinweis": "Dreiecke geben erst mit dem Ausbruch eine Richtung",
+        "obergrenze": ober,
+        "untergrenze": unter,
+        "bestaetigt": bestaetigt,
+        "hinweis": "bestaetigt sobald ein Schluss ausserhalb der Spanne liegt; "
+                   "die Richtung kommt vom Ausbruch, nicht von der Form",
     }
 
 
