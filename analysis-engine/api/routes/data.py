@@ -122,6 +122,23 @@ def trigger_konsens(bg: BackgroundTasks):
             "check": "/api/v1/konsens"}
 
 
+@router.get("/muster")
+def get_muster():
+    """Bewertung der Chartmuster (10.08.)."""
+    from services.muster_auswertung import REDIS_KEY_MUSTER
+    data = redis_get_json(REDIS_KEY_MUSTER)
+    return {"available": data is not None, "data": data}
+
+
+@router.post("/run/muster")
+def trigger_muster(bg: BackgroundTasks):
+    """Chartmuster-Rückrechnung manuell auslösen."""
+    from services.muster_auswertung import run_muster_auswertung, FENSTER_TAGE
+    bg.add_task(run_muster_auswertung)
+    return {"started": True, "job": "muster", "fensterTage": FENSTER_TAGE,
+            "check": "/api/v1/muster"}
+
+
 @router.get("/comms-check")
 def comms_check():
     """Verbindungs-Check: beweist jede Kommunikations-Strecke mit echten Daten."""

@@ -1983,3 +1983,159 @@ def test_muster_doppelboden_nackenlinie_liegt_zwischen_den_tiefs():
         f"Nackenlinie {db['nackenlinie']} statt 120 — es wurde ein Hoch "
         f"ausserhalb der beiden Tiefs genommen"
     )
+
+
+
+# ── Muster-Rueckrechnung (10.08.) ────────────────────────────────────────────
+
+import services.muster_historie as _MH                                # noqa: E402
+
+
+def _steigend(n=200, start="2024-01-01"):
+    """Kerzen mit Zickzack, damit Wendepunkte entstehen."""
+    idx = pd.date_range(start, periods=n, freq="1D", tz="UTC")
+    hochs, tiefs = [], []
+    for i in range(n):
+        basis = 100.0
+        hochs.append(basis + (12.0 if i % 17 == 8 else 1.0))
+        tiefs.append(basis - (12.0 if i % 17 == 0 else 1.0))
+    return pd.DataFrame(
+        {"open": [100.0] * n, "high": hochs, "low": tiefs,
+         "close": [100.0] * n, "volume": [10.0] * n}, index=idx)
+
+
+def test_musterhistorie_sieht_nie_in_die_zukunft():
+    """Derselbe Riegel wie bei der Konsens-Rueckrechnung, hier fuer Muster.
+
+    Der Kerzenschnitt stammt aus strategie_historie und ist dort geprueft —
+    hier wird sichergestellt, dass die Muster-Rueckrechnung ihn WIRKLICH
+    benutzt und nicht am ihm vorbei rechnet.
+    """
+    basis = _steigend()
+    gesehen = []
+
+    echt_erkenne = _MH.erkenne_muster
+
+    def mit_mitschrift(df):
+        gesehen.append(None if df is None or df.empty else df.index[-1])
+        return {"muster": []}
+
+    echt_get = _MH.get_ohlcv
+    _MH.get_ohlcv = lambda s, i, p: [
+        {"timestamp": t.isoformat(), "open": float(r["open"]), "high": float(r["high"]),
+         "low": float(r["low"]), "close": float(r["close"]), "volume": 10.0}
+        for t, r in basis.iterrows()]
+    _MH.erkenne_muster = mit_mitschrift
+    try:
+        r = _MH.muster_historie("EURUSD", tage=30, intervall="1d")
+    finally:
+        _MH.get_ohlcv = echt_get
+        _MH.erkenne_muster = echt_erkenne
+
+    assert r["status"] == "ok", r.get("hinweise")
+    assert len(gesehen) == r["balken"]
+    for i, zeitpunkt in enumerate(r["zeitstempel"]):
+        if gesehen[i] is None:
+            continue
+        assert str(gesehen[i]) <= zeitpunkt.replace("+00:00", "+00:00"), (
+            f"Balken {i} sah Kerzen aus der Zukunft"
+        )
+
+
+def test_musterhistorie_zaehlt_nur_bestaetigte_als_richtung():
+    """Ein unbestaetigtes Muster haette nie einen Einstieg ausgeloest.
+
+    Wuerde es trotzdem als Richtung gezaehlt, maesse die Auswertung etwas, das
+    nie stattgefunden hat — dieselbe Falle wie ein Backtest ohne Ausfuehrung.
+    """
+    basis = _steigend()
+    echt_erkenne = _MH.erkenne_muster
+    echt_get = _MH.get_ohlcv
+    _MH.get_ohlcv = lambda s, i, p: [
+        {"timestamp": t.isoformat(), "open": 100.0, "high": 101.0, "low": 99.0,
+         "close": 100.0, "volume": 10.0} for t in basis.index]
+    # Immer ein UNBESTAETIGTES Doppeltop melden
+    _MH.erkenne_muster = lambda df: {"muster": [
+        {"muster": "DOPPELTOP", "richtung": "SHORT", "bestaetigt": False}]}
+    try:
+        r = _MH.muster_historie("EURUSD", tage=30, intervall="1d")
+    finally:
+        _MH.get_ohlcv = echt_get
+        _MH.erkenne_muster = echt_erkenne
+
+    assert set(r["konsens"]) == {"NEUTRAL"}, (
+        f"unbestaetigtes Muster wurde als Richtung gezaehlt: {set(r['konsens'])}"
+    )
+    assert set(r["entryQualityTier"]) == {"KEIN_MUSTER"}
+    # In musterAlle MUSS es trotzdem stehen — sonst laesst sich spaeter nicht
+    # beantworten, ob die Bestaetigung ueberhaupt etwas bringt.
+    assert all(liste == ["DOPPELTOP"] for liste in r["musterAlle"])
+
+
+def test_musterhistorie_meldet_fehlenden_vorlauf():
+    """Balken ohne genug Vorlauf duerfen NICHT als 'kein Muster' zaehlen —
+    sonst sieht fehlende Datenlage aus wie ein gemessenes Ergebnis."""
+    kurz = _steigend(n=70)
+    echt_get = _MH.get_ohlcv
+    _MH.get_ohlcv = lambda s, i, p: [
+        {"timestamp": t.isoformat(), "open": 100.0, "high": 101.0, "low": 99.0,
+         "close": 100.0, "volume": 10.0} for t in kurz.index]
+    try:
+        r = _MH.muster_historie("EURUSD", tage=70, intervall="1d")
+    finally:
+        _MH.get_ohlcv = echt_get
+    assert r["balkenOhneVorlauf"] > 0, "fehlender Vorlauf wurde nicht gezaehlt"
+    assert any("Vorlauf" in h for h in r["hinweise"])
+
+
+def test_musterhistorie_liefert_gleich_lange_reihen():
+    """Ungleiche Laengen wuerden Kurs und Muster gegeneinander verschieben."""
+    basis = _steigend()
+    echt_get = _MH.get_ohlcv
+    _MH.get_ohlcv = lambda s, i, p: [
+        {"timestamp": t.isoformat(), "open": float(r["open"]), "high": float(r["high"]),
+         "low": float(r["low"]), "close": float(r["close"]), "volume": 10.0}
+        for t, r in basis.iterrows()]
+    try:
+        r = _MH.muster_historie("EURUSD", tage=90, intervall="1d")
+    finally:
+        _MH.get_ohlcv = echt_get
+    laengen = {len(r["zeitstempel"]), len(r["kurs"]), len(r["konsens"]),
+               len(r["konsensConf"]), len(r["entryQualityTier"]),
+               len(r["strategienOhneDaten"]), len(r["musterAlle"]), len(r["bestaetigt"])}
+    assert len(laengen) == 1, f"Reihen verschieden lang: {laengen}"
+    assert r["balken"] == len(r["zeitstempel"])
+
+
+def test_musterhistorie_ohne_daten_stuerzt_nicht_ab():
+    echt_get = _MH.get_ohlcv
+    _MH.get_ohlcv = lambda *a, **k: []
+    try:
+        r = _MH.muster_historie("EURUSD", tage=30, intervall="1d")
+    finally:
+        _MH.get_ohlcv = echt_get
+    assert r["status"] == "keine_daten" and r["hinweise"]
+
+
+def test_musterhistorie_endpunkt_prueft_seine_grenzen():
+    import asyncio as _aio
+    from fastapi import HTTPException
+    from api.routes.strategies import muster_rueckrechnung, MAX_MUSTER_FENSTER_TAGE
+
+    for tage in [0, -5, MAX_MUSTER_FENSTER_TAGE + 1, 99999]:
+        try:
+            _aio.run(muster_rueckrechnung("EURUSD", tage))
+            raise AssertionError(f"tage={tage} wurde akzeptiert")
+        except HTTPException as e:
+            assert e.status_code == 400
+    try:
+        _aio.run(muster_rueckrechnung("EURUSD", 30, "1m"))
+        raise AssertionError("Intervall 1m wurde akzeptiert")
+    except HTTPException as e:
+        assert e.status_code == 400
+
+
+def test_musterhistorie_endpunkt_blockiert_den_event_loop_nicht():
+    import inspect
+    from api.routes import strategies as _routen
+    assert "run_in_executor" in inspect.getsource(_routen.muster_rueckrechnung)

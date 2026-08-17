@@ -268,6 +268,53 @@ def _konsens_abschnitt() -> list[str]:
     return zeilen
 
 
+def _muster_abschnitt() -> list[str]:
+    """Ergebnis der Chartmuster-Rueckrechnung (10.08.).
+
+    Die Muster erkennen, handeln aber bewusst nicht mit. Dieser Abschnitt
+    beantwortet, ob sich das aendern sollte: er zeigt je Musterart den VORTEIL
+    gegenueber der Marktbewegung im selben Zeitraum. Ein Muster mit negativem
+    Vorteil haette Geld gekostet — unabhaengig davon, was Lehrbuecher sagen.
+
+    Ohne diesen Abschnitt laege das Ergebnis nur in Redis und niemand saehe es.
+    """
+    daten = redis_get_json("analysis:muster")
+    if not daten or daten.get("status") != "done":
+        return []
+    ergebnisse = daten.get("results") or {}
+    if not ergebnisse:
+        return []
+
+    # Ueber alle Symbole zusammenfassen, mit der Fallzahl gewichtet — sonst
+    # zieht ein Symbol mit drei Faellen das Bild.
+    je_art: dict[str, dict] = {}
+    for e in ergebnisse.values():
+        for art, d in (e.get("jeMusterart") or {}).items():
+            lang = (d.get("horizonte") or {}).get("swing_168h", {}).get("alle") or {}
+            z = je_art.setdefault(art, {"n": 0, "summe": 0.0, "bloecke": 0})
+            for richtung in ("LONG", "SHORT"):
+                teil = lang.get(richtung) or {}
+                n = int(teil.get("n", 0))
+                z["n"] += n
+                z["summe"] += float(teil.get("vorteilPct", 0.0)) * n
+            z["bloecke"] += sum(int(v) for v in (d.get("bloecke") or {}).values())
+    bewertet = [(a, z["summe"] / z["n"], z["n"], z["bloecke"])
+                for a, z in je_art.items() if z["n"] > 0]
+    if not bewertet:
+        return []
+    bewertet.sort(key=lambda x: x[1], reverse=True)
+
+    zeilen = ["<b>📈 Chartmuster (gemessen, handeln NICHT mit):</b>"]
+    for art, vorteil, n, bloecke in bewertet:
+        vz = "+" if vorteil >= 0 else ""
+        zeilen.append(f"• {art}: {vz}{vorteil:.3f}% Vorteil ({bloecke} Bloecke, {n} Balken)")
+    zeilen.append("<i>Vorteil ueber den Swing-Horizont, MINUS Marktbewegung im selben "
+                  "Zeitraum. Negativ heisst: dieses Muster haette Geld gekostet. "
+                  "Bloecke, nicht Balken, sind die ehrliche Fallzahl.</i>")
+    zeilen.append("")
+    return zeilen
+
+
 def _build_report(days: int, title: str, compare_previous: bool, show_walk_forward: bool = False) -> str:
     current = _stats_for_window(days, 0)
     lines = [f"📊 <b>{title}</b>", ""]
@@ -319,6 +366,7 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
             lines.append("")
 
         lines.extend(_konsens_abschnitt())
+        lines.extend(_muster_abschnitt())
 
     # Entry-Engine Phase D: Auswertung nach Entry-Quality-Tier
     tiers = _entry_quality_breakdown(days)

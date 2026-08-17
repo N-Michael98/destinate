@@ -89,6 +89,43 @@ PAUSE_SEK = 2
 # eingetreten waere.
 HORIZONTE: dict[str, int] = {"scalping_4h": 1, "daytrading_24h": 6, "swing_168h": 42}
 
+# Dieselben Horizonte in STUNDEN — die eigentliche Groesse. Die Balkenzahlen
+# oben gelten nur fuer einen 4h-Takt.
+#
+# FUND 10.08.: die Muster-Auswertung rechnet auf TAGESKERZEN. Dieselben
+# Balkenzahlen bedeuten dort 1, 6 und 42 TAGE statt 4h, 24h und 168h — also den
+# sechsfachen Zeitraum, ohne dass es irgendwo stuende. Aufgefallen an einem
+# unplausiblen Ergebnis (USOIL Doppelboden "+24 % auf 7 Tage"), das in
+# Wirklichkeit 42 Tage waren.
+#
+# Ein Horizont, der kuerzer ist als ein Balken, laesst sich nicht messen und
+# wird weggelassen — statt auf 1 Balken aufgerundet zu werden und damit etwas
+# anderes zu messen, als sein Name sagt.
+HORIZONTE_STUNDEN: dict[str, int] = {
+    "scalping_4h": 4, "daytrading_24h": 24, "swing_168h": 168,
+}
+
+# Wie viele Stunden ein Balken je Takt umfasst.
+TAKT_STUNDEN: dict[str, float] = {"15m": 0.25, "1h": 1, "4h": 4, "1d": 24}
+
+
+def horizonte_fuer(takt_intervall: str | None) -> dict[str, int]:
+    """Horizonte in BALKEN, passend zum Takt der Reihe.
+
+    Bei 4h kommen exakt die Werte oben heraus (1, 6, 42) — das bisherige
+    Verhalten bleibt damit unveraendert. Bei einem unbekannten Takt ebenso,
+    weil dann nichts Besseres bekannt ist.
+    """
+    stunden = TAKT_STUNDEN.get(str(takt_intervall or "").lower())
+    if not stunden or stunden <= 0:
+        return dict(HORIZONTE)
+    aus: dict[str, int] = {}
+    for name, h in HORIZONTE_STUNDEN.items():
+        balken = int(round(h / stunden))
+        if balken >= 1:
+            aus[name] = balken
+    return aus
+
 # Grenzen der Confidence-Staffelung. Die Schnitte bei 75 und 81 sind KEINE
 # runden Zahlen, sondern die Schwellen aus den Einstellungen: ab 75 wird
 # automatisch freigegeben, ab 81 auch nach Erreichen des Tageslimits. Damit
@@ -278,12 +315,17 @@ def bewerte_historie(historie: dict) -> dict:
     }
     ergebnis["bloeckeGesamt"] = len(alle_bloecke)
 
+    # Horizonte passend zum TAKT der Reihe — auf Tageskerzen bedeuten dieselben
+    # Balkenzahlen den sechsfachen Zeitraum (Fund 10.08.).
+    horizonte = horizonte_fuer(historie.get("taktIntervall"))
+    ergebnis["horizonteBalken"] = horizonte
     ergebnis["horizonte"] = {
         name: _je_horizont(kurse, konsens, k, vollstaendig, n)
-        for name, k in HORIZONTE.items()
+        for name, k in horizonte.items()
     }
-    ergebnis["konfidenz"] = _je_konfidenz(kurse, konsens, conf)
-    ergebnis["entryQuality"] = _je_tier(kurse, konsens, tiers)
+    leit = horizonte.get("daytrading_24h") or next(iter(horizonte.values()), 1)
+    ergebnis["konfidenz"] = _je_konfidenz(kurse, konsens, conf, leit)
+    ergebnis["entryQuality"] = _je_tier(kurse, konsens, tiers, leit)
     return ergebnis
 
 
@@ -316,13 +358,14 @@ def _je_horizont(kurse: list[float], konsens: list[str], k: int,
     return block
 
 
-def _je_konfidenz(kurse: list[float], konsens: list[str], conf: list[int]) -> dict:
+def _je_konfidenz(kurse: list[float], konsens: list[str], conf: list[int],
+                  leit_horizont: int) -> dict:
     """Staffelung nach Confidence — beantwortet, ob 75 richtig liegt.
 
     Gerechnet auf dem Daytrading-Horizont: das ist der Standard-Handelsstil,
     und eine Staffelung ueber drei Horizonte gleichzeitig liest niemand.
     """
-    k = HORIZONTE["daytrading_24h"]
+    k = leit_horizont
     stufen: dict = {}
     for unten, oben in KONFIDENZ_STUFEN:
         renditen: list[float] = []
@@ -338,9 +381,10 @@ def _je_konfidenz(kurse: list[float], konsens: list[str], conf: list[int]) -> di
     return {"horizontBalken": k, "stufen": stufen}
 
 
-def _je_tier(kurse: list[float], konsens: list[str], tiers: list[str]) -> dict:
+def _je_tier(kurse: list[float], konsens: list[str], tiers: list[str],
+             leit_horizont: int) -> dict:
     """Dasselbe nach Entry-Quality-Stufe."""
-    k = HORIZONTE["daytrading_24h"]
+    k = leit_horizont
     gruppen: dict[str, list[float]] = {}
     for i, richtung in enumerate(konsens):
         if richtung not in RICHTUNGEN or i >= len(tiers):

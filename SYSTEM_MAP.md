@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
+Dateien mit internen Abhängigkeiten: 642 · Kanten: 1330
 
 
 ## analysis-engine/api
@@ -21,6 +21,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
   - → `analysis-engine/services/backup.py`
   - → `analysis-engine/services/data_collector.py`
   - → `analysis-engine/services/konsens_auswertung.py`
+  - → `analysis-engine/services/muster_auswertung.py`
   - → `analysis-engine/services/news_intel.py`
   - → `analysis-engine/services/periodic_report.py`
   - → `analysis-engine/services/recommendations.py`
@@ -41,6 +42,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
   - → `analysis-engine/services/backup.py`
   - → `analysis-engine/services/data_collector.py`
   - → `analysis-engine/services/konsens_auswertung.py`
+  - → `analysis-engine/services/muster_auswertung.py`
   - → `analysis-engine/services/news_intel.py`
   - → `analysis-engine/services/periodic_report.py`
   - → `analysis-engine/services/recommendations.py`
@@ -61,6 +63,11 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
 - `analysis-engine/services/konsens_auswertung.py`
   - → `analysis-engine/core/config.py`
   - → `analysis-engine/services/backtest_engine.py`
+  - → `analysis-engine/services/storage.py`
+- `analysis-engine/services/muster_auswertung.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/services/backtest_engine.py`
+  - → `analysis-engine/services/konsens_auswertung.py`
   - → `analysis-engine/services/storage.py`
 - `analysis-engine/services/news_intel.py`
   - → `analysis-engine/core/config.py`
@@ -83,6 +90,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
   - → `analysis-engine/services/backtest_engine.py`
   - → `analysis-engine/services/data_collector.py`
   - → `analysis-engine/services/konsens_auswertung.py`
+  - → `analysis-engine/services/muster_auswertung.py`
   - → `analysis-engine/services/periodic_report.py`
   - → `analysis-engine/services/recommendations.py`
   - → `analysis-engine/services/walk_forward.py`
@@ -117,6 +125,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
 - `backend/api/routes/strategies.py`
   - → `backend/services/chartmuster.py`
   - → `backend/services/market_data.py`
+  - → `backend/services/muster_historie.py`
   - → `backend/services/strategie_historie.py`
   - → `backend/services/trading_strategies.py`
 - `backend/api/routes/system.py`
@@ -165,6 +174,10 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
 - `backend/services/market_intelligence.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`
+- `backend/services/muster_historie.py`
+  - → `backend/services/chartmuster.py`
+  - → `backend/services/market_data.py`
+  - → `backend/services/strategie_historie.py`
 - `backend/services/strategie_historie.py`
   - → `backend/services/market_data.py`
 - `backend/services/talib_indicators.py`
@@ -189,6 +202,7 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
   - → `backend/services/chartmuster.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`
+  - → `backend/services/muster_historie.py`
   - → `backend/services/strategie_historie.py`
   - → `backend/services/trade_lifecycle_manager.py`
   - → `backend/services/trading_strategies.py`
@@ -2022,13 +2036,13 @@ Dateien mit internen Abhängigkeiten: 640 · Kanten: 1318
 - `frontend/app/lib/prisma.ts` — von 20 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 17 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 15 Dateien
+- `analysis-engine/core/config.py` — von 13 Dateien
+- `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 13 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 13 Dateien
-- `analysis-engine/core/config.py` — von 12 Dateien
-- `backend/services/market_data.py` — von 12 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
-- `analysis-engine/services/storage.py` — von 9 Dateien
+- `analysis-engine/services/storage.py` — von 10 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 9 Dateien
 - `frontend/lib/paper-trading/paper-types.ts` — von 9 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 8 Dateien

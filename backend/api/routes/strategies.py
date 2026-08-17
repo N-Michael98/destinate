@@ -5,6 +5,7 @@ POST /api/v1/strategies/analyze/multi           → Alle 15 Strategien für mehr
 GET  /api/v1/strategies/list                    → Liste aller verfügbaren Strategien
 GET  /api/v1/strategies/historie/{symbol}       → 16-Strategien-Konsens rückgerechnet
 GET  /api/v1/strategies/muster/{symbol}         → Chartmuster im Kursverlauf
+GET  /api/v1/strategies/muster-historie/{symbol} → Chartmuster rückgerechnet
 """
 
 import asyncio
@@ -14,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from services.trading_strategies import analyze_all_strategies, STRATEGIES
 from services.strategie_historie import konsens_historie
 from services.chartmuster import erkenne_muster
+from services.muster_historie import muster_historie
 
 router = APIRouter(prefix="/strategies", tags=["Trading Strategies"])
 
@@ -153,3 +155,36 @@ async def chartmuster(symbol: str, interval: str = "4h"):
 
     schleife = asyncio.get_event_loop()
     return await schleife.run_in_executor(None, _lauf)
+
+
+MAX_MUSTER_FENSTER_TAGE = 730
+STANDARD_MUSTER_FENSTER_TAGE = 365
+
+
+@router.get("/muster-historie/{symbol}")
+async def muster_rueckrechnung(symbol: str, tage: int = STANDARD_MUSTER_FENSTER_TAGE,
+                               interval: str = "1d"):
+    """Laesst die ECHTE Muster-Erkennung durch die Vergangenheit laufen.
+
+    WOZU: chartmuster.py erkennt Muster, handelt aber bewusst nicht mit. Ob ein
+    Muster etwas taugt, muss erst gemessen werden — dafuer liefert dieser
+    Endpunkt die Grundlage. Bewertet wird in der Analysis-Engine, mit derselben
+    Auswertung, die schon den 16-Strategien-Konsens misst.
+
+    Gemessen 10.08.: rund 1 Sekunde je Jahr Tageskerzen. Laeuft trotzdem im
+    eigenen Faden — dieser Dienst bedient alle 5 Minuten den Live-Scan
+    (Audit-Fund #6).
+    """
+    if tage < 1 or tage > MAX_MUSTER_FENSTER_TAGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"tage muss zwischen 1 und {MAX_MUSTER_FENSTER_TAGE} liegen",
+        )
+    if interval not in ERLAUBTE_INTERVALLE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"interval muss eines von {sorted(ERLAUBTE_INTERVALLE)} sein",
+        )
+    sym = symbol.upper()
+    schleife = asyncio.get_event_loop()
+    return await schleife.run_in_executor(None, muster_historie, sym, tage, interval)

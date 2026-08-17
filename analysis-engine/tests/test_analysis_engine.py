@@ -85,6 +85,7 @@ from services.periodic_report import (_exit_reason_breakdown,        # noqa: E40
                                       _konsens_abschnitt, _build_report)
 from services.recommendations import _build_recommendations          # noqa: E402
 import services.konsens_auswertung as _KA                        # noqa: E402
+import services.muster_auswertung as _MA                         # noqa: E402
 
 
 def _notiz(grund=None, **rest):
@@ -1052,3 +1053,163 @@ def test_konsens_pfad_stimmt_mit_dem_backend_ueberein():
     assert gebaut == echt, (
         f"Pfade laufen auseinander — Engine fragt {gebaut}, Backend bedient {echt}"
     )
+
+
+
+# ── Chartmuster-Bewertung (10.08.) ───────────────────────────────────────────
+
+
+def test_horizonte_haengen_am_takt():
+    """DER FUND vom 10.08.
+
+    HORIZONTE sind Balkenzahlen fuer einen 4h-Takt (1, 6, 42 = 4h, 24h, 168h).
+    Die Muster-Rueckrechnung laeuft auf TAGESKERZEN — dieselben Zahlen bedeuten
+    dort 1, 6 und 42 TAGE, also den sechsfachen Zeitraum, ohne dass es irgendwo
+    stuende. Aufgefallen an einem unplausiblen Ergebnis (+24 % "auf 7 Tage").
+    """
+    assert _KA.horizonte_fuer("4h") == _KA.HORIZONTE, "4h muss unveraendert bleiben"
+    tag = _KA.horizonte_fuer("1d")
+    assert tag["daytrading_24h"] == 1 and tag["swing_168h"] == 7, tag
+    # Ein Horizont kuerzer als ein Balken laesst sich nicht messen und wird
+    # weggelassen — statt auf 1 aufgerundet zu werden und etwas anderes zu
+    # messen, als sein Name sagt.
+    assert "scalping_4h" not in tag, "4h auf Tageskerzen ist nicht messbar"
+    assert _KA.horizonte_fuer("1h")["scalping_4h"] == 4
+    # Unbekannter oder fehlender Takt -> die bisherigen Werte, nichts Erfundenes.
+    for schlecht in [None, "", "99x"]:
+        assert _KA.horizonte_fuer(schlecht) == _KA.HORIZONTE
+
+
+def test_horizonte_wirken_in_der_bewertung():
+    """Nicht nur die Funktion, auch ihre Anwendung."""
+    kurse = [100.0 + i for i in range(60)]
+    h4 = _historie(kurse, ["LONG"] * 60)
+    h1d = {**_historie(kurse, ["LONG"] * 60), "taktIntervall": "1d"}
+    r4 = _KA.bewerte_historie(h4)
+    r1 = _KA.bewerte_historie(h1d)
+    assert r4["horizonteBalken"]["swing_168h"] == 42
+    assert r1["horizonteBalken"]["swing_168h"] == 7
+    assert "scalping_4h" in r4["horizonte"] and "scalping_4h" not in r1["horizonte"]
+
+
+def _musterhistorie(kurse, arten, richtungen):
+    n = len(kurse)
+    return {
+        "symbol": "TEST", "status": "ok", "taktIntervall": "1d",
+        "kurs": kurse, "konsens": richtungen, "konsensConf": [0] * n,
+        "entryQualityTier": arten, "strategienOhneDaten": [0] * n,
+        "musterAlle": [[a] if a != "KEIN_MUSTER" else [] for a in arten],
+        "fensterTage": 365, "strategienMitLuecken": {}, "hinweise": [],
+    }
+
+
+def test_muster_wird_je_art_getrennt_bewertet():
+    """Der Kern: jede Musterart bekommt ihre eigene Zahl.
+
+    Zusammengefasst waere die Aussage wertlos — ein gutes Muster koennte ein
+    schlechtes tragen.
+    """
+    # DOPPELBODEN steht vor Anstiegen, DOPPELTOP vor weiteren Anstiegen
+    # (also falsch). Beide muessen SICHTBAR verschieden herauskommen.
+    kurse, arten, richtungen = [], [], []
+    for i in range(80):
+        kurse.append(100.0 + i * 1.0)
+        if i % 10 == 0:
+            arten.append("DOPPELBODEN"); richtungen.append("LONG")
+        elif i % 10 == 5:
+            arten.append("DOPPELTOP"); richtungen.append("SHORT")
+        else:
+            arten.append("KEIN_MUSTER"); richtungen.append("NEUTRAL")
+    r = _MA.bewerte_muster(_musterhistorie(kurse, arten, richtungen))
+    assert r["status"] == "ok"
+    assert set(r["jeMusterart"]) == {"DOPPELBODEN", "DOPPELTOP"}
+    db = r["jeMusterart"]["DOPPELBODEN"]["horizonte"]["daytrading_24h"]["alle"]
+    dt = r["jeMusterart"]["DOPPELTOP"]["horizonte"]["daytrading_24h"]["alle"]
+    assert db["LONG"]["n"] > 0 and dt["SHORT"]["n"] > 0
+    # Im stetigen Anstieg muss SHORT schlechter abschneiden als LONG.
+    assert dt["SHORT"]["mittelPct"] < db["LONG"]["mittelPct"]
+
+
+def test_muster_reihe_fuer_setzt_alles_andere_auf_neutral():
+    """Sonst wuerde jede Art die Faelle der anderen mitzaehlen."""
+    arten = ["DOPPELTOP", "DOPPELBODEN", "KEIN_MUSTER", "DOPPELTOP"]
+    richtungen = ["SHORT", "LONG", "NEUTRAL", "SHORT"]
+    h = _musterhistorie([100.0, 101.0, 102.0, 103.0], arten, richtungen)
+    nur_dt = _MA._reihe_fuer(h, "DOPPELTOP")["konsens"]
+    assert nur_dt == ["SHORT", "NEUTRAL", "NEUTRAL", "SHORT"], nur_dt
+    # Der Kurs darf dabei NICHT angefasst werden — die Basis muss ueber alle
+    # Balken gleich bleiben, sonst waere der Vergleich zwischen den Arten unfair.
+    assert _MA._reihe_fuer(h, "DOPPELTOP")["kurs"] == h["kurs"]
+
+
+def test_muster_zaehlt_auch_die_unbestaetigten():
+    """Ohne diese Zahl waere 'nur bestaetigte zaehlen' eine Regel ohne Beleg."""
+    arten = ["DOPPELTOP", "KEIN_MUSTER", "DOPPELTOP"]
+    h = _musterhistorie([100.0, 101.0, 102.0], arten, ["SHORT", "NEUTRAL", "SHORT"])
+    h["musterAlle"] = [["DOPPELTOP", "DREIECK_STEIGEND"], ["DREIECK_STEIGEND"], ["DOPPELTOP"]]
+    r = _MA.bewerte_muster(h)
+    assert r["erkanntGesamt"] == {"DOPPELTOP": 2, "DREIECK_STEIGEND": 2}
+
+
+def test_muster_reicht_fehlerstatus_durch():
+    r = _MA.bewerte_muster({"status": "keine_daten", "hinweise": ["keine Kerzen"]})
+    assert r["status"] == "keine_daten" and r["hinweise"]
+
+
+def test_muster_klemmt_das_fenster():
+    echt = _MA.settings
+    _MA.settings = types.SimpleNamespace(MUSTER_FENSTER_TAGE=99999)
+    try:
+        assert _MA._fensterlaenge() == _MA.MAX_FENSTER_TAGE
+        _MA.settings = types.SimpleNamespace(MUSTER_FENSTER_TAGE=0)
+        assert _MA._fensterlaenge() == _MA.STANDARD_FENSTER_TAGE
+    finally:
+        _MA.settings = echt
+
+
+def test_muster_holt_vom_richtigen_endpunkt():
+    """Die Naht zwischen den Diensten — dort sassen heute schon zwei Fehler."""
+    gesehen = {}
+
+    class _A:
+        status_code = 200
+        text = ""
+        @staticmethod
+        def json():
+            return {"status": "ok"}
+
+    echt_httpx, echt_settings = _MA.httpx, _MA.settings
+    _MA.httpx = types.SimpleNamespace(
+        get=lambda url, **k: (gesehen.update(url=url, **k), _A())[1])
+    _MA.settings = types.SimpleNamespace(
+        PYTHON_BACKEND_URL="http://b", BACKEND_API_KEY="geheim")
+    try:
+        _MA.hole_musterhistorie("EURUSD", tage=100)
+    finally:
+        _MA.httpx, _MA.settings = echt_httpx, echt_settings
+    assert gesehen["url"] == "http://b/api/v1/strategies/muster-historie/EURUSD"
+    assert gesehen["params"] == {"tage": 100, "interval": "1d"}
+    assert gesehen["headers"] == {"X-Backend-Key": "geheim"}
+
+
+def test_muster_lauf_geht_durch_und_landet_in_redis():
+    """Die Verdrahtung — genau die Zone, in der heute schon ein KeyError sass."""
+    kurse = [100.0 + i for i in range(60)]
+    arten = ["DOPPELBODEN" if i % 10 == 0 else "KEIN_MUSTER" for i in range(60)]
+    richt = ["LONG" if i % 10 == 0 else "NEUTRAL" for i in range(60)]
+    geschrieben = {}
+    echt_hole, echt_redis = _MA.hole_musterhistorie, _MA.redis_set_json
+    echt_wl, echt_pause = _MA.WATCHLIST, _MA.PAUSE_SEK
+    _MA.hole_musterhistorie = lambda s, tage=None: _musterhistorie(kurse, arten, richt)
+    _MA.redis_set_json = lambda k, v, ttl: geschrieben.update({k: v}) or True
+    _MA.WATCHLIST = ["EURUSD", "BTCUSD"]
+    _MA.PAUSE_SEK = 0
+    try:
+        _MA.run_muster_auswertung()
+    finally:
+        _MA.hole_musterhistorie, _MA.redis_set_json = echt_hole, echt_redis
+        _MA.WATCHLIST, _MA.PAUSE_SEK = echt_wl, echt_pause
+    end = geschrieben[_MA.REDIS_KEY_MUSTER]
+    assert end["status"] == "done", end.get("error")
+    assert end["symbole"] == 2
+    json.dumps(end)

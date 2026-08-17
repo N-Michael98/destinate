@@ -91,6 +91,14 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_konsens_auswertung, "cron", day_of_week="sat", hour=5, minute=0,
                           id="konsens", misfire_grace_time=3600)
 
+        # Chartmuster-Rückrechnung (10.08.): wöchentlich Samstag 05:30 UTC.
+        # Deutlich billiger als der Konsens (gemessen rund 1 s je Symbol und
+        # Jahr), deshalb direkt danach. Beantwortet, ob ein erkanntes Muster
+        # überhaupt Information trägt — bevor es handeln darf.
+        from services.muster_auswertung import run_muster_auswertung
+        scheduler.add_job(run_muster_auswertung, "cron", day_of_week="sat", hour=5, minute=30,
+                          id="muster", misfire_grace_time=3600)
+
         scheduler.start()
         logger.info("Scheduler gestartet — data-collector (4h), news-intel (2h), backtest (02:00), ai-learning (03:30)")
     except Exception as e:

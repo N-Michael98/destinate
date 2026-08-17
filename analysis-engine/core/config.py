@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # 0 = Standard (90) verwenden.
     KONSENS_FENSTER_TAGE: int = 0
 
+    # Fensterlänge der Chartmuster-Rückrechnung in Tagen (10.08.).
+    # 0 = Standard (365) verwenden.
+    MUSTER_FENSTER_TAGE: int = 0
+
     class Config:
         env_file = ".env"
         extra = "ignore"
