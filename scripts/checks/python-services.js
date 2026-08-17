@@ -130,7 +130,7 @@ module.exports = function pruefe() {
 
   // ── Teil 2: Laufen die vorhandenen Tests? ─────────────────────────────────
   //
-  // ERWEITERT 07.08.: geprüft wurde nur backend/tests. analysis-engine hatte
+  // ERWEITERT 09.08.: geprüft wurde nur backend/tests. analysis-engine hatte
   // KEINEN einzigen Test — dort entsteht aber die Lerngrundlage des Systems
   // (Trade-Statistiken, Ausstiegsgründe, Wochen-Report). py_compile findet dort
   // Syntaxfehler, aber keinen falschen Zähler; wer Trades falsch gruppiert,
@@ -147,7 +147,7 @@ module.exports = function pruefe() {
   // Die Regel kommt aus der STRUKTUR: jeder Dienst mit Python-Quelltext braucht
   // Tests. Damit lässt sich weder ein Eintrag aus einer Liste streichen noch ein
   // tests/-Verzeichnis löschen, ohne dass der Prüfer rot wird — beide Wege sind
-  // im Sabotage-Lauf am 07.08. zuerst durchgerutscht.
+  // im Sabotage-Lauf am 09.08. zuerst durchgerutscht.
   const suiten = gruppen.filter(([, dateien]) => dateien.length > 0).map(([d]) => d);
   for (const dienst of suiten) {
     const testDir = path.join(ROOT, dienst, "tests");

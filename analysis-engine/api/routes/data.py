@@ -124,7 +124,7 @@ def trigger_konsens(bg: BackgroundTasks):
 
 @router.get("/muster")
 def get_muster():
-    """Bewertung der Chartmuster (10.08.)."""
+    """Bewertung der Chartmuster (17.08.)."""
     from services.muster_auswertung import REDIS_KEY_MUSTER
     data = redis_get_json(REDIS_KEY_MUSTER)
     return {"available": data is not None, "data": data}

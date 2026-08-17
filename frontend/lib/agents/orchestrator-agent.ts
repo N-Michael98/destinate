@@ -355,7 +355,7 @@ async function postTradeActions(params: {
   try {
     const { saveCapitalTradeToJournal } = await import("../capital-com/capital-trade-tracker");
     await saveCapitalTradeToJournal({
-      // Unbestaetigte Order mitschreiben (10.08.) — sonst ist ein
+      // Unbestaetigte Order mitschreiben (17.08.) — sonst ist ein
       // Phantom-Trade spaeter nicht von einem echten Nulltrade zu trennen.
       unbestaetigt: result?.unbestaetigt,
       dealId:       result?.dealId ?? "unknown",
@@ -398,7 +398,7 @@ function isWithinTradingSession(): boolean {
 // ── Hauptzyklus ───────────────────────────────────────────────────────────────
 
 /**
- * Die Auto-Approve-Schwelle, die WIRKLICH gilt (10.08.).
+ * Die Auto-Approve-Schwelle, die WIRKLICH gilt (13.08.).
  *
  * Ein gespeicherter Wert unter MIN_SIGNAL_CONFIDENCE hat keine Wirkung: die
  * Signalkette verwirft solche Signale schon vorher an drei Stellen. Der Regler
@@ -816,7 +816,7 @@ export async function runOrchestratorCycle(): Promise<void> {
       // Kurs-Aktualität (02.08.) — verhindert Einstiege auf veralteten Kursen
       priceAgeMinutes: candidate.ageMinutes,
       maxPriceAgeMinutes: settings.botSettings.maxPriceAgeMinutes,
-      // Wochenverlust-Grenze (10.08.): stand bis heute als Standardwert in der
+      // Wochenverlust-Grenze (13.08.): stand bis heute als Standardwert in der
       // Signatur des Filters und wurde nie uebergeben — als einziges der drei
       // Verlust-Limits war sie nicht einstellbar.
       maxWeeklyLossPct: settings.riskSettings?.maxWeeklyLossPct,

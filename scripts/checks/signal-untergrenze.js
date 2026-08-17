@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Prüfer 13: Untergrenze der Signal-Confidence — ein Regler darf nicht lügen
 //
-// DER FUND (10.08.). Der Regler "Auto-Approve Threshold" liess Werte von 50 bis
+// DER FUND (13.08.). Der Regler "Auto-Approve Threshold" liess Werte von 50 bis
 // 99 zu. Bevor ein Signal diesen Regler erreicht, wird es aber schon verworfen:
 // die Signalkette verlangt an DREI Stellen `confidence >= 70`. Werte zwischen
 // 50 und 69 hatten damit KEINERLEI Wirkung — der Regler zeigte eine

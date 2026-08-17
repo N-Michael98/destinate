@@ -299,7 +299,7 @@ export async function register() {
                   }
 
                   // Welche Positionen haben schon einen ECHTEN Teilgewinn
-                  // hinter sich? (10.08.) Der RiskAgent lief in diesem Zyklus
+                  // hinter sich? (11.08.) Der RiskAgent lief in diesem Zyklus
                   // kurz zuvor und hat seinen Teilgewinn in Trade.notes
                   // vermerkt. Der Python-Lifecycle weiss davon nichts: sein
                   // partial_done liegt nur im Arbeitsspeicher, und sein
@@ -379,7 +379,7 @@ export async function register() {
                       if (r.ok) {
                         console.log(`[py-lifecycle] SL updated: ${symbol} ${liveSL ?? "kein"} -> ${action.new_sl}`);
                         // Dem AI Manager mitteilen, dass hier ein zweites System
-                        // eingegriffen hat (10.08.). Er entschied bisher ueber
+                        // eingegriffen hat (11.08.). Er entschied bisher ueber
                         // Positionen, deren Absicherung Python kurz zuvor
                         // veraendert hatte, ohne davon zu wissen.
                         try {
@@ -400,7 +400,7 @@ export async function register() {
                       }
                       else console.error(`[py-lifecycle] ⚠ Zeit-Exit FEHLGESCHLAGEN: ${symbol} — ${r.error}`);
                     } else if (action.action === "PARTIAL_CLOSE" && action.volume) {
-                      // ZWEI Systeme nehmen Teilgewinn (Fund 10.08.). Kurz zuvor
+                      // ZWEI Systeme nehmen Teilgewinn (Fund 11.08.). Kurz zuvor
                       // lief in diesem Zyklus runActiveTradeManager() ->
                       // runRiskAgent(), der ebenfalls capitalClosePartial ruft.
                       // Beide führen getrennte Merker, keiner kennt den anderen:

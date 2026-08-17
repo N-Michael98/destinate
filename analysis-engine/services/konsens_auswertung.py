@@ -1,5 +1,5 @@
 """
-Bewertung des historischen Konsenses (Stufe 4, Schritt 3 — 07.08.).
+Bewertung des historischen Konsenses (Stufe 4, Schritt 3 — 10.08.).
 
 WOZU. Schritt 2 laesst den ECHTEN 16-Strategien-Konsens durch die Vergangenheit
 laufen und liefert die Reihe der Entscheidungen samt Kurs. Er bewertet sie
@@ -54,7 +54,7 @@ from services.storage import redis_set_json
 REDIS_KEY_KONSENS = "analysis:konsens"
 TTL = 8 * 24 * 60 * 60  # 8 Tage — laeuft woechentlich
 
-# Fensterlaenge in Tagen. EINSTELLBAR (User-Vorgabe 07.08.: "wir muessen die
+# Fensterlaenge in Tagen. EINSTELLBAR (User-Vorgabe 10.08.: "wir muessen die
 # zeit fenster anpassen so sind wir flexibel"): die Rechnung faellt in
 # divine-warmth an, das alle 5 Minuten auch den Live-Scan bedient.
 STANDARD_FENSTER_TAGE = 90
@@ -92,7 +92,7 @@ HORIZONTE: dict[str, int] = {"scalping_4h": 1, "daytrading_24h": 6, "swing_168h"
 # Dieselben Horizonte in STUNDEN — die eigentliche Groesse. Die Balkenzahlen
 # oben gelten nur fuer einen 4h-Takt.
 #
-# FUND 10.08.: die Muster-Auswertung rechnet auf TAGESKERZEN. Dieselben
+# FUND 17.08.: die Muster-Auswertung rechnet auf TAGESKERZEN. Dieselben
 # Balkenzahlen bedeuten dort 1, 6 und 42 TAGE statt 4h, 24h und 168h — also den
 # sechsfachen Zeitraum, ohne dass es irgendwo stuende. Aufgefallen an einem
 # unplausiblen Ergebnis (USOIL Doppelboden "+24 % auf 7 Tage"), das in
@@ -316,7 +316,7 @@ def bewerte_historie(historie: dict) -> dict:
     ergebnis["bloeckeGesamt"] = len(alle_bloecke)
 
     # Horizonte passend zum TAKT der Reihe — auf Tageskerzen bedeuten dieselben
-    # Balkenzahlen den sechsfachen Zeitraum (Fund 10.08.).
+    # Balkenzahlen den sechsfachen Zeitraum (Fund 17.08.).
     horizonte = horizonte_fuer(historie.get("taktIntervall"))
     ergebnis["horizonteBalken"] = horizonte
     ergebnis["horizonte"] = {

@@ -1,5 +1,5 @@
 /**
- * Zustand des Exit-AI-Managers (10.08.).
+ * Zustand des Exit-AI-Managers (11.08.).
  *
  * WOZU. Faellt die AI aus, faengt askAIManager() das ab und liefert APPROVE —
  * das System laeuft regelbasiert weiter. Das ist als Verhalten richtig, aber

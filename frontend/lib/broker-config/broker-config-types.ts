@@ -98,7 +98,7 @@ export interface BotSettings {
 }
 
 /**
- * Untergrenze für die Confidence eines Signals (10.08.).
+ * Untergrenze für die Confidence eines Signals (13.08.).
  *
  * WOZU. Der Regler "Auto-Approve Threshold" liess Werte von 50 bis 99 zu. Bevor
  * ein Signal diesen Regler überhaupt erreicht, wird es aber schon verworfen:
@@ -126,7 +126,7 @@ export interface RiskSettings {
   maxTotalDrawdownPct: number;
   maxExposurePct: number;
   minConfidenceScore: number;
-  /** Wochenverlust-Grenze in % (10.08.).
+  /** Wochenverlust-Grenze in % (13.08.).
    *
    *  Stand bis heute als Standardwert direkt in der Signatur von
    *  checkWeeklyLossLimit (6.0) und wurde vom einzigen Aufrufer nicht

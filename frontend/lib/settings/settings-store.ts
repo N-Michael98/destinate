@@ -37,7 +37,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     maxTotalDrawdownPct: 10.0,
     maxExposurePct: 20.0,
     minConfidenceScore: 65,
-    // 10.08.: bisher als Standardwert in der Funktionssignatur verdrahtet.
+    // 13.08.: bisher als Standardwert in der Funktionssignatur verdrahtet.
     // Der Wert bleibt 6.0 — es aendert sich nichts, er wird nur einstellbar.
     maxWeeklyLossPct: 6.0,
     // Standard AUS: die Schwellen zählen weiter in Kursprozent, bisheriges

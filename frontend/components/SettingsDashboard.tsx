@@ -979,7 +979,7 @@ export default function SettingsDashboard() {
               {[
                 { label: "Max Trades / Day", field: "maxTradesPerDay", value: settings.botSettings.maxTradesPerDay, min: 1, max: 50 },
                 { label: "Max Concurrent Positions", field: "maxConcurrentPositions", value: settings.botSettings.maxConcurrentPositions, min: 1, max: 10 },
-                // min ab 10.08. aus MIN_SIGNAL_CONFIDENCE statt fest 50: die Signalkette
+                // min ab 13.08. aus MIN_SIGNAL_CONFIDENCE statt fest 50: die Signalkette
                 // verwirft alles darunter an drei Stellen, der Regler zeigte also
                 // einen Bereich an, den es nicht gab.
                 { label: `Auto-Approve Threshold (%) — ab ${MIN_SIGNAL_CONFIDENCE}`, field: "autoApproveThreshold", value: settings.botSettings.autoApproveThreshold, min: MIN_SIGNAL_CONFIDENCE, max: 99 },
@@ -1435,11 +1435,11 @@ export default function SettingsDashboard() {
               { label: "Max Risk Per Trade (%)", field: "maxRiskPerTradePct", value: settings.riskSettings.maxRiskPerTradePct, min: 0.1, max: 5, step: 0.1, color: "#10c96d" },
               { label: "Max Daily Drawdown (%)", field: "maxDailyDrawdownPct", value: settings.riskSettings.maxDailyDrawdownPct, min: 0.5, max: 10, step: 0.5, color: "#fbbf24" },
               { label: "Max Total Drawdown (%)", field: "maxTotalDrawdownPct", value: settings.riskSettings.maxTotalDrawdownPct, min: 1, max: 30, step: 1, color: "#f87171" },
-              // 10.08. ergaenzt: die Wochengrenze war als einzige der drei Verlust-Limits
+              // 13.08. ergaenzt: die Wochengrenze war als einzige der drei Verlust-Limits
               // nicht einstellbar — sie stand als Standardwert in einer Funktionssignatur.
               { label: "Max Weekly Loss (%)", field: "maxWeeklyLossPct", value: settings.riskSettings.maxWeeklyLossPct, min: 1, max: 30, step: 0.5, color: "#f59e0b" },
               { label: "Max Portfolio Exposure (%)", field: "maxExposurePct", value: settings.riskSettings.maxExposurePct, min: 5, max: 100, step: 5, color: "#a5b4fc" },
-              // min ab 10.08. aus MIN_SIGNAL_CONFIDENCE statt fest 30 (derselbe Fund wie
+              // min ab 13.08. aus MIN_SIGNAL_CONFIDENCE statt fest 30 (derselbe Fund wie
               // beim Auto-Approve-Regler): dieser Wert geht per Math.max in dieselbe
               // Rechnung — er kann nur VERSCHAERFEN. Alles unter der Untergrenze der
               // Signalkette wird verschluckt und hatte nie eine Wirkung.

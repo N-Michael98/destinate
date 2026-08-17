@@ -60,7 +60,7 @@ function keysOf(block) {
 /** Übersetzt eine TypeScript-Datei und führt sie mit gestellten Importen aus.
  *
  *  WOZU. Die Prüfer sehen sonst nur STRUKTUR — ob ein Riegel dasteht. Ob er
- *  RICHTIG rechnet, sieht keiner. Vorgeführt am 10.08.: die AI-Klemme liess
+ *  RICHTIG rechnet, sieht keiner. Vorgeführt am 11.08.: die AI-Klemme liess
  *  sich auf `return n;` reduzieren (also vollständig entfernen) und ai-clamp
  *  blieb grün, weil dieser Prüfer eine eigene KOPIE der Klemme testete statt
  *  der echten. Ein Nachbau prüft sich selbst.

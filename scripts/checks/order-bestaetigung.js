@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Prüfer 14: Order-Bestätigung und Mindest-Stop-Abstand
 //
-// ZWEI FUNDE VOM 10.08., beide in capitalPlaceOrder.
+// ZWEI FUNDE VOM 13.08., beide in capitalPlaceOrder.
 //
 // A) EINE ORDER GALT ALS ERFOLGREICH, OHNE BESTÄTIGT ZU SEIN.
 //    Capital.com verlangt nach dem Absenden einen Bestätigungsschritt
@@ -142,7 +142,7 @@ module.exports = function pruefe() {
   pruefe1("eine nicht umrechenbare Einheit wird nicht sichtbar gemacht",
     /nicht umrechenbar/.test(client));
 
-  // ── C) Wird die Unsicherheit auch VERWERTET? (10.08.) ────────────────────
+  // ── C) Wird die Unsicherheit auch VERWERTET? (17.08.) ────────────────────
   //
   // ANLASS: unbestaetigt wurde eingefuehrt, aber von NIEMANDEM gelesen —
   // exakt die Fehlerklasse, die beim AI Manager (aiReason) am selben Tag

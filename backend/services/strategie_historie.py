@@ -1,5 +1,5 @@
 """
-Historischer Lauf des 16-Strategien-Konsenses (Stufe 4, Schritt 2 — 07.08.).
+Historischer Lauf des 16-Strategien-Konsenses (Stufe 4, Schritt 2 — 10.08.).
 
 WOZU. Der naechtliche Backtest und der Walk-Forward pruefen drei einfache
 Strategien auf Schlusskursen: EMA_CROSS, RSI_REVERSION, BREAKOUT. Gehandelt
@@ -20,7 +20,7 @@ spaeter auseinanderdriften und genau die Luecke neu aufreissen, die er
 schliessen soll.
 
 EHRLICHKEIT BEI DEN DATEN. Die Strategien brauchen vier Intervalle, und die
-reichen unterschiedlich weit zurueck. Gemessen am 07.08. bei yfinance:
+reichen unterschiedlich weit zurueck. Gemessen am 10.08. bei yfinance:
 
     4h (aus 1h)   3 Monate abrufbar, 6 Monate mit period=6mo
     1d            1 Jahr und mehr
@@ -54,7 +54,7 @@ from services.market_data import get_ohlcv
 # Ausschnitt zu schneiden, den die Strategie anfordert.
 #
 # ZUR GENAUIGKEIT, offen benannt: yfinance setzt den Fensteranfang anders als
-# "jetzt minus 30 Tage" (gemessen 07.08.: bis zu 66 Balken Abweichung). Fuer
+# "jetzt minus 30 Tage" (gemessen 10.08.: bis zu 66 Balken Abweichung). Fuer
 # einen VERGANGENEN Zeitpunkt gibt es aber ohnehin keine yfinance-Antwort, mit
 # der man vergleichen koennte — das Fenster muss konstruiert werden. Gewaehlt
 # ist die schlichte Zeitspanne, weil sie nachrechenbar ist.
@@ -69,7 +69,7 @@ ZEITRAUM_DAUER: dict[str, timedelta] = {
     "2y": timedelta(days=730),
 }
 
-# Was yfinance je Intervall ueberhaupt hergibt (gemessen 07.08.).
+# Was yfinance je Intervall ueberhaupt hergibt (gemessen 10.08.).
 # Laengere Anfragen kommen leer zurueck — deshalb hier gedeckelt, statt
 # hinterher mit leeren Rahmen dazustehen.
 MAX_HISTORIE: dict[str, timedelta] = {

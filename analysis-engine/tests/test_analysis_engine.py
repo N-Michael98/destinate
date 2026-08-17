@@ -1,7 +1,7 @@
 """
 Tests fuer die Analysis-Engine.
 
-WARUM ES DIESE DATEI GIBT (07.08.): analysis-engine hatte bis heute KEINEN
+WARUM ES DIESE DATEI GIBT (09.08.): analysis-engine hatte bis heute KEINEN
 einzigen Test. Der Pruefer python-services hat die Dateien nur uebersetzt
 (py_compile) — Uebersetzen findet Syntaxfehler, aber keinen falschen Zaehler.
 Genau hier entsteht aber die Lerngrundlage des Systems: wer den Ausstiegsgrund
@@ -194,7 +194,7 @@ def test_report_ohne_daten_faellt_nicht_um():
     assert _exit_reason_breakdown(7) == {}
 
 
-# ── Vorschlaege duerfen dem Walk-Forward nicht widersprechen (07.08.) ────────
+# ── Vorschlaege duerfen dem Walk-Forward nicht widersprechen (09.08.) ────────
 # ANLASS, belegt aus dem Telegram-Bericht vom 09.08.: alle DREI Vorschlaege des
 # Tages (DJ30, USDCAD, UK100) standen im selben Wochen-Report unter
 # "Overfitting-Verdacht". recommendations.py las den Walk-Forward gar nicht.
@@ -285,7 +285,7 @@ def test_vorschlaege_halten_nur_die_gemeldeten_zurueck():
     assert len(recs) == 3
 
 
-# ── Walk-Forward gehaertet (07.08.) ──────────────────────────────────────────
+# ── Walk-Forward gehaertet (09.08.) ──────────────────────────────────────────
 
 import numpy as _np                                                   # noqa: E402
 import pandas as _pd                                                  # noqa: E402
@@ -391,7 +391,7 @@ def test_auswahl_gibt_lieber_nichts_zurueck():
     assert best is None
 
 
-# ── Spread-Messung (07.08.) ──────────────────────────────────────────────────
+# ── Spread-Messung (09.08.) ──────────────────────────────────────────────────
 
 def _spread_zeile(markt, spread, bid):
     notizen = json.dumps({"entryContext": {"spread": spread, "bid": bid}})
@@ -437,7 +437,7 @@ def test_spread_ignoriert_unbrauchbare_werte():
 def test_walkforward_gibt_vorlauf_weiter():
     """Der Walk-Forward MUSS den Vorlauf an _run_single durchreichen.
 
-    LUECKE AUS DEM SABOTAGE-LAUF (07.08.): die Tests prueften zwar, dass
+    LUECKE AUS DEM SABOTAGE-LAUF (09.08.): die Tests prueften zwar, dass
     _run_single mit ab_index richtig maskiert — aber nicht, dass der
     Walk-Forward ihn ueberhaupt setzt. "warm_start = train_end" (also gar kein
     Vorlauf) blieb dadurch gruen. Genau diese Zeile prueft dieser Test.
@@ -484,7 +484,7 @@ def test_walkforward_gibt_vorlauf_weiter():
     assert any(f["vorlaufBalken"] > 0 for f in ergebnis["folds"])
 
 
-# -- Konsens-Auswertung (07.08., Stufe 4 Schritt 3) ---------------------------
+# -- Konsens-Auswertung (10.08., Stufe 4 Schritt 3) ---------------------------
 # Gemessen wird die Vorwaertsrendite nach einem Signal. Die drei Fehler, die so
 # eine Auswertung wertlos machen, stehen im Modulkopf — hier wird jeder einzeln
 # geprueft: Rand in die Zukunft, fehlende Basis, Ueberlappung als Fallzahl.
@@ -666,7 +666,7 @@ def test_konsens_kennzahlen_bei_leerer_liste():
 
 
 def test_konsens_etiketten_stimmen_mit_dem_backend_ueberein():
-    """Cross-Service-Riegel — der Fund vom 07.08.
+    """Cross-Service-Riegel — der Fund vom 10.08.
 
     Der erste Entwurf dieses Moduls suchte nach "BUY"/"SELL". Der Konsens
     vergibt aber "LONG"/"SHORT". Kein Unittest hat das gefunden: sie bekamen
@@ -788,7 +788,7 @@ def test_konsens_lauf_ueberlebt_ein_kaputtes_symbol():
 
 
 def test_konsens_holt_vom_richtigen_endpunkt():
-    """Die Strecke zwischen den Diensten — ungeprueft bis 07.08.
+    """Die Strecke zwischen den Diensten — ungeprueft bis 10.08.
 
     Genau hier sass der Fund des Tages (BUY/SELL statt LONG/SHORT): an der
     Naht zwischen zwei Diensten, die jeder fuer sich getestet waren. Ein
@@ -941,7 +941,7 @@ def test_report_schweigt_ohne_konsens_daten():
         # Ein LAUFENDER Eintrag MIT Teilergebnissen. Heute schreibt
         # _run_konsens_auswertung_inner waehrend des Laufs keine results mit —
         # deshalb griff bisher schon die results-Pruefung und der Statusriegel
-        # blieb ungeprueft (Sabotage-Lauf 07.08.: durchgerutscht). Sobald
+        # blieb ungeprueft (Sabotage-Lauf 10.08.: durchgerutscht). Sobald
         # jemand Zwischenstaende mitschreibt, entscheidet allein der Status
         # darueber, ob ein halbfertiger Lauf als fertig im Report landet.
         laeuft = _konsens_redis({"BTCUSD": (0.30, 100, 0.20, 100, {})})
@@ -963,7 +963,7 @@ def test_report_schweigt_ohne_konsens_daten():
 def test_report_haengt_den_konsens_abschnitt_wirklich_ein():
     """Der Abschnitt muss im FERTIGEN Report stehen, nicht nur existieren.
 
-    Im Sabotage-Lauf am 07.08. liess sich der Aufruf aus _build_report
+    Im Sabotage-Lauf am 10.08. liess sich der Aufruf aus _build_report
     ersatzlos streichen, ohne dass ein Test rot wurde: die drei Tests darueber
     riefen _konsens_abschnitt() direkt auf. Eine Funktion, die niemand
     aufruft, besteht ihre eigenen Tests tadellos — und liefert nichts.
@@ -1056,11 +1056,11 @@ def test_konsens_pfad_stimmt_mit_dem_backend_ueberein():
 
 
 
-# ── Chartmuster-Bewertung (10.08.) ───────────────────────────────────────────
+# ── Chartmuster-Bewertung (17.08.) ───────────────────────────────────────────
 
 
 def test_horizonte_haengen_am_takt():
-    """DER FUND vom 10.08.
+    """DER FUND vom 17.08.
 
     HORIZONTE sind Balkenzahlen fuer einen 4h-Takt (1, 6, 42 = 4h, 24h, 168h).
     Die Muster-Rueckrechnung laeuft auf TAGESKERZEN — dieselben Zahlen bedeuten

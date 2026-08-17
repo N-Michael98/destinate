@@ -1,5 +1,5 @@
 """
-Chartmuster-Erkennung (10.08.).
+Chartmuster-Erkennung (13.08.).
 
 WAS ERKANNT WIRD. Doppeltop und Doppelboden, Schulter-Kopf-Schulter und seine
 Umkehrung, sowie die drei Dreiecke (symmetrisch, steigend, fallend).
@@ -19,7 +19,7 @@ mehr erklaeren kann.
 
 TOLERANZEN IN ATR, NICHT IN PROZENT. "Zwei Hochs auf gleicher Hoehe" braucht
 ein Mass fuer "gleich". In Kursprozent gemessen bedeutet dasselbe Prozent je
-nach Markt voellig Verschiedenes — am 10.08. ueber alle 30 Symbole gemessen
+nach Markt voellig Verschiedenes — am 13.08. ueber alle 30 Symbole gemessen
 liegt der Faktor bei 17,6 zwischen dem ruhigsten und dem bewegtesten Markt.
 Deshalb wird in ATR gerechnet: eine Toleranz von 0,5 ATR heisst in jedem Markt
 dasselbe.
@@ -251,7 +251,7 @@ def dreieck(punkte: list[dict], df: pd.DataFrame, atr: float) -> Optional[dict]:
     ober = max(h1["kurs"], h2["kurs"])
     unter = min(t1["kurs"], t2["kurs"])
 
-    # DER AUSBRUCH (ergaenzt 10.08.). Bis dahin stand hier fest "bestaetigt:
+    # DER AUSBRUCH (ergaenzt 17.08.). Bis dahin stand hier fest "bestaetigt:
     # False" — mit der Folge, dass Dreiecke zwar erkannt, aber NIE gemessen
     # werden konnten: die Rueckrechnung zaehlt nur bestaetigte Muster als
     # Richtung. Nachgewiesen ueber alle 30 Symbole: 3485 Erkennungen, null

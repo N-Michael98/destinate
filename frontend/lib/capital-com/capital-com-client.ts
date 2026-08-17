@@ -50,7 +50,7 @@ export interface OrderResult {
   error?: string;
   openLevel?: number; // actual fill price from /confirms
   /** Die Order wurde abgeschickt, der Bestaetigungsschritt war aber nicht
-   *  lesbar (10.08.). ok bleibt true, weil die Order live sein KANN — sie als
+   *  lesbar (13.08.). ok bleibt true, weil die Order live sein KANN — sie als
    *  Fehlschlag zu melden waere gefaehrlicher, ein Aufrufer koennte sie erneut
    *  senden und die Position verdoppeln. */
   unbestaetigt?: boolean;
@@ -454,7 +454,7 @@ export async function capitalGetPrices(
   }
 }
 
-// ── Mindest-Stop-Abstand des Brokers (10.08.) ────────────────────────────────
+// ── Mindest-Stop-Abstand des Brokers (13.08.) ────────────────────────────────
 //
 // Capital.com schreibt je Markt vor, wie nah ein Stop am Kurs stehen darf, und
 // liefert die Regel bei jedem Marktabruf in dealingRules.minStopOrProfitDistance
@@ -603,7 +603,7 @@ export async function capitalPlaceOrder(
     if (order.profitLevel != null) body.profitLevel = order.profitLevel;
 
     // Mindest-Stop-Abstand des Brokers pruefen, BEVOR die Order rausgeht
-    // (10.08.). Vorher ging der Stop ungeprueft raus; ein zu enger fuehrte zu
+    // (13.08.). Vorher ging der Stop ungeprueft raus; ein zu enger fuehrte zu
     // einer Ablehnung mit einem Fehlercode, den niemand einordnen konnte.
     // Der Aufruf ist zwischengespeichert (10 Minuten je Epic) und laesst die
     // Order durch, wenn die Regel nicht belegbar ist — ein geratener Riegel
@@ -670,7 +670,7 @@ export async function capitalPlaceOrder(
       }
     }
 
-    // HIER LANDET, WER NICHT BESTAETIGEN KONNTE (Fund 10.08.).
+    // HIER LANDET, WER NICHT BESTAETIGEN KONNTE (Fund 13.08.).
     //
     // Bis heute meldete diese Stelle `status: "OPENED"` — also "Order steht" —
     // obwohl der Bestaetigungsschritt gar nicht gelesen werden konnte. Eine

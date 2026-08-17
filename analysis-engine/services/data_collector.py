@@ -20,9 +20,9 @@ TTL = 26 * 60 * 60  # 26h — überlappt den 4h-Zyklus grosszügig
 
 
 def _exit_grund(notes: str | None) -> str:
-    """Ausstiegsgrund aus den Notizen holen (07.08.).
+    """Ausstiegsgrund aus den Notizen holen (09.08.).
 
-    Der Tracker leitet ihn seit dem 07.08. aus dem ECHTEN Schlusskurs ab
+    Der Tracker leitet ihn seit dem 09.08. aus dem ECHTEN Schlusskurs ab
     (ZIEL / STOP / DAZWISCHEN). Vorher stand dort eine fest verdrahtete Null,
     und es war nicht feststellbar, WARUM ein Trade endete. Ohne diese
     Unterscheidung laesst sich nicht beantworten, warum die Stufe GOOD im
@@ -40,7 +40,7 @@ def _exit_grund(notes: str | None) -> str:
 
 
 def _spread_je_symbol(rows: list[tuple]) -> dict:
-    """Gemessener Spread je Markt aus den eigenen Trades (07.08.).
+    """Gemessener Spread je Markt aus den eigenen Trades (09.08.).
 
     WARUM: der Backtest rechnet heute nur mit fees=0.0002 (0.02 % je Seite).
     Der SPREAD fehlt — bei CFDs oft der groesste Kostenblock. Ohne ihn sieht

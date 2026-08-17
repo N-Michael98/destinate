@@ -45,7 +45,7 @@ MIN_BT_PROFIT_FACTOR = 1.4
 
 
 def _ueberangepasste_symbole() -> set[str]:
-    """Symbole, fuer die der Walk-Forward Ueberanpassung meldet (07.08.).
+    """Symbole, fuer die der Walk-Forward Ueberanpassung meldet (09.08.).
 
     ANLASS, belegt aus dem Telegram-Bericht vom 09.08.: ALLE DREI Vorschlaege
     des Tages (DJ30, USDCAD, UK100) standen im selben Wochen-Report unter
@@ -99,7 +99,7 @@ def _build_recommendations() -> tuple[list[dict], list[str]]:
                 and bt.get("trades", 0) >= MIN_BT_TRADES):
             continue
 
-        # Regel 3 (07.08.): der Walk-Forward muss dem Backtest nicht
+        # Regel 3 (09.08.): der Walk-Forward muss dem Backtest nicht
         # widersprechen. Der Vorschlag beruht auf der In-Sample-Zahl — genau
         # die ist bei Ueberanpassungsverdacht nicht belastbar.
         if symbol in ueberangepasst:

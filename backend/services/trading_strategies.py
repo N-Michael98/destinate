@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # Analysen, auch nachdem der Event-Loop nicht mehr blockiert (Fund #6).
 # TTL 60s reicht: 1h/4h/1d/15m-Kerzen ändern sich nicht schneller.
 #
-# EINHEITLICHER 4h-ZEITRAUM (07.08.): die 4h-Strategien holten drei
+# EINHEITLICHER 4h-ZEITRAUM (09.08.): die 4h-Strategien holten drei
 # verschiedene Zeitraeume (1mo, 2mo, 3mo). Jeder loest einen EIGENEN
 # 1h-Netzabruf aus, weil der Cache nach (Symbol, Intervall, Zeitraum) trennt —
 # also 3 Abrufe je Symbol statt einem, 90 statt 30 je Zyklus.
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 _ohlcv_cache: dict[tuple[str, str, str], tuple[float, pd.DataFrame]] = {}
 _CACHE_TTL_SEC = 60
 
-# ── Kerzenquelle umlenken (07.08., Stufe 4 Schritt 1) ────────────────────────
+# ── Kerzenquelle umlenken (10.08., Stufe 4 Schritt 1) ────────────────────────
 #
 # WOZU: Um zu pruefen, ob der 16-Strategien-Konsens historisch getaugt haette,
 # muss jede Strategie an JEDEM vergangenen Balken laufen — mit den Daten, die

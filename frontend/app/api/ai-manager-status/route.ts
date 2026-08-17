@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getAIManagerStatus, AUSFALL_AB_FEHLERN } from "@/lib/agents/ai-manager-status";
 
 /**
- * Zustand des Exit-AI-Managers (10.08.).
+ * Zustand des Exit-AI-Managers (11.08.).
  *
  * ANLASS. /api/ai-health beweist, dass der Anbieter ERREICHBAR ist — es macht
  * dafür einen eigenen Testaufruf. Es sagt aber nichts darüber, was der AI

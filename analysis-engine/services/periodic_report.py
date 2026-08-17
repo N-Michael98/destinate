@@ -50,9 +50,9 @@ def _stats_for_window(days_back_start: int, days_back_end: int) -> dict:
 
 
 def _exit_reason_breakdown(days: int) -> dict:
-    """WinRate/PnL gruppiert nach AUSSTIEGSGRUND (07.08.).
+    """WinRate/PnL gruppiert nach AUSSTIEGSGRUND (09.08.).
 
-    Der Tracker leitet ihn seit dem 07.08. aus dem echten Schlusskurs ab:
+    Der Tracker leitet ihn seit dem 09.08. aus dem echten Schlusskurs ab:
     ZIEL / STOP / DAZWISCHEN. Vorher stand dort eine fest verdrahtete Null.
 
     WARUM das im Bericht steht: der Wochen-Report vom 09.08. zeigte fuer die
@@ -92,17 +92,17 @@ def _exit_reason_breakdown(days: int) -> dict:
 
 
 def _ai_manager_breakdown(days: int) -> dict:
-    """WinRate/PnL gruppiert danach, WAS DER AI MANAGER an der Position tat (10.08.).
+    """WinRate/PnL gruppiert danach, WAS DER AI MANAGER an der Position tat (11.08.).
 
     WARUM das hier steht: der AI Manager darf seit dem 03.08. Breakeven-Puffer,
     Trailing-Abstand und Teilgewinn-Anteil an der Marktlage ausrichten — und
     er darf eine Massnahme mit SKIP ganz verhindern. Sein Grund (aiReason) ging
-    bis zum 10.08. in eine Logzeile und in eine Event-Nutzlast, die NIEMAND
+    bis zum 11.08. in eine Logzeile und in eine Event-Nutzlast, die NIEMAND
     liest. Es gab also keine Rueckkopplung: niemand konnte messen, ob ein SKIP
     oder ein ADJUST sich gelohnt hat. Die AI entschied, ohne je nachgerechnet
     zu werden.
 
-    Seit dem 10.08. haelt der RiskAgent seine Entscheidungen in Trade.notes
+    Seit dem 11.08. haelt der RiskAgent seine Entscheidungen in Trade.notes
     fest (aiZusammenfassung). Hier werden sie gegen das ERGEBNIS derselben
     Position gestellt — Entscheidung und Ausgang in einer Zeile.
 
@@ -110,7 +110,7 @@ def _ai_manager_breakdown(days: int) -> dict:
       NUR_APPROVE  die AI hat nur zugestimmt (Regelwerte gegolten)
       MIT_ADJUST   sie hat mindestens einmal eigene Werte gesetzt
       MIT_SKIP     sie hat mindestens einmal eine Massnahme verhindert
-      OHNE_ANGABE  Trades von vor dem 10.08. — verfaelschen nichts
+      OHNE_ANGABE  Trades von vor dem 11.08. — verfaelschen nichts
 
     MIT_SKIP und MIT_ADJUST koennen sich ueberschneiden; SKIP gewinnt, weil das
     der staerkere Eingriff ist (die Massnahme fand gar nicht statt).
@@ -200,7 +200,7 @@ def _send(text: str) -> None:
 
 
 def _konsens_abschnitt() -> list[str]:
-    """Ergebnis der Konsens-Auswertung (Stufe 4, Schritt 3 — 07.08.).
+    """Ergebnis der Konsens-Auswertung (Stufe 4, Schritt 3 — 10.08.).
 
     Der Walk-Forward darüber prüft DREI einfache Strategien auf Schlusskursen.
     Gehandelt werden 16. Dieser Abschnitt zeigt, was der ECHTE Konsens in der
@@ -269,7 +269,7 @@ def _konsens_abschnitt() -> list[str]:
 
 
 def _muster_abschnitt() -> list[str]:
-    """Ergebnis der Chartmuster-Rueckrechnung (10.08.).
+    """Ergebnis der Chartmuster-Rueckrechnung (17.08.).
 
     Die Muster erkennen, handeln aber bewusst nicht mit. Dieser Abschnitt
     beantwortet, ob sich das aendern sollte: er zeigt je Musterart den VORTEIL
@@ -382,7 +382,7 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
         lines.append("<i>Wenn GOOD/EXCELLENT besser abschneiden → Engine wirkt, Schwelle anheben.</i>")
         lines.append("")
 
-    # Was der AI Manager an den Positionen tat (10.08.) — beantwortet, ob sein
+    # Was der AI Manager an den Positionen tat (11.08.) — beantwortet, ob sein
     # Eingreifen etwas gebracht hat. Bis dahin gab es dazu KEINE Zahl.
     ai = _ai_manager_breakdown(days)
     ai_bewertet = {k: v for k, v in ai.items() if k != "OHNE_ANGABE"}
@@ -397,17 +397,17 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
             lines.append(f"• {gruppe}: {e['trades']} Trades, WR {wr}, {vz}{e['pnl']}")
         ohne = ai.get("OHNE_ANGABE", {}).get("trades", 0)
         if ohne:
-            lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 10.08.).</i>")
+            lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 11.08.).</i>")
         lines.append("<i>MIT_SKIP = die AI hat mindestens eine Massnahme verhindert. "
                      "Schneidet diese Gruppe schlechter ab als NUR_APPROVE, greift sie zu oft ein.</i>")
         lines.append("")
 
-    # Ausstiegsgrund (07.08.) — beantwortet, WARUM Trades enden
+    # Ausstiegsgrund (09.08.) — beantwortet, WARUM Trades enden
     gruende = _exit_reason_breakdown(days)
     benannt = {k: v for k, v in gruende.items() if k != "OHNE_ANGABE"}
     if benannt:
         lines.append("<b>🚪 Nach Ausstiegsgrund:</b>")
-        # NIE_BESTAETIGT und KEIN_PNL ergaenzt (10.08.): Trades, deren Order nie
+        # NIE_BESTAETIGT und KEIN_PNL ergaenzt (17.08.): Trades, deren Order nie
         # bestaetigt wurde bzw. deren P&L nie auftauchte. Sie zaehlen nicht als
         # echte Trades — bis heute landeten sie unbenannt als BREAKEVEN in der
         # Statistik und waren von einem echten Nulltrade nicht zu trennen.
@@ -421,7 +421,7 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
             lines.append(f"• {grund}: {e['trades']} Trades, WR {wr}, {vz}{e['pnl']}")
         ohne = gruende.get("OHNE_ANGABE", {}).get("trades", 0)
         if ohne:
-            lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 07.08.).</i>")
+            lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 09.08.).</i>")
         lines.append("<i>DAZWISCHEN = weder Ziel noch Stop, also Zeit-Exit, Trailing oder Teilschliessung.</i>")
         if gruende.get("NIE_BESTAETIGT", {}).get("trades"):
             lines.append(f"<i>NIE_BESTAETIGT = die Order wurde abgeschickt, aber weder "

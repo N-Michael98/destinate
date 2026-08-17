@@ -39,7 +39,7 @@ export interface ExecutionResult {
   error?: string;
   executedAt: string;
   /** Die Order wurde abgeschickt, der Bestaetigungsschritt war aber nicht
-   *  lesbar (10.08.). Muss bis in den Trade-Eintrag durchgereicht werden:
+   *  lesbar (17.08.). Muss bis in den Trade-Eintrag durchgereicht werden:
    *  gab es die Position in Wirklichkeit nie, schliesst der Tracker sie nach
    *  fuenf Versuchen als BREAKEVEN mit P&L 0 — ununterscheidbar von einem
    *  echten Nulltrade. Genau die Statistik, aus der die Exit-Schwellen ihre

@@ -180,7 +180,7 @@ def _vorlauf(strategy: str, params: dict) -> int:
     """Wie viele Balken braucht der Indikator, bevor er verlaesslich ist.
 
     Gebraucht fuer den Walk-Forward: dessen Test-Abschnitt begann bisher KALT,
-    also mit einem Indikator, der bei null anfaengt. NACHGEMESSEN (07.08.,
+    also mit einem Indikator, der bei null anfaengt. NACHGEMESSEN (09.08.,
     3000 Balken, Testfenster 500):
 
       EMA_CROSS slow=21   kalt 16 Signale, warm 12  -> 4 ERFUNDENE (+33 %)
@@ -218,7 +218,7 @@ def _run_single(close: pd.Series, strategy: str, params: dict, sl: float, tp: fl
                 ab_index: int = 0) -> dict | None:
     """Ein Backtest mit vectorbt. None bei Fehler.
 
-    ab_index (07.08.): Balken VOR diesem Index dienen nur als Vorlauf fuer die
+    ab_index (09.08.): Balken VOR diesem Index dienen nur als Vorlauf fuer die
     Indikatoren — dort wird nicht eingestiegen. Standard 0 = unveraendertes
     bisheriges Verhalten, damit der naechtliche Backtest gleich bleibt.
     """

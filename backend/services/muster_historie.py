@@ -1,5 +1,5 @@
 """
-Historischer Lauf der Chartmuster-Erkennung (10.08.).
+Historischer Lauf der Chartmuster-Erkennung (17.08.).
 
 WOZU. chartmuster.py erkennt Doppeltop, Doppelboden, Schulter-Kopf-Schulter und
 die drei Dreiecke — aber es handelt bewusst nicht mit. Der Grund steht dort im

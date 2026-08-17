@@ -43,7 +43,7 @@ ROBUST_MIN_PF = 1.2
 OVERFIT_GAP_RATIO = 0.5  # out-of-sample < 50% des in-sample PF
 
 # Mindestzahl Trades, damit ein Parametersatz ueberhaupt gewaehlt werden darf
-# (07.08.). Vorher gewann der hoechste ProfitFactor — auch wenn er auf zwei
+# (09.08.). Vorher gewann der hoechste ProfitFactor — auch wenn er auf zwei
 # Trades beruhte. Genau so entsteht Ueberanpassung: bei wenigen Trades ist ein
 # hoher Faktor Zufall, kein Nachweis.
 #
@@ -57,7 +57,7 @@ def _best_on_slice(close: pd.Series, param_sets: dict, sl_tp_list: list) -> dict
     """Testet die Parameter-Matrix auf EINEM Datenausschnitt, gibt die beste
     Kombination nach ProfitFactor zurück (None wenn nichts auswertbar).
 
-    Seit 07.08. mit Mindest-Trade-Zahl: ein Parametersatz mit weniger als
+    Seit 09.08. mit Mindest-Trade-Zahl: ein Parametersatz mit weniger als
     MIN_TRADES_FUER_AUSWAHL Trades darf nicht gewinnen, egal wie hoch sein
     ProfitFactor ist. Vorher konnte ein Faktor aus zwei Trades die Auswahl
     bestimmen — und genau dieser Wert wurde dann als "in-sample" gemeldet und
@@ -111,7 +111,7 @@ def _evaluate_walk_forward(symbol: str, df: pd.DataFrame, is_diagnose: bool) -> 
         if best_in_sample is None:
             continue
 
-        # VORLAUF FUER DEN TESTABSCHNITT (07.08.).
+        # VORLAUF FUER DEN TESTABSCHNITT (09.08.).
         #
         # Bisher begann der Test bei train_end — mit einem Indikator, der dort
         # bei null anfaengt. Nachgemessen verzerrt das in BEIDE Richtungen:

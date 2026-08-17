@@ -197,7 +197,7 @@ function checkAgentHealth(): void {
     }
   }
 
-  // ── Fällt der Exit-AI-Manager aus? (10.08.) ────────────────────────────────
+  // ── Fällt der Exit-AI-Manager aus? (11.08.) ────────────────────────────────
   //
   // Bis heute war ein Ausfall UNSICHTBAR: askAIManager fing ihn ab, lieferte
   // APPROVE, und es entstand eine console.warn-Zeile. Das System handelte dann

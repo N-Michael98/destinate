@@ -131,7 +131,7 @@ function erfasse() {
     // Obergrenze, ab der die Struktur verworfen wird. Wer die Obergrenze von
     // 3.0 auf 30 zieht, verdoppelt bis verzehnfacht den Stop-Abstand — kein
     // anderer Pruefer wuerde das bemerken, weil die STRUKTUR unveraendert bleibt.
-    // Welche Kerzen die Strategien SEHEN (07.08.).
+    // Welche Kerzen die Strategien SEHEN (09.08.).
     //
     // Jede (Intervall, Zeitraum)-Kombination ist ein eigener Netzabruf je
     // Symbol — fuenf Kombinationen sind 150 Abrufe je Zyklus gegen eine

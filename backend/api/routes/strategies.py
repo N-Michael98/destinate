@@ -86,7 +86,7 @@ async def list_strategies():
     }
 
 
-# ── Historischer Konsens (Stufe 4, Schritt 2 — 07.08.) ───────────────────────
+# ── Historischer Konsens (Stufe 4, Schritt 2 — 10.08.) ───────────────────────
 
 MAX_FENSTER_TAGE = 180
 STANDARD_FENSTER_TAGE = 90
@@ -121,7 +121,7 @@ async def strategie_historie(symbol: str, tage: int = STANDARD_FENSTER_TAGE):
     return await schleife.run_in_executor(None, konsens_historie, sym, tage)
 
 
-# ── Chartmuster (10.08.) ─────────────────────────────────────────────────────
+# ── Chartmuster (13.08.) ─────────────────────────────────────────────────────
 
 ERLAUBTE_INTERVALLE = {"15m", "1h", "4h", "1d"}
 
@@ -171,7 +171,7 @@ async def muster_rueckrechnung(symbol: str, tage: int = STANDARD_MUSTER_FENSTER_
     Endpunkt die Grundlage. Bewertet wird in der Analysis-Engine, mit derselben
     Auswertung, die schon den 16-Strategien-Konsens misst.
 
-    Gemessen 10.08.: rund 1 Sekunde je Jahr Tageskerzen. Laeuft trotzdem im
+    Gemessen 17.08.: rund 1 Sekunde je Jahr Tageskerzen. Laeuft trotzdem im
     eigenen Faden — dieser Dienst bedient alle 5 Minuten den Live-Scan
     (Audit-Fund #6).
     """

@@ -6,14 +6,14 @@
 // könnte eine einzige Ausreisser-Antwort (etwa Trailing 50× ATR = praktisch
 // kein Stop) den Schutz aushebeln.
 //
-// UMGEBAUT AM 10.08. — der Prüfer prüfte sich selbst. Teil 2 enthielt eine
+// UMGEBAUT AM 11.08. — der Prüfer prüfte sich selbst. Teil 2 enthielt eine
 // KOPIE von inGrenzen und rechnete diese Kopie gegen bösartige Eingaben durch.
 // Nachgewiesen: die echte Klemme liess sich auf `return n;` reduzieren, also
 // vollständig entfernen, und der Prüfer blieb grün. Ein Nachbau driftet
 // auseinander und verschweigt genau das, was er sichern soll. Jetzt wird die
 // ECHTE Funktion geladen und aufgerufen.
 //
-// Teil 3 ist neu (Fund 10.08.): der Prompt schrieb "Fortschritt Richtung Ziel"
+// Teil 3 ist neu (Fund 11.08.): der Prompt schrieb "Fortschritt Richtung Ziel"
 // und bekam profitPct — die blosse Kursbewegung. Gemessen im Moment des
 // Breakeven lag das je nach Markt um Faktor 5,9 (UKOIL) bis 103,8 (EURGBP)
 // daneben. Die AI soll beurteilen, ob eine Position weit genug ist, und
@@ -61,7 +61,7 @@ module.exports = function pruefe() {
 
   if (typeof inGrenzen !== "function") {
     funde.push("inGrenzen wird nicht exportiert — die Klemme bleibt ungeprüft "
-      + "(bis 10.08. testete dieser Prüfer eine Kopie und blieb grün, während "
+      + "(bis 11.08. testete dieser Prüfer eine Kopie und blieb grün, während "
       + "die echte Klemme entfernt war)");
   } else {
     const G = { beBuffer: [0, 0.5], atrFactor: [0.5, 4.0], partialRatio: [0.25, 0.75] };
@@ -125,7 +125,7 @@ module.exports = function pruefe() {
       pruefe1(`${name} ergibt keinen brauchbaren Wert`, r === 0, String(r));
     }
     // DER KERN: der Wert muss sich von profitPct unterscheiden — sonst wäre
-    // der Fund vom 10.08. wieder da. Gemessen mit echten Marktzahlen.
+    // der Fund vom 11.08. wieder da. Gemessen mit echten Marktzahlen.
     for (const [name, kurs, atr, mindestens] of [
       // Untergrenzen bewusst UNTER dem echten Wert (UKOIL 2,95 %, EURGBP
       // 51,9 %), aber weit ÜBER profitPct (0,5 %) — geprüft wird, dass hier
@@ -149,7 +149,7 @@ module.exports = function pruefe() {
   pruefe1("die Marktlage nennt der AI das Ziel nicht (liveTP)",
     /liveTP:\s*number/.test(risk) && /Ziel steht bei/.test(risk));
 
-  // ── Teil 5: der Zustands-Zaehler (10.08.) ─────────────────────────────────
+  // ── Teil 5: der Zustands-Zaehler (11.08.) ─────────────────────────────────
   //
   // Fiel die AI aus, entstand eine console.warn-Zeile und APPROVE — sonst
   // nichts. Ein stummer Ausfall ueber Tage war nur in Logzeilen sichtbar.
@@ -186,7 +186,7 @@ module.exports = function pruefe() {
   // Verdrahtung: meldet askAIManager wirklich, und faellt der Diagnostics-Agent auf?
   // ZWEI Meldestellen, beide gezaehlt: der catch-Zweig UND der Fall "Antwort
   // kam an, enthielt aber kein JSON". Der zweite ist der heimtueckischere —
-  // eine kaputte Antwort sah bis zum 10.08. aus wie ein erfolgreiches APPROVE.
+  // eine kaputte Antwort sah bis zum 11.08. aus wie ein erfolgreiches APPROVE.
   // Erster Entwurf pruefte nur, OB irgendwo gemeldet wird; im Sabotage-Lauf
   // liess sich damit eine der beiden Stellen ersatzlos streichen.
   const fallbackMeldungen = (risk.match(/meldeAIEntscheidung\(action,\s*"FALLBACK"/g) || []).length;
@@ -198,7 +198,7 @@ module.exports = function pruefe() {
   pruefe1("der Diagnostics-Agent meldet einen AI-Ausfall nicht",
     /AI_MANAGER_AUSFALL/.test(diag) && /getAIManagerStatus\(\)/.test(diag));
 
-  // ── Teil 6: Rueckkopplung und Fremd-Eingriff (10.08.) ─────────────────────
+  // ── Teil 6: Rueckkopplung und Fremd-Eingriff (11.08.) ─────────────────────
   // Auf die SCHREIBSTELLE pruefen, nicht auf das Wort: "aiZusammenfassung"
   // steht auch im Kommentar der Funktion. Im Sabotage-Lauf blieb das Feld
   // deshalb entfernbar, ohne dass etwas rot wurde.

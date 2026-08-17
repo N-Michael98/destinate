@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Prüfer 12: Teilgewinn-Riegel — FÜHRT DIE ENTSCHEIDUNG WIRKLICH AUS
 //
-// DER FUND (10.08.). Im 2-Minuten-Zyklus laufen ZWEI Systeme, die beide
+// DER FUND (11.08.). Im 2-Minuten-Zyklus laufen ZWEI Systeme, die beide
 // Teilgewinn nehmen, mit getrennten Merkern und ohne voneinander zu wissen:
 //
 //   runActiveTradeManager() -> runRiskAgent()   partialDone in Trade.notes
@@ -189,7 +189,7 @@ module.exports = function pruefe() {
   // etwas verkauft wurde.
   //
   // Erster Entwurf suchte nur, OB es irgendwo einen solchen Aufruf gibt. Im
-  // Sabotage-Lauf (10.08.) rutschte damit "geschlossene Menge wird nicht
+  // Sabotage-Lauf (11.08.) rutschte damit "geschlossene Menge wird nicht
   // festgehalten" durch: der Ausdruck steht an DREI Stellen, und der Treffer
   // in merkeTeilgewinn hielt die Prüfung grün, während der im Teilgewinn-Zweig
   // entfernt war. Ein positionsblinder Riegel schützt die Stelle nicht, die er

@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(run_konsens_auswertung, "cron", day_of_week="sat", hour=5, minute=0,
                           id="konsens", misfire_grace_time=3600)
 
-        # Chartmuster-Rückrechnung (10.08.): wöchentlich Samstag 05:30 UTC.
+        # Chartmuster-Rückrechnung (17.08.): wöchentlich Samstag 05:30 UTC.
         # Deutlich billiger als der Konsens (gemessen rund 1 s je Symbol und
         # Jahr), deshalb direkt danach. Beantwortet, ob ein erkanntes Muster
         # überhaupt Information trägt — bevor es handeln darf.

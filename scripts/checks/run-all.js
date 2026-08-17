@@ -40,16 +40,16 @@ const pruefer = [
   // Vorzeichen oder ein Faktor statt eines Divisors bliebe strukturell
   // unauffaellig und wirkte am offenen Geld.
   ["exit-schwellen", require("./exit-schwellen")],
-  // 10.08. ergaenzt: ZWEI Systeme nahmen Teilgewinn auf derselben Position,
+  // 11.08. ergaenzt: ZWEI Systeme nahmen Teilgewinn auf derselben Position,
   // mit getrennten Merkern und ohne voneinander zu wissen — der Python-Teil
   // mit einer Groesse aus der Registrierung, die nach dem ersten Teilverkauf
   // die ganze Restposition geschlossen haette. Fuehrt die Entscheidung aus.
   ["teilgewinn", require("./teilgewinn")],
-  // 10.08. ergaenzt: ZWEI Regler boten Werte an, die keinerlei Wirkung hatten —
+  // 13.08. ergaenzt: ZWEI Regler boten Werte an, die keinerlei Wirkung hatten —
   // die Signalkette verwirft alles unter 70 an drei Stellen. Ein Regler, der
   // etwas anzeigt, das er nicht kann, fuehrt zu falschen Entscheidungen.
   ["signal-untergrenze", require("./signal-untergrenze")],
-  // 10.08. ergaenzt: eine Order galt als erfolgreich, obwohl der
+  // 13.08. ergaenzt: eine Order galt als erfolgreich, obwohl der
   // Bestaetigungsschritt gar nicht gelesen werden konnte — ein unbekannter
   // Ausgang sah aus wie ein Erfolg. Dazu der Mindest-Stop-Abstand des Brokers,
   // der nie ausgewertet wurde.

@@ -18,7 +18,7 @@ export interface TradeRecord {
   confidence: number;
   icPositionId?: string; // IC Markets position ID if also executed there
   entryContext?: Record<string, unknown>; // Marktbedingungen beim Entry (für Analysis Engine)
-  /** Order abgeschickt, Bestaetigung nicht lesbar (10.08.). Landet in den
+  /** Order abgeschickt, Bestaetigung nicht lesbar (17.08.). Landet in den
    *  Notizen, damit ein Phantom-Trade spaeter erkennbar ist: gab es die
    *  Position nie, schliesst der Tracker sie als BREAKEVEN mit P&L 0 —
    *  ununterscheidbar von einem echten Nulltrade. */
@@ -158,7 +158,7 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // transaction.dealId. Also: (epic, openPrice) → P&L.
     const { EPIC_MAP } = await import("./capital-com-client");
     const pnlByEpicOpen = new Map<string, number>();
-    // SCHLUSSKURS mitnehmen (07.08.). Capital liefert ihn in derselben
+    // SCHLUSSKURS mitnehmen (09.08.). Capital liefert ihn in derselben
     // Aktivitaet (details.closeLevel) — bisher wurde er geholt und weggeworfen:
     // weiter unten stand hart "closeLevel = 0". Damit war nicht feststellbar,
     // WARUM ein Trade endete (Ziel, Stop, Zeit-Exit, Trailing). Genau diese
@@ -235,7 +235,7 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
         } else {
           // Nach 5 Versuchen aufgeben — wie altes Verhalten.
           //
-          // ERWEITERT 10.08.: War die Order NIE BESTAETIGT und ist auch nach
+          // ERWEITERT 17.08.: War die Order NIE BESTAETIGT und ist auch nach
           // fuenf Zyklen weder eine Position noch ein P&L aufgetaucht, dann
           // hat es diesen Trade mit hoher Wahrscheinlichkeit nie gegeben — die
           // Bestaetigung war unlesbar und der Broker hat die Order vermutlich
@@ -268,7 +268,7 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       // Update notes with close data
       let updatedMeta: Record<string, unknown> = {};
       try { updatedMeta = JSON.parse(trade.notes); } catch { updatedMeta = {}; }
-      // AUSSTIEGSGRUND ABLEITEN (07.08.).
+      // AUSSTIEGSGRUND ABLEITEN (09.08.).
       //
       // Hier stand "updatedMeta.closeLevel = 0" — eine fest verdrahtete Null,
       // obwohl der echte Schlusskurs eine Schleife weiter oben schon vorliegt.

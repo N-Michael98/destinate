@@ -1,5 +1,5 @@
 """
-Bewertung der Chartmuster (10.08.).
+Bewertung der Chartmuster (17.08.).
 
 WOZU. chartmuster.py erkennt Doppeltop, Doppelboden, Schulter-Kopf-Schulter und
 die drei Dreiecke — handelt aber bewusst nicht mit. Ob ein Muster etwas taugt,

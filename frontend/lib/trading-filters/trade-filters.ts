@@ -354,7 +354,7 @@ export async function runAllFilters(params: {
   priceAgeMinutes?: number | null;
   /** Erlaubtes Höchstalter in Minuten. 0 = Prüfung aus. */
   maxPriceAgeMinutes?: number;
-  /** Wochenverlust-Grenze in % (10.08.). Fehlt sie, gilt der bisherige
+  /** Wochenverlust-Grenze in % (13.08.). Fehlt sie, gilt der bisherige
    *  Standardwert 6.0 — der Aufrufer muss also nichts tun, damit alles
    *  bleibt wie es war. */
   maxWeeklyLossPct?: number;

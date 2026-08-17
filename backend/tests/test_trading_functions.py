@@ -1083,7 +1083,7 @@ def test_leeres_ergebnis_wird_nicht_zwischengespeichert():
     assert versuche_gesamt > versuche_erster,         f"zweiter Aufruf kam aus dem Cache ({versuche_erster} -> {versuche_gesamt} Versuche)"
 
 
-# ── Einheitlicher 4h-Zeitraum (07.08.) ───────────────────────────────────────
+# ── Einheitlicher 4h-Zeitraum (09.08.) ───────────────────────────────────────
 
 def test_alle_4h_strategien_nutzen_denselben_zeitraum():
     """Sonst holt jede Variante einen EIGENEN Netzabruf.
@@ -1148,7 +1148,7 @@ def test_anzahl_verschiedener_kerzenabrufe_bleibt_klein():
     )
 
 
-# ── Umlenkbare Kerzenquelle (07.08., Stufe 4 Schritt 1) ──────────────────────
+# ── Umlenkbare Kerzenquelle (10.08., Stufe 4 Schritt 1) ──────────────────────
 # WOZU: um den 16-Strategien-Konsens rueckrechnen zu koennen, muss jede
 # Strategie an jedem vergangenen Balken mit den Daten VON DAMALS laufen.
 # Die Gefahr dabei ist nicht die Rueckrechnung selbst, sondern dass sie in den
@@ -1328,7 +1328,7 @@ def test_strategien_laufen_auf_mitgegebenen_kerzen():
     assert r["signal"] in ("LONG", "SHORT", "NEUTRAL")
 
 
-# ── Historischer Konsens (07.08., Stufe 4 Schritt 2) ─────────────────────────
+# ── Historischer Konsens (10.08., Stufe 4 Schritt 2) ─────────────────────────
 # Hier wird NICHTS nachgebaut: analyze_all_strategies() ist dieselbe Funktion
 # wie live und bekommt ueber den Kerzen-Haken die Daten des jeweiligen
 # Zeitpunkts. Die Gefahr liegt woanders — dass ein Balken Daten aus der ZUKUNFT
@@ -1418,7 +1418,7 @@ def test_historie_meldet_luecken_statt_sie_zu_verschweigen():
     """Der Kern der Vorgabe: scalping darf NICHT still auf falschen Daten
     laufen. Fehlt sein 15m-Fenster, muss das gezaehlt und benannt werden.
 
-    yfinance liefert 15m nur 60 Tage zurueck (gemessen 07.08.) — bei laengeren
+    yfinance liefert 15m nur 60 Tage zurueck (gemessen 10.08.) — bei laengeren
     Fenstern ist die Luecke unvermeidbar. Verschweigen waere sie nicht.
     """
     lang = _reihe(n=600, freq="4h", start="2026-01-01")
@@ -1628,7 +1628,7 @@ def test_historie_endpunkt_blockiert_den_event_loop_nicht():
     assert "await" in quelle
 
 
-# ── Chartmuster (10.08.) ─────────────────────────────────────────────────────
+# ── Chartmuster (13.08.) ─────────────────────────────────────────────────────
 # Die Muster bestehen aus WENDEPUNKTEN, und die Regel dafuer gibt es im System
 # schon (_swing_points im Handelspfad). alle_swings() verwendet dieselbe Regel,
 # liefert aber die ganze Reihe statt nur den letzten Punkt. Diese Doppelung ist
@@ -1779,7 +1779,7 @@ def test_muster_toleranz_haengt_am_atr_nicht_am_prozent():
     Dieselbe Formation in einem ruhigen und in einem bewegten Markt muss
     GLEICH bewertet werden. In Kursprozent gemessen waere sie es nicht — ueber
     die 30 Symbole liegt der Faktor bei 17,6 zwischen ruhigstem und bewegtestem
-    Markt (gemessen 10.08.).
+    Markt (gemessen 13.08.).
     """
     atr_klein = 1.0
     atr_gross = 10.0
@@ -1875,7 +1875,7 @@ def test_muster_endpunkt_blockiert_den_event_loop_nicht():
 def test_muster_nackenlinie_liegt_zwischen_den_hochs():
     """Gegenprobe zur Nackenlinie.
 
-    Im Sabotage-Lauf (10.08.) liess sich die Bedingung "das Tief muss ZWISCHEN
+    Im Sabotage-Lauf (13.08.) liess sich die Bedingung "das Tief muss ZWISCHEN
     den beiden Hochs liegen" ersatzlos streichen, ohne dass ein Test rot wurde:
     in meinen Testdaten lag das tiefste Tief ohnehin dazwischen. Hier liegt ein
     NOCH TIEFERES Tief ausserhalb — wird es als Nackenlinie genommen, ist das
@@ -1986,7 +1986,7 @@ def test_muster_doppelboden_nackenlinie_liegt_zwischen_den_tiefs():
 
 
 
-# ── Muster-Rueckrechnung (10.08.) ────────────────────────────────────────────
+# ── Muster-Rueckrechnung (17.08.) ────────────────────────────────────────────
 
 import services.muster_historie as _MH                                # noqa: E402
 
@@ -2142,7 +2142,7 @@ def test_musterhistorie_endpunkt_blockiert_den_event_loop_nicht():
 
 
 def test_muster_dreieck_ausbruch_gibt_die_richtung():
-    """DER FUND vom 10.08.: Dreiecke waren nie bestaetigt und damit NIE messbar.
+    """DER FUND vom 17.08.: Dreiecke waren nie bestaetigt und damit NIE messbar.
 
     Ueber alle 30 Symbole: 3485 Erkennungen, null Messungen — die
     Rueckrechnung zaehlt nur bestaetigte Muster als Richtung. Etwas zu bauen,

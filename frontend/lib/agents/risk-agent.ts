@@ -33,7 +33,7 @@ export interface PosMeta {
   peakPrice: number | null;
   confidence: number;
   tradingStyle: string;
-  /** Letzter Eingriff eines ANDEREN Systems an derselben Position (10.08.).
+  /** Letzter Eingriff eines ANDEREN Systems an derselben Position (11.08.).
    *  Optional, damit bestehende Aufrufer unveraendert bleiben. */
   fremdAktion?: { zeit: string; text: string } | null;
 }
@@ -138,7 +138,7 @@ function persistMeta(dealId: string, patch: Record<string, unknown>): void {
 }
 
 /**
- * Hält eine AI-Entscheidung bei der Position fest (10.08.).
+ * Hält eine AI-Entscheidung bei der Position fest (11.08.).
  *
  * WOZU. Der Grund der AI (aiReason) ging bisher in eine Logzeile und in eine
  * Event-Nutzlast — und wurde von NIEMANDEM gelesen. Der Diagnostics-Agent ist
@@ -235,14 +235,14 @@ interface MarktLage {
   atr: number;
   slRange: number;
   liveSL: number;
-  // Ergänzt 10.08.: die AI wurde nach dem "Fortschritt Richtung Ziel" gefragt,
+  // Ergänzt 11.08.: die AI wurde nach dem "Fortschritt Richtung Ziel" gefragt,
   // erfuhr aber nur, wo der STOP steht — das Ziel selbst kannte sie nicht.
   // Damit war die Zahl für sie nicht nachvollziehbar und auch nicht korrigierbar.
   liveTP: number;
   ageHours: number;
   style: string;
   confidence: number;
-  /** Was ein ANDERES System zuletzt an dieser Position tat (10.08.).
+  /** Was ein ANDERES System zuletzt an dieser Position tat (11.08.).
    *  Der Python-Lifecycle bearbeitet dieselben Capital.com-Positionen und
    *  fragt den AI Manager nie — ohne diesen Hinweis entscheidet sie blind
    *  über eine Absicherung, die jemand anders gerade verändert hat. */
@@ -341,7 +341,7 @@ export function wirksameSchwellen(
 /**
  * Fortschritt der Position Richtung ZIEL, als Anteil (1.0 = Ziel erreicht).
  *
- * WOZU (Fund 10.08.). Der Prompt des AI Managers schrieb "Fortschritt Richtung
+ * WOZU (Fund 11.08.). Der Prompt des AI Managers schrieb "Fortschritt Richtung
  * Ziel" — bekam aber profitPct, also die blosse Kursbewegung in Prozent. Das
  * sind zwei verschiedene Grössen, und der Unterschied hängt am Markt.
  * Nachgerechnet im Moment, in dem der Breakeven auslöst (profitPct = 0,5 %):
@@ -541,7 +541,7 @@ async function processPosition(
     fremdAktion: meta.fremdAktion ?? null,
   };
   // Fortschritt Richtung Ziel — EINMAL berechnet, an alle drei AI-Aufrufe.
-  // Bis zum 10.08. bekam die AI hier profitPct, beschriftet als "Fortschritt
+  // Bis zum 11.08. bekam die AI hier profitPct, beschriftet als "Fortschritt
   // Richtung Ziel": je nach Markt um Faktor 6 bis 104 daneben (siehe
   // fortschrittZumZiel).
   const zielFortschritt = fortschrittZumZiel(profitPct, entry, liveTP, slRange);
@@ -581,7 +581,7 @@ async function processPosition(
         const result = await capitalClosePartial(apiKey, cst, securityToken, epicForClose, direction, partialSize);
         if (result.ok) {
           positionMeta.set(dealId, { ...meta, partialDone: true });
-          // partialSize MIT festhalten (10.08.). Grund: partialDone wird auch
+          // partialSize MIT festhalten (11.08.). Grund: partialDone wird auch
           // im else-Zweig unten gesetzt, wenn die Position zu klein zum
           // Halbieren war und GAR NICHTS geschlossen wurde. Wer den Merker
           // allein liest, kann beides nicht unterscheiden — und der
@@ -776,7 +776,7 @@ export function getRiskAgentState(): Map<string, PosMeta> {
 
 /**
  * Liest aus Trade.notes, welche Positionen schon einen ECHTEN Teilgewinn
- * hinter sich haben (10.08.).
+ * hinter sich haben (11.08.).
  *
  * Als eigene Funktion, nicht als Schleife in instrumentation.ts: dort liesse
  * sie sich nicht ausführen. Im Sabotage-Lauf war die eingebettete Fassung
@@ -810,7 +810,7 @@ export function teilgewinnStand(
 }
 
 /**
- * Darf ein FREMDES System (Python-Lifecycle) hier Teilgewinn nehmen? (10.08.)
+ * Darf ein FREMDES System (Python-Lifecycle) hier Teilgewinn nehmen? (11.08.)
  *
  * Als eigene Funktion, nicht als eingebettete if-Kette in instrumentation.ts:
  * dort liesse sie sich nicht ausführen und damit auch nicht beweisen. Der
@@ -862,7 +862,7 @@ export function teilgewinnErlaubt(
 }
 
 /**
- * Vermerkt einen Teilgewinn, den ein ANDERES System genommen hat (10.08.).
+ * Vermerkt einen Teilgewinn, den ein ANDERES System genommen hat (11.08.).
  *
  * Aufrufer ist der Python-Lifecycle-Zweig in instrumentation.ts. Ohne diesen
  * Vermerk nähme dieser Agent im nächsten Zyklus seinerseits noch einen
@@ -881,7 +881,7 @@ export function teilgewinnErlaubt(
  * dort wird der Merker gesetzt, ohne dass ein Verkauf stattfand).
  */
 /**
- * Vermerkt, dass ein ANDERES System an dieser Position gehandelt hat (10.08.).
+ * Vermerkt, dass ein ANDERES System an dieser Position gehandelt hat (11.08.).
  *
  * WOZU. Auf denselben Capital.com-Positionen arbeitet im selben 2-Minuten-Zyklus
  * auch der Python-Lifecycle: er zieht Stops nach, nimmt Teilgewinn und schliesst
