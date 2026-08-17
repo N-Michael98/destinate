@@ -73,6 +73,52 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
 }
 
 // Called from background monitor — fetches open Capital.com positions and closes finished trades
+/**
+ * Leitet aus dem echten Schlusskurs ab, WARUM ein Trade endete (09.08.).
+ *
+ * exitPosition ist die objektive Zahl: 0 = am Stop, 1 = am Ziel. Sie bleibt
+ * auch dann brauchbar, wenn die Einteilung spaeter anders gezogen wird. Die
+ * 5 %-Toleranz ist die einzige gewaehlte Zahl: gross genug fuer Schlupf beim
+ * Schliessen, klein genug, um einen Trailing-Ausstieg nahe am Ziel nicht
+ * faelschlich als "Ziel" zu zaehlen.
+ *
+ * ALS EIGENE FUNKTION SEIT 17.08. Vorher stand die Ableitung nur im Hauptpfad.
+ * Der P&L-Nachtrag weiter unten korrigiert Ergebnis und P&L, setzte aber
+ * KEINEN Ausstiegsgrund — und genau ueber diesen Weg laufen Trades, die der
+ * manuelle Journal-Abgleich (sync-journal) vorher geschlossen hat. Der schreibt
+ * status CLOSED und result 'CLOSED' ohne P&L und ohne Grund, und nimmt den
+ * Trade damit dem Tracker aus der Hand: der sieht nur status = 'OPEN'.
+ *
+ * NACHGEWIESEN am Wochen-Report vom 16.08.: der Abschnitt "Nach Ausstiegsgrund"
+ * fehlte GANZ, sieben Tage nach dem Einbau — weil kein einziger Trade einen
+ * hatte. Die Auswertung zeigt den Abschnitt nur, wenn mindestens einer benannt
+ * ist.
+ *
+ * Fuer SELL liegt das Ziel UNTER dem Stop — die Formel dreht sich mit, weil
+ * die Spanne dann negativ ist. 0 bleibt Stop, 1 bleibt Ziel.
+ */
+export function ausstiegsgrund(
+  schlusskurs: number | null,
+  stopLoss: number,
+  takeProfit: number,
+): { exitPosition: number | null; exitReason: string } {
+  if (schlusskurs === null || !Number.isFinite(schlusskurs)) {
+    return { exitPosition: null, exitReason: "KEIN_SCHLUSSKURS" };
+  }
+  const spanne = Number(takeProfit) - Number(stopLoss);
+  if (!Number.isFinite(spanne) || Math.abs(spanne) === 0) {
+    return { exitPosition: null, exitReason: "UNBEKANNT" };
+  }
+  const exitPosition = (schlusskurs - Number(stopLoss)) / spanne;
+  if (!Number.isFinite(exitPosition)) {
+    return { exitPosition: null, exitReason: "UNBEKANNT" };
+  }
+  const exitReason = exitPosition >= 0.95 ? "ZIEL"
+    : exitPosition <= 0.05 ? "STOP"
+    : "DAZWISCHEN";
+  return { exitPosition: Number(exitPosition.toFixed(4)), exitReason };
+}
+
 export async function syncCapitalPositionsToJournal(): Promise<void> {
   try {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
@@ -235,21 +281,10 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       // gross genug fuer Schlupf beim Schliessen, klein genug, um einen
       // Trailing-Ausstieg nahe am Ziel nicht faelschlich als "Ziel" zu zaehlen.
       const schlusskurs = closeByEpicOpen.get(openKey) ?? null;
-      let exitPosition: number | null = null;
-      let exitReason = "UNBEKANNT";
-      const spanne = Number(trade.takeProfit) - Number(trade.stopLoss);
-      if (schlusskurs !== null && Number.isFinite(spanne) && Math.abs(spanne) > 0) {
-        // Fuer SELL liegt das Ziel UNTER dem Stop — die Formel dreht sich mit,
-        // weil spanne dann negativ ist. 0 bleibt Stop, 1 bleibt Ziel.
-        exitPosition = (schlusskurs - Number(trade.stopLoss)) / spanne;
-        if (exitPosition >= 0.95) exitReason = "ZIEL";
-        else if (exitPosition <= 0.05) exitReason = "STOP";
-        else exitReason = "DAZWISCHEN";
-      } else if (schlusskurs === null) {
-        exitReason = "KEIN_SCHLUSSKURS";
-      }
+      const { exitPosition, exitReason } = ausstiegsgrund(
+        schlusskurs, Number(trade.stopLoss), Number(trade.takeProfit));
       updatedMeta.closeLevel = schlusskurs ?? 0;
-      updatedMeta.exitPosition = exitPosition !== null ? Number(exitPosition.toFixed(4)) : null;
+      updatedMeta.exitPosition = exitPosition;
       updatedMeta.exitReason = exitReason;
       updatedMeta.closedAt = new Date().toISOString();
 
@@ -283,9 +318,10 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // bleibt korrekt), UPDATE nochmals mit profitLoss=0 abgesichert.
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const zeroTrades: Array<{ id: number; market: string; entry: number; notes: string }> =
+      const zeroTrades: Array<{ id: number; market: string; entry: number; notes: string;
+                                stopLoss: number; takeProfit: number }> =
         await (db.$queryRawUnsafe as any)(
-          `SELECT "id","market","entry","notes" FROM "Trade"
+          `SELECT "id","market","entry","notes","stopLoss","takeProfit" FROM "Trade"
            WHERE "status" = 'CLOSED' AND "profitLoss" = 0
              AND "updatedAt" >= NOW() - INTERVAL '48 hours'
              AND "notes" LIKE '%dealId%'`
@@ -297,11 +333,31 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
         const key = `${(EPIC_MAP[t.market] ?? t.market)}|${Number(t.entry).toFixed(5)}`;
         const pnl = (m.dealId ? pnlByDealId.get(m.dealId) : undefined) ?? pnlByEpicOpen.get(key);
         if (pnl === undefined || pnl === 0) continue; // nur echte Werte nachtragen
-        const res = pnl > 0.01 ? "WIN" : pnl < -0.01 ? "LOSS" : "BREAKEVEN";
-        await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET "result" = $1, "profitLoss" = $2 WHERE "id" = $3 AND "profitLoss" = 0`,
-          res, pnl, t.id
-        );
+          const res = pnl > 0.01 ? "WIN" : pnl < -0.01 ? "LOSS" : "BREAKEVEN";
+
+          // AUSSTIEGSGRUND MITSCHREIBEN (17.08.). Hier wurden bisher nur
+          // Ergebnis und P&L korrigiert. Genau ueber diesen Weg laufen aber
+          // Trades, die der manuelle Journal-Abgleich (sync-journal) vorher
+          // geschlossen hat: der setzt status CLOSED ohne P&L und ohne Grund
+          // und nimmt sie damit dem Hauptpfad aus der Hand, denn der sieht nur
+          // status = 'OPEN'. Folge: der Abschnitt "Nach Ausstiegsgrund" im
+          // Wochen-Report vom 16.08. fehlte GANZ — kein einziger Trade hatte
+          // einen. Der Schlusskurs liegt hier ohnehin vor (closeByEpicOpen,
+          // dieselbe Funktion), es braucht keinen zusaetzlichen Abruf.
+          let notizen: Record<string, unknown> = {};
+          try { notizen = JSON.parse(t.notes) as Record<string, unknown>; } catch { notizen = {}; }
+          if (!notizen.exitReason) {
+            const schluss = closeByEpicOpen.get(key) ?? null;
+            const grund = ausstiegsgrund(schluss, Number(t.stopLoss), Number(t.takeProfit));
+            notizen.closeLevel = schluss ?? 0;
+            notizen.exitPosition = grund.exitPosition;
+            notizen.exitReason = grund.exitReason;
+            notizen.nachgetragenAm = new Date().toISOString();
+          }
+          await db.$executeRawUnsafe(
+            `UPDATE "Trade" SET "result" = $1, "profitLoss" = $2, "notes" = $3 WHERE "id" = $4 AND "profitLoss" = 0`,
+            res, pnl, JSON.stringify(notizen), t.id
+          );
         corrected.push(`${t.market}: ${res} ${pnl > 0 ? "+" : ""}${pnl}`);
         console.log(`[trade-tracker] 🔄 P&L nachgetragen: ${t.market} id=${t.id} → ${res} ${pnl}`);
       }

@@ -203,5 +203,83 @@ module.exports = function pruefe() {
   pruefe1("der Wochenreport erklaert NIE_BESTAETIGT nicht",
     /NIE_BESTAETIGT = die Order wurde abgeschickt/.test(bericht));
 
+  // ── D) Ausstiegsgrund: wird er ueberall geschrieben? (17.08.) ────────────
+  //
+  // NACHGEWIESEN am Wochen-Report vom 16.08.: der Abschnitt "Nach
+  // Ausstiegsgrund" fehlte GANZ, sieben Tage nach seinem Einbau — kein
+  // einziger Trade hatte einen. Die Ursache war eine Kette:
+  //   sync-journal setzte status CLOSED mit result 'CLOSED' (kein gueltiges
+  //   Ergebnis), ohne P&L und ohne Grund. Damit war der Trade dem Tracker
+  //   entzogen, denn der sieht nur status = 'OPEN'. Der P&L-Nachtrag holte
+  //   Ergebnis und P&L spaeter nach — den Grund aber nie.
+  const geladenT = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+  if (geladenT.fehler) {
+    funde.push(geladenT.fehler);
+  } else {
+    const a = geladenT.exports.ausstiegsgrund;
+    if (typeof a !== "function") {
+      funde.push("ausstiegsgrund wird nicht exportiert — die Ableitung bleibt ungeprüft");
+    } else {
+      pruefe1("Schluss am Ziel wird nicht als ZIEL erkannt",
+        a(119, 100, 120).exitReason === "ZIEL", JSON.stringify(a(119, 100, 120)));
+      pruefe1("Schluss am Stop wird nicht als STOP erkannt",
+        a(101, 100, 120).exitReason === "STOP");
+      pruefe1("Schluss in der Mitte wird nicht als DAZWISCHEN erkannt",
+        a(110, 100, 120).exitReason === "DAZWISCHEN");
+      // SELL: das Ziel liegt UNTER dem Stop, die Spanne ist negativ.
+      pruefe1("SELL-Richtung wird falsch eingeordnet",
+        a(101, 120, 100).exitReason === "ZIEL", JSON.stringify(a(101, 120, 100)));
+      pruefe1("ohne Schlusskurs wird nicht KEIN_SCHLUSSKURS gemeldet",
+        a(null, 100, 120).exitReason === "KEIN_SCHLUSSKURS");
+      // JENSEITS des Stops geschlossen — Schlupf oder Kursluecke. Erst hier
+      // wird exitPosition NEGATIV, und erst hier faellt auf, wenn jemand den
+      // Betrag nimmt: aus -0,25 wuerde +0,25 und aus STOP damit DAZWISCHEN.
+      // Im Sabotage-Lauf (17.08.) rutschte genau das durch, weil alle meine
+      // Faelle innerhalb der Spanne lagen.
+      pruefe1("BUY jenseits des Stops wird nicht als STOP gewertet",
+        a(95, 100, 120).exitReason === "STOP", JSON.stringify(a(95, 100, 120)));
+      pruefe1("SELL jenseits des Stops wird nicht als STOP gewertet",
+        a(125, 120, 100).exitReason === "STOP", JSON.stringify(a(125, 120, 100)));
+      pruefe1("exitPosition wird jenseits des Stops nicht negativ",
+        a(95, 100, 120).exitPosition < 0, String(a(95, 100, 120).exitPosition));
+      // Und ueber dem Ziel hinaus muss es weiterhin ZIEL bleiben.
+      pruefe1("BUY ueber dem Ziel wird nicht als ZIEL gewertet",
+        a(130, 100, 120).exitReason === "ZIEL", JSON.stringify(a(130, 100, 120)));
+      for (const [name, args] of [
+        ["Stop = Ziel", [110, 100, 100]],
+        ["Schlusskurs NaN", [NaN, 100, 120]],
+        ["Spanne NaN", [110, NaN, 120]],
+      ]) {
+        const r = a(...args);
+        pruefe1(`${name} ergibt keinen brauchbaren Grund`,
+          r.exitReason === "UNBEKANNT" || r.exitReason === "KEIN_SCHLUSSKURS",
+          JSON.stringify(r));
+      }
+      // Die Toleranz ist die einzige gewaehlte Zahl — sie muss stimmen.
+      pruefe1("die 5%-Toleranz am Ziel greift nicht",
+        a(119.0, 100, 120).exitReason === "ZIEL" && a(118.9, 100, 120).exitReason === "DAZWISCHEN");
+    }
+  }
+
+  const tracker2 = read("frontend/lib/capital-com/capital-trade-tracker.ts");
+  const sync = read("frontend/app/api/capital-com/sync-journal/route.ts");
+
+  pruefe1("der Hauptpfad leitet den Grund nicht mehr ab",
+    /const \{ exitPosition, exitReason \} = ausstiegsgrund\(/.test(tracker2));
+  pruefe1("der P&L-Nachtrag schreibt den Ausstiegsgrund nicht mit",
+    /notizen\.exitReason = grund\.exitReason/.test(tracker2));
+  pruefe1("der Nachtrag speichert die Notizen nicht",
+    /SET "result" = \$1, "profitLoss" = \$2, "notes" = \$3/.test(tracker2));
+  pruefe1("der Nachtrag holt stopLoss und takeProfit nicht",
+    /SELECT "id","market","entry","notes","stopLoss","takeProfit"/.test(tracker2));
+  pruefe1("ein bereits gesetzter Grund wird ueberschrieben",
+    /if \(!notizen\.exitReason\)/.test(tracker2));
+
+  // DIE WURZEL: sync-journal darf keinen Trade mehr abschliessen.
+  pruefe1("sync-journal schliesst wieder Trades ab und entzieht sie dem Tracker",
+    !/SET "status" = 'CLOSED'/.test(sync), "status CLOSED in sync-journal gefunden");
+  pruefe1("sync-journal vermerkt die verschwundene Position nicht",
+    /brokerPositionWeg/.test(sync));
+
   return { titel: `Order-Bestätigung + Stop-Abstand (${geprueft} Prüfungen)`, funde };
 };

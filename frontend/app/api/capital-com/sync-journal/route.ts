@@ -80,11 +80,32 @@ export async function POST(request: Request) {
     try { meta = JSON.parse(t.notes); } catch { continue; }
     if (!meta.dealId || openDealIds.has(meta.dealId)) continue;
 
-    // Position closed — mark as CLOSED (P&L unknown without history API)
-    await db.$executeRawUnsafe(
-      `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'CLOSED', "updatedAt" = NOW() WHERE "id" = $1`,
-      t.id
-    );
+      // Position ist beim Broker weg — hier NUR vermerken, nicht abschliessen.
+      //
+      // BIS 17.08. stand hier status CLOSED mit result 'CLOSED', ohne P&L und
+      // ohne Ausstiegsgrund. Das hatte drei Folgen, alle am Wochen-Report vom
+      // 16.08. nachgewiesen:
+      //   1. 'CLOSED' ist kein gueltiges Ergebnis — die Auswertung zaehlt nur
+      //      WIN und LOSS. Solche Trades erschienen als "WR n/a, +0.0" und
+      //      blaehten die Zahl der Trades auf, ohne einen Ausgang zu haben.
+      //   2. Der Tracker sieht nur status = 'OPEN'. Einmal auf CLOSED gesetzt,
+      //      konnte er den echten P&L und den Ausstiegsgrund NIE mehr
+      //      nachtragen — dieser Knopf nahm ihm den Trade aus der Hand.
+      //   3. Der Abschnitt "Nach Ausstiegsgrund" fehlte deshalb ganz im
+      //      Bericht, sieben Tage nach seinem Einbau.
+      //
+      // Jetzt bleibt der Trade OPEN und wird nur MARKIERT. Der Tracker laeuft
+      // ohnehin alle zwei Minuten, findet die fehlende Position selbst und
+      // schliesst sie mit P&L und Grund — so wie es vorgesehen ist. Der
+      // manuelle Abgleich meldet damit, was er sieht, statt es zu entscheiden.
+      let notizen: Record<string, unknown> = {};
+      try { notizen = JSON.parse(t.notes) as Record<string, unknown>; } catch { notizen = {}; }
+      notizen.brokerPositionWeg = new Date().toISOString();
+      await db.$executeRawUnsafe(
+        `UPDATE "Trade" SET "notes" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+        JSON.stringify(notizen),
+        t.id
+      );
     imported++;
   }
 
