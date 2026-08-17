@@ -18,6 +18,11 @@ export interface TradeRecord {
   confidence: number;
   icPositionId?: string; // IC Markets position ID if also executed there
   entryContext?: Record<string, unknown>; // Marktbedingungen beim Entry (für Analysis Engine)
+  /** Order abgeschickt, Bestaetigung nicht lesbar (10.08.). Landet in den
+   *  Notizen, damit ein Phantom-Trade spaeter erkennbar ist: gab es die
+   *  Position nie, schliesst der Tracker sie als BREAKEVEN mit P&L 0 —
+   *  ununterscheidbar von einem echten Nulltrade. */
+  unbestaetigt?: boolean;
 }
 
 export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<void> {
@@ -58,6 +63,7 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
         source: "auto-scan",
         ...(trade.icPositionId ? { icPositionId: trade.icPositionId } : {}),
         ...(trade.entryContext ? { entryContext: trade.entryContext } : {}),
+        ...(trade.unbestaetigt ? { unbestaetigt: true } : {}),
       })
     );
     console.log(`[trade-tracker] Saved trade: ${trade.symbol} ${trade.direction} (${trade.tradingStyle}) deal=${trade.dealId}`);
@@ -181,12 +187,31 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           );
           console.log(`[trade-tracker] P&L noch nicht verbucht: ${trade.market} deal=${meta.dealId} (Versuch ${retries}/5) — bleibt OPEN`);
         } else {
-          // Nach 5 Versuchen aufgeben — wie altes Verhalten
+          // Nach 5 Versuchen aufgeben — wie altes Verhalten.
+          //
+          // ERWEITERT 10.08.: War die Order NIE BESTAETIGT und ist auch nach
+          // fuenf Zyklen weder eine Position noch ein P&L aufgetaucht, dann
+          // hat es diesen Trade mit hoher Wahrscheinlichkeit nie gegeben — die
+          // Bestaetigung war unlesbar und der Broker hat die Order vermutlich
+          // abgelehnt. Bisher landete so ein Phantom als BREAKEVEN mit P&L 0 in
+          // der Statistik, ohne Ausstiegsgrund und damit ununterscheidbar von
+          // einem echten Nulltrade. Genau diese Statistik soll spaeter die
+          // Exit-Schwellen belegen.
+          //
+          // Der Eintrag wird NICHT geloescht, sondern BENANNT: er taucht im
+          // Wochenreport als eigene Gruppe auf und verfaelscht die uebrigen nicht.
+          const phantom = m.unbestaetigt === true;
+          m.exitReason = phantom ? "NIE_BESTAETIGT" : "KEIN_PNL";
           await db.$executeRawUnsafe(
-            `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'BREAKEVEN', "profitLoss" = 0, "updatedAt" = NOW() WHERE "id" = $1`,
+            `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'BREAKEVEN', "profitLoss" = 0, "notes" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+            JSON.stringify(m),
             trade.id
           );
-          console.warn(`[trade-tracker] ⚠️ P&L nach 5 Versuchen nicht gefunden: ${trade.market} deal=${meta.dealId} — CLOSED als BREAKEVEN`);
+          if (phantom) {
+            console.error(`[trade-tracker] ⚠️ PHANTOM: ${trade.market} deal=${meta.dealId} war nie bestaetigt und ist nie als Position aufgetaucht — als NIE_BESTAETIGT geschlossen`);
+          } else {
+            console.warn(`[trade-tracker] ⚠️ P&L nach 5 Versuchen nicht gefunden: ${trade.market} deal=${meta.dealId} — CLOSED als KEIN_PNL`);
+          }
         }
         continue;
       }

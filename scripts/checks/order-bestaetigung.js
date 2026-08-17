@@ -142,5 +142,66 @@ module.exports = function pruefe() {
   pruefe1("eine nicht umrechenbare Einheit wird nicht sichtbar gemacht",
     /nicht umrechenbar/.test(client));
 
+  // ── C) Wird die Unsicherheit auch VERWERTET? (10.08.) ────────────────────
+  //
+  // ANLASS: unbestaetigt wurde eingefuehrt, aber von NIEMANDEM gelesen —
+  // exakt die Fehlerklasse, die beim AI Manager (aiReason) am selben Tag
+  // behoben wurde. Ein Feld zu setzen, das niemand auswertet, sieht aus wie
+  // Schutz und ist keiner.
+  //
+  // Die Folge war nachgewiesen: ein Trade-Eintrag entsteht bei ok:true, also
+  // auch bei unbestaetigter Order. Gab es die Position nie, findet der Tracker
+  // sie nicht, versucht fuenfmal den P&L zu holen und schliesst sie dann als
+  // BREAKEVEN mit P&L 0 — ohne Ausstiegsgrund und damit ununterscheidbar von
+  // einem echten Nulltrade. Genau die Statistik, aus der die Exit-Schwellen
+  // ihre Antwort ziehen sollen.
+  const exec = read("frontend/lib/capital-com/capital-com-execution.ts");
+  const tracker = read("frontend/lib/capital-com/capital-trade-tracker.ts");
+  const bericht = read("analysis-engine/services/periodic_report.py");
+
+  pruefe1("ExecutionResult kennt unbestaetigt nicht",
+    /unbestaetigt\?: boolean/.test(exec));
+  pruefe1("executeCapitalDemoOrder reicht unbestaetigt nicht durch",
+    /unbestaetigt: result\.unbestaetigt/.test(exec));
+  pruefe1("TradeRecord kennt unbestaetigt nicht",
+    /unbestaetigt\?: boolean/.test(tracker));
+  pruefe1("die Notizen des Trades tragen unbestaetigt nicht",
+    /trade\.unbestaetigt \? \{ unbestaetigt: true \}/.test(tracker));
+
+  // Alle DREI Speicherstellen muessen es mitgeben — eine zu vergessen hiesse,
+  // dass Phantom-Trades aus genau diesem Pfad unerkannt bleiben.
+  let stellen = 0;
+  for (const datei of [
+    "frontend/app/api/auto-execute/route.ts",
+    "frontend/app/api/capital-com/execute/route.ts",
+    "frontend/lib/agents/orchestrator-agent.ts",
+  ]) {
+    if (/unbestaetigt: result\?\.unbestaetigt/.test(read(datei))) stellen++;
+  }
+  pruefe1("nicht alle drei Speicherstellen geben unbestaetigt mit",
+    stellen === 3, `${stellen} von 3`);
+
+  // Und der Tracker muss daraus wirklich etwas machen.
+  pruefe1("der Tracker unterscheidet einen Phantom-Trade nicht",
+    /m\.unbestaetigt === true/.test(tracker));
+  // Auf die ZUWEISUNG pruefen, nicht auf das Wort: "NIE_BESTAETIGT" steht
+  // auch im Kommentar und in beiden Logzeilen. Im Sabotage-Lauf liess sich die
+  // Zuweisung deshalb streichen, ohne dass etwas rot wurde.
+  pruefe1("der Phantom-Trade bekommt keinen eigenen Ausstiegsgrund",
+    /m\.exitReason = phantom \? "NIE_BESTAETIGT" : "KEIN_PNL"/.test(tracker));
+  // Das VOLLSTAENDIGE UPDATE pruefen: der Wiederholungs-Zweig darueber
+  // enthaelt ebenfalls "notes" = $1 mit JSON.stringify(m) und liess das
+  // urspruengliche Muster gruen bleiben, obwohl der Grund nie gespeichert wurde.
+  pruefe1("der Ausstiegsgrund wird beim Schliessen nicht mitgeschrieben",
+    /'BREAKEVEN', "profitLoss" = 0, "notes" = \$1/.test(tracker));
+  pruefe1("ein Phantom-Trade wird nicht als solcher gemeldet",
+    /PHANTOM/.test(tracker));
+  // Auf die REIHENFOLGE-Liste pruefen: "NIE_BESTAETIGT" steht auch im
+  // Kommentar und im Hinweistext darunter.
+  pruefe1("der Wochenreport sortiert die neuen Gruppen nicht ein",
+    /"NIE_BESTAETIGT",\s*"KEIN_PNL",\s*"UNBEKANNT"\]/.test(bericht));
+  pruefe1("der Wochenreport erklaert NIE_BESTAETIGT nicht",
+    /NIE_BESTAETIGT = die Order wurde abgeschickt/.test(bericht));
+
   return { titel: `Order-Bestätigung + Stop-Abstand (${geprueft} Prüfungen)`, funde };
 };

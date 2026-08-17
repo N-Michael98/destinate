@@ -355,6 +355,9 @@ async function postTradeActions(params: {
   try {
     const { saveCapitalTradeToJournal } = await import("../capital-com/capital-trade-tracker");
     await saveCapitalTradeToJournal({
+      // Unbestaetigte Order mitschreiben (10.08.) — sonst ist ein
+      // Phantom-Trade spaeter nicht von einem echten Nulltrade zu trennen.
+      unbestaetigt: result?.unbestaetigt,
       dealId:       result?.dealId ?? "unknown",
       symbol:       candidate.symbol,
       direction:    candidate.gpt.direction as "BUY" | "SELL",

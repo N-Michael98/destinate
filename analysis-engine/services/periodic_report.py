@@ -359,7 +359,12 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
     benannt = {k: v for k, v in gruende.items() if k != "OHNE_ANGABE"}
     if benannt:
         lines.append("<b>🚪 Nach Ausstiegsgrund:</b>")
-        reihenfolge = ["ZIEL", "DAZWISCHEN", "STOP", "KEIN_SCHLUSSKURS", "UNBEKANNT"]
+        # NIE_BESTAETIGT und KEIN_PNL ergaenzt (10.08.): Trades, deren Order nie
+        # bestaetigt wurde bzw. deren P&L nie auftauchte. Sie zaehlen nicht als
+        # echte Trades — bis heute landeten sie unbenannt als BREAKEVEN in der
+        # Statistik und waren von einem echten Nulltrade nicht zu trennen.
+        reihenfolge = ["ZIEL", "DAZWISCHEN", "STOP", "KEIN_SCHLUSSKURS",
+                       "NIE_BESTAETIGT", "KEIN_PNL", "UNBEKANNT"]
         for grund in sorted(benannt.keys(),
                             key=lambda x: reihenfolge.index(x) if x in reihenfolge else 99):
             e = benannt[grund]
@@ -370,6 +375,10 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
         if ohne:
             lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 07.08.).</i>")
         lines.append("<i>DAZWISCHEN = weder Ziel noch Stop, also Zeit-Exit, Trailing oder Teilschliessung.</i>")
+        if gruende.get("NIE_BESTAETIGT", {}).get("trades"):
+            lines.append(f"<i>NIE_BESTAETIGT = die Order wurde abgeschickt, aber weder "
+                         f"bestaetigt noch je als Position gesehen. Das sind vermutlich "
+                         f"gar keine Trades — nicht mitrechnen.</i>")
         lines.append("")
 
     lines.append(f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC")

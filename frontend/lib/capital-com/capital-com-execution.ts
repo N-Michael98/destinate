@@ -38,6 +38,13 @@ export interface ExecutionResult {
   openLevel?: number; // real fill price from Capital.com confirm
   error?: string;
   executedAt: string;
+  /** Die Order wurde abgeschickt, der Bestaetigungsschritt war aber nicht
+   *  lesbar (10.08.). Muss bis in den Trade-Eintrag durchgereicht werden:
+   *  gab es die Position in Wirklichkeit nie, schliesst der Tracker sie nach
+   *  fuenf Versuchen als BREAKEVEN mit P&L 0 — ununterscheidbar von einem
+   *  echten Nulltrade. Genau die Statistik, aus der die Exit-Schwellen ihre
+   *  Antwort ziehen sollen, waere damit verschmutzt. */
+  unbestaetigt?: boolean;
 }
 
 export interface CloseResult {
@@ -263,6 +270,7 @@ export async function executeCapitalDemoOrder(
     openLevel: result.openLevel,
     error: result.error,
     executedAt: new Date().toISOString(),
+    unbestaetigt: result.unbestaetigt,
   };
 }
 
