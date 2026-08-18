@@ -809,6 +809,156 @@ export function teilgewinnStand(
   return menge;
 }
 
+/** Stammdaten, die der Python-Lifecycle beim Registrieren braucht (18.08.). */
+export interface LifecycleStammdaten {
+  tradingStyle: string;
+  confidence: number;
+}
+
+/** Offene Broker-Position, so wie sie `capitalGetPositions()` liefert (18.08.). */
+export interface LifecyclePosition {
+  dealId?: string | null;
+  symbol?: string | null;
+  epic?: string | null;
+  direction?: string | null;
+  size?: number | null;
+  openLevel?: number | null;
+  stopLevel?: number | null;
+  profitLevel?: number | null;
+  createdDate?: string | null;
+}
+
+/**
+ * Liest Handelsstil und Confidence je dealId aus Trade.notes (18.08.).
+ *
+ * Beides steht NICHT in der Broker-Position, entscheidet beim Python-Lifecycle
+ * aber über echtes Verhalten: `confidence` legt den Breakeven-Punkt fest
+ * (0.40 / 0.55 / 0.70 je Stufe), `tradingStyle` die Haltedauer bis zum
+ * Zeit-Exit (SCALPING 4 h, DAYTRADING 24 h, SWING 168 h). Ein SWING-Trade mit
+ * geratenem DAYTRADING würde 144 Stunden zu früh geschlossen — deshalb wird
+ * hier nichts angenommen: fehlt eines von beiden, entsteht kein Eintrag und
+ * die Position wird später NICHT nachregistriert.
+ */
+export function stammdatenAusNotizen(
+  zeilen: ReadonlyArray<{ notes: string | null }> | null | undefined,
+): Map<string, LifecycleStammdaten> {
+  const karte = new Map<string, LifecycleStammdaten>();
+  for (const zeile of zeilen ?? []) {
+    if (!zeile?.notes) continue;
+    try {
+      const m = JSON.parse(zeile.notes) as {
+        dealId?: string; tradingStyle?: string; confidence?: number;
+      };
+      const stil = String(m.tradingStyle ?? "").trim();
+      // Bewusst typeof statt Number(): Number(null) ist 0, nicht NaN. Eine
+      // Notiz mit `confidence: null` wuerde sonst als Confidence 0 durchgehen
+      // — also geraten statt uebersprungen, und der Breakeven-Punkt spraenge
+      // ungefragt auf die unterste Stufe.
+      const conf = m.confidence;
+      if (m.dealId && stil && typeof conf === "number" && Number.isFinite(conf)) {
+        karte.set(String(m.dealId), { tradingStyle: stil, confidence: conf });
+      }
+    } catch {
+      // Eine kaputte Notiz darf die übrigen nicht mitnehmen.
+    }
+  }
+  return karte;
+}
+
+/**
+ * Welche offenen Positionen muss der Python-Lifecycle nachgereicht bekommen?
+ * (18.08.)
+ *
+ * DAS PROBLEM. `_trades` im Python-Lifecycle liegt nur im Arbeitsspeicher und
+ * wird ausschliesslich beim Eröffnen gefüllt (orchestrator-agent.ts). Nach
+ * jedem Neustart des Dienstes — also nach jedem Deploy — kennt er die offenen
+ * Positionen nicht mehr und antwortet still mit `{"action": null}`, während
+ * die Schleife weiter „N Positionen für Lifecycle-Update" meldet. Der Schutz
+ * bleibt (der RiskAgent hier hat Breakeven, Teilgewinn, Trailing und Zeit-Exit
+ * selbst), aber die zweite Schicht fällt lautlos aus.
+ *
+ * WARUM NICHT EINFACH IMMER REGISTRIEREN. `register_trade()` überschreibt den
+ * Eintrag und feuert `TRADE_OPENED`. Blindes Registrieren würde jeden Zyklus
+ * `be_set`, `partial_done` und `trail_sl` zurücksetzen und alle zwei Minuten
+ * eine Telegram-Meldung auslösen. Deshalb wird nur ergänzt, was fehlt.
+ *
+ * ALLE ANGABEN KOMMEN VOM BROKER, nicht aus der Datenbank: `openLevel`,
+ * `stopLevel` (der LIVE nachgezogene Stop, nicht der ursprüngliche) und
+ * `createdDate` als echte Eröffnungszeit. Damit stimmt der Zustand nach dem
+ * Nachregistrieren mit der Wirklichkeit überein, und der Zeit-Exit rechnet ab
+ * dem richtigen Zeitpunkt statt ab jetzt.
+ *
+ * FAIL-SAFE. `bekannt === null` heisst: die Abfrage ist fehlgeschlagen. Dann
+ * wird NICHTS registriert — lieber eine Runde ohne zweite Schicht als ein
+ * Zurücksetzen der Merker auf einer laufenden Position.
+ */
+export function nachzuregistrieren(
+  positionen: ReadonlyArray<LifecyclePosition> | null | undefined,
+  bekannt: ReadonlySet<string> | null | undefined,
+  stammdaten: ReadonlyMap<string, LifecycleStammdaten> | null | undefined,
+): Array<{
+  tradeId: string; symbol: string; direction: "BUY" | "SELL"; entry: number;
+  stopLoss: number; takeProfit: number; size: number; confidence: number;
+  tradingStyle: string; broker: string; openedAt: string; silent: true;
+}> {
+  // Abfrage fehlgeschlagen → nichts tun.
+  if (!bekannt) return [];
+
+  const aus: Array<{
+    tradeId: string; symbol: string; direction: "BUY" | "SELL"; entry: number;
+    stopLoss: number; takeProfit: number; size: number; confidence: number;
+    tradingStyle: string; broker: string; openedAt: string; silent: true;
+  }> = [];
+
+  for (const pos of positionen ?? []) {
+    const tradeId = String(pos?.dealId ?? "");
+    if (!tradeId) continue;
+    // Python kennt ihn schon — NICHT überschreiben.
+    if (bekannt.has(tradeId)) continue;
+
+    // Stil und Confidence sind unbekannt → nicht raten, nicht registrieren.
+    const stamm = stammdaten?.get(tradeId);
+    if (!stamm) continue;
+
+    const richtung = String(pos?.direction ?? "").toUpperCase();
+    if (richtung !== "BUY" && richtung !== "SELL") continue;
+
+    const entry = Number(pos?.openLevel);
+    if (!Number.isFinite(entry) || entry <= 0) continue;
+
+    const size = Number(pos?.size);
+    if (!Number.isFinite(size) || size <= 0) continue;
+
+    // Ohne echte Eröffnungszeit würde der Zeit-Exit ab JETZT zählen und die
+    // Position zu lange halten. Lieber gar nicht registrieren.
+    const roh = String(pos?.createdDate ?? "");
+    const zeit = roh ? new Date(roh) : null;
+    if (!zeit || Number.isNaN(zeit.getTime())) continue;
+
+    const stop = Number(pos?.stopLevel);
+    const ziel = Number(pos?.profitLevel);
+
+    aus.push({
+      tradeId,
+      symbol:       String(pos?.symbol ?? pos?.epic ?? ""),
+      direction:    richtung,
+      entry,
+      stopLoss:     Number.isFinite(stop) && stop > 0 ? stop : 0,
+      takeProfit:   Number.isFinite(ziel) && ziel > 0 ? ziel : 0,
+      size,
+      confidence:   stamm.confidence,
+      tradingStyle: stamm.tradingStyle,
+      broker:       "Capital.com",
+      openedAt:     zeit.toISOString(),
+      // OHNE Eröffnungsmeldung: register_trade() feuert sonst TRADE_OPENED,
+      // und der Nutzer bekäme nach jedem Deploy für jede laufende Position
+      // eine "Trade ausgeführt"-Meldung für einen Trade von vorgestern.
+      silent:       true,
+    });
+  }
+  return aus;
+}
+
 /**
  * Darf ein FREMDES System (Python-Lifecycle) hier Teilgewinn nehmen? (11.08.)
  *

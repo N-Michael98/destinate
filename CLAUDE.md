@@ -9,8 +9,8 @@ manuell geschickt werden.
 cd frontend && npm run check
 ```
 
-Läuft in rund 2,5 Sekunden, braucht keine Installation. Sieben Prüfer, Rückgabe
-0 = grün. **Rot heisst: nicht committen, erst beheben.**
+Braucht keine Installation. **Fünfzehn Prüfer**, Rückgabe 0 = grün.
+**Rot heisst: nicht committen, erst beheben.**
 
 Mit TypeScript-Prüfung zusammen:
 
@@ -36,11 +36,28 @@ Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweisl
 an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
 Prüfer, der nie rot wird, ist wertlos.
 
-**Eine Ausnahme seit dem 10.08.:** der elfte Prüfer `exit-schwellen` **rechnet**.
-Er übersetzt `risk-agent.ts` und ruft `wirksameSchwellen()` wirklich auf — 29
-Rechnungen über fünf gemessene Märkte. Damit fällt dort auch ein subtil falscher
-Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle), der strukturell
-unauffällig bliebe. Für alle anderen Pfade gilt der Absatz oben weiter.
+**Sechs Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
+TypeScript-Datei und rufen die echte Funktion auf. Damit fällt dort auch ein
+subtil falscher Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle,
+fehlender Null-Fall), der strukturell unauffällig bliebe:
+
+| Prüfer | ruft wirklich auf | seit |
+|---|---|---|
+| `ai-clamp` | `inGrenzen()` | 11.08. |
+| `exit-schwellen` | `wirksameSchwellen()` | 10.08. |
+| `teilgewinn` | `teilgewinnErlaubt()`, `teilgewinnStand()` | 11.08. |
+| `signal-untergrenze` | die Untergrenze der Signalkette | 13.08. |
+| `order-bestaetigung` | `ausstiegsgrund()`, `stopAbstandGenug()` | 13.08. |
+| `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()` | 18.08. |
+
+Für alle anderen Pfade gilt der Absatz oben weiter.
+
+**Ein Wort im Kommentar ist keine Verwendung.** Diese Fehlerklasse hat 2026
+sechsmal zugeschlagen: ein Prüfer suchte nach einem Namen und fand ihn in einem
+Kommentar, einer Logzeile oder an einer anderen Aufrufstelle — während die
+echte Verdrahtung fehlte. Zuletzt am 18.08. im Sabotage-Lauf von
+`lifecycle-rueckkehr`. Wer zählt, ob etwas *benutzt* wird, muss Kommentare und
+Zeichenketten vorher entfernen (`ohneKommentareUndTexte()` dort).
 
 ## Vorgehen bei Änderungen
 
@@ -99,7 +116,7 @@ anderer Fehler denselben Pfad abfangen kann.
 
 ## Snapshot kritischer Werte
 
-Der neunte Prüfer hält 289 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
+Der neunte Prüfer hält 290 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
 alle Grössen- und Stop-Tabellen, die Standardwerte der Einstellungen, die
 Exit-Schwellen und Haltedauern, die Klemmen des AI Managers, die Prüfsumme des
 GPT-Regelteils, die Reihenfolge der Filterkette und die Konstanten des

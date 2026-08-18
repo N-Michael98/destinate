@@ -24,6 +24,12 @@ class TradeRegisterRequest(BaseModel):
     trading_style: str   = "DAYTRADING"
     broker:        str   = "Capital.com"
     opened_at:     Optional[str] = None
+    # Nachtraeglich registrieren, OHNE eine Eroeffnungsmeldung auszuloesen
+    # (18.08.). Nach einem Neustart des Dienstes reicht das Frontend die schon
+    # laufenden Positionen nach. Ohne dieses Feld schickte der Bus fuer JEDE
+    # davon ein TRADE_OPENED und der Nutzer bekaeme nach jedem Deploy eine
+    # Reihe "Trade ausgefuehrt"-Meldungen fuer Trades von vorgestern.
+    silent:        bool  = False
 
 class PriceUpdateRequest(BaseModel):
     trade_id:      str
@@ -59,7 +65,7 @@ def register_trade(body: TradeRegisterRequest):
         broker        = body.broker,
         opened_at     = opened,
     )
-    lifecycle.register_trade(trade)
+    lifecycle.register_trade(trade, silent=body.silent)
     return {"ok": True, "trade_id": body.trade_id}
 
 @router.post("/price-update")

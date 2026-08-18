@@ -88,6 +88,8 @@ export async function pyRegisterTrade(params: {
   tradingStyle: string;
   broker:      string;
   openedAt?:   string;
+  /** Nachtraeglich registrieren, ohne Eroeffnungsmeldung (18.08.). */
+  silent?:     boolean;
 }): Promise<boolean> {
   const res = await post("/api/v1/lifecycle/register", {
     trade_id:      params.tradeId,
@@ -101,6 +103,7 @@ export async function pyRegisterTrade(params: {
     trading_style: params.tradingStyle,
     broker:        params.broker,
     opened_at:     params.openedAt,
+    silent:        params.silent === true,
   });
   return !!res;
 }
@@ -125,6 +128,31 @@ export async function pyPriceUpdate(tradeId: string, currentPrice: number): Prom
 
 export async function pyCloseTrade(tradeId: string, pnl: number, reason: string): Promise<void> {
   await post("/api/v1/lifecycle/close", { trade_id: tradeId, pnl, reason });
+}
+
+// ── Lifecycle: welche Trades kennt Python gerade? ─────────────────────────────
+
+/**
+ * Die IDs der Trades, die der Python-Lifecycle im Arbeitsspeicher hat (18.08.).
+ *
+ * WOZU. `_trades` liegt ausschliesslich im RAM und wird NUR beim Eroeffnen
+ * gefuellt. Nach jedem Neustart des Python-Dienstes (jedes Railway-Deploy)
+ * kennt er die offenen Positionen nicht mehr: `on_price_update` antwortet
+ * still mit `{"action": null}`, waehrend die Schleife weiter meldet, sie
+ * habe N Positionen aktualisiert. Der Schutz selbst bleibt — der RiskAgent
+ * in TypeScript hat Breakeven, Teilgewinn, Trailing und Zeit-Exit selbst —
+ * aber die zweite Schicht faellt lautlos aus.
+ *
+ * RUECKGABE. Die bekannten IDs, oder **null** wenn die Abfrage fehlschlug.
+ * Diese Unterscheidung ist wichtig und darf nicht zu einem leeren Set
+ * verkuerzt werden: bei einem Fehler darf NICHTS nachregistriert werden.
+ * Ein Blind-Registrieren wuerde `be_set`, `partial_done` und `trail_sl`
+ * zuruecksetzen und bei jedem Zyklus eine TRADE_OPENED-Meldung ausloesen.
+ */
+export async function pyLifecycleTrades(): Promise<Set<string> | null> {
+  const res = await get<{ trades?: Array<{ trade_id?: string }> }>("/api/v1/lifecycle/trades");
+  if (!res || !Array.isArray(res.trades)) return null;
+  return new Set(res.trades.map((t) => String(t?.trade_id ?? "")).filter(Boolean));
 }
 
 // ── Lifecycle: Balance Update ─────────────────────────────────────────────────

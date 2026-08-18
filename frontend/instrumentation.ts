@@ -279,7 +279,8 @@ export async function register() {
 
           // Python lifecycle manager: BE/Trailing/Exit für alle registrierten Trades
           try {
-            const { isPythonBackendConfigured, pyPriceUpdate, pyUpdateBalance } = await import("./lib/python-backend/python-client");
+            const { isPythonBackendConfigured, pyPriceUpdate, pyUpdateBalance,
+                    pyLifecycleTrades, pyRegisterTrade } = await import("./lib/python-backend/python-client");
             if (isPythonBackendConfigured()) {
               const { isCapitalConnected, getCapitalSession } = await import("./lib/capital-com/capital-com-session");
               if (isCapitalConnected()) {
@@ -324,19 +325,62 @@ export async function register() {
                   // WIRKLICH ausführen kann. Als Schleife hier war sie im
                   // Sabotage-Lauf abschaltbar, ohne dass etwas rot wurde.
                   let schonTeilgewonnen = new Set<string>();
+                  // Stil und Confidence je dealId — gebraucht, um nach einem
+                  // Neustart des Python-Dienstes nachregistrieren zu koennen
+                  // (18.08.). Dieselben Zeilen, kein zweiter DB-Treffer.
+                  let stammdaten = new Map<string, import("./lib/agents/risk-agent").LifecycleStammdaten>();
                   try {
                     const { getPrisma } = await import("./app/lib/prisma");
-                    const { teilgewinnStand } = await import("./lib/agents/risk-agent");
+                    const { teilgewinnStand, stammdatenAusNotizen } = await import("./lib/agents/risk-agent");
                     const db = getPrisma();
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const rows = await (db.$queryRawUnsafe as any)(
                       `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealId%'`
                     ) as Array<{ notes: string }>;
                     schonTeilgewonnen = teilgewinnStand(rows);
+                    stammdaten = stammdatenAusNotizen(rows);
                   } catch (e) {
                     console.warn("[py-lifecycle] Teilgewinn-Stand nicht lesbar — Riegel greift diesen Zyklus nicht:",
                       e instanceof Error ? e.message : String(e));
                   }
+
+                  // FEHLENDE TRADES NACHREICHEN (18.08.).
+                  //
+                  // `_trades` im Python-Lifecycle liegt nur im Arbeitsspeicher
+                  // und wurde bisher AUSSCHLIESSLICH beim Eroeffnen gefuellt.
+                  // Nach jedem Neustart des Dienstes — also nach jedem Deploy —
+                  // kannte er die offenen Positionen nicht mehr und antwortete
+                  // still mit action:null, waehrend die Zeile darueber weiter
+                  // "N Positionen fuer Lifecycle-Update" meldete. Der Schutz
+                  // blieb (der RiskAgent lief kurz zuvor und hat Breakeven,
+                  // Teilgewinn, Trailing und Zeit-Exit selbst), aber die zweite
+                  // Schicht fiel lautlos aus.
+                  //
+                  // Die Entscheidung liegt in nachzuregistrieren() im RiskAgent,
+                  // NICHT hier als Schleife: eingebettet liesse sie sich nicht
+                  // ausfuehren und damit nicht beweisen. Der Pruefer
+                  // `lifecycle-rueckkehr` ruft genau diese Funktion auf.
+                  try {
+                    const { nachzuregistrieren } = await import("./lib/agents/risk-agent");
+                    const bekannt = await pyLifecycleTrades();
+                    if (bekannt === null) {
+                      console.warn("[py-lifecycle] Trade-Liste nicht abrufbar — diesen Zyklus wird NICHT nachregistriert");
+                    }
+                    const fehlend = nachzuregistrieren(positions, bekannt, stammdaten);
+                    for (const t of fehlend) {
+                      const ok = await pyRegisterTrade(t);
+                      if (ok) {
+                        console.log(`[py-lifecycle] nachregistriert: ${t.symbol} ${t.direction} `
+                          + `deal=${t.tradeId} stil=${t.tradingStyle} eroeffnet=${t.openedAt}`);
+                      } else {
+                        console.warn(`[py-lifecycle] Nachregistrieren fehlgeschlagen: ${t.symbol} deal=${t.tradeId}`);
+                      }
+                    }
+                  } catch (e) {
+                    console.warn("[py-lifecycle] Nachregistrieren uebersprungen:",
+                      e instanceof Error ? e.message : String(e));
+                  }
+
                   for (const pos of positions) {
                     const tradeId = pos.dealId;
                     if (!tradeId) continue;

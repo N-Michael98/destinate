@@ -280,6 +280,87 @@ class TestZeitExit:
         result = await mgr.on_price_update("T001", 1.1010)
         assert result["action"] != "CLOSE"
 
+
+# ── Nachreichen nach einem Neustart (18.08.) ─────────────────────────────────
+#
+# `_trades` liegt nur im Arbeitsspeicher und wurde NUR beim Eroeffnen gefuellt.
+# Nach jedem Neustart des Dienstes kannte der Lifecycle die offenen Positionen
+# nicht mehr und antwortete still mit action=None. Das Frontend reicht sie
+# jetzt nach — aber STILL, sonst meldet Telegram nach jedem Deploy fuer jede
+# laufende Position "Trade ausgefuehrt".
+
+class TestStillesNachreichen:
+    def _mit_bus_mitschnitt(self, monkeypatch):
+        from services import trade_lifecycle_manager as tlm
+        ereignisse = []
+
+        class _Bus:
+            def publish_sync(self, typ, daten, source=None):
+                ereignisse.append((typ, daten))
+
+            async def publish(self, typ, daten, source=None):
+                ereignisse.append((typ, daten))
+
+            def subscribe(self, *a, **k):
+                pass
+
+        monkeypatch.setattr(tlm, "bus", _Bus())
+        return ereignisse
+
+    def test_normales_registrieren_meldet_weiterhin(self, monkeypatch):
+        ereignisse = self._mit_bus_mitschnitt(monkeypatch)
+        mgr = TradeLifecycleManager()
+        mgr.register_trade(make_trade())
+        typen = [e[0] for e in ereignisse]
+        assert EventType.TRADE_OPENED in typen, (
+            "ein normal eroeffneter Trade MUSS weiterhin gemeldet werden")
+
+    def test_stilles_nachreichen_meldet_nicht(self, monkeypatch):
+        ereignisse = self._mit_bus_mitschnitt(monkeypatch)
+        mgr = TradeLifecycleManager()
+        mgr.register_trade(make_trade(), silent=True)
+        typen = [e[0] for e in ereignisse]
+        assert EventType.TRADE_OPENED not in typen, (
+            "nachgereichte Positionen duerfen KEINE Eroeffnungsmeldung ausloesen")
+
+    def test_stilles_nachreichen_verwaltet_trotzdem(self, monkeypatch):
+        """Still heisst nur: keine Meldung. Verwaltet wird ganz normal."""
+        self._mit_bus_mitschnitt(monkeypatch)
+        mgr = TradeLifecycleManager()
+        mgr.register_trade(make_trade(), silent=True)
+        assert "T001" in mgr._trades
+
+    @pytest.mark.asyncio
+    async def test_nachgereichter_trade_bekommt_zeit_exit(self, monkeypatch):
+        """Der eigentliche Zweck: nach dem Nachreichen greift der Zeit-Exit
+        wieder — und zwar ab der ECHTEN Eroeffnungszeit, nicht ab jetzt."""
+        self._mit_bus_mitschnitt(monkeypatch)
+        alt = datetime.now(timezone.utc) - timedelta(hours=5)
+        mgr = TradeLifecycleManager()
+        mgr.register_trade(make_trade(trading_style="SCALPING", opened_at=alt),
+                           silent=True)
+        ergebnis = await mgr.on_price_update("T001", 1.1000)
+        assert ergebnis["action"] == "CLOSE"
+        assert ergebnis["reason"] == "ZEIT_EXIT"
+
+    @pytest.mark.asyncio
+    async def test_unbekannter_trade_bleibt_stumm(self, monkeypatch):
+        """Der Zustand VOR der Behebung: ohne Registrierung passiert nichts.
+        Genau das lief nach jedem Deploy unbemerkt."""
+        self._mit_bus_mitschnitt(monkeypatch)
+        mgr = TradeLifecycleManager()
+        ergebnis = await mgr.on_price_update("T001", 1.1000)
+        assert ergebnis["action"] is None
+
+    def test_schliessen_raeumt_auf(self, monkeypatch):
+        """pyCloseTrade hatte keinen Aufrufer — `_trades` wurde nie geleert."""
+        ereignisse = self._mit_bus_mitschnitt(monkeypatch)
+        mgr = TradeLifecycleManager()
+        mgr.register_trade(make_trade(), silent=True)
+        mgr.remove_trade("T001", pnl=12.5, reason="ZIEL")
+        assert "T001" not in mgr._trades
+        assert EventType.TRADE_CLOSED in [e[0] for e in ereignisse]
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 6. MARKET MAPPER TESTS
 # ══════════════════════════════════════════════════════════════════════════════

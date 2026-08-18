@@ -152,8 +152,20 @@ class TradeLifecycleManager:
 
     # ── Trade registrieren ────────────────────────────────────────────────────
 
-    def register_trade(self, trade: TradeState) -> None:
+    def register_trade(self, trade: TradeState, silent: bool = False) -> None:
+        """Nimmt einen Trade in die Verwaltung auf.
+
+        `silent=True` heisst: NACHTRAEGLICH registriert (18.08.). `_trades`
+        liegt nur im Arbeitsspeicher; nach einem Neustart des Dienstes reicht
+        das Frontend die schon laufenden Positionen nach. Dabei darf KEIN
+        TRADE_OPENED entstehen — sonst meldet Telegram nach jedem Deploy
+        "Trade ausgefuehrt" fuer Positionen, die es laengst gibt.
+        """
         self._trades[trade.trade_id] = trade
+        if silent:
+            logger.info(f"[lifecycle] ↩ Trade nachgereicht: {trade.trade_id} "
+                        f"{trade.symbol} {trade.direction} (keine Meldung)")
+            return
         logger.info(f"[lifecycle] ✅ Trade registriert: {trade.trade_id} {trade.symbol} {trade.direction}")
         bus.publish_sync(EventType.TRADE_OPENED, {
             **trade.to_dict(),

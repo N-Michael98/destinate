@@ -119,6 +119,37 @@ export function ausstiegsgrund(
   return { exitPosition: Number(exitPosition.toFixed(4)), exitReason };
 }
 
+/**
+ * Meldet dem Python-Lifecycle, dass ein Trade geschlossen ist (18.08.).
+ *
+ * WARUM DAS FEHLTE. `pyCloseTrade()` existierte seit jeher, hatte aber KEINEN
+ * einzigen Aufrufer. Der Python-Lifecycle raeumte seinen Trade damit nie aus
+ * `_trades` — ein Eintrag je jemals eroeffnetem Trade blieb bis zum naechsten
+ * Neustart des Dienstes liegen. `open_trades` in /lifecycle/stats zaehlte
+ * entsprechend falsch, und das Ereignis TRADE_CLOSED konnte nie feuern.
+ *
+ * Der Nutzer verliert dadurch KEINE Meldung: die Telegram-Nachricht zum
+ * geschlossenen Trade kommt von hier (notifyTradeClosed), nicht aus Python.
+ * Was fehlte, war das Aufraeumen.
+ *
+ * Bewusst non-fatal und ohne Rueckgabe: ist Python nicht erreichbar, laeuft
+ * das System regelbasiert weiter — genau wie bei allen anderen py-Aufrufen.
+ */
+async function meldeSchliessungAnPython(
+  dealId: string,
+  profitLoss: number,
+  grund: string,
+): Promise<void> {
+  if (!dealId) return;
+  try {
+    const { pyCloseTrade } = await import("../python-backend/python-client");
+    await pyCloseTrade(dealId, Number.isFinite(profitLoss) ? profitLoss : 0, grund || "CLOSED");
+  } catch (e) {
+    console.warn(`[trade-tracker] Python-Lifecycle nicht ueber Schliessung informiert (deal=${dealId}):`,
+      e instanceof Error ? e.message : String(e));
+  }
+}
+
 export async function syncCapitalPositionsToJournal(): Promise<void> {
   try {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
@@ -258,6 +289,7 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           } else {
             console.warn(`[trade-tracker] ⚠️ P&L nach 5 Versuchen nicht gefunden: ${trade.market} deal=${meta.dealId} — CLOSED als KEIN_PNL`);
           }
+          await meldeSchliessungAnPython(String(meta.dealId ?? ""), 0, String(m.exitReason));
         }
         continue;
       }
@@ -307,6 +339,7 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           broker: "Capital.com",
         });
       } catch { /* non-fatal */ }
+      await meldeSchliessungAnPython(String(meta.dealId ?? ""), profitLoss, exitReason);
     }
 
     // ── NACHTRAG: CLOSED-Trades mit profitLoss=0 der letzten 48h korrigieren ──

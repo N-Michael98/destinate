@@ -54,6 +54,14 @@ const pruefer = [
   // Ausgang sah aus wie ein Erfolg. Dazu der Mindest-Stop-Abstand des Brokers,
   // der nie ausgewertet wurde.
   ["order-bestaetigung", require("./order-bestaetigung")],
+  // 18.08. ergaenzt: der Python-Lifecycle haelt seine Trades nur im
+  // Arbeitsspeicher und wurde NUR beim Eroeffnen gefuellt. Nach jedem Neustart
+  // des Dienstes kannte er die offenen Positionen nicht mehr und antwortete
+  // still mit action:null, waehrend das Log weiter "N Positionen fuer
+  // Lifecycle-Update" meldete. Dazu: pyCloseTrade() hatte keinen Aufrufer,
+  // _trades wurde nie geleert. Fuehrt die Entscheidung aus — blindes
+  // Nachregistrieren waere schlimmer als keines.
+  ["lifecycle-rueckkehr", require("./lifecycle-rueckkehr")],
 ];
 
 const nurDieser = process.argv[2];
