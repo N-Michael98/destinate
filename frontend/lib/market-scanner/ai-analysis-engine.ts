@@ -463,25 +463,25 @@ export function detectMarketRegime(ta?: TAlibSummary | null): MarketRegimeInfo {
   return { regime: "UNKNOWN", reason: `adx=${adx?.toFixed(0) ?? "?"} (Übergangszone 20-25)` };
 }
 
-// Strategien, die auf klare Trends angewiesen sind — im RANGING-Regime schwach
-const TREND_FOLLOWING_STRATEGIES = new Set(["trend_following", "breakout", "ma_crossover", "donchian", "momentum"]);
-// Strategien, die von Seitwärtsbewegung profitieren — im RANGING-Regime stark
-const MEAN_REVERSION_STRATEGIES = new Set(["mean_reversion", "support_resistance", "rsi_divergence", "bb_squeeze", "scalping"]);
-
-/** Passt die Confidence einer Top-Strategie ans erkannte Regime an (additiv,
- * kappt nur — erhöht nie über die Original-Confidence hinaus). */
-export function regimeAdjustedNote(regime: MarketRegimeType, topStrategyName?: string): string {
-  if (regime === "RANGING" && topStrategyName && TREND_FOLLOWING_STRATEGIES.has(topStrategyName)) {
-    return "RANGING-Markt + Trendfolge-Strategie — historisch schwach, Vorsicht";
-  }
-  if (regime === "RANGING" && topStrategyName && MEAN_REVERSION_STRATEGIES.has(topStrategyName)) {
-    return "RANGING-Markt + Mean-Reversion-Strategie — passt zueinander";
-  }
-  if (regime === "VOLATILE") {
-    return "Volatilitäts-Ausdehnung — engere Positionsgrösse/weitere Stops erwägen";
-  }
-  return "";
-}
+// ENTFERNT AM 18.08.: regimeAdjustedNote() samt der zwei Strategie-Listen.
+//
+// Die Funktion hatte seit dem 26.07. KEINEN Aufrufer. Sie hätte dem
+// GPT-Prompt einen deutenden Zusatz beigelegt ("RANGING-Markt +
+// Trendfolge-Strategie — historisch schwach"). Zwei Gründe gegen das
+// Nachverdrahten:
+//
+//   1. Das Regime steht bereits im Prompt — `regimeText` unten schreibt
+//      `| regime=RANGING(adx=18)` hinein, zusammen mit allen aktiven
+//      Strategien. GPT hat beide Angaben und kann sie selbst verbinden.
+//   2. "historisch schwach" war nie gemessen. Genau solche Behauptungen
+//      haben wir im August durch Messungen ersetzt — bei den Chartmustern
+//      kam dabei heraus, dass keines trägt. Eine ungemessene Meinung in den
+//      Prompt zu legen, der Richtung, Stop und Ziel bestimmt, wäre der
+//      umgekehrte Weg.
+//
+// Ihr Doc-Kommentar beschrieb ausserdem etwas anderes als sie tat ("passt
+// die Confidence an" — sie gab einen Text zurück und passte nichts an).
+// detectMarketRegime() bleibt: die Funktion wird benutzt (siehe unten).
 
 // ── Main Analyse ───────────────────────────────────────────────────────────────
 export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerOpportunity[]> {
