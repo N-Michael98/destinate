@@ -826,6 +826,12 @@ export async function runRiskAgent(ctx: RiskAgentContext): Promise<void> {
   for (const id of positionMeta.keys()) {
     if (!liveIds.has(id)) positionMeta.delete(id);
   }
+  // Auch die Meldungs-Merker mitraeumen (19.08.). Sie wuchsen sonst mit jeder
+  // je gesehenen dealId weiter — je Position bis zu drei Eintraege
+  // (Stil geraten, Alter unbekannt, Zeit-Exit ausgesetzt) und nie wieder
+  // entfernt. Klein, aber unbegrenzt; und schliesst sich eine Position und
+  // taucht dieselbe dealId spaeter erneut auf, soll erneut gemeldet werden.
+  vergissGemeldete(liveIds);
 
   console.log(`[risk-agent] Zyklus abgeschlossen`);
 }
@@ -956,6 +962,26 @@ export function geratenerStilMelden(
   if (gerateneGemeldet.has(dealId)) return false;
   gerateneGemeldet.add(dealId);
   return true;
+}
+
+/**
+ * Entfernt die Merker zu Positionen, die es nicht mehr gibt (19.08.).
+ *
+ * Ohne das wuechse die Menge mit jeder je gesehenen dealId weiter — je
+ * Position bis zu drei Eintraege, und nie wieder entfernt. Klein, aber
+ * unbegrenzt. Zweiter Zweck: taucht dieselbe dealId spaeter erneut auf, soll
+ * erneut gemeldet werden statt stumm zu bleiben.
+ *
+ * Die Merker tragen Praefixe (`alter:`, `zeitexit:`) — verglichen wird
+ * deshalb der Teil hinter dem letzten Doppelpunkt.
+ */
+export function vergissGemeldete(lebendeDealIds: ReadonlySet<string>): void {
+  for (const schluessel of [...gerateneGemeldet]) {
+    const id = schluessel.includes(":")
+      ? schluessel.slice(schluessel.indexOf(":") + 1)
+      : schluessel;
+    if (!lebendeDealIds.has(id)) gerateneGemeldet.delete(schluessel);
+  }
 }
 
 /** Nur für Tests und Prüfer. */

@@ -254,6 +254,30 @@ module.exports = function pruefe() {
     resetGeraten();
     pruefe1("nach dem Zuruecksetzen wird nicht wieder gemeldet",
       melden("D1", false, false) === true);
+
+    // Aufräumen geschlossener Positionen (19.08.) — sonst wächst die Menge
+    // unbegrenzt, und eine wiederkehrende dealId bliebe stumm.
+    const vergiss = m.vergissGemeldete;
+    if (typeof vergiss !== "function") {
+      funde.push("vergissGemeldete wird nicht exportiert — die Merker-Menge "
+        + "wüchse mit jeder je gesehenen Position weiter");
+    } else {
+      resetGeraten();
+      melden("D1", false, false);
+      melden("alter:D1", false, false);
+      melden("D2", false, false);
+      vergiss(new Set(["D1"]));
+      pruefe1("der Merker einer noch offenen Position wird gelöscht",
+        melden("D1", false, false) === false);
+      pruefe1("auch der Merker mit Präfix bleibt bei offener Position",
+        melden("alter:D1", false, false) === false);
+      pruefe1("der Merker einer geschlossenen Position bleibt liegen",
+        melden("D2", false, false) === true,
+        "danach würde dieselbe Position nie wieder gemeldet");
+      vergiss(new Set());
+      pruefe1("eine leere Live-Menge räumt nicht alles ab",
+        melden("D1", false, false) === true);
+    }
     resetGeraten();
   }
 
@@ -519,6 +543,11 @@ module.exports = function pruefe() {
   // 24 h. Waere die Position SWING gedacht, schloesse der Zeit-Exit sie
   // 144 Stunden zu frueh — ein Eingriff auf einer Annahme.
   const riskC = ohneKommentare(riskRoh);
+  pruefe1("die Merker werden nie aufgeräumt",
+    aufrufe(riskRoh, "vergissGemeldete") >= 1
+    && /vergissGemeldete\(liveIds\)/.test(ohneKommentare(riskRoh)),
+    "die Funktion allein genügt nicht — sie muss im Zyklus gerufen werden");
+
   pruefe1("PosMeta merkt sich nicht, ob der Stil geraten ist",
     /stilGeraten\?:\s*boolean/.test(riskC));
   pruefe1("stilGeraten wird nicht aus beiden Quellen bestimmt",
