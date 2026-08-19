@@ -96,6 +96,25 @@ function ohneKommentare(text) {
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
+/**
+ * Schneidet den Rumpf EINER Funktion heraus.
+ *
+ * NOTWENDIG, NICHT KOSMETISCH. Im Sabotage-Lauf am 19.08. rutschte eine
+ * Sabotage durch: die Warnung beim Löschen eines offenen Trades wurde
+ * entfernt, der Prüfer blieb grün — weil `status === "OPEN"` auf derselben
+ * Seite an einem Dutzend anderer Stellen steht (Filter, Anzeige, Zählung).
+ * Wer prüft, ob eine BESTIMMTE Funktion etwas tut, muss in ihr suchen und
+ * nicht in der ganzen Datei. Siebtes Auftreten derselben Fehlerklasse.
+ */
+function funktionsRumpf(text, name) {
+  const start = text.indexOf(`function ${name}(`);
+  if (start < 0) return "";
+  const rest = text.slice(start);
+  // bis zur nächsten Funktion auf derselben Einrückungsebene
+  const ende = rest.slice(1).search(/\n {0,2}(async )?function /);
+  return ende < 0 ? rest : rest.slice(0, ende + 1);
+}
+
 /** Zählt echte AUFRUFE `name(` und lässt Definitionen sowie Importe weg. */
 function aufrufe(rohText, name) {
   const text = ohneKommentareUndTexte(rohText);
@@ -412,6 +431,45 @@ module.exports = function pruefe() {
   pruefe1("beide Schliess-Pfade melden an Python",
     aufrufe(tracker, "meldeSchliessungAnPython") >= 2,
     "Phantom-/KEIN_PNL-Pfad und der echte Abschluss");
+
+  // ── Teil 6: niemand darf OFFENE Trades massenhaft löschen (19.08.) ───────
+  //
+  // Am 19.08. standen vier offene Positionen beim Broker und NULL passende
+  // Zeilen in der Datenbank. Der wahrscheinliche Weg dorthin: der Knopf
+  // "Journal zurücksetzen" rief prisma.trade.deleteMany() OHNE Filter — und
+  // der Bestätigungstext sprach von einer "SQLite-Datenbank", während in
+  // Produktion PostgreSQL läuft.
+  //
+  // Die Zeile eines offenen Trades ist die einzige Verbindung zur laufenden
+  // Position: ohne sie fällt der RiskAgent auf geratene Werte zurück, der
+  // Risiko-Zustand wird nicht mehr gespeichert und der Python-Lifecycle kann
+  // nicht nachregistrieren. Dieselbe Fehlerklasse wie am 17.08.
+  const tradesRoute = lies("frontend", "app", "api", "trades", "route.ts");
+  const tradesC = ohneKommentare(tradesRoute);
+  pruefe1("die Route /api/trades fehlt", tradesRoute.length > 0);
+  pruefe1("deleteMany() löscht wieder ALLES, auch offene Trades",
+    !/deleteMany\(\s*\)/.test(tradesC),
+    "ein Filter auf status ist Pflicht");
+  pruefe1("deleteMany() nimmt offene Trades nicht aus",
+    /deleteMany\(\{[\s\S]{0,120}status:\s*\{\s*not:\s*["']OPEN["']\s*\}/.test(tradesC),
+    "sonst reisst ein Knopfdruck die Verbindung zu laufenden Positionen durch");
+  pruefe1("die Antwort sagt nicht, wie viele offene behalten wurden",
+    /offenBehalten/.test(tradesC));
+
+  const journalSeite = lies("frontend", "app", "trading-journal", "page.tsx");
+  pruefe1("der Bestätigungstext behauptet weiter SQLite",
+    !/SQLite/i.test(ohneKommentare(journalSeite)),
+    "in Produktion läuft PostgreSQL — der Text verharmlost den Eingriff");
+  // IN der Funktion suchen, nicht in der ganzen Seite: `status === "OPEN"`
+  // steht dort an einem Dutzend anderer Stellen (Filter, Anzeige, Zählung).
+  const loeschRumpf = funktionsRumpf(ohneKommentare(journalSeite), "deleteTrade");
+  pruefe1("deleteTrade() ist nicht auffindbar", loeschRumpf.length > 0);
+  pruefe1("beim Löschen einer einzelnen Zeile wird der OPEN-Fall nicht benannt",
+    /status === ["']OPEN["']/.test(loeschRumpf),
+    "ein offener Trade ist die einzige Verbindung zur laufenden Position");
+  pruefe1("der Status erreicht deleteTrade gar nicht",
+    /deleteTrade\(trade\.id,\s*trade\.status\)/.test(ohneKommentare(journalSeite)),
+    "ohne ihn kann die Rückfrage den OPEN-Fall nicht erkennen");
 
   return {
     titel: `Lifecycle-Rückkehr (${geprueft} Prüfungen, Entscheidung ausgeführt)`,

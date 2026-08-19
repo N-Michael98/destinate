@@ -1670,7 +1670,7 @@ export default function TradingJournal() {
       setRiskPercent(accountRiskPercent);
       setNotes("");
 
-      alert("Trade erfolgreich in SQLite gespeichert.");
+      alert("Trade erfolgreich gespeichert.");
     } catch (error) {
       console.error(error);
       alert("Fehler beim Speichern des Trades.");
@@ -1830,8 +1830,21 @@ export default function TradingJournal() {
     }
   }
 
-  async function deleteTrade(tradeId: number) {
-    const confirmed = window.confirm("Diesen Trade wirklich löschen?");
+  async function deleteTrade(tradeId: number, status?: string) {
+    // Bei einem OFFENEN Trade steht mehr auf dem Spiel als ein Journal-Eintrag
+    // (19.08.): die Zeile ist die einzige Verbindung zwischen der laufenden
+    // Broker-Position und dem System. Ohne sie fällt der RiskAgent auf
+    // geratene Werte zurück (DAYTRADING, 72), der Risiko-Zustand wird nicht
+    // mehr gespeichert und der Python-Lifecycle kann nicht nachregistrieren.
+    const confirmed = window.confirm(
+      status === "OPEN"
+        ? "Dieser Trade ist noch OFFEN.\n\n"
+          + "Die Zeile ist die einzige Verbindung zur laufenden Position beim "
+          + "Broker. Wird sie gelöscht, verliert das System für diese Position "
+          + "Handelsstil, Confidence und den gespeicherten Risiko-Zustand — der "
+          + "Zeit-Exit rechnet dann mit geratenen 24 Stunden.\n\nTrotzdem löschen?"
+        : "Diesen Trade wirklich löschen?"
+    );
     if (!confirmed) return;
 
     try {
@@ -1854,8 +1867,16 @@ export default function TradingJournal() {
   }
 
   async function resetJournal() {
+    // KORRIGIERT 19.08.: der Text sprach von einer "SQLite-Datenbank", während
+    // in Produktion PostgreSQL läuft — wer das liest, denkt an eine lokale
+    // Testdatenbank. Und gelöscht wurde ALLES, auch die offenen Trades.
+    // Offene bleiben jetzt stehen; der Riegel dafür sitzt im Server
+    // (app/api/trades/route.ts), nicht hier.
     const confirmed = window.confirm(
-      "Wirklich ALLE Trades aus der SQLite-Datenbank löschen?"
+      "Abgeschlossene Trades wirklich aus der Datenbank löschen?\n\n"
+      + "OFFENE Trades bleiben erhalten — sie gehören zu laufenden Positionen "
+      + "beim Broker. Ohne sie verliert das System deren Risiko-Zustand, "
+      + "Handelsstil und Confidence."
     );
 
     if (!confirmed) return;
@@ -1874,7 +1895,7 @@ export default function TradingJournal() {
 
       setSelectedMarket("All");
       await loadTrades();
-      alert("Alle Trades wurden gelöscht.");
+      alert(data.message ?? "Abgeschlossene Trades wurden gelöscht.");
     } catch (error) {
       console.error(error);
       alert("Fehler beim Zurücksetzen der Datenbank.");
@@ -2413,7 +2434,7 @@ export default function TradingJournal() {
               </button>
 
               <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-gray-300">
-                {isLoaded ? "SQLite Verbindung aktiv" : "Lade Datenbank..."}
+                {isLoaded ? "Datenbank verbunden" : "Lade Datenbank..."}
               </div>
             </div>
           </div>
@@ -3956,7 +3977,7 @@ export default function TradingJournal() {
                       )}
                     </div>
                     <button onClick={() => startEditTrade(trade)} className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm">Edit</button>
-                    <button onClick={() => deleteTrade(trade.id)} className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm">Löschen</button>
+                    <button onClick={() => deleteTrade(trade.id, trade.status)} className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm">Löschen</button>
                     <div>{trade.accountSize ?? 30000}</div>
                     <div>{trade.riskPercent ?? 1}%</div>
                   </div>
