@@ -8,6 +8,7 @@
  */
 
 import { pythonBackendAuthHeader } from "./auth-header";
+import { meldePythonAufruf } from "./python-status";
 
 const BASE_URL = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
 
@@ -48,11 +49,15 @@ async function post<T = unknown>(path: string, body: unknown): Promise<T | null>
     // fehlertolerante Verhalten zu ändern (Rückgabe bleibt null).
     if (!res.ok) {
       console.warn(`[py-client] ${res.status} bei POST ${path} -> ${BASE_URL}`);
+      meldePythonAufruf(path, false, `HTTP ${res.status}`);
       return null;
     }
+    meldePythonAufruf(path, true);
     return res.json() as Promise<T>;
   } catch (e) {
-    console.warn(`[py-client] POST ${path} fehlgeschlagen -> ${BASE_URL}:`, e instanceof Error ? e.message : String(e));
+    const grund = e instanceof Error ? e.message : String(e);
+    console.warn(`[py-client] POST ${path} fehlgeschlagen -> ${BASE_URL}:`, grund);
+    meldePythonAufruf(path, false, grund);
     return null;
   }
 }
@@ -66,10 +71,17 @@ async function get<T = unknown>(path: string): Promise<T | null> {
     });
     if (!res.ok) {
       console.warn(`[py-client] ${res.status} bei GET ${path} -> ${BASE_URL}`);
+      meldePythonAufruf(path, false, `HTTP ${res.status}`);
       return null;
     }
+    meldePythonAufruf(path, true);
     return res.json() as Promise<T>;
-  } catch {
+  } catch (e) {
+    // Bis zum 19.08. war dieser Zweig ein leeres catch — ein Netzfehler beim
+    // Lesen verschwand vollstaendig, ohne Logzeile und ohne Zaehlung.
+    const grund = e instanceof Error ? e.message : String(e);
+    console.warn(`[py-client] GET ${path} fehlgeschlagen -> ${BASE_URL}:`, grund);
+    meldePythonAufruf(path, false, grund);
     return null;
   }
 }

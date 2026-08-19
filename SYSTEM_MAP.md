@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 642 · Kanten: 1331
+Dateien mit internen Abhängigkeiten: 643 · Kanten: 1334
 
 
 ## analysis-engine/api
@@ -517,6 +517,8 @@ Dateien mit internen Abhängigkeiten: 642 · Kanten: 1331
   - → `frontend/lib/portfolio-brain/portfolio-risk-management.ts`
 - `frontend/app/api/position-sizing-evolution-sync/route.ts`
   - → `frontend/lib/position-sizing-evolution-sync/index.ts`
+- `frontend/app/api/python-status/route.ts`
+  - → `frontend/lib/python-backend/python-status.ts`
 - `frontend/app/api/python/[...path]/route.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
 - `frontend/app/api/regime-ai-sync/route.ts`
@@ -788,6 +790,7 @@ Dateien mit internen Abhängigkeiten: 642 · Kanten: 1331
 - `frontend/lib/agents/diagnostics-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
   - → `frontend/lib/agents/ai-manager-status.ts`
+  - → `frontend/lib/python-backend/python-status.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/agents/execution-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
@@ -1779,6 +1782,7 @@ Dateien mit internen Abhängigkeiten: 642 · Kanten: 1331
   - → `frontend/lib/position-sizing-evolution-sync/position-sizing-evolution-sync-types.ts`
 - `frontend/lib/python-backend/python-client.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
+  - → `frontend/lib/python-backend/python-status.ts`
 - `frontend/lib/python-bridge/python-data.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
 - `frontend/lib/regime-ai-sync/index.ts`

@@ -10,7 +10,8 @@
  */
 
 import { agentBus, type AgentEvent, type AgentEventType } from "./agent-bus";
-import { getAIManagerStatus } from "./ai-manager-status";
+import { getAIManagerStatus, aiManagerUebergang } from "./ai-manager-status";
+import { getPythonStatus, pythonUebergang } from "../python-backend/python-status";
 
 const AGENT_ID = "DiagnosticsAgent";
 
@@ -207,9 +208,17 @@ function checkAgentHealth(): void {
   // erreichbar === false heisst: mindestens AUSFALL_AB_FEHLERN Fehlschläge in
   // Folge. null (noch nie gefragt) ist ausdrücklich KEIN Ausfall — ohne offene
   // Position wird der Manager gar nicht gerufen.
+  //
+  // KORREKTUR 19.08.: bis heute wurde bei jedem Durchlauf gemeldet, solange
+  // erreichbar === false galt — also alle fünf Minuten dieselbe Nachricht,
+  // eine Nacht Ausfall = zwölf pro Stunde ohne Ende. AGENT_DEAD oben ist über
+  // `hb.status !== "DEAD"` dagegen gesichert, recordAnomaly meldet nur beim
+  // Erreichen der Schwelle. Nur dieser Alarm hatte keinen Riegel. Jetzt meldet
+  // aiManagerUebergang() den WECHSEL — je einmal Ausfall und Entwarnung.
   try {
-    const aiStatus = getAIManagerStatus();
-    if (aiStatus.erreichbar === false) {
+    const wechsel = aiManagerUebergang();
+    if (wechsel === "AUSFALL") {
+      const aiStatus = getAIManagerStatus();
       recordAnomaly(
         "AI_MANAGER_AUSFALL",
         `${aiStatus.fehlerInFolge} Fehlschläge in Folge, zuletzt: ${aiStatus.letzterFehler ?? "?"}`,
@@ -220,6 +229,46 @@ function checkAgentHealth(): void {
         + `${aiStatus.fehlerInFolge} Fehlschläge in Folge (Fallback-Anteil ${aiStatus.fallbackAnteilPct} %).\n`
         + `Grund: ${aiStatus.letzterFehler ?? "unbekannt"}\n`
         + `Die Absicherung läuft weiter — aber rein regelbasiert, ohne Anpassung an die Marktlage.`
+      ).catch(() => {});
+    } else if (wechsel === "ERHOLT") {
+      sendDiagnosticsAlert(`🤖 Exit-AI-Manager antwortet wieder.`).catch(() => {});
+    }
+  } catch { /* Diagnose darf nie der Grund sein, warum etwas scheitert */ }
+
+  // ── Fällt das Python-Backend aus? (19.08.) ────────────────────────────────
+  //
+  // Bis heute wurde es im Hintergrund GAR NICHT überwacht: pyHealthCheck()
+  // hatte keinen Aufrufer, /api/market-data/health holt nur ein UI-Widget
+  // (also nur bei geöffneter Seite), und hier standen ausschliesslich Agenten.
+  // Alle Python-Aufrufe geben bei Fehlern still null zurück und das System
+  // läuft regelbasiert weiter — richtig, aber unsichtbar.
+  //
+  // Über diesen Dienst laufen der Python-Lifecycle (Breakeven, Teilgewinn,
+  // Trailing, Zeit-Exit als ZWEITE Schicht) und die Datenversorgung der
+  // Analysis-Engine. Ein stiller Ausfall kostet also Redundanz und die
+  // wöchentlichen Auswertungen.
+  //
+  // Auch hier der WECHSEL statt des Zustands — aus demselben Grund wie oben.
+  try {
+    const wechsel = pythonUebergang();
+    if (wechsel === "AUSFALL") {
+      const py = getPythonStatus();
+      recordAnomaly(
+        "PYTHON_BACKEND_AUSFALL",
+        `${py.fehlerInFolge} Fehlschläge in Folge, zuletzt ${py.letzterFehler ?? "?"} bei ${py.letzterFehlerPfad ?? "?"}`,
+      );
+      sendDiagnosticsAlert(
+        `🐍 Python-Backend antwortet nicht\n`
+        + `${py.fehlerInFolge} Fehlschläge in Folge (Fehleranteil ${py.fehlerAnteilPct} %).\n`
+        + `Zuletzt: ${py.letzterFehler ?? "unbekannt"} bei ${py.letzterFehlerPfad ?? "?"}\n`
+        + `Letzte erfolgreiche Antwort: ${py.letzterErfolgAt ?? "seit dem Start keine"}\n`
+        + `Der Handel läuft weiter — aber ohne die zweite Absicherungsschicht `
+        + `und ohne die wöchentlichen Auswertungen.`
+      ).catch(() => {});
+    } else if (wechsel === "ERHOLT") {
+      const py = getPythonStatus();
+      sendDiagnosticsAlert(
+        `🐍 Python-Backend antwortet wieder (zuletzt ${py.letzterErfolgPfad ?? "?"}).`
       ).catch(() => {});
     }
   } catch { /* Diagnose darf nie der Grund sein, warum etwas scheitert */ }

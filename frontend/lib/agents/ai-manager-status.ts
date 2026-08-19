@@ -58,6 +58,8 @@ interface Zustand {
   letzterFehlerAt: string | null;
   letzterFehler: string | null;
   fehlerInFolge: number;
+  /** Wurde der laufende Ausfall schon gemeldet? (19.08.) */
+  ausfallGemeldet: boolean;
 }
 
 function neuerZustand(): Zustand {
@@ -71,6 +73,7 @@ function neuerZustand(): Zustand {
     letzterFehlerAt: null,
     letzterFehler: null,
     fehlerInFolge: 0,
+    ausfallGemeldet: false,
   };
 }
 
@@ -139,6 +142,44 @@ export function getAIManagerStatus(): AIManagerStatus {
     // gerufen; das als Ausfall zu melden waere ein Fehlalarm.
     erreichbar: gesamt === 0 ? null : z.fehlerInFolge < AUSFALL_AB_FEHLERN,
   };
+}
+
+export type AIUebergang = "AUSFALL" | "ERHOLT" | null;
+
+/**
+ * Gibt den Zustandswechsel zurueck — und zwar GENAU EINMAL je Wechsel (19.08.).
+ *
+ * BEHOBENER FEHLER. Der Diagnostics-Agent fragte bis zum 19.08. nur
+ * `erreichbar === false` ab und rief dann direkt sendDiagnosticsAlert(). Da er
+ * alle fuenf Minuten laeuft, kam waehrend eines Ausfalls alle fuenf Minuten
+ * dieselbe Telegram-Nachricht — bei einer Nacht Ausfall zwoelf pro Stunde,
+ * ohne Ende. Der Vergleich zeigt es: AGENT_DEAD ist ueber `hb.status !==
+ * "DEAD"` gegen Wiederholung gesichert, recordAnomaly meldet nur beim
+ * Erreichen der Schwelle (`count === ANOMALY_ALERT_THRESHOLD`) — nur dieser
+ * eine Alarm hatte keinen solchen Riegel.
+ *
+ * "ERHOLT" wird ebenfalls genau einmal gemeldet: die Entwarnung ist die
+ * wichtigere Haelfte, sonst weiss niemand, ob der Ausfall noch anhaelt.
+ */
+export function aiManagerUebergang(): AIUebergang {
+  try {
+    const z = zustand();
+    // Kein gesonderter Riegel fuer "nie gefragt" — er waere tot: ohne Anfrage
+    // ist fehlerInFolge 0 und ausfallGemeldet false. Nachgewiesen im
+    // Sabotage-Lauf am 19.08. (siehe python-status.ts, gleiche Stelle).
+    const ausgefallen = z.fehlerInFolge >= AUSFALL_AB_FEHLERN;
+    if (ausgefallen && !z.ausfallGemeldet) {
+      z.ausfallGemeldet = true;
+      return "AUSFALL";
+    }
+    if (!ausgefallen && z.ausfallGemeldet) {
+      z.ausfallGemeldet = false;
+      return "ERHOLT";
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /** Nur für Tests und Prüfer. */

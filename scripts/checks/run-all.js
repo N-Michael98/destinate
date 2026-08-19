@@ -62,6 +62,13 @@ const pruefer = [
   // _trades wurde nie geleert. Fuehrt die Entscheidung aus — blindes
   // Nachregistrieren waere schlimmer als keines.
   ["lifecycle-rueckkehr", require("./lifecycle-rueckkehr")],
+  // 19.08. ergaenzt: das Python-Backend wurde im Hintergrund GAR NICHT
+  // ueberwacht — pyHealthCheck() ohne Aufrufer, /api/market-data/health nur von
+  // einem UI-Widget geholt, der Diagnostics-Agent prueft nur Agenten. Ein
+  // Ausfall ueber Nacht fiel niemandem auf. Dazu der Riegel gegen
+  // Dauermeldungen, der beim AI-Alarm vom 11.08. fehlte. Fuehrt die Zaehlung
+  // aus: eine Ueberwachung, die falsch zaehlt, ist schlimmer als keine.
+  ["python-ueberwachung", require("./python-ueberwachung")],
 ];
 
 const nurDieser = process.argv[2];
