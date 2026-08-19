@@ -340,7 +340,14 @@ export async function register() {
                     schonTeilgewonnen = teilgewinnStand(rows);
                     stammdaten = stammdatenAusNotizen(rows);
                   } catch (e) {
-                    console.warn("[py-lifecycle] Teilgewinn-Stand nicht lesbar — Riegel greift diesen Zyklus nicht:",
+                    // Die Meldung nennt BEIDE Folgen (19.08.). Seit die
+                    // Stammdaten aus derselben Abfrage kommen, schaltet ein
+                    // DB-Aussetzer auch das Nachregistrieren ab — die alte
+                    // Fassung sprach nur vom Teilgewinn und fuehrte damit
+                    // genau bei der Frage in die Irre, ob nachregistriert
+                    // wurde.
+                    console.warn("[py-lifecycle] Trade-Notizen nicht lesbar — dieser Zyklus OHNE "
+                      + "Teilgewinn-Riegel und OHNE Nachregistrieren:",
                       e instanceof Error ? e.message : String(e));
                   }
 
@@ -367,6 +374,14 @@ export async function register() {
                       console.warn("[py-lifecycle] Trade-Liste nicht abrufbar — diesen Zyklus wird NICHT nachregistriert");
                     }
                     const fehlend = nachzuregistrieren(positions, bekannt, stammdaten);
+                    // Eine Zeile je Zyklus mit dem ERGEBNIS der Pruefung
+                    // (19.08.). Vorher wurde nur beim tatsaechlichen
+                    // Nachregistrieren geloggt — "geprueft, nichts zu tun" war
+                    // damit von "nie gelaufen" nicht zu unterscheiden, und
+                    // genau das liess sich hinterher nicht mehr beantworten.
+                    console.log(`[py-lifecycle] Python kennt ${bekannt ? bekannt.size : "?"} von `
+                      + `${positions.length} Positionen, Stammdaten fuer ${stammdaten.size}, `
+                      + `nachzureichen ${fehlend.length}`);
                     for (const t of fehlend) {
                       const ok = await pyRegisterTrade(t);
                       if (ok) {
