@@ -239,7 +239,8 @@ interface MarktLage {
   // erfuhr aber nur, wo der STOP steht — das Ziel selbst kannte sie nicht.
   // Damit war die Zahl für sie nicht nachvollziehbar und auch nicht korrigierbar.
   liveTP: number;
-  ageHours: number;
+  /** null = Eröffnungszeit beim Broker unbekannt (19.08.). */
+  ageHours: number | null;
   style: string;
   confidence: number;
   /** Was ein ANDERES System zuletzt an dieser Position tat (11.08.).
@@ -403,7 +404,7 @@ Gewinn: ${(lage.profitPct * 100).toFixed(2)}%
 ATR: ${lage.atr.toFixed(5)} (${((lage.atr / Math.max(lage.currentPrice, 1e-9)) * 100).toFixed(2)}% vom Kurs — Mass für die aktuelle Schwankung)
 Stop-Spanne: ${lage.slRange.toFixed(5)} | Stop steht bei: ${lage.liveSL > 0 ? lage.liveSL : "keiner"}
 Ziel steht bei: ${lage.liveTP > 0 ? lage.liveTP : `keines gesetzt (gerechnet wird mit 2× Stop-Spanne)`}
-Position offen seit: ${lage.ageHours.toFixed(1)} Stunden
+Position offen seit: ${lage.ageHours == null ? "unbekannt" : `${lage.ageHours.toFixed(1)} Stunden`}
 Handelsstil: ${lage.style}${lage.fremdAktion?.text
         ? `
 ACHTUNG, ein zweites System verwaltet dieselbe Position: ${lage.fremdAktion.text} (${lage.fremdAktion.zeit}). Berücksichtige das — die Absicherung kann bereits enger stehen, als es hier aussieht.`
@@ -531,7 +532,16 @@ async function processPosition(
   // ── Zeit-Exit ──────────────────────────────────────────────────────────────
   const style = meta.tradingStyle.toUpperCase();
   const maxHours = STYLE_MAX_HOURS[style] ?? STYLE_MAX_HOURS.DAYTRADING;
-  const ageHours = (Date.now() - new Date(pos.createdDate ?? Date.now()).getTime()) / 3_600_000;
+  // Alter der Position. UNBEKANNT bleibt unbekannt (19.08.): bis heute stand
+  // hier `?? Date.now()`, also galt eine Position ohne Eroeffnungsdatum als
+  // gerade eben eroeffnet — ageHours 0, Zeit-Exit nie. Jetzt null, und der
+  // Zeit-Exit unten laesst die Position dann ausdruecklich in Ruhe, statt sie
+  // auf einer erfundenen Zahl zu schliessen oder stillschweigend laufen zu
+  // lassen.
+  const eroeffnet = pos.createdDate ? new Date(pos.createdDate) : null;
+  const ageHours = eroeffnet && !Number.isNaN(eroeffnet.getTime())
+    ? (Date.now() - eroeffnet.getTime()) / 3_600_000
+    : null;
 
   // Marktlage für den AI Manager (03.08.). Rein aus bereits berechneten Werten
   // zusammengesetzt — kein zusätzlicher Abruf, keine neue Fehlerquelle.
@@ -545,7 +555,16 @@ async function processPosition(
   // Richtung Ziel": je nach Markt um Faktor 6 bis 104 daneben (siehe
   // fortschrittZumZiel).
   const zielFortschritt = fortschrittZumZiel(profitPct, entry, liveTP, slRange);
-  if (ageHours >= maxHours) {
+  if (ageHours == null) {
+    // Ohne bekannte Eröffnungszeit wird NICHT geschlossen — aber es wird auch
+    // nicht mehr verschwiegen (19.08.). Einmal je Position, über denselben
+    // Merker wie der geratene Stil.
+    if (geratenerStilMelden(`alter:${dealId}`, false, false)) {
+      console.warn(`[risk-agent] ⚠️ ${symbol} deal=${dealId}: Broker liefert keine `
+        + `Eroeffnungszeit — der Zeit-Exit (${maxHours} h) kann fuer diese Position `
+        + `NICHT greifen. Sie laeuft ohne Haltedauer-Grenze.`);
+    }
+  } else if (ageHours >= maxHours) {
     const closeResult = await capitalClosePosition(apiKey, cst, securityToken, dealId);
     if (closeResult.ok) {
       positionMeta.delete(dealId);

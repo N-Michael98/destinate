@@ -4,7 +4,15 @@
 import { getPrisma } from "../../app/lib/prisma";
 
 export interface TradeRecord {
+  /** Die ECHTE Positions-ID des Brokers. Leer, solange sie unbekannt ist —
+   *  hier darf NIEMALS eine Order-Referenz stehen (19.08.). */
   dealId: string;
+  /** Die Order-Referenz (`o_...`). Bis zum 19.08. landete sie ersatzweise im
+   *  Feld dealId und machte den Eintrag damit dauerhaft unauffindbar: eine
+   *  Referenz passt zu keiner Positions-ID. Jetzt steht sie hier, und der
+   *  Tracker traegt die echte dealId nach, sobald die Bestaetigung lesbar
+   *  wird. */
+  dealReference?: string;
   symbol: string;
   direction: "BUY" | "SELL";
   tradingStyle: string;
@@ -56,7 +64,10 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
       riskReward,
       positionSize,
       JSON.stringify({
-        dealId: trade.dealId,
+        // dealId nur setzen, wenn es eine ECHTE Positions-ID ist. Ein leerer
+        // Wert ist ehrlicher als eine Order-Referenz, die nie passt.
+        ...(trade.dealId ? { dealId: trade.dealId } : {}),
+        ...(trade.dealReference ? { dealReference: trade.dealReference } : {}),
         tradingStyle: trade.tradingStyle,
         confidence: trade.confidence,
         broker: "Capital.com DEMO",
@@ -150,6 +161,79 @@ async function meldeSchliessungAnPython(
   }
 }
 
+/** Nach so vielen vergeblichen Versuchen wird die Referenz nicht mehr
+ *  aufgeloest. Capital.com haelt Bestaetigungen nur begrenzte Zeit vor; ewig
+ *  weiterzufragen waere Last ohne Aussicht. */
+export const DEALID_VERSUCHE_MAX = 5;
+
+/**
+ * Traegt fehlende Positions-IDs nach (19.08.).
+ *
+ * Scheitert der Bestaetigungsschritt beim Auftragen, kennt das Journal nur die
+ * Order-Referenz. Seit dem 19.08. steht sie in `dealReference` statt sich als
+ * `dealId` auszugeben — ehrlich, aber der Eintrag bleibt damit vorerst
+ * unauffindbar fuer persistMeta, teilgewinnStand, stammdatenAusNotizen und
+ * nachzuregistrieren. Diese Funktion holt die echte ID nach.
+ *
+ * Sie laeuft im selben Zyklus wie der Rest des Trackers, also alle zwei
+ * Minuten — frueh genug, solange Capital die Bestaetigung noch vorhaelt.
+ *
+ * Non-fatal in jedem Zweig: ein Fehlschlag hier darf den Tracker nicht
+ * anhalten.
+ */
+export async function ergaenzeFehlendeDealIds(
+  apiKey: string, cst: string, securityToken: string,
+): Promise<{ geprueft: number; ergaenzt: number; aufgegeben: number }> {
+  const bilanz = { geprueft: 0, ergaenzt: 0, aufgegeben: 0 };
+  try {
+    const db = getPrisma();
+    const rows = await (db.$queryRawUnsafe as (q: string) => Promise<Array<{ id: number; notes: string }>>)(
+      `SELECT id, notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealReference%'`
+    );
+    const { capitalConfirmDeal } = await import("./capital-com-client");
+
+    for (const zeile of rows ?? []) {
+      let m: Record<string, unknown>;
+      try { m = JSON.parse(zeile.notes) as Record<string, unknown>; } catch { continue; }
+      if (m.dealId) continue;                       // schon aufgeloest
+      const ref = String(m.dealReference ?? "");
+      if (!ref) continue;
+      const versuche = Number(m.dealIdVersuche ?? 0);
+      if (versuche >= DEALID_VERSUCHE_MAX) continue; // aufgegeben, siehe unten
+
+      bilanz.geprueft++;
+      const a = await capitalConfirmDeal(apiKey, cst, securityToken, ref);
+      const neu: Record<string, unknown> = { ...m, dealIdVersuche: versuche + 1 };
+
+      if (a.ok && a.dealId) {
+        neu.dealId = a.dealId;
+        bilanz.ergaenzt++;
+        console.log(`[trade-tracker] dealId nachgetragen: ref=${ref} -> ${a.dealId}`);
+      } else if (a.ok && a.abgelehnt) {
+        // Es wird nie eine Position geben — nicht weiter fragen.
+        neu.dealIdVersuche = DEALID_VERSUCHE_MAX;
+        neu.exitReason = "NIE_BESTAETIGT";
+        bilanz.aufgegeben++;
+        console.warn(`[trade-tracker] Order ${ref} wurde abgelehnt/geloescht — keine Position`);
+      } else if (versuche + 1 >= DEALID_VERSUCHE_MAX) {
+        bilanz.aufgegeben++;
+        console.warn(`[trade-tracker] dealId zu ref=${ref} nach ${DEALID_VERSUCHE_MAX} `
+          + `Versuchen nicht aufloesbar (${a.error ?? "?"}) — der Eintrag bleibt ohne `
+          + `Positions-ID und damit ohne Risiko-Zustand, Teilgewinn-Riegel und Nachregistrieren`);
+      }
+
+      await db.$executeRawUnsafe(
+        `UPDATE "Trade" SET "notes" = $1 WHERE "id" = $2`,
+        JSON.stringify(neu), zeile.id
+      );
+    }
+  } catch (e) {
+    console.warn("[trade-tracker] Nachtragen der dealIds uebersprungen:",
+      e instanceof Error ? e.message : String(e));
+  }
+  return bilanz;
+}
+
 export async function syncCapitalPositionsToJournal(): Promise<void> {
   try {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
@@ -157,6 +241,11 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
 
     if (!isCapitalConnected()) return;
     const session = getCapitalSession()!;
+
+    // ZUERST fehlende Positions-IDs nachtragen (19.08.). Muss vor dem Abgleich
+    // unten laufen: ein Eintrag ohne dealId laesst sich mit keiner offenen
+    // Position vergleichen und saehe sonst aus wie eine verschwundene.
+    await ergaenzeFehlendeDealIds(session.apiKey, session.cst, session.securityToken);
 
     const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
     if (!posResult.ok) return;

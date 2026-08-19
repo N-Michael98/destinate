@@ -471,6 +471,54 @@ module.exports = function pruefe() {
     /deleteTrade\(trade\.id,\s*trade\.status\)/.test(ohneKommentare(journalSeite)),
     "ohne ihn kann die Rückfrage den OPEN-Fall nicht erkennen");
 
+  // ── Teil 7: dealId und dealReference sind zwei Dinge (19.08.) ───────────
+  //
+  // Am 19.08. trugen ALLE Journal-Einträge `o_...` — Order-Referenzen, weil
+  // der Bestätigungsschritt fehlgeschlagen war und die Referenz ersatzweise
+  // als dealId gespeichert wurde. Die laufenden Positionen tragen
+  // `00000000-...`. Zwei Namensräume, die nie zusammenfinden: persistMeta,
+  // teilgewinnStand, stammdatenAusNotizen und nachzuregistrieren greifen für
+  // solche Trades DAUERHAFT ins Leere, ohne ein Wort.
+  const trackerRoh = lies("frontend", "lib", "capital-com", "capital-trade-tracker.ts");
+  const trackerC = ohneKommentare(trackerRoh);
+  const orchRoh = lies("frontend", "lib", "agents", "orchestrator-agent.ts");
+
+  pruefe1("das Journal kennt kein eigenes Feld für die Order-Referenz",
+    /dealReference\?:\s*string/.test(trackerC));
+  pruefe1("dealId wird auch ohne echte Positions-ID geschrieben",
+    /\.\.\.\(trade\.dealId \? \{ dealId: trade\.dealId \} : \{\}\)/.test(trackerC),
+    "ein leeres Feld ist ehrlicher als eine Referenz, die nie passt");
+  pruefe1("die Order-Referenz landet nicht in den Notizen",
+    /dealReference: trade\.dealReference/.test(trackerC),
+    "ohne sie kann die echte ID später nicht nachgetragen werden");
+  pruefe1("der Orchestrator schreibt wieder einen Platzhalter als dealId",
+    !/dealId:\s*result\?\.dealId \?\? "unknown"/.test(ohneKommentare(orchRoh)));
+
+  pruefe1("es gibt kein Nachtragen der Positions-ID",
+    aufrufe(trackerRoh, "ergaenzeFehlendeDealIds") >= 1
+    && /export async function ergaenzeFehlendeDealIds/.test(trackerRoh));
+  pruefe1("das Nachtragen läuft nicht vor dem Positions-Abgleich",
+    trackerC.indexOf("ergaenzeFehlendeDealIds(session.apiKey")
+      < trackerC.indexOf("capitalGetPositions(session.apiKey"),
+    "ein Eintrag ohne dealId sähe sonst aus wie eine verschwundene Position");
+  pruefe1("das Nachtragen hat keine Obergrenze — es würde ewig weiterfragen",
+    /DEALID_VERSUCHE_MAX/.test(trackerC)
+    && /versuche >= DEALID_VERSUCHE_MAX/.test(trackerC));
+  pruefe1("eine abgelehnte Order wird weiter abgefragt",
+    /a\.abgelehnt/.test(trackerC),
+    "zu ihr wird es nie eine Position geben");
+
+  // Der Rückfall an der Quelle: ein fehlendes Eröffnungsdatum darf nicht
+  // erfunden werden, sonst zählt der Zeit-Exit ab null.
+  const clientRoh = lies("frontend", "lib", "capital-com", "capital-com-client.ts");
+  pruefe1("ein fehlendes Eröffnungsdatum wird wieder durch JETZT ersetzt",
+    !/createdDate:\s*String\(pos\.createdDate \?\? new Date\(\)/.test(ohneKommentare(clientRoh)),
+    "damit läuft der Zeit-Exit für diese Position nie");
+  pruefe1("der RiskAgent behandelt ein unbekanntes Alter nicht gesondert",
+    /const ageHours = eroeffnet && !Number\.isNaN/.test(ohneKommentare(riskRoh))
+    && /if \(ageHours == null\)/.test(ohneKommentare(riskRoh)),
+    "sonst gilt eine Position ohne Datum als gerade eröffnet");
+
   return {
     titel: `Lifecycle-Rückkehr (${geprueft} Prüfungen, Entscheidung ausgeführt)`,
     funde,

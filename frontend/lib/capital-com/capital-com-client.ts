@@ -657,13 +657,30 @@ export async function capitalPlaceOrder(
         if (confirmRes.ok) {
           const confirm = (await confirmRes.json()) as Record<string, unknown>;
           const status = String(confirm.status ?? "");
-          const dealId = String(confirm.dealId ?? dealReference);
+          // KEIN Rueckfall auf die Order-Referenz mehr (19.08.). Bis heute
+          // stand hier `?? dealReference` — fehlte die Positions-ID in der
+          // Bestaetigung, wanderte eine ORDER-Referenz (`o_...`) in ein Feld
+          // namens dealId. Sie kann niemals zu einer Positions-ID passen, und
+          // damit greifen persistMeta, teilgewinnStand, stammdatenAusNotizen,
+          // nachzuregistrieren und dbMeta fuer diesen Trade DAUERHAFT ins
+          // Leere — stumm. Nachgewiesen am 19.08.: alle Journal-Eintraege
+          // trugen `o_...`, die laufenden Positionen `00000000-...`.
+          const dealId = String(confirm.dealId ?? "");
           if (status === "REJECTED" || status === "DELETED") {
             const reason = String(confirm.reason ?? confirm.rejectReason ?? "Order rejected by broker");
             return { ok: false, error: reason };
           }
           const openLevel = Number(confirm.level ?? confirm.openLevel ?? 0);
-          return { ok: true, dealReference, dealId, status: "OPENED", openLevel: openLevel > 0 ? openLevel : undefined };
+          return {
+            ok: true, dealReference,
+            dealId: dealId || undefined,
+            // Ohne Positions-ID ist die Order zwar angenommen, aber nicht
+            // zuordenbar — dieselbe Lage wie bei einer unlesbaren
+            // Bestaetigung, und sie wird auch so benannt.
+            status: dealId ? "OPENED" : "UNBESTAETIGT",
+            unbestaetigt: dealId ? undefined : true,
+            openLevel: openLevel > 0 ? openLevel : undefined,
+          };
         }
       } catch (e) {
         bestaetigungsFehler = e instanceof Error ? e.message : String(e);
@@ -692,7 +709,9 @@ export async function capitalPlaceOrder(
     return {
       ok: true,
       dealReference,
-      dealId: String(data.dealId ?? dealReference),
+      // KEINE erfundene dealId (19.08.) — siehe oben. Die Order-Referenz
+      // steht in dealReference, wo sie hingehoert.
+      dealId: undefined,
       status: dealReference ? "UNBESTAETIGT" : "OPENED",
       unbestaetigt: dealReference ? true : undefined,
       error: dealReference
@@ -705,6 +724,47 @@ export async function capitalPlaceOrder(
 }
 
 // Get all open positions
+/**
+ * Holt die echte Positions-ID zu einer Order-Referenz nach (19.08.).
+ *
+ * WOZU. Scheitert der Bestaetigungsschritt beim Auftragen, kennen wir nur die
+ * Order-Referenz (`o_...`). Die wandert seit dem 19.08. in ein eigenes Feld,
+ * statt sich als dealId auszugeben. Damit der Eintrag nicht dauerhaft
+ * unauffindbar bleibt, fragt der Tracker die Bestaetigung spaeter noch einmal
+ * ab — sie ist bei Capital.com nur eine begrenzte Zeit verfuegbar, deshalb
+ * frueh und mit begrenzter Zahl von Versuchen.
+ *
+ * Rueckgabe:
+ *   { ok: true, dealId }        Positions-ID gefunden
+ *   { ok: true, abgelehnt }     Order wurde abgelehnt oder geloescht — es wird
+ *                               nie eine Position geben, nicht weiter fragen
+ *   { ok: false, error }        Abfrage fehlgeschlagen, spaeter erneut
+ */
+export async function capitalConfirmDeal(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  dealReference: string,
+): Promise<{ ok: boolean; dealId?: string; abgelehnt?: boolean; error?: string }> {
+  if (!dealReference) return { ok: false, error: "keine Referenz" };
+  try {
+    const res = await fetch(`${DEMO_BASE}/confirms/${dealReference}`, {
+      headers: authHeaders(apiKey, cst, securityToken),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const confirm = (await res.json()) as Record<string, unknown>;
+    const status = String(confirm.status ?? "");
+    if (status === "REJECTED" || status === "DELETED") {
+      return { ok: true, abgelehnt: true };
+    }
+    const dealId = String(confirm.dealId ?? "");
+    return dealId ? { ok: true, dealId } : { ok: false, error: "Bestaetigung ohne dealId" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
 export async function capitalGetPositions(
   apiKey: string,
   cst: string,
@@ -734,7 +794,16 @@ const positions: OpenPosition[] = (data.positions ?? []).map((p) => {
         profitLevel: pos.limitLevel != null ? Number(pos.limitLevel) : null,
         profitLoss: Number(pos.upl ?? 0),
         currency: String(pos.currency ?? "USD"),
-        createdDate: String(pos.createdDate ?? new Date().toISOString()),
+        // KEIN erfundenes Datum mehr (19.08.). Bis heute stand hier
+        // `?? new Date().toISOString()` — fehlte die Angabe beim Broker, sah
+        // die Position aus, als waere sie gerade eben eroeffnet worden. Der
+        // Zeit-Exit im RiskAgent rechnet daraus ageHours = 0 und feuert nie,
+        // egal wie alt die Position wirklich ist. Und der Riegel in
+        // nachzuregistrieren() pruefte auf ein UNLESBARES Datum — er bekam
+        // aber immer ein lesbares und war damit ausgehebelt.
+        // Leerer Text heisst jetzt ehrlich "unbekannt"; die Aufrufer
+        // entscheiden, was sie damit tun.
+        createdDate: String(pos.createdDate ?? ""),
       };
     });
 

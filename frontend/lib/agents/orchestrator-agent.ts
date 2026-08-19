@@ -358,7 +358,12 @@ async function postTradeActions(params: {
       // Unbestaetigte Order mitschreiben (17.08.) — sonst ist ein
       // Phantom-Trade spaeter nicht von einem echten Nulltrade zu trennen.
       unbestaetigt: result?.unbestaetigt,
-      dealId:       result?.dealId ?? "unknown",
+      // Bis zum 19.08. stand hier `?? "unknown"` bzw. eine Order-Referenz.
+      // Beides machte den Eintrag unauffindbar. Jetzt bleibt dealId leer,
+      // solange die echte Positions-ID fehlt — die Referenz wandert in ihr
+      // eigenes Feld, und der Tracker traegt die ID nach.
+      dealId:       result?.dealId ?? "",
+      dealReference: result?.dealReference,
       symbol:       candidate.symbol,
       direction:    candidate.gpt.direction as "BUY" | "SELL",
       tradingStyle: style,

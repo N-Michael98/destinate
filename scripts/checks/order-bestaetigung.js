@@ -53,9 +53,25 @@ module.exports = function pruefe() {
   pruefe1("es wird nicht gewarnt, wenn eine Order unbestätigt bleibt",
     /NICHT bestaetigt/.test(client));
   // ok MUSS true bleiben — sonst droht die doppelte Position.
+  //
+  // GEAENDERT 19.08.: die Pruefung war am alten Wortlaut festgenagelt
+  // (`dealId: String(data.dealId ?? dealReference)`). Genau diese Zeile war
+  // aber selbst der Fehler — sie schrieb eine ORDER-Referenz in ein Feld
+  // namens dealId, und die passt zu keiner Positions-ID. Geprueft wird jetzt
+  // die EIGENSCHAFT statt des Textes, und zwar IM Rueckfall-Block: alles
+  // hinter der Warnung "NICHT bestaetigt".
+  const rueckfall = client.slice(client.indexOf("NICHT bestaetigt"));
+  pruefe1("der Rückfall-Block ist nicht auffindbar", rueckfall.length > 0);
   pruefe1("eine unbestätigte Order wird als Fehlschlag gemeldet — das kann zur "
     + "doppelten Position führen",
-    /ok: true,\s*\n\s*dealReference,\s*\n\s*dealId: String\(data\.dealId/.test(client));
+    /return \{\s*\n?\s*ok: true,/.test(rueckfall) && !/ok: false/.test(rueckfall.slice(0, 600)));
+  pruefe1("die Order-Referenz wird wieder als dealId ausgegeben — sie passt zu "
+    + "keiner Positions-ID und macht den Eintrag dauerhaft unauffindbar",
+    !/dealId:\s*String\(data\.dealId\s*\?\?\s*dealReference\)/.test(client)
+    && !/String\(confirm\.dealId\s*\?\?\s*dealReference\)/.test(client));
+  pruefe1("ohne Positions-ID wird die Order nicht als unbestätigt geführt",
+    /status: dealId \? "OPENED" : "UNBESTAETIGT"/.test(client),
+    "eine angenommene Order ohne dealId ist genauso wenig zuordenbar");
   // Eine echte Ablehnung muss weiterhin hart fehlschlagen.
   pruefe1("eine echte Ablehnung (REJECTED) führt nicht mehr zu ok:false",
     /status === "REJECTED" \|\| status === "DELETED"/.test(client)
