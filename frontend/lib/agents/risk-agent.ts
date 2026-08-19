@@ -865,6 +865,57 @@ export function stammdatenAusNotizen(
   return karte;
 }
 
+/** Aufschlüsselung der gelesenen Trade-Notizen (19.08.). */
+export interface NotizenBefund {
+  zeilen: number;
+  lesbar: number;
+  mitDealId: number;
+  mitStil: number;
+  mitConfidence: number;
+}
+
+/**
+ * Zählt, WORAN es liegt, wenn keine Stammdaten zustande kommen (19.08.).
+ *
+ * ANLASS. In Produktion stand am 19.08. im Log:
+ *   "Python kennt 0 von 4 Positionen, Stammdaten fuer 0, nachzureichen 0"
+ * Der Fail-safe griff also richtig (ohne Stil und Confidence wird nicht
+ * geraten), aber das Nachregistrieren lief damit ins Leere — und die Zeile
+ * konnte nicht sagen, WARUM. Zwei ganz verschiedene Ursachen sahen gleich aus:
+ *
+ *   zeilen = 0    die Abfrage findet keine offenen Trades. Dann sind Datenbank
+ *                 und Broker uneinig — ein eigener, groesserer Befund.
+ *   zeilen > 0    die Zeilen sind da, aber in den Notizen fehlt ein Feld.
+ *                 mitStil und mitConfidence sagen welches.
+ *
+ * Reine Zaehlung ohne Inhalt: es werden nur Anzahlen zurueckgegeben, nie
+ * Notiz-Text. Damit landet nichts aus den Notizen im Log.
+ */
+export function notizenBefund(
+  zeilen: ReadonlyArray<{ notes: string | null }> | null | undefined,
+): NotizenBefund {
+  const aus: NotizenBefund = {
+    zeilen: 0, lesbar: 0, mitDealId: 0, mitStil: 0, mitConfidence: 0,
+  };
+  for (const zeile of zeilen ?? []) {
+    aus.zeilen++;
+    if (!zeile?.notes) continue;
+    let m: { dealId?: unknown; tradingStyle?: unknown; confidence?: unknown };
+    try {
+      m = JSON.parse(zeile.notes) as typeof m;
+    } catch {
+      continue;
+    }
+    aus.lesbar++;
+    if (m.dealId) aus.mitDealId++;
+    if (String(m.tradingStyle ?? "").trim()) aus.mitStil++;
+    if (typeof m.confidence === "number" && Number.isFinite(m.confidence)) {
+      aus.mitConfidence++;
+    }
+  }
+  return aus;
+}
+
 /**
  * Welche offenen Positionen muss der Python-Lifecycle nachgereicht bekommen?
  * (18.08.)

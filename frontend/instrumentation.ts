@@ -329,9 +329,10 @@ export async function register() {
                   // Neustart des Python-Dienstes nachregistrieren zu koennen
                   // (18.08.). Dieselben Zeilen, kein zweiter DB-Treffer.
                   let stammdaten = new Map<string, import("./lib/agents/risk-agent").LifecycleStammdaten>();
+                  let befund: import("./lib/agents/risk-agent").NotizenBefund | null = null;
                   try {
                     const { getPrisma } = await import("./app/lib/prisma");
-                    const { teilgewinnStand, stammdatenAusNotizen } = await import("./lib/agents/risk-agent");
+                    const { teilgewinnStand, stammdatenAusNotizen, notizenBefund } = await import("./lib/agents/risk-agent");
                     const db = getPrisma();
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const rows = await (db.$queryRawUnsafe as any)(
@@ -339,6 +340,7 @@ export async function register() {
                     ) as Array<{ notes: string }>;
                     schonTeilgewonnen = teilgewinnStand(rows);
                     stammdaten = stammdatenAusNotizen(rows);
+                    befund = notizenBefund(rows);
                   } catch (e) {
                     // Die Meldung nennt BEIDE Folgen (19.08.). Seit die
                     // Stammdaten aus derselben Abfrage kommen, schaltet ein
@@ -382,6 +384,20 @@ export async function register() {
                     console.log(`[py-lifecycle] Python kennt ${bekannt ? bekannt.size : "?"} von `
                       + `${positions.length} Positionen, Stammdaten fuer ${stammdaten.size}, `
                       + `nachzureichen ${fehlend.length}`);
+                    // Kommen keine Stammdaten zustande, obwohl etwas fehlt:
+                    // sagen WORAN es liegt (19.08.). Ohne diese Zeile sahen
+                    // "keine offenen Trades in der Datenbank" und "Feld fehlt
+                    // in den Notizen" im Log voellig gleich aus. Nur Anzahlen,
+                    // kein Notiz-Inhalt.
+                    if (stammdaten.size === 0 && bekannt && bekannt.size < positions.length) {
+                      console.warn("[py-lifecycle] KEINE Stammdaten — Notizen: "
+                        + (befund
+                          ? `${befund.zeilen} Zeilen, ${befund.lesbar} lesbar, `
+                            + `${befund.mitDealId} mit dealId, ${befund.mitStil} mit Stil, `
+                            + `${befund.mitConfidence} mit Confidence`
+                          : "Abfrage fehlgeschlagen")
+                        + ` | ${positions.length} offene Positionen beim Broker`);
+                    }
                     for (const t of fehlend) {
                       const ok = await pyRegisterTrade(t);
                       if (ok) {

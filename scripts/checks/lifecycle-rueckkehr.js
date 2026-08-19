@@ -82,6 +82,20 @@ function ohneKommentareUndTexte(text) {
     .replace(/'(?:\\.|[^\\'])*'/g, "''");
 }
 
+/**
+ * Entfernt NUR Kommentare, lässt Zeichenketten stehen.
+ *
+ * Gebraucht dort, wo der Beleg selbst in einer Zeichenkette steht — etwa
+ * `befund.mitStil` innerhalb einer Log-Zeile. Die schärfere Variante oben
+ * würde ihn mitlöschen und einen vorhandenen Riegel als fehlend melden (genau
+ * das passierte am 19.08. beim ersten Lauf dieser Prüfung).
+ */
+function ohneKommentare(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
 /** Zählt echte AUFRUFE `name(` und lässt Definitionen sowie Importe weg. */
 function aufrufe(rohText, name) {
   const text = ohneKommentareUndTexte(rohText);
@@ -152,6 +166,45 @@ module.exports = function pruefe() {
   pruefe1("eine kaputte Notiz nimmt die übrigen nicht mit", gemischt.size === 1);
   pruefe1("leere Liste ergibt leere Karte", stammAus([]).size === 0);
   pruefe1("null ergibt leere Karte", stammAus(null).size === 0);
+
+  // ── Teil 1b: notizenBefund() wirklich rechnen (19.08.) ───────────────────
+  // In Produktion stand "Stammdaten fuer 0" — und die Zeile konnte nicht
+  // sagen, ob die Abfrage nichts fand oder ob ein Feld fehlte.
+  const befundF = m.notizenBefund;
+  if (typeof befundF !== "function") {
+    funde.push("notizenBefund wird nicht exportiert — die Ursache fehlender "
+      + "Stammdaten bliebe im Dunkeln");
+  } else {
+    const b0 = befundF([]);
+    pruefe1("leere Liste ergibt lauter Nullen",
+      b0.zeilen === 0 && b0.lesbar === 0 && b0.mitDealId === 0
+      && b0.mitStil === 0 && b0.mitConfidence === 0);
+    pruefe1("null ergibt lauter Nullen", befundF(null).zeilen === 0);
+
+    const b1 = befundF([
+      z({ dealId: "D1", tradingStyle: "SWING", confidence: 82 }),
+      z({ dealId: "D2", tradingStyle: "SWING" }),          // Confidence fehlt
+      z({ dealId: "D3", confidence: 70 }),                 // Stil fehlt
+      z({ tradingStyle: "SWING", confidence: 70 }),        // dealId fehlt
+      { notes: "{kaputt" },                                // unlesbar
+      { notes: null },                                     // leer
+    ]);
+    pruefe1("alle Zeilen werden gezählt", b1.zeilen === 6, String(b1.zeilen));
+    pruefe1("nur lesbare zählen als lesbar", b1.lesbar === 4, String(b1.lesbar));
+    pruefe1("dealId wird richtig gezählt", b1.mitDealId === 3, String(b1.mitDealId));
+    pruefe1("Stil wird richtig gezählt", b1.mitStil === 3, String(b1.mitStil));
+    pruefe1("Confidence wird richtig gezählt", b1.mitConfidence === 3,
+      String(b1.mitConfidence));
+    pruefe1("leerer Stil zählt nicht als vorhanden",
+      befundF([z({ dealId: "D1", tradingStyle: "  ", confidence: 1 })]).mitStil === 0);
+    pruefe1("confidence null zählt nicht als vorhanden",
+      befundF([z({ dealId: "D1", tradingStyle: "S", confidence: null })]).mitConfidence === 0);
+
+    let geworfenB = false;
+    try { befundF([{ notes: 42 }, {}, null]); } catch { geworfenB = true; }
+    pruefe1("notizenBefund wirft bei Unsinn — das würde den Zyklus abbrechen",
+      !geworfenB);
+  }
 
   // ── Teil 2: nachzuregistrieren() wirklich rechnen ─────────────────────────
   const POS = {
@@ -279,6 +332,11 @@ module.exports = function pruefe() {
     aufrufe(instr, "pyRegisterTrade") >= 1);
   pruefe1("instrumentation.ts liest die Stammdaten",
     aufrufe(instr, "stammdatenAusNotizen") >= 1);
+  pruefe1("instrumentation.ts ermittelt die Ursache fehlender Stammdaten nicht",
+    aufrufe(instr, "notizenBefund") >= 1
+    && /befund\.zeilen/.test(ohneKommentare(instr))
+    && /befund\.mitStil/.test(ohneKommentare(instr)),
+    "sonst sieht 'keine offenen Trades' aus wie 'Feld fehlt in den Notizen'");
   pruefe1("das Ergebnis von nachzuregistrieren wird auch benutzt",
     /const\s+fehlend\s*=\s*nachzuregistrieren\(/.test(instrC)
     && /for\s*\(const\s+\w+\s+of\s+fehlend\)/.test(instrC),
