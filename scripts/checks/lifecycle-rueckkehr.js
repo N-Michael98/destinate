@@ -206,6 +206,38 @@ module.exports = function pruefe() {
       !geworfenB);
   }
 
+  // ── Teil 1c: geratenerStilMelden() wirklich rechnen (19.08.) ─────────────
+  // Ohne Datenbankzeile UND ohne Speicher raet der RiskAgent Stil und
+  // Confidence. Das entscheidet ueber den Zeit-Exit (24 h statt 168 h) und
+  // darf nicht stumm passieren — aber auch nicht alle zwei Minuten schreien.
+  const melden = m.geratenerStilMelden;
+  const resetGeraten = m.resetGerateneStammdaten;
+  if (typeof melden !== "function" || typeof resetGeraten !== "function") {
+    funde.push("geratenerStilMelden/resetGerateneStammdaten werden nicht "
+      + "exportiert — ein geratener Handelsstil bliebe unsichtbar");
+  } else {
+    resetGeraten();
+    pruefe1("mit Datenbankzeile wird faelschlich gemeldet",
+      melden("D1", true, false) === false);
+    pruefe1("mit Speicher-Eintrag wird faelschlich gemeldet",
+      melden("D1", false, true) === false);
+    pruefe1("mit beidem wird faelschlich gemeldet",
+      melden("D1", true, true) === false);
+    pruefe1("ohne dealId wird gemeldet", melden("", false, false) === false);
+    pruefe1("ohne jede Quelle wird NICHT gemeldet",
+      melden("D1", false, false) === true,
+      "der geratene Stil bliebe unsichtbar");
+    pruefe1("dieselbe Position wird ein ZWEITES Mal gemeldet",
+      melden("D1", false, false) === false,
+      "sonst alle zwei Minuten dieselbe Warnung");
+    pruefe1("eine ANDERE Position wird nicht gemeldet",
+      melden("D2", false, false) === true);
+    resetGeraten();
+    pruefe1("nach dem Zuruecksetzen wird nicht wieder gemeldet",
+      melden("D1", false, false) === true);
+    resetGeraten();
+  }
+
   // ── Teil 2: nachzuregistrieren() wirklich rechnen ─────────────────────────
   const POS = {
     dealId: "D1", symbol: "EURUSD", epic: "EURUSD", direction: "BUY",
@@ -332,6 +364,19 @@ module.exports = function pruefe() {
     aufrufe(instr, "pyRegisterTrade") >= 1);
   pruefe1("instrumentation.ts liest die Stammdaten",
     aufrufe(instr, "stammdatenAusNotizen") >= 1);
+  const riskRoh = lies("frontend", "lib", "agents", "risk-agent.ts");
+  pruefe1("der RiskAgent meldet einen geratenen Stil nicht",
+    aufrufe(riskRoh, "geratenerStilMelden") >= 1,
+    "aufrufe() laesst die Definition bewusst weg — gezaehlt wird die echte "
+    + "Aufrufstelle in der Positions-Schleife");
+  pruefe1("die Meldung haengt nicht am fehlenden Speicher-Eintrag",
+    /geratenerStilMelden\(pos\.dealId,\s*!!dbEntry,\s*hatSpeicher\)/
+      .test(ohneKommentare(riskRoh)),
+    "beide Quellen muessen fehlen, sonst warnt es bei jedem neuen Trade");
+  pruefe1("die Meldung nennt die Folge für den Zeit-Exit nicht",
+    /STYLE_MAX_HOURS\[mem\.tradingStyle/.test(ohneKommentare(riskRoh)),
+    "ohne die Stundenzahl weiss niemand, was der geratene Stil kostet");
+
   pruefe1("instrumentation.ts ermittelt die Ursache fehlender Stammdaten nicht",
     aufrufe(instr, "notizenBefund") >= 1
     && /befund\.zeilen/.test(ohneKommentare(instr))

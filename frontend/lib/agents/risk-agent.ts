@@ -727,12 +727,22 @@ export async function runRiskAgent(ctx: RiskAgentContext): Promise<void> {
       continue;
     }
 
+    const hatSpeicher = positionMeta.has(pos.dealId);
     const mem = positionMeta.get(pos.dealId) ?? {
       beSet: false, partialDone: false, trailSL: null, peakPrice: null, confidence: 72, tradingStyle: "DAYTRADING"
     };
     // Merge DB + in-memory: für Booleans (beSet, partialDone) gewinnt TRUE aus beiden Quellen.
     // DB schreibt beSet/partialDone nie zurück → in-memory-State darf nicht verloren gehen.
     const dbEntry = ctx.dbMeta.get(pos.dealId);
+    // Ohne beide Quellen wird der Stil GERATEN — das darf nicht stumm
+    // geschehen (19.08.). Siehe geratenerStilMelden().
+    if (geratenerStilMelden(pos.dealId, !!dbEntry, hatSpeicher)) {
+      console.warn(`[risk-agent] ⚠️ ${symbol} deal=${pos.dealId}: weder Datenbankzeile noch `
+        + `Speicher-Eintrag — Stil und Confidence GERATEN (${mem.tradingStyle}, ${mem.confidence}). `
+        + `Der Zeit-Exit rechnet damit mit `
+        + `${STYLE_MAX_HOURS[mem.tradingStyle.toUpperCase()] ?? STYLE_MAX_HOURS.DAYTRADING} h, `
+        + `und die Exit-Schwellen haengen an dieser Confidence-Stufe.`);
+    }
     const meta: PosMeta = {
       beSet:        (dbEntry?.beSet || mem.beSet),
       partialDone:  (dbEntry?.partialDone || mem.partialDone),
@@ -863,6 +873,44 @@ export function stammdatenAusNotizen(
     }
   }
   return karte;
+}
+
+const gerateneGemeldet = new Set<string>();
+
+/**
+ * Muss für diese Position gemeldet werden, dass Stil und Confidence GERATEN
+ * sind? Gibt `true` genau EINMAL je dealId zurück (19.08.).
+ *
+ * DER ANLASS. Findet der RiskAgent weder eine Datenbankzeile (`dbMeta`) noch
+ * einen Speicher-Eintrag (`positionMeta`), fällt er auf feste Standardwerte
+ * zurück: `tradingStyle: "DAYTRADING"`, `confidence: 72`. Das ist als Rückfall
+ * vertretbar, war aber vollkommen UNSICHTBAR — und es entscheidet über Geld:
+ * der Zeit-Exit rechnet dann mit 24 Stunden statt der 168 eines SWING-Trades,
+ * und die Exit-Schwellen hängen an der Confidence-Stufe.
+ *
+ * In Produktion trat genau das am 19.08. ein: vier offene Positionen beim
+ * Broker, null passende Zeilen in der Datenbank — der RiskAgent verwaltete
+ * alle vier mit geratenem Stil, ohne dass irgendwo etwas davon stand.
+ *
+ * Genau EINMAL je Position, nicht je Zyklus: die Schleife läuft alle zwei
+ * Minuten, eine Dauerwarnung wäre nach einer Stunde Rauschen. Dieselbe
+ * Überlegung wie bei den Ausfall-Meldungen in python-status.ts.
+ */
+export function geratenerStilMelden(
+  dealId: string,
+  hatDbEintrag: boolean,
+  hatSpeicher: boolean,
+): boolean {
+  if (!dealId) return false;
+  if (hatDbEintrag || hatSpeicher) return false;
+  if (gerateneGemeldet.has(dealId)) return false;
+  gerateneGemeldet.add(dealId);
+  return true;
+}
+
+/** Nur für Tests und Prüfer. */
+export function resetGerateneStammdaten(): void {
+  gerateneGemeldet.clear();
 }
 
 /** Aufschlüsselung der gelesenen Trade-Notizen (19.08.). */
