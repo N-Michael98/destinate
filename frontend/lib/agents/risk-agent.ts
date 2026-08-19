@@ -36,6 +36,11 @@ export interface PosMeta {
   /** Letzter Eingriff eines ANDEREN Systems an derselben Position (11.08.).
    *  Optional, damit bestehende Aufrufer unveraendert bleiben. */
   fremdAktion?: { zeit: string; text: string } | null;
+  /** true = tradingStyle und confidence stammen NICHT aus Datenbank oder
+   *  Speicher, sondern sind die Standardwerte (DAYTRADING, 72) — also geraten
+   *  (19.08.). Der Zeit-Exit darf darauf nicht handeln. Optional, damit
+   *  bestehende Aufrufer unveraendert bleiben. */
+  stilGeraten?: boolean;
 }
 
 export interface PriceData {
@@ -564,6 +569,29 @@ async function processPosition(
         + `Eroeffnungszeit — der Zeit-Exit (${maxHours} h) kann fuer diese Position `
         + `NICHT greifen. Sie laeuft ohne Haltedauer-Grenze.`);
     }
+  } else if (meta.stilGeraten === true) {
+    // KEIN Zeit-Exit auf geratenem Handelsstil (19.08.).
+    //
+    // Ohne Datenbankzeile und ohne Speicher-Eintrag steht der Stil auf dem
+    // Standardwert DAYTRADING — also 24 Stunden. Waere die Position in
+    // Wirklichkeit SWING gedacht (168 h), wuerde sie 144 Stunden zu frueh
+    // geschlossen. Das ist kein Schutz mehr, das ist ein Eingriff auf einer
+    // Annahme, und er kostet echtes Geld.
+    //
+    // Nachgewiesen am 19.08.: vier offene Positionen (Gold, GBPUSD, UKOIL,
+    // NAS100) ohne jede Journal-Zeile, alle juenger als 24 Stunden — der
+    // Zeit-Exit haette sie binnen Stunden auf einem geratenen Wert
+    // geschlossen.
+    //
+    // Breakeven, Teilgewinn und Trailing laufen weiter: die BEWEGEN einen
+    // Stop in Richtung Gewinn oder nehmen Teilgewinn mit. Sie koennen eine
+    // Position nicht beenden. Ein Zeit-Exit kann.
+    if (geratenerStilMelden(`zeitexit:${dealId}`, false, false)) {
+      console.warn(`[risk-agent] ⚠️ ${symbol} deal=${dealId}: Zeit-Exit AUSGESETZT — `
+        + `der Handelsstil ist geraten (${style}, ${maxHours} h) und wuerde die Position `
+        + `auf einer Annahme schliessen. Breakeven, Teilgewinn und Trailing laufen weiter. `
+        + `Sobald eine Journal-Zeile mit tradingStyle existiert, greift er wieder.`);
+    }
   } else if (ageHours >= maxHours) {
     const closeResult = await capitalClosePosition(apiKey, cst, securityToken, dealId);
     if (closeResult.ok) {
@@ -775,6 +803,9 @@ export async function runRiskAgent(ctx: RiskAgentContext): Promise<void> {
       // Hinweis erreichte die AI nie — und weil es optional ist, hätte auch
       // tsc nichts gemeldet.
       fremdAktion:  dbEntry?.fremdAktion ?? null,
+      // Weder Datenbank noch Speicher: Stil und Confidence sind die
+      // Standardwerte, also geraten (19.08.).
+      stilGeraten:  !dbEntry && !hatSpeicher,
     };
 
     try {

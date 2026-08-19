@@ -514,6 +514,27 @@ module.exports = function pruefe() {
   pruefe1("ein fehlendes Eröffnungsdatum wird wieder durch JETZT ersetzt",
     !/createdDate:\s*String\(pos\.createdDate \?\? new Date\(\)/.test(ohneKommentare(clientRoh)),
     "damit läuft der Zeit-Exit für diese Position nie");
+  // ── Kein Zeit-Exit auf geratenem Handelsstil (19.08.) ───────────────────
+  // Der teuerste Fall: ohne Journal-Zeile steht der Stil auf DAYTRADING, also
+  // 24 h. Waere die Position SWING gedacht, schloesse der Zeit-Exit sie
+  // 144 Stunden zu frueh — ein Eingriff auf einer Annahme.
+  const riskC = ohneKommentare(riskRoh);
+  pruefe1("PosMeta merkt sich nicht, ob der Stil geraten ist",
+    /stilGeraten\?:\s*boolean/.test(riskC));
+  pruefe1("stilGeraten wird nicht aus beiden Quellen bestimmt",
+    /stilGeraten:\s*!dbEntry && !hatSpeicher/.test(riskC),
+    "nur wenn WEDER Datenbank NOCH Speicher etwas hergeben, ist es geraten");
+  pruefe1("der Zeit-Exit handelt weiter auf geratenem Stil",
+    /else if \(meta\.stilGeraten === true\)/.test(riskC),
+    "er wuerde die Position auf einer Annahme schliessen");
+  pruefe1("die Aussetzung greift nicht VOR dem Altersvergleich",
+    riskC.indexOf("meta.stilGeraten === true") < riskC.indexOf("ageHours >= maxHours"),
+    "sonst wird trotzdem geschlossen");
+  pruefe1("Breakeven, Teilgewinn oder Trailing haengen faelschlich am geratenen Stil",
+    (riskC.match(/stilGeraten/g) || []).length === 3,
+    "genau drei Stellen: Feld, Zuweisung, Zeit-Exit — sonst ist mehr gesperrt "
+    + "als beabsichtigt");
+
   pruefe1("der RiskAgent behandelt ein unbekanntes Alter nicht gesondert",
     /const ageHours = eroeffnet && !Number\.isNaN/.test(ohneKommentare(riskRoh))
     && /if \(ageHours == null\)/.test(ohneKommentare(riskRoh)),
