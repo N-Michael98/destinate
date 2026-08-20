@@ -33,9 +33,114 @@ export interface TradeRecord {
   unbestaetigt?: boolean;
 }
 
-export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<void> {
+// ── Journal-Zeilen, die noch nicht geschrieben werden konnten (20.08.) ───────
+//
+// WARUM ES DIESE WARTESCHLANGE GIBT. Wenn saveCapitalTradeToJournal() gerufen
+// wird, ist die Order beim Broker BEREITS LIVE. Sie laesst sich nicht
+// zuruecknehmen. Die Journal-Zeile ist die einzige Verbindung zwischen dieser
+// laufenden Position und dem System — ohne sie:
+//   - persistMeta() findet nichts, der Risiko-Zustand ueberlebt keinen Neustart
+//   - der Riegel gegen den doppelten Teilgewinn ist blind
+//   - der RiskAgent faellt auf GERATENE Werte zurueck (DAYTRADING, 72)
+//   - der Zeit-Exit wird ausgesetzt, die Position laeuft ohne Haltedauer-Grenze
+//   - der Python-Lifecycle kann sie nach einem Neustart nicht nachregistrieren
+// Genau dieser Zustand wurde am 19.08. an vier laufenden Positionen gemessen.
+//
+// Bis heute stand hier nur ein `console.error`. Ein Datenbank-Aussetzer von
+// wenigen Sekunden — etwa waehrend des Postgres-Patches bei Railway — haette
+// die Zeile DAUERHAFT gekostet.
+const ausstehendeZeilen: TradeRecord[] = [];
+
+/** Obergrenze der Warteschlange. Ohne sie waere sie ein Leck: bei einem langen
+ *  Datenbank-Ausfall wuechse sie mit jedem Trade weiter. Fuenfzig ist mehr als
+ *  ein Handelstag je erzeugt (maxTradesPerDay liegt weit darunter). */
+export const AUSSTEHEND_MAX = 50;
+
+/** Nimmt eine ungeschriebene Zeile in die Warteschlange. Bei Ueberlauf faellt
+ *  die AELTESTE heraus — sie ist am ehesten schon anderweitig geschlossen. */
+export function merkeAusstehendeZeile(trade: TradeRecord): void {
+  try {
+    if (!trade) return;
+    ausstehendeZeilen.push(trade);
+    while (ausstehendeZeilen.length > AUSSTEHEND_MAX) ausstehendeZeilen.shift();
+  } catch { /* Merken darf nie stoeren */ }
+}
+
+export function ausstehendeAnzahl(): number {
+  return ausstehendeZeilen.length;
+}
+
+/** Nur für Tests und Prüfer. */
+export function ausstehendeLeeren(): void {
+  ausstehendeZeilen.length = 0;
+}
+
+/**
+ * Schreibt die gemerkten Zeilen nach, sobald die Datenbank wieder antwortet
+ * (20.08.). Wird vom Tracker in jedem Zyklus gerufen, also alle zwei Minuten.
+ *
+ * Gelingt eine Zeile, faellt sie aus der Schlange. Gelingt sie nicht, bleibt
+ * sie stehen und wird beim naechsten Zyklus erneut versucht — anders als beim
+ * Nachtragen der dealId gibt es hier KEINE Versuchsgrenze: eine fehlende
+ * Journal-Zeile kostet dauerhaft Schutz, ein weiterer Versuch kostet nichts.
+ */
+export async function schreibeAusstehendeZeilen(): Promise<{ geschrieben: number; offen: number }> {
+  const bilanz = { geschrieben: 0, offen: 0 };
+  if (ausstehendeZeilen.length === 0) return bilanz;
+  // Von vorne arbeiten, damit die Reihenfolge der Eroeffnungen erhalten bleibt.
+  for (let i = ausstehendeZeilen.length - 1; i >= 0; i--) {
+    const trade = ausstehendeZeilen[i];
+    // Immer mit Doppelpruefung: die Zeile kann seit dem Merken laengst
+    // geschrieben worden sein.
+    const ok = await versucheJournalZeile(trade, true);
+    if (ok) {
+      ausstehendeZeilen.splice(i, 1);
+      bilanz.geschrieben++;
+      console.log(`[trade-tracker] Journal-Zeile nachgetragen: ${trade.symbol} `
+        + `${trade.direction} deal=${trade.dealId || trade.dealReference || "?"}`);
+    }
+  }
+  bilanz.offen = ausstehendeZeilen.length;
+  if (bilanz.geschrieben > 0 || bilanz.offen > 0) {
+    console.log(`[trade-tracker] ausstehende Journal-Zeilen: ${bilanz.geschrieben} nachgetragen, `
+      + `${bilanz.offen} offen`);
+  }
+  return bilanz;
+}
+
+/**
+ * EIN Schreibversuch. Getrennt, damit er wiederholt werden kann, ohne die
+ * SQL-Anweisung zu verdoppeln.
+ *
+ * `pruefeDoppelt` MUSS bei jeder Wiederholung gesetzt sein (20.08.). Grund:
+ * ein INSERT kann in der Datenbank landen und die ANTWORT trotzdem verloren
+ * gehen — bei einem Zeitfehler oder Verbindungsabriss genau der Normalfall.
+ * Der naechste Versuch schriebe denselben Trade dann ein ZWEITES Mal, und der
+ * Wochen-Report zaehlte ihn doppelt. Wiederholen ohne diese Pruefung waere
+ * also schlimmer als gar nicht zu wiederholen.
+ */
+async function versucheJournalZeile(
+  trade: TradeRecord,
+  pruefeDoppelt = false,
+): Promise<boolean> {
   try {
     const db = getPrisma();
+
+    if (pruefeDoppelt) {
+      const kennung = trade.dealId || trade.dealReference || "";
+      if (kennung) {
+        const vorhanden = await (db.$queryRawUnsafe as (q: string, ...a: unknown[]) => Promise<unknown[]>)(
+          `SELECT 1 FROM "Trade" WHERE notes LIKE $1 LIMIT 1`,
+          `%${kennung}%`
+        );
+        if (Array.isArray(vorhanden) && vorhanden.length > 0) {
+          console.log(`[trade-tracker] Journal-Zeile war bereits vorhanden (${kennung}) — `
+            + `kein zweiter Eintrag`);
+          return true;
+        }
+      }
+    }
+
     const riskAmount = trade.accountBalance * (trade.riskPercent / 100);
     const riskPerUnit = Math.abs(trade.entry - trade.stopLoss);
     const rewardPerUnit = Math.abs(trade.takeProfit - trade.entry);
@@ -78,9 +183,61 @@ export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<voi
       })
     );
     console.log(`[trade-tracker] Saved trade: ${trade.symbol} ${trade.direction} (${trade.tradingStyle}) deal=${trade.dealId}`);
+    return true;
   } catch (err) {
-    console.error("[trade-tracker] Failed to save trade:", err);
+    console.warn("[trade-tracker] Journal-Zeile nicht geschrieben:",
+      err instanceof Error ? err.message : String(err));
+    return false;
   }
+}
+
+/** Wartezeiten zwischen den Sofort-Versuchen in Millisekunden (20.08.).
+ *  Kurz genug, um den Handelszyklus nicht auszubremsen; lang genug, um einen
+ *  Verbindungsabriss oder einen Neustart der Datenbank zu ueberbruecken. */
+export const JOURNAL_WARTEZEITEN = [400, 1200];
+
+/**
+ * Schreibt einen ausgefuehrten Trade ins Journal — mit Wiederholung (20.08.).
+ *
+ * Die Order ist an diesem Punkt BEREITS LIVE. Ein einzelner Fehlversuch darf
+ * die Zeile nicht kosten, deshalb:
+ *   1. bis zu drei Sofort-Versuche mit kurzer Pause (deckt Aussetzer ab)
+ *   2. scheitert auch der letzte, wandert der Trade in die Warteschlange und
+ *      wird in jedem Tracker-Zyklus erneut versucht
+ *   3. dazu eine Telegram-Meldung — eine laufende Position ohne Journal-Zeile
+ *      ist kein Zustand, den man nur im Log entdecken sollte
+ *
+ * Rueckgabe: true = geschrieben, false = gemerkt und wird nachgetragen.
+ */
+export async function saveCapitalTradeToJournal(trade: TradeRecord): Promise<boolean> {
+  for (let versuch = 0; versuch <= JOURNAL_WARTEZEITEN.length; versuch++) {
+    if (versuch > 0) {
+      await new Promise((r) => setTimeout(r, JOURNAL_WARTEZEITEN[versuch - 1]));
+    }
+    // Ab dem ZWEITEN Versuch auf eine bereits geschriebene Zeile pruefen.
+    if (await versucheJournalZeile(trade, versuch > 0)) return true;
+  }
+
+  merkeAusstehendeZeile(trade);
+  const kennung = trade.dealId || trade.dealReference || "ohne ID";
+  console.error(`[trade-tracker] ⚠️ Journal-Zeile nach ${JOURNAL_WARTEZEITEN.length + 1} `
+    + `Versuchen NICHT geschrieben: ${trade.symbol} ${trade.direction} ${kennung}. `
+    + `Gemerkt — wird in jedem Zyklus erneut versucht. Bis dahin laeuft die Position `
+    + `ohne Risiko-Zustand, ohne Teilgewinn-Riegel und ohne Zeit-Exit.`);
+  try {
+    const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+    await sendTelegram(
+      "⚠️ <b>Journal-Zeile konnte nicht geschrieben werden</b>\n\n"
+      + `${trade.symbol} ${trade.direction} (${trade.tradingStyle})\n`
+      + `Kennung: ${kennung}\n\n`
+      + "Die Position ist beim Broker LIVE, hat aber keine Zeile in der Datenbank. "
+      + "Solange das so ist, laeuft sie ohne gespeicherten Risiko-Zustand, ohne "
+      + "Teilgewinn-Riegel und ohne Zeit-Exit — der RiskAgent schuetzt sie weiter "
+      + "ueber Stop, Breakeven und Trailing.\n\n"
+      + "Sie wird automatisch in jedem Zyklus erneut geschrieben."
+    );
+  } catch { /* non-fatal */ }
+  return false;
 }
 
 // Called from background monitor — fetches open Capital.com positions and closes finished trades
@@ -239,10 +396,18 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
     const { capitalGetPositions, capitalGetClosedPositions } = await import("./capital-com-client");
 
+    // ZUERST ungeschriebene Journal-Zeilen nachtragen (20.08.) — und zwar VOR
+    // der Broker-Pruefung. Das Schreiben braucht nur die Datenbank; haenge es
+    // an `isCapitalConnected`, blieben gemerkte Zeilen bei getrennter
+    // Broker-Sitzung ungeschrieben liegen, obwohl nichts dagegen spricht.
+    // Eine fehlende Zeile bedeutet, dass die zugehoerige LAUFENDE Position dem
+    // System unbekannt ist — jeder Schritt danach setzt sie voraus.
+    await schreibeAusstehendeZeilen();
+
     if (!isCapitalConnected()) return;
     const session = getCapitalSession()!;
 
-    // ZUERST fehlende Positions-IDs nachtragen (19.08.). Muss vor dem Abgleich
+    // DANN fehlende Positions-IDs nachtragen (19.08.). Muss vor dem Abgleich
     // unten laufen: ein Eintrag ohne dealId laesst sich mit keiner offenen
     // Position vergleichen und saehe sonst aus wie eine verschwundene.
     await ergaenzeFehlendeDealIds(session.apiKey, session.cst, session.securityToken);

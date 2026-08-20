@@ -29,7 +29,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { ROOT } = require("./_lib");
+const { ROOT, ladeTsModul } = require("./_lib");
 
 function ladeRiskAgent(funde) {
   const tsPfad = path.join(ROOT, "frontend", "node_modules", "typescript");
@@ -597,6 +597,90 @@ module.exports = function pruefe() {
     ohneKommentare(instr).indexOf("DATENBANK-VORLAUF GESCHEITERT") <
     ohneKommentare(instr).indexOf("setInterval"),
     "sonst liegen sie weiter im selben try und werden übersprungen");
+
+  // ── Teil 9: eine Journal-Zeile darf nicht verloren gehen (20.08.) ───────
+  //
+  // Wenn saveCapitalTradeToJournal() gerufen wird, ist die Order beim Broker
+  // BEREITS LIVE. Die Zeile ist die einzige Verbindung dorthin — ohne sie
+  // rät der RiskAgent den Stil, der Zeit-Exit setzt aus, der Teilgewinn-Riegel
+  // ist blind und Python kann nicht nachregistrieren. Bis zum 20.08. stand
+  // dort nur ein console.error: ein Aussetzer von Sekunden kostete die Zeile
+  // DAUERHAFT.
+  const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+  if (tr.fehler) {
+    funde.push(tr.fehler);
+  } else {
+    const { merkeAusstehendeZeile, ausstehendeAnzahl, ausstehendeLeeren,
+            AUSSTEHEND_MAX, JOURNAL_WARTEZEITEN } = tr.exports;
+    if (typeof merkeAusstehendeZeile !== "function"
+        || typeof ausstehendeAnzahl !== "function"
+        || typeof ausstehendeLeeren !== "function") {
+      funde.push("die Warteschlange für ungeschriebene Journal-Zeilen wird nicht "
+        + "exportiert — sie bleibt damit ungeprüft");
+    } else {
+      ausstehendeLeeren();
+      pruefe1("frisch ist die Warteschlange nicht leer", ausstehendeAnzahl() === 0);
+      merkeAusstehendeZeile({ symbol: "EURUSD", direction: "BUY" });
+      pruefe1("eine gemerkte Zeile wird nicht gezählt", ausstehendeAnzahl() === 1);
+      merkeAusstehendeZeile(null);
+      pruefe1("null landet fälschlich in der Warteschlange", ausstehendeAnzahl() === 1);
+
+      // Die Obergrenze ist der Riegel gegen ein Leck: bei einem langen
+      // Datenbank-Ausfall wüchse die Schlange sonst mit jedem Trade weiter.
+      ausstehendeLeeren();
+      for (let i = 0; i < AUSSTEHEND_MAX + 15; i++) {
+        merkeAusstehendeZeile({ symbol: `S${i}`, direction: "BUY" });
+      }
+      pruefe1(`die Warteschlange wächst über ${AUSSTEHEND_MAX} hinaus — ein Leck`,
+        ausstehendeAnzahl() === AUSSTEHEND_MAX, String(ausstehendeAnzahl()));
+      ausstehendeLeeren();
+      pruefe1("Leeren wirkt nicht", ausstehendeAnzahl() === 0);
+
+      let geworfenQ = false;
+      try { merkeAusstehendeZeile(undefined); ausstehendeAnzahl(); } catch { geworfenQ = true; }
+      pruefe1("die Warteschlange wirft bei Unsinn — das würde den Zyklus abbrechen",
+        !geworfenQ);
+      pruefe1("es gibt keine Wartezeiten zwischen den Sofort-Versuchen",
+        Array.isArray(JOURNAL_WARTEZEITEN) && JOURNAL_WARTEZEITEN.length >= 2
+        && JOURNAL_WARTEZEITEN.every((n) => typeof n === "number" && n > 0),
+        "ohne Pause wiederholt sich der Fehlschlag sofort");
+      ausstehendeLeeren();
+    }
+  }
+
+  const trRoh = lies("frontend", "lib", "capital-com", "capital-trade-tracker.ts");
+  const trC2 = ohneKommentare(trRoh);
+  pruefe1("das Schreiben wird nicht wiederholt",
+    /for \(let versuch = 0; versuch <= JOURNAL_WARTEZEITEN\.length; versuch\+\+\)/.test(trC2),
+    "ein einzelner Fehlversuch kostet sonst die Zeile dauerhaft");
+  pruefe1("nach dem letzten Versuch wird die Zeile nicht gemerkt",
+    aufrufe(trRoh, "merkeAusstehendeZeile") >= 1);
+  pruefe1("die gemerkten Zeilen werden nie nachgetragen",
+    aufrufe(trRoh, "schreibeAusstehendeZeilen") >= 1
+    && /await schreibeAusstehendeZeilen\(\)/.test(trC2));
+  pruefe1("das Nachtragen läuft nicht als ERSTES im Zyklus",
+    trC2.indexOf("await schreibeAusstehendeZeilen()")
+      < trC2.indexOf("await ergaenzeFehlendeDealIds("),
+    "eine fehlende Zeile heisst, dass die laufende Position unbekannt ist — "
+    + "alles danach setzt sie voraus");
+  // Wiederholen OHNE Doppelpruefung waere schlimmer als gar nicht wiederholen:
+  // ein INSERT kann landen und die Antwort verloren gehen.
+  pruefe1("die Wiederholung prüft nicht auf eine bereits geschriebene Zeile",
+    /versucheJournalZeile\(trade, versuch > 0\)/.test(trC2),
+    "sonst entsteht bei einem Antwortverlust ein DOPPELTER Journal-Eintrag");
+  pruefe1("das Nachtragen prüft nicht auf eine bereits geschriebene Zeile",
+    /versucheJournalZeile\(trade, true\)/.test(trC2));
+  pruefe1("die Doppelprüfung fragt die Datenbank gar nicht",
+    /SELECT 1 FROM "Trade" WHERE notes LIKE \$1 LIMIT 1/.test(trRoh));
+  // Das Schreiben braucht nur die Datenbank — nicht den Broker.
+  pruefe1("das Nachtragen hängt an der Broker-Verbindung",
+    trC2.indexOf("await schreibeAusstehendeZeilen()")
+      < trC2.indexOf("if (!isCapitalConnected()) return;"),
+    "bei getrennter Sitzung blieben gemerkte Zeilen sonst liegen");
+
+  pruefe1("der Verlust einer Journal-Zeile wird nicht gemeldet",
+    /Journal-Zeile konnte nicht geschrieben werden/.test(ohneKommentare(trRoh)),
+    "eine laufende Position ohne Zeile darf man nicht nur im Log entdecken");
 
   return {
     titel: `Lifecycle-Rückkehr (${geprueft} Prüfungen, Entscheidung ausgeführt)`,
