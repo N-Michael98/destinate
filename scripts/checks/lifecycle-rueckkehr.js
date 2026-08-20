@@ -569,6 +569,35 @@ module.exports = function pruefe() {
     && /if \(ageHours == null\)/.test(ohneKommentare(riskRoh)),
     "sonst gilt eine Position ohne Datum als gerade eröffnet");
 
+  // ── Teil 8: ein Datenbank-Ausfall darf nicht alles anhalten (19.08.) ────
+  //
+  // Anlass: Railway kündigte für Sa 10:00 – So 18:00 UTC einen Sicherheits-
+  // Patch des Postgres an (13 CVEs, „high"). Der Patch startet die Datenbank
+  // neu. Zwei Stellen hätten das teuer gemacht.
+  const atm = lies("frontend", "lib", "capital-com", "active-trade-manager.ts");
+  const atmC = ohneKommentare(atm);
+  pruefe1("active-trade-manager.ts fehlt", atm.length > 0);
+  pruefe1("die DB-Abfrage der Risiko-Verwaltung ist wieder ungeschützt",
+    /let dbTrades: Array<\{ notes: string \}> = \[\];/.test(atmC)
+    && /try \{[\s\S]{0,200}?dbTrades = await/.test(atmC),
+    "eine geworfene Abfrage bricht runActiveTradeManager ab — dann laufen "
+    + "Breakeven, Teilgewinn und Trailing für KEINE Position mehr");
+  pruefe1("der Ausfall der DB-Abfrage wird verschwiegen",
+    /\[trade-mgr\][^"]*Trade-Notizen nicht lesbar/.test(ohneKommentare(atm)));
+
+  pruefe1("der Datenbank-Vorlauf hängt wieder am selben try wie die Schleifen",
+    /DATENBANK-VORLAUF GESCHEITERT/.test(ohneKommentare(instr)),
+    "sonst startet bei DB-Ausfall am Prozessstart KEINE Handelsschleife — "
+    + "und register() läuft nur einmal, es erholt sich nie");
+  pruefe1("der Start ohne Datenbank wird nicht gemeldet",
+    /Datenbank beim Start nicht erreichbar/.test(instr),
+    "eine console.error-Zeile allein bemerkt nachts niemand");
+  // Die Schleifen MUESSEN hinter dem Auffangblock stehen, nicht davor.
+  pruefe1("die Schleifen starten weiterhin vor dem Auffangblock",
+    ohneKommentare(instr).indexOf("DATENBANK-VORLAUF GESCHEITERT") <
+    ohneKommentare(instr).indexOf("setInterval"),
+    "sonst liegen sie weiter im selben try und werden übersprungen");
+
   return {
     titel: `Lifecycle-Rückkehr (${geprueft} Prüfungen, Entscheidung ausgeführt)`,
     funde,

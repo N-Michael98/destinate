@@ -45,10 +45,34 @@ export async function runActiveTradeManager(): Promise<void> {
   if (!posResult.ok || !posResult.positions?.length) return;
 
   // ── 2. DB-Metadaten laden ─────────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const dbTrades = await (db.$queryRawUnsafe as any)(
-    `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealId%'`
-  ) as Array<{ notes: string }>;
+  //
+  // ABGESICHERT SEIT 19.08. Bis heute stand diese Abfrage NACKT hier. Fiel die
+  // Datenbank aus, warf sie — und damit brach runActiveTradeManager() komplett
+  // ab. Folge: Breakeven, Teilgewinn und Trailing liefen fuer JEDE Position
+  // gar nicht mehr, solange die Datenbank weg war. Einziges Signal: eine
+  // console.error-Zeile in instrumentation.ts.
+  //
+  // Anlass: der fuer Sa 10:00 - So 18:00 UTC angekuendigte Postgres-Patch bei
+  // Railway startet die Datenbank neu. Aber es geht nicht nur um dieses
+  // Fenster — jeder Aussetzer haette dasselbe bewirkt.
+  //
+  // Jetzt wird DEGRADIERT statt abgebrochen: ohne DB-Zustand arbeitet der
+  // RiskAgent mit seinem Arbeitsspeicher weiter (positionMeta) und mit dem
+  // ECHTEN Stop beim Broker. Positionen ohne Speicher-Eintrag gelten dann als
+  // "Stil geraten" — und dort setzt der Zeit-Exit ohnehin aus, schliesst also
+  // nichts auf einer Annahme. Das ist die sichere Richtung.
+  let dbTrades: Array<{ notes: string }> = [];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    dbTrades = await (db.$queryRawUnsafe as any)(
+      `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealId%'`
+    ) as Array<{ notes: string }>;
+  } catch (e) {
+    console.error("[trade-mgr] ⚠️ Trade-Notizen nicht lesbar — die Risiko-Verwaltung laeuft "
+      + "diesen Zyklus OHNE Datenbank-Zustand. Breakeven, Teilgewinn und Trailing greifen "
+      + "weiter aus dem Arbeitsspeicher; der Zeit-Exit bleibt fuer unbekannte Positionen "
+      + "ausgesetzt:", e instanceof Error ? e.message : String(e));
+  }
 
   const dbMeta = new Map<string, PosMeta>();
   for (const t of dbTrades) {

@@ -159,6 +159,42 @@ export async function register() {
         await initLearning();
       } catch { /* non-fatal */ }
 
+    } catch (err) {
+      // DER DATENBANK-VORLAUF DARF DIE SCHLEIFEN NICHT VERHINDERN (19.08.).
+      //
+      // Bis heute lag ALLES in einem einzigen try, dessen catch ganz unten
+      // sitzt — auch die setInterval-Schleifen. War die Datenbank beim
+      // Prozessstart nicht erreichbar, warf schon die erste Migration, und
+      // damit wurde KEINE EINZIGE Schleife gestartet: kein Positions-Monitor,
+      // kein Breakeven, kein Trailing, kein Python-Lifecycle, kein Watchdog.
+      // Der Dienst stand auf "Online", die Website lief, das Handelssystem tat
+      // nichts. Einzige Spur war eine console.error-Zeile, und es erholte sich
+      // NIE — register() laeuft nur einmal je Prozess.
+      //
+      // Anlass: Railway kuendigte fuer Sa 10:00 - So 18:00 UTC einen
+      // Sicherheits-Patch des Postgres an. Ein Neustart der Datenbank in genau
+      // dem Moment, in dem auch dieser Dienst neu startet, haette das
+      // ausgeloest.
+      //
+      // Die Migrationen sind `CREATE TABLE IF NOT EXISTS` — Hausarbeit. Die
+      // Schleifen sind das Produkt. Schlaegt die Hausarbeit fehl, laeuft das
+      // Produkt trotzdem an und findet die Datenbank beim naechsten Zyklus
+      // von selbst wieder.
+      console.error("[instrumentation] ⚠️ DATENBANK-VORLAUF GESCHEITERT — die Handelsschleifen "
+        + "starten trotzdem. Schema-Migration, Admin-Anlage und Zwischenspeicher wurden "
+        + "UEBERSPRUNGEN; sobald die Datenbank wieder antwortet, greifen die Zyklen erneut:", err);
+      try {
+        const { sendTelegram } = await import("./lib/telegram-notifications/telegram-sender");
+        await sendTelegram(
+          "⚠️ <b>Datenbank beim Start nicht erreichbar</b>\n\n"
+          + "Schema-Migration und Zwischenspeicher wurden übersprungen. Die Handelsschleifen "
+          + "laufen trotzdem an und finden die Datenbank beim nächsten Zyklus von selbst.\n\n"
+          + `Grund: ${err instanceof Error ? err.message : String(err)}`
+        );
+      } catch { /* non-fatal */ }
+    }
+
+    try {
       // Killswitch-State aus Redis wiederherstellen (überlebt Deploys)
       try {
         const { restoreKillswitchFromRedis } = await import("./lib/killswitch");
