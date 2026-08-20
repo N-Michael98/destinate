@@ -12,14 +12,31 @@ import { meldePythonAufruf } from "./python-status";
 
 const BASE_URL = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
 
-// Diagnose (02.08.): exquisite-rejoicing bekommt seit Tagen alle ~2 Minuten
+// ZIEL-AUSGABE BEIM ERSTEN AUFRUF — bewusst dauerhaft (02.08., neu bewertet 19.08.).
+//
+// ANLASS damals: exquisite-rejoicing bekam tagelang alle ~2 Minuten
 // POST /api/v1/lifecycle/balance mit 401, während divine-warmth denselben
-// Aufruf im selben Takt mit 200 beantwortet. Die Quell-IPs (100.64.0.x) zeigen
-// auf einen Dienst im eigenen Railway-Netz, und lifecycle/balance wird im
-// ganzen Repo NUR von dieser Datei aufgerufen. Welche Ziel-URL dieses Modul
-// tatsächlich auflöst, war von aussen nicht feststellbar — deshalb hier eine
-// einmalige Ausgabe beim ersten Aufruf. Rein additiv, ändert kein Verhalten.
-// Der Schlüssel selbst wird NIEMALS geloggt, nur ob er vorhanden ist.
+// Aufruf im selben Takt mit 200 beantwortete. Welche Ziel-URL dieses Modul
+// tatsächlich auflöst, war von aussen nicht feststellbar. Die Ursache lag in
+// next.config.ts und wurde mit b3981a7 behoben.
+//
+// WARUM DIE ZEILE BLEIBT, obwohl die damalige Frage beantwortet ist: sie
+// beantwortet dieselbe Frage bei JEDEM Start neu, und das ist keine
+// Kleinigkeit. Es gibt ZWEI Python-Dienste aus demselben Code, und sie werden
+// von verschiedenen Seiten benutzt:
+//
+//   Frontend (diese Datei)  PYTHON_BACKEND_NEW_URL -> divine-warmth
+//   Analysis-Engine         PYTHON_BACKEND_URL     -> exquisite-rejoicing
+//                                                    (analysis-engine/README.md)
+//
+// Am 19.08. war genau diese Zeile der Beleg dafür: als Railway den Deploy von
+// exquisite-rejoicing nicht ausrollen konnte, liess sich damit sofort sagen,
+// dass der Lifecycle davon NICHT betroffen war. Ohne sie wäre das eine
+// Vermutung geblieben. Eine Umgebungsvariable, die still auf den falschen
+// Dienst zeigt, ist von aussen nicht sichtbar — diese Zeile macht sie sichtbar.
+//
+// Rein additiv, ändert kein Verhalten. Der Schlüssel selbst wird NIEMALS
+// geloggt, nur ob er vorhanden ist.
 let _diagLogged = false;
 function logTargetOnce(): void {
   if (_diagLogged) return;
@@ -173,45 +190,20 @@ export async function pyUpdateBalance(balance: number): Promise<void> {
   await post("/api/v1/lifecycle/balance", { balance });
 }
 
-// ── Intelligence: Markt analysieren ──────────────────────────────────────────
-
-export interface PyIntelligenceResult {
-  symbol:             string;
-  signal:             "BUY" | "SELL" | "NEUTRAL";
-  score:              number;
-  confidence:         number;
-  trade_recommended:  boolean;
-  layers: {
-    technical:        { signal: string; score: number; rsi?: number; adx?: number };
-    regime:           { regime: string; trade_ok: boolean };
-    multi_timeframe:  { alignment: string; alignment_score: number };
-    correlation:      { confirmed: boolean; boost: number };
-  };
-}
-
-export async function pyAnalyzeSymbol(symbol: string): Promise<PyIntelligenceResult | null> {
-  return get<PyIntelligenceResult>(`/api/v1/intelligence/analyze/${symbol}`);
-}
-
-export async function pyAnalyzeMulti(symbols: string[]): Promise<PyIntelligenceResult[]> {
-  const res = await post<{ results: PyIntelligenceResult[] }>(
-    "/api/v1/intelligence/analyze/multi",
-    { symbols }
-  );
-  return res?.results ?? [];
-}
-
-// ── Event Bus: Status ─────────────────────────────────────────────────────────
-
-export async function pyGetEventStats(): Promise<unknown> {
-  return get("/api/v1/events/stats");
-}
-
-// ── Health Check ──────────────────────────────────────────────────────────────
-
-export async function pyHealthCheck(): Promise<boolean> {
-  const res = await get<{ ok: boolean }>("/health");
-  return !!(res as { ok?: boolean })?.ok;
-}
+// ENTFERNT AM 19.08.: pyAnalyzeSymbol(), pyAnalyzeMulti(), pyGetEventStats(),
+// pyHealthCheck() samt dem nur dort verwendeten Typ PyIntelligenceResult.
+//
+// Alle vier waren korrekt geschrieben — die Backend-Routen dazu gibt es
+// weiterhin (@router.get("/analyze/{symbol}"), @router.post("/analyze/multi"),
+// @router.get("/stats")). Aufgerufen hat sie NIEMAND, keine einzige Stelle im
+// ganzen Repository. Sie standen seit ihrer Entstehung ungenutzt hier.
+//
+// pyHealthCheck() ist ausserdem inhaltlich abgeloest: seit dem 19.08. zaehlt
+// python-status.ts jeden echten Aufruf mit und meldet einen Ausfall ueber den
+// Diagnostics-Agent. Ein zusaetzlicher Health-Ping waere Last ohne Erkenntnis
+// — gehen die echten Aufrufe durch, ist der Dienst erreichbar.
+//
+// Wer sie zurueckholen will, findet sie in der Historie. Toter Code hat heute
+// zweimal echte Befunde verdeckt; das ist der Grund fuer die Entfernung.
 
 export { isConfigured as isPythonBackendConfigured };

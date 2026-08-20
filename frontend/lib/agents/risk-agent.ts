@@ -836,9 +836,9 @@ export async function runRiskAgent(ctx: RiskAgentContext): Promise<void> {
   console.log(`[risk-agent] Zyklus abgeschlossen`);
 }
 
-export function getRiskAgentState(): Map<string, PosMeta> {
-  return new Map(positionMeta);
-}
+// ENTFERNT AM 19.08.: getRiskAgentState(). Ein Lesezugriff auf positionMeta,
+// den nie jemand gerufen hat. Wer den Zustand braucht, findet ihn im Log oder
+// baut sich eine Route dafuer — dann aber mit Aufrufer.
 
 /**
  * Liest aus Trade.notes, welche Positionen schon einen ECHTEN Teilgewinn

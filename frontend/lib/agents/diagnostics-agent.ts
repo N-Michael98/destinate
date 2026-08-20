@@ -351,10 +351,6 @@ export function clearAnomalies(): void {
   console.log("[diag-agent] Anomalien zurückgesetzt");
 }
 
-export function stopDiagnosticsAgent(): void {
-  if (healthCheckInterval) {
-    clearInterval(healthCheckInterval);
-    healthCheckInterval = null;
-  }
-  initialized = false;
-}
+// ENTFERNT AM 19.08.: stopDiagnosticsAgent(). Ohne Aufrufer, und der Agent
+// soll bewusst so lange laufen wie der Prozess. `healthCheckInterval` bleibt
+// als Merker gegen doppeltes Starten (initDiagnosticsAgent prueft `initialized`).
