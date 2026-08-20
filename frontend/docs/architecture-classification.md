@@ -1,5 +1,17 @@
 ﻿# V15.A.2 Architecture Classification Report
 
+> **Stand 20.08.2026 — Teile dieses Dokuments beschreiben entfernten Code.**
+> An diesem Tag wurden 163 Dateien entfernt, die von keiner Stelle des
+> Programms mehr erreichbar waren (Fixpunkt-Analyse ueber alle Importe,
+> statisch und dynamisch). Belegt durch: die Routentabelle des Builds war
+> vorher und nachher **byte-identisch**, TypeScript sauber, alle 16 Pruefer
+> gruen. Betroffen sind u. a. die Panels unter `components/portfolio-brain/`
+> sowie die Module `lib/learning-reports`, `lib/forward-testing`,
+> `lib/claude-integration`, `lib/openai-integration`, `lib/ai-memory`,
+> `lib/performance-tracker`, `lib/tradingview-integration`.
+> Wer sie zurueckholen will, findet sie vollstaendig in der Git-Historie.
+
+
 ## Goal
 
 Clean the dashboard architecture without breaking the long-term AI Trading System vision.
