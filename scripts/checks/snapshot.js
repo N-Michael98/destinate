@@ -124,6 +124,33 @@ function erfasse() {
       })(),
     },
     filterReihenfolge: [...filters.matchAll(/blockedBy:\s*"([A-Z_]+)"/g)].map((m) => m[1]),
+    // Volatilitaets-Skalierung (23.08.): getVolatilityAdjustedRisk multipliziert
+    // das Risiko je Trade nach ATR. Fuenf Zahlen, die unmittelbar die
+    // Positionsgroesse bestimmen — und bis heute war KEINE davon gesichert.
+    // VORGEFUEHRT, nicht vermutet: die Schwelle von 3.0 auf 30.0 gezogen, damit
+    // greift die 0,4x-Klemme fuer sehr hohe Volatilitaet nie mehr — und alle
+    // sechzehn Pruefer blieben gruen.
+    //
+    // Erfasst wird die Kette ALS FOLGE, mitsamt Vergleichszeichen: ">3.0=>0.4".
+    // Damit faellt auch auf, wer nur das Zeichen dreht (aus "> 1.5" wird
+    // "< 1.5") oder zwei Stufen vertauscht — beides laesst die Zahlenmenge
+    // unveraendert und bliebe bei reiner Wertaufnahme unsichtbar.
+    volatilitaetsSkalierung: (() => {
+      const start = filters.indexOf("export function getVolatilityAdjustedRisk");
+      if (start < 0) return "FUNKTION FEHLT";
+      const rest = filters.slice(start);
+      const ende = rest.indexOf("\n}");
+      const rumpf = rest.slice(0, ende < 0 ? rest.length : ende).replace(/\/\/[^\n]*/g, "");
+      const grund = rumpf.match(/let\s+multiplier\s*=\s*(-?[0-9.]+)/);
+      const boden = rumpf.match(/Math\.max\(\s*(-?[0-9.]+)/);
+      return {
+        grundwert: grund ? Number(grund[1]) : null,
+        stufen: [...rumpf.matchAll(
+          /atrPct\s*([<>]=?)\s*(-?[0-9.]+)\s*\)\s*multiplier\s*=\s*(-?[0-9.]+)/g
+        )].map((m) => `${m[1]}${m[2]}=>${m[3]}`),
+        untergrenze: boden ? Number(boden[1]) : null,
+      };
+    })(),
     // Struktur-Stop (05.08.): der gemessene Konsens legt seinen Stop hinter den
     // letzten bestaetigten Wendepunkt statt rein aus ATR. Drei Zahlen
     // entscheiden dabei ueber das Risiko je Trade, und keine davon war bisher
