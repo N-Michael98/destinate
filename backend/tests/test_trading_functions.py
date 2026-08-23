@@ -1764,6 +1764,48 @@ def test_muster_swing_regel_stimmt_mit_dem_handelspfad_ueberein():
         )
 
 
+def test_atr_reihe_endet_auf_atr_wilder():
+    """DIESELBE Zahl, nicht nur dieselbe Absicht (20.08.).
+
+    atr_wilder_reihe() ist eine zweite Fassung derselben Rechnung — dieselbe
+    Gefahr wie bei alle_swings() gegen _swing_points(): zwei Definitionen, die
+    langsam auseinanderdriften. Deshalb wird der LETZTE Reihenwert gegen
+    atr_wilder() geprueft, statt es zu behaupten.
+    """
+    import random
+    random.seed(20260820)
+    hochs = [100 + random.uniform(-3, 3) + i * 0.05 for i in range(120)]
+    df = _kerzen(hochs)
+
+    einzeln = _CM.atr_wilder(df)
+    reihe = _CM.atr_wilder_reihe(df)
+    assert einzeln is not None and reihe is not None
+    assert abs(float(reihe.iloc[-1]) - einzeln) < 1e-9, (
+        f"Reihe endet auf {reihe.iloc[-1]}, atr_wilder sagt {einzeln}")
+
+
+def test_atr_reihe_hat_die_aufwaermphase_ausgelassen():
+    """Die ersten `periode` Balken haben KEINEN ATR — sie duerfen nicht mit
+    einem erfundenen Wert auftauchen."""
+    hochs = [100 + i * 0.1 for i in range(60)]
+    df = _kerzen(hochs)
+    reihe = _CM.atr_wilder_reihe(df, periode=14)
+    assert reihe is not None
+    # Der ERSTE Balken hat sehr wohl eine True Range: max(axis=1) ueberspringt
+    # NaN, es bleibt `hoch - tief` ohne Vorschluss. dropna() entfernt also
+    # nichts, und die Reihe hat n - periode + 1 Werte. Genauso rechnet
+    # atr_wilder() — deshalb stimmen beide ueberein.
+    assert len(reihe) == len(df) - 14 + 1, len(reihe)
+    assert reihe.index[0] > df.index[0], "Reihe beginnt zu frueh"
+    assert reihe.index[-1] == df.index[-1], "Reihe endet nicht am letzten Balken"
+
+
+def test_atr_reihe_bei_zu_wenig_daten():
+    """Zu wenig Kerzen ergibt None — kein Absturz, kein geratener Wert."""
+    assert _CM.atr_wilder_reihe(_kerzen([100.0, 101.0, 102.0]), periode=14) is None
+    assert _CM.atr_wilder_reihe(None, periode=14) is None
+
+
 def test_muster_swings_sind_bestaetigt():
     """Die letzten Kerzen koennen naturgemaess keinen Wendepunkt tragen —
     sonst waere er unbestaetigt und taugte nicht als Grundlage."""

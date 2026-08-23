@@ -237,6 +237,26 @@ def konsens_historie(symbol: str, tage: int = 90, takt_intervall: str = "4h") ->
     schnitt = Kerzenschnitt(reihen)
     zuordnung = strategien_je_intervall()
 
+    # ATR je Balken, als ANTEIL des Kurses (20.08.).
+    #
+    # WOZU. Der Live-Pfad skaliert das Risiko nach ATR
+    # (getVolatilityAdjustedRisk in trade-filters.ts: >3 % nur 40 % Risiko,
+    # <0,3 % nur 70 %), blockiert aber nie. Ob Blockieren besser waere als
+    # Skalieren, war bisher eine Meinung. Mit dieser Reihe wird es messbar:
+    # dieselbe Auswertung, die den Konsens bewertet, kann dann nach
+    # Volatilitaetsbaendern trennen.
+    #
+    # EINMAL vektoriell auf der Taktreihe gerechnet, nicht je Balken neu — das
+    # waere quadratisch. Die Funktion stammt aus chartmuster.py und ist gegen
+    # atr_wilder() nachgewiesen (test_atr_reihe_endet_auf_atr_wilder).
+    #
+    # Die ersten 14 Balken haben keinen ATR (Aufwaermphase). Dort steht None —
+    # NICHT 0 und nicht der erste bekannte Wert. Ein erfundener Wert saehe
+    # spaeter aus wie eine Messung.
+    from services.chartmuster import atr_wilder_reihe
+    atr_reihe = atr_wilder_reihe(takt)
+    atr_pct: list[float | None] = []
+
     zeitstempel: list[str] = []
     kurse: list[float] = []
     konsens: list[str] = []
@@ -276,7 +296,14 @@ def konsens_historie(symbol: str, tage: int = 90, takt_intervall: str = "4h") ->
         ohne_daten_je_balken.append(len(betroffen))
 
         zeitstempel.append(zeitpunkt.isoformat())
-        kurse.append(round(float(zeile["close"]), 6))
+        schluss = float(zeile["close"])
+        kurse.append(round(schluss, 6))
+        # ATR als Anteil des Kurses. None, solange die Aufwaermphase laeuft
+        # oder der Kurs unbrauchbar ist — nie ein Ersatzwert.
+        if atr_reihe is not None and zeitpunkt in atr_reihe.index and schluss > 0:
+            atr_pct.append(round(float(atr_reihe.loc[zeitpunkt]) / schluss * 100, 4))
+        else:
+            atr_pct.append(None)
         konsens.append(str(ergebnis.get("consensus", "NEUTRAL")))
         konsens_conf.append(int(ergebnis.get("consensus_conf", 0)))
         eq = ergebnis.get("entry_quality") or {}
@@ -302,6 +329,10 @@ def konsens_historie(symbol: str, tage: int = 90, takt_intervall: str = "4h") ->
         "dauerSek": round(time.time() - begonnen, 1),
         "zeitstempel": zeitstempel,
         "kurs": kurse,
+        # ATR je Balken in Prozent des Kurses; None waehrend der Aufwaermphase
+        # (20.08.). Rein additiv — bestehende Auswerter lesen das Feld nicht
+        # und bleiben unveraendert.
+        "atrPct": atr_pct,
         "konsens": konsens,
         "konsensConf": konsens_conf,
         "entryQualityTier": eq_tier,

@@ -72,6 +72,41 @@ def atr_wilder(df: pd.DataFrame, periode: int = 14) -> Optional[float]:
     return wert if wert > 0 else None
 
 
+def atr_wilder_reihe(df: pd.DataFrame, periode: int = 14) -> Optional[pd.Series]:
+    """ATR nach Wilder als REIHE — je Balken ein Wert (20.08.).
+
+    WOZU. atr_wilder() liefert nur den LETZTEN Wert. Fuer die Frage "haengt das
+    Ergebnis eines Signals von der Volatilitaet ab?" braucht es den ATR je
+    Balken der Vergangenheit.
+
+    BEWUSST NEBEN atr_wilder() STATT AN SEINER STELLE. Die vorhandene Funktion
+    haengt an der Mustererkennung; ein Umbau dort waere ein Risiko ohne Not.
+    Dass beide DIESELBE Zahl liefern, ist kein Vertrauen, sondern nachgewiesen:
+    test_atr_reihe_endet_auf_atr_wilder vergleicht den letzten Reihenwert mit
+    atr_wilder() auf echten Kerzen.
+
+    Rueckgabe: Reihe ueber die Zeitpunkte AB dem Ende der Aufwaermphase
+    (die ersten `periode` Balken haben keinen ATR). None, wenn zu wenig Daten.
+    """
+    if df is None or len(df) < periode + 1:
+        return None
+    hoch, tief, schluss = df["high"], df["low"], df["close"]
+    vorher = schluss.shift(1)
+    tr = pd.concat([hoch - tief, (hoch - vorher).abs(), (tief - vorher).abs()], axis=1).max(axis=1)
+    tr = tr.dropna()
+    if len(tr) < periode:
+        return None
+    # Seed und Rekursion identisch zu atr_wilder() — nur werden hier alle
+    # Zwischenwerte behalten statt verworfen.
+    werte: list[float] = []
+    wert = float(tr.iloc[:periode].mean())
+    werte.append(wert)
+    for x in tr.iloc[periode:]:
+        wert = (wert * (periode - 1) + float(x)) / periode
+        werte.append(wert)
+    return pd.Series(werte, index=tr.index[periode - 1:])
+
+
 def alle_swings(df: pd.DataFrame, links: int = SWING_LINKS,
                 rechts: int = SWING_RECHTS) -> list[dict]:
     """Alle BESTAETIGTEN Wendepunkte, in zeitlicher Reihenfolge.
