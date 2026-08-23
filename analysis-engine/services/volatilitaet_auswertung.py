@@ -42,7 +42,9 @@ ZWEI BANDSCHNITTE, und der Vergleich zwischen ihnen ist der eigentliche Punkt:
             stimmen.
 """
 
-from services.konsens_auswertung import bewerte_historie, RICHTUNGEN
+from services.konsens_auswertung import (
+    bewerte_historie, RICHTUNGEN, HORIZONTE, horizonte_fuer,
+    _vorwaerts_rendite, _richtungsrendite)
 
 # Exakt die Schwellen aus getVolatilityAdjustedRisk (trade-filters.ts:316).
 # Als (Name, untere Grenze exklusiv, obere Grenze inklusiv, Live-Risikofaktor).
@@ -110,6 +112,33 @@ def _relative_grenzen(atr_werte: list) -> list:
     return grenzen
 
 
+def bandbasis(kurse: list, atr: list, unten, oben, k: int) -> dict:
+    """Die Marktbewegung ueber die Balken DIESES Bandes (20.08.).
+
+    WARUM DAS NOETIG IST — ein Fehler in der ersten Fassung dieses Moduls.
+    bewerte_historie() rechnet die Basis ueber ALLE Balken (range(n) in
+    _je_horizont). Fuer Chartmuster ist das richtig: ein Doppeltop haengt nicht
+    systematisch an der Volatilitaet, die Basis ist also derselbe Massstab fuer
+    jede Musterart.
+
+    Fuer ATR-BAENDER gilt das NICHT. In einem Hoch-Volatilitaetsband sind die
+    Bewegungen per Definition groesser. Wer sie gegen einen Durchschnitt haelt,
+    der die ruhigen Balken mitmittelt, ueberschaetzt die hohen Baender und
+    unterschaetzt die ruhigen — und zwar genau in die Richtung, in die man das
+    Ergebnis gern haette. Das waere Falle 2 eine Ebene tiefer.
+
+    Deshalb hier die Basis ueber die Balken des Bandes SELBST. Sie ist der
+    ehrliche Massstab: "haette man in diesem Band blind gekauft, was waere
+    herausgekommen?"
+    """
+    werte = [r for i in range(len(kurse))
+             if _im_band(atr[i] if i < len(atr) else None, unten, oben)
+             and (r := _vorwaerts_rendite(kurse, i, k)) is not None]
+    if not werte:
+        return {"n": 0, "mittel": None}
+    return {"n": len(werte), "mittel": sum(werte) / len(werte)}
+
+
 def _kennzahlen(teil: dict) -> dict:
     """Zieht aus einem bewerte_historie-Block die Zahlen je Richtung."""
     aus = {}
@@ -140,14 +169,35 @@ def bewerte_nach_volatilitaet(historie: dict, horizont: str = "daytrading_24h") 
     if gesamt.get("status") != "ok":
         return gesamt
 
+    kurse = [float(x) for x in (historie.get("kurs") or [])]
+    hz = horizonte_fuer(historie.get("taktIntervall"))
+    k = hz.get(horizont) or HORIZONTE.get(horizont, 6)
+
     def _fuer(unten, oben):
         teil = bewerte_historie(_reihe_fuer_band(historie, unten, oben))
         if teil.get("status") != "ok":
             return None
         block = (teil.get("horizonte") or {}).get(horizont, {}).get("alle", {})
+        kz = _kennzahlen(block)
+
+        # Vorteil GEGEN DIE BANDEIGENE BASIS — siehe bandbasis().
+        # Der Wert aus bewerte_historie steht daneben, damit der Unterschied
+        # sichtbar bleibt statt still ersetzt zu werden.
+        bb = bandbasis(kurse, atr, unten, oben, k)
+        for r in RICHTUNGEN:
+            e = kz[r]
+            if bb["mittel"] is None or e.get("mittelPct") is None:
+                e["bandBasisPct"] = None
+                e["vorteilGegenBandPct"] = None
+                continue
+            basis = _richtungsrendite(bb["mittel"], r) * 100
+            e["bandBasisPct"] = round(basis, 4)
+            e["vorteilGegenBandPct"] = round(e["mittelPct"] - basis, 4)
+
         return {
-            "kennzahlen": _kennzahlen(block),
+            "kennzahlen": kz,
             "bloecke": teil.get("bloecke", {}),
+            "bandBasisN": bb["n"],
         }
 
     absolut = {}

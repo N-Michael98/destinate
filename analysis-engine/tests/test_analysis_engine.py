@@ -1289,3 +1289,44 @@ def test_vola_ohne_atr_meldet_das_ehrlich():
     aus = _VA.bewerte_nach_volatilitaet(
         {"status": "ok", "konsens": ["LONG"], "atrPct": [None], "kurs": [1.0]})
     assert aus["status"] == "kein_atr", aus
+
+
+def test_vola_bandbasis_nimmt_nur_die_balken_des_bandes():
+    """DER wichtigste Test dieses Moduls (20.08.).
+
+    Die erste Fassung mass den Vorteil gegen die Basis ueber ALLE Balken. Bei
+    ATR-Baendern ist das verzerrt: hohe Baender bewegen sich per Definition
+    mehr. bandbasis() muss deshalb AUSSCHLIESSLICH die Balken des Bandes
+    heranziehen.
+    """
+    # Kurse: in den ruhigen Balken (ATR 0.1) passiert nichts, in den bewegten
+    # (ATR 2.5) geht es je 10 % hoch.
+    kurse = [100.0, 100.0, 100.0, 100.0, 110.0, 121.0, 133.1, 146.41]
+    atr = [0.1, 0.1, 0.1, 2.5, 2.5, 2.5, 2.5, 2.5]
+
+    ruhig = _VA.bandbasis(kurse, atr, None, 0.3, k=1)
+    bewegt = _VA.bandbasis(kurse, atr, 2.0, 3.0, k=1)
+
+    assert ruhig["n"] == 3, ruhig            # Balken 0,1,2 haben eine Zukunft
+    # Balken 2 blickt auf Balken 3 — der steht noch bei 100. Alle drei ruhigen
+    # Balken haben also Rendite null; der Anstieg beginnt erst danach.
+    assert abs(ruhig["mittel"]) < 1e-12, ruhig
+    assert bewegt["n"] == 4, bewegt          # Balken 3,4,5,6 (7 hat keine Zukunft)
+    assert bewegt["mittel"] > 0.09, bewegt   # rund 10 % je Balken
+    # Der Kern: die beiden Basen sind VERSCHIEDEN. Genau dieser Unterschied
+    # ging in der ersten Fassung verloren.
+    assert bewegt["mittel"] > ruhig["mittel"] * 2
+
+
+def test_vola_bandbasis_ohne_balken():
+    """Ein Band ohne Balken liefert None — keine erfundene Null."""
+    leer = _VA.bandbasis([100.0, 101.0], [0.1, 0.1], 5.0, None, k=1)
+    assert leer["n"] == 0 and leer["mittel"] is None
+
+
+def test_vola_bandbasis_zaehlt_den_rand_nicht_mit():
+    """Balken ohne Zukunft duerfen nicht als Nullrendite eingehen."""
+    kurse = [100.0, 101.0, 102.0]
+    atr = [1.0, 1.0, 1.0]
+    aus = _VA.bandbasis(kurse, atr, 0.3, 1.5, k=2)
+    assert aus["n"] == 1, aus   # nur Balken 0 hat einen Balken 2 vor sich
