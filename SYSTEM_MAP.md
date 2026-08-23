@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 565 · Kanten: 1126
+Dateien mit internen Abhängigkeiten: 565 · Kanten: 1147
 
 
 ## analysis-engine/api
@@ -36,6 +36,9 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1126
 
 - `analysis-engine/main.py`
   - → `analysis-engine/api/routes/__init__.py`
+  - → `analysis-engine/api/routes/data.py`
+  - → `analysis-engine/api/routes/health.py`
+  - → `analysis-engine/api/routes/insights.py`
   - → `analysis-engine/core/config.py`
   - → `analysis-engine/services/ai_learning.py`
   - → `analysis-engine/services/backtest_engine.py`
@@ -151,6 +154,22 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1126
 
 - `backend/main.py`
   - → `backend/api/routes/__init__.py`
+  - → `backend/api/routes/advanced.py`
+  - → `backend/api/routes/backtest_extended.py`
+  - → `backend/api/routes/backtesting.py`
+  - → `backend/api/routes/calendar.py`
+  - → `backend/api/routes/dukascopy.py`
+  - → `backend/api/routes/events.py`
+  - → `backend/api/routes/finbert.py`
+  - → `backend/api/routes/health.py`
+  - → `backend/api/routes/indicators.py`
+  - → `backend/api/routes/intelligence.py`
+  - → `backend/api/routes/lifecycle.py`
+  - → `backend/api/routes/market.py`
+  - → `backend/api/routes/sentiment.py`
+  - → `backend/api/routes/strategies.py`
+  - → `backend/api/routes/system.py`
+  - → `backend/api/routes/talib_analysis.py`
   - → `backend/core/config.py`
   - → `backend/services/telegram_alerts.py`
 
@@ -186,6 +205,7 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1126
 - `backend/services/strategie_historie.py`
   - → `backend/services/chartmuster.py`
   - → `backend/services/market_data.py`
+  - → `backend/services/trading_strategies.py`
 - `backend/services/talib_indicators.py`
   - → `backend/services/market_data.py`
 - `backend/services/telegram_alerts.py`
@@ -205,6 +225,7 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1126
   - → `backend/core/event_bus.py`
   - → `backend/core/log_drossel.py`
   - → `backend/core/retry.py`
+  - → `backend/core/takt.py`
   - → `backend/services/chartmuster.py`
   - → `backend/services/market_data.py`
   - → `backend/services/market_mapper.py`

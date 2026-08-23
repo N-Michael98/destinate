@@ -87,6 +87,18 @@ function sammleGraph() {
       const z = aufloesen(datei, angabe);
       if (z && z !== datei) ziele.add(z);
     };
+    // Wie nimm(), zählt aber NICHT als Import-Angabe mit.
+    //
+    // Gebraucht für "from <paket> import <name>": ob <name> ein Modul oder nur
+    // eine Funktion ist, steht der Zeile nicht an. Beides wird probiert, aber
+    // nur ein Treffer erzeugt eine Kante. Würde das über nimm() laufen, zählte
+    // jede Funktion aus jeder Importliste als "nicht aufgelöst" und --audit
+    // meldete hunderte Fehlalarme — der Selbstprüfung wäre nicht mehr zu
+    // trauen, und genau die soll ja belegen, dass die Karte vollständig ist.
+    const nimmStill = (angabe) => {
+      const z = aufloesen(datei, angabe);
+      if (z && z !== datei) ziele.add(z);
+    };
 
     if (/\.(ts|tsx)$/.test(datei)) {
       // Statisch: import ... from "x"  /  export ... from "x"
@@ -100,7 +112,26 @@ function sammleGraph() {
       // require("x")
       for (const m of src.matchAll(/\brequire\(\s*["']([^"']+)["']\s*\)/g)) nimm(m[1]);
     } else {
-      for (const m of src.matchAll(/^\s*from\s+([\w.]+)\s+import/gm)) nimm(m[1]);
+      // LÜCKE, gefunden 23.08.: bis hierher wurde nur der PAKETTEIL gelesen.
+      // "from api.routes import health" landete damit bei api/routes/__init__.py
+      // statt bei health.py — und weil die Datei sonst niemand importiert, war
+      // sie in der Karte scheinbar unbenutzt. Betroffen waren 21 echte
+      // Abhängigkeiten, darunter JEDE Routen-Registrierung in beiden main.py
+      // und die Kante strategie_historie -> trading_strategies. Aufgefallen,
+      // weil --impact für trading_strategies.py einen Nutzer nicht nannte, den
+      // der Quelltext eindeutig zeigt.
+      //
+      // Die Selbstprüfung meldete trotzdem "0 offen": sie zählt, was von den
+      // GELESENEN Angaben nicht auflösbar war — nicht, was gar nicht erst
+      // gelesen wurde. Ein Prüfer, der seine eigene Lücke nicht kennt, gibt
+      // falsche Sicherheit.
+      for (const m of src.matchAll(/^\s*from\s+([\w.]+)\s+import\s+([^\n#]+)/gm)) {
+        nimm(m[1]);
+        for (const teil of m[2].split(",")) {
+          const name = teil.trim().split(/\s+as\s+/)[0].trim();
+          if (/^[A-Za-z_]\w*$/.test(name)) nimmStill(`${m[1]}.${name}`);
+        }
+      }
       for (const m of src.matchAll(/^\s*import\s+([\w.]+)/gm)) nimm(m[1]);
     }
     kanten.set(datei, ziele);
