@@ -1330,3 +1330,292 @@ def test_vola_bandbasis_zaehlt_den_rand_nicht_mit():
     atr = [1.0, 1.0, 1.0]
     aus = _VA.bandbasis(kurse, atr, 0.3, 1.5, k=2)
     assert aus["n"] == 1, aus   # nur Balken 0 hat einen Balken 2 vor sich
+
+
+# ---------------------------------------------------------------------------
+# Bandhistorie: die Verdichtung ueber viele Symbole und das Ansammeln ueber
+# Wochen (23.08.). Grund: eine einmalige Messung ist bei rund 90 Tagen
+# gedeckelt — 180 Tage auf 4h lassen am Fensteranfang 12,5 von 16 Strategien
+# ohne Daten, 90 Tage nur 1,0. Mehr Belege gibt es nur durch Ansammeln.
+# ---------------------------------------------------------------------------
+
+def _band(n_long=0, v_long=0.0, vb_long=None, n_short=0, v_short=0.0,
+          vb_short=None, balken=0, bloecke_long=0, bloecke_short=0):
+    """Baut EINEN Bandeintrag in der Form, die bewerte_nach_volatilitaet liefert."""
+    kz = {
+        "LONG": {"n": n_long, "vorteilPct": v_long, "trefferPct": 50.0,
+                 "vorteilGegenBandPct": vb_long},
+        "SHORT": {"n": n_short, "vorteilPct": v_short, "trefferPct": 50.0,
+                  "vorteilGegenBandPct": vb_short},
+    }
+    return {"balken": balken, "kennzahlen": kz,
+            "bloecke": {"LONG": bloecke_long, "SHORT": bloecke_short}}
+
+
+def _bewertung(**baender):
+    return {"status": "ok", "absolut": dict(baender), "relativ": {}}
+
+
+def test_bandhistorie_gewichtet_mit_der_fallzahl():
+    """Ein Symbol mit 200 Faellen muss schwerer wiegen als eines mit 10.
+
+    Ohne Gewichtung waere das Mittel (1.0 + -1.0)/2 = 0.0. Richtig gewichtet
+    ist es (200*1.0 + 10*-1.0)/210 = +0.9048.
+
+    BEIDE Spalten werden geprueft, mit VERSCHIEDENEN Werten. Die erste Fassung
+    dieses Tests hing nur an vorteilGegenBandPct und setzte beide Werte gleich
+    — im Sabotage-Lauf vom 23.08. liess sich die Gewichtung von vorteilPct
+    dadurch entfernen, ohne dass ein Test rot wurde.
+    """
+    a = _bewertung(**{"unter_0.3": _band(n_long=200, v_long=1.0, vb_long=2.0)})
+    b = _bewertung(**{"unter_0.3": _band(n_long=10, v_long=-1.0, vb_long=-2.0)})
+    aus = _VA.verdichte_baender([a, b])["absolut"]["unter_0.3"]
+    assert aus["faelle"] == 210, aus
+    assert abs(aus["vorteilPct"] - 0.9048) < 0.001, aus
+    assert abs(aus["vorteilGegenBandPct"] - 1.8095) < 0.001, aus
+    # Die Trefferquote laeuft ueber dieselbe Gewichtung und ist sonst nirgends
+    # geprueft — beide Symbole liefern 50 %, also muss 50 % herauskommen.
+    assert abs(aus["trefferPct"] - 50.0) < 0.001, aus
+
+
+def test_bandhistorie_zaehlt_symbole_im_plus():
+    """In wie vielen Maerkten der Vorteil positiv war — die Zeile, die vor
+    einer Aussage aus einem einzigen Ausreisser schuetzt."""
+    plus = _bewertung(**{"unter_0.3": _band(n_long=5, v_long=2.0, vb_long=2.0)})
+    minus = _bewertung(**{"unter_0.3": _band(n_long=5, v_long=-2.0, vb_long=-2.0)})
+    null = _bewertung(**{"unter_0.3": _band(n_long=0)})   # keine Faelle
+    aus = _VA.verdichte_baender([plus, minus, minus, null])["absolut"]["unter_0.3"]
+    assert aus["symbole"] == 3, aus        # das leere zaehlt nicht mit
+    assert aus["symbolePlus"] == 1, aus
+
+
+def test_bandhistorie_summiert_balken_und_bloecke():
+    """BLOECKE sind die ehrliche Fallzahl — zusammenhaengende Laeufe, nicht
+    einzelne Balken. Fielen sie aus der Verdichtung, saehe jede Auswertung
+    mehr Belege, als es gibt. Im Sabotage-Lauf vom 23.08. liessen sich beide
+    Summen auf null setzen, ohne dass ein Test rot wurde.
+    """
+    a = _bewertung(**{"unter_0.3": _band(n_long=5, v_long=1.0, vb_long=1.0,
+                                         balken=40, bloecke_long=3, bloecke_short=2)})
+    b = _bewertung(**{"unter_0.3": _band(n_short=7, v_short=1.0, vb_short=1.0,
+                                         balken=60, bloecke_long=1, bloecke_short=4)})
+    aus = _VA.verdichte_baender([a, b])["absolut"]["unter_0.3"]
+    assert aus["balken"] == 100, aus
+    assert aus["bloecke"] == 10, aus       # 3+2+1+4, ueber beide Richtungen
+    assert aus["faelle"] == 12, aus        # 5 LONG + 7 SHORT
+
+
+def test_bandhistorie_verwirft_nicht_ok_und_meldet_warum():
+    aus = _VA.verdichte_baender([
+        _bewertung(**{"unter_0.3": _band(n_long=5, v_long=1.0, vb_long=1.0)}),
+        {"status": "kein_atr"},
+        {"status": "kein_atr"},
+        {"status": "zu_kurz"},
+        None,
+    ])
+    assert aus["symbole"] == 1, aus
+    assert aus["verworfen"] == {"kein_atr": 2, "zu_kurz": 1, "unbekannt": 1}, aus
+
+
+def test_bandhistorie_ohne_faelle_meldet_none_statt_null():
+    """Eine 0 liesse sich als "gemessen, kein Vorteil" lesen — es war aber gar
+    nichts da."""
+    aus = _VA.verdichte_baender([])["absolut"]["unter_0.3"]
+    assert aus["faelle"] == 0 and aus["vorteilPct"] is None, aus
+    assert aus["trefferPct"] is None, aus
+
+
+def test_bandhistorie_faellt_auf_gesamtvorteil_zurueck():
+    """Fehlt die bandeigene Basis, muss der Gesamtvorteil einspringen — sonst
+    zaehlt der Fall bei n mit, aber nicht in der Summe, und das Mittel bezoege
+    sich auf eine andere Grundmenge als die Fallzahl."""
+    a = _bewertung(**{"unter_0.3": _band(n_long=10, v_long=0.5, vb_long=None)})
+    aus = _VA.verdichte_baender([a])["absolut"]["unter_0.3"]
+    assert aus["faelle"] == 10, aus
+    assert abs(aus["vorteilGegenBandPct"] - 0.5) < 1e-9, aus
+
+
+def test_bandhistorie_traegt_den_live_faktor_mit():
+    """Ohne den Faktor daneben ist die Zahl nicht deutbar — man saehe den
+    Vorteil, aber nicht, wie das System heute darauf reagiert."""
+    aus = _VA.verdichte_baender([])["absolut"]
+    assert aus["ueber_3.0"]["liveRisikoFaktor"] == 0.4, aus["ueber_3.0"]
+    assert aus["unter_0.3"]["liveRisikoFaktor"] == 0.7, aus["unter_0.3"]
+
+
+def test_bandhistorie_haengt_an_und_schneidet_vorne_ab():
+    alt = [{"i": i} for i in range(5)]
+    aus = _VA.haenge_an_historie(alt, {"i": 99}, max_eintraege=3)
+    assert aus == [{"i": 3}, {"i": 4}, {"i": 99}], aus
+
+
+def test_bandhistorie_uebersteht_kaputten_vorzustand():
+    """Ein verunglueckter Altwert darf den Wochenlauf nicht kippen."""
+    for kaputt in (None, "keine liste", 42, {"a": 1}):
+        aus = _VA.haenge_an_historie(kaputt, {"neu": True})
+        assert aus == [{"neu": True}], (kaputt, aus)
+    gemischt = _VA.haenge_an_historie([{"ok": 1}, "muell", 7], {"neu": True})
+    assert gemischt == [{"ok": 1}, {"neu": True}], gemischt
+
+
+def test_bandhistorie_wird_in_den_wochenlauf_geschrieben():
+    """Die Verdrahtung selbst — nicht nur die Funktion. Genau hier ist im
+    Repository wiederholt etwas gebaut und nie aufgerufen worden."""
+    geschrieben = {}
+
+    def _set(key, value, ttl):
+        geschrieben["key"], geschrieben["value"], geschrieben["ttl"] = key, value, ttl
+        return True
+
+    alt_set, alt_get = _KA.redis_set_json, _KA.redis_get_json
+    try:
+        _KA.redis_set_json = _set
+        _KA.redis_get_json = lambda key: [{"alt": True}]
+        _KA._schreibe_bandhistorie(
+            [_bewertung(**{"unter_0.3": _band(n_long=7, v_long=0.2, vb_long=0.2)})])
+    finally:
+        _KA.redis_set_json, _KA.redis_get_json = alt_set, alt_get
+
+    assert geschrieben["key"] == _KA.REDIS_KEY_VOLA_BAENDER, geschrieben
+    # Muss deutlich laenger halten als der Konsens-Schluessel, sonst ist die
+    # Historie nach einem ausgefallenen Wochenlauf weg.
+    assert geschrieben["ttl"] > _KA.TTL * 10, geschrieben["ttl"]
+    assert geschrieben["value"][0] == {"alt": True}, geschrieben["value"]
+    zeile = geschrieben["value"][-1]
+    assert zeile["symbole"] == 1 and zeile["fensterTage"] == _KA.FENSTER_TAGE, zeile
+    assert zeile["absolut"]["unter_0.3"]["faelle"] == 7, zeile["absolut"]
+    assert zeile["gemessenAm"], zeile
+
+
+def test_bandhistorie_schreibt_nichts_ohne_bewertungen():
+    """Kein leerer Eintrag — der wuerde die Historie mit Nullzeilen verwaessern."""
+    gerufen = []
+    alt_set = _KA.redis_set_json
+    try:
+        _KA.redis_set_json = lambda *a, **k: gerufen.append(a) or True
+        _KA._schreibe_bandhistorie([])
+    finally:
+        _KA.redis_set_json = alt_set
+    assert gerufen == [], gerufen
+
+
+def test_bandmessung_reisst_den_wochenlauf_nicht_mit():
+    """Beiwerk darf die Konsens-Auswertung nicht kippen — weder bei einem
+    Absturz in der Bewertung noch bei einem Redis-Fehler."""
+    sammler = []
+    _KA._sammle_volatilitaet({"status": "ok", "kurs": None}, sammler, "X")
+    assert sammler == [], sammler   # abgefangen, nichts gesammelt
+
+    alt_set = _KA.redis_set_json
+    try:
+        def _kaputt(*a, **k):
+            raise RuntimeError("Redis weg")
+        _KA.redis_set_json = _kaputt
+        _KA._schreibe_bandhistorie(
+            [_bewertung(**{"unter_0.3": _band(n_long=1, v_long=0.1, vb_long=0.1)})])
+    finally:
+        _KA.redis_set_json = alt_set
+
+
+def test_bandmessung_sammelt_eine_echte_reihe():
+    """Ende zu Ende: echte Konsens-Reihe -> _sammle_volatilitaet -> Verdichtung."""
+    n = 120
+    hist = {
+        "status": "ok", "symbol": "TEST", "taktIntervall": "4h", "balken": n,
+        "kurs": [100.0 + i * 0.5 for i in range(n)],
+        "konsens": ["LONG" if i % 3 == 0 else "NEUTRAL" for i in range(n)],
+        "atrPct": [0.2 if i % 2 == 0 else 2.5 for i in range(n)],
+    }
+    sammler = []
+    _KA._sammle_volatilitaet(hist, sammler, "TEST")
+    assert len(sammler) == 1, sammler
+    aus = _VA.verdichte_baender(sammler)
+    assert aus["symbole"] == 1 and aus["verworfen"] == {}, aus
+    # Beide bestueckten Baender muessen Faelle zeigen; das ruhige Band haelt die
+    # geraden Balken, das bewegte die ungeraden.
+    assert aus["absolut"]["unter_0.3"]["faelle"] > 0, aus["absolut"]
+    assert aus["absolut"]["2.0_bis_3.0"]["faelle"] > 0, aus["absolut"]
+
+
+def test_wochenlauf_schreibt_die_bandhistorie_wirklich():
+    """ECHTER DURCHLAUF von _run_konsens_auswertung_inner.
+
+    WARUM NICHT NUR DIE FUNKTION. Der Test darueber ruft
+    _schreibe_bandhistorie direkt auf — wer den AUFRUF aus dem Wochenlauf
+    entfernt, bliebe damit gruen. Genau diese Fehlerklasse ("gebaut, nie
+    verdrahtet") hat in diesem Repository wiederholt zugeschlagen. Hier laeuft
+    deshalb die echte Schleife; nur das Datenholen und Redis sind ersetzt.
+    """
+    n = 90
+    def _reihe(symbol, tage=None):
+        return {
+            "status": "ok", "symbol": symbol, "taktIntervall": "4h", "balken": n,
+            "kurs": [100.0 + i * 0.3 for i in range(n)],
+            "konsens": ["LONG" if i % 4 == 0 else "NEUTRAL" for i in range(n)],
+            "atrPct": [0.2 if i % 2 == 0 else 2.5 for i in range(n)],
+        }
+
+    geschrieben: dict = {}
+    def _set(key, value, ttl):
+        geschrieben[key] = value
+        return True
+
+    alt = (_KA.hole_historie, _KA.WATCHLIST, _KA.PAUSE_SEK,
+           _KA.redis_set_json, _KA.redis_get_json)
+    try:
+        _KA.hole_historie = _reihe
+        _KA.WATCHLIST = ["AAA", "BBB"]
+        _KA.PAUSE_SEK = 0
+        _KA.redis_set_json = _set
+        _KA.redis_get_json = lambda key: geschrieben.get(key)
+        _KA._run_konsens_auswertung_inner()
+    finally:
+        (_KA.hole_historie, _KA.WATCHLIST, _KA.PAUSE_SEK,
+         _KA.redis_set_json, _KA.redis_get_json) = alt
+
+    # Der Konsens-Schluessel muss weiterhin geschrieben werden ...
+    assert _KA.REDIS_KEY_KONSENS in geschrieben, list(geschrieben)
+    assert geschrieben[_KA.REDIS_KEY_KONSENS]["symbole"] == 2
+
+    # ... UND die Bandhistorie, ohne dass jemand sie von Hand anstoesst.
+    assert _KA.REDIS_KEY_VOLA_BAENDER in geschrieben, list(geschrieben)
+    historie = geschrieben[_KA.REDIS_KEY_VOLA_BAENDER]
+    assert len(historie) == 1, historie
+    zeile = historie[0]
+    assert zeile["symbole"] == 2, zeile
+    assert zeile["absolut"]["unter_0.3"]["faelle"] > 0, zeile["absolut"]
+    # Jedes Live-Band muss in der Zeile stehen, sonst faellt spaeter eines
+    # stillschweigend aus der Auswertung.
+    for name, _u, _o, _f in _VA.ABSOLUTE_BAENDER:
+        assert name in zeile["absolut"], (name, list(zeile["absolut"]))
+
+
+def test_wochenlauf_haengt_bei_jedem_lauf_eine_zeile_an():
+    """Zwei Laeufe hintereinander muessen zwei Zeilen ergeben — sonst waechst
+    die Belegbasis nie, und genau dafuer ist die Historie da."""
+    n = 90
+    def _reihe(symbol, tage=None):
+        return {
+            "status": "ok", "symbol": symbol, "taktIntervall": "4h", "balken": n,
+            "kurs": [100.0 + i * 0.3 for i in range(n)],
+            "konsens": ["LONG" if i % 4 == 0 else "NEUTRAL" for i in range(n)],
+            "atrPct": [1.0] * n,
+        }
+
+    geschrieben: dict = {}
+    alt = (_KA.hole_historie, _KA.WATCHLIST, _KA.PAUSE_SEK,
+           _KA.redis_set_json, _KA.redis_get_json)
+    try:
+        _KA.hole_historie = _reihe
+        _KA.WATCHLIST = ["AAA"]
+        _KA.PAUSE_SEK = 0
+        _KA.redis_set_json = lambda key, value, ttl: geschrieben.__setitem__(key, value) or True
+        _KA.redis_get_json = lambda key: geschrieben.get(key)
+        _KA._run_konsens_auswertung_inner()
+        _KA._run_konsens_auswertung_inner()
+    finally:
+        (_KA.hole_historie, _KA.WATCHLIST, _KA.PAUSE_SEK,
+         _KA.redis_set_json, _KA.redis_get_json) = alt
+
+    assert len(geschrieben[_KA.REDIS_KEY_VOLA_BAENDER]) == 2, \
+        geschrieben[_KA.REDIS_KEY_VOLA_BAENDER]

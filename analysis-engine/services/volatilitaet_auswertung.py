@@ -63,6 +63,16 @@ ABSOLUTE_BAENDER = [
 RELATIVE_FAECHER = 5
 
 
+# Wie viele woechentliche Laeufe die Bandhistorie haelt. 60 ~ etwas ueber ein
+# Jahr. Grund fuer das Mitschreiben ueberhaupt: eine EINMALIGE Messung ist bei
+# rund 90 Tagen gedeckelt — nicht wegen Rechenzeit, sondern weil die Datenquelle
+# fuer 4h nicht weiter zurueckreicht und die Strategien am Fensteranfang sonst
+# ohne Vorlauf dastehen (bei 180 Tagen fehlen dort 12,5 von 16 Strategien,
+# bei 90 Tagen 1,0 — gemessen am 23.08.). Wer mehr Belege will, muss sie
+# ansammeln statt weiter zurueckzugreifen.
+BAND_HISTORIE_MAX = 60
+
+
 def _im_band(wert, unten, oben) -> bool:
     """Untere Grenze exklusiv, obere inklusiv — damit die Baender luecken- und
     ueberschneidungsfrei aneinanderstossen."""
@@ -238,3 +248,116 @@ def bewerte_nach_volatilitaet(historie: dict, horizont: str = "daytrading_24h") 
         "relativeGrenzen": grenzen,
         "hinweise": list(historie.get("hinweise", [])),
     }
+
+
+def _verdichte_eine(quelle: dict, ziel: dict) -> None:
+    """Zaehlt die Baender EINES Symbols in den laufenden Sammler.
+
+    Gewichtet wird mit der Fallzahl n je Richtung — ein Symbol mit 200 Faellen
+    zaehlt also mehr als eines mit 12. Ohne Gewichtung haetten duenne Maerkte
+    denselben Einfluss wie dichte, und genau das waere die naechste stille
+    Verzerrung nach der, die bandbasis() behebt.
+    """
+    for name, e in quelle.items():
+        if name not in ziel:
+            continue
+        z = ziel[name]
+        z["balken"] += int(e.get("balken", 0))
+        sym_summe, sym_n = 0.0, 0
+        for r in RICHTUNGEN:
+            kz = (e.get("kennzahlen") or {}).get(r) or {}
+            n = int(kz.get("n") or 0)
+            v = kz.get("vorteilPct")
+            vb = kz.get("vorteilGegenBandPct")
+            t = kz.get("trefferPct")
+            if n and v is not None:
+                z["n"] += n
+                z["vorteilSumme"] += v * n
+                # Fehlt die bandeigene Basis, wird der Gesamtvorteil genommen —
+                # sonst faellt der Fall stillschweigend aus der Gewichtung und
+                # das Mittel bezoege sich auf eine andere Grundmenge als n.
+                z["vorteilBandSumme"] += (vb if vb is not None else v) * n
+                if t is not None:
+                    z["trefferSumme"] += t * n
+                sym_summe += (vb if vb is not None else v) * n
+                sym_n += n
+            z["bloecke"] += int((e.get("bloecke") or {}).get(r, 0))
+        if sym_n:
+            z["symbole"] += 1
+            if sym_summe / sym_n > 0:
+                z["symbolePlus"] += 1
+
+
+def _mittelwerte(sammler: dict) -> dict:
+    """Aus Summen werden Mittel. Bei n=0 bleibt None statt einer 0 — eine 0
+    laese sich als 'kein Vorteil gemessen' missdeuten, obwohl gar nichts da war.
+    """
+    aus = {}
+    for name, z in sammler.items():
+        n = z["n"]
+        aus[name] = {
+            "balken": z["balken"],
+            "faelle": n,
+            "bloecke": z["bloecke"],
+            "symbole": z["symbole"],
+            "symbolePlus": z["symbolePlus"],
+            "vorteilPct": round(z["vorteilSumme"] / n, 4) if n else None,
+            "vorteilGegenBandPct": round(z["vorteilBandSumme"] / n, 4) if n else None,
+            "trefferPct": round(z["trefferSumme"] / n, 2) if n else None,
+        }
+        if "liveRisikoFaktor" in z:
+            aus[name]["liveRisikoFaktor"] = z["liveRisikoFaktor"]
+    return aus
+
+
+def verdichte_baender(bewertungen: list, horizont: str = "daytrading_24h") -> dict:
+    """Fasst die Bandergebnisse VIELER Symbole zu einer Zeile zusammen.
+
+    Eingabe sind die Rueckgaben von bewerte_nach_volatilitaet(). Ergebnisse mit
+    einem anderen Status als "ok" werden gezaehlt, aber nicht mitgerechnet.
+    """
+    sammel_abs = {
+        name: {"balken": 0, "n": 0, "bloecke": 0, "symbole": 0, "symbolePlus": 0,
+               "vorteilSumme": 0.0, "vorteilBandSumme": 0.0, "trefferSumme": 0.0,
+               "liveRisikoFaktor": faktor}
+        for name, _, _, faktor in ABSOLUTE_BAENDER
+    }
+    sammel_rel = {
+        f"fuenftel_{i}": {"balken": 0, "n": 0, "bloecke": 0, "symbole": 0,
+                          "symbolePlus": 0, "vorteilSumme": 0.0,
+                          "vorteilBandSumme": 0.0, "trefferSumme": 0.0}
+        for i in range(1, RELATIVE_FAECHER + 1)
+    }
+
+    genommen, verworfen = 0, {}
+    for b in bewertungen or []:
+        if (b or {}).get("status") != "ok":
+            schluessel = str((b or {}).get("status", "unbekannt"))
+            verworfen[schluessel] = verworfen.get(schluessel, 0) + 1
+            continue
+        genommen += 1
+        _verdichte_eine(b.get("absolut") or {}, sammel_abs)
+        _verdichte_eine(b.get("relativ") or {}, sammel_rel)
+
+    return {
+        "horizont": horizont,
+        "symbole": genommen,
+        "verworfen": verworfen,
+        "absolut": _mittelwerte(sammel_abs),
+        "relativ": _mittelwerte(sammel_rel),
+    }
+
+
+def haenge_an_historie(vorher, neu: dict, max_eintraege: int = BAND_HISTORIE_MAX) -> list:
+    """Neue Zeile hinten anhaengen, vorne abschneiden.
+
+    Getrennt von Redis, damit die Abschneide-Regel pruefbar ist. Ein kaputter
+    oder fehlender Vorzustand ergibt eine neue Liste statt eines Absturzes —
+    der woechentliche Lauf darf an einem verungluecketen Altwert nicht scheitern.
+    """
+    liste = vorher if isinstance(vorher, list) else []
+    liste = [e for e in liste if isinstance(e, dict)]
+    liste.append(neu)
+    if max_eintraege > 0 and len(liste) > max_eintraege:
+        liste = liste[-max_eintraege:]
+    return liste

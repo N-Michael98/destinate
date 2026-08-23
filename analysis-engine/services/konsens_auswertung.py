@@ -49,9 +49,15 @@ from loguru import logger
 
 from core.config import settings
 from services.backtest_engine import WATCHLIST
-from services.storage import redis_set_json
+from services.storage import redis_set_json, redis_get_json
 
 REDIS_KEY_KONSENS = "analysis:konsens"
+# Die Bandhistorie waechst mit jedem Lauf, statt wie der Konsens-Schluessel
+# ueberschrieben zu werden. Eigene, lange Haltbarkeit: bei 8 Tagen waere sie
+# nach einem ausgefallenen Wochenlauf weg — also genau dann, wenn man sie
+# braucht.
+REDIS_KEY_VOLA_BAENDER = "analysis:vola-baender"
+TTL_VOLA_BAENDER = 400 * 24 * 60 * 60
 TTL = 8 * 24 * 60 * 60  # 8 Tage — laeuft woechentlich
 
 # Fensterlaenge in Tagen. EINSTELLBAR (User-Vorgabe 10.08.: "wir muessen die
@@ -413,11 +419,68 @@ def run_konsens_auswertung() -> None:
         }, TTL)
 
 
+def _sammle_volatilitaet(historie: dict, sammler: list, symbol: str) -> None:
+    """Bewertet eine bereits geholte Reihe zusaetzlich nach ATR-Baendern.
+
+    KOSTET KEINEN ABRUF. Die Reihe liegt schon da; die Auswertung selbst
+    braucht fuer alle 30 Symbole zusammen rund 0,3 s (gemessen 23.08.) — neben
+    den Minuten fuer das Datenholen faellt sie nicht ins Gewicht.
+
+    Der Import steht ABSICHTLICH hier drin und nicht oben: volatilitaet_-
+    auswertung importiert seinerseits aus diesem Modul. Auf Modulebene waere
+    das ein Ringschluss, der je nach Ladereihenfolge zuschlaegt — also genau
+    die Sorte Fehler, die erst im Betrieb auffaellt.
+
+    Faellt die Bewertung aus, wird das gemeldet und der Lauf geht weiter. Die
+    Bandmessung ist Beiwerk; sie darf die Konsens-Auswertung nicht mitreissen.
+    """
+    try:
+        from services.volatilitaet_auswertung import bewerte_nach_volatilitaet
+        b = bewerte_nach_volatilitaet(historie)
+        if b.get("status") == "ok":
+            sammler.append(b)
+        else:
+            logger.info(f"[konsens] {symbol}: Bandmessung ausgelassen ({b.get('status')})")
+    except Exception as e:
+        logger.warning(f"[konsens] {symbol}: Bandmessung fehlgeschlagen — {type(e).__name__}: {e}")
+
+
+def _schreibe_bandhistorie(bewertungen: list) -> None:
+    """Verdichtet die Baender zu einer Zeile und haengt sie an die Historie.
+
+    WOZU DIE HISTORIE. Eine einmalige Messung ist bei rund 90 Tagen gedeckelt
+    (siehe BAND_HISTORIE_MAX). Ueber Wochen angesammelt waechst die Fallzahl
+    dagegen weiter — das ist der einzige Weg zu einer belastbaren Aussage
+    darueber, ob die Risiko-Skalierung nach Volatilitaet ueberhaupt traegt.
+    """
+    if not bewertungen:
+        logger.info("[konsens] Bandhistorie: keine bewertbaren Symbole — nichts angehaengt")
+        return
+    try:
+        from services.volatilitaet_auswertung import verdichte_baender, haenge_an_historie
+        zeile = verdichte_baender(bewertungen)
+        zeile["gemessenAm"] = datetime.now(timezone.utc).isoformat()
+        zeile["fensterTage"] = FENSTER_TAGE
+        neu = haenge_an_historie(redis_get_json(REDIS_KEY_VOLA_BAENDER), zeile)
+        ok = redis_set_json(REDIS_KEY_VOLA_BAENDER, neu, TTL_VOLA_BAENDER)
+        teile = " ".join(
+            f"{name}={(e['vorteilGegenBandPct'] if e['vorteilGegenBandPct'] is not None else 0):+.3f}%/n={e['faelle']},"
+            for name, e in (zeile.get("absolut") or {}).items()
+        )
+        logger.info(
+            f"[konsens] Bandhistorie: {len(neu)} Laeufe, {zeile['symbole']} Symbole, "
+            f"Redis={'ok' if ok else 'FEHLER'} — {teile}"
+        )
+    except Exception as e:
+        logger.warning(f"[konsens] Bandhistorie fehlgeschlagen — {type(e).__name__}: {e}")
+
+
 def _run_konsens_auswertung_inner() -> None:
     begonnen = time.time()
     logger.info(f"[konsens] Lauf gestartet — Fenster {FENSTER_TAGE} Tage")
 
     ergebnisse: dict[str, dict] = {}
+    vola_bewertungen: list[dict] = []
     for idx, symbol in enumerate(WATCHLIST):
         redis_set_json(REDIS_KEY_KONSENS, {
             "status": "running",
@@ -438,6 +501,7 @@ def _run_konsens_auswertung_inner() -> None:
             )
             continue
         ergebnisse[symbol] = bewertung
+        _sammle_volatilitaet(historie, vola_bewertungen, symbol)
         tag = bewertung["horizonte"]["daytrading_24h"]["alle"]
         # Ueber RICHTUNGEN gebildet, nicht mit hingeschriebenen Namen: hier
         # stand BUY/SELL und haette beim ersten echten Lauf mit KeyError
@@ -463,6 +527,7 @@ def _run_konsens_auswertung_inner() -> None:
         "results": ergebnisse,
     }
     ok = redis_set_json(REDIS_KEY_KONSENS, zusammenfassung, TTL)
+    _schreibe_bandhistorie(vola_bewertungen)
     logger.info(
         f"[konsens] fertig — {len(ergebnisse)} Symbole in "
         f"{zusammenfassung['durationSec']}s, Redis={'ok' if ok else 'FEHLER'}"
