@@ -1734,3 +1734,186 @@ def test_vola_kennzahlen_wird_nicht_vom_konsens_modul_ueberdeckt():
     # Und es ist wirklich ein anderes als das im Konsens-Modul.
     assert _VA._kennzahlen is not _KA._kennzahlen
     assert list(inspect.signature(_KA._kennzahlen).parameters) == ["renditen"]
+
+
+# ---------------------------------------------------------------------------
+# Redis-Schluessel muessen ueber alle Fundstellen deckungsgleich sein (23.08.).
+#
+# GEFUNDEN BEI DER GENERALKONTROLLE. Neun Schluesselnamen, fuenf davon in
+# mehreren Dateien definiert, und vier werden in periodic_report.py mit einem
+# LITERAL statt der Konstante gelesen. Heute stimmt alles ueberein — aber
+# nichts wuerde es merken, wenn es aufhoert. Wer analysis:konsens in
+# konsens_auswertung.py umbenennt, laesst periodic_report ins Leere greifen:
+# kein Fehler, keine Ausnahme, nur ein Bericht ohne Konsens-Abschnitt.
+#
+# Das ist dieselbe Fehlerklasse, fuer die es im Frontend epic-tables und
+# watchlist-sync gibt: ein Wert, der an mehreren Stellen gleich sein MUSS.
+# ---------------------------------------------------------------------------
+
+def _redis_schluessel_definitionen():
+    """Alle `REDIS_KEY_X = "..."` im Dienst, nach Namen gruppiert."""
+    import re as _re
+    from pathlib import Path as _Path
+
+    wurzel = _Path(__file__).resolve().parent.parent
+    aus: dict[str, list[tuple[str, str]]] = {}
+    for pfad in wurzel.rglob("*.py"):
+        if "__pycache__" in str(pfad):
+            continue
+        for m in _re.finditer(
+            r'^(REDIS_KEY_\w+)\s*=\s*"([^"]+)"',
+            pfad.read_text(encoding="utf-8", errors="ignore"), _re.M
+        ):
+            aus.setdefault(m.group(1), []).append((pfad.name, m.group(2)))
+    return aus
+
+
+def test_gleichnamige_redis_schluessel_haben_denselben_wert():
+    """Fuenf Namen stehen in mehreren Dateien. Weichen sie ab, schreibt der
+    eine Dienst dorthin, wo der andere nicht liest."""
+    defs = _redis_schluessel_definitionen()
+    assert len(defs) >= 8, f"nur {len(defs)} Schluessel gefunden — Muster kaputt?"
+
+    mehrfach = {n: o for n, o in defs.items() if len(o) > 1}
+    assert mehrfach, "keine mehrfach definierten Schluessel gefunden — Muster kaputt?"
+
+    for name, orte in mehrfach.items():
+        werte = {wert for _, wert in orte}
+        assert len(werte) == 1, (
+            f"{name} hat verschiedene Werte: "
+            + ", ".join(f"{d}={w}" for d, w in orte)
+        )
+
+
+def _frontend_analysis_schluessel() -> dict:
+    """Alle `analysis:`-Schluessel, die das TypeScript-Frontend benutzt.
+
+    NOETIG, weil zwei Schluessel die SPRACHGRENZE ueberqueren: das Frontend
+    schreibt analysis:applied_overrides und analysis:recommendations, der
+    Wochenbericht in Python liest sie. Ein Pruefer, der nur den Python-Baum
+    kennt, haelt sie faelschlich fuer herrenlos — genau das ist mir am 23.08.
+    passiert, bevor ich nachgesehen habe.
+
+    Der Build-Ausgabeordner .next wird ausgelassen: dort liegen Kopien, die
+    beim naechsten Build ueberschrieben werden. Wer die mitzaehlt, prueft
+    einen Abzug statt der Quelle.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    lib = _Path(__file__).resolve().parent.parent.parent / "frontend" / "lib"
+    aus: dict[str, str] = {}
+    if not lib.is_dir():
+        return aus
+    for pfad in lib.rglob("*.ts"):
+        if ".next" in pfad.parts:
+            continue
+        for m in _re.finditer(r'"(analysis:[^"]+)"',
+                              pfad.read_text(encoding="utf-8", errors="ignore")):
+            aus[m.group(1)] = pfad.name
+    return aus
+
+
+def test_sprachuebergreifende_schluessel_stimmen_ueberein():
+    """Zwei Schluessel werden in TypeScript geschrieben und in Python gelesen.
+
+    Die Zeichenkette steht dabei ZWEIMAL im Quelltext, in zwei Sprachen, und
+    nichts glich sie bisher ab. Wer eine Seite umbenennt, bekommt keinen
+    Fehler: das Frontend schreibt weiter, der Bericht liest weiter — nur eben
+    aneinander vorbei, und der Abschnitt bleibt fuer immer leer.
+
+    Namentlich festgehalten statt automatisch abgeleitet: eine Ableitung waere
+    gruen, sobald BEIDE Seiten verschwinden.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    UEBERGREIFEND = ["analysis:applied_overrides", "analysis:recommendations"]
+
+    im_frontend = _frontend_analysis_schluessel()
+    wurzel = _Path(__file__).resolve().parent.parent
+    im_python = set()
+    for pfad in wurzel.rglob("*.py"):
+        if "__pycache__" in str(pfad) or pfad.name.startswith("test_"):
+            continue
+        im_python.update(_re.findall(r'"(analysis:[^"]+)"',
+                                     pfad.read_text(encoding="utf-8", errors="ignore")))
+
+    for schluessel in UEBERGREIFEND:
+        assert schluessel in im_frontend, (
+            f'{schluessel} steht nicht mehr im Frontend — umbenannt? '
+            f"Gefunden: {sorted(im_frontend)}"
+        )
+        assert schluessel in im_python, (
+            f'{schluessel} steht nicht mehr im Python-Dienst — umbenannt? '
+            f"Gefunden: {sorted(im_python)}"
+        )
+
+
+def test_literal_gelesene_schluessel_treffen_eine_echte_konstante():
+    """periodic_report.py liest vier Schluessel als Zeichenkette statt ueber
+    die Konstante. Jede davon muss einem definierten Schluessel entsprechen —
+    sonst liest der Wochenbericht still ins Leere.
+
+    Die Frontend-Schluessel zaehlen mit: analysis:applied_overrides hat auf der
+    Python-Seite gar keine Konstante, weil geschrieben wird es drueben.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    bekannte = {wert for orte in _redis_schluessel_definitionen().values()
+                for _, wert in orte}
+    bekannte |= set(_frontend_analysis_schluessel())
+    wurzel = _Path(__file__).resolve().parent.parent
+
+    geprueft = 0
+    for pfad in wurzel.rglob("*.py"):
+        if "__pycache__" in str(pfad) or pfad.name.startswith("test_"):
+            continue
+        for m in _re.finditer(
+            r'redis_(?:get|set)_json\(\s*"(analysis:[^"]+)"',
+            pfad.read_text(encoding="utf-8", errors="ignore")
+        ):
+            geprueft += 1
+            assert m.group(1) in bekannte, (
+                f'{pfad.name} liest "{m.group(1)}" — kein Schluessel dieses '
+                f"Namens definiert. Bekannt: {sorted(bekannte)}"
+            )
+
+    # Ohne diese Zeile waere der Test gruen, wenn das Muster ins Leere laeuft.
+    assert geprueft >= 4, f"nur {geprueft} Literale gefunden — Muster kaputt?"
+
+
+def test_jeder_geschriebene_schluessel_wird_auch_gelesen():
+    """Schreiben ohne Leser ist keine Messung, sondern Ballast.
+
+    Genau das war die Bandhistorie vor diesem Durchgang: geschrieben, 400 Tage
+    Haltbarkeit, kein einziger Leser. Gelesen wird sowohl ueber
+    redis_get_json() als auch ueber den rohen Client (r.get) — insights.py
+    macht Letzteres, und ein Pruefer, der nur das Erste kennt, meldet einen
+    Fehlalarm. Beides zaehlt.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    wurzel = _Path(__file__).resolve().parent.parent
+    geschrieben: dict[str, str] = {}
+    gelesen: set[str] = set()
+
+    for pfad in wurzel.rglob("*.py"):
+        if "__pycache__" in str(pfad) or pfad.name.startswith("test_"):
+            continue
+        t = pfad.read_text(encoding="utf-8", errors="ignore")
+        for m in _re.finditer(r'redis_set_json\(\s*(REDIS_KEY_\w+|"analysis:[^"]+")', t):
+            geschrieben[m.group(1).strip('"')] = pfad.name
+        for m in _re.finditer(
+            r'(?:redis_get_json|r\.get|redis\.get)\(\s*(REDIS_KEY_\w+|"analysis:[^"]+")', t
+        ):
+            gelesen.add(m.group(1).strip('"'))
+
+    assert len(geschrieben) >= 6, f"nur {len(geschrieben)} Schreiber — Muster kaputt?"
+    ohne_leser = {k: v for k, v in geschrieben.items() if k not in gelesen}
+    assert not ohne_leser, (
+        "geschrieben, aber nirgends gelesen: "
+        + ", ".join(f"{k} (in {v})" for k, v in sorted(ohne_leser.items()))
+    )
