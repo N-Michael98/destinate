@@ -1213,3 +1213,79 @@ def test_muster_lauf_geht_durch_und_landet_in_redis():
     assert end["status"] == "done", end.get("error")
     assert end["symbole"] == 2
     json.dumps(end)
+
+
+# ── Volatilitaets-Auswertung (20.08.) ────────────────────────────────────────
+#
+# Die Bandlogik ist der gefaehrlichste Teil: Baender, die sich ueberschneiden
+# oder eine Luecke lassen, machen die ganze Messung wertlos — Balken wuerden
+# doppelt oder gar nicht gezaehlt, ohne dass es auffiele.
+
+import services.volatilitaet_auswertung as _VA                    # noqa: E402
+
+
+def test_vola_baender_sind_lueckenlos_und_ueberschneidungsfrei():
+    """JEDER ATR-Wert faellt in GENAU EIN absolutes Band."""
+    proben = [0.0001, 0.05, 0.2999, 0.3, 0.30001, 1.0, 1.5, 1.50001,
+              1.9, 2.0, 2.00001, 2.9, 3.0, 3.00001, 8.5, 99.0]
+    for wert in proben:
+        treffer = [name for name, u, o, _ in _VA.ABSOLUTE_BAENDER
+                   if _VA._im_band(wert, u, o)]
+        assert len(treffer) == 1, f"ATR {wert} faellt in {treffer}"
+
+
+def test_vola_band_grenzen_folgen_der_live_regel():
+    """Die Grenzen muessen zu getVolatilityAdjustedRisk passen: dort entscheidet
+    `atrPct > 3.0` bzw. `atrPct < 0.3`. Genau 0.3 gehoert NICHT ins
+    Niedrig-Band, genau 3.0 nicht ins Hoch-Band."""
+    assert _VA._im_band(0.3, None, 0.3) is True      # <= 0.3 -> Niedrig-Band
+    assert _VA._im_band(0.3, 0.3, 1.5) is False      # nicht doppelt
+    assert _VA._im_band(3.0, 3.0, None) is False     # 3.0 ist nicht > 3.0
+    assert _VA._im_band(3.0, 2.0, 3.0) is True
+    assert _VA._im_band(None, None, 0.3) is False    # Aufwaermphase zaehlt nie
+
+
+def test_vola_reihe_setzt_fremde_balken_auf_neutral():
+    """Nur Balken IM Band behalten ihr Signal — alle anderen werden NEUTRAL."""
+    hist = {
+        "konsens": ["LONG", "SHORT", "LONG", "SHORT"],
+        "atrPct":  [0.1,    2.5,     None,   1.0],
+    }
+    gefiltert = _VA._reihe_fuer_band(hist, None, 0.3)["konsens"]
+    assert gefiltert == ["LONG", "NEUTRAL", "NEUTRAL", "NEUTRAL"], gefiltert
+    hoch = _VA._reihe_fuer_band(hist, 2.0, 3.0)["konsens"]
+    assert hoch == ["NEUTRAL", "SHORT", "NEUTRAL", "NEUTRAL"], hoch
+
+
+def test_vola_reihe_laesst_alles_andere_unveraendert():
+    """Nur `konsens` wird ersetzt — Kurse und uebrige Felder bleiben, sonst
+    aendert sich die Basis und der Vergleich waere schief."""
+    hist = {"konsens": ["LONG"], "atrPct": [1.0], "kurs": [1.23], "symbol": "X"}
+    aus = _VA._reihe_fuer_band(hist, 0.3, 1.5)
+    assert aus["kurs"] == [1.23] and aus["symbol"] == "X"
+
+
+def test_vola_relative_grenzen_bei_zu_wenig_daten():
+    """Unter 50 Werten wird NICHT geschnitten — lieber kein relativer Schnitt
+    als Faecher auf einer duennen Verteilung."""
+    assert _VA._relative_grenzen([1.0] * 20) == []
+    assert _VA._relative_grenzen([None] * 100) == []
+
+
+def test_vola_relative_grenzen_teilen_in_fuenftel():
+    werte = [float(i) for i in range(100)]
+    grenzen = _VA._relative_grenzen(werte)
+    assert len(grenzen) == _VA.RELATIVE_FAECHER - 1, grenzen
+    assert grenzen == sorted(grenzen), grenzen
+
+
+def test_vola_flache_verteilung_wird_nicht_geschnitten():
+    """Bei lauter gleichen Werten waeren die Grenzen identisch und die Faecher
+    leer — dann lieber gar nicht schneiden."""
+    assert _VA._relative_grenzen([0.5] * 200) == []
+
+
+def test_vola_ohne_atr_meldet_das_ehrlich():
+    aus = _VA.bewerte_nach_volatilitaet(
+        {"status": "ok", "konsens": ["LONG"], "atrPct": [None], "kurs": [1.0]})
+    assert aus["status"] == "kein_atr", aus
