@@ -69,6 +69,13 @@ const pruefer = [
   // Dauermeldungen, der beim AI-Alarm vom 11.08. fehlte. Fuehrt die Zaehlung
   // aus: eine Ueberwachung, die falsch zaehlt, ist schlimmer als keine.
   ["python-ueberwachung", require("./python-ueberwachung")],
+  // 23.08. ergaenzt: getVolatilityAdjustedRisk bestimmt die Positionsgroesse
+  // nach ATR und war von KEINEM Pruefer erfasst. Vorgefuehrt: die Schwelle von
+  // 3.0 auf 30.0 gezogen — die 0,4x-Klemme greift nie mehr — und alle sechzehn
+  // blieben gruen. Seither haelt der Snapshot die Zahlen; dieser Pruefer
+  // RECHNET zusaetzlich, denn ein Snapshot merkt keinen Umbau bei gleichen
+  // Literalen. Der achte rechnende Pruefer.
+  ["vola-skalierung", require("./vola-skalierung")],
 ];
 
 const nurDieser = process.argv[2];

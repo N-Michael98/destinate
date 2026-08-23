@@ -9,7 +9,7 @@ manuell geschickt werden.
 cd frontend && npm run check
 ```
 
-Braucht keine Installation. **Sechzehn Prüfer**, Rückgabe 0 = grün.
+Braucht keine Installation. **Siebzehn Prüfer**, Rückgabe 0 = grün.
 **Rot heisst: nicht committen, erst beheben.**
 
 Mit TypeScript-Prüfung zusammen:
@@ -36,7 +36,7 @@ Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweisl
 an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
 Prüfer, der nie rot wird, ist wertlos.
 
-**Sieben Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
+**Acht Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
 TypeScript-Datei und rufen die echte Funktion auf. Damit fällt dort auch ein
 subtil falscher Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle,
 fehlender Null-Fall), der strukturell unauffällig bliebe:
@@ -50,6 +50,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `order-bestaetigung` | `ausstiegsgrund()`, `stopAbstandGenug()` | 13.08. |
 | `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()` | 18.08. |
 | `python-ueberwachung` | `meldePythonAufruf()`, `pythonUebergang()` | 19.08. |
+| `vola-skalierung` | `getVolatilityAdjustedRisk()` | 23.08. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -117,11 +118,24 @@ anderer Fehler denselben Pfad abfangen kann.
 
 ## Snapshot kritischer Werte
 
-Der neunte Prüfer hält 290 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
+Der neunte Prüfer hält 296 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
 alle Grössen- und Stop-Tabellen, die Standardwerte der Einstellungen, die
 Exit-Schwellen und Haltedauern, die Klemmen des AI Managers, die Prüfsumme des
-GPT-Regelteils, die Reihenfolge der Filterkette und die Konstanten des
-Struktur-Stops.
+GPT-Regelteils, die Reihenfolge der Filterkette, die Konstanten des
+Struktur-Stops und seit dem 23.08. die Volatilitäts-Skalierung des Risikos.
+
+Letztere war bis dahin von **keinem** Prüfer erfasst. Vorgeführt: die Schwelle
+von `3.0` auf `30.0` gezogen — damit greift die 0,4×-Klemme für sehr hohe
+Volatilität nie mehr — und alle sechzehn Prüfer blieben grün. Erfasst wird die
+Kette jetzt **als Folge mitsamt Vergleichszeichen** (`">3.0=>0.4"`), damit auch
+ein gedrehtes Zeichen oder zwei vertauschte Stufen auffallen; beides lässt die
+Menge der Zahlen unverändert.
+
+Ein Snapshot **rechnet aber nicht**. Ein Umbau bei gleichen Literalen bliebe
+unsichtbar — deshalb prüft `vola-skalierung` dieselbe Funktion zusätzlich durch
+Aufrufen. Nachgewiesen am 23.08.: von sieben Sabotagen fingen **fünf nur der
+rechnende Prüfer** (`else` entfernt, geteilt statt multipliziert, Ergebnis
+verworfen, Datenklemme entfernt, Order bekommt ungekürztes Risiko).
 
 Die übrigen Prüfer sichern **Strukturen** — dass ein Eintrag existiert. Sie
 merken nicht, wenn jemand seinen **Wert** ändert. Vorgeführt: `MAX_SIZE` für
