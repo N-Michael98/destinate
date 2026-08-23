@@ -198,7 +198,20 @@ def strategy_price_action(symbol: str) -> dict:
     Saubere Trendstruktur ohne Indikatoren.
     """
     df = _load(symbol, "4h", "3mo")
-    if df.empty or len(df) < 10:
+    # 14 statt 10 (23.08.): _atr() weiter unten rechnet mit Fenster 14, und die
+    # Bibliothek schreibt dabei atr[13]. Bei 10 bis 13 Kerzen ist das ein
+    # IndexError — der Riegel stand auf 10, gebraucht werden 14.
+    #
+    # BELEGT, nicht geschaetzt: lueckenloser Lauf ueber alle 16 Strategien und
+    # jede Kerzenzahl 0..400 (6416 echte Aufrufe). Genau die Spanne 10-13 warf.
+    # Ein Stichprobenlauf (10, 15, 20, 30, ...) hatte den dritten Fall
+    # mean_reversion uebersehen — deshalb lueckenlos.
+    #
+    # Am Handelsverhalten aendert das nichts: der Absturz wurde in
+    # analyze_all_strategies ohnehin abgefangen und zu NEUTRAL. Neu ist, dass
+    # der Grund stimmt ("Zu wenig Daten" statt "Fehler: index 13 is out of
+    # bounds") und keine Ausnahme mehr durch den Lauf geht.
+    if df.empty or len(df) < 14:
         return _neutral("Zu wenig Daten")
 
     c = df["close"].values
@@ -331,7 +344,14 @@ def strategy_mean_reversion(symbol: str) -> dict:
     RSI extremes + Bollinger-Band Berührung. Nur in Ranging-Märkten (ADX < 20).
     """
     df = _load(symbol, "1h", "1mo")
-    if df.empty or len(df) < 25:
+    # 28 statt 25 (23.08.): hier ist NICHT der ATR der Engpass, sondern der
+    # ADX. ADXIndicator(window=14) braucht rund das doppelte Fenster — bei 25
+    # Kerzen bleiben intern 12 Zeilen, geschrieben wird Index 14.
+    #
+    # BELEGT: im lueckenlosen Lauf 0..400 warf genau die Spanne 25-27, ab 28
+    # laeuft es. Dieser Fall lag zwischen den Stichproben 20 und 30 und waere
+    # bei einem Stichprobenlauf unentdeckt geblieben.
+    if df.empty or len(df) < 28:
         return _neutral("Zu wenig Daten")
 
     close = df["close"]
@@ -546,7 +566,9 @@ def strategy_candlestick_patterns(symbol: str) -> dict:
     TA-Lib Candlestick Pattern Recognition: Hammer, Engulfing, Morning/Evening Star, Doji.
     """
     df = _load(symbol, "4h", "3mo")
-    if df.empty or len(df) < 10:
+    # 14 statt 10 (23.08.): gleicher Grund wie bei strategy_price_action —
+    # _atr() braucht 14 Kerzen, der Riegel stand auf 10. Siehe dort.
+    if df.empty or len(df) < 14:
         return _neutral("Zu wenig Daten")
 
     try:

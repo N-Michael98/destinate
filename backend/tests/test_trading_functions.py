@@ -2309,3 +2309,117 @@ def test_muster_dreieck_ausbruch_gibt_die_richtung():
     )
     # Die FORM muss dabei dieselbe bleiben — nur die Richtung haengt am Ausbruch.
     assert hoch["form"] == tief["form"]
+
+
+# ── Zu wenig Kerzen darf nie abstuerzen (23.08.) ──────────────────────────────
+
+def _kerzenrahmen(n: int):
+    """n plausible Kerzen. Leicht steigend, mit echten Hochs/Tiefs/Volumen."""
+    return pd.DataFrame({
+        "open":   [100.0 + i * 0.10 for i in range(n)],
+        "high":   [100.5 + i * 0.13 for i in range(n)],
+        "low":    [99.5 + i * 0.07 for i in range(n)],
+        "close":  [100.2 + i * 0.11 for i in range(n)],
+        "volume": [1000 + i * 3 for i in range(n)],
+    }, index=pd.date_range("2026-01-01", periods=n, freq="4h", tz="UTC"))
+
+
+def test_keine_strategie_stuerzt_bei_wenigen_kerzen_ab():
+    """JEDE Strategie, JEDE Kerzenzahl 0..40 — kein Absturz, immer ein Signal.
+
+    GEFUNDEN AM 23.08. Drei der sechzehn Strategien warfen einen IndexError,
+    weil ihr Riegel unter der Fensterlaenge ihres eigenen Indikators lag:
+
+        price_action     Riegel 10, _atr() braucht 14   -> Kerzen 10-13
+        candlestick      Riegel 10, _atr() braucht 14   -> Kerzen 10-13
+        mean_reversion   Riegel 25, ADX braucht 28      -> Kerzen 25-27
+
+    Live wurde das in analyze_all_strategies abgefangen und zu NEUTRAL — der
+    Konsens war also aus 14 echten plus 2 Schein-Neutralen gebildet, ohne dass
+    das jemandem auffiel. Sichtbar wurde es erst im 730-Tage-Messlauf, wo
+    Kerzenschnitt am Fensteranfang nur wenige Kerzen liefert.
+
+    LUECKENLOS und nicht in Stichproben: mean_reversion liegt zwischen 20 und
+    30 und wurde von einem Stichprobenlauf (10, 15, 20, 30) uebersehen. Genau
+    deshalb laeuft dieser Test jede einzelne Zahl.
+    """
+    for n in range(0, 41):
+        df = _kerzenrahmen(n)
+        with _TS.kerzenquelle(lambda s, i, p, _df=df: _df):
+            for name, fn in _TS.STRATEGIES.items():
+                try:
+                    r = fn("EGAL")
+                except Exception as e:
+                    pytest.fail(
+                        f"{name} stuerzt bei {n} Kerzen ab: {type(e).__name__}: {e}"
+                    )
+                assert r["signal"] in ("LONG", "SHORT", "NEUTRAL"), (name, n, r)
+
+
+def test_die_drei_bekannten_luecken_bleiben_zu():
+    """Punktgenau die Spannen, die am 23.08. geworfen haben.
+
+    Der Test darueber laeuft breit; dieser haelt die konkreten Faelle fest,
+    damit im Fehlerfall sofort dasteht, WELCHER Riegel wieder zu tief steht.
+    """
+    faelle = [
+        ("price_action", range(10, 14)),
+        ("candlestick", range(10, 14)),
+        ("mean_reversion", range(25, 28)),
+    ]
+    for name, spanne in faelle:
+        for n in spanne:
+            df = _kerzenrahmen(n)
+            with _TS.kerzenquelle(lambda s, i, p, _df=df: _df):
+                r = _TS.STRATEGIES[name]("EGAL")
+            assert r["signal"] == "NEUTRAL", (name, n, r)
+
+
+def test_riegel_traegt_die_indikatoren_die_wirklich_werfen():
+    """Prueft die QUELLE, damit auffaellt, wer einen werfenden Indikator
+    einbaut, ohne den Riegel mitzuziehen — auch jenseits von 40 Kerzen, wo der
+    Laufzeittest oben nicht mehr hinschaut.
+
+    NUR ZWEI INDIKATOREN WERFEN. Am 23.08. nachgemessen, jede Kerzenzahl 1..59:
+
+        ATR(14)         wirft bei  1-13   ab 14 sauber
+        ADX(14)         wirft bei  1-27   ab 28 sauber   (rund 2 * Fenster)
+        RSI, EMA(200), SMA(200), Bollinger(20), MACD, Stochastic,
+        CCI(20), MFI(14)                   werfen NIE — sie liefern NaN
+
+    Die erste Fassung dieses Tests verlangte "Riegel >= groesstes Fenster" und
+    schlug damit bei trend_following an (Riegel 50, EMA-Fenster 200). Das war
+    eine erfundene Regel: EMA(200) laeuft bei 50 Kerzen anstandslos und gibt
+    NaN zurueck, was die Strategie ueber _last() abfaengt. Geprueft wird
+    deshalb ausschliesslich, was nachweislich wirft.
+    """
+    import inspect
+    import re as _re
+
+    geprueft = 0
+    for name, fn in _TS.STRATEGIES.items():
+        try:
+            quelle = inspect.getsource(fn)
+        except (OSError, TypeError):
+            continue
+        riegel = _re.search(r"len\(df\)\s*<\s*(\d+)", quelle)
+        if not riegel:
+            continue
+        noetig = 0
+        # _atr(df) rechnet mit Fenster 14, _atr(df, 7) mit 7 — die Zahl wird
+        # gelesen statt pauschal angenommen. strategy_scalping ruft
+        # tatsaechlich _atr(df, 7) auf; eine pauschale 14 waere dort zu streng.
+        for m in _re.finditer(r"_atr\(\s*df\s*(?:,\s*(?:period\s*=\s*)?(\d+))?\s*\)", quelle):
+            noetig = max(noetig, int(m.group(1)) if m.group(1) else 14)
+        for m in _re.finditer(r"ADXIndicator\([^)]*window\s*=\s*(\d+)", quelle):
+            noetig = max(noetig, int(m.group(1)) * 2)
+        if noetig == 0:
+            continue
+        geprueft += 1
+        assert int(riegel.group(1)) >= noetig, (
+            f"{name}: Riegel {riegel.group(1)}, braucht aber {noetig}"
+        )
+
+    # Ohne diese Zeile waere der Test gruen, wenn das Suchmuster ins Leere
+    # laeuft — ein Pruefer, der nichts findet, prueft nichts.
+    assert geprueft >= 3, f"nur {geprueft} Strategien geprueft — Muster kaputt?"
