@@ -1619,3 +1619,118 @@ def test_wochenlauf_haengt_bei_jedem_lauf_eine_zeile_an():
 
     assert len(geschrieben[_KA.REDIS_KEY_VOLA_BAENDER]) == 2, \
         geschrieben[_KA.REDIS_KEY_VOLA_BAENDER]
+
+
+# ---------------------------------------------------------------------------
+# Leseendpunkt der Bandhistorie (23.08.).
+#
+# GEFUNDEN BEI DER GENERALKONTROLLE: die Historie wurde geschrieben, aber von
+# NIRGENDWO gelesen. analysis:konsens hat seit jeher einen Endpunkt, die neue
+# Bandhistorie hatte keinen — sie waere ein Jahr lang in Redis gewachsen, ohne
+# dass jemand sie je haette ansehen koennen. Angesammeltes, das niemand lesen
+# kann, ist keine Messung.
+# ---------------------------------------------------------------------------
+
+import api.routes.data as _RD                                    # noqa: E402
+
+
+def test_vola_endpunkt_ist_registriert():
+    """Der Pfad muss am Router haengen — nicht nur die Funktion existieren.
+
+    Das ist der eigentliche Riegel: wer den Dekorator entfernt, laesst die
+    Funktion stehen und jeder Funktionstest bliebe gruen.
+    """
+    pfade = {r.path for r in _RD.router.routes}
+    assert "/vola-baender" in pfade, sorted(pfade)
+    treffer = [r for r in _RD.router.routes if r.path == "/vola-baender"]
+    assert "GET" in treffer[0].methods, treffer[0].methods
+
+
+def test_vola_endpunkt_ohne_daten():
+    alt = _RD.redis_get_json
+    try:
+        _RD.redis_get_json = lambda k: None
+        aus = _RD.get_vola_baender()
+    finally:
+        _RD.redis_get_json = alt
+    assert aus["available"] is False and aus["laeufe"] == 0, aus
+    assert aus["neuester"] is None and aus["data"] == [], aus
+
+
+def test_vola_endpunkt_liest_den_richtigen_schluessel():
+    """Sonst laege eine Antwort vor, die aus einer anderen Messung stammt."""
+    gefragt = []
+    alt = _RD.redis_get_json
+    try:
+        _RD.redis_get_json = lambda k: gefragt.append(k) or []
+        _RD.get_vola_baender()
+    finally:
+        _RD.redis_get_json = alt
+    assert gefragt == [_KA.REDIS_KEY_VOLA_BAENDER], gefragt
+
+
+def test_vola_endpunkt_zaehlt_laeufe_und_zeigt_den_neuesten():
+    alt = _RD.redis_get_json
+    try:
+        _RD.redis_get_json = lambda k: [{"nr": 1}, {"nr": 2}, {"nr": 3}]
+        aus = _RD.get_vola_baender()
+    finally:
+        _RD.redis_get_json = alt
+    assert aus["available"] is True and aus["laeufe"] == 3, aus
+    # Der NEUESTE ist der letzte — haenge_an_historie haengt hinten an.
+    assert aus["neuester"] == {"nr": 3}, aus
+
+
+def test_vola_endpunkt_uebersteht_kaputten_speicher():
+    """Ein verunglueckter Redis-Wert darf keine 500 werfen."""
+    for kaputt in ("kaputt", 42, {"kein": "list"}):
+        alt = _RD.redis_get_json
+        try:
+            _RD.redis_get_json = lambda k, _w=kaputt: _w
+            aus = _RD.get_vola_baender()
+        finally:
+            _RD.redis_get_json = alt
+        assert aus["available"] is False and aus["data"] == [], (kaputt, aus)
+
+
+def test_bandhistorie_deckel_greift_auch_ohne_argument():
+    """Der STANDARDWERT muss decken, nicht nur ein mitgegebener.
+
+    GEFUNDEN BEI DER GENERALKONTROLLE 23.08.: der Deckel-Test gab
+    max_eintraege=3 mit. Damit war BAND_HISTORIE_MAX selbst ungeprueft — auf 0
+    gesetzt schaltet die Bedingung `max_eintraege > 0` den Deckel still ab und
+    die Historie waechst unbegrenzt weiter. Dieselbe Fehlerklasse wie beim
+    Snapshot: die Struktur stimmt, der WERT nicht.
+    """
+    assert _VA.BAND_HISTORIE_MAX > 0, "ein Deckel von 0 schaltet das Abschneiden ab"
+    assert _VA.BAND_HISTORIE_MAX <= 500, "so viele Wochenlaeufe passen nicht in einen Redis-Wert"
+
+    alt = [{"i": i} for i in range(_VA.BAND_HISTORIE_MAX + 5)]
+    aus = _VA.haenge_an_historie(alt, {"i": "neu"})      # OHNE max_eintraege
+    assert len(aus) == _VA.BAND_HISTORIE_MAX, len(aus)
+    assert aus[-1] == {"i": "neu"}, aus[-1]
+    # Vorne wurde abgeschnitten, nicht hinten.
+    assert aus[0] == {"i": 6}, aus[0]
+
+
+def test_bandhistorie_deckel_reicht_fuer_ein_jahr():
+    """60 Wochenlaeufe sind gut ein Jahr. Faellt der Wert unter ein halbes
+    Jahr, waere die Historie kuerzer als der Zeitraum, ueber den sie Aussagen
+    tragen soll — dann kann man sie auch weglassen."""
+    assert _VA.BAND_HISTORIE_MAX >= 26, _VA.BAND_HISTORIE_MAX
+
+
+def test_vola_kennzahlen_wird_nicht_vom_konsens_modul_ueberdeckt():
+    """Beide Module haben ein _kennzahlen — mit VERSCHIEDENEN Signaturen.
+
+    konsens_auswertung._kennzahlen(renditen: list) gegen
+    volatilitaet_auswertung._kennzahlen(teil: dict). Wer den Namen versehentlich
+    in die Importliste aufnimmt, bekaeme keinen Fehler, sondern falsche Zahlen.
+    Der Test haelt fest, dass das lokale gemeint ist.
+    """
+    import inspect
+    parameter = list(inspect.signature(_VA._kennzahlen).parameters)
+    assert parameter == ["teil"], parameter
+    # Und es ist wirklich ein anderes als das im Konsens-Modul.
+    assert _VA._kennzahlen is not _KA._kennzahlen
+    assert list(inspect.signature(_KA._kennzahlen).parameters) == ["renditen"]

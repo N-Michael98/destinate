@@ -109,6 +109,31 @@ def get_konsens():
     return {"available": data is not None, "data": data}
 
 
+@router.get("/vola-baender")
+def get_vola_baender():
+    """Volatilitätsbänder über die Wochen — wächst mit jedem Konsens-Lauf.
+
+    WOZU EIN EIGENER ENDPUNKT. Eine EINMALIGE Messung ist bei rund 90 Tagen
+    gedeckelt: die Quelle liefert 1h nur sechs Monate, 4h wird daraus erzeugt,
+    und bei 180 Tagen fehlen am Fensteranfang 12,5 von 16 Strategien der
+    Vorlauf (gemessen 23.08., bei 90 Tagen sind es 1,0). Mehr Belege gibt es
+    deshalb nur durch Ansammeln über Wochen — und Angesammeltes, das niemand
+    lesen kann, ist keine Messung.
+
+    `laeufe` ist die Zahl der bisher gesammelten Wochenläufe; erst ab einer
+    Handvoll trägt der Vergleich zwischen den Bändern überhaupt etwas.
+    """
+    from services.konsens_auswertung import REDIS_KEY_VOLA_BAENDER
+    data = redis_get_json(REDIS_KEY_VOLA_BAENDER)
+    liste = data if isinstance(data, list) else []
+    return {
+        "available": bool(liste),
+        "laeufe": len(liste),
+        "neuester": liste[-1] if liste else None,
+        "data": liste,
+    }
+
+
 @router.post("/run/konsens")
 def trigger_konsens(bg: BackgroundTasks):
     """Konsens-Auswertung manuell auslösen.
