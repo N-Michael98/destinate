@@ -313,13 +313,47 @@ export function checkPriceFreshness(
 
 // ── 9. Volatility Scaling ─────────────────────────────────────────────────────
 // Gibt adjustierten riskPercent zurück — kleiner bei hoher ATR
+// Faktor, wenn die Volatilität UNBEKANNT ist (23.08.).
+//
+// Bis heute gab die Funktion bei fehlendem ATR oder Preis das Grundrisiko
+// UNGEKÜRZT zurück — fehlende Daten führten also zu MEHR Risiko als bekannt
+// hohe Volatilität. Das ist genau die falsche Richtung.
+//
+// ERREICHBAR, nicht theoretisch: `taSignals` ist `undefined`, sobald der
+// Scanner keinen TA-Eintrag für das Symbol hat (ai-analysis-engine.ts:1141),
+// und die Aufrufstelle macht daraus `?? 0`. Fällt das Python-Backend aus,
+// fehlt der Eintrag für ALLE Symbole gleichzeitig.
+//
+// Warum 0.4 und nicht ein milderer Wert: bei unbekannter Volatilität lässt
+// sich das oberste Band (`> 3 %`, Faktor 0.4) nicht ausschliessen. Der
+// vorsichtige Wert unter Unsicherheit ist deshalb der kleinste der Tabelle.
+//
+// UNGEFÄHRLICH, belegt: die Grösse wird in capital-com-execution.ts:202 mit
+// `Math.max(min, …)` auf MIN_SIZE HOCHgeklemmt. Ein kleineres Risiko kann die
+// Position also nur verkleinern, nie auf null bringen — kein Nullauftrag,
+// keine abgelehnte Order, kein neuer Fehlerpfad.
+// Bewusst NICHT exportiert: niemand ausserhalb braucht den Wert. Der Snapshot
+// liest ihn aus dem Quelltext, der rechnende Prüfer über das Verhalten. Ein
+// Export „für später" wäre genau der tote Code, den dieses Repository sonst
+// aufräumt.
+const RISIKO_OHNE_VOLA_DATEN = 0.4;
+
 export function getVolatilityAdjustedRisk(
   symbol: string,
   baseRiskPct: number,
   atr: number,
   currentPrice: number
 ): number {
-  if (!atr || !currentPrice || currentPrice <= 0) return baseRiskPct;
+  if (!atr || !currentPrice || currentPrice <= 0) {
+    const ohneDaten = Math.max(
+      0.1, Math.round(baseRiskPct * RISIKO_OHNE_VOLA_DATEN * 10) / 10
+    );
+    console.log(
+      `[filter] ⚠️ ${symbol} Volatilität UNBEKANNT (ATR=${atr}, Preis=${currentPrice})`
+      + ` → Risk ${baseRiskPct}% → ${ohneDaten}% (vorsorglich)`
+    );
+    return ohneDaten;
+  }
   const atrPct = (atr / currentPrice) * 100; // ATR als % des Preises
   // Skalierung: normale ATR ~0.5-1.5%, hohe ATR >2%
   let multiplier = 1.0;

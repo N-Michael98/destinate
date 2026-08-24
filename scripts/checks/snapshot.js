@@ -143,12 +143,20 @@ function erfasse() {
       const rumpf = rest.slice(0, ende < 0 ? rest.length : ende).replace(/\/\/[^\n]*/g, "");
       const grund = rumpf.match(/let\s+multiplier\s*=\s*(-?[0-9.]+)/);
       const boden = rumpf.match(/Math\.max\(\s*(-?[0-9.]+)/);
+      // Der Faktor für UNBEKANNTE Volatilität steht als Konstante VOR der
+      // Funktion, nicht in ihrem Rumpf — deshalb aus der ganzen Datei gelesen.
+      // Ohne diese Zeile wäre er ungesichert, und genau das war der Zustand,
+      // der die ganze Kette bis zum 23.08. ungeschützt liess.
+      const ohneDaten = filters.match(
+        /RISIKO_OHNE_VOLA_DATEN\s*=\s*(-?[0-9.]+)/
+      );
       return {
         grundwert: grund ? Number(grund[1]) : null,
         stufen: [...rumpf.matchAll(
           /atrPct\s*([<>]=?)\s*(-?[0-9.]+)\s*\)\s*multiplier\s*=\s*(-?[0-9.]+)/g
         )].map((m) => `${m[1]}${m[2]}=>${m[3]}`),
         untergrenze: boden ? Number(boden[1]) : null,
+        ohneDaten: ohneDaten ? Number(ohneDaten[1]) : "KONSTANTE FEHLT",
       };
     })(),
     // Struktur-Stop (05.08.): der gemessene Konsens legt seinen Stop hinter den

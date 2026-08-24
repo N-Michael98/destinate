@@ -102,18 +102,34 @@ module.exports = function pruefe() {
 
     // ── Teil 3: fehlende Daten ───────────────────────────────────────────
     //
-    // FESTGEHALTEN, NICHT GUTGEHEISSEN. Die Aufrufstelle übergibt
-    // `taSignals?.atr ?? 0` und `candidate.bid ?? 0`. Fehlt eines davon,
-    // liefert die Funktion das Grundrisiko UNGEKÜRZT zurück — fehlende Daten
-    // führen also zu vollem Risiko, nicht zu weniger. Das ist heutiges
-    // Verhalten; der Prüfer hält es fest, damit eine Änderung daran sichtbar
-    // wird statt unbemerkt zu passieren.
-    pruefe1("ohne ATR wird nicht das Grundrisiko zurueckgegeben",
-      f("PRUEFUNG", 2.0, 0, 100) === 2.0);
-    pruefe1("ohne Preis wird nicht das Grundrisiko zurueckgegeben",
-      f("PRUEFUNG", 2.0, 1.5, 0) === 2.0);
-    pruefe1("ein negativer Preis wird nicht abgefangen",
-      f("PRUEFUNG", 2.0, 1.5, -5) === 2.0);
+    // GEÄNDERT AM 23.08. Bis dahin gab die Funktion bei fehlendem ATR oder
+    // Preis das Grundrisiko UNGEKÜRZT zurück — fehlende Daten fuehrten also zu
+    // MEHR Risiko als bekannt hohe Volatilitaet. Dieser Pruefer hielt das alte
+    // Verhalten fest und wurde bei der Umstellung prompt rot; genau dafuer
+    // stand es hier.
+    //
+    // Neu: der kleinste Faktor der Tabelle (0.4), weil sich bei unbekannter
+    // Volatilitaet das oberste Band nicht ausschliessen laesst.
+    const OHNE_DATEN = Math.max(0.1, Math.round(2.0 * 0.4 * 10) / 10);
+    pruefe1("ohne ATR wird das Risiko nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, 0, 100) === OHNE_DATEN, `bekommen ${f("PRUEFUNG", 2.0, 0, 100)}`);
+    pruefe1("ohne Preis wird das Risiko nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, 1.5, 0) === OHNE_DATEN, `bekommen ${f("PRUEFUNG", 2.0, 1.5, 0)}`);
+    pruefe1("ein negativer Preis wird nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, 1.5, -5) === OHNE_DATEN);
+    pruefe1("ein NaN-Preis wird nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, 1.5, NaN) === OHNE_DATEN);
+
+    // DIE EIGENSCHAFT, nicht die Zahl. Ueberlebt jede spaetere Umkalibrierung
+    // der Tabelle: fehlende Daten duerfen NIE weniger vorsichtig behandelt
+    // werden als der bekannt schlechteste Fall.
+    pruefe1("fehlende Daten sind weniger vorsichtig als sehr hohe Volatilitaet",
+      f("PRUEFUNG", 2.0, 0, 100) <= f("PRUEFUNG", 2.0, 8.0, 100));
+    pruefe1("fehlende Daten liefern mehr als das Grundrisiko",
+      f("PRUEFUNG", 2.0, 0, 100) <= 2.0);
+    // Und die Untergrenze gilt auch hier — kein Nullrisiko.
+    pruefe1("ohne Daten faellt das Risiko unter die Untergrenze",
+      f("PRUEFUNG", 0.01, 0, 100) >= 0.1);
 
     // ── Teil 4: Eigenschaften über den ganzen Bereich ────────────────────
     //
@@ -127,8 +143,10 @@ module.exports = function pruefe() {
       const r = f("PRUEFUNG", 2.0, atrPct, 100);
       if (!Number.isFinite(r)) immerZahl = false;
       if (r < 0) nieNegativ = false;
-      // atrPct 0 schaltet die Skalierung ab (siehe Teil 3) — dort ist r = Basis.
-      if (atrPct > 0 && r > 2.0 + 1e-9) nieGroesser = false;
+      // Seit dem 23.08. OHNE Ausnahme: auch atrPct 0 wird gekuerzt statt
+      // durchgereicht. Vorher musste dieser Fall hier ausgenommen werden —
+      // das war der stille Hinweis auf die Luecke.
+      if (r > 2.0 + 1e-9) nieGroesser = false;
       if (atrPct >= 1.5) {
         if (vorher !== null && r > vorher + 1e-9) monotonAb15 = false;
         vorher = r;
