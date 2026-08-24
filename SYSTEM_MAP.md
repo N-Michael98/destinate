@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 565 · Kanten: 1147
+Dateien mit internen Abhängigkeiten: 565 · Kanten: 1151
 
 
 ## analysis-engine/api
@@ -94,6 +94,8 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1147
 
 - `analysis-engine/tests/test_analysis_engine.py`
   - → `analysis-engine/api/routes/data.py`
+  - → `analysis-engine/core/config.py`
+  - → `analysis-engine/main.py`
   - → `analysis-engine/services/backtest_engine.py`
   - → `analysis-engine/services/data_collector.py`
   - → `analysis-engine/services/konsens_auswertung.py`
@@ -227,7 +229,9 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1147
   - → `backend/core/retry.py`
   - → `backend/core/takt.py`
   - → `backend/services/chartmuster.py`
+  - → `backend/services/indicators.py`
   - → `backend/services/market_data.py`
+  - → `backend/services/market_intelligence.py`
   - → `backend/services/market_mapper.py`
   - → `backend/services/muster_historie.py`
   - → `backend/services/strategie_historie.py`
@@ -1775,7 +1779,7 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1147
 - `frontend/app/lib/prisma.ts` — von 20 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 19 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 16 Dateien
-- `analysis-engine/core/config.py` — von 13 Dateien
+- `analysis-engine/core/config.py` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 13 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien

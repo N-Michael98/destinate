@@ -182,16 +182,34 @@ app.include_router(data.router, prefix="/api/v1")
 
 @app.get("/")
 def root():
+    """Wurzel: nennt die tatsächlich registrierten Endpunkte.
+
+    ERZEUGT, NICHT GEPFLEGT (24.08.). Vorher stand hier eine von Hand
+    gepflegte Liste mit fünf Einträgen — während der Dienst achtzehn Routen
+    hatte. `konsens`, `muster`, `walkforward`, `recommendations`,
+    `comms-check` und `vola-baender` fehlten alle. Wer die Wurzel als
+    Wegweiser benutzt, fand die Hälfte des Dienstes nicht.
+
+    Eine Liste, die von Hand nachgezogen werden muss, veraltet zuverlässig.
+    Deshalb wird sie jetzt aus `app.routes` abgeleitet: neue Endpunkte
+    erscheinen von selbst, entfernte verschwinden.
+
+    Der Verweis auf `/docs` ist ebenfalls weg — die Doku ist mit
+    `docs_url=None` bewusst abgeschaltet, der Link ging also ins Leere.
+    """
+    endpunkte = sorted(
+        r.path for r in app.routes
+        if "GET" in (getattr(r, "methods", set()) or set())
+        and r.path not in ("/", "/openapi.json", "/docs", "/redoc")
+    )
+    ausloeser = sorted(
+        r.path for r in app.routes
+        if "POST" in (getattr(r, "methods", set()) or set())
+    )
     return {
         "app": settings.APP_NAME,
         "version": settings.VERSION,
-        "docs": "/docs",
-        "endpoints": {
-            "health": "/health",
-            "insights": "/api/v1/insights",
-            "trade_stats": "/api/v1/trade-stats",
-            "news": "/api/v1/news",
-            "backtests": "/api/v1/backtests",
-        },
-        "phase": "4 — AI Learning Manager aktiv (täglich 03:30 UTC, Telegram-Report)",
+        "endpoints": endpunkte,
+        "trigger": ausloeser,
+        "hinweis": "/api/* erfordert den Header X-Analysis-Key, sofern gesetzt",
     }

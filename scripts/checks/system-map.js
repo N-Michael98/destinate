@@ -64,7 +64,13 @@ function aufloesen(vonDatei, angabe) {
   // Ordner der importierenden Datei (backend/ oder analysis-engine/).
   const dienst = vonDatei.startsWith("backend/") ? "backend"
     : vonDatei.startsWith("analysis-engine/") ? "analysis-engine" : null;
-  if (dienst && /^(services|core|api)[./]/.test(angabe)) {
+  // ERWEITERT 24.08. um `main`: die Einstiegsdatei liegt auf der Dienstwurzel
+  // und fiel damit aus dem Muster. Aufgefallen, als ein Test `import main`
+  // bekam und die Karte die Kante nicht zeigte — dieselbe Sorte Lücke wie am
+  // 23.08. bei "from X import Y", nur eine Ebene höher. Ohne sie beantwortet
+  // --impact die Frage "wer startet diesen Dienst" nicht.
+  // `main` steht ALLEIN (import main) — deshalb eigener Zweig ohne Trennzeichen.
+  if (dienst && (/^(services|core|api)[./]/.test(angabe) || angabe === "main")) {
     const ziel = `${dienst}/${angabe.replace(/\./g, "/")}.py`;
     if (existiert(ziel)) return ziel;
     const alsPaket = `${dienst}/${angabe.replace(/\./g, "/")}/__init__.py`;

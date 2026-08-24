@@ -1917,3 +1917,76 @@ def test_jeder_geschriebene_schluessel_wird_auch_gelesen():
         "geschrieben, aber nirgends gelesen: "
         + ", ".join(f"{k} (in {v})" for k, v in sorted(ohne_leser.items()))
     )
+
+
+# ---------------------------------------------------------------------------
+# Die Wurzel muss die ECHTEN Endpunkte nennen (24.08.).
+#
+# Vorher stand dort eine von Hand gepflegte Liste mit fuenf Eintraegen, waehrend
+# der Dienst achtzehn Routen hatte — konsens, muster, walkforward,
+# recommendations, comms-check und vola-baender fehlten alle. Dazu ein Verweis
+# auf /docs, das mit docs_url=None abgeschaltet ist.
+#
+# Eine Liste, die von Hand nachgezogen werden muss, veraltet zuverlaessig.
+# Diese Pruefung stellt sicher, dass sie ABGELEITET bleibt.
+# ---------------------------------------------------------------------------
+
+def _engine_main():
+    """main.py importieren — mit den drei Einstellungen, die es dabei liest.
+
+    Der Stub am Kopf dieser Datei setzt settings als leeren Namespace; main.py
+    braucht APP_NAME, VERSION und ANALYSIS_API_KEY schon beim Import. Gesetzt
+    wird nur, was fehlt, damit kein anderer Test etwas anderes vorfindet als
+    bisher. Der Scheduler startet nicht: er sitzt in lifespan().
+    """
+    from core.config import settings as _s
+    for name, wert in (("APP_NAME", "Destinate Analysis Engine"),
+                       ("VERSION", "0.0.0-test"),
+                       ("ANALYSIS_API_KEY", "")):
+        if not hasattr(_s, name):
+            setattr(_s, name, wert)
+    import main as _M
+    return _M
+
+
+def test_wurzel_nennt_alle_echten_endpunkte():
+    _M = _engine_main()
+
+    aus = _M.root()
+    echte = {r.path for r in _M.app.routes
+             if "GET" in (getattr(r, "methods", set()) or set())
+             and r.path not in ("/", "/openapi.json", "/docs", "/redoc")}
+    assert set(aus["endpoints"]) == echte, (
+        "Wurzel und Router weichen ab — fehlend: "
+        f"{sorted(echte - set(aus['endpoints']))}, "
+        f"zuviel: {sorted(set(aus['endpoints']) - echte)}"
+    )
+    # Nicht nur eine Handvoll: der Dienst hat deutlich mehr als die fuenf,
+    # die frueher dort standen.
+    assert len(aus["endpoints"]) >= 10, aus["endpoints"]
+    # Die heute gebaute Bandhistorie muss dabei sein.
+    assert "/api/v1/vola-baender" in aus["endpoints"], aus["endpoints"]
+
+
+def test_wurzel_verweist_nicht_auf_abgeschaltete_doku():
+    """docs_url=None — ein Verweis auf /docs ginge ins Leere."""
+    _M = _engine_main()
+
+    aus = _M.root()
+    assert "docs" not in aus, aus
+    assert "/docs" not in str(aus), aus
+    assert _M.app.docs_url is None and _M.app.openapi_url is None
+
+
+def test_wurzel_nennt_die_ausloeser_getrennt():
+    """POST-Routen stossen Jobs an und gehoeren nicht in dieselbe Liste wie
+    die lesenden Endpunkte."""
+    _M = _engine_main()
+
+    aus = _M.root()
+    posts = {r.path for r in _M.app.routes
+             if "POST" in (getattr(r, "methods", set()) or set())}
+    assert set(aus["trigger"]) == posts, (sorted(posts), aus["trigger"])
+    assert all(p.startswith("/api/v1/run/") for p in aus["trigger"]), aus["trigger"]
+    # Und sie duerfen NICHT in der Leseliste auftauchen.
+    assert not (set(aus["trigger"]) & set(aus["endpoints"])), aus

@@ -54,9 +54,27 @@ def _last(series: pd.Series) -> Optional[float]:
 
 # ── Ebene 1: Technische Analyse ───────────────────────────────────────────────
 
+# Kleinste Kerzenzahl, mit der die technische Ebene ein ECHTES Urteil bildet
+# (24.08.). Lückenlos 0..80 gemessen, zwei verschiedene Fehler dabei gefunden:
+#
+#   10-27 Kerzen   IndexError aus dem ADX (braucht rund 2 x Fenster = 28)
+#   28-49 Kerzen   TypeError "'>' not supported" — EMA50 liefert dort noch
+#                  None, und das Urteil vergleicht ema20 > ema50
+#
+# Ab 50 läuft es sauber. Der Riegel stand auf 10 und lag damit unter BEIDEN
+# Schwellen. Am Wochenende lädt die Korrelations-Ebene `1h/5d` und bekommt für
+# Forex nur eine Handvoll Kerzen — genau dort schlug es zu, sichtbar als
+# "[intelligence] TA Fehler: index 14 is out of bounds for axis 0 with size 9".
+#
+# Am Ergebnis ändert sich nichts: der Absturz wurde ohnehin abgefangen und zu
+# NEUTRAL. Neu ist, dass der Grund stimmt und keine Ausnahme mehr fliegt.
+MIN_KERZEN_TA = 50
+
+
 def _technical_analysis(df: pd.DataFrame) -> dict:
-    if df.empty or len(df) < 10:
-        return {"signal": "NEUTRAL", "score": 50, "reason": "Zu wenig Daten"}
+    if df.empty or len(df) < MIN_KERZEN_TA:
+        return {"signal": "NEUTRAL", "score": 50,
+                "reason": f"Zu wenig Daten ({len(df)} < {MIN_KERZEN_TA})"}
     try:
         return _technical_analysis_inner(df)
     except Exception as e:

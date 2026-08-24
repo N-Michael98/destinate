@@ -12,10 +12,27 @@ def _load_df(symbol: str, interval: str = "1h", period: str = "3mo") -> pd.DataF
     df.set_index("timestamp", inplace=True)
     return df
 
+# Kleinste Kerzenzahl, mit der calculate_all durchläuft (24.08.).
+#
+# GEMESSEN, nicht geschätzt: lückenlos 0..80 durchgerechnet, ab genau 28 läuft
+# es sauber. Der Engpass ist der ADX — `ADXIndicator(window=14)` braucht rund
+# das doppelte Fenster und schreibt sonst über das Ende seines eigenen Arrays
+# hinaus. Der ATR (14) und alle EMAs sind harmloser: EMA liefert NaN statt zu
+# werfen, auch bei Fenster 200 auf 30 Kerzen.
+#
+# Vorher stand hier NUR `if df.empty` — bei 1 bis 27 Kerzen flog ein
+# IndexError. Die Route fing ihn ab und schickte 500, ohne dass irgendein Test
+# rot wurde. Aufgefallen erst beim Endpunkt-Durchlauf am 24.08.
+MIN_KERZEN = 28
+
+
 def calculate_all(symbol: str, interval: str = "1h", period: str = "3mo") -> dict:
     df = _load_df(symbol, interval, period)
     if df.empty:
         return {"error": "No data available"}
+    if len(df) < MIN_KERZEN:
+        return {"error": f"Zu wenig Kerzen: {len(df)} < {MIN_KERZEN}",
+                "symbol": symbol, "candles": len(df)}
 
     close = df["close"]
     high  = df["high"]

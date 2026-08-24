@@ -2423,3 +2423,87 @@ def test_riegel_traegt_die_indikatoren_die_wirklich_werfen():
     # Ohne diese Zeile waere der Test gruen, wenn das Suchmuster ins Leere
     # laeuft — ein Pruefer, der nichts findet, prueft nichts.
     assert geprueft >= 3, f"nur {geprueft} Strategien geprueft — Muster kaputt?"
+
+
+# ── Zu wenig Kerzen darf AUCH ausserhalb der Strategien nie werfen (24.08.) ──
+#
+# GEFUNDEN BEIM ENDPUNKT-DURCHLAUF. Im Log stand
+# "[intelligence] TA Fehler: index 14 is out of bounds for axis 0 with size 9".
+# Dieselbe Fehlerklasse wie bei den Strategien am 23.08., nur in zwei anderen
+# Modulen — und dort NIE geprueft, weil beide ihre Ausnahme abfangen und mit
+# NEUTRAL bzw. 200 antworten. Ein Absturz, der aufgeraeumt wird, sieht von
+# aussen aus wie ein Ergebnis.
+#
+# Gemessen statt geschaetzt, lueckenlos 0..80:
+#   indicators.calculate_all        sauber ab 28   (ADX braucht 2 x 14)
+#   market_intelligence._technical  sauber ab 50   (ADX 28, dann EMA50 = None)
+
+def _mi_rahmen(n: int):
+    return pd.DataFrame({
+        "open":   [100.0 + i * 0.10 for i in range(n)],
+        "high":   [100.5 + i * 0.13 for i in range(n)],
+        "low":    [99.5 + i * 0.07 for i in range(n)],
+        "close":  [100.2 + i * 0.11 for i in range(n)],
+        "volume": [1000 + i * 3 for i in range(n)],
+    }, index=pd.date_range("2026-01-01", periods=n, freq="1h", tz="UTC"))
+
+
+def _mi_kerzen(n: int) -> list:
+    df = _mi_rahmen(n)
+    return [{"timestamp": str(t), "open": r.open, "high": r.high,
+             "low": r.low, "close": r.close, "volume": r.volume}
+            for t, r in df.iterrows()]
+
+
+def test_indikatoren_stuerzen_bei_wenigen_kerzen_nicht_ab():
+    """calculate_all hatte NUR `if df.empty` — bei 1 bis 27 Kerzen flog ein
+    IndexError aus dem ADX, die Route machte daraus 500."""
+    import services.indicators as IND
+
+    echt = IND.get_ohlcv
+    try:
+        for n in range(0, 81):
+            IND.get_ohlcv = lambda s, i, p, _n=n: _mi_kerzen(_n)
+            try:
+                r = IND.calculate_all("EGAL")
+            except Exception as e:
+                pytest.fail(f"calculate_all wirft bei {n} Kerzen: "
+                            f"{type(e).__name__}: {e}")
+            assert isinstance(r, dict), (n, r)
+            # Unterhalb der Grenze MUSS es ein ehrliches error-Feld geben,
+            # oberhalb echte Werte — nicht andersherum.
+            if n < IND.MIN_KERZEN:
+                assert "error" in r, (n, list(r)[:6])
+            else:
+                assert "error" not in r, (n, r.get("error"))
+    finally:
+        IND.get_ohlcv = echt
+
+
+def test_marktintelligenz_stuerzt_bei_wenigen_kerzen_nicht_ab():
+    """Zwei verschiedene Fehler lagen hier hintereinander: bis 27 der ADX,
+    bis 49 ein Vergleich gegen None aus EMA50."""
+    import services.market_intelligence as MI
+
+    for n in range(0, 81):
+        try:
+            r = MI._technical_analysis(_mi_rahmen(n))
+        except Exception as e:
+            pytest.fail(f"_technical_analysis wirft bei {n} Kerzen: "
+                        f"{type(e).__name__}: {e}")
+        assert r["signal"] in ("BUY", "SELL", "NEUTRAL"), (n, r)
+        grund = r.get("reason") or ""
+        # "TA Fehler" heisst: die Ausnahme wurde abgefangen statt vermieden.
+        # Genau dieser Zustand soll nicht mehr vorkommen.
+        assert "Fehler" not in grund, (n, grund)
+
+
+def test_kerzen_grenzen_liegen_nicht_unter_dem_gemessenen_bedarf():
+    """Die Konstanten selbst. Ohne diese Pruefung liesse sich MIN_KERZEN auf 1
+    setzen und die Verhaltenstests oben wuerden mitwandern, weil sie sich auf
+    dieselbe Konstante beziehen."""
+    import services.indicators as IND
+    import services.market_intelligence as MI
+
+    assert IND.MIN_KERZEN >= 28, IND.MIN_KERZEN
+    assert MI.MIN_KERZEN_TA >= 50, MI.MIN_KERZEN_TA
