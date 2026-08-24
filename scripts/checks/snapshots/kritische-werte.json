@@ -1,6 +1,6 @@
 {
   "hinweis": "Von scripts/checks/snapshot.js erzeugt. Nicht von Hand ändern — mit --update neu schreiben.",
-  "erstelltAm": "2026-08-24T12:30:00.891Z",
+  "erstelltAm": "2026-08-24T19:32:49.826Z",
   "werte": {
     "epicMap": {
       "EURUSD": "EURUSD",
@@ -317,6 +317,7 @@
       ]
     },
     "filterReihenfolge": [
+      "PRICE_MISSING",
       "PRICE_STALE",
       "ECONOMIC_CALENDAR",
       "CORRELATION",

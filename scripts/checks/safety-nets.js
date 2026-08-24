@@ -20,7 +20,15 @@ module.exports = function pruefe() {
   const risk    = read("frontend/lib/agents/risk-agent.ts");
 
   const pruefungen = [
-    ["Kurs-Frische-Filter läuft als erster Filter", /checkPriceFreshness\(symbol, priceAgeMinutes, maxPriceAgeMinutes\)/, filters],
+    // 24.08.: der Kurs-Frische-Filter war bis heute der erste. Seither läuft
+    // die Prüfung DAVOR, ob es überhaupt einen Kurs gibt — Frische eines
+    // nicht vorhandenen Kurses zu prüfen ist sinnlos. Die alte Beschriftung
+    // sagte "als erster Filter" und wäre damit zu einer falschen Aussage
+    // geworden; ein Prüfer, der etwas Unwahres behauptet, ist schlimmer als
+    // keiner.
+    ["Kurs-Vorhanden-Filter ist verdrahtet",        /checkPriceAvailable\(symbol, bid, spread\)/, filters],
+    ["Kurs-Vorhanden blockt mit eigenem Grund",     /blockedBy:\s*"PRICE_MISSING"/, filters],
+    ["Kurs-Frische-Filter ist verdrahtet",          /checkPriceFreshness\(symbol, priceAgeMinutes, maxPriceAgeMinutes\)/, filters],
     ["Kurs-Frische kommt aus den Einstellungen",    /maxPriceAgeMinutes:\s*settings\.botSettings\.maxPriceAgeMinutes/, orch],
     ["Duplikat-/Pyramiding-Schutz verdrahtet",      /pyramidingEnabled/, orch],
     ["Gesamt-Drawdown-Grenze verdrahtet",           /maxTotalDrawdownPct:\s*settings\.riskSettings/, orch],
@@ -57,5 +65,25 @@ module.exports = function pruefe() {
     if (!/isKillswitchActive/.test(read(datei))) funde.push(`FEHLT: Killswitch-Sperre in ${datei}`);
   }
 
-  return { titel: `Sicherheitsnetze (${pruefungen.length + 2} Prüfungen)`, funde };
+  // REIHENFOLGE, nicht nur Vorhandensein (24.08.). Beide Aufrufe können da
+  // sein und trotzdem in der falschen Ordnung stehen — ein Muster sieht das
+  // nicht. Der Kurs-Vorhanden-Riegel MUSS vor der Frische-Prüfung laufen:
+  // das Alter eines nicht vorhandenen Kurses zu prüfen ergibt nichts, und
+  // die Frische-Prüfung läuft ausserdem nur, wenn maxPriceAgeMinutes gesetzt
+  // ist — ein fehlender Kurs käme dann ganz ungeprüft durch.
+  const kette = filters.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const posVorhanden = kette.indexOf("checkPriceAvailable(symbol, bid, spread)");
+  const posFrische = kette.indexOf("checkPriceFreshness(symbol, priceAgeMinutes");
+  if (posVorhanden < 0 || posFrische < 0) {
+    funde.push("FEHLT: einer der beiden Kurs-Filter ist nicht auffindbar");
+  } else if (posVorhanden > posFrische) {
+    funde.push("REIHENFOLGE: checkPriceAvailable läuft NACH checkPriceFreshness");
+  }
+  // Und er darf nicht hinter einer Einstellung stehen, die ihn abschalten kann.
+  const vorher = posVorhanden >= 0 ? kette.slice(Math.max(0, posVorhanden - 260), posVorhanden) : "";
+  if (/if\s*\([^)]*maxPriceAgeMinutes[^)]*\)\s*\{[^}]*$/.test(vorher)) {
+    funde.push("Kurs-Vorhanden-Riegel steht in einem bedingten Block");
+  }
+
+  return { titel: `Sicherheitsnetze (${pruefungen.length + 4} Prüfungen)`, funde };
 };

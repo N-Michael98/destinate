@@ -294,6 +294,48 @@ export function checkExposureLimit(
 // Der Fall "Alter unbekannt" ist bewusst durchlässig, damit Instrumente ohne
 // Minutendaten nicht grundlos ausgeschlossen werden — er ist damit aber auch
 // die einzige Lücke dieses Schutzes.
+// ── 8b. Kurs überhaupt vorhanden ─────────────────────────────────────────────
+//
+// OHNE KURS IST JEDER HANDEL EIN RATEN (24.08.). Fehlt der Preis, lässt sich
+// weder die Positionsgrösse rechnen noch der Spread prüfen noch der Einstieg
+// bestimmen. Die Kette prüfte bisher nur das ALTER des Kurses (Stufe 0) — und
+// das auch nur, wenn `maxPriceAgeMinutes` gesetzt ist. Dass gar kein Kurs da
+// ist, prüfte niemand.
+//
+// EHRLICH EINGEORDNET: heute ist der Fall über den Livepfad nicht erreichbar.
+// Der Scanner filtert `markets.filter((m) => m.bid > 0)`
+// (ai-analysis-engine.ts:522), und die Gelegenheiten werden aus genau dieser
+// Liste gebaut (Schleife über `validMarkets`, Zeile 791). Nachgeprüft, nicht
+// angenommen. Dies ist also eine ZUSICHERUNG, kein Loch-Schliessen.
+//
+// Warum sie trotzdem hierher gehört: runAllFilters ist eine exportierte
+// Funktion mit einem Versprechen. Dieses Versprechen darf nicht davon abhängen,
+// dass ein Aufrufer zwei Module weiter vorsichtig war. Wer den Filter in
+// Zeile 522 entfernt, öffnet sonst still eine Tür, die niemand bemerkt.
+//
+// checkLiquidity gab bei `bid <= 0` bisher `allowed: true` zurück — es KANN
+// ohne Preis keinen Spread-Anteil rechnen und winkte deshalb durch. Diese
+// Zeile bleibt als Rückfall stehen, ist über die Kette aber nicht mehr
+// erreichbar, weil hier vorher blockiert wird.
+export function checkPriceAvailable(
+  symbol: string,
+  bid: number,
+  spread: number
+): FilterResult {
+  // Number.isFinite fängt auch NaN und Infinity — `bid <= 0` allein tut das
+  // NICHT: `NaN <= 0` ist false, ein NaN-Preis käme also durch.
+  if (!Number.isFinite(bid) || bid <= 0) {
+    console.log(`[filter] 🚫 ${symbol} GEBLOCKT: kein Kurs (bid=${bid}) — ohne Preis wäre der Einstieg geraten`);
+    return { allowed: false, reason: `Kein Kurs vorhanden (bid=${bid})` };
+  }
+  // Ein negativer Spread heisst bid > ask — kaputte Daten, keine Marktlage.
+  if (!Number.isFinite(spread) || spread < 0) {
+    console.log(`[filter] 🚫 ${symbol} GEBLOCKT: unmöglicher Spread (${spread})`);
+    return { allowed: false, reason: `Unmöglicher Spread: ${spread}` };
+  }
+  return { allowed: true, reason: "" };
+}
+
 export function checkPriceFreshness(
   symbol: string,
   ageMinutes: number | null | undefined,
@@ -399,7 +441,14 @@ export async function runAllFilters(params: {
     priceAgeMinutes, maxPriceAgeMinutes,
   } = params;
 
-  // 0. Kurs-Aktualität — ZUERST: ohne verlässlichen Kurs sind alle folgenden
+  // 00. Kurs überhaupt vorhanden — VOR ALLEM ANDEREN und ohne Einstellung,
+  //     die es abschalten könnte. Stufe 0 darunter prüft, ob der Kurs FRISCH
+  //     ist; hier wird geprüft, ob es ihn GIBT. Ohne Preis wäre der Einstieg
+  //     geraten, und alle folgenden Prüfungen rechnen mit einer Null.
+  const priceFilter = checkPriceAvailable(symbol, bid, spread);
+  if (!priceFilter.allowed) return { allowed: false, blockedBy: "PRICE_MISSING", reason: priceFilter.reason };
+
+  // 0. Kurs-Aktualität — ohne verlässlichen Kurs sind alle folgenden
   //    Prüfungen (Spread, Verlustgrenzen) und die Einstiegsberechnung wertlos.
   if (maxPriceAgeMinutes != null) {
     const freshFilter = checkPriceFreshness(symbol, priceAgeMinutes, maxPriceAgeMinutes);

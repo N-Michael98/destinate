@@ -76,6 +76,12 @@ const pruefer = [
   // RECHNET zusaetzlich, denn ein Snapshot merkt keinen Umbau bei gleichen
   // Literalen. Der achte rechnende Pruefer.
   ["vola-skalierung", require("./vola-skalierung")],
+  // 24.08. ergaenzt: die Kette prueft, ob der Kurs FRISCH ist — aber niemand
+  // prueft, ob es ihn ueberhaupt gibt. checkLiquidity gab bei bid <= 0 sogar
+  // ausdruecklich `allowed: true` zurueck. Ohne Preis ist die Positionsgroesse
+  // geraten. Der neunte rechnende Pruefer; faengt auch NaN, das ein blosses
+  // `bid <= 0` durchlaesst.
+  ["kurs-riegel", require("./kurs-riegel")],
 ];
 
 const nurDieser = process.argv[2];

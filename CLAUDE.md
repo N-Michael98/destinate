@@ -9,7 +9,7 @@ manuell geschickt werden.
 cd frontend && npm run check
 ```
 
-Braucht keine Installation. **Siebzehn Prüfer**, Rückgabe 0 = grün.
+Braucht keine Installation. **Achtzehn Prüfer**, Rückgabe 0 = grün.
 **Rot heisst: nicht committen, erst beheben.**
 
 Mit TypeScript-Prüfung zusammen:
@@ -36,7 +36,7 @@ Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweisl
 an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
 Prüfer, der nie rot wird, ist wertlos.
 
-**Acht Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
+**Neun Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
 TypeScript-Datei und rufen die echte Funktion auf. Damit fällt dort auch ein
 subtil falscher Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle,
 fehlender Null-Fall), der strukturell unauffällig bliebe:
@@ -51,6 +51,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()` | 18.08. |
 | `python-ueberwachung` | `meldePythonAufruf()`, `pythonUebergang()` | 19.08. |
 | `vola-skalierung` | `getVolatilityAdjustedRisk()` | 23.08. |
+| `kurs-riegel` | `checkPriceAvailable()` | 24.08. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -79,7 +80,7 @@ und danach immer `npm run check` **und** `npm run build`:
 | `frontend/lib/agents/risk-agent.ts` | Breakeven, Teilgewinn, Trailing, Zeit-Exit |
 | `frontend/lib/capital-com/capital-com-execution.ts` | Positionsgrösse, MAX_SIZE-Klemme, Stop-Distanzen |
 | `frontend/lib/capital-com/capital-com-client.ts` | Epic-Namen, Orders, Stops beim Broker |
-| `frontend/lib/trading-filters/trade-filters.ts` | alle sieben Handelsfilter |
+| `frontend/lib/trading-filters/trade-filters.ts` | die ganze Filterkette (neun Stufen, siehe `filterReihenfolge` im Snapshot) |
 | `frontend/lib/agents/orchestrator-agent.ts` | Watchlist, Schwellen, Duplikat-Schutz |
 | `frontend/instrumentation.ts` | alle Schleifen, Killswitch-Sperren, Python-Lifecycle |
 | `frontend/lib/killswitch/` | Notaus |
@@ -118,7 +119,7 @@ anderer Fehler denselben Pfad abfangen kann.
 
 ## Snapshot kritischer Werte
 
-Der neunte Prüfer hält 297 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
+Der neunte Prüfer hält 298 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
 alle Grössen- und Stop-Tabellen, die Standardwerte der Einstellungen, die
 Exit-Schwellen und Haltedauern, die Klemmen des AI Managers, die Prüfsumme des
 GPT-Regelteils, die Reihenfolge der Filterkette, die Konstanten des
@@ -151,6 +152,30 @@ Position nur verkleinern, nie einen Nullauftrag erzeugen. 70 018 Fälle alt
 gegen neu gerechnet: 70 000 identisch, 18 anders (ausnahmslos die entarteten
 Eingaben), **null** Änderungen bei gültigen Daten, **null** Fälle mit
 steigendem Risiko.
+
+## Ohne Kurs wird nicht gehandelt
+
+Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn
+überhaupt gibt. `checkLiquidity` gab bei `bid <= 0` sogar ausdrücklich
+`allowed: true` zurück: ohne Preis lässt sich kein Spread-Anteil rechnen, also
+wurde durchgewunken. Ohne Preis ist aber auch die Positionsgrösse, der Einstieg
+und jede Verlustgrenze geraten.
+
+Seit dem 24.08. steht `checkPriceAvailable()` als **erster** Schritt der Kette,
+vor der Frische-Prüfung und ohne Einstellung, die ihn abschalten könnte
+(`blockedBy: "PRICE_MISSING"`).
+
+**Ehrlich eingeordnet:** über den Livepfad war der Fall nicht erreichbar — der
+Scanner filtert `markets.filter((m) => m.bid > 0)` und baut die Gelegenheiten
+aus genau dieser Liste. Nachgeprüft, nicht angenommen. Es ist also eine
+Zusicherung an der Stelle, an der sie gilt, kein geschlossenes Loch. Sie gehört
+trotzdem dorthin: `runAllFilters` gibt ein Versprechen, das nicht davon abhängen
+darf, dass ein Aufrufer zwei Module weiter vorsichtig war.
+
+`Number.isFinite` steht dort mit Absicht: `NaN <= 0` ist **false**, ein
+NaN-Preis käme sonst durch. Genau das fing im Sabotage-Lauf **nur** der
+rechnende Prüfer — von sieben Sabotagen fünf, darunter auch ein zu STRENGER
+Riegel, der gültige Kurse blockt hätte.
 
 Die übrigen Prüfer sichern **Strukturen** — dass ein Eintrag existiert. Sie
 merken nicht, wenn jemand seinen **Wert** ändert. Vorgeführt: `MAX_SIZE` für
