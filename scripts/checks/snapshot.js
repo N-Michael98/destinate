@@ -28,7 +28,13 @@ const DATEI = path.join(__dirname, "snapshots", "kritische-werte.json");
  *  Kommentarzeilen werden vorher entfernt, damit Zahlen aus Erklärungen
  *  ("z.B. 0.5") nicht mitgelesen werden. */
 function zahlen(block) {
-  const ohneKommentare = block.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  // `(^|[^:])` vor dem `//`: sonst frisst das Muster jede URL in einer
+  // Zeichenkette samt Zeilenrest — aus `webhook: "https://x", limit: 5` würde
+  // `webhook: "https:` und die 5 wäre still aus dem Snapshot verschwunden.
+  // Nachgewiesen am 24.08.; lifecycle-rueckkehr.js löst es seit jeher so.
+  const ohneKommentare = block
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
   const out = {};
   for (const m of ohneKommentare.matchAll(/([A-Za-z][A-Za-z0-9_]*)\s*:\s*(-?[0-9.]+)/g)) {
     out[m[1]] = Number(m[2]);
@@ -140,7 +146,9 @@ function erfasse() {
       if (start < 0) return "FUNKTION FEHLT";
       const rest = filters.slice(start);
       const ende = rest.indexOf("\n}");
-      const rumpf = rest.slice(0, ende < 0 ? rest.length : ende).replace(/\/\/[^\n]*/g, "");
+      const rumpf = rest
+        .slice(0, ende < 0 ? rest.length : ende)
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");   // URL-sicher, siehe zahlen()
       const grund = rumpf.match(/let\s+multiplier\s*=\s*(-?[0-9.]+)/);
       const boden = rumpf.match(/Math\.max\(\s*(-?[0-9.]+)/);
       // Der Faktor für UNBEKANNTE Volatilität steht als Konstante VOR der

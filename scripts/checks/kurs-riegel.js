@@ -120,7 +120,9 @@ module.exports = function pruefe() {
   const roh = read("frontend/lib/trading-filters/trade-filters.ts");
   const kette = roh
     .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/[^\n]*/g, "");
+    // `[^:]` davor — sonst frisst das Muster "https://…" in einer Zeichenkette
+    // und mit ihm den ganzen Zeilenrest. Siehe lifecycle-rueckkehr.js:79.
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
   const posAufruf = kette.indexOf("checkPriceAvailable(symbol, bid, spread)");
   pruefe1("die Kette ruft den Kurs-Riegel nicht auf", posAufruf >= 0);
   pruefe1("der Riegel blockt nicht mit eigenem Grund",

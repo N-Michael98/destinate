@@ -7,7 +7,53 @@
 //
 // EHRLICHE ABGRENZUNG: geprüft wird das VORHANDENSEIN und die Verdrahtung im
 // Quelltext, nicht das Laufzeitverhalten.
+const fs = require("fs");
+const path = require("path");
 const { read } = require("./_lib");
+
+/** Benutzt ein Prüfer die naive Kommentar-Entfernung ohne URL-Schutz?
+ *
+ * WARUM DAS HIERHER GEHÖRT. Fast jeder strukturelle Prüfer entfernt vor dem
+ * Zählen Kommentare und Zeichenketten — sonst gilt ein Name in einem Kommentar
+ * als Verwendung (die Fehlerklasse, die 2026 sechsmal zuschlug). Wer dabei
+ * `//[^\n]*` ohne `[^:]` davor schreibt, frisst jede URL in einer Zeichenkette
+ * UND den ganzen Zeilenrest dahinter. Vorgeführt am 24.08.:
+ *
+ *   'const url = "https://x/v1"; const r = checkPriceAvailable(...)'
+ *      naiv   -> 'const url = "https:'          checkPriceAvailable WEG
+ *      [^:]   -> unverändert
+ *
+ * Ein Prüfer mit kaputtem Textfilter wird grundlos rot — oder übersieht still
+ * etwas. Damit ist das Netz selbst betroffen, nicht nur ein einzelner Prüfer.
+ * lifecycle-rueckkehr.js löst es seit jeher richtig; beim Bau von
+ * vola-skalierung und kurs-riegel ist mir derselbe Fehler zweimal
+ * unterlaufen — deshalb dieser Riegel.
+ */
+function pruefeTextfilter() {
+  const funde = [];
+  const ordner = __dirname;
+  for (const datei of fs.readdirSync(ordner).filter((d) => d.endsWith(".js"))) {
+    const src = fs.readFileSync(path.join(ordner, datei), "utf8");
+    // ZEILENWEISE und ohne Kommentarzeilen. Die erste Fassung meldete diese
+    // Datei selbst, weil das Muster in der Erklärung darüber vorkommt — ein
+    // Prüfer, der sich an seiner eigenen Dokumentation stört, wird ignoriert,
+    // und dann nützt er nichts mehr.
+    let naiv = 0;
+    for (const zeile of src.split("\n")) {
+      const stelle = zeile.indexOf(".replace(/\\/\\/[^\\n]*/");
+      if (stelle < 0) continue;
+      const kommentar = zeile.indexOf("//");
+      const inKommentar = kommentar >= 0 && kommentar < stelle;
+      if (!inKommentar) naiv++;
+    }
+    if (naiv > 0) {
+      funde.push(
+        `${datei}: ${naiv}x naive Kommentar-Entfernung ohne (^|[^:]) — frisst URLs`
+      );
+    }
+  }
+  return funde;
+}
 
 module.exports = function pruefe() {
   const funde = [];
@@ -71,7 +117,11 @@ module.exports = function pruefe() {
   // das Alter eines nicht vorhandenen Kurses zu prüfen ergibt nichts, und
   // die Frische-Prüfung läuft ausserdem nur, wenn maxPriceAgeMinutes gesetzt
   // ist — ein fehlender Kurs käme dann ganz ungeprüft durch.
-  const kette = filters.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  // `[^:]` vor dem `//`, sonst frisst das Muster jede URL in einer Zeichenkette
+  // und den Zeilenrest dahinter (siehe lifecycle-rueckkehr.js:79).
+  const kette = filters
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
   const posVorhanden = kette.indexOf("checkPriceAvailable(symbol, bid, spread)");
   const posFrische = kette.indexOf("checkPriceFreshness(symbol, priceAgeMinutes");
   if (posVorhanden < 0 || posFrische < 0) {
@@ -85,5 +135,9 @@ module.exports = function pruefe() {
     funde.push("Kurs-Vorhanden-Riegel steht in einem bedingten Block");
   }
 
-  return { titel: `Sicherheitsnetze (${pruefungen.length + 4} Prüfungen)`, funde };
+  // Das Netz prüft auch sich selbst: ein Prüfer mit kaputtem Textfilter macht
+  // jede andere strukturelle Prüfung unzuverlässig.
+  funde.push(...pruefeTextfilter());
+
+  return { titel: `Sicherheitsnetze (${pruefungen.length + 5} Prüfungen)`, funde };
 };

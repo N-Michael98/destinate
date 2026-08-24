@@ -234,7 +234,13 @@ function aufrufBlock(src, name) {
 function ohneKommentareUndTexte(src) {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/[^\n]*/g, "")
+    // `[^:]` davor, sonst frisst das Muster jede URL in einer Zeichenkette:
+    // aus "https://x" wird "https:" und der GANZE Zeilenrest verschwindet —
+    // samt einer echten Verdrahtung, die dahinter stünde. Gefunden am 24.08.,
+    // als mein eigener Wegwerf-Scanner daran scheiterte; lifecycle-rueckkehr.js
+    // löst es seit jeher so. Heute enthält keine der geprüften Dateien "://",
+    // der Fehler wäre also stumm geblieben, bis jemand eine URL einbaut.
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
     .replace(/`(?:\\.|[^`\\])*`/g, "``")
     .replace(/"(?:\\.|[^"\\])*"/g, '""')
     .replace(/'(?:\\.|[^'\\])*'/g, "''");
