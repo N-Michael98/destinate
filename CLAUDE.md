@@ -118,7 +118,7 @@ anderer Fehler denselben Pfad abfangen kann.
 
 ## Snapshot kritischer Werte
 
-Der neunte Prüfer hält 296 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
+Der neunte Prüfer hält 297 Zahlen, Schalter und Texte fest, die über Risiko entscheiden:
 alle Grössen- und Stop-Tabellen, die Standardwerte der Einstellungen, die
 Exit-Schwellen und Haltedauern, die Klemmen des AI Managers, die Prüfsumme des
 GPT-Regelteils, die Reihenfolge der Filterkette, die Konstanten des
@@ -136,6 +136,21 @@ unsichtbar — deshalb prüft `vola-skalierung` dieselbe Funktion zusätzlich du
 Aufrufen. Nachgewiesen am 23.08.: von sieben Sabotagen fingen **fünf nur der
 rechnende Prüfer** (`else` entfernt, geteilt statt multipliziert, Ergebnis
 verworfen, Datenklemme entfernt, Order bekommt ungekürztes Risiko).
+
+**Fehlende Daten kürzen jetzt ebenfalls** (24.08.). Bis dahin gab die Funktion
+bei fehlendem ATR oder Preis das Grundrisiko **ungekürzt** zurück: bekannt hohe
+Volatilität bekam 40 %, gar keine Information 100 % — die falsche Richtung.
+Erreichbar über `taSignals: undefined` (`ai-analysis-engine.ts`), bei einem
+Python-Ausfall für **alle** Symbole gleichzeitig. Jetzt greift
+`RISIKO_OHNE_VOLA_DATEN = 0.4`, der kleinste Faktor der Tabelle, weil sich das
+oberste Band nicht ausschliessen lässt.
+
+Belegt ungefährlich: `capital-com-execution.ts` klemmt die Grösse mit
+`Math.max(min, …)` auf `MIN_SIZE` **hoch** — ein kleineres Risiko kann die
+Position nur verkleinern, nie einen Nullauftrag erzeugen. 70 018 Fälle alt
+gegen neu gerechnet: 70 000 identisch, 18 anders (ausnahmslos die entarteten
+Eingaben), **null** Änderungen bei gültigen Daten, **null** Fälle mit
+steigendem Risiko.
 
 Die übrigen Prüfer sichern **Strukturen** — dass ein Eintrag existiert. Sie
 merken nicht, wenn jemand seinen **Wert** ändert. Vorgeführt: `MAX_SIZE` für
