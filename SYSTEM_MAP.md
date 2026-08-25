@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 565 · Kanten: 1153
+Dateien mit internen Abhängigkeiten: 560 · Kanten: 1147
 
 
 ## analysis-engine/api
@@ -418,8 +418,6 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1153
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
 - `frontend/app/api/institutional-portfolio-brain-sync/route.ts`
   - → `frontend/lib/institutional-portfolio-brain-sync/index.ts`
-- `frontend/app/api/learning-feedback-integration/route.ts`
-  - → `frontend/lib/learning-feedback-integration/index.ts`
 - `frontend/app/api/learning/analyze/route.ts`
   - → `frontend/lib/learning/trade-feedback-engine.ts`
 - `frontend/app/api/learning/status/route.ts`
@@ -456,7 +454,7 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1153
   - → `frontend/lib/dependency-scanner/index.ts`
   - → `frontend/lib/evolution-governance/index.ts`
   - → `frontend/lib/execution-preparation/index.ts`
-  - → `frontend/lib/learning-feedback-integration/index.ts`
+  - → `frontend/lib/learning/trade-feedback-engine.ts`
   - → `frontend/lib/market-data-engine/index.ts`
   - → `frontend/lib/market-universe/opportunity-scanner.ts`
   - → `frontend/lib/mission-control-endpoint-registry.ts`
@@ -484,8 +482,6 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1153
   - → `frontend/lib/news-intelligence/news-intelligence-engine.ts`
 - `frontend/app/api/opportunity-scanner/route.ts`
   - → `frontend/lib/market-universe/opportunity-scanner.ts`
-- `frontend/app/api/outcome-learning-auto-update/route.ts`
-  - → `frontend/lib/outcome-learning-auto-update/index.ts`
 - `frontend/app/api/outcome-learning-evolution-feedback-sync/route.ts`
   - → `frontend/lib/outcome-learning-evolution-feedback-sync/index.ts`
 - `frontend/app/api/paper-account-performance-sync/route.ts`
@@ -1250,11 +1246,6 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1153
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/killswitch/killswitch-types.ts`
-- `frontend/lib/learning-feedback-integration/index.ts`
-  - → `frontend/lib/learning-feedback-integration/learning-feedback-engine.ts`
-  - → `frontend/lib/learning-feedback-integration/learning-feedback-types.ts`
-- `frontend/lib/learning-feedback-integration/learning-feedback-engine.ts`
-  - → `frontend/lib/learning-feedback-integration/learning-feedback-types.ts`
 - `frontend/lib/learning/learning-store.ts`
   - → `frontend/lib/db-store.ts`
 - `frontend/lib/learning/trade-feedback-engine.ts`
@@ -1379,8 +1370,6 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1153
   - → `frontend/lib/strategy-mutation/index.ts`
 - `frontend/lib/news-intelligence/news-intelligence-engine.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
-- `frontend/lib/outcome-learning-auto-update/index.ts`
-  - → `frontend/lib/outcome-learning-auto-update/outcome-learning-types.ts`
 - `frontend/lib/outcome-learning-evolution-feedback-sync/index.ts`
   - → `frontend/lib/outcome-learning-evolution-feedback-sync/outcome-learning-evolution-feedback-sync-engine.ts`
   - → `frontend/lib/outcome-learning-evolution-feedback-sync/outcome-learning-evolution-feedback-sync-types.ts`

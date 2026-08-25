@@ -188,7 +188,10 @@ const dependencyItems: DependencyItem[] = [
     layer: "LEARNING",
     status: "CENTER_ACTIVE",
     healthStatus: "HEALTHY",
-    dependsOn: ["trade-outcome-feedback-engine", "learning-feedback-integration"],
+    // 24.08.: "learning-feedback-integration" zeigte auf ein Modul, das mit
+    // fest eingebauten Fantasie-Trades rechnete und keinen Konsumenten hatte;
+    // es ist entfernt. Der echte Lernstrang ist lib/learning/.
+    dependsOn: ["trade-outcome-feedback-engine", "learning/trade-feedback-engine"],
     feedsInto: ["gpt-analyst", "claude-risk", "portfolio-brain", "evolution-center"],
     notificationRequired: false,
     telegramAlertReady: true,

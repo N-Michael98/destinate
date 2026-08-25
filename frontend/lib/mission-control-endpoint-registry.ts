@@ -117,10 +117,14 @@ export const missionControlEndpointRegistry: MissionControlEndpoint[] = [
   {
     key: "learning",
     label: "Learning Feedback",
-    endpoint: "/api/learning-feedback-integration",
+    // 24.08.: zeigte auf /api/learning-feedback-integration — einen Bericht
+    // aus fest eingebauten Fantasie-Trades ohne jeden Konsumenten. Jetzt auf
+    // das echte Lernsystem, das stündlich aus den geschlossenen Trades der
+    // Datenbank rechnet.
+    endpoint: "/api/learning/status",
     group: "LEARNING",
     critical: false,
-    description: "Learning feedback and outcome integration.",
+    description: "Lernzustand aus echten geschlossenen Trades (stündlicher Zyklus).",
   },
 ];
 

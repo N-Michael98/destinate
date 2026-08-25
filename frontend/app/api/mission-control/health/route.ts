@@ -10,7 +10,7 @@ import { getBrokerHealthMonitorReport } from "@/lib/broker-health-monitor";
 import { marketDataManager } from "@/lib/market-data-engine";
 import { buildOpportunityScannerReport } from "@/lib/market-universe/opportunity-scanner";
 import { generateEvolutionGovernanceReport } from "@/lib/evolution-governance";
-import { getLearningFeedbackIntegrationReport } from "@/lib/learning-feedback-integration";
+import { getLearningState } from "@/lib/learning/trade-feedback-engine";
 import { TradeTicketBuilder, ExecutionQueue } from "@/lib/execution-preparation";
 import { getAISettings } from "@/lib/ai-config";
 
@@ -80,9 +80,33 @@ async function checkEndpoint(key: string, checkedAt: string): Promise<{ status: 
         const r = generateEvolutionGovernanceReport();
         return { status: "READY", summary: r.status ?? "READY" };
       }
+      // ECHTER Lernzustand statt Mock (24.08.).
+      //
+      // Bis heute stand hier getLearningFeedbackIntegrationReport() — ein
+      // Bericht aus fest eingebauten Fantasie-Trades (SPX500, pnlAmount 150).
+      // Er gelang immer, also meldete die Kachel IMMER "READY". Eine
+      // Gesundheitsprüfung, die nicht fehlschlagen kann, prüft nichts.
+      //
+      // Jetzt der Zustand des Lernsystems, das seit dem 24.08. stündlich aus
+      // den ECHTEN geschlossenen Trades rechnet. getLearningState() ist ein
+      // billiger Lesezugriff auf den Speicher — eine Gesundheitsprüfung darf
+      // keinen vollen Zyklus auslösen.
+      //
+      // Die Kachel meldet WARNING, solange noch nie gelernt wurde. Das ist
+      // kein Fehler, sondern der ehrliche Zustand "noch keine geschlossenen
+      // Trades" — und genau das soll man sehen können.
       case "learning": {
-        const r = getLearningFeedbackIntegrationReport();
-        return { status: "READY", summary: r.status ?? "READY" };
+        const s = getLearningState();
+        const zyklen = s?.learningCycles ?? 0;
+        const trades = s?.totalTradesAnalyzed ?? 0;
+        const symbole = Object.keys(s?.symbolPerformance ?? {}).length;
+        if (zyklen === 0) {
+          return { status: "WARNING", summary: "noch kein Lernzyklus gelaufen" };
+        }
+        return {
+          status: "READY",
+          summary: `${zyklen} Zyklen, ${trades} Trades, ${symbole} Symbole`,
+        };
       }
       default:
         return { status: "WARNING", summary: "Unknown endpoint" };
