@@ -1794,6 +1794,16 @@ type ClaudeRiskApiResponse = {
   success: boolean;
   risks: ClaudeRiskAssessment[];
   count: number;
+  // 25.08.: Die Route liefert seit jeher `source` — "CLAUDE_REAL" wenn das
+  // echte Claude geantwortet hat, "CLAUDE_RISK_LIVE" wenn der regelbasierte
+  // Rückfall gerechnet hat. Der Typ kannte das Feld NICHT, also sah die
+  // Oberfläche es nie: die Kachel hiess in beiden Fällen "Live Claude Risk
+  // Review". Wer draufschaut, konnte nicht erkennen, ob überhaupt eine AI
+  // beteiligt war.
+  source?: string;
+  // Symbole, für die es keine Daten gab. Ohne dieses Feld sieht eine kurze
+  // Liste aus wie "nichts zu bewerten" statt wie "keine Daten".
+  skippedNoData?: string[];
   updatedAt: string;
 };
 
@@ -1814,6 +1824,11 @@ type GPTAnalysisApiResponse = {
   success: boolean;
   analyses: GPTAnalysisApiItem[];
   count: number;
+  // 25.08.: "GPT_REAL" = echtes GPT hat geantwortet, "GPT_ANALYST_LIVE" =
+  // regelbasierter Rueckfall. Der Typ kannte das Feld nicht, also stand ueber
+  // beidem dieselbe Zeile "Live-AI-Analyse".
+  source?: string;
+  skippedNoPrice?: string[];
   updatedAt: string;
 };
 
@@ -2430,6 +2445,11 @@ function ClaudeRiskLiveCenter() {
   const [riskLoading, setRiskLoading] = useState(true);
   const [riskError, setRiskError] = useState<string | null>(null);
   const [lastRiskUpdate, setLastRiskUpdate] = useState("");
+  // Woher kamen die Daten? "CLAUDE_REAL" = echtes Claude, "CLAUDE_RISK_LIVE"
+  // = regelbasierter Rueckfall. Wird angezeigt, damit die Kachel nicht in
+  // beiden Faellen dasselbe behauptet.
+  const [riskSource, setRiskSource] = useState("");
+  const [riskSkipped, setRiskSkipped] = useState<string[]>([]);
 
   async function loadClaudeRisks() {
     try {
@@ -2447,6 +2467,8 @@ function ClaudeRiskLiveCenter() {
       const payload = (await response.json()) as ClaudeRiskApiResponse;
       setRisks(payload.risks);
       setLastRiskUpdate(payload.updatedAt);
+      setRiskSource(payload.source ?? "");
+      setRiskSkipped(payload.skippedNoData ?? []);
     } catch (caughtError) {
       setRiskError(
         caughtError instanceof Error
@@ -2516,10 +2538,36 @@ function ClaudeRiskLiveCenter() {
       <div className="bg-black border border-red-900 rounded-2xl p-6 mb-8">
         <div className="flex items-start justify-between gap-6 mb-6">
           <div>
-            <h3 className="text-3xl font-bold"> Live Claude Risk Review</h3>
+            <h3 className="text-3xl font-bold"> Claude Risk Review</h3>
             <p className="text-gray-400 mt-2">
               Daten aus <span className="text-red-400">/api/claude-risk/assess</span>. Auto-Refresh alle 20 Sekunden.
             </p>
+            {/* HERKUNFT SICHTBAR (25.08.). Die Kachel hiess "Live Claude Risk
+                Review" — auch dann, wenn gar kein Claude gefragt wurde, weil
+                kein API-Schluessel hinterlegt ist. Dann rechnet ein
+                regelbasierter Rueckfall. Beides ist brauchbar, aber es ist
+                nicht dasselbe, und wer draufschaut muss es unterscheiden
+                koennen. */}
+            {riskSource && (
+              <p className="mt-2 text-sm">
+                {riskSource === "CLAUDE_REAL" ? (
+                  <span className="text-green-400">
+                    ● Echte Claude-Antwort
+                  </span>
+                ) : (
+                  <span className="text-yellow-400">
+                    ● Regelbasierter Rückfall — kein Claude gefragt
+                    (kein API-Schlüssel oder Aufruf fehlgeschlagen)
+                  </span>
+                )}
+              </p>
+            )}
+            {riskSkipped.length > 0 && (
+              <p className="mt-1 text-sm text-yellow-500">
+                ⚠ {riskSkipped.length} ohne Daten übersprungen:{" "}
+                {riskSkipped.join(", ")}
+              </p>
+            )}
           </div>
 
           <button
@@ -2661,6 +2709,9 @@ function GPTAnalystLiveCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState("");
+  // Herkunft der GPT-Analyse sichtbar machen (25.08.).
+  const [gptSource, setGptSource] = useState("");
+  const [gptSkipped, setGptSkipped] = useState<string[]>([]);
 
   async function loadAnalyses() {
     try {
@@ -2678,6 +2729,8 @@ function GPTAnalystLiveCenter() {
       const payload = (await response.json()) as GPTAnalysisApiResponse;
       setAnalyses(payload.analyses);
       setLastUpdate(payload.updatedAt);
+      setGptSource(payload.source ?? "");
+      setGptSkipped(payload.skippedNoPrice ?? []);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -2718,8 +2771,31 @@ function GPTAnalystLiveCenter() {
         <div>
           <h2 className="text-4xl font-black"> GPT Analyst Dashboard Center V9.8.2</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Live-AI-Analyse aus der GPT Analyst API: Bias, Entry Zone, Stop Loss, Take Profits, Confidence und Reasoning.
+            Analyse aus <span className="text-cyan-400">/api/gpt-analyst/analyze</span>: Bias, Entry Zone, Stop Loss, Take Profits und Reasoning.
           </p>
+          {/* HERKUNFT SICHTBAR (25.08.). Vorher stand hier "Live-AI-Analyse …
+              Confidence …" — auch dann, wenn gar kein GPT gefragt wurde. Der
+              regelbasierte Rueckfall liefert eine feste Confidence, die als
+              gemessener Wert aussah. Jetzt steht dabei, was gerechnet hat. */}
+          {gptSource && (
+            <p className="mt-2 text-sm">
+              {gptSource === "GPT_REAL" ? (
+                <span className="text-green-400">● Echte GPT-Antwort</span>
+              ) : (
+                <span className="text-yellow-400">
+                  ● Regelbasierter Rückfall — kein GPT gefragt
+                  (kein API-Schlüssel oder Aufruf fehlgeschlagen).
+                  Die Confidence ist dabei ein fester Wert, keine Messung.
+                </span>
+              )}
+            </p>
+          )}
+          {gptSkipped.length > 0 && (
+            <p className="mt-1 text-sm text-yellow-500">
+              ⚠ {gptSkipped.length} ohne Preis übersprungen:{" "}
+              {gptSkipped.join(", ")}
+            </p>
+          )}
         </div>
 
         <div className="bg-black border border-cyan-800 rounded-2xl p-5 min-w-[190px]">

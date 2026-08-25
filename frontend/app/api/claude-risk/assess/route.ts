@@ -38,11 +38,26 @@ export async function GET(request: Request) {
   const hasPythonData = indicators.length > 0;
   const indMap = Object.fromEntries(indicators.map((i) => [i.symbol, i]));
 
-  // Trade-Specs für Prompt aufbauen
+  // Trade-Specs für Prompt aufbauen.
+  //
+  // OHNE PREIS KEIN SPEC (25.08.). Hier stand `?? 0` als letzter Rückfall.
+  // Fehlen sowohl die Python-Indikatoren als auch die GPT-Analyse, wurde
+  // daraus price=0 → atr=0 → entry/stop/target alle 0 → R:R = NaN. Genau das
+  // ging dann in den Prompt: "entry 0.00000, stop 0.00000, target 0.00000
+  // (R:R NaN)". Claude wurde also gebeten, einen unmöglichen Trade zu
+  // bewerten — und hätte irgendetwas darüber geantwortet.
+  //
+  // Dieselbe Regel wie im Handelspfad: ohne Preis wird nichts gebaut.
+  const ohnePreis: string[] = [];
   const tradeSpecs = SYMBOLS.map((sym) => {
     const gpt = gptAnalyses.find((a) => a.symbol === sym);
     const ind = indMap[sym];
-    const price = ind?.price ?? gpt?.entry ?? 0;
+    const roh = ind?.price ?? gpt?.entry;
+    if (typeof roh !== "number" || !Number.isFinite(roh) || roh <= 0) {
+      ohnePreis.push(sym);
+      return null;
+    }
+    const price = roh;
     const atr = ind?.indicators.atr ?? price * 0.005;
     const dir = gpt?.direction ?? (ind?.trend === "BULLISH" ? "BUY" : "SELL");
     const entry = gpt?.entry ?? price;
@@ -50,7 +65,13 @@ export async function GET(request: Request) {
     const tp = gpt?.takeProfit ?? (dir === "BUY" ? entry + atr * 3 : entry - atr * 3);
     const rr = Math.abs(tp - entry) / Math.abs(entry - sl);
     return { sym, dir, entry: entry.toFixed(5), sl: sl.toFixed(5), tp: tp.toFixed(5), rr: rr.toFixed(2), conf: gpt?.confidence ?? 70, ind };
-  });
+  }).filter((t): t is NonNullable<typeof t> => t !== null);
+
+  if (ohnePreis.length > 0) {
+    console.warn(
+      `[claude-risk] ${ohnePreis.length} Symbole ohne Preis übersprungen: ${ohnePreis.join(", ")}`
+    );
+  }
 
   if (ai.anthropic.connected && ai.anthropic.apiKey.length > 20) {
     try {
@@ -115,21 +136,39 @@ Rules: riskScore 0-100 (higher = more risky). Approve if riskScore < 60 and R:R 
   }
 
   // Fallback mit echten Risiko-Werten aus Python
+  // Rückfall: regelbasiert, aber NUR für Symbole mit echten Indikatoren.
+  //
+  // Vorher standen hier `rsi ?? 50` und `adx ?? 20` als Rückfall. Das sind
+  // zwar neutrale Werte und keine wilden Zahlen — aber sie erzeugen eine
+  // Risikobewertung für ein Symbol, über das NICHTS bekannt ist. Eine
+  // Bewertung ohne Datenlage ist keine Bewertung.
   const manager = new ClaudeRiskManager();
+  const ohneIndikatoren: string[] = [];
   const risks = SYMBOLS.map((sym) => {
     const ind = indMap[sym];
-    const rsi = ind?.indicators.rsi.value ?? 50;
-    const adx = ind?.indicators.adx.adx ?? 20;
+    const rsi = ind?.indicators?.rsi?.value;
+    const adx = ind?.indicators?.adx?.adx;
+    if (typeof rsi !== "number" || typeof adx !== "number") {
+      ohneIndikatoren.push(sym);
+      return null;
+    }
     const riskLevel = rsi > 70 || rsi < 30 ? 6 : 3;
     const volatility = adx > 40 ? "VOLATILE" : "NORMAL";
     return manager.assess(sym, riskLevel, 25, 1, volatility);
-  });
+  }).filter((r): r is NonNullable<typeof r> => r !== null);
+
+  if (ohneIndikatoren.length > 0) {
+    console.warn(
+      `[claude-risk] Rückfall: ${ohneIndikatoren.length} Symbole ohne Indikatoren übersprungen: ${ohneIndikatoren.join(", ")}`
+    );
+  }
 
   return NextResponse.json({
     success: true, risks,
     source: "CLAUDE_RISK_LIVE",
     pythonData: hasPythonData,
     count: risks.length,
+    skippedNoData: [...new Set([...ohnePreis, ...ohneIndikatoren])],
     updatedAt: new Date().toISOString(),
   });
 }

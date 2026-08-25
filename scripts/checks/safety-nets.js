@@ -139,5 +139,62 @@ module.exports = function pruefe() {
   // jede andere strukturelle Prüfung unzuverlässig.
   funde.push(...pruefeTextfilter());
 
-  return { titel: `Sicherheitsnetze (${pruefungen.length + 5} Prüfungen)`, funde };
+  // ── Keine erfundenen Preise in den Analyse-Routen (25.08.) ──────────────
+  //
+  // GEFUNDEN BEI DER ANALYSE der Dashboard-Module. In
+  // /api/gpt-analyst/analyze stand als letzter Rückfall:
+  //
+  //   const price = ind?.price ?? (sym === "XAUUSD" ? 2340 : ... : 19000);
+  //
+  // Fällt Python aus — und dafür gibt es seit dem 19.08. eine eigene
+  // Überwachung —, wurden aus diesen Fantasiezahlen Einstieg, Stop und Ziel
+  // abgeleitet. In /api/claude-risk/assess stand `?? 0`, woraus atr=0,
+  // entry=stop=target=0 und R:R=NaN entstand; genau das ging in den Prompt an
+  // Claude.
+  //
+  // Beide Routen überspringen jetzt Symbole ohne Preis und MELDEN sie.
+  // Geprüft wird das Verhalten an seinem Kennzeichen: der Melde-Liste.
+  const analyseRouten = [
+    ["frontend/app/api/gpt-analyst/analyze/route.ts", "skippedNoPrice", /2340|67500|19000/],
+    ["frontend/app/api/claude-risk/assess/route.ts", "skippedNoData", /\?\?\s*0\s*;/],
+  ];
+  for (const [datei, feld, verbotenesMuster] of analyseRouten) {
+    const src = read(datei)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    if (!src.includes(feld)) {
+      funde.push(`FEHLT: ${datei} meldet übersprungene Symbole nicht (${feld})`);
+    }
+    if (verbotenesMuster.test(src)) {
+      funde.push(`${datei}: erfundener Preis-Rückfall ist zurück`);
+    }
+    if (!/Number\.isFinite\(/.test(src)) {
+      funde.push(`FEHLT: ${datei} prüft den Preis nicht mit Number.isFinite`);
+    }
+  }
+
+  // ── Die Herkunft der Analyse ist in der Oberfläche sichtbar ─────────────
+  //
+  // Die Kacheln hiessen "Live Claude Risk Review" und "Live-AI-Analyse" —
+  // auch dann, wenn gar keine AI gefragt wurde, weil kein Schlüssel
+  // hinterlegt ist und der regelbasierte Rückfall gerechnet hat. Beides ist
+  // brauchbar, aber es ist nicht dasselbe.
+  // OHNE KOMMENTARE. Die erste Fassung suchte im Rohtext — und fand
+  // "CLAUDE_REAL" in der Erklärung, die ich selbst danebengeschrieben hatte.
+  // Im Sabotage-Lauf liess sich der Vergleich durch `false` ersetzen und der
+  // Prüfer blieb grün. Genau die Fehlerklasse, die hier am häufigsten
+  // zuschlägt — diesmal in meinem eigenen Prüfer.
+  const seite = read("frontend/app/page.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  for (const [marke, quelle] of [["CLAUDE_REAL", "riskSource"], ["GPT_REAL", "gptSource"]]) {
+    // Nicht bloss "der Name kommt vor", sondern: er wird VERGLICHEN.
+    const muster = new RegExp(`${quelle}\\s*===\\s*"${marke}"`);
+    if (!muster.test(seite)) {
+      funde.push(`FEHLT: page.tsx unterscheidet ${marke} nicht vom Rückfall`);
+    }
+  }
+
+  return { titel: `Sicherheitsnetze (${pruefungen.length + 11} Prüfungen)`, funde };
 };

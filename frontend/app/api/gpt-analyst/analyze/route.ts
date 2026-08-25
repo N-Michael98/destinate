@@ -103,12 +103,41 @@ Return a JSON array with one entry per symbol:
   const analyst = new GPTAnalystManager();
   const indMap = Object.fromEntries(indicators.map((i) => [i.symbol, i]));
 
+  // OHNE ECHTEN PREIS KEINE HANDELSIDEE (25.08.).
+  //
+  // Hier stand bis heute ein Rückfall auf FEST EINGEBAUTE Preise:
+  //   XAUUSD 2340, EURUSD 1.085, BTCUSD 67500, sonst 19000
+  //
+  // Fällt Python aus, liefert `fetchIndicatorsMany` nichts, und dann wurden
+  // aus diesen Fantasiezahlen Einstieg, Stop und Ziel abgeleitet — eine
+  // vollständige Handelsidee auf einem Preis, den niemand gemessen hat.
+  // XAUUSD stand zuletzt weit über 2340; die Idee wäre nicht bloss ungenau,
+  // sondern sinnlos gewesen.
+  //
+  // Der Ausfall ist erreichbar und tritt auf: genau dafür gibt es seit dem
+  // 19.08. die Python-Überwachung.
+  //
+  // Jetzt gilt dieselbe Regel wie im Handelspfad (checkPriceAvailable):
+  // ohne Preis wird nichts erzeugt. Die übersprungenen Symbole werden
+  // GEMELDET, nicht still weggelassen — sonst sieht eine kurze Liste aus wie
+  // "nichts gefunden" statt wie "keine Daten".
+  const ohnePreis: string[] = [];
   const analyses = SYMBOLS.map((sym) => {
     const ind = indMap[sym];
-    const price = ind?.price ?? (sym === "XAUUSD" ? 2340 : sym === "EURUSD" ? 1.085 : sym === "BTCUSD" ? 67500 : 19000);
+    const price = ind?.price;
+    if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
+      ohnePreis.push(sym);
+      return null;
+    }
     const regime = ind?.trend === "BULLISH" ? "TRENDING_BULL" : ind?.trend === "BEARISH" ? "TRENDING_BEAR" : "RANGING";
     return analyst.createTradeIdea(sym, price, regime, "NORMAL", "NEUTRAL");
-  });
+  }).filter((a): a is NonNullable<typeof a> => a !== null);
+
+  if (ohnePreis.length > 0) {
+    console.warn(
+      `[gpt-analyst] ${ohnePreis.length} Symbole ohne Preis übersprungen: ${ohnePreis.join(", ")}`
+    );
+  }
 
   return NextResponse.json({
     success: true,
@@ -116,6 +145,9 @@ Return a JSON array with one entry per symbol:
     source: "GPT_ANALYST_LIVE",
     pythonData: hasPythonData,
     count: analyses.length,
+    // Damit die Oberfläche "keine Daten" von "nichts gefunden" unterscheiden
+    // kann — ohne dieses Feld sähen beide Fälle gleich aus.
+    skippedNoPrice: ohnePreis,
     updatedAt: new Date().toISOString(),
   });
 }
