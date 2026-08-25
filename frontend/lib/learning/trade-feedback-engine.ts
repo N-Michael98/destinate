@@ -1,4 +1,5 @@
 import { PaperHistory } from "@/lib/paper-trading/paper-history";
+import { getPrisma } from "../../app/lib/prisma";
 import {
   readLearningState,
   writeLearningState,
@@ -28,6 +29,90 @@ type ClosedTrade = {
   outcome: "WIN" | "LOSS" | "BREAKEVEN";
   closedAt: string;
 };
+
+/** Woraus soll gelernt werden? (24.08.)
+ *
+ * Bis heute gab es nur eine Quelle: die PAPIERHANDELS-Historie. Der Zyklus
+ * lernte also aus simulierten Ergebnissen, während die echten Trades in der
+ * `Trade`-Tabelle danebenlagen und nie angefasst wurden.
+ *
+ * Die beiden werden BEWUSST NICHT vermischt. Papier ist Simulation, echt ist
+ * echt — ein gemeinsamer Topf würde eine Kennzahl erzeugen, der man nicht
+ * ansieht, wie viel davon erfunden ist. Genau diese Sorte Vermischung ist der
+ * Grund, warum hier überhaupt aufgeräumt wird. "beide" bleibt möglich, muss
+ * aber ausdrücklich verlangt werden und steht im Bericht.
+ */
+export type LernQuelle = "echt" | "papier" | "beide";
+
+/** Geschlossene Trades aus der ECHTEN Trade-Tabelle.
+ *
+ * `status !== "OPEN"` ist dasselbe Kriterium, das auch der Aufräum-Knopf im
+ * Journal benutzt (app/api/trades/route.ts) — eine zweite Definition von
+ * "geschlossen" wäre eine Fehlerquelle für sich.
+ *
+ * FEHLERTOLERANT MIT ABSICHT: ist die Datenbank nicht erreichbar, kommt eine
+ * leere Liste zurück und es wird gemeldet. Der Lernzyklus soll später aus
+ * einer Schleife laufen; eine Ausnahme von hier würde diese Schleife töten.
+ * Das war am 19.08. schon einmal der Fall (Datenbank-Vorlauf in
+ * instrumentation.ts).
+ */
+export async function echteGeschlosseneTrades(): Promise<ClosedTrade[]> {
+  // Die Zeilenform wird ausdrücklich benannt: getPrisma() ist hier lose
+  // typisiert, ohne Annotation wäre `z` ein `any` und jeder Tippfehler im
+  // Feldnamen fiele erst zur Laufzeit auf.
+  type Zeile = {
+    market: string | null;
+    direction: string | null;
+    profitLoss: number | null;
+    updatedAt: Date | null;
+    createdAt: Date | null;
+  };
+  try {
+    const db = getPrisma();
+    const zeilen: Zeile[] = await db.trade.findMany({
+      where: { status: { not: "OPEN" } },
+      select: {
+        market: true, direction: true, profitLoss: true,
+        updatedAt: true, createdAt: true,
+      },
+      orderBy: { updatedAt: "asc" },
+    });
+    // Zeilen OHNE Markt fliegen raus (24.08.). Sie landeten sonst als Symbol
+    // "UNKNOWN" in der Lerntabelle und bekämen dort eine Win-Rate und einen
+    // Anpassungsfaktor — für einen Markt, den es nicht gibt. Ein Trade, der
+    // sich keinem Instrument zuordnen lässt, lehrt nichts über ein Instrument.
+    // Gemeldet statt still verworfen, sonst fehlt später die Erklärung für
+    // eine abweichende Anzahl.
+    const brauchbar = zeilen.filter((z) => (z.market ?? "").trim().length > 0);
+    if (brauchbar.length !== zeilen.length) {
+      console.warn(
+        `[learning] ${zeilen.length - brauchbar.length} geschlossene Trades ohne Markt — nicht gelernt`
+      );
+    }
+    return brauchbar.map((z) => {
+      const pnl = typeof z.profitLoss === "number" ? z.profitLoss : 0;
+      return {
+        symbol: (z.market as string).trim(),
+        // Die Spalte ist ein freier Text. Alles, was nicht eindeutig SELL/SHORT
+        // ist, gilt als BUY — dieselbe Vorgabe wie im Papierpfad, damit die
+        // beiden Quellen nicht unterschiedlich raten.
+        direction: /^(SELL|SHORT)$/i.test(String(z.direction ?? "")) ? "SELL" : "BUY",
+        pnl,
+        // Gleiche Schwelle wie im Papierpfad: ein Cent Rauschen ist kein
+        // Gewinn und kein Verlust.
+        outcome: pnl > 0.01 ? "WIN" : pnl < -0.01 ? "LOSS" : "BREAKEVEN",
+        closedAt: (z.updatedAt ?? z.createdAt ?? new Date()).toISOString(),
+      } as ClosedTrade;
+    });
+  } catch (e) {
+    console.error(
+      `[learning] ⚠️ echte Trades nicht lesbar — gelernt wird ohne sie: ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+    return [];
+  }
+}
 
 function extractClosedTrades(slot = "capital"): ClosedTrade[] {
   const history = PaperHistory.getAll(slot);
@@ -113,16 +198,38 @@ export type LearningAnalysisReport = {
   insights: string[];
   status: "LEARNING" | "WARMING_UP" | "NO_DATA";
   nextAction: string;
+  /** Woraus wurde gelernt (24.08.).
+   *
+   * Steht ABSICHTLICH im Bericht: bis heute lernte der Zyklus still aus der
+   * Papierhandels-Historie, und dem Bericht sah man das nicht an. Wer eine
+   * Kennzahl liest, muss erkennen können, ob sie aus echten oder simulierten
+   * Trades stammt. */
+  quelle: LernQuelle;
 };
 
-export async function runLearningCycle(slots = ["capital", "broker2"]): Promise<LearningAnalysisReport> {
+export async function runLearningCycle(
+  slots = ["capital", "broker2"],
+  quelle: LernQuelle = "echt",
+): Promise<LearningAnalysisReport> {
   const state = readLearningState();
 
-  // Trades von beiden Broker-Slots lesen
+  // QUELLE (24.08.). Vorher wurde ausschliesslich aus der Papierhandels-
+  // Historie gelernt — also aus Simulationen, während die echten Trades
+  // danebenlagen. Standard ist jetzt "echt"; Papier muss ausdrücklich
+  // verlangt werden und steht im Bericht, damit niemand eine simulierte
+  // Kennzahl für eine gemessene hält.
   const allTrades: ClosedTrade[] = [];
-  for (const slot of slots) {
-    try { allTrades.push(...extractClosedTrades(slot)); } catch { /* skip */ }
+  if (quelle === "echt" || quelle === "beide") {
+    allTrades.push(...(await echteGeschlosseneTrades()));
   }
+  if (quelle === "papier" || quelle === "beide") {
+    for (const slot of slots) {
+      try { allTrades.push(...extractClosedTrades(slot)); } catch { /* skip */ }
+    }
+  }
+  console.log(
+    `[learning] Zyklus mit Quelle "${quelle}": ${allTrades.length} geschlossene Trades`
+  );
 
   const newTrades = allTrades.length - state.totalTradesAnalyzed;
 
@@ -207,8 +314,14 @@ export async function runLearningCycle(slots = ["capital", "broker2"]): Promise<
     totalTrades === 0 ? "NO_DATA" :
     totalTrades < 5  ? "WARMING_UP" : "LEARNING";
 
+  // Der Text muss zur QUELLE passen (24.08.): "Starte Paper Trading" wäre bei
+  // Quelle "echt" ein falscher Rat — dort fehlen geschlossene ECHTE Trades,
+  // und die entstehen durch Handeln, nicht durch Simulieren.
   const nextAction =
-    status === "NO_DATA"     ? "Starte Paper Trading um Lern-Daten zu sammeln." :
+    status === "NO_DATA"
+      ? (quelle === "papier"
+          ? "Starte Paper Trading um Lern-Daten zu sammeln."
+          : "Noch keine geschlossenen Trades in der Datenbank — es gibt nichts zu lernen.") :
     status === "WARMING_UP"  ? `${5 - totalTrades} weitere Trades bis verlässliche Anpassungen möglich sind.` :
     `${newTrades} neue Trades analysiert — Strategie-Gewichte wurden aktualisiert.`;
 
@@ -238,6 +351,7 @@ export async function runLearningCycle(slots = ["capital", "broker2"]): Promise<
     insights,
     status,
     nextAction,
+    quelle,
   };
 }
 

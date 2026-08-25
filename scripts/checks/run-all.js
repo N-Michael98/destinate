@@ -82,6 +82,12 @@ const pruefer = [
   // geraten. Der neunte rechnende Pruefer; faengt auch NaN, das ein blosses
   // `bid <= 0` durchlaesst.
   ["kurs-riegel", require("./kurs-riegel")],
+  // 24.08. ergaenzt: der Lernzyklus las ausschliesslich die PAPIERHANDELS-
+  // Historie — gelernt wurde also aus Simulationen, waehrend die echten
+  // geschlossenen Trades danebenlagen. Jetzt aus der Trade-Tabelle, und der
+  // Bericht nennt die Quelle. Der zehnte rechnende Pruefer, und der erste
+  // ASYNCHRONE: er ruft echteGeschlosseneTrades() wirklich auf.
+  ["lern-quelle", require("./lern-quelle")],
 ];
 
 const nurDieser = process.argv[2];
@@ -92,28 +98,47 @@ console.log("\n" + "─".repeat(64));
 console.log("  REGRESSIONSPRÜFUNG");
 console.log("─".repeat(64));
 
-for (const [name, fn] of pruefer) {
-  if (nurDieser && name !== nurDieser) continue;
-  gelaufen++;
-  let ergebnis;
-  try {
-    ergebnis = fn();
-  } catch (e) {
-    // Ein abgestürzter Prüfer ist selbst ein Befund — sonst hielte man ihn
-    // fälschlich für bestanden.
-    console.log(`  ✗ ${name.padEnd(16)} PRÜFER ABGESTÜRZT: ${e.message}`);
-    befunde++;
-    continue;
+// ASYNCHRON SEIT 24.08. Ein Prüfer, der eine echte async-Funktion aufruft
+// (lern-quelle ruft echteGeschlosseneTrades, das die Datenbank liest), gibt
+// ein Promise zurück. Vorher lief `ergebnis.funde.length` darauf ins Leere und
+// der Prüfer wurde als ABGESTÜRZT gemeldet — ein Prüfer, den man technisch
+// nicht schreiben kann, ist eine stille Grenze des Netzes.
+//
+// Rückwärtskompatibel: `await` auf einen gewöhnlichen Rückgabewert liefert
+// genau diesen Wert. Alle bestehenden Prüfer bleiben unverändert.
+async function alleLaufen() {
+  for (const [name, fn] of pruefer) {
+    if (nurDieser && name !== nurDieser) continue;
+    gelaufen++;
+    let ergebnis;
+    try {
+      ergebnis = await fn();
+    } catch (e) {
+      // Ein abgestürzter Prüfer ist selbst ein Befund — sonst hielte man ihn
+      // fälschlich für bestanden.
+      console.log(`  ✗ ${name.padEnd(16)} PRÜFER ABGESTÜRZT: ${e.message}`);
+      befunde++;
+      continue;
+    }
+    // Ein Prüfer, der etwas anderes als { titel, funde } liefert, ist kaputt —
+    // ohne diese Zeile stürzte die Auswertung hier ab statt es zu melden.
+    if (!ergebnis || !Array.isArray(ergebnis.funde)) {
+      console.log(`  ✗ ${name.padEnd(16)} PRÜFER liefert kein { titel, funde }`);
+      befunde++;
+      continue;
+    }
+    if (ergebnis.funde.length === 0) {
+      console.log(`  ✓ ${name.padEnd(16)} ${ergebnis.titel}`);
+    } else {
+      console.log(`  ✗ ${name.padEnd(16)} ${ergebnis.titel}`);
+      for (const f of ergebnis.funde) console.log(`      → ${f}`);
+      befunde += ergebnis.funde.length;
+    }
   }
-  if (ergebnis.funde.length === 0) {
-    console.log(`  ✓ ${name.padEnd(16)} ${ergebnis.titel}`);
-  } else {
-    console.log(`  ✗ ${name.padEnd(16)} ${ergebnis.titel}`);
-    for (const f of ergebnis.funde) console.log(`      → ${f}`);
-    befunde += ergebnis.funde.length;
-  }
+  auswerten();
 }
 
+function auswerten() {
 console.log("─".repeat(64));
 if (gelaufen === 0) {
   console.log(`  Kein Prüfer namens "${nurDieser}" gefunden.`);
@@ -126,3 +151,10 @@ if (befunde === 0) {
 }
 console.log("─".repeat(64) + "\n");
 process.exit(befunde === 0 ? 0 : 1);
+}
+
+alleLaufen().catch((e) => {
+  // Auch der Läufer selbst darf nicht still sterben.
+  console.log(`\n  ✗ REGRESSIONSPRÜFUNG ABGEBROCHEN: ${e && e.message}\n`);
+  process.exit(1);
+});

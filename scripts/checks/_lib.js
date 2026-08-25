@@ -76,7 +76,23 @@ function keysOf(block) {
  *  @returns { exports } oder { fehler } — nie ein Wurf, damit ein Prüfer
  *           daraus einen Befund machen kann statt abzustürzen.
  */
-function ladeTsModul(relPfad) {
+/** TypeScript-Modul übersetzen und ausführen.
+ *
+ * `ersatz` (24.08.) erlaubt es, EINZELNE Importe durch eigene Objekte zu
+ * ersetzen — Schlüssel ist ein Textstück des Importpfads. Gebraucht, sobald
+ * ein Prüfling eine Aussenwelt hat, die der Stellvertreter nicht nachbilden
+ * kann: `await db.trade.findMany()` liefert über den Proxy kein Array, und
+ * jede Schleife darüber verhält sich dann anders als im Betrieb.
+ *
+ * Beispiel:
+ *   ladeTsModul("lib/learning/trade-feedback-engine.ts", {
+ *     "prisma": { getPrisma: () => ({ trade: { findMany: async () => zeilen } }) },
+ *   })
+ *
+ * Alles, was NICHT in `ersatz` steht, bekommt weiterhin den Stellvertreter —
+ * ein Prüfstand ohne echte Aussenwelt bleibt also die Voreinstellung.
+ */
+function ladeTsModul(relPfad, ersatz = {}) {
   const tsPfad = path.join(ROOT, "frontend", "node_modules", "typescript");
   if (!fs.existsSync(tsPfad)) {
     return { fehler: "typescript nicht gefunden — nachholen: cd frontend && npm install" };
@@ -94,8 +110,15 @@ function ladeTsModul(relPfad) {
       apply: () => { throw new Error("keine Aussenwelt im Prüfstand"); },
       construct: () => ({}),
     });
+    // Erst nach einem passenden Ersatz suchen, sonst der Stellvertreter.
+    const holen = (angabe) => {
+      for (const [teil, objekt] of Object.entries(ersatz)) {
+        if (String(angabe).includes(teil)) return objekt;
+      }
+      return stellvertreter();
+    };
     new Function("exports", "require", "module", "__filename", "__dirname", js)(
-      modul.exports, stellvertreter, modul, datei, path.dirname(datei));
+      modul.exports, holen, modul, datei, path.dirname(datei));
     return { exports: modul.exports };
   } catch (e) {
     return { fehler: `${relPfad} liess sich nicht ausführen: ${e.message}` };

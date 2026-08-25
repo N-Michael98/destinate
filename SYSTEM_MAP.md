@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 565 · Kanten: 1151
+Dateien mit internen Abhängigkeiten: 565 · Kanten: 1152
 
 
 ## analysis-engine/api
@@ -1257,6 +1257,7 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1151
 - `frontend/lib/learning/learning-store.ts`
   - → `frontend/lib/db-store.ts`
 - `frontend/lib/learning/trade-feedback-engine.ts`
+  - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/learning/learning-store.ts`
   - → `frontend/lib/paper-trading/paper-history.ts`
 - `frontend/lib/malwarebytes-integration/index.ts`
@@ -1776,7 +1777,7 @@ Dateien mit internen Abhängigkeiten: 565 · Kanten: 1151
 ## Am häufigsten benutzt (Änderung hier trifft am meisten)
 
 - `frontend/lib/smart-broker-selection/index.ts` — von 26 Dateien
-- `frontend/app/lib/prisma.ts` — von 20 Dateien
+- `frontend/app/lib/prisma.ts` — von 21 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 19 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 16 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien

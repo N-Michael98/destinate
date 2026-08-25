@@ -9,7 +9,7 @@ manuell geschickt werden.
 cd frontend && npm run check
 ```
 
-Braucht keine Installation. **Achtzehn Prüfer**, Rückgabe 0 = grün.
+Braucht keine Installation. **Neunzehn Prüfer**, Rückgabe 0 = grün.
 **Rot heisst: nicht committen, erst beheben.**
 
 Mit TypeScript-Prüfung zusammen:
@@ -36,7 +36,7 @@ Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweisl
 an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
 Prüfer, der nie rot wird, ist wertlos.
 
-**Neun Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
+**Zehn Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
 TypeScript-Datei und rufen die echte Funktion auf. Damit fällt dort auch ein
 subtil falscher Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle,
 fehlender Null-Fall), der strukturell unauffällig bliebe:
@@ -52,6 +52,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `python-ueberwachung` | `meldePythonAufruf()`, `pythonUebergang()` | 19.08. |
 | `vola-skalierung` | `getVolatilityAdjustedRisk()` | 23.08. |
 | `kurs-riegel` | `checkPriceAvailable()` | 24.08. |
+| `lern-quelle` | `echteGeschlosseneTrades()`, `runLearningCycle()` | 24.08. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -61,6 +62,38 @@ Kommentar, einer Logzeile oder an einer anderen Aufrufstelle — während die
 echte Verdrahtung fehlte. Zuletzt am 18.08. im Sabotage-Lauf von
 `lifecycle-rueckkehr`. Wer zählt, ob etwas *benutzt* wird, muss Kommentare und
 Zeichenketten vorher entfernen (`ohneKommentareUndTexte()` dort).
+
+## Gelernt wird aus echten Trades, nicht aus Simulationen
+
+`runLearningCycle()` in `lib/learning/trade-feedback-engine.ts` las bis zum
+24.08. **ausschliesslich die Papierhandels-Historie**. Der Zyklus lernte also
+aus Simulationen, während die echten geschlossenen Trades in der
+`Trade`-Tabelle danebenlagen — und dem Bericht sah man das nicht an.
+
+Jetzt: `echteGeschlosseneTrades()` liest `status != "OPEN"` aus der Datenbank,
+Standardquelle ist `"echt"`, und die Quelle steht **im Bericht**
+(`quelle: "echt" | "papier" | "beide"`).
+
+Beide Quellen werden **nicht vermischt**. Papier ist Simulation, echt ist echt;
+ein gemeinsamer Topf ergäbe eine Kennzahl, der man nicht ansieht, wie viel
+davon erfunden ist. `"beide"` bleibt möglich, muss aber verlangt werden.
+
+Ausgeschlossen werden: **offene** Trades (ihr `profitLoss` ist ein
+Zwischenstand, kein Ergebnis) und Zeilen **ohne Markt** (sie landeten sonst als
+Symbol `UNKNOWN` mit eigener Win-Rate in der Lerntabelle). Beides wird gemeldet,
+nicht still verworfen.
+
+**Was das NICHT tut:** am Handel ändert sich nichts. `getLearningAdjustmentFactor()`
+wird nur von `strategy-evolution/evolution-engine.ts` gelesen, und das läuft in
+keiner Schleife. Der Weg vom Gelernten zum Handel ist eine eigene, bewusste
+Entscheidung — und gehört erst gegangen, wenn gemessen ist, dass das Lernsignal
+etwas taugt.
+
+**Zweiter Lernstrang, weiterhin schlafend:**
+`lib/learning-feedback-integration/` und `lib/outcome-learning-auto-update/`
+rechnen mit fest eingebauten Mock-Daten und haben **gar keinen** Konsumenten.
+Ins Dashboard gelangt daraus nur `learning: READY`, keine erfundenen Zahlen.
+Entscheidung offen: verdrahten oder entfernen.
 
 ## Vorgehen bei Änderungen
 
