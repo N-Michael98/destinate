@@ -625,6 +625,70 @@ export async function register() {
         console.log("[instrumentation] Claude Security Watchdog started (every 3min)");
       } catch { /* non-fatal */ }
 
+      // ── Lernzyklus stündlich (24.08., Schritt 2) ──────────────────────────
+      //
+      // WOZU. runLearningCycle() liest seit dem 24.08. die ECHTEN
+      // geschlossenen Trades statt der Papierhandels-Historie — aber NIEMAND
+      // rief es auf. Es hing an zwei API-Routen, die von Hand angestossen
+      // werden mussten. Eine Auswertung, die nur läuft, wenn jemand daran
+      // denkt, ist keine Auswertung.
+      //
+      // STÜNDLICH, nicht öfter. Der Zyklus liest bei jedem Lauf ALLE
+      // geschlossenen Trades neu (kein Index auf `status`, also ein voller
+      // Durchgang). Geschlossene Trades entstehen ein paar Mal am Tag —
+      // häufiger zu rechnen erzeugt Datenbanklast ohne neue Erkenntnis.
+      //
+      // ERSTER LAUF NACH 2 MINUTEN statt sofort: beim Start sind Datenbank
+      // und Broker-Sitzung noch am Hochfahren. Ohne diese Wartezeit stünde im
+      // Log direkt nach jedem Deploy ein Fehler, der keiner ist.
+      //
+      // WAS ER NICHT TUT: er ändert nichts am Handel. Der gelernte Faktor
+      // wird bisher nur von strategy-evolution/evolution-engine.ts gelesen,
+      // und das läuft in keiner Schleife. Dieser Zyklus SAMMELT die Messdaten,
+      // mit denen sich später entscheiden lässt, ob das Lernsignal überhaupt
+      // etwas taugt.
+      try {
+        const { runLearningCycle } = await import("./lib/learning/trade-feedback-engine");
+        let lernzyklusLaeuft = false;
+        const lernen = async () => {
+          if (lernzyklusLaeuft) {
+            console.warn("[learning] Vorheriger Zyklus läuft noch — überspringe diesen Tick");
+            return;
+          }
+          // Killswitch respektiert (gleiche Regel wie alle anderen Schleifen).
+          // Der Zyklus handelt zwar nicht, schreibt aber den Lernzustand — und
+          // während eines Notaus ist die Lage kein guter Lehrmeister.
+          try {
+            const { isKillswitchActive } = await import("./lib/killswitch");
+            if (isKillswitchActive()) {
+              console.warn("[learning] 🔴 Killswitch aktiv — Lernzyklus übersprungen");
+              return;
+            }
+          } catch { /* non-fatal — im Zweifel weiterlaufen wie bisher */ }
+          lernzyklusLaeuft = true;
+          try {
+            const bericht = await runLearningCycle();
+            console.log(
+              `[learning] Zyklus fertig — Quelle "${bericht.quelle}", ` +
+              `${bericht.totalTradesAnalyzed} Trades, Status ${bericht.status}, ` +
+              `${Object.keys(bericht.symbolPerformance).length} Symbole`
+            );
+          } catch (err) {
+            // Eine Ausnahme darf die Schleife nicht töten — sonst lernt das
+            // System ab dem ersten Fehler nie wieder, ohne dass es auffällt.
+            console.error(
+              "[learning] Zyklus-Fehler:",
+              err instanceof Error ? err.message : String(err)
+            );
+          } finally {
+            lernzyklusLaeuft = false;
+          }
+        };
+        setTimeout(lernen, 2 * 60 * 1000);
+        setInterval(lernen, 60 * 60 * 1000);
+        console.log("[instrumentation] Lernzyklus gestartet (stündlich, erster Lauf in 2min)");
+      } catch { /* non-fatal */ }
+
     } catch (err) {
       console.error("[instrumentation] Setup error:", err);
     }

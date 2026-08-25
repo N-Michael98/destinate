@@ -216,5 +216,64 @@ module.exports = async function pruefe() {
   pruefe1("die Quelle wird nicht in den Bericht geschrieben",
     /\bquelle,?\s*\n\s*\};/.test(src) || /quelle:\s*quelle/.test(src));
 
+  // ── Teil 6: der Zyklus wird auch WIRKLICH gefahren ────────────────────
+  //
+  // Bis zum 24.08. hing runLearningCycle an zwei API-Routen, die von Hand
+  // angestossen werden mussten. Eine Auswertung, die nur läuft, wenn jemand
+  // daran denkt, ist keine Auswertung.
+  //
+  // EHRLICHE ABGRENZUNG: die Schleife selbst lässt sich hier nicht ausführen —
+  // instrumentation.ts baut beim Laden Broker-Sitzungen und Handelsschleifen
+  // auf. Geprüft wird deshalb die VERDRAHTUNG im Quelltext, wie bei allen
+  // anderen Schleifen dieser Datei auch. Die Rechnung steckt in den Teilen
+  // 1 bis 5: die Funktion, die hier gerufen wird, ist dort nachgerechnet.
+  //
+  // EINGEGRENZT auf den Lern-Block: `isKillswitchActive` und `setInterval`
+  // stehen in dieser Datei ein Dutzend Mal. Wer die ganze Datei durchsucht,
+  // findet die Wachen einer FREMDEN Schleife und hält sie für die eigenen —
+  // genau die Fehlerklasse, für die es funktionsRumpf() gibt.
+  const instr = read("frontend/instrumentation.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const start = instr.indexOf("runLearningCycle } = await import");
+  pruefe1("keine Schleife ruft den Lernzyklus", start >= 0);
+  if (start >= 0) {
+    // ENDE GENAU BESTIMMEN, nicht schätzen. Die erste Fassung nahm 2600
+    // Zeichen ab dem Anfang — und reichte damit in die NÄCHSTE Schleife
+    // hinein. Im Sabotage-Lauf vom 24.08. liess sich der Fehlerabfang des
+    // Lernzyklus ersatzlos streichen, und der Prüfer blieb grün: er hatte das
+    // `catch (err)` einer fremden Schleife gefunden. Genau die Fehlerklasse,
+    // die hier am häufigsten zuschlägt.
+    //
+    // Der Block endet an seiner eigenen Startmeldung — jede Schleife in
+    // instrumentation.ts schliesst mit einer solchen Zeile ab.
+    const endeRel = instr.slice(start).indexOf('console.log("[instrumentation] Lernzyklus');
+    const block = instr.slice(start, endeRel > 0 ? start + endeRel : start + 2600);
+    pruefe1("der Lern-Block ist nicht abgrenzbar", endeRel > 0);
+    pruefe1("der Lernzyklus wird nicht aufgerufen",
+      /await\s+runLearningCycle\(\)/.test(block));
+    pruefe1("keine Wiederholung eingerichtet", /setInterval\(/.test(block));
+    pruefe1("kein erster Lauf nach dem Start", /setTimeout\(/.test(block));
+    pruefe1("kein Riegel gegen überlappende Läufe",
+      /if\s*\(\s*lernzyklusLaeuft\s*\)/.test(block));
+    pruefe1("der Riegel wird nicht wieder freigegeben",
+      /finally\s*\{\s*lernzyklusLaeuft\s*=\s*false/.test(block));
+    pruefe1("der Killswitch sperrt den Lernzyklus nicht",
+      /isKillswitchActive\(\)/.test(block));
+    // Nicht nur "irgendwo steht ein catch", sondern: der Fehlerabfang DIESES
+    // Zyklus mit SEINER Meldung. Ohne ihn läuft eine unbehandelte
+    // Promise-Ablehnung — und die beendet in Node den ganzen Dienst.
+    pruefe1("ein Fehler im Zyklus kann die Schleife töten",
+      /\}\s*catch\s*\([^)]*\)\s*\{\s*console\.error\(\s*\n?\s*"\[learning\] Zyklus-Fehler:"/.test(block),
+      "kein eigener Fehlerabfang mit [learning]-Meldung");
+    // Die Wiederholung darf nicht im Minutentakt laufen: der Zyklus liest bei
+    // jedem Lauf ALLE geschlossenen Trades, und es gibt keinen Index auf
+    // `status`. Geschlossene Trades entstehen ein paar Mal am Tag.
+    const takt = block.match(/setInterval\([^,]+,\s*([0-9*\s_]+)\)/);
+    const ms = takt ? Function(`"use strict";return (${takt[1]})`)() : 0;
+    pruefe1("der Lernzyklus läuft häufiger als alle 15 Minuten",
+      ms >= 15 * 60 * 1000, `${Math.round(ms / 60000)} Minuten`);
+  }
+
   return { titel: `Lern-Quelle (${geprueft} Rechnungen, echte Funktion)`, funde };
 };
