@@ -65,9 +65,20 @@ async function checkEndpoint(key: string, checkedAt: string): Promise<{ status: 
         const r = getBrokerHealthMonitorReport();
         return { status: "READY", summary: `${r.healthyBrokers ?? 0}/${r.totalBrokers ?? 0} brokers healthy` };
       }
+      // 26.08.: isReady() gab bedingungslos `true` zurück, die Kachel meldete
+      // also immer "Online". Der dahinterliegende Preis-Cache wird von
+      // NIEMANDEM gefüllt (`priceCache.set()` hat keinen Aufrufer) — die
+      // Meldung war dauerhaft unwahr. Jetzt steht die Zahl dabei, damit man
+      // "leer" von "läuft" unterscheiden kann.
       case "marketData": {
-        const ready = marketDataManager.isReady();
-        return { status: ready ? "READY" : "WARNING", summary: ready ? "Online" : "Degraded" };
+        const anzahl = marketDataManager.cacheSize();
+        return anzahl > 0
+          ? { status: "READY", summary: `${anzahl} Preise im Cache` }
+          : {
+              status: "WARNING",
+              summary: "Cache leer — diese Schicht wird nicht befüllt "
+                + "(der Handelspfad holt Kurse direkt vom Broker/Python)",
+            };
       }
       case "marketRegime": {
         return { status: "READY", summary: "Market Regime online" };

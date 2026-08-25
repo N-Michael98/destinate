@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 560 · Kanten: 1148
+Dateien mit internen Abhängigkeiten: 549 · Kanten: 1129
 
 
 ## analysis-engine/api
@@ -1081,22 +1081,6 @@ Dateien mit internen Abhängigkeiten: 560 · Kanten: 1148
   - → `frontend/lib/consensus-engine/consensus-types.ts`
 - `frontend/lib/consensus-engine/vote-calculator.ts`
   - → `frontend/lib/consensus-engine/consensus-types.ts`
-- `frontend/lib/consensus-intelligence/agent-signal.ts`
-  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
-- `frontend/lib/consensus-intelligence/claude-risk-signal.ts`
-  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
-- `frontend/lib/consensus-intelligence/conflict-detector.ts`
-  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
-- `frontend/lib/consensus-intelligence/consensus-manager.ts`
-  - → `frontend/lib/consensus-intelligence/agent-signal.ts`
-  - → `frontend/lib/consensus-intelligence/claude-risk-signal.ts`
-  - → `frontend/lib/consensus-intelligence/conflict-detector.ts`
-  - → `frontend/lib/consensus-intelligence/decision-matrix.ts`
-  - → `frontend/lib/consensus-intelligence/gpt-signal.ts`
-- `frontend/lib/consensus-intelligence/decision-matrix.ts`
-  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
-- `frontend/lib/consensus-intelligence/gpt-signal.ts`
-  - → `frontend/lib/consensus-intelligence/consensus-types.ts`
 - `frontend/lib/db-store.ts`
   - → `frontend/app/lib/prisma.ts`
 - `frontend/lib/demo-execution/execution-engine.ts`
@@ -1292,20 +1276,6 @@ Dateien mit internen Abhängigkeiten: 560 · Kanten: 1148
   - → `frontend/lib/market-regime-engine/regime-types.ts`
 - `frontend/lib/market-regime-engine/volatility-detector.ts`
   - → `frontend/lib/market-regime-engine/regime-types.ts`
-- `frontend/lib/market-regime/news-regime.ts`
-  - → `frontend/lib/market-regime/regime-types.ts`
-- `frontend/lib/market-regime/regime-manager.ts`
-  - → `frontend/lib/market-regime/news-regime.ts`
-  - → `frontend/lib/market-regime/regime-types.ts`
-  - → `frontend/lib/market-regime/risk-regime.ts`
-  - → `frontend/lib/market-regime/trend-regime.ts`
-  - → `frontend/lib/market-regime/volatility-regime.ts`
-- `frontend/lib/market-regime/risk-regime.ts`
-  - → `frontend/lib/market-regime/regime-types.ts`
-- `frontend/lib/market-regime/trend-regime.ts`
-  - → `frontend/lib/market-regime/regime-types.ts`
-- `frontend/lib/market-regime/volatility-regime.ts`
-  - → `frontend/lib/market-regime/regime-types.ts`
 - `frontend/lib/market-scanner/ai-analysis-engine.ts`
   - → `frontend/lib/ai-config/ai-config-store.ts`
   - → `frontend/lib/broker-config/index.ts`
