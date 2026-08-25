@@ -2507,3 +2507,169 @@ def test_kerzen_grenzen_liegen_nicht_unter_dem_gemessenen_bedarf():
 
     assert IND.MIN_KERZEN >= 28, IND.MIN_KERZEN
     assert MI.MIN_KERZEN_TA >= 50, MI.MIN_KERZEN_TA
+
+
+# ── Vier Mess-Indikatoren: Keltner, Ichimoku, Fibonacci, Volume Profile ──────
+#
+# ZUM MESSEN GEBAUT, NICHT ZUM HANDELN (25.08.). Aus der Ideenliste standen
+# vier Indikatoren offen; keiner existierte im Programm. Bevor irgendetwas
+# davon den Handel beruehrt, wird gemessen — dieselbe Reihenfolge wie bei den
+# Chartmustern, wo am Ende KEINES verlaesslich war.
+#
+# DIE KRITISCHE EIGENSCHAFT IST DER BLICK IN DIE ZUKUNFT. Ein Signal an Balken
+# i darf nur von Daten bis i abhaengen. Ein einziger Ausrutscher erzeugt eine
+# Kennzahl, die grossartig aussieht und im Betrieb wertlos ist — und man sieht
+# es dem Ergebnis NICHT an. Deshalb steht das hier an erster Stelle.
+
+import services.indikator_signale as _IS                              # noqa: E402
+
+
+def _ind_kerzen(n: int, samen: int = 20260825):
+    import numpy as _np
+    rng = _np.random.default_rng(samen)
+    basis = 100 + rng.normal(0, 1.0, n).cumsum()
+    return pd.DataFrame({
+        "open": basis + rng.normal(0, 0.2, n),
+        "high": basis + _np.abs(rng.normal(0.8, 0.4, n)),
+        "low": basis - _np.abs(rng.normal(0.8, 0.4, n)),
+        "close": basis + rng.normal(0, 0.2, n),
+        "volume": rng.integers(500, 5000, n).astype(float),
+    }, index=pd.date_range("2026-01-01", periods=n, freq="4h", tz="UTC"))
+
+
+def test_indikatoren_sehen_nicht_in_die_zukunft_abschneiden():
+    """Reihe ueber die vollen Daten vs. ueber ein bei i abgeschnittenes Stueck.
+
+    Ist das Signal an i beide Male gleich, wurde nichts von danach benutzt.
+    """
+    df = _ind_kerzen(260)
+    punkte = list(range(120, 255, 9))
+    for name, fn in _IS.INDIKATOREN.items():
+        voll = fn(df)
+        assert len(voll) == len(df), (name, len(voll))
+        for i in punkte:
+            teil = fn(df.iloc[: i + 1])
+            assert len(teil) == i + 1, (name, i, len(teil))
+            assert teil[i] == voll[i], (
+                f"{name} an Balken {i}: abgeschnitten {teil[i]} != voll {voll[i]} "
+                f"— die Funktion kennt die Zukunft")
+
+
+def test_indikatoren_sehen_nicht_in_die_zukunft_verfaelschung():
+    """Schaerfer als das Abschneiden: alles NACH i wird verzehnfacht.
+
+    Aendert sich das Signal an i dadurch, ist es ein Blick nach vorn. Diese
+    Variante faengt auch Faelle, in denen das Abschneiden zufaellig dasselbe
+    ergibt (etwa weil ein Fenster ohnehin nicht bis dorthin reicht).
+    """
+    df = _ind_kerzen(260)
+    punkte = list(range(120, 255, 13))
+    for name, fn in _IS.INDIKATOREN.items():
+        voll = fn(df)
+        for i in punkte:
+            kaputt = df.copy()
+            for spalte in ("open", "high", "low", "close"):
+                kaputt.iloc[i + 1:, kaputt.columns.get_loc(spalte)] *= 10.0
+            kaputt.iloc[i + 1:, kaputt.columns.get_loc("volume")] *= 100.0
+            assert fn(kaputt)[i] == voll[i], (
+                f"{name} an Balken {i} aendert sich, wenn die ZUKUNFT verfaelscht "
+                f"wird — die Funktion kennt sie")
+
+
+def test_indikatoren_liefern_immer_die_richtige_laenge():
+    """Eine kuerzere Reihe wuerde die Auswertung alles verwerfen lassen —
+    bewerte_historie() verlangt gleiche Laengen und meldet sonst 'unbrauchbar'.
+    Auch bei zu wenig Daten muss die Laenge stimmen."""
+    for n in (0, 1, 5, 20, 49, 50, 51, 77, 200):
+        df = _ind_kerzen(n) if n else pd.DataFrame(
+            columns=["open", "high", "low", "close", "volume"])
+        for name, fn in _IS.INDIKATOREN.items():
+            reihe = fn(df)
+            assert len(reihe) == n, (name, n, len(reihe))
+            assert all(r in ("LONG", "SHORT", "NEUTRAL") for r in reihe), (name, n)
+
+
+def test_indikatoren_ohne_volumen_schweigen():
+    """Volume Profile OHNE Volumen muss NEUTRAL liefern, keine erfundene Zahl.
+
+    ERREICHBAR UND HAEUFIG: von 30 Symbolen der Watchlist liefern 13 kein
+    Volumen — darunter ALLE zehn Forex-Paare (gemessen 25.08.). Wer dort ein
+    Signal erfindet, misst Rauschen.
+    """
+    df = _ind_kerzen(120).drop(columns=["volume"])
+    reihe = _IS.volume_profile_signale(df)
+    assert len(reihe) == len(df)
+    assert set(reihe) == {"NEUTRAL"}, set(reihe)
+
+    df0 = _ind_kerzen(120)
+    df0["volume"] = 0.0
+    assert set(_IS.volume_profile_signale(df0)) == {"NEUTRAL"}
+
+
+def test_keltner_bricht_in_die_richtige_richtung_aus():
+    """Ein kuenstlicher Ausbruch nach oben MUSS LONG geben, nicht SHORT.
+
+    Faengt ein vertauschtes Vorzeichen — der Umbau, der strukturell voellig
+    unauffaellig bleibt und jede Messung ins Gegenteil dreht.
+    """
+    n = 80
+    schluss = [100.0] * (n - 5) + [130.0, 132.0, 134.0, 136.0, 138.0]
+    df = pd.DataFrame({
+        "open": schluss, "high": [c + 0.5 for c in schluss],
+        "low": [c - 0.5 for c in schluss], "close": schluss,
+        "volume": [1000.0] * n,
+    }, index=pd.date_range("2026-01-01", periods=n, freq="4h", tz="UTC"))
+    reihe = _IS.keltner_signale(df)
+    assert reihe[-1] == "LONG", reihe[-6:]
+
+    fallend = [100.0] * (n - 5) + [70.0, 68.0, 66.0, 64.0, 62.0]
+    df2 = pd.DataFrame({
+        "open": fallend, "high": [c + 0.5 for c in fallend],
+        "low": [c - 0.5 for c in fallend], "close": fallend,
+        "volume": [1000.0] * n,
+    }, index=df.index)
+    assert _IS.keltner_signale(df2)[-1] == "SHORT", _IS.keltner_signale(df2)[-6:]
+
+
+def test_fibonacci_trifft_die_zone_und_nur_die():
+    """Ein Ruecksetzer GENAU in die 50–61,8-%-Zone gibt LONG, einer davor
+    oder danach nicht. Prueft die Grenzen, nicht nur die Mitte."""
+    n = _IS.FIB_FENSTER
+    # Aufwaertsbewegung 100 -> 200, dann Ruecksetzer auf ein Ziel.
+    def bauen(ziel: float):
+        werte = [100.0 + i * (100.0 / (n - 2)) for i in range(n - 1)] + [ziel]
+        return pd.DataFrame({
+            "open": werte, "high": werte, "low": werte, "close": werte,
+            "volume": [1000.0] * n,
+        }, index=pd.date_range("2026-01-01", periods=n, freq="4h", tz="UTC"))
+
+    # Hoch 200, Tief 100 -> Ruecksetzer 55 % liegt bei 200 - 0.55*100 = 145
+    assert _IS.fibonacci_signale(bauen(145.0))[-1] == "LONG"
+    # 30 % Ruecksetzer (170) liegt VOR der Zone
+    assert _IS.fibonacci_signale(bauen(170.0))[-1] == "NEUTRAL"
+    # 80 % Ruecksetzer (120) liegt DAHINTER
+    assert _IS.fibonacci_signale(bauen(120.0))[-1] == "NEUTRAL"
+
+
+def test_indikatoren_beruehren_den_handel_nicht():
+    """Das Modul ist zum MESSEN gebaut. Wird es von einem Handelspfad
+    importiert, ist aus der Messung unbemerkt eine Handelsentscheidung
+    geworden — genau die Grenze, die bei den Chartmustern bewusst gezogen
+    wurde."""
+    import re as _re
+    from pathlib import Path as _Path
+
+    wurzel = _Path(__file__).resolve().parent.parent
+    treffer = []
+    for pfad in wurzel.rglob("*.py"):
+        if any(x in pfad.parts for x in ("__pycache__", "venv", "tests")):
+            continue
+        if pfad.name == "indikator_signale.py":
+            continue
+        text = pfad.read_text(encoding="utf-8", errors="ignore")
+        text = _re.sub(r"#[^\n]*", "", text)
+        if "indikator_signale" in text:
+            treffer.append(pfad.name)
+    assert not treffer, (
+        f"indikator_signale wird importiert von {treffer} — es ist zum Messen "
+        f"gebaut, nicht zum Handeln")
