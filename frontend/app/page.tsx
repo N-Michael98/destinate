@@ -126,7 +126,14 @@ const navGroups: NavGroup[] = [
       { label: "Execution Center", icon: "EX", view: "execution-center" },
       { label: "Live Execution", icon: "GO", view: "live-execution" },
       { label: "Broker Center", icon: "BR", view: "broker-center" },
-      { label: "Live Prep", icon: "LP", view: "live-prep" },
+      // ENTFERNT 26.08.: "Live Prep" (view: "live-prep"). Der Eintrag stand im
+      // Menü, aber es gab KEINE Zeile, die ihn rendert — als einziger von 29.
+      // Der Klick fiel deshalb auf CenterPlaceholder durch und zeigte dort
+      // "Status: Prepared" in Grün und "Diese Ansicht ist bewusst aus dem
+      // Hauptdashboard ausgelagert". Beides unwahr: sie war nicht ausgelagert,
+      // es gab sie nicht. Im ganzen Programm existiert keine Live-Prep-
+      // Komponente. Der Prüfer `menue-ansichten` hält Menü und gerenderte
+      // Ansichten ab heute deckungsgleich.
     ],
   },
   {
@@ -236,9 +243,13 @@ function CenterPlaceholder({
           <p className="text-gray-400 text-xl mt-3">{subtitle}</p>
         </div>
 
-        <div className="bg-black border border-gray-800 rounded-2xl p-5 min-w-[180px]">
+        {/* 26.08.: hier stand ein grünes "Prepared". Diese Kachel erscheint
+            NUR, wenn eine Ansicht keine Render-Zeile hat — also genau dann,
+            wenn nichts gebaut ist. Ein grünes "Prepared" darüber ist die
+            Fehlerklasse, die dieses Programm wiederholt getroffen hat. */}
+        <div className="bg-black border border-yellow-800 rounded-2xl p-5 min-w-[180px]">
           <p className="text-gray-400">Center Status</p>
-          <p className="text-green-400 text-2xl font-bold">Prepared</p>
+          <p className="text-yellow-400 text-2xl font-bold">Nicht gebaut</p>
         </div>
       </div>
 
@@ -3639,30 +3650,39 @@ function renderActiveCenter(activeView: string, activeLabel: string) {
   if (activeView === "scheduler") return <SchedulerCenter />;
 
   return (
+    // SICHERHEITSNETZ, nicht Anzeige (26.08.). Hierher kommt man nur, wenn ein
+    // Menüeintrag KEINE Render-Zeile hat. Vorher stand hier "Status: Prepared /
+    // Mode: Simulation / Safety: Locked" — drei erfundene Zusicherungen über
+    // etwas, das gar nicht existiert. Genau so sah "Live Prep" jahrelang
+    // funktionsfähig aus. Jetzt sagt die Seite, was wirklich der Fall ist.
+    //
+    // Der Durchfall bleibt bestehen, damit ein vergessener Eintrag eine
+    // erklärende Seite ergibt statt einer leeren. Auffallen soll er trotzdem —
+    // dafür sorgt der Prüfer `menue-ansichten`.
     <CenterPlaceholder
       title={`${activeLabel}`}
-      subtitle="Professionelles Modul-Center. Diese Ansicht ist bewusst aus dem Hauptdashboard ausgelagert."
+      subtitle="Für diese Ansicht gibt es keine Umsetzung. Der Menüeintrag existiert, die Ansicht dahinter nicht."
       cards={[
         {
           title: "Status",
-          value: "Prepared",
-          note: "Module architecture ready",
-          accent: "text-green-400",
-          border: "border-green-900",
+          value: "Nicht gebaut",
+          note: "keine Render-Zeile für diese Ansicht",
+          accent: "text-yellow-400",
+          border: "border-yellow-900",
         },
         {
-          title: "Mode",
-          value: "Simulation",
-          note: "No live execution",
-          accent: "text-purple-400",
-          border: "border-purple-900",
+          title: "Daten",
+          value: "keine",
+          note: "hier wird nichts geladen und nichts gerechnet",
+          accent: "text-gray-400",
+          border: "border-gray-800",
         },
         {
-          title: "Safety",
-          value: "Locked",
-          note: "Live trading blocked",
-          accent: "text-red-400",
-          border: "border-red-900",
+          title: "Handel",
+          value: "unberührt",
+          note: "diese Seite löst nichts aus",
+          accent: "text-gray-400",
+          border: "border-gray-800",
         },
       ]}
     />

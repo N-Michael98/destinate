@@ -250,5 +250,43 @@ module.exports = function pruefe() {
     }
   }
 
-  return { titel: `Sicherheitsnetze (${pruefungen.length + 12} Prüfungen)`, funde };
+  // ── Der Brute-Force-Zähler räumt auf (26.08.) ───────────────────────────
+  //
+  // ANLASS. `bruteForceMap` in middleware.ts bekam für JEDE anonyme Anfrage
+  // einen Eintrag und hat ihn nie wieder entfernt — eine IP, die einmal
+  // vorbeikommt, blieb bis zum nächsten Deploy stehen. Ein öffentlich
+  // erreichbarer Server wird dauerhaft von Scannern abgeklopft; die Karte
+  // wuchs also monoton. Kein Absturz, aber ein Leck, und es lief seit dem
+  // ersten Tag.
+  //
+  // Belegt verhaltensneutral: 25 520 Anfragen durch beide Fassungen, NULL
+  // abweichende Entscheidungen bei 88 echten Auslösungen. Entfernt werden nur
+  // Einträge, deren Fenster ohnehin abgelaufen ist.
+  //
+  // OHNE KOMMENTARE — der Name steht auch in der Erklärung darüber.
+  {
+    const mw = read("frontend/middleware.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    if (!/function\s+bruteForceAufraeumen/.test(mw)) {
+      funde.push("FEHLT: middleware.ts räumt bruteForceMap nicht auf — Speicherleck");
+    }
+    if (!/bruteForceMap\.delete\(/.test(mw)) {
+      funde.push("FEHLT: bruteForceAufraeumen löscht nichts");
+    }
+    // Nur ABGELAUFENE Einträge dürfen weg. Eine Verdrängung ohne Fensterprüfung
+    // würde einem Angreifer seinen Zähler zurücksetzen.
+    if (!/now\s*-\s*eintrag\.firstSeen\s*>\s*BRUTE_WINDOW_MS/.test(mw)) {
+      funde.push(
+        "FEHLT: das Aufräumen prüft das Zeitfenster nicht — es würde laufende "
+        + "Zähler löschen und damit die Brute-Force-Erkennung aushebeln"
+      );
+    }
+    // Und es muss auch GERUFEN werden.
+    if (!/bruteForceAufraeumen\(now\)/.test(mw)) {
+      funde.push("FEHLT: bruteForceAufraeumen wird nirgends aufgerufen");
+    }
+  }
+
+  return { titel: `Sicherheitsnetze (${pruefungen.length + 16} Prüfungen)`, funde };
 };

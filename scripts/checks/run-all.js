@@ -96,6 +96,13 @@ const pruefer = [
   // elfte rechnende Pruefer laedt das Modul deshalb ZWEIMAL und prueft, dass
   // beide Instanzen denselben Zustand sehen — das kann keine Struktur-Pruefung.
   ["preis-cache", require("./preis-cache")],
+  // 26.08. ergaenzt: das Dashboard ist EINE Seite mit einem Ansichtsumschalter.
+  // Menue (navGroups) und Render-Kette (activeView === "…") stehen 3500 Zeilen
+  // auseinander in derselben Datei — und waren auseinandergelaufen. "Live Prep"
+  // stand im Menue ohne Render-Zeile; der Klick fiel auf den Platzhalter durch
+  // und zeigte dort "Status: Prepared" in Gruen. Struktur-Pruefer, kein
+  // rechnender: hier gibt es nichts zu rechnen, nur zwei Listen abzugleichen.
+  ["menue-ansichten", require("./menue-ansichten")],
 ];
 
 const nurDieser = process.argv[2];

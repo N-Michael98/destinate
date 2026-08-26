@@ -70,6 +70,37 @@ const BRUTE_WINDOW_MS = 60_000; // 1 minute
 // vorher fälschlich als "Brute Force" geflaggt (False Positive → Self-Block).
 const BRUTE_THRESHOLD_ANON = 30; // 30+ anonyme Requests/min = verdächtig (Login-Bruteforce etc.)
 
+// ── Speicherleck geschlossen (26.08.) ────────────────────────────────────────
+//
+// `bruteForceMap` bekam für JEDE anonyme Anfrage einen Eintrag und hat ihn NIE
+// wieder entfernt. Eine IP, die einmal vorbeikommt und nie wiederkehrt, blieb
+// bis zum nächsten Deploy stehen. Ein öffentlich erreichbarer Server wird
+// dauerhaft von Scannern abgeklopft — die Karte wächst also monoton mit der
+// Zahl fremder IPs. Kein Absturz, aber ein Leck, und es lief seit dem ersten
+// Tag.
+//
+// AUFRÄUMEN IST HIER VERHALTENSNEUTRAL, und nur deshalb ist es sicher: entfernt
+// werden ausschliesslich Einträge, deren Fenster ABGELAUFEN ist. Genau die
+// setzt die Zählung unten bei der nächsten Anfrage ohnehin auf
+// `{ count: 1 }` zurück. Kein laufender Zähler wird angetastet, die
+// Brute-Force-Erkennung ändert sich um kein Jota.
+//
+// EHRLICHE GRENZE: kämen mehr als MAX_IPS VERSCHIEDENE IPs innerhalb einer
+// Minute, fände der Durchlauf nichts zum Löschen und die Karte wüchse weiter.
+// Das ist Absicht — unter einem verteilten Angriff ist ein wachsender
+// Speicher besser als eine Verdrängung, die dem Angreifer seinen Zähler
+// zurücksetzt.
+//
+// Gleiches Muster wie `memCache` in lib/cache/redis-cache.ts.
+const BRUTE_MAX_IPS = 10_000;
+
+function bruteForceAufraeumen(now: number): void {
+  if (bruteForceMap.size <= BRUTE_MAX_IPS) return;
+  for (const [ip, eintrag] of bruteForceMap) {
+    if (now - eintrag.firstSeen > BRUTE_WINDOW_MS) bruteForceMap.delete(ip);
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const ip = getClientIP(request);
@@ -111,6 +142,7 @@ export async function middleware(request: NextRequest) {
   const now = Date.now();
   let bruteForce = false;
   if (!hasAuthCookie) {
+    bruteForceAufraeumen(now);
     const bfEntry = bruteForceMap.get(ip) ?? { count: 0, firstSeen: now };
     if (now - bfEntry.firstSeen > BRUTE_WINDOW_MS) {
       bruteForceMap.set(ip, { count: 1, firstSeen: now });
