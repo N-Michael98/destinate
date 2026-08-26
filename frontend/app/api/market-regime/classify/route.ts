@@ -22,14 +22,26 @@ export async function GET() {
       );
     });
 
+    // Woher die Kurse kommen, gehört in die Antwort (26.08.). Bis heute las
+    // diese Route einen Cache, den NIEMAND füllte — sie lieferte also immer
+    // `regimes: []` und die Oberfläche zeigte dazu "Live" und "Engine Online".
+    // Jetzt füllt der Handelszyklus den Cache; bleibt er trotzdem leer, sagt
+    // die Antwort das, statt eine leere Liste als Ergebnis auszugeben.
+    const ageMinutes = marketDataManager.cacheAlterMinuten();
+
     return NextResponse.json({
       success: true,
       regimes,
       prices,
       count: regimes.length,
-      source: "LIVE_REGIME_ENGINE",
+      ageMinutes,
+      source: prices.length > 0 ? "LIVE_REGIME_ENGINE" : "NO_PRICES",
       message:
-        "Real Market Regime Engine uses dynamic price movement, momentum, volatility and risk classification.",
+        prices.length > 0
+          ? `Regime aus ${prices.length} Kursen im Preis-Cache (jüngster ${ageMinutes} Min alt).`
+          : "Keine Kurse im Preis-Cache — der Handelszyklus hat noch nichts "
+            + "abgelegt (oder die Einträge sind abgelaufen). Ohne Kurs wird "
+            + "kein Regime eingestuft.",
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {

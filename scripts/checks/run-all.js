@@ -88,6 +88,14 @@ const pruefer = [
   // Bericht nennt die Quelle. Der zehnte rechnende Pruefer, und der erste
   // ASYNCHRONE: er ruft echteGeschlosseneTrades() wirklich auf.
   ["lern-quelle", require("./lern-quelle")],
+  // 26.08. ergaenzt: `priceCache.set()` hatte im ganzen Programm KEINEN
+  // Aufrufer — drei Ansichten lasen einen Cache, den nichts befuellte. Der
+  // naheliegende Fix haette nicht gewirkt: der Zustand lag modul-scoped, und
+  // genau daran ist am 28.07. schon der Killswitch gescheitert (API-Routen und
+  // die Loops in instrumentation.ts sehen verschiedene Modul-Kopien). Der
+  // elfte rechnende Pruefer laedt das Modul deshalb ZWEIMAL und prueft, dass
+  // beide Instanzen denselben Zustand sehen — das kann keine Struktur-Pruefung.
+  ["preis-cache", require("./preis-cache")],
 ];
 
 const nurDieser = process.argv[2];

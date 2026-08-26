@@ -1845,24 +1845,46 @@ type MarketRegimeApiResponse = {
   success: boolean;
   regimes: MarketRegimeApiItem[];
   count: number;
+  // Seit 26.08. in der Antwort: woher die Kurse kamen und wie alt sie sind.
+  // "NO_PRICES" = der Preis-Cache war leer. Ohne dieses Feld sah eine leere
+  // Liste aus wie "keine auffälligen Regime" statt wie "keine Daten".
+  source?: "LIVE_REGIME_ENGINE" | "NO_PRICES";
+  ageMinutes?: number | null;
+  message?: string;
   updatedAt: string;
 };
 
+// KORREKTUR 26.08. — diese beiden Typen beschrieben etwas, das die Route nie
+// geliefert hat.
+//
+// Hier stand `bid`, `ask`, `spread`, `timestamp`, `source` je Kurs. Geliefert
+// wird von `/api/market-data/prices` aber unverändert die Antwort des
+// Python-Backends (`get_multi_price`): `price`, `asOf`, `ageMinutes`,
+// `asOfPrecision`. Kein einziges der vier gerenderten Felder existierte —
+// die Kachel "Live Price Cache" zeigte deshalb Symbolnamen mit LEEREN
+// Preisen, und der Untertitel der "Selected"-Kachel war `undefined`.
+//
+// TypeScript konnte das nicht melden: die Antwort kommt als `any` aus
+// `response.json()` und wurde mit `as` behauptet. Eine Zusicherung ersetzt
+// keine Prüfung.
+//
+// Ebenso `success`: die Route antwortet mit `ok`. Das Feld wurde nie gelesen,
+// deshalb fiel es nicht auf — bei Backend-Ausfall rendert die Kachel sonst
+// Zeilen mit `price: null`.
 type MarketPriceApiItem = {
   symbol: string;
-  bid: number;
-  ask: number;
-  spread: number;
-  timestamp: string;
-  source: string;
+  price: number | null;
+  asOf?: string | null;
+  ageMinutes?: number | null;
+  asOfPrecision?: "minute" | "day" | null;
+  error?: string;
 };
 
 type MarketPricesApiResponse = {
-  success: boolean;
+  ok: boolean;
   prices: MarketPriceApiItem[];
   count: number;
   source: string;
-  message: string;
   updatedAt: string;
 };
 
@@ -2952,6 +2974,8 @@ function MarketRegimeLiveCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState("");
+  const [regimeSource, setRegimeSource] = useState("");
+  const [regimeAge, setRegimeAge] = useState<number | null>(null);
 
   async function loadRegimes() {
     try {
@@ -2969,6 +2993,8 @@ function MarketRegimeLiveCenter() {
       const payload = (await response.json()) as MarketRegimeApiResponse;
       setRegimes(payload.regimes);
       setLastUpdate(payload.updatedAt);
+      setRegimeSource(payload.source ?? "");
+      setRegimeAge(payload.ageMinutes ?? null);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -3014,14 +3040,31 @@ function MarketRegimeLiveCenter() {
           </p>
         </div>
 
+        {/* 26.08.: hier stand fest "Live" und daneben "Engine: Online" —
+            während die Route wegen des nie befüllten Preis-Caches IMMER eine
+            leere Liste lieferte. Beides hing an nichts. Jetzt hängt es an der
+            Herkunft, die die Route mitschickt. */}
         <div className="bg-black border border-lime-800 rounded-2xl p-5 min-w-[190px]">
           <p className="text-gray-400">Regime Status</p>
-          <p className="text-lime-400 text-2xl font-bold">Live</p>
+          <p className={`text-2xl font-bold ${regimes.length > 0 ? "text-lime-400" : "text-yellow-400"}`}>
+            {regimes.length > 0 ? "Live" : "Keine Kurse"}
+          </p>
         </div>
       </div>
 
+      {regimeSource === "NO_PRICES" && (
+        <div className="bg-yellow-950 border border-yellow-800 rounded-2xl p-5 mb-8">
+          <p className="text-yellow-300 font-bold">Keine Kurse im Preis-Cache</p>
+          <p className="text-yellow-200/80 mt-2">
+            Der Handelszyklus hat noch keine Kurse abgelegt, oder die Einträge
+            sind abgelaufen. Ohne Kurs wird kein Regime eingestuft — die leere
+            Liste unten ist ein Datenausfall, kein Ergebnis.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="Engine" value="Online" subtitle="Regime core" accent="text-lime-400" border="border-lime-900" />
+        <StatCard title="Kurs-Alter" value={regimeAge == null ? "—" : `${Math.round(regimeAge)} Min`} subtitle="jüngster im Cache" accent={regimeAge == null ? "text-yellow-400" : "text-lime-400"} border="border-lime-900" />
         <StatCard title="Symbols" value={`${regimes.length}`} subtitle="Classified markets" accent="text-blue-400" border="border-blue-900" />
         <StatCard title="Confidence" value={`${averageConfidence}%`} subtitle="Average score" accent="text-green-400" border="border-green-900" />
         <StatCard title="Volatile" value={`${volatileCount}`} subtitle="Volatility flags" accent="text-purple-400" border="border-purple-900" />
@@ -3184,6 +3227,10 @@ function MarketDataEngineCenter() {
   const [pricesLoading, setPricesLoading] = useState(true);
   const [pricesError, setPricesError] = useState<string | null>(null);
   const [lastPriceUpdate, setLastPriceUpdate] = useState<string>("");
+  // Herkunft der Kurse (26.08.): "PYTHON_YFINANCE" oder "BACKEND_OFFLINE".
+  // Die Route liefert das Feld seit jeher — gelesen wurde es nie, deshalb sah
+  // ein Backend-Ausfall in der Oberfläche aus wie "keine Kurse gefunden".
+  const [pricesSource, setPricesSource] = useState<string>("");
 
   async function loadMarketPrices() {
     try {
@@ -3199,8 +3246,12 @@ function MarketDataEngineCenter() {
       }
 
       const payload = (await response.json()) as MarketPricesApiResponse;
-      setMarketPrices(payload.prices);
+      // Nur Zeilen mit echtem Kurs übernehmen. Bei Backend-Ausfall liefert die
+      // Route `ok: false` und je Symbol `price: null` — das ist eine Meldung,
+      // kein Kurs, und hat in einer Preisliste nichts verloren.
+      setMarketPrices((payload.prices ?? []).filter((p) => p.price !== null));
       setLastPriceUpdate(payload.updatedAt);
+      setPricesSource(payload.ok ? payload.source : "BACKEND_OFFLINE");
     } catch (caughtError) {
       setPricesError(
         caughtError instanceof Error
@@ -3238,21 +3289,26 @@ function MarketDataEngineCenter() {
         <div>
           <h2 className="text-4xl font-black"> Market Data Engine V9.6.4</h2>
           <p className="text-gray-400 text-xl mt-3">
-            Live verbundene Marktdaten-Schicht: Price Cache API, Mock-Live-Preise, TradingView Chart Layer, Feed Router und AI Data Pipeline.
+            Kurse aus dem Python-Backend (yfinance), TradingView als Chart-Layer.
+            Beides ist getrennt: der Chart zeigt, das Backend liefert die Zahlen.
           </p>
         </div>
 
+        {/* 26.08.: hier stand fest "Online" — unabhängig davon, ob überhaupt
+            ein Kurs ankam. Jetzt hängt die Anzeige an den geladenen Daten. */}
         <div className="bg-black border border-blue-800 rounded-2xl p-5 min-w-[190px]">
           <p className="text-gray-400">Market Data Status</p>
-          <p className="text-blue-400 text-2xl font-bold">Online</p>
+          <p className={`text-2xl font-bold ${marketPrices.length > 0 ? "text-blue-400" : "text-yellow-400"}`}>
+            {marketPrices.length > 0 ? "Online" : "Keine Kurse"}
+          </p>
         </div>
       </div>
 
       <div className="grid grid-cols-5 gap-6 mb-8">
-        <StatCard title="Engine" value="Online" subtitle="Market data core" accent="text-blue-400" border="border-blue-900" />
-        <StatCard title="Selected" value={selectedMarket.label} subtitle={selectedPrice ? `${selectedPrice.bid}` : selectedMarket.symbol} accent={selectedMarket.accent} border={selectedMarket.border} />
+        <StatCard title="Kurse" value={`${marketPrices.length}`} subtitle={pricesSource || "wird geladen"} accent={marketPrices.length > 0 ? "text-blue-400" : "text-yellow-400"} border="border-blue-900" />
+        <StatCard title="Selected" value={selectedMarket.label} subtitle={selectedPrice?.price != null ? `${selectedPrice.price}` : selectedMarket.symbol} accent={selectedMarket.accent} border={selectedMarket.border} />
         <StatCard title="Timeframe" value={timeframes.find((timeframe) => timeframe.value === selectedInterval)?.label ?? selectedInterval} subtitle="Selectable" accent="text-cyan-400" border="border-cyan-900" />
-        <StatCard title="Feed Priority" value="Ready" subtitle="Capital / IC / TV" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Quelle" value="Python" subtitle="yfinance über Redis-Cache" accent="text-green-400" border="border-green-900" />
         <StatCard title="Safety" value="Safe" subtitle="No unofficial API" accent="text-red-400" border="border-red-900" />
       </div>
 
@@ -3456,27 +3512,54 @@ function MarketDataEngineCenter() {
             <p className="text-red-400 mt-6">{pricesError}</p>
           )}
 
+          {pricesSource === "BACKEND_OFFLINE" && (
+            <p className="text-yellow-400 mt-6">
+              Python-Backend nicht erreichbar — keine Kurse. (Das ist kein
+              leeres Ergebnis, sondern ein Ausfall der Quelle.)
+            </p>
+          )}
+
+          {!pricesLoading && !pricesError && marketPrices.length === 0 &&
+            pricesSource !== "BACKEND_OFFLINE" && (
+            <p className="text-gray-400 mt-6">Keine Kurse geliefert.</p>
+          )}
+
           {!pricesLoading && !pricesError && (
             <div className="grid grid-cols-2 gap-4 mt-5">
               {marketPrices.map((price) => (
                 <div key={price.symbol} className="bg-gray-950 border border-gray-800 rounded-xl p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-bold">{price.symbol}</p>
-                    <p className="text-xs text-gray-500">{price.source}</p>
+                    <p className="text-xs text-gray-500">{pricesSource}</p>
                   </div>
 
                   <p className="text-green-400 text-2xl font-black mt-3">
-                    {price.bid}
+                    {price.price}
                   </p>
 
                   <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
                     <div>
-                      <p className="text-gray-500">Ask</p>
-                      <p className="text-cyan-400 font-bold">{price.ask}</p>
+                      <p className="text-gray-500">Alter</p>
+                      {/* Fund 02.08.: ein 57 Stunden alter Kurs sah taufrisch
+                          aus. Unbekanntes Alter wird deshalb als "unbekannt"
+                          ausgewiesen und NICHT als frisch. */}
+                      <p className={
+                        price.ageMinutes == null ? "text-gray-500 font-bold"
+                        : price.ageMinutes > 15 ? "text-yellow-400 font-bold"
+                        : "text-cyan-400 font-bold"
+                      }>
+                        {price.ageMinutes == null
+                          ? "unbekannt"
+                          : `${Math.round(price.ageMinutes)} Min`}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Spread</p>
-                      <p className="text-yellow-400 font-bold">{price.spread}</p>
+                      <p className="text-gray-500">Genauigkeit</p>
+                      <p className="text-gray-300 font-bold">
+                        {price.asOfPrecision === "minute" ? "Minute"
+                          : price.asOfPrecision === "day" ? "Tagesschluss"
+                          : "unbekannt"}
+                      </p>
                     </div>
                   </div>
                 </div>

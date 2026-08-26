@@ -66,18 +66,26 @@ async function checkEndpoint(key: string, checkedAt: string): Promise<{ status: 
         return { status: "READY", summary: `${r.healthyBrokers ?? 0}/${r.totalBrokers ?? 0} brokers healthy` };
       }
       // 26.08.: isReady() gab bedingungslos `true` zurück, die Kachel meldete
-      // also immer "Online". Der dahinterliegende Preis-Cache wird von
-      // NIEMANDEM gefüllt (`priceCache.set()` hat keinen Aufrufer) — die
-      // Meldung war dauerhaft unwahr. Jetzt steht die Zahl dabei, damit man
-      // "leer" von "läuft" unterscheiden kann.
+      // also immer "Online". Der dahinterliegende Preis-Cache hatte zudem
+      // keinen einzigen Schreiber. Beides ist behoben — der Handelszyklus
+      // legt seine Marktliste jetzt dort ab.
+      //
+      // Das Alter steht mit dabei: eine Zahl allein sagt nicht, ob der Zyklus
+      // noch läuft. `getAll()` verwirft abgelaufene Einträge, ein stehender
+      // Zyklus fällt also nach CACHE_MAX_ALTER_MS auf 0 zurück — die Kachel
+      // wird dann von selbst gelb, ohne dass jemand hinschauen muss.
       case "marketData": {
         const anzahl = marketDataManager.cacheSize();
+        const alter = marketDataManager.cacheAlterMinuten();
         return anzahl > 0
-          ? { status: "READY", summary: `${anzahl} Preise im Cache` }
+          ? {
+              status: "READY",
+              summary: `${anzahl} Preise im Cache, jüngster ${alter} Min alt`,
+            }
           : {
               status: "WARNING",
-              summary: "Cache leer — diese Schicht wird nicht befüllt "
-                + "(der Handelspfad holt Kurse direkt vom Broker/Python)",
+              summary: "Cache leer — der Handelszyklus hat noch keine Kurse "
+                + "abgelegt (oder sie sind abgelaufen)",
             };
       }
       case "marketRegime": {

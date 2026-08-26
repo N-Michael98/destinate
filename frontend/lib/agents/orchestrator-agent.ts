@@ -293,6 +293,33 @@ async function fetchMarkets(
       console.warn(`[orchestrator] 🕐 Kurs-Alter: KEIN einziger Kurs hat einen Zeitstempel (${supplemented.length} Märkte) — Aktualität nicht prüfbar`);
     }
   }
+
+  // ── Preis-Cache befüllen (26.08.) ─────────────────────────────────────────
+  //
+  // AUSSCHLIESSLICH ein Nebeneffekt: `supplemented` wird nicht angefasst und
+  // unverändert zurückgegeben. Der Handel liest diesen Cache NICHT — er
+  // arbeitet mit der Rückgabe direkt weiter. Fällt der Aufruf aus, ist die
+  // Folge eine leere Anzeige, kein gestörter Zyklus. Deshalb try/catch und
+  // deshalb steht er hinter allem, was der Handel braucht.
+  //
+  // Warum ausgerechnet hier: dies ist die einzige Stelle im Programm, die
+  // laufend echte Broker-Kurse für die GANZE Watchlist in der Hand hat. Bis
+  // heute rief `priceCache.set()` NIEMAND auf — drei Ansichten lasen einen
+  // Cache, den nichts befüllte (Mission-Control-Kachel, /api/market-data/status
+  // und /api/market-regime/classify, letztere im Dashboard alle 20 Sekunden).
+  //
+  // Die Alternative wäre ein eigener Preis-Takt gewesen. Der hätte sich sein
+  // Rate-Limit mit dem Handelszyklus geteilt — und genau daran sind am 08.07.
+  // schon einmal 9 von 16 Kursanfragen verworfen worden. Dieser Weg kostet
+  // keine einzige zusätzliche Anfrage.
+  try {
+    const { preiseUebernehmen } = await import("../market-data-engine/price-cache");
+    const uebernommen = preiseUebernehmen(supplemented);
+    console.log(`[orchestrator] 💾 Preis-Cache: ${uebernommen}/${supplemented.length} Kurse übernommen`);
+  } catch (e) {
+    console.warn(`[orchestrator] Preis-Cache nicht befüllt: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   return supplemented;
 }
 
