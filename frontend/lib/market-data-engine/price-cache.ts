@@ -50,9 +50,18 @@ export class PriceCache {
    *  Regime-Einstufung überhaupt eine Bewegung zu sehen: sie rechnet
    *  `priceChangePercent` aus genau diesem Paar. Ohne Vorgänger meldet
    *  `detectTrend()` RANGING mit Score 50 — für den ersten Durchlauf ist das
-   *  richtig, denn eine Bewegung ist dann tatsächlich nicht bekannt. */
+   *  richtig, denn eine Bewegung ist dann tatsächlich nicht bekannt.
+   *
+   *  ABGELAUFENE Vorgänger werden NICHT verwendet — `this.get()` statt eines
+   *  rohen Map-Zugriffs. Sonst entstünde nach einem Ausfall des
+   *  Handelszyklus genau die Sorte Falschaussage, die dieses Programm
+   *  wiederholt getroffen hat: stand der Zyklus drei Stunden still, wäre die
+   *  Bewegung dieser drei Stunden als Bewegung EINES Zyklus ausgewiesen
+   *  worden — aus +2,7 % über Nacht würde ein STRONG_BULL "gerade eben".
+   *  Jetzt beginnt die Messung nach einem Ausfall sauber von vorn: ein
+   *  Durchlauf ohne Vergleich, danach echte Zwei-Minuten-Deltas. */
   set(price: MarketPrice) {
-    const vorher = speicher().get(price.symbol);
+    const vorher = this.get(price.symbol);
     speicher().set(price.symbol, {
       ...price,
       previousBid: vorher?.bid,

@@ -197,6 +197,27 @@ module.exports = function pruefe() {
     pruefe1("aktueller Kurs wurde nicht aktualisiert",
       zweit && zweit.bid === 101, zweit && `${zweit.bid}`);
 
+    // Ein ABGELAUFENER Vorgänger darf nicht als Vergleich dienen.
+    //
+    // Stand der Handelszyklus drei Stunden still, wäre die Bewegung dieser
+    // drei Stunden sonst als Bewegung EINES Zyklus ausgewiesen worden — aus
+    // "+2,7 % über Nacht" würde ein STRONG_BULL "gerade eben". Nach einem
+    // Ausfall muss die Messung sauber von vorn beginnen.
+    priceCache.leeren();
+    priceCache.set({
+      symbol: "LUECKE", bid: 3358, ask: 3358.5, spread: 0.5, timestamp: "",
+      receivedAt: new Date(Date.now() - (CACHE_MAX_ALTER_MS + 60_000)).toISOString(),
+      source: "CAPITAL_COM",
+    });
+    preiseUebernehmen([{ symbol: "LUECKE", bid: 3450, ask: 3450.5, spread: 0.5, priceSource: "CAPITAL" }]);
+    const nachLuecke = priceCache.get("LUECKE");
+    pruefe1("abgelaufener Vorgaenger wird als Vergleich benutzt — eine "
+      + "Bewegung ueber Stunden erschiene als Bewegung eines Zyklus",
+      nachLuecke && nachLuecke.previousBid === undefined,
+      nachLuecke && `previousBid=${nachLuecke.previousBid}`);
+    pruefe1("der neue Kurs kam nach der Luecke nicht an",
+      nachLuecke && nachLuecke.bid === 3450, nachLuecke && `${nachLuecke.bid}`);
+
     // ── Teil 5: Verfall ──────────────────────────────────────────────────
     //
     // Ein stehengebliebener Handelszyklus darf keine stundenalten Kurse als

@@ -9,7 +9,7 @@ manuell geschickt werden.
 cd frontend && npm run check
 ```
 
-Braucht keine Installation. **Neunzehn Prüfer**, Rückgabe 0 = grün.
+Braucht keine Installation. **Zwanzig Prüfer**, Rückgabe 0 = grün.
 **Rot heisst: nicht committen, erst beheben.**
 
 Mit TypeScript-Prüfung zusammen:
@@ -36,7 +36,7 @@ Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweisl
 an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
 Prüfer, der nie rot wird, ist wertlos.
 
-**Zehn Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
+**Elf Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
 TypeScript-Datei und rufen die echte Funktion auf. Damit fällt dort auch ein
 subtil falscher Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle,
 fehlender Null-Fall), der strukturell unauffällig bliebe:
@@ -53,8 +53,53 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `vola-skalierung` | `getVolatilityAdjustedRisk()` | 23.08. |
 | `kurs-riegel` | `checkPriceAvailable()` | 24.08. |
 | `lern-quelle` | `echteGeschlosseneTrades()`, `runLearningCycle()` | 24.08. |
+| `preis-cache` | `preiseUebernehmen()`, `priceCache`, `marketHealth` | 26.08. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
+
+## Modul-scoped Zustand ist in diesem Projekt ein Fehler
+
+Wird ein Zustand vom **Handelszyklus geschrieben** und von einer **API-Route
+gelesen** (oder umgekehrt), gehört er auf `global`. Eine modul-scoped
+`let`/`private` reicht nicht: API-Routen und die Loops in `instrumentation.ts`
+sehen verschiedene Kopien desselben Moduls.
+
+Das ist keine Vermutung. Am **28.07.** hat genau das den Killswitch
+ausgehebelt — die Begründung steht in `killswitch-engine.ts:12`. Am **26.08.**
+stand derselbe Fehler im Preis-Cache und hätte den Fix dort wirkungslos
+gemacht: die Route hätte weiter eine leere Kopie gesehen, und die Anzeige hätte
+repariert ausgesehen, ohne es zu sein.
+
+Bewährt: `global.__killswitch_state__`, `global.__capital_session__`,
+`global.__icmarkets_session__`, `global.__last_scan_result__`,
+`global.__price_cache__`, `global.__daily_trades__`.
+
+Der Prüfer `preis-cache` bildet den Fall nach: er lädt das Modul **zweimal**,
+schreibt über die eine Instanz und liest über die andere. Wer einen neuen
+geteilten Zustand baut, prüft ihn genauso — eine Struktur-Prüfung sieht diesen
+Fehler nicht.
+
+## Ohne Kurs kein Regime — und kein „Live" ohne Beleg
+
+`priceCache` (`lib/market-data-engine/`) hatte bis zum 26.08. **keinen
+Schreiber**. Drei Ansichten lasen daraus, eine davon im Dashboard alle 20
+Sekunden. Jetzt füllt ihn `fetchMarkets()` am Ende jedes Handelszyklus mit der
+Marktliste, die es ohnehin schon beim Broker geholt hat — reiner Nebeneffekt in
+`try/catch`, keine zusätzliche Broker-Anfrage, `supplemented` bleibt unberührt.
+
+Der Cache **verfällt nach 10 Minuten** (`CACHE_MAX_ALTER_MS`). Ein
+stehengebliebener Zyklus soll keine stundenalten Kurse als aktuell ausgeben —
+derselbe Fehler wie am 02.08., nur eine Schicht höher. Ein unlesbarer
+Zeitstempel gilt als **abgelaufen**, nicht als frisch.
+
+`previousBid`/`previousAsk` kommen aus dem **vorherigen** Cache-Eintrag. Ohne
+sie meldet `detectTrend()` für jedes Symbol für immer `RANGING`/50.
+
+`market-health.ts` **leitet ab statt zu behaupten**. Dort standen feste Zeilen:
+TradingView „verbunden, 20 ms" (dieses Programm holt von dort keine Kurse — es
+gibt nur ein Chart-Widget) und Capital.com „nicht verbunden" (es *ist* der
+Live-Broker). `latencyMs` ist ersatzlos entfallen: hier wird keine Latenz
+gemessen, und eine ungemessene Zahl auszugeben ist genau der Fehler.
 
 **Ein Wort im Kommentar ist keine Verwendung.** Diese Fehlerklasse hat 2026
 sechsmal zugeschlagen: ein Prüfer suchte nach einem Namen und fand ihn in einem
