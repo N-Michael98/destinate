@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 549 · Kanten: 1131
+Dateien mit internen Abhängigkeiten: 548 · Kanten: 1128
 
 
 ## analysis-engine/api
@@ -427,8 +427,6 @@ Dateien mit internen Abhängigkeiten: 549 · Kanten: 1131
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
 - `frontend/app/api/market-data/status/route.ts`
-  - → `frontend/lib/market-data-engine/index.ts`
-- `frontend/app/api/market-data/symbols/route.ts`
   - → `frontend/lib/market-data-engine/index.ts`
 - `frontend/app/api/market-regime-sync/route.ts`
   - → `frontend/lib/market-universe/market-regime-sync.ts`
@@ -1244,12 +1242,10 @@ Dateien mit internen Abhängigkeiten: 549 · Kanten: 1131
 - `frontend/lib/malwarebytes-integration/malwarebytes-engine.ts`
   - → `frontend/lib/malwarebytes-integration/malwarebytes-types.ts`
 - `frontend/lib/market-data-engine/index.ts`
-  - → `frontend/lib/market-data-engine/feed-router.ts`
   - → `frontend/lib/market-data-engine/market-data-manager.ts`
   - → `frontend/lib/market-data-engine/market-health.ts`
   - → `frontend/lib/market-data-engine/market-types.ts`
   - → `frontend/lib/market-data-engine/price-cache.ts`
-  - → `frontend/lib/market-data-engine/symbol-registry.ts`
 - `frontend/lib/market-data-engine/market-data-manager.ts`
   - → `frontend/lib/market-data-engine/market-health.ts`
   - → `frontend/lib/market-data-engine/price-cache.ts`
