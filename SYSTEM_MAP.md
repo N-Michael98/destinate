@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
+Dateien mit internen Abhängigkeiten: 468 · Kanten: 1014
 
 
 ## analysis-engine/api
@@ -293,10 +293,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/app/api/autonomous-broker-optimization/route.ts`
   - → `frontend/lib/autonomous-broker-optimization/index.ts`
-- `frontend/app/api/autonomous-evolution-strategy-weight-sync/route.ts`
-  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/index.ts`
-- `frontend/app/api/autonomous-evolution-trade-approval-sync/route.ts`
-  - → `frontend/lib/autonomous-evolution-trade-approval-sync/index.ts`
 - `frontend/app/api/autonomous-trading-evolution-memory/route.ts`
   - → `frontend/lib/autonomous-trading-evolution-memory/index.ts`
   - → `frontend/lib/autonomous-trading-evolution/index.ts`
@@ -308,24 +304,14 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/broker-evolution-intelligence/index.ts`
 - `frontend/app/api/broker-execution-quality-learning/route.ts`
   - → `frontend/lib/broker-execution-quality-learning/index.ts`
-- `frontend/app/api/broker-health-dual-broker-sync/route.ts`
-  - → `frontend/lib/broker-health-dual-broker-sync/index.ts`
 - `frontend/app/api/broker-health-monitor/route.ts`
   - → `frontend/lib/broker-health-monitor/index.ts`
 - `frontend/app/api/broker-performance-memory/route.ts`
   - → `frontend/lib/broker-performance-memory/index.ts`
 - `frontend/app/api/broker-reputation-memory/route.ts`
   - → `frontend/lib/broker-reputation-memory/index.ts`
-- `frontend/app/api/broker-routing-capitalcom-sync/route.ts`
-  - → `frontend/lib/broker-routing-capitalcom-sync/index.ts`
-- `frontend/app/api/broker-routing-dual-broker-sync/route.ts`
-  - → `frontend/lib/broker-routing-dual-broker-sync/index.ts`
-- `frontend/app/api/broker-routing-icmarkets-sync/route.ts`
-  - → `frontend/lib/broker-routing-icmarkets-sync/index.ts`
 - `frontend/app/api/broker-routing-layer/route.ts`
   - → `frontend/lib/broker-routing-layer/index.ts`
-- `frontend/app/api/broker-selection-routing-sync/route.ts`
-  - → `frontend/lib/broker-selection-routing-sync/index.ts`
 - `frontend/app/api/capital-com/execute/route.ts`
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
@@ -357,8 +343,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/dependency-scanner/index.ts`
 - `frontend/app/api/diagnostics-agent/route.ts`
   - → `frontend/lib/agents/diagnostics-agent.ts`
-- `frontend/app/api/dual-broker-execution-queue-sync/route.ts`
-  - → `frontend/lib/dual-broker-execution-queue-sync/index.ts`
 - `frontend/app/api/dual-broker-orchestrator/route.ts`
   - → `frontend/lib/dual-broker-orchestrator/index.ts`
 - `frontend/app/api/dynamic-market-data/route.ts`
@@ -367,12 +351,8 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/dynamic-position-allocation/index.ts`
 - `frontend/app/api/economic-calendar/route.ts`
   - → `frontend/lib/economic-calendar/index.ts`
-- `frontend/app/api/evolution-allocation-portfolio-sync/route.ts`
-  - → `frontend/lib/evolution-allocation-portfolio-sync/index.ts`
 - `frontend/app/api/evolution-allocation/route.ts`
   - → `frontend/lib/evolution-allocation/index.ts`
-- `frontend/app/api/evolution-feedback-strategy-evolution-sync/route.ts`
-  - → `frontend/lib/evolution-feedback-strategy-evolution-sync/index.ts`
 - `frontend/app/api/evolution-governance/route.ts`
   - → `frontend/lib/evolution-governance/index.ts`
 - `frontend/app/api/execution-position-ticket-sync/route.ts`
@@ -382,10 +362,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/app/api/execution-queue-position-sync/route.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/execution-queue-position-sync/index.ts`
-- `frontend/app/api/execution-queue-ticket-generator-sync/route.ts`
-  - → `frontend/lib/execution-queue-ticket-generator-sync/index.ts`
-- `frontend/app/api/execution-ticket-paper-order-sync/route.ts`
-  - → `frontend/lib/execution-ticket-paper-order-sync/index.ts`
 - `frontend/app/api/execution/queue/route.ts`
   - → `frontend/lib/execution-preparation/index.ts`
 - `frontend/app/api/execution/tickets/route.ts`
@@ -411,8 +387,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
 - `frontend/app/api/icmarkets/symbols/route.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
-- `frontend/app/api/institutional-portfolio-brain-sync/route.ts`
-  - → `frontend/lib/institutional-portfolio-brain-sync/index.ts`
 - `frontend/app/api/learning/analyze/route.ts`
   - → `frontend/lib/learning/trade-feedback-engine.ts`
 - `frontend/app/api/learning/status/route.ts`
@@ -422,8 +396,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/python-backend/auth-header.ts`
 - `frontend/app/api/market-data/status/route.ts`
   - → `frontend/lib/market-data-engine/index.ts`
-- `frontend/app/api/market-regime-sync/route.ts`
-  - → `frontend/lib/market-universe/market-regime-sync.ts`
 - `frontend/app/api/market-regime/classify/route.ts`
   - → `frontend/lib/market-data-engine/index.ts`
   - → `frontend/lib/market-regime-engine/index.ts`
@@ -457,14 +429,8 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/mission-control/recovery-tracker.ts`
 - `frontend/app/api/multi-strategy-competition/route.ts`
   - → `frontend/lib/multi-strategy-competition/index.ts`
-- `frontend/app/api/multi-style-consensus-trade-approval-sync/route.ts`
-  - → `frontend/lib/multi-style-consensus-trade-approval-sync/index.ts`
-- `frontend/app/api/multi-style-consensus-unified-decision-sync/route.ts`
-  - → `frontend/lib/multi-style-consensus-unified-decision-sync/index.ts`
 - `frontend/app/api/multi-style-consensus/route.ts`
   - → `frontend/lib/multi-style-consensus/index.ts`
-- `frontend/app/api/multi-timeframe-trade-approval-sync/route.ts`
-  - → `frontend/lib/multi-timeframe-trade-approval-sync/index.ts`
 - `frontend/app/api/multi-timeframe-trading-style-analysis/route.ts`
   - → `frontend/lib/multi-timeframe-trading-style-analysis/index.ts`
 - `frontend/app/api/multi-timeframe-unified-decision-sync/route.ts`
@@ -475,16 +441,10 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/news-intelligence/news-intelligence-engine.ts`
 - `frontend/app/api/opportunity-scanner/route.ts`
   - → `frontend/lib/market-universe/opportunity-scanner.ts`
-- `frontend/app/api/outcome-learning-evolution-feedback-sync/route.ts`
-  - → `frontend/lib/outcome-learning-evolution-feedback-sync/index.ts`
-- `frontend/app/api/paper-account-performance-sync/route.ts`
-  - → `frontend/lib/paper-account-performance-sync/index.ts`
 - `frontend/app/api/paper-orders/[id]/route.ts`
   - → `frontend/app/lib/prisma.ts`
 - `frontend/app/api/paper-orders/route.ts`
   - → `frontend/app/lib/prisma.ts`
-- `frontend/app/api/paper-position-account-sync/route.ts`
-  - → `frontend/lib/paper-position-account-sync/index.ts`
 - `frontend/app/api/paper-trading-execution-engine/route.ts`
   - → `frontend/lib/portfolio-brain/paper-trading-execution-engine.ts`
 - `frontend/app/api/paper/account/route.ts`
@@ -504,28 +464,18 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/paper-trading/paper-singleton.ts`
 - `frontend/app/api/paper/status/route.ts`
   - → `frontend/lib/paper-trading/paper-singleton.ts`
-- `frontend/app/api/performance-outcome-learning-sync/route.ts`
-  - → `frontend/lib/performance-outcome-learning-sync/index.ts`
 - `frontend/app/api/portfolio-brain-adaptive-confidence/route.ts`
   - → `frontend/lib/portfolio-brain/portfolio-brain-adaptive-confidence.ts`
 - `frontend/app/api/portfolio-brain-adaptive-learning/route.ts`
   - → `frontend/lib/portfolio-brain/portfolio-brain-adaptive-learning.ts`
-- `frontend/app/api/portfolio-brain-broker-selection-sync/route.ts`
-  - → `frontend/lib/portfolio-brain-broker-selection-sync/index.ts`
 - `frontend/app/api/portfolio-brain-decision-memory/route.ts`
   - → `frontend/lib/portfolio-brain/portfolio-brain-decision-memory.ts`
-- `frontend/app/api/portfolio-brain-evolution-sync/route.ts`
-  - → `frontend/lib/portfolio-brain-evolution-sync/index.ts`
 - `frontend/app/api/portfolio-brain-learning/route.ts`
   - → `frontend/lib/portfolio-brain/portfolio-brain-learning.ts`
-- `frontend/app/api/portfolio-brain-outcome-learning-sync/route.ts`
-  - → `frontend/lib/portfolio-brain/portfolio-brain-outcome-learning-sync.ts`
 - `frontend/app/api/portfolio-brain-outcomes/route.ts`
   - → `frontend/lib/portfolio-brain/portfolio-brain-outcomes.ts`
 - `frontend/app/api/portfolio-brain-self-evolution/route.ts`
   - → `frontend/lib/portfolio-brain/portfolio-brain-self-evolution.ts`
-- `frontend/app/api/portfolio-brain-strategy-sync/route.ts`
-  - → `frontend/lib/portfolio-brain/portfolio-brain-strategy-sync.ts`
 - `frontend/app/api/portfolio-brain-unified-decision/route.ts`
   - → `frontend/lib/portfolio-brain-unified-decision/index.ts`
 - `frontend/app/api/portfolio-brain/route.ts`
@@ -535,14 +485,10 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/portfolio-intelligence/index.ts`
 - `frontend/app/api/portfolio-risk-management/route.ts`
   - → `frontend/lib/portfolio-brain/portfolio-risk-management.ts`
-- `frontend/app/api/position-sizing-evolution-sync/route.ts`
-  - → `frontend/lib/position-sizing-evolution-sync/index.ts`
 - `frontend/app/api/python-status/route.ts`
   - → `frontend/lib/python-backend/python-status.ts`
 - `frontend/app/api/python/[...path]/route.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
-- `frontend/app/api/regime-ai-sync/route.ts`
-  - → `frontend/lib/regime-ai-sync/index.ts`
 - `frontend/app/api/security-center/killswitch/route.ts`
   - → `frontend/lib/killswitch/index.ts`
   - → `frontend/lib/telegram-notifications/index.ts`
@@ -558,18 +504,12 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/settings/index.ts`
   - → `frontend/lib/settings/settings-store.ts`
-- `frontend/app/api/smart-broker-execution-sync/route.ts`
-  - → `frontend/lib/smart-broker-execution-sync/index.ts`
 - `frontend/app/api/smart-broker-selection/route.ts`
   - → `frontend/lib/smart-broker-selection/index.ts`
 - `frontend/app/api/species-broker-execution-sync/route.ts`
   - → `frontend/lib/species-broker-execution-sync/index.ts`
-- `frontend/app/api/species-broker-routing-sync/route.ts`
-  - → `frontend/lib/species-broker-routing-sync/index.ts`
 - `frontend/app/api/species-capital-allocation/route.ts`
   - → `frontend/lib/species-capital-allocation/index.ts`
-- `frontend/app/api/species-execution-center-sync/route.ts`
-  - → `frontend/lib/species-execution-center-sync/index.ts`
 - `frontend/app/api/species-execution-queue-integration/route.ts`
   - → `frontend/lib/species-execution-queue-integration/index.ts`
 - `frontend/app/api/species-execution-queue/route.ts`
@@ -586,14 +526,10 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/species-survival/index.ts`
 - `frontend/app/api/species-trade-allocation/route.ts`
   - → `frontend/lib/species-trade-allocation/index.ts`
-- `frontend/app/api/species-trade-approval-sync/route.ts`
-  - → `frontend/lib/species-trade-approval-sync/index.ts`
 - `frontend/app/api/strategy-breeding/route.ts`
   - → `frontend/lib/strategy-breeding/index.ts`
 - `frontend/app/api/strategy-broker-intelligence/route.ts`
   - → `frontend/lib/strategy-broker-intelligence/index.ts`
-- `frontend/app/api/strategy-evolution-autonomous-sync/route.ts`
-  - → `frontend/lib/strategy-evolution-autonomous-sync/index.ts`
 - `frontend/app/api/strategy-evolution-intelligence/route.ts`
   - → `frontend/lib/strategy-evolution-intelligence/index.ts`
   - → `frontend/lib/strategy-evolution/evolution-engine.ts`
@@ -601,8 +537,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/strategy-lifecycle/index.ts`
 - `frontend/app/api/strategy-mutation/route.ts`
   - → `frontend/lib/strategy-mutation/index.ts`
-- `frontend/app/api/strategy-opportunity-sync/route.ts`
-  - → `frontend/lib/market-universe/strategy-opportunity-sync.ts`
 - `frontend/app/api/strategy-ranking/route.ts`
   - → `frontend/lib/strategy-ranking/index.ts`
 - `frontend/app/api/strategy-species-classification/route.ts`
@@ -611,8 +545,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/strategy-universe-registry/index.ts`
 - `frontend/app/api/strategy-weight-auto-rebalancing/route.ts`
   - → `frontend/lib/strategy-weight-auto-rebalancing/index.ts`
-- `frontend/app/api/strategy-weight-portfolio-brain-sync/route.ts`
-  - → `frontend/lib/strategy-weight-portfolio-brain-sync/index.ts`
 - `frontend/app/api/technical-analysis/route.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
@@ -630,8 +562,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/app/api/trade-approval-engine/route.ts`
   - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
-- `frontend/app/api/trade-approval-execution-queue-sync/route.ts`
-  - → `frontend/lib/trade-approval-execution-queue-sync/index.ts`
 - `frontend/app/api/trade-outcome-feedback-engine/route.ts`
   - → `frontend/lib/portfolio-brain/trade-outcome-feedback-engine.ts`
 - `frontend/app/api/trades/[id]/route.ts`
@@ -640,12 +570,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/app/lib/prisma.ts`
 - `frontend/app/api/trading-style-priority-engine/route.ts`
   - → `frontend/lib/trading-style-priority-engine/index.ts`
-- `frontend/app/api/trading-style-priority-trade-approval-sync/route.ts`
-  - → `frontend/lib/trading-style-priority-trade-approval-sync/index.ts`
-- `frontend/app/api/trading-style-priority-unified-decision-sync/route.ts`
-  - → `frontend/lib/trading-style-priority-unified-decision-sync/index.ts`
-- `frontend/app/api/unified-decision-trade-approval-sync/route.ts`
-  - → `frontend/lib/unified-decision-trade-approval-sync/index.ts`
 - `frontend/app/api/validation-agent/route.ts`
   - → `frontend/lib/agents/validation-agent.ts`
 - `frontend/app/generated/prisma/browser.ts`
@@ -888,22 +812,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/autonomous-broker-optimization/index.ts`
   - → `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-engine.ts`
   - → `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-types.ts`
-- `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-engine.ts`
-  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-types.ts`
-  - → `frontend/lib/autonomous-trading-evolution-memory/index.ts`
-  - → `frontend/lib/autonomous-trading-evolution/index.ts`
-  - → `frontend/lib/strategy-ranking/index.ts`
-- `frontend/lib/autonomous-evolution-strategy-weight-sync/index.ts`
-  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-engine.ts`
-  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/autonomous-evolution-strategy-weight-sync-types.ts`
-- `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-engine.ts`
-  - → `frontend/lib/autonomous-evolution-strategy-weight-sync/index.ts`
-  - → `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-types.ts`
-  - → `frontend/lib/autonomous-trading-evolution/index.ts`
-  - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
-- `frontend/lib/autonomous-evolution-trade-approval-sync/index.ts`
-  - → `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-engine.ts`
-  - → `frontend/lib/autonomous-evolution-trade-approval-sync/autonomous-evolution-trade-approval-sync-types.ts`
 - `frontend/lib/autonomous-trading-evolution-memory/autonomous-trading-evolution-memory-types.ts`
   - → `frontend/lib/autonomous-trading-evolution/index.ts`
 - `frontend/lib/autonomous-trading-evolution-memory/autonomous-trading-evolution-memory.ts`
@@ -949,8 +857,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/broker-execution-quality-learning/index.ts`
   - → `frontend/lib/broker-execution-quality-learning/broker-execution-quality-learning-engine.ts`
   - → `frontend/lib/broker-execution-quality-learning/broker-execution-quality-learning-types.ts`
-- `frontend/lib/broker-health-dual-broker-sync/index.ts`
-  - → `frontend/lib/broker-health-dual-broker-sync/broker-health-dual-broker-types.ts`
 - `frontend/lib/broker-health-monitor/index.ts`
   - → `frontend/lib/broker-health-monitor/broker-health-monitor-types.ts`
 - `frontend/lib/broker-performance-memory/broker-performance-memory-engine.ts`
@@ -971,24 +877,8 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/broker-reputation-memory/index.ts`
   - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-engine.ts`
   - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-types.ts`
-- `frontend/lib/broker-routing-capitalcom-sync/index.ts`
-  - → `frontend/lib/broker-routing-capitalcom-sync/broker-routing-capitalcom-types.ts`
-- `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-engine.ts`
-  - → `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-types.ts`
-  - → `frontend/lib/broker-selection-routing-sync/index.ts`
-- `frontend/lib/broker-routing-dual-broker-sync/index.ts`
-  - → `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-engine.ts`
-  - → `frontend/lib/broker-routing-dual-broker-sync/broker-routing-dual-broker-sync-types.ts`
-- `frontend/lib/broker-routing-icmarkets-sync/index.ts`
-  - → `frontend/lib/broker-routing-icmarkets-sync/broker-routing-icmarkets-types.ts`
 - `frontend/lib/broker-routing-layer/index.ts`
   - → `frontend/lib/broker-routing-layer/broker-routing-types.ts`
-- `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-engine.ts`
-  - → `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-types.ts`
-  - → `frontend/lib/portfolio-brain-broker-selection-sync/index.ts`
-- `frontend/lib/broker-selection-routing-sync/index.ts`
-  - → `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-engine.ts`
-  - → `frontend/lib/broker-selection-routing-sync/broker-selection-routing-sync-types.ts`
 - `frontend/lib/brokers/auth/auth-manager.ts`
   - → `frontend/lib/brokers/auth/capital-demo.ts`
   - → `frontend/lib/brokers/auth/icmarkets-demo.ts`
@@ -1079,12 +969,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/dependency-scanner/index.ts`
   - → `frontend/lib/dependency-scanner/dependency-scanner-engine.ts`
   - → `frontend/lib/dependency-scanner/dependency-scanner-types.ts`
-- `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-engine.ts`
-  - → `frontend/lib/broker-routing-dual-broker-sync/index.ts`
-  - → `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-types.ts`
-- `frontend/lib/dual-broker-execution-queue-sync/index.ts`
-  - → `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-engine.ts`
-  - → `frontend/lib/dual-broker-execution-queue-sync/dual-broker-execution-queue-sync-types.ts`
 - `frontend/lib/dual-broker-orchestrator/index.ts`
   - → `frontend/lib/dual-broker-orchestrator/dual-broker-orchestrator-types.ts`
 - `frontend/lib/dynamic-position-allocation/dynamic-position-allocation-engine.ts`
@@ -1102,11 +986,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/economic-calendar/index.ts`
   - → `frontend/lib/economic-calendar/economic-calendar-engine.ts`
   - → `frontend/lib/economic-calendar/economic-calendar-types.ts`
-- `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-engine.ts`
-  - → `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-types.ts`
-- `frontend/lib/evolution-allocation-portfolio-sync/index.ts`
-  - → `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-engine.ts`
-  - → `frontend/lib/evolution-allocation-portfolio-sync/evolution-allocation-portfolio-sync-types.ts`
 - `frontend/lib/evolution-allocation/evolution-allocation-engine.ts`
   - → `frontend/lib/evolution-allocation/evolution-allocation-types.ts`
   - → `frontend/lib/evolution-governance/index.ts`
@@ -1161,20 +1040,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/execution-queue-position-sync/index.ts`
   - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-engine.ts`
   - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-types.ts`
-- `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-engine.ts`
-  - → `frontend/lib/dual-broker-execution-queue-sync/index.ts`
-  - → `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-types.ts`
-- `frontend/lib/execution-queue-ticket-generator-sync/index.ts`
-  - → `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-engine.ts`
-  - → `frontend/lib/execution-queue-ticket-generator-sync/execution-queue-ticket-generator-sync-types.ts`
-- `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-engine.ts`
-  - → `frontend/lib/execution-position-ticket-sync/index.ts`
-  - → `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-types.ts`
-  - → `frontend/lib/paper-trading/paper-singleton.ts`
-  - → `frontend/lib/paper-trading/paper-types.ts`
-- `frontend/lib/execution-ticket-paper-order-sync/index.ts`
-  - → `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-engine.ts`
-  - → `frontend/lib/execution-ticket-paper-order-sync/execution-ticket-paper-order-sync-types.ts`
 - `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
   - → `frontend/lib/gpt-analyst-engine/bias-detector.ts`
   - → `frontend/lib/gpt-analyst-engine/entry-planner.ts`
@@ -1204,8 +1069,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
-- `frontend/lib/institutional-portfolio-brain-sync/index.ts`
-  - → `frontend/lib/institutional-portfolio-brain-sync/institutional-sync-types.ts`
 - `frontend/lib/intelligence/economic-calendar.ts`
   - → `frontend/lib/intelligence/news-types.ts`
 - `frontend/lib/killswitch/index.ts`
@@ -1311,8 +1174,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/multi-style-consensus/multi-style-consensus-engine.ts`
   - → `frontend/lib/multi-style-consensus/multi-style-consensus-types.ts`
   - → `frontend/lib/trading-style-priority-engine/index.ts`
-- `frontend/lib/multi-timeframe-trade-approval-sync/index.ts`
-  - → `frontend/lib/multi-timeframe-trade-approval-sync/multi-timeframe-trade-approval-types.ts`
 - `frontend/lib/multi-timeframe-trading-style-analysis/index.ts`
   - → `frontend/lib/multi-timeframe-trading-style-analysis/multi-timeframe-types.ts`
 - `frontend/lib/multi-timeframe-unified-decision-sync/index.ts`
@@ -1379,13 +1240,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/performance-outcome-learning-sync/performance-outcome-learning-sync-engine.ts`
   - → `frontend/lib/paper-account-performance-sync/index.ts`
   - → `frontend/lib/performance-outcome-learning-sync/performance-outcome-learning-sync-types.ts`
-- `frontend/lib/portfolio-brain-broker-selection-sync/index.ts`
-  - → `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-engine.ts`
-  - → `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-types.ts`
-- `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-engine.ts`
-  - → `frontend/lib/portfolio-brain-broker-selection-sync/portfolio-brain-broker-selection-sync-types.ts`
-  - → `frontend/lib/portfolio-brain-evolution-sync/index.ts`
-  - → `frontend/lib/smart-broker-selection/index.ts`
 - `frontend/lib/portfolio-brain-evolution-sync/index.ts`
   - → `frontend/lib/portfolio-brain-evolution-sync/portfolio-brain-evolution-sync-engine.ts`
   - → `frontend/lib/portfolio-brain-evolution-sync/portfolio-brain-evolution-sync-types.ts`
@@ -1481,15 +1335,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/python-backend/python-status.ts`
 - `frontend/lib/python-bridge/python-data.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
-- `frontend/lib/regime-ai-sync/index.ts`
-  - → `frontend/lib/regime-ai-sync/regime-ai-sync-engine.ts`
-  - → `frontend/lib/regime-ai-sync/regime-ai-sync-types.ts`
-- `frontend/lib/regime-ai-sync/regime-ai-sync-engine.ts`
-  - → `frontend/lib/claude-risk-engine/claude-risk-manager.ts`
-  - → `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
-  - → `frontend/lib/market-data-engine/index.ts`
-  - → `frontend/lib/market-regime-engine/index.ts`
-  - → `frontend/lib/regime-ai-sync/regime-ai-sync-types.ts`
 - `frontend/lib/security-center/index.ts`
   - → `frontend/lib/security-center/security-center-engine.ts`
   - → `frontend/lib/security-center/security-center-types.ts`
@@ -1532,21 +1377,11 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/species-broker-execution-sync/species-broker-execution-sync-types.ts`
 - `frontend/lib/species-broker-execution-sync/species-broker-execution-sync-engine.ts`
   - → `frontend/lib/species-broker-execution-sync/species-broker-execution-sync-types.ts`
-- `frontend/lib/species-broker-routing-sync/index.ts`
-  - → `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-engine.ts`
-  - → `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-types.ts`
-- `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-engine.ts`
-  - → `frontend/lib/species-broker-routing-sync/species-broker-routing-sync-types.ts`
 - `frontend/lib/species-capital-allocation/index.ts`
   - → `frontend/lib/species-capital-allocation/species-capital-allocation-engine.ts`
   - → `frontend/lib/species-capital-allocation/species-capital-allocation-types.ts`
 - `frontend/lib/species-capital-allocation/species-capital-allocation-engine.ts`
   - → `frontend/lib/species-capital-allocation/species-capital-allocation-types.ts`
-- `frontend/lib/species-execution-center-sync/index.ts`
-  - → `frontend/lib/species-execution-center-sync/species-execution-center-sync-engine.ts`
-  - → `frontend/lib/species-execution-center-sync/species-execution-center-sync-types.ts`
-- `frontend/lib/species-execution-center-sync/species-execution-center-sync-engine.ts`
-  - → `frontend/lib/species-execution-center-sync/species-execution-center-sync-types.ts`
 - `frontend/lib/species-execution-queue-integration/index.ts`
   - → `frontend/lib/species-execution-queue-integration/species-execution-queue-integration-engine.ts`
   - → `frontend/lib/species-execution-queue-integration/species-execution-queue-integration-types.ts`
@@ -1587,11 +1422,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/species-trade-allocation/species-trade-allocation-types.ts`
 - `frontend/lib/species-trade-allocation/species-trade-allocation-engine.ts`
   - → `frontend/lib/species-trade-allocation/species-trade-allocation-types.ts`
-- `frontend/lib/species-trade-approval-sync/index.ts`
-  - → `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-engine.ts`
-  - → `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-types.ts`
-- `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-engine.ts`
-  - → `frontend/lib/species-trade-approval-sync/species-trade-approval-sync-types.ts`
 - `frontend/lib/strategy-breeding/index.ts`
   - → `frontend/lib/strategy-breeding/strategy-breeding-engine.ts`
   - → `frontend/lib/strategy-breeding/strategy-breeding-types.ts`
@@ -1683,8 +1513,6 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/strategy-broker-intelligence/index.ts`
 - `frontend/lib/strategy-weight-auto-rebalancing/index.ts`
   - → `frontend/lib/strategy-weight-auto-rebalancing/strategy-weight-types.ts`
-- `frontend/lib/strategy-weight-portfolio-brain-sync/index.ts`
-  - → `frontend/lib/strategy-weight-portfolio-brain-sync/strategy-weight-portfolio-brain-sync-types.ts`
 - `frontend/lib/technical-indicators/index.ts`
   - → `frontend/lib/technical-indicators/technical-indicators-engine.ts`
   - → `frontend/lib/technical-indicators/technical-indicators-types.ts`
@@ -1695,20 +1523,12 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
   - → `frontend/lib/telegram-notifications/telegram-types.ts`
 - `frontend/lib/telegram-notifications/telegram-engine.ts`
   - → `frontend/lib/telegram-notifications/telegram-types.ts`
-- `frontend/lib/trade-approval-execution-queue-sync/index.ts`
-  - → `frontend/lib/trade-approval-execution-queue-sync/trade-approval-execution-queue-types.ts`
 - `frontend/lib/trading-filters/trade-filters.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/trading-style-priority-engine/index.ts`
   - → `frontend/lib/trading-style-priority-engine/trading-style-priority-types.ts`
-- `frontend/lib/trading-style-priority-trade-approval-sync/index.ts`
-  - → `frontend/lib/trading-style-priority-trade-approval-sync/trading-style-priority-trade-approval-types.ts`
-- `frontend/lib/trading-style-priority-unified-decision-sync/index.ts`
-  - → `frontend/lib/trading-style-priority-unified-decision-sync/trading-style-priority-unified-decision-types.ts`
-- `frontend/lib/unified-decision-trade-approval-sync/index.ts`
-  - → `frontend/lib/unified-decision-trade-approval-sync/unified-decision-trade-approval-types.ts`
 
 ## frontend/middleware.ts
 
@@ -1718,7 +1538,7 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 
 ## Am häufigsten benutzt (Änderung hier trifft am meisten)
 
-- `frontend/lib/smart-broker-selection/index.ts` — von 26 Dateien
+- `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 19 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 16 Dateien
@@ -1728,9 +1548,9 @@ Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien
-- `frontend/lib/paper-trading/paper-singleton.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
+- `frontend/lib/paper-trading/paper-singleton.ts` — von 10 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 9 Dateien
-- `frontend/lib/paper-trading/paper-types.ts` — von 9 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 8 Dateien
+- `frontend/lib/icmarkets/icmarkets-client.ts` — von 8 Dateien
 
