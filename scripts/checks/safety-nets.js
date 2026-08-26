@@ -196,5 +196,59 @@ module.exports = function pruefe() {
     }
   }
 
-  return { titel: `Sicherheitsnetze (${pruefungen.length + 11} Prüfungen)`, funde };
+  // ── Keine erfundenen Handelsempfehlungen in der Oberfläche (26.08.) ─────
+  //
+  // ANLASS. Unter `app/` lagen zwei Seiten einer älteren Generation, die
+  // vollständige Handelsanweisungen aus einer fest verdrahteten Tabelle
+  // rendern — Gold SELL, Einstieg 3345, Stop 3365, Ziel 3290, „Strong Sell",
+  // Confidence 91, dazu erfundene Nachrichten. Nichts davon war gerechnet,
+  // nichts davon aktuell (der echte Goldkurs stand bei ~3358). Wer die Seite
+  // aufrief, sah konkrete Anweisungen, die aus nichts stammten.
+  //
+  // WAS GEPRÜFT WIRD: Richtung UND Einstieg UND Stop UND Ziel als LITERALE
+  // innerhalb desselben Blocks. Das ist eine vollständige Empfehlung, und die
+  // darf in der Oberfläche nur aus einer Rechnung kommen, nie aus dem
+  // Quelltext. Einzelne Zahlen sind erlaubt — ein Schwellwert oder eine
+  // Beispiel-Grösse ist kein Signal.
+  //
+  // `api/` ist ausgenommen: dort steht mit `TradeTicketBuilder.build(...)` ein
+  // legitimer Aufbau mit Stellungsargumenten, kein Literal-Block.
+  {
+    const APP = path.join(__dirname, "..", "..", "frontend", "app");
+    const UEBER = new Set(["generated", "api"]);
+    const dateien = [];
+    (function lauf(d) {
+      if (!fs.existsSync(d)) return;
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (UEBER.has(e.name)) continue;
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) lauf(p);
+        else if (/\.tsx?$/.test(e.name)) dateien.push(p);
+      }
+    })(APP);
+
+    const EMPFEHLUNG = new RegExp(
+      "direction\\s*:\\s*[\"'](BUY|SELL|LONG|SHORT)[\"'][\\s\\S]{0,400}?"
+      + "entry\\s*:\\s*[\"']?[\\d.]+[\"']?[\\s\\S]{0,300}?"
+      + "stopLoss\\s*:\\s*[\"']?[\\d.]+[\"']?[\\s\\S]{0,300}?"
+      + "takeProfit\\s*:\\s*[\"']?[\\d.]+[\"']?", "g");
+
+    for (const datei of dateien) {
+      const src = fs.readFileSync(datei, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const treffer = [...src.matchAll(EMPFEHLUNG)];
+      if (treffer.length > 0) {
+        const rel = path.relative(path.join(__dirname, "..", ".."), datei)
+          .split("\\").join("/");
+        funde.push(
+          `ERFUNDENE HANDELSEMPFEHLUNG: ${rel} — ${treffer.length} Block/Blöcke `
+          + `mit Richtung, Einstieg, Stop und Ziel als feste Literale. `
+          + `Eine Empfehlung in der Oberfläche muss gerechnet sein.`
+        );
+      }
+    }
+  }
+
+  return { titel: `Sicherheitsnetze (${pruefungen.length + 12} Prüfungen)`, funde };
 };

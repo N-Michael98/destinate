@@ -60,9 +60,26 @@ function quelldateien() {
 
 const existiert = (rel) => fs.existsSync(path.join(ROOT, rel));
 
+/** Liegt dieser Pfad in einem übersprungenen Ordner (`.next`, `node_modules`,
+ *  `venv`, …)?
+ *
+ *  GEFUNDEN 26.08.: `next-env.d.ts` enthält seit Next 16 die Zeile
+ *  `import "./.next/types/routes.d.ts";` — erzeugte Build-Ausgabe. Der
+ *  Auflöser hat sie brav aufgelöst, weil die Datei existiert. Damit hing die
+ *  Karte davon ab, ob gerade gebaut worden war: nach `rm -rf .next` eine Kante
+ *  weniger, nach `npm run build` eine mehr, und der Prüfer wurde abwechselnd
+ *  rot und grün, ohne dass sich eine Zeile Quelltext geändert hätte.
+ *
+ *  `quelldateien()` überspringt diese Ordner ohnehin — ein Ziel darin kann
+ *  also gar keinen Knoten in der Karte haben. */
+function istUebersprungen(rel) {
+  return rel.split("/").some((teil) => UEBERSPRINGEN.has(teil));
+}
+
 /**
  * Import-Angabe zu einem Dateipfad auflösen.
- * Gibt null zurück für Fremdpakete — die gehören nicht in unsere Karte.
+ * Gibt null zurück für Fremdpakete und für erzeugte Ordner — beides gehört
+ * nicht in unsere Karte.
  */
 function aufloesen(vonDatei, angabe) {
   const dir = path.posix.dirname(vonDatei);
@@ -73,6 +90,7 @@ function aufloesen(vonDatei, angabe) {
     const basis = angabe.startsWith("@/")
       ? path.posix.join("frontend", angabe.slice(2))
       : path.posix.normalize(path.posix.join(dir, angabe));
+    if (istUebersprungen(basis)) return null;   // erzeugte Ausgabe, siehe oben
     for (const k of [".ts", ".tsx", "/index.ts", "/index.tsx", ".js", ""]) {
       if (k === "" ? existiert(basis) && /\.(ts|tsx)$/.test(basis) : existiert(basis + k)) {
         return k === "" ? basis : basis + k;
@@ -133,9 +151,9 @@ function sammleGraph() {
       // LÜCKE, gefunden 26.08.: hier stand `[\s\S]{0,200}?` — ein festes
       // Fenster von 200 Zeichen zwischen `import` und `from`. Ein längerer
       // Import-Block fiel damit lautlos aus der Karte. Betroffen waren zwei
-      // echte Abhängigkeiten (ai-assistant/page.tsx → ./helpers, 357 Zeilen,
-      // und technical-indicators-engine → seine eigenen Typen), und
-      // `--impact` hat sie folglich nie genannt.
+      // echte Abhängigkeiten — eine davon in der inzwischen entfernten
+      // ai-assistant-Seite, die andere technical-indicators-engine → seine
+      // eigenen Typen — und `--impact` hat sie folglich nie genannt.
       //
       // Die Selbstprüfung meldete trotzdem "0 offen" — sie zählt, was von den
       // GELESENEN Angaben nicht auflösbar war, nicht was gar nicht erst
@@ -397,6 +415,11 @@ if (require.main === module) {
         // "nicht auflösbar" gemeldet werden, sonst wäre die Selbstprüfung
         // dauerhaft rot und damit wertlos.
         if (/\.(css|scss|sass|less|svg|png|jpe?g|gif|webp|woff2?|ttf|json)$/i.test(a)) { extern++; continue; }
+        // Erzeugte Ordner (.next, node_modules, venv …) gehören nicht in die
+        // Karte und dürfen deshalb auch nicht als "nicht aufgelöst" gelten —
+        // sonst wäre die Selbstprüfung nach jedem Build rot. Betrifft konkret
+        // `next-env.d.ts` → `./.next/types/routes.d.ts` (26.08.).
+        if (a.split("/").some((teil) => UEBERSPRINGEN.has(teil))) { extern++; continue; }
         const istIntern = a.startsWith(".") || a.startsWith("@/")
           || ((datei.startsWith("backend/") || datei.startsWith("analysis-engine/")) && /^(services|core|api)[./]/.test(a));
         if (!istIntern) { extern++; continue; }

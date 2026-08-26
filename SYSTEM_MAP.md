@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 549 · Kanten: 1130
+Dateien mit internen Abhängigkeiten: 542 · Kanten: 1120
 
 
 ## analysis-engine/api
@@ -241,13 +241,6 @@ Dateien mit internen Abhängigkeiten: 549 · Kanten: 1130
 
 ## frontend/app
 
-- `frontend/app/ai-assistant/helpers.ts`
-  - → `frontend/app/data/markets.ts`
-- `frontend/app/ai-assistant/page.tsx`
-  - → `frontend/app/ai-assistant/helpers.ts`
-  - → `frontend/app/data/journalAnalytics.ts`
-  - → `frontend/app/data/tradeUtils.ts`
-  - → `frontend/app/services/openai.ts`
 - `frontend/app/api/adaptive-broker-weighting/route.ts`
   - → `frontend/lib/adaptive-broker-weighting/index.ts`
 - `frontend/app/api/ai-config/route.ts`
@@ -655,10 +648,6 @@ Dateien mit internen Abhängigkeiten: 549 · Kanten: 1130
   - → `frontend/lib/unified-decision-trade-approval-sync/index.ts`
 - `frontend/app/api/validation-agent/route.ts`
   - → `frontend/lib/agents/validation-agent.ts`
-- `frontend/app/data/journalAnalytics.ts`
-  - → `frontend/app/data/trades.ts`
-- `frontend/app/data/tradeUtils.ts`
-  - → `frontend/app/data/trades.ts`
 - `frontend/app/generated/prisma/browser.ts`
   - → `frontend/app/generated/prisma/enums.ts`
   - → `frontend/app/generated/prisma/internal/prismaNamespaceBrowser.ts`
@@ -687,10 +676,6 @@ Dateien mit internen Abhängigkeiten: 549 · Kanten: 1130
 - `frontend/app/generated/prisma/models/Trade.ts`
   - → `frontend/app/generated/prisma/enums.ts`
   - → `frontend/app/generated/prisma/internal/prismaNamespace.ts`
-- `frontend/app/market-intelligence/[market]/page.tsx`
-  - → `frontend/app/data/markets.ts`
-- `frontend/app/market-intelligence/page.tsx`
-  - → `frontend/app/data/markets.ts`
 - `frontend/app/page.tsx`
   - → `frontend/components/AIAgentControlCenter.tsx`
   - → `frontend/components/BrokerCenterPanel.tsx`
@@ -1730,11 +1715,6 @@ Dateien mit internen Abhängigkeiten: 549 · Kanten: 1130
 - `frontend/middleware.ts`
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/security-watchdog/security-event-logger.ts`
-
-## frontend/next-env.d.ts
-
-- `frontend/next-env.d.ts`
-  - → `frontend/.next/types/routes.d.ts`
 
 ## Am häufigsten benutzt (Änderung hier trifft am meisten)
 
