@@ -9,7 +9,7 @@ manuell geschickt werden.
 cd frontend && npm run check
 ```
 
-Braucht keine Installation. **Zwanzig Prüfer**, Rückgabe 0 = grün.
+Braucht keine Installation. **Einundzwanzig Prüfer**, Rückgabe 0 = grün.
 **Rot heisst: nicht committen, erst beheben.**
 
 Mit TypeScript-Prüfung zusammen:
@@ -78,6 +78,23 @@ Der Prüfer `preis-cache` bildet den Fall nach: er lädt das Modul **zweimal**,
 schreibt über die eine Instanz und liest über die andere. Wer einen neuen
 geteilten Zustand baut, prüft ihn genauso — eine Struktur-Prüfung sieht diesen
 Fehler nicht.
+
+## Das Dashboard ist EINE Seite, kein Satz von Seiten
+
+`app/page.tsx` hält oben `navGroups` (die Menüeinträge) und 3500 Zeilen weiter
+unten die Kette `if (activeView === "…") return <X />;`. Beide Listen müssen
+deckungsgleich sein — der Prüfer `menue-ansichten` erzwingt das in beide
+Richtungen.
+
+Am **26.08.** waren sie es nicht: „Live Prep" stand im Menü ohne Render-Zeile,
+als einziger von 29. Der Klick fiel auf `CenterPlaceholder` durch, und der
+meldete dort **„Status: Prepared"** in Grün samt „bewusst aus dem Hauptdashboard
+ausgelagert". Es gab die Ansicht nie.
+
+Der Durchfall bleibt bestehen — ein vergessener Eintrag soll eine erklärende
+Seite ergeben statt einer leeren. Er sagt jetzt **„Nicht gebaut"**.
+
+Wer eine Ansicht hinzufügt, braucht **beides**: Menüeintrag und Render-Zeile.
 
 ## Ohne Kurs kein Regime — und kein „Live" ohne Beleg
 
