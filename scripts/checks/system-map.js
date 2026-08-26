@@ -23,6 +23,27 @@ const { ROOT } = require("./_lib");
 const DATEI = path.join(ROOT, "SYSTEM_MAP.md");
 const UEBERSPRINGEN = new Set(["node_modules", ".next", ".git", "venv", "__pycache__", ".snapshots"]);
 
+/** `import ... from "x"` / `export ... from "x"` — ohne Längenbegrenzung.
+ *  Begründung steht bei der Verwendungsstelle in sammleGraph(). */
+const RE_IMPORT_FROM =
+  /(?:^|\n)\s*(?:import|export)\s+[\w$*,{}\s]*?\bfrom\s+["']([^"']+)["']/g;
+
+/** Nur für die Selbstprüfung: JEDES `from "…"` im Quelltext, ohne Rücksicht
+ *  darauf, ob eine Import-Anweisung davorsteht.
+ *
+ *  In TypeScript kommt `from "…"` praktisch nur in Import-/Export-Anweisungen
+ *  vor. Findet `--audit` hier mehr als das anerkannte Muster oben, hat das
+ *  anerkannte Muster etwas verloren — genau die Lücke vom 26.08. Damit kann
+ *  die Selbstprüfung ihre eigene blinde Stelle sehen, statt "0 offen" zu
+ *  melden, während Kanten fehlen. */
+const RE_FROM_ROH = /\bfrom\s+["']([^"']+)["']/g;
+
+/** Kommentare entfernen, damit ein `from "…"` in einer Erklärung nicht als
+ *  Import zählt. `[^:]` vor `//` — sonst frisst das Muster "https://…". */
+function ohneKommentare(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
 /** Alle eigenen Quelldateien, repo-relativ mit Schrägstrichen. */
 function quelldateien() {
   const out = [];
@@ -108,7 +129,26 @@ function sammleGraph() {
 
     if (/\.(ts|tsx)$/.test(datei)) {
       // Statisch: import ... from "x"  /  export ... from "x"
-      for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)[\s\S]{0,200}?from\s+["']([^"']+)["']/g)) nimm(m[1]);
+      //
+      // LÜCKE, gefunden 26.08.: hier stand `[\s\S]{0,200}?` — ein festes
+      // Fenster von 200 Zeichen zwischen `import` und `from`. Ein längerer
+      // Import-Block fiel damit lautlos aus der Karte. Betroffen waren zwei
+      // echte Abhängigkeiten (ai-assistant/page.tsx → ./helpers, 357 Zeilen,
+      // und technical-indicators-engine → seine eigenen Typen), und
+      // `--impact` hat sie folglich nie genannt.
+      //
+      // Die Selbstprüfung meldete trotzdem "0 offen" — sie zählt, was von den
+      // GELESENEN Angaben nicht auflösbar war, nicht was gar nicht erst
+      // gelesen wurde. Exakt dieselbe blinde Stelle wie am 23.08. auf der
+      // Python-Seite. Deshalb prüft `--audit` seit heute zusätzlich, ob jede
+      // Import-ANWEISUNG auch eine Angabe geliefert hat.
+      //
+      // Statt einer grösseren Zahl jetzt eine Zeichenklasse ohne Länge:
+      // zwischen `import`/`export` und `from` stehen nur Bezeichner, Klammern,
+      // Kommas, `*` und Leerraum. `;`, `(`, `=` und `.` sind NICHT enthalten —
+      // damit kann der Ausdruck eine Anweisungsgrenze nicht überschreiten und
+      // sich kein Ziel aus der nächsten Zeile borgen.
+      for (const m of src.matchAll(RE_IMPORT_FROM)) nimm(m[1]);
       // Nebenwirkungs-Import: import "x"
       for (const m of src.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g)) nimm(m[1]);
       // Dynamisch: import("x") — davon gibt es hier über neunzig, und
@@ -326,11 +366,24 @@ if (require.main === module) {
     const dateien = quelldateien();
     let intern = 0, extern = 0;
     const offen = [];
+    // ZWEITE FRAGE seit dem 26.08.: nicht nur "war jede gelesene Angabe
+    // auflösbar", sondern auch "wurde jede Angabe überhaupt gelesen". Genau
+    // daran ist diese Selbstprüfung zweimal vorbeigelaufen — am 23.08. auf der
+    // Python-Seite, am 26.08. auf der TypeScript-Seite. Sie meldete beide Male
+    // "0 offen", während echte Kanten fehlten.
+    const uebersehen = [];
     for (const datei of dateien) {
       const src = fs.readFileSync(path.join(ROOT, datei), "utf8");
       const angaben = [];
       if (/\.(ts|tsx)$/.test(datei)) {
-        for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)[\s\S]{0,200}?from\s+["']([^"']+)["']/g)) angaben.push(m[1]);
+        for (const m of src.matchAll(RE_IMPORT_FROM)) angaben.push(m[1]);
+        // Gegenprobe: JEDES `from "…"` ausserhalb von Kommentaren. Findet sich
+        // hier eines, das oben nicht erkannt wurde, hat das Muster etwas
+        // verloren — unabhängig davon, ob es auflösbar wäre.
+        const erkannt = new Set(angaben);
+        for (const m of ohneKommentare(src).matchAll(RE_FROM_ROH)) {
+          if (!erkannt.has(m[1])) uebersehen.push(`${datei}  →  ${m[1]}`);
+        }
         for (const m of src.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g)) angaben.push(m[1]);
         for (const m of src.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)) angaben.push(m[1]);
         for (const m of src.matchAll(/\brequire\(\s*["']([^"']+)["']\s*\)/g)) angaben.push(m[1]);
@@ -355,8 +408,11 @@ if (require.main === module) {
     console.log(`  NICHT aufgelöst:            ${offen.length}`);
     for (const o of offen.slice(0, 20)) console.log(`     ${o}`);
     if (offen.length > 20) console.log(`     … und ${offen.length - 20} weitere`);
+    console.log(`  GAR NICHT GELESEN:          ${uebersehen.length}`);
+    for (const u of uebersehen.slice(0, 20)) console.log(`     ${u}`);
+    if (uebersehen.length > 20) console.log(`     … und ${uebersehen.length - 20} weitere`);
     console.log("");
-    process.exit(offen.length === 0 ? 0 : 1);
+    process.exit(offen.length === 0 && uebersehen.length === 0 ? 0 : 1);
   }
 
   console.log("Aufruf:\n  node scripts/checks/system-map.js --impact <datei>\n  node scripts/checks/system-map.js --update\n  node scripts/checks/system-map.js --audit");
