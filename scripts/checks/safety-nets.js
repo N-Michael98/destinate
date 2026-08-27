@@ -288,5 +288,68 @@ module.exports = function pruefe() {
     }
   }
 
-  return { titel: `Sicherheitsnetze (${pruefungen.length + 16} Prüfungen)`, funde };
+  // ── Die letzte Stufe des Signal-Trichters ist ablesbar (27.08.) ─────────
+  //
+  // ANLASS. Der Bot stand fest, und der Trichter meldete nur
+  // "SL/TP gesetzt 3 → Risiko-Freigabe (R/R≥1.5) 0 = GO". Drei Signale
+  // erreichten die letzte Stufe, keines kam durch — und WORAN war aus dem Log
+  // nicht zu erkennen. Die Beschriftung nennt nur das Chance-Risiko, die echte
+  // Bedingung ist `riskScore < 60 && rr >= 1.5`. Es konnte beides sein.
+  //
+  // Ausserdem gab sich der regelbasierte Rückfall als echte Claude-Antwort aus:
+  // `simulateClaude()` lieferte `source: "CLAUDE_REAL"`, und `CLAUDE_SIMULATED`
+  // war im ganzen Programm nirgends gesetzt.
+  {
+    const roh = read("frontend/lib/market-scanner/ai-analysis-engine.ts");
+    const ohne = roh
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+    // 1. Der Rückfall darf sich nicht als echt ausgeben.
+    const simBlock = ohne.slice(
+      ohne.indexOf("function simulateClaude"),
+      ohne.indexOf("function simulateClaude") + 900
+    );
+    if (/source:\s*"CLAUDE_REAL"/.test(simBlock)) {
+      funde.push(
+        'simulateClaude() gibt sich als "CLAUDE_REAL" aus — eine Regel-Rechnung '
+        + "als Antwort des echten Modells ausgewiesen"
+      );
+    }
+    if (!/source:\s*"CLAUDE_SIMULATED"/.test(simBlock)) {
+      funde.push('simulateClaude() kennzeichnet sich nicht als "CLAUDE_SIMULATED"');
+    }
+
+    // 2. Die Ablehnung an der letzten Stufe muss die ZAHLEN nennen.
+    if (!/NICHT freigegeben/.test(roh)) {
+      funde.push(
+        "FEHLT: keine Meldung, warum ein Signal an der letzten Stufe scheitert — "
+        + "dann steht wieder nur '0 = GO' im Log"
+      );
+    }
+    if (!/rewardRiskRatio\.toFixed\(2\)/.test(ohne)) {
+      funde.push("FEHLT: der R/R-Wert wird bei der Ablehnung nicht ausgegeben");
+    }
+    if (!/riskScore\s*>=\s*60/.test(ohne)) {
+      funde.push("FEHLT: der Risiko-Score wird bei der Ablehnung nicht geprüft/genannt");
+    }
+    // Der Risiko-Score ist NUR im echten Pfad eine Bedingung — wer ihn auch im
+    // Rückfall nennt, gibt einen Grund an, den es dort nicht gibt.
+    if (!/claude\.source\s*===\s*"CLAUDE_REAL"\s*&&\s*claude\.riskScore/.test(ohne)) {
+      funde.push(
+        "der Risiko-Score wird ohne Herkunfts-Prüfung als Ablehnungsgrund genannt — "
+        + "im regelbasierten Rückfall ist er gar keine Bedingung"
+      );
+    }
+
+    // 3. Eine Simulation im Handelspfad darf nicht still laufen.
+    if (!/handelbare\(s\) Signal\(e\) ohne Claude bewertet/.test(roh)) {
+      funde.push(
+        "FEHLT: es wird nicht gemeldet, wenn der regelbasierte Rückfall ein "
+        + "handelbares Signal bewertet hat"
+      );
+    }
+  }
+
+  return { titel: `Sicherheitsnetze (${pruefungen.length + 23} Prüfungen)`, funde };
 };

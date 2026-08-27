@@ -351,6 +351,28 @@ function realesChanceRisiko(
   return chance / risiko;
 }
 
+/**
+ * Regelbasierter Rückfall, wenn kein Claude-Schlüssel hinterlegt ist oder GPT
+ * keine handelbare Richtung genannt hat.
+ *
+ * KORREKTUR 27.08.: hier stand `source: "CLAUDE_REAL"`. Eine Regel-Rechnung
+ * gab sich also als Antwort des echten Modells aus — und `CLAUDE_SIMULATED`
+ * war im ganzen Programm nirgends gesetzt, obwohl der Typ es kennt. Im
+ * Marktscanner erschien deshalb das violette Abzeichen "CLAUDE_REAL" auch
+ * dann, wenn nie ein Modell gefragt wurde.
+ *
+ * Dieselbe Fehlerklasse wurde am 25.08. in den Anzeige-Routen behoben; hier
+ * stand sie im Handelspfad.
+ *
+ * KEINE Handelsentscheidung hängt an diesem Feld — nachgeprüft: `isRealAnalysis`
+ * wertet `gpt.source` aus, und `claude.source` wird ausserhalb dieser Datei nur
+ * von MarketScannerPanel.tsx:382 gelesen, und zwar für die Farbe des Abzeichens.
+ *
+ * BEACHTE: die beiden Pfade urteilen nach VERSCHIEDENEN Regeln. Der echte
+ * Claude verlangt `riskScore < 60 && rr >= 1.5`, dieser Rückfall prüft den
+ * Risiko-Score gar nicht. Deshalb steht die Herkunft jetzt auch in der
+ * Ablehnungs-Zeile im Log — sonst wäre der genannte Grund nicht einzuordnen.
+ */
 function simulateClaude(gpt: GPTMarketAnalysis, markt: { bid: number; ask: number }): ClaudeRiskAssessment {
   const rrRatio = realesChanceRisiko(gpt, markt);
   const riskScore = Math.max(10, 80 - gpt.confidence);
@@ -359,9 +381,9 @@ function simulateClaude(gpt: GPTMarketAnalysis, markt: { bid: number; ask: numbe
     approved: gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && rrRatio >= 1.5,
     riskScore,
     maxRiskPercent: riskScore > 60 ? 0.5 : 1.0,
-    reasoning: `Risk assessment: confidence=${gpt.confidence}% R/R=${rrRatio.toFixed(2)}`,
+    reasoning: `Regelbasiert (kein Claude gefragt): confidence=${gpt.confidence}% R/R=${rrRatio.toFixed(2)}`,
     rewardRiskRatio: rrRatio,
-    source: "CLAUDE_REAL",
+    source: "CLAUDE_SIMULATED",
   };
 }
 
@@ -783,6 +805,12 @@ each market's own data, never from habit or from these examples' direction:
   const opportunities: ScannerOpportunity[] = [];
   // Zähler für den Signal-Trichter — siehe Erklärung bei der Auswertung unten.
   const trichter = { gesamt: 0, echteAnalyse: 0, volleDaten: 0, richtung: 0, confidence: 0, slTp: 0, go: 0 };
+  // Wie oft musste der REGELBASIERTE Rückfall einspringen, obwohl ein
+  // handelbares Signal vorlag? (27.08.) Das ist kein Randfall, sondern eine
+  // andere Entscheidungsregel: der Rückfall prüft den Risiko-Score gar nicht.
+  // Läuft er, soll es dastehen — eine Simulation im Handelspfad darf nicht
+  // still sein.
+  let ohneClaude = 0;
   // Trichter des gemessenen Konsenses (05.08.): Er löste im ersten Betriebstag
   // kein einziges Mal aus, und an welcher der vier Bedingungen es scheitert,
   // war nicht erkennbar. Rein zählend, beeinflusst nichts.
@@ -1044,6 +1072,9 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         source: "CLAUDE_REAL",
       };
     } else {
+      // Nur zählen, wenn ein HANDELBARES Signal vorlag. Bei direction=WAIT ist
+      // der Rückfall der Normalfall (23 von 30 Märkten) und keine Meldung wert.
+      if (!hasClaude && gpt.direction !== "WAIT" && gpt.stopLoss > 0) ohneClaude++;
       claude = simulateClaude(gpt, market);
     }
 
@@ -1115,6 +1146,47 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     // sieben Bedingungen die Märkte scheitern, war nicht erkennbar. Derselbe
     // blinde Fleck wie heute früh bei den Capital-Epics: der Ausfall ist still.
     // Reine Zählung, beeinflusst keine Entscheidung.
+    // ── Warum ein Signal an der LETZTEN Stufe scheitert (27.08.) ───────────
+    //
+    // ANLASS. Am 27.08. stand der Bot fest: der Trichter meldete
+    // "SL/TP gesetzt 3 → Risiko-Freigabe (R/R≥1.5) 0 = GO". Drei Signale
+    // erreichten die letzte Stufe, keines kam durch — und aus dem Log war NICHT
+    // zu erkennen, WORAN. Die Beschriftung nennt nur das Chance-Risiko, die
+    // echte Bedingung ist aber `riskScore < 60 && rr >= 1.5`. Es konnte also
+    // beides gewesen sein, und niemand konnte es unterscheiden.
+    //
+    // Reine Beobachtung: diese Zeile trifft keine Entscheidung. Sie sagt, wie
+    // knapp es war — ein R/R von 1.48 ist etwas völlig anderes als 0.9, und nur
+    // mit der Zahl lässt sich beurteilen, ob die Hürde richtig steht.
+    //
+    // Die Herkunft steht mit dabei, weil die beiden Pfade nach verschiedenen
+    // Regeln urteilen (siehe simulateClaude).
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT"
+        && gpt.confidence >= MIN_SIGNAL_CONFIDENCE
+        && gpt.stopLoss > 0 && gpt.takeProfit > 0 && !claude.approved) {
+      const einstieg = gpt.direction === "BUY"
+        ? (market.ask || market.bid)
+        : (market.bid || market.ask);
+      const stopAbstand = Math.abs(einstieg - gpt.stopLoss);
+      const zielAbstand = Math.abs(gpt.takeProfit - einstieg);
+      const gruende: string[] = [];
+      if (!(claude.rewardRiskRatio >= 1.5)) {
+        gruende.push(`R/R ${claude.rewardRiskRatio.toFixed(2)} < 1.5`);
+      }
+      // Der Risiko-Score ist NUR im echten Claude-Pfad eine Bedingung — der
+      // Rückfall prüft ihn nicht. Ihn dort zu nennen wäre irreführend.
+      if (claude.source === "CLAUDE_REAL" && claude.riskScore >= 60) {
+        gruende.push(`Risiko-Score ${claude.riskScore} >= 60`);
+      }
+      console.log(
+        `[ai-engine] ⚖️ ${market.symbol} ${gpt.direction} NICHT freigegeben `
+        + `(${claude.source}): ${gruende.join(" + ") || "Grund nicht ableitbar"} `
+        + `| Einstieg ${einstieg} SL ${gpt.stopLoss} TP ${gpt.takeProfit} `
+        + `| Abstand Stop ${stopAbstand.toFixed(5)} Ziel ${zielAbstand.toFixed(5)} `
+        + `| conf ${gpt.confidence}`
+      );
+    }
+
     trichter.gesamt++;
     if (isRealAnalysis) trichter.echteAnalyse++;
     if (isRealAnalysis && hasFullData) trichter.volleDaten++;
@@ -1168,6 +1240,14 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     ` → Strategien einig≥70 ${konsens.strategienEinig} → Entry-Quality GOOD/EXCELLENT ${konsens.qualitaetEinig}` +
     ` = handelbar (Regler ist ${messkonsensAktiv ? "AN" : "AUS"})`
   );
+  // Eine Simulation im Handelspfad darf nicht still laufen (27.08.).
+  if (ohneClaude > 0) {
+    console.warn(
+      `[ai-engine] ⚠️ ${ohneClaude} handelbare(s) Signal(e) ohne Claude bewertet — `
+      + `es galt der REGELBASIERTE Rückfall, und der prüft den Risiko-Score nicht. `
+      + `Kein Anthropic-Schlüssel hinterlegt.`
+    );
+  }
 
   return opportunities
     .sort((a, b) => b.finalScore - a.finalScore)
