@@ -103,6 +103,12 @@ const pruefer = [
   // und zeigte dort "Status: Prepared" in Gruen. Struktur-Pruefer, kein
   // rechnender: hier gibt es nichts zu rechnen, nur zwei Listen abzugleichen.
   ["menue-ansichten", require("./menue-ansichten")],
+  // 26.08. ergaenzt, nach "seit gestern kein Trade": ein einziger
+  // fehlgeschlagener Lesevorgang der Einstellungen beim Prozessstart klemmte
+  // das System fuer die GESAMTE Laufzeit auf mode="MANUAL" — still, ohne
+  // Alarm, ohne Erholung. Der zwoelfte rechnende Pruefer laesst eine
+  // steuerbare Datenbank ausfallen und wiederkommen.
+  ["einstellungen-ausfall", require("./einstellungen-ausfall")],
 ];
 
 const nurDieser = process.argv[2];

@@ -66,7 +66,49 @@ async function getPrisma() {
   return gp();
 }
 
-async function loadFromDB(): Promise<SystemSettings> {
+// ── Warum hier zwischen ZWEI Fällen unterschieden wird (26.08.) ─────────────
+//
+// Hier stand ein einziges `catch { /* DB not ready yet → use defaults */ }`,
+// und danach wurden die Standardwerte zurückgegeben. Damit war ein
+// DATENBANKFEHLER nicht von "es gibt noch keinen Datensatz" zu unterscheiden —
+// und beides endete in `DEFAULT_SETTINGS` mit `mode: "MANUAL"`.
+//
+// DIE FOLGE, und sie ist still und dauerhaft: `get()` legt das Ergebnis auf
+// `global.__system_settings__` ab und liest danach NIE wieder nach. Ein
+// einziger fehlgeschlagener Lesevorgang beim Start klemmt das System also für
+// die gesamte Prozesslaufzeit auf MANUAL fest. Der Orchestrator meldet dann
+// alle fünf Minuten "Modus nicht AUTO — Zyklus übersprungen", und sonst
+// passiert nichts. Kein Fehler, kein Alarm, keine Erholung.
+//
+// Am 19.08. wurde genau diese Fehlerklasse für die Migrationen behoben
+// (instrumentation.ts) — mit der Begründung "der Dienst stand auf Online, die
+// Website lief, das Handelssystem tat nichts". Dort steht auch das
+// Versprechen, das System finde "die Datenbank beim nächsten Zyklus von selbst
+// wieder". Für die Einstellungen galt das NICHT, weil sie zwischengespeichert
+// werden.
+//
+// Anlass damals: ein angekündigter Postgres-Sicherheitspatch bei Railway. Fällt
+// die Datenbank für Sekunden weg, während dieser Dienst startet, greift genau
+// dieser Pfad.
+//
+// Betroffen ist im Übrigen nicht nur `mode`: die GESAMTE Risikokonfiguration
+// fiele auf Standardwerte zurück — Positionsgrössen, Stop-Abstände, Limits.
+// Dass daraus MANUAL folgt und damit gar nicht gehandelt wird, ist der einzige
+// Grund, warum das nie Geld gekostet hat.
+type Ladeergebnis = {
+  settings: SystemSettings;
+  /** true = die Datenbank hat geantwortet (auch wenn es noch keinen Datensatz
+   *  gibt). false = Lesefehler; das Ergebnis darf NICHT zwischengespeichert
+   *  werden, sonst brennt sich der Ausfall dauerhaft ein. */
+  ausDB: boolean;
+  fehler?: string;
+};
+
+function standardwerte(): SystemSettings {
+  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+}
+
+async function loadFromDB(): Promise<Ladeergebnis> {
   try {
     const db = await getPrisma();
     const row = await db.$queryRaw<{ data: string }[]>`
@@ -75,18 +117,29 @@ async function loadFromDB(): Promise<SystemSettings> {
     if (row && row.length > 0) {
       const parsed = JSON.parse(row[0].data) as SystemSettings;
       return {
-        ...DEFAULT_SETTINGS,
-        ...parsed,
-        botSettings: { ...DEFAULT_SETTINGS.botSettings, ...parsed.botSettings },
-        riskSettings: { ...DEFAULT_SETTINGS.riskSettings, ...parsed.riskSettings },
-        connections: DEFAULT_SETTINGS.connections.map((def) => {
-          const saved = parsed.connections?.find((c) => c.brokerKey === def.brokerKey);
-          return saved ? { ...saved, connected: false, accountId: null, error: null } : def;
-        }),
+        ausDB: true,
+        settings: {
+          ...DEFAULT_SETTINGS,
+          ...parsed,
+          botSettings: { ...DEFAULT_SETTINGS.botSettings, ...parsed.botSettings },
+          riskSettings: { ...DEFAULT_SETTINGS.riskSettings, ...parsed.riskSettings },
+          connections: DEFAULT_SETTINGS.connections.map((def) => {
+            const saved = parsed.connections?.find((c) => c.brokerKey === def.brokerKey);
+            return saved ? { ...saved, connected: false, accountId: null, error: null } : def;
+          }),
+        },
       };
     }
-  } catch { /* DB not ready yet → use defaults */ }
-  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    // Die Datenbank hat geantwortet, es gibt nur noch keinen Datensatz.
+    // Das ist der legitime Erstlauf — Standardwerte sind hier richtig.
+    return { ausDB: true, settings: standardwerte() };
+  } catch (err) {
+    return {
+      ausDB: false,
+      settings: standardwerte(),
+      fehler: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 async function saveToDB(s: SystemSettings): Promise<void> {
@@ -102,13 +155,62 @@ async function saveToDB(s: SystemSettings): Promise<void> {
 }
 
 // In-memory cache so we don't hit DB on every read within same process
-declare global { var __system_settings__: SystemSettings | undefined; }
+declare global {
+  var __system_settings__: SystemSettings | undefined;
+  /** Zeitpunkt der letzten Warnung über einen Lesefehler — damit die Meldung
+   *  bei anhaltendem Ausfall nicht jede Sekunde erscheint, aber auch nicht
+   *  nur einmal und dann nie wieder. */
+  var __settings_letzte_warnung__: number | undefined;
+}
+
+/** Wie oft darf gewarnt werden, solange die Datenbank nicht antwortet? */
+const WARN_ABSTAND_MS = 5 * 60 * 1000;
 
 async function get(): Promise<SystemSettings> {
-  if (!global.__system_settings__) {
-    global.__system_settings__ = await loadFromDB();
+  if (global.__system_settings__) return global.__system_settings__;
+
+  const { settings, ausDB, fehler } = await loadFromDB();
+
+  if (!ausDB) {
+    // NICHT zwischenspeichern. Der nächste Aufruf versucht es erneut — damit
+    // erholt sich das System von selbst, sobald die Datenbank wieder da ist.
+    // Vorher blieb der Ausfall bis zum nächsten Deploy eingebrannt.
+    const jetzt = Date.now();
+    const letzte = global.__settings_letzte_warnung__ ?? 0;
+    if (jetzt - letzte > WARN_ABSTAND_MS) {
+      global.__settings_letzte_warnung__ = jetzt;
+      console.error(
+        "[settings] ⛔ EINSTELLUNGEN NICHT LESBAR — es gelten die Standardwerte, "
+        + `und die bedeuten mode="MANUAL": es wird NICHT gehandelt. `
+        + `Das ist der sichere Zustand, aber kein normaler. Grund: ${fehler}`
+      );
+      // Stiller Stillstand ist genau das Problem, das behoben wird — deshalb
+      // geht die Meldung auch raus. Fehlschlag darf den Lesevorgang nicht
+      // aufhalten, deshalb ohne await.
+      import("../telegram-notifications/telegram-sender")
+        .then(({ sendTelegram }) =>
+          sendTelegram(
+            "⛔ <b>Einstellungen nicht lesbar</b>\n\n"
+            + "Die Datenbank antwortet nicht. Es gelten die Standardwerte — "
+            + "und die bedeuten <b>MANUAL</b>: der Bot eröffnet keine Trades.\n\n"
+            + "Sobald die Datenbank wieder antwortet, lädt das System die "
+            + "Einstellungen von selbst nach.\n\n"
+            + `Grund: ${fehler}`
+          )
+        )
+        .catch(() => { /* non-fatal */ });
+    }
+    return settings;
   }
-  return global.__system_settings__!;
+
+  global.__system_settings__ = settings;
+  return settings;
+}
+
+/** Für Diagnose und Prüfer: konnten die Einstellungen aus der Datenbank
+ *  gelesen werden, oder gelten gerade die Standardwerte? */
+export function einstellungenAusDB(): boolean {
+  return global.__system_settings__ !== undefined;
 }
 
 async function set(s: SystemSettings): Promise<void> {
