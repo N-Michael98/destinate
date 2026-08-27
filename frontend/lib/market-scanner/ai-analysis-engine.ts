@@ -1314,6 +1314,23 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     // Regeln urteilen (siehe simulateClaude).
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT"
         && gpt.confidence >= MIN_SIGNAL_CONFIDENCE
+        && gpt.stopLoss > 0 && gpt.takeProfit > 0) {
+      // ── Risiko-Scores von ALLEN Signalen der letzten Stufe ──────────────
+      //
+      // KORREKTUR 27.08.: die Erfassung stand vorher INNERHALB der Ablehnung.
+      // Damit zaehlte sie ausschliesslich abgelehnte Signale — ein
+      // Auswahlfehler. Die Meldung "72×3, nahezu konstant" war deshalb zum
+      // Teil ein Artefakt der eigenen Messung: GBPJPY hatte einen Score unter
+      // 60, kam durch, und wurde nie mitgezaehlt.
+      //
+      // Wer nur die Ablehnungen betrachtet, findet zwangslaeufig hohe und
+      // aehnliche Werte. Erst ueber ALLE Signale der letzten Stufe zeigt die
+      // Verteilung, ob die Bewertung wirklich unterscheidet.
+      if (claude.source === "CLAUDE_REAL") risikoScores.push(claude.riskScore);
+    }
+
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT"
+        && gpt.confidence >= MIN_SIGNAL_CONFIDENCE
         && gpt.stopLoss > 0 && gpt.takeProfit > 0 && !claude.approved) {
       const einstieg = gpt.direction === "BUY"
         ? (market.ask || market.bid)
@@ -1353,7 +1370,6 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
             : "")
       );
       if (verstoesse.length) promptVerstossZaehler++;
-      if (claude.source === "CLAUDE_REAL") risikoScores.push(claude.riskScore);
     }
 
     trichter.gesamt++;
@@ -1422,7 +1438,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     const groesste = Math.max(...haeufigkeit.values());
     const einheitlich = groesste / risikoScores.length >= 0.8;
     console.log(
-      `[ai-engine] 🎯 Risiko-Scores der abgelehnten Signale: ${verteilung}`
+      `[ai-engine] 🎯 Risiko-Scores aller Signale der letzten Stufe: ${verteilung}`
       + ` (${haeufigkeit.size} verschiedene bei ${risikoScores.length} Signalen)`
       + (einheitlich
           ? ` — ⚠️ nahezu KONSTANT. Eine Bewertung, die fuer alles dieselbe Zahl`
