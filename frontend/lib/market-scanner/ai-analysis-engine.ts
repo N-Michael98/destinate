@@ -318,6 +318,96 @@ function noSignal(market: CapitalMarket): GPTMarketAnalysis {
   };
 }
 
+// ── Die Max-Stop-Abstände aus dem GPT-Prompt, jetzt als Konstante (27.08.) ──
+//
+// ANLASS. Diese Regel stand ausschliesslich als Text IM PROMPT und wurde
+// nirgends im Programm geprüft — nachgesehen: genau eine Fundstelle, die
+// Zeichenkette selbst. Am 27.08. hat GPT sie verletzt und es fiel niemandem
+// auf: EURUSD mit Stopabstand 0.00703 gegen ein deklariertes Maximum von
+// 0.0040, also das 1,76-fache.
+//
+// GEFÄHRLICH IST DAS NICHT: die Positionsgrösse wird als
+// `riskAmount / (effectiveStop * pipVal)` gerechnet
+// (capital-com-execution.ts:199) — ein weiterer Stop ergibt eine KLEINERE
+// Position bei gleichem Euro-Risiko. Der Schaden ist ein anderer: ein zu
+// weiter Stop drückt das Chance-Risiko-Verhältnis und lässt das Signal an der
+// letzten Stufe scheitern. Genau das war am 27.08. der Fall.
+//
+// Hier wird NICHTS erzwungen. Die Regel wird nur MESSBAR — vorher liess sich
+// nicht sagen, ob GPT sie einhält.
+//
+// `text` und die Reihenfolge sind so gewählt, dass die gerenderte Zeile
+// zeichengleich zur bisherigen bleibt; der Snapshot der GPT-Regeln (Prüfsumme)
+// darf sich durch einen reinen Umbau nicht ändern.
+//
+// Der Schlüssel "GOLD" ist der aus dem Prompt. Im Programm heisst der Markt
+// XAUUSD — deshalb die Zuordnung unten. Der Prompt-Text bleibt unverändert,
+// weil eine Änderung daran GPTs Verhalten ändern würde und das eine eigene,
+// belegte Entscheidung braucht.
+const MAX_SL_ABSTAND: Record<string, { wert: number; text: string }> = {
+  GOLD: { wert: 15, text: "15pts" },
+  EURUSD: { wert: 0.004, text: "0.0040" },
+  NAS100: { wert: 200, text: "200pts" },
+  USOIL: { wert: 2.0, text: "2.0" },
+  BTCUSD: { wert: 1000, text: "1000" },
+};
+
+/** Die Prompt-Zeile — aus derselben Tabelle erzeugt, die auch geprüft wird. */
+function maxSlZeile(): string {
+  return Object.entries(MAX_SL_ABSTAND).map(([s, v]) => `${s}=${v.text}`).join(", ");
+}
+
+/** Welcher Höchstabstand gilt für dieses Symbol? null = keiner festgelegt. */
+function maxSlFuer(symbol: string): number | null {
+  const schluessel = symbol === "XAUUSD" ? "GOLD" : symbol;
+  return MAX_SL_ABSTAND[schluessel]?.wert ?? null;
+}
+
+/**
+ * Hält sich GPT an die Regeln, die im Prompt stehen? Reine MESSUNG.
+ *
+ * Zurück kommt eine Liste der Verstösse in Klartext, leer wenn alles passt.
+ * Geprüft werden die zwei Regeln, die sich am Ergebnis nachrechnen lassen:
+ *   - "Max SL distances: …"
+ *   - "the distance to the target must be at least 1.5× the distance to the stop"
+ */
+export function promptVerstoesse(
+  gpt: GPTMarketAnalysis,
+  markt: { bid: number; ask: number },
+): string[] {
+  if (gpt.direction === "WAIT" || !(gpt.stopLoss > 0) || !(gpt.takeProfit > 0)) return [];
+  const einstieg = gpt.direction === "BUY" ? (markt.ask || markt.bid) : (markt.bid || markt.ask);
+  if (!(einstieg > 0)) return [];
+
+  const verstoesse: string[] = [];
+  const stopAbstand = Math.abs(einstieg - gpt.stopLoss);
+  const zielAbstand = Math.abs(gpt.takeProfit - einstieg);
+
+  const max = maxSlFuer(gpt.symbol);
+  if (max !== null && stopAbstand > max) {
+    verstoesse.push(
+      `Stop ${stopAbstand.toFixed(5)} > erlaubtes Maximum ${max} `
+      + `(${(stopAbstand / max).toFixed(2)}-fach)`
+    );
+  }
+  // Verhältnis EINMAL rechnen und mit Toleranz vergleichen.
+  //
+  // Ohne die Toleranz meldet ein Setup von exakt 1.5 einen Verstoss:
+  // `1.3650 - 1.35` ergibt in Fliesskomma 0.014999999999999902, `0.01 * 1.5`
+  // dagegen 0.015000000000000013 — die Zahlen liegen um 1e-16 auseinander und
+  // der Vergleich kippt. Beim Test mit echten Logdaten aufgefallen. Eine
+  // Messung, die den Grenzfall falsch meldet, erzeugt genau die Fehlalarme,
+  // wegen derer man später nicht mehr hinschaut.
+  const verhaeltnis = stopAbstand > 0 ? zielAbstand / stopAbstand : 0;
+  if (stopAbstand > 0 && verhaeltnis < 1.5 - 1e-9) {
+    verstoesse.push(
+      `Ziel nur ${verhaeltnis.toFixed(2)}× Stopabstand, `
+      + `Prompt verlangt >= 1.5× — hier waere WAIT die vorgeschriebene Antwort`
+    );
+  }
+  return verstoesse;
+}
+
 /**
  * Chance-Risiko-Verhältnis am TATSÄCHLICHEN Einstiegskurs.
  *
@@ -729,7 +819,7 @@ CRITICAL RULES — violations = bad analysis:
   if the swing is nearer — a tighter stop is not rewarded and risks rejection.
 - stopLoss MUST be below entry for BUY, above entry for SELL
 - Place stopLoss beyond the relevant S/R zone, not inside it
-- Max SL distances: GOLD=15pts, EURUSD=0.0040, NAS100=200pts, USOIL=2.0, BTCUSD=1000
+- Max SL distances: ${maxSlZeile()}
 
 Return ONLY valid JSON. BUY and SELL are equally valid outcomes — decide purely from
 each market's own data, never from habit or from these examples' direction:
@@ -811,6 +901,9 @@ each market's own data, never from habit or from these examples' direction:
   // Läuft er, soll es dastehen — eine Simulation im Handelspfad darf nicht
   // still sein.
   let ohneClaude = 0;
+  // Wie viele abgelehnte Signale verletzten dabei GPTs eigene Prompt-Regeln?
+  // Trennt "der Markt gibt nichts her" von "das Modell haelt sich nicht daran".
+  let promptVerstossZaehler = 0;
   // Trichter des gemessenen Konsenses (05.08.): Er löste im ersten Betriebstag
   // kein einziges Mal aus, und an welcher der vier Bedingungen es scheitert,
   // war nicht erkennbar. Rein zählend, beeinflusst nichts.
@@ -1178,13 +1271,19 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       if (claude.source === "CLAUDE_REAL" && claude.riskScore >= 60) {
         gruende.push(`Risiko-Score ${claude.riskScore} >= 60`);
       }
+      // Hat GPT dabei seine eigenen Prompt-Regeln verletzt? Das trennt
+      // "der Markt gibt gerade nichts her" von "das Modell haelt sich nicht
+      // an die Vorgabe" — ohne diese Angabe ist beides nicht zu unterscheiden.
+      const verstoesse = promptVerstoesse(gpt, market);
       console.log(
         `[ai-engine] ⚖️ ${market.symbol} ${gpt.direction} NICHT freigegeben `
         + `(${claude.source}): ${gruende.join(" + ") || "Grund nicht ableitbar"} `
         + `| Einstieg ${einstieg} SL ${gpt.stopLoss} TP ${gpt.takeProfit} `
         + `| Abstand Stop ${stopAbstand.toFixed(5)} Ziel ${zielAbstand.toFixed(5)} `
         + `| conf ${gpt.confidence}`
+        + (verstoesse.length ? ` | PROMPT-VERSTOSS: ${verstoesse.join(" ; ")}` : "")
       );
+      if (verstoesse.length) promptVerstossZaehler++;
     }
 
     trichter.gesamt++;
@@ -1240,6 +1339,13 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     ` → Strategien einig≥70 ${konsens.strategienEinig} → Entry-Quality GOOD/EXCELLENT ${konsens.qualitaetEinig}` +
     ` = handelbar (Regler ist ${messkonsensAktiv ? "AN" : "AUS"})`
   );
+  if (promptVerstossZaehler > 0) {
+    console.warn(
+      `[ai-engine] 📐 ${promptVerstossZaehler} abgelehnte(s) Signal(e) verletzten `
+      + `die Regeln aus dem eigenen Prompt (Stop-Höchstabstand oder Ziel < 1.5× Stop). `
+      + `Dann liegt es am Modell, nicht am Markt.`
+    );
+  }
   // Eine Simulation im Handelspfad darf nicht still laufen (27.08.).
   if (ohneClaude > 0) {
     console.warn(
