@@ -318,6 +318,48 @@ function noSignal(market: CapitalMarket): GPTMarketAnalysis {
   };
 }
 
+/**
+ * Zahl für den GPT-Prompt — mit so vielen Stellen, dass sie nicht auf null
+ * fällt.
+ *
+ * DER FEHLER, gefunden am 27.08.: die technischen Werte gingen mit
+ * `toFixed(2)` in den Prompt. Für die grossen FX-Paare, die um 0.6 bis 1.4
+ * notieren, ist das vernichtend:
+ *
+ *   EURUSD  ATR 0.0047  ->  "0.00"      GPT sieht NULL
+ *   USDCHF  ATR 0.0042  ->  "0.00"      GPT sieht NULL
+ *   AUDUSD  ATR 0.0038  ->  "0.00"      GPT sieht NULL
+ *   GBPUSD  ATR 0.0055  ->  "0.01"      82 % zu gross
+ *   ema20 1.1640 / ema50 1.1620  ->  beide "1.16"   nicht unterscheidbar
+ *   bb [1.1580..1.1720]          ->  "[1.16..1.17]" unbrauchbar
+ *
+ * Der Prompt verlangt aber genau von diesen Werten die Stop-Platzierung:
+ * "fall back to roughly 1.5 ATR from entry", "Never place the stop CLOSER
+ * than 1.5 ATR to entry", "distToRes … measured IN ATR UNITS", "EMA200: only
+ * take BUY when price > ema200", "treat the Bollinger band edges as dynamic
+ * zones". Mit ATR = 0.00 ist all das für diese Paare unbrauchbar.
+ *
+ * Passt zum Beobachteten: am 27.08. lag GPTs EURUSD-Ziel auf 0.00003 genau
+ * beim Wert für einen Stop am erlaubten Maximum (0.0040) — der Stop selbst
+ * stand aber beim 1,76-fachen. Ohne verwertbaren ATR fehlt die Grundlage für
+ * die Stop-Platzierung.
+ *
+ * Für Gold, Indizes und Krypto war `toFixed(2)` unauffällig — deshalb ist es
+ * nie aufgefallen.
+ *
+ * Preise, Spread, Support/Resistance und die Swing-Punkte gehen unverändert
+ * ROH in den Prompt; nur diese sechs Felder waren betroffen. RSI und ADX
+ * bleiben bei `toFixed(0)` — sie sind 0-100-Skalen.
+ */
+export function promptZahl(wert: number | null | undefined): string {
+  if (wert == null || !Number.isFinite(wert)) return "?";
+  const betrag = Math.abs(wert);
+  // Ab 100 reichen 2 Stellen (Gold, Indizes, Krypto). Darunter so viele, dass
+  // auch ein ATR von 0.0038 nicht verschwindet.
+  const stellen = betrag >= 100 ? 2 : betrag >= 1 ? 5 : 6;
+  return wert.toFixed(stellen);
+}
+
 // ── Die Max-Stop-Abstände aus dem GPT-Prompt, jetzt als Konstante (27.08.) ──
 //
 // ANLASS. Diese Regel stand ausschliesslich als Text IM PROMPT und wurde
@@ -672,15 +714,15 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
       const sr = strategyData.get(m.symbol);
       const mtf = mtfData.get(m.symbol);
       const taInfo = ta
-        ? ` | 1D:trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${ta.ema_20?.toFixed(2)} ema50=${ta.ema_50?.toFixed(2)} atr=${ta.atr?.toFixed(2)}`
+        ? ` | 1D:trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${promptZahl(ta.ema_20)} ema50=${promptZahl(ta.ema_50)} atr=${promptZahl(ta.atr)}`
         : "";
       // Schritt 3 (26.07.): Bollinger (dynamische S/R), ADX (Trendstärke),
       // EMA200 (Haupttrend), Candlestick-Patterns — bisher nie an GPT gegeben
       const extraTa = ta
         ? [
-            ta.bb_upper != null && ta.bb_lower != null ? `bb=[${Number(ta.bb_lower).toFixed(2)}..${Number(ta.bb_upper).toFixed(2)}]` : "",
+            ta.bb_upper != null && ta.bb_lower != null ? `bb=[${promptZahl(Number(ta.bb_lower))}..${promptZahl(Number(ta.bb_upper))}]` : "",
             ta.adx != null ? `adx=${Number(ta.adx).toFixed(0)}` : "",
-            ta.ema_200 != null ? `ema200=${Number(ta.ema_200).toFixed(2)}${ta.above_ema200 === true ? "(price>ema200)" : ta.above_ema200 === false ? "(price<ema200)" : ""}` : "",
+            ta.ema_200 != null ? `ema200=${promptZahl(Number(ta.ema_200))}${ta.above_ema200 === true ? "(price>ema200)" : ta.above_ema200 === false ? "(price<ema200)" : ""}` : "",
             (ta.patterns_bullish?.length ?? 0) > 0 ? `bullPat=${ta.patterns_bullish!.slice(0, 2).join(",")}` : "",
             (ta.patterns_bearish?.length ?? 0) > 0 ? `bearPat=${ta.patterns_bearish!.slice(0, 2).join(",")}` : "",
           ].filter(Boolean).join(" ")

@@ -109,6 +109,13 @@ const pruefer = [
   // Alarm, ohne Erholung. Der zwoelfte rechnende Pruefer laesst eine
   // steuerbare Datenbank ausfallen und wiederkommen.
   ["einstellungen-ausfall", require("./einstellungen-ausfall")],
+  // 27.08. ergaenzt: die technischen Werte gingen mit toFixed(2) in den
+  // GPT-Prompt. Fuer die grossen FX-Paare (Kurs 0.6 bis 1.4) wurde der ATR
+  // damit zu "0.00" — und genau davon haengt im Prompt die Stop-Platzierung
+  // ab. Sechs von dreissig Maerkten waren betroffen, still, seit jeher.
+  // Der dreizehnte rechnende Pruefer ruft die Formatierung mit echten
+  // Groessenordnungen auf.
+  ["prompt-zahlen", require("./prompt-zahlen")],
 ];
 
 const nurDieser = process.argv[2];
