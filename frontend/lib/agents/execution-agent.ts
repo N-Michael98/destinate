@@ -163,7 +163,28 @@ export async function runExecutionAgent(req: ExecutionAgentRequest): Promise<Exe
     });
     console.log(`[exec-agent] ✅ ${req.symbol} ${req.direction} — Capital:${capitalResult?.ok ? capitalResult.dealId : "❌"} IC:${icResult?.ok ? icResult.positionId : "❌"}`);
   } else {
-    console.warn(`[exec-agent] ❌ Beide Broker fehlgeschlagen: ${req.symbol}`);
+    // ── Der GRUND gehört ins Log (27.08.) ──────────────────────────────────
+    //
+    // Hier stand nur "Beide Broker fehlgeschlagen: SYMBOL". Beide Ergebnisse
+    // tragen ein `error`-Feld, und es wurde verworfen. Schlägt eine Order fehl
+    // — zu wenig Margin, Stop zu nah am Kurs, Grösse unter dem Minimum, Markt
+    // geschlossen —, stand die Ursache NIRGENDS. Der Orchestrator meldet
+    // danach `execResult.aiReason`, und das ist die Begründung der FREIGABE,
+    // nicht der Fehler.
+    //
+    // Das ist die letzte Stelle der ganzen Kette: hier scheitert ein Signal,
+    // das alle sieben Prüfungen bestanden hat. Ausgerechnet dort schwieg das
+    // Log. `size` und `epic` stehen mit dabei — bei Broker-Ablehnungen wegen
+    // Mindestgrösse oder Stop-Abstand ist genau das die Information, die man
+    // braucht.
+    const cap = capitalResult
+      ? `Capital: ${capitalResult.error ?? "ohne Fehlermeldung"}`
+        + (capitalResult.size ? ` (size=${capitalResult.size}, epic=${capitalResult.epic})` : "")
+      : "Capital: nicht versucht";
+    const ic = icResult
+      ? `IC: ${icResult.error ?? "ohne Fehlermeldung"}`
+      : "IC: nicht versucht";
+    console.warn(`[exec-agent] ❌ Order fehlgeschlagen: ${req.symbol} ${req.direction} — ${cap} | ${ic}`);
   }
 
   return {

@@ -944,7 +944,14 @@ export async function runOrchestratorCycle(): Promise<void> {
       });
       break; // 1 Trade pro Zyklus
     } else {
-      console.warn(`[orchestrator] ❌ ${candidate.symbol} fehlgeschlagen: ${execResult.aiReason}`);
+      // `aiReason` ist die Begründung der FREIGABE, nicht der Fehler (27.08.).
+      // Der Broker-Grund steht im ExecutionResult und wurde hier verschwiegen.
+      // `skippedByAI` unterscheidet die zwei völlig verschiedenen Fälle:
+      // vom AI-Manager abgelehnt, oder vom Broker zurückgewiesen.
+      const brokerGrund = execResult.skippedByAI
+        ? `vom AI-Manager abgelehnt: ${execResult.aiReason}`
+        : `Broker: ${execResult.capital?.error ?? execResult.icMarkets?.error ?? "ohne Fehlermeldung"}`;
+      console.warn(`[orchestrator] ❌ ${candidate.symbol} nicht ausgeführt — ${brokerGrund}`);
     }
   }
 
