@@ -21,12 +21,22 @@ export interface GPTMarketAnalysis {
 
 export interface ClaudeRiskAssessment {
   symbol: string;
+  /** Das Urteil, mit dem WIR arbeiten — im echten Pfad NICHT von Claude
+   *  uebernommen, sondern aus riskScore und R/R neu gerechnet. */
   approved: boolean;
   riskScore: number;
   maxRiskPercent: number;
   reasoning: string;
   rewardRiskRatio: number;
   source: "CLAUDE_REAL" | "CLAUDE_SIMULATED";
+  /** Was Claude SELBST geantwortet hat (27.08.).
+   *
+   *  Der Code verwirft `parsed.approved` und rechnet `approved` aus riskScore
+   *  und R/R neu. Damit war nie sichtbar, ob unsere Ablehnung mit Claudes
+   *  eigener Einschaetzung uebereinstimmt oder ihr widerspricht. Reine
+   *  Diagnose — es wird nichts damit entschieden.
+   *  undefined = kein echter Claude-Aufruf (regelbasierter Rueckfall). */
+  eigenesUrteil?: boolean;
 }
 
 export interface ScannerOpportunity {
@@ -946,6 +956,11 @@ each market's own data, never from habit or from these examples' direction:
   // Wie viele abgelehnte Signale verletzten dabei GPTs eigene Prompt-Regeln?
   // Trennt "der Markt gibt nichts her" von "das Modell haelt sich nicht daran".
   let promptVerstossZaehler = 0;
+  // Verteilung der Risiko-Scores (27.08.). Am 27.08. lagen SIEBEN von acht auf
+  // exakt 72 — bei R/R-Werten von 0.45 bis 2.67. Eine Bewertung, die fuer
+  // alles dieselbe Zahl liefert, bewertet nichts. Von Hand faellt das nicht
+  // auf; als Verteilung je Zyklus sofort.
+  const risikoScores: number[] = [];
   // Trichter des gemessenen Konsenses (05.08.): Er löste im ersten Betriebstag
   // kein einziges Mal aus, und an welcher der vier Bedingungen es scheitert,
   // war nicht erkennbar. Rein zählend, beeinflusst nichts.
@@ -1205,6 +1220,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         reasoning: parsed.reasoning ?? "",
         rewardRiskRatio: parsedRR,
         source: "CLAUDE_REAL",
+        eigenesUrteil: parsed.approved,
       };
     } else {
       // Nur zählen, wenn ein HANDELBARES Signal vorlag. Bei direction=WAIT ist
@@ -1324,8 +1340,20 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         + `| Abstand Stop ${stopAbstand.toFixed(5)} Ziel ${zielAbstand.toFixed(5)} `
         + `| conf ${gpt.confidence}`
         + (verstoesse.length ? ` | PROMPT-VERSTOSS: ${verstoesse.join(" ; ")}` : "")
+        // Was hat Claude SELBST gesagt? (27.08.) Der Code verwirft
+        // `parsed.approved` und rechnet neu — ohne diese Angabe liesse sich
+        // nicht erkennen, ob wir Claudes Urteil folgen oder ihm widersprechen.
+        // Am 27.08. lagen sieben von acht Risiko-Scores auf exakt 72, bei
+        // R/R-Werten von 0.45 bis 2.67. Eine Bewertung, die fuer alles
+        // dieselbe Zahl liefert, bewertet nichts — und genau das muss man
+        // sehen koennen.
+        + (claude.eigenesUrteil !== undefined
+            ? ` | Claude selbst: approved=${claude.eigenesUrteil}`
+              + (claude.reasoning ? ` "${claude.reasoning.slice(0, 90)}"` : "")
+            : "")
       );
       if (verstoesse.length) promptVerstossZaehler++;
+      if (claude.source === "CLAUDE_REAL") risikoScores.push(claude.riskScore);
     }
 
     trichter.gesamt++;
@@ -1381,6 +1409,28 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     ` → Strategien einig≥70 ${konsens.strategienEinig} → Entry-Quality GOOD/EXCELLENT ${konsens.qualitaetEinig}` +
     ` = handelbar (Regler ist ${messkonsensAktiv ? "AN" : "AUS"})`
   );
+  // Verteilung der Risiko-Scores — macht eine Bewertung sichtbar, die immer
+  // dasselbe antwortet. Die Schwelle 60 entscheidet ueber jede Freigabe;
+  // liefert das Modell dafuer eine Konstante, entscheidet sie nichts.
+  if (risikoScores.length >= 3) {
+    const haeufigkeit = new Map<number, number>();
+    for (const w of risikoScores) haeufigkeit.set(w, (haeufigkeit.get(w) ?? 0) + 1);
+    const verteilung = [...haeufigkeit.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([wert, n]) => `${wert}×${n}`)
+      .join(" ");
+    const groesste = Math.max(...haeufigkeit.values());
+    const einheitlich = groesste / risikoScores.length >= 0.8;
+    console.log(
+      `[ai-engine] 🎯 Risiko-Scores der abgelehnten Signale: ${verteilung}`
+      + ` (${haeufigkeit.size} verschiedene bei ${risikoScores.length} Signalen)`
+      + (einheitlich
+          ? ` — ⚠️ nahezu KONSTANT. Eine Bewertung, die fuer alles dieselbe Zahl`
+            + ` liefert, unterscheidet nichts; die Schwelle 60 entscheidet dann`
+            + ` pauschal.`
+          : "")
+    );
+  }
   if (promptVerstossZaehler > 0) {
     console.warn(
       `[ai-engine] 📐 ${promptVerstossZaehler} abgelehnte(s) Signal(e) verletzten `
