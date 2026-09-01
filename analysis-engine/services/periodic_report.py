@@ -91,6 +91,92 @@ def _exit_reason_breakdown(days: int) -> dict:
     return gruende
 
 
+def _journal_konsistenz() -> dict:
+    """Zaehlt zwei belegte Fehler in der Trade-Tabelle (01.09.). NUR LESEND.
+
+    BEFUND A — Etikett widerspricht dem Ergebnis.
+    `KEIN_PNL` und `NIE_BESTAETIGT` werden im Frontend zusammen mit
+    `profitLoss = 0` und `result = 'BREAKEVEN'` geschrieben
+    (capital-trade-tracker.ts:535). Der Journal-Abgleich
+    (app/api/capital-com/sync-journal) setzt danach `status`, `result` und
+    `profitLoss` — aber NICHT `notes`. Das Etikett bleibt also stehen, waehrend
+    Ergebnis und P&L ueberschrieben werden.
+
+    Sichtbar im Monatsreport vom 01.09.: "KEIN_PNL: 20 Trades, WR 46.2%,
+    +75.58". Zwanzig Trades mit P&L null koennen nicht +75.58 ergeben. Damit
+    ist die Ausstiegsgrund-Statistik, die eigentlich die Exit-Schwellen
+    belegen soll, fuer einen Teil der Zeilen falsch beschriftet.
+
+    BEFUND B — die Zuordnung im Journal-Abgleich ist mehrdeutig.
+    Dort steht:
+
+        WHERE notes::text LIKE '%"dealId":"…"%'
+           OR ( "market" = $2 AND ("profitLoss" = 0 OR "profitLoss" IS NULL)
+                AND notes::text NOT LIKE '%"source":"tx-sync"%' )
+        ORDER BY id DESC LIMIT 1
+
+    Der Kommentar darueber behauptet "market+direction+CLOSED within 24h
+    window". Geprueft wird davon NUR `market`. Kein `direction`, kein `status`,
+    kein Zeitfenster. Und `ORDER BY id DESC` heisst: gibt es mehrere treffbare
+    Zeilen, gewinnt die juengste — auch gegen einen exakten dealId-Treffer.
+    Ohne `status`-Filter kann sogar eine OFFENE Position getroffen und mit
+    fremdem P&L zwangsgeschlossen werden.
+
+    Diese Zaehlung veraendert nichts. Sie beantwortet nur, wie viele Zeilen
+    betroffen sein KOENNEN — die Grundlage fuer die Entscheidung, ob und wie
+    repariert wird.
+    """
+    ergebnis = {"etikett": [], "mehrdeutig": [], "offen_treffbar": 0}
+
+    # ── A: Etikett gegen Ergebnis ────────────────────────────────────────
+    rows = pg_query(
+        '''SELECT
+             CASE
+               WHEN notes LIKE '%"exitReason":"KEIN_PNL"%'       THEN 'KEIN_PNL'
+               WHEN notes LIKE '%"exitReason":"NIE_BESTAETIGT"%' THEN 'NIE_BESTAETIGT'
+               ELSE 'andere'
+             END,
+             COUNT(*),
+             COUNT(*) FILTER (WHERE "profitLoss" <> 0),
+             COUNT(*) FILTER (WHERE result <> 'BREAKEVEN'),
+             COALESCE(SUM("profitLoss"), 0)
+           FROM "Trade"
+           WHERE status = 'CLOSED'
+             AND (notes LIKE '%"exitReason":"KEIN_PNL"%'
+                  OR notes LIKE '%"exitReason":"NIE_BESTAETIGT"%')
+           GROUP BY 1'''
+    )
+    for grund, anzahl, mit_pnl, nicht_be, pnl in rows:
+        ergebnis["etikett"].append({
+            "grund": grund,
+            "zeilen": int(anzahl or 0),
+            "mitPnl": int(mit_pnl or 0),
+            "nichtBreakeven": int(nicht_be or 0),
+            "pnl": round(float(pnl or 0), 2),
+        })
+
+    # ── B: Mehrdeutigkeit der Zuordnung ──────────────────────────────────
+    rows2 = pg_query(
+        '''SELECT market, COUNT(*), COUNT(*) FILTER (WHERE status = 'OPEN')
+           FROM "Trade"
+           WHERE ("profitLoss" = 0 OR "profitLoss" IS NULL)
+             AND (notes IS NULL OR notes NOT LIKE '%"source":"tx-sync"%')
+           GROUP BY market
+           HAVING COUNT(*) > 1
+           ORDER BY 2 DESC
+           LIMIT 10'''
+    )
+    for market, anzahl, offen in rows2:
+        ergebnis["mehrdeutig"].append({
+            "markt": market or "?",
+            "treffbar": int(anzahl or 0),
+            "offen": int(offen or 0),
+        })
+        ergebnis["offen_treffbar"] += int(offen or 0)
+
+    return ergebnis
+
+
 def _ai_manager_breakdown(days: int) -> dict:
     """WinRate/PnL gruppiert danach, WAS DER AI MANAGER an der Position tat (11.08.).
 
@@ -423,6 +509,53 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
         if ohne:
             lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 09.08.).</i>")
         lines.append("<i>DAZWISCHEN = weder Ziel noch Stop, also Zeit-Exit, Trailing oder Teilschliessung.</i>")
+
+        # ── Konsistenz der Etiketten (01.09.) ────────────────────────────
+        #
+        # Erscheint NUR, wenn wirklich etwas widerspruechlich ist. Eine
+        # Warnung, die immer dasteht, liest nach zwei Wochen niemand mehr.
+        try:
+            kons = _journal_konsistenz()
+            kaputt = [e for e in kons["etikett"] if e["mitPnl"] > 0 or e["nichtBreakeven"] > 0]
+            if kaputt:
+                lines.append("")
+                lines.append("<b>⚠️ Etikett stimmt nicht mit dem Ergebnis ueberein:</b>")
+                for e in kaputt:
+                    lines.append(
+                        f"• {e['grund']}: {e['zeilen']} Zeilen, davon {e['mitPnl']} mit P&L != 0"
+                        f" und {e['nichtBreakeven']} nicht BREAKEVEN (Summe {e['pnl']})"
+                    )
+                lines.append(
+                    "<i>Diese Etiketten werden zusammen mit P&L 0 geschrieben. Der "
+                    "Journal-Abgleich ueberschreibt danach Ergebnis und P&L, laesst "
+                    "die Notiz aber stehen — die Ausstiegsgrund-Statistik ist fuer "
+                    "diese Zeilen nicht belastbar.</i>"
+                )
+            if kons["mehrdeutig"]:
+                offen = kons["offen_treffbar"]
+                top = ", ".join(
+                    f"{m['markt']} ({m['treffbar']} Zeilen"
+                    + (f", {m['offen']} offen" if m["offen"] else "")
+                    + ")"
+                    for m in kons["mehrdeutig"][:5]
+                )
+                lines.append("")
+                lines.append(
+                    f"<b>⚠️ Journal-Abgleich: Zuordnung mehrdeutig</b> — "
+                    f"{len(kons['mehrdeutig'])} Maerkte mit mehr als einer treffbaren Zeile: {top}"
+                )
+                if offen:
+                    lines.append(
+                        f"<b>Davon {offen} OFFENE Position(en)</b> — die duerften nie "
+                        f"getroffen werden."
+                    )
+                lines.append(
+                    "<i>Die Zuordnung prueft nur den Markt, nicht Richtung, Status "
+                    "oder Zeitpunkt, und nimmt bei mehreren Treffern den juengsten "
+                    "Eintrag. Der Abgleich laeuft nur auf Knopfdruck im Dashboard.</i>"
+                )
+        except Exception as e:  # pragma: no cover — Diagnose darf den Report nie kippen
+            logger.warning(f"Journal-Konsistenzpruefung fehlgeschlagen: {e}")
         if gruende.get("NIE_BESTAETIGT", {}).get("trades"):
             lines.append(f"<i>NIE_BESTAETIGT = die Order wurde abgeschickt, aber weder "
                          f"bestaetigt noch je als Position gesehen. Das sind vermutlich "

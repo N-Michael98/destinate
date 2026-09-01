@@ -194,6 +194,81 @@ def test_report_ohne_daten_faellt_nicht_um():
     assert _exit_reason_breakdown(7) == {}
 
 
+# ── Konsistenz der Journal-Etiketten (01.09.) ────────────────────────────────
+#
+# ANLASS. Der Monats-Report vom 01.09. meldete
+# "KEIN_PNL: 20 Trades, WR 46.2%, +75.58". Das kann nicht sein: `KEIN_PNL` wird
+# im Frontend zusammen mit `profitLoss = 0` und `result = 'BREAKEVEN'`
+# geschrieben. Zwanzig solche Zeilen ergeben null, nicht +75.58.
+#
+# Ursache: der Journal-Abgleich (sync-journal) setzt `status`, `result` und
+# `profitLoss`, aber NICHT `notes`. Das Etikett bleibt stehen, das Ergebnis
+# wird ueberschrieben. Damit ist die Ausstiegsgrund-Statistik — die die
+# Exit-Schwellen belegen soll — fuer diese Zeilen nicht belastbar.
+#
+# `_journal_konsistenz()` stellt ZWEI verschiedene Abfragen; der gemeinsame
+# pg_query-Ersatz oben liefert immer dieselbe Liste. Deshalb wird hier gezielt
+# die Referenz IN periodic_report ersetzt — das Modul importiert `pg_query`
+# per Namen und haelt eine eigene Bindung.
+
+def _konsistenz_mit(etikett_zeilen, mehrdeutig_zeilen):
+    import services.periodic_report as _PR
+
+    def _stub(sql, *a, **k):
+        s = " ".join(str(sql).split())
+        if "exitReason" in s:
+            return etikett_zeilen
+        if "HAVING COUNT(*) > 1" in s:
+            return mehrdeutig_zeilen
+        return []
+
+    alt = _PR.pg_query
+    _PR.pg_query = _stub
+    try:
+        return _PR._journal_konsistenz()
+    finally:
+        _PR.pg_query = alt
+
+
+def test_konsistenz_erkennt_etikett_gegen_ergebnis():
+    """Der beobachtete Fall vom 01.09.: 20 Zeilen KEIN_PNL mit echtem P&L."""
+    r = _konsistenz_mit([("KEIN_PNL", 20, 20, 20, 75.58)], [])
+    assert len(r["etikett"]) == 1
+    e = r["etikett"][0]
+    assert e["grund"] == "KEIN_PNL"
+    assert e["zeilen"] == 20
+    assert e["mitPnl"] == 20, "Zeilen mit P&L != 0 wurden nicht erkannt"
+    assert e["nichtBreakeven"] == 20
+    assert e["pnl"] == 75.58
+
+
+def test_konsistenz_meldet_nichts_wenn_alles_stimmt():
+    """KEIN_PNL mit P&L 0 und BREAKEVEN ist der KORREKTE Zustand."""
+    r = _konsistenz_mit([("KEIN_PNL", 5, 0, 0, 0.0)], [])
+    e = r["etikett"][0]
+    assert e["mitPnl"] == 0 and e["nichtBreakeven"] == 0, \
+        "ein sauberer Zustand wird faelschlich als Widerspruch gemeldet"
+
+
+def test_konsistenz_zaehlt_mehrdeutige_zuordnung():
+    """Mehr als eine treffbare Zeile je Markt = die Zuordnung kann danebengreifen.
+
+    Offene Positionen werden getrennt gezaehlt — die duerfen vom
+    Journal-Abgleich nie getroffen werden, tun es aber, weil die Bedingung
+    keinen status-Filter hat.
+    """
+    r = _konsistenz_mit([], [("XAUUSD", 4, 1), ("NAS100", 3, 0)])
+    assert len(r["mehrdeutig"]) == 2
+    assert r["mehrdeutig"][0]["markt"] == "XAUUSD"
+    assert r["mehrdeutig"][0]["treffbar"] == 4
+    assert r["offen_treffbar"] == 1, "offene Positionen werden nicht getrennt gezaehlt"
+
+
+def test_konsistenz_ohne_daten_faellt_nicht_um():
+    r = _konsistenz_mit([], [])
+    assert r == {"etikett": [], "mehrdeutig": [], "offen_treffbar": 0}
+
+
 # ── Vorschlaege duerfen dem Walk-Forward nicht widersprechen (09.08.) ────────
 # ANLASS, belegt aus dem Telegram-Bericht vom 09.08.: alle DREI Vorschlaege des
 # Tages (DJ30, USDCAD, UK100) standen im selben Wochen-Report unter
