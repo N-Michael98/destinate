@@ -510,57 +510,58 @@ def _build_report(days: int, title: str, compare_previous: bool, show_walk_forwa
             lines.append(f"<i>{ohne} aeltere Trades ohne Angabe (vor dem 09.08.).</i>")
         lines.append("<i>DAZWISCHEN = weder Ziel noch Stop, also Zeit-Exit, Trailing oder Teilschliessung.</i>")
 
-        # ── Konsistenz der Etiketten (01.09.) ────────────────────────────
-        #
-        # Erscheint NUR, wenn wirklich etwas widerspruechlich ist. Eine
-        # Warnung, die immer dasteht, liest nach zwei Wochen niemand mehr.
-        try:
-            kons = _journal_konsistenz()
-            kaputt = [e for e in kons["etikett"] if e["mitPnl"] > 0 or e["nichtBreakeven"] > 0]
-            if kaputt:
-                lines.append("")
-                lines.append("<b>⚠️ Etikett stimmt nicht mit dem Ergebnis ueberein:</b>")
-                for e in kaputt:
-                    lines.append(
-                        f"• {e['grund']}: {e['zeilen']} Zeilen, davon {e['mitPnl']} mit P&L != 0"
-                        f" und {e['nichtBreakeven']} nicht BREAKEVEN (Summe {e['pnl']})"
-                    )
-                lines.append(
-                    "<i>Diese Etiketten werden zusammen mit P&L 0 geschrieben. Der "
-                    "Journal-Abgleich ueberschreibt danach Ergebnis und P&L, laesst "
-                    "die Notiz aber stehen — die Ausstiegsgrund-Statistik ist fuer "
-                    "diese Zeilen nicht belastbar.</i>"
-                )
-            if kons["mehrdeutig"]:
-                offen = kons["offen_treffbar"]
-                top = ", ".join(
-                    f"{m['markt']} ({m['treffbar']} Zeilen"
-                    + (f", {m['offen']} offen" if m["offen"] else "")
-                    + ")"
-                    for m in kons["mehrdeutig"][:5]
-                )
-                lines.append("")
-                lines.append(
-                    f"<b>⚠️ Journal-Abgleich: Zuordnung mehrdeutig</b> — "
-                    f"{len(kons['mehrdeutig'])} Maerkte mit mehr als einer treffbaren Zeile: {top}"
-                )
-                if offen:
-                    lines.append(
-                        f"<b>Davon {offen} OFFENE Position(en)</b> — die duerften nie "
-                        f"getroffen werden."
-                    )
-                lines.append(
-                    "<i>Die Zuordnung prueft nur den Markt, nicht Richtung, Status "
-                    "oder Zeitpunkt, und nimmt bei mehreren Treffern den juengsten "
-                    "Eintrag. Der Abgleich laeuft nur auf Knopfdruck im Dashboard.</i>"
-                )
-        except Exception as e:  # pragma: no cover — Diagnose darf den Report nie kippen
-            logger.warning(f"Journal-Konsistenzpruefung fehlgeschlagen: {e}")
         if gruende.get("NIE_BESTAETIGT", {}).get("trades"):
             lines.append(f"<i>NIE_BESTAETIGT = die Order wurde abgeschickt, aber weder "
                          f"bestaetigt noch je als Position gesehen. Das sind vermutlich "
                          f"gar keine Trades — nicht mitrechnen.</i>")
         lines.append("")
+
+    # ── Konsistenz der Etiketten (01.09.) ────────────────────────────
+    #
+    # Erscheint NUR, wenn wirklich etwas widerspruechlich ist. Eine
+    # Warnung, die immer dasteht, liest nach zwei Wochen niemand mehr.
+    try:
+        kons = _journal_konsistenz()
+        kaputt = [e for e in kons["etikett"] if e["mitPnl"] > 0 or e["nichtBreakeven"] > 0]
+        if kaputt:
+            lines.append("")
+            lines.append("<b>⚠️ Etikett stimmt nicht mit dem Ergebnis ueberein:</b>")
+            for e in kaputt:
+                lines.append(
+                    f"• {e['grund']}: {e['zeilen']} Zeilen, davon {e['mitPnl']} mit P&L != 0"
+                    f" und {e['nichtBreakeven']} nicht BREAKEVEN (Summe {e['pnl']})"
+                )
+            lines.append(
+                "<i>Diese Etiketten werden zusammen mit P&L 0 geschrieben. Der "
+                "Journal-Abgleich ueberschreibt danach Ergebnis und P&L, laesst "
+                "die Notiz aber stehen — die Ausstiegsgrund-Statistik ist fuer "
+                "diese Zeilen nicht belastbar.</i>"
+            )
+        if kons["mehrdeutig"]:
+            offen = kons["offen_treffbar"]
+            top = ", ".join(
+                f"{m['markt']} ({m['treffbar']} Zeilen"
+                + (f", {m['offen']} offen" if m["offen"] else "")
+                + ")"
+                for m in kons["mehrdeutig"][:5]
+            )
+            lines.append("")
+            lines.append(
+                f"<b>⚠️ Journal-Abgleich: Zuordnung mehrdeutig</b> — "
+                f"{len(kons['mehrdeutig'])} Maerkte mit mehr als einer treffbaren Zeile: {top}"
+            )
+            if offen:
+                lines.append(
+                    f"<b>Davon {offen} OFFENE Position(en)</b> — die duerften nie "
+                    f"getroffen werden."
+                )
+            lines.append(
+                "<i>Die Zuordnung prueft nur den Markt, nicht Richtung, Status "
+                "oder Zeitpunkt, und nimmt bei mehreren Treffern den juengsten "
+                "Eintrag. Der Abgleich laeuft nur auf Knopfdruck im Dashboard.</i>"
+            )
+    except Exception as e:  # pragma: no cover — Diagnose darf den Report nie kippen
+        logger.warning(f"Journal-Konsistenzpruefung fehlgeschlagen: {e}")
 
     lines.append(f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC")
     return "\n".join(lines)

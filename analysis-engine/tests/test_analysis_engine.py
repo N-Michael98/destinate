@@ -269,6 +269,47 @@ def test_konsistenz_ohne_daten_faellt_nicht_um():
     assert r == {"etikett": [], "mehrdeutig": [], "offen_treffbar": 0}
 
 
+def test_konsistenz_erscheint_auch_ohne_benannte_ausstiegsgruende():
+    """Die Warnung darf NICHT davon abhaengen, ob im Fenster ein Trade mit
+    benanntem Ausstiegsgrund liegt.
+
+    ANLASS, eigener Fehler am 01.09.: der Block stand zuerst INNERHALB von
+    `if benannt:` — dem Abschnitt "Nach Ausstiegsgrund", der nur erscheint,
+    wenn im gewaehlten Zeitfenster mindestens ein Trade einen benannten Grund
+    hat. Die Konsistenzpruefung scannt aber ALLE Trades, nicht das Fenster.
+    Eine ruhige Woche haette die Warnung also verschluckt, obwohl zwanzig
+    widerspruechliche Zeilen in der Tabelle stehen.
+    """
+    import services.periodic_report as _PR
+
+    _ZEILEN.clear()   # keine Trades im Fenster -> "Nach Ausstiegsgrund" faellt weg
+
+    def _stub(sql, *a, **k):
+        s = " ".join(str(sql).split())
+        if "exitReason" in s:
+            return [("KEIN_PNL", 20, 20, 20, 75.58)]
+        if "HAVING COUNT(*) > 1" in s:
+            return []
+        return []
+
+    alt = _PR.pg_query
+    _PR.pg_query = _stub
+    try:
+        text = _build_report(7, "Test", compare_previous=False, show_walk_forward=False)
+    finally:
+        _PR.pg_query = alt
+
+    assert "Nach Ausstiegsgrund" not in text, (
+        "Vorbedingung des Tests stimmt nicht — es duerfte keinen benannten "
+        "Ausstiegsgrund im Fenster geben"
+    )
+    assert "Etikett stimmt nicht" in text, (
+        "die Konsistenz-Warnung wurde verschluckt, weil kein Trade im Fenster "
+        "einen benannten Ausstiegsgrund hatte"
+    )
+    assert "20" in text and "75.58" in text
+
+
 # ── Vorschlaege duerfen dem Walk-Forward nicht widersprechen (09.08.) ────────
 # ANLASS, belegt aus dem Telegram-Bericht vom 09.08.: alle DREI Vorschlaege des
 # Tages (DJ30, USDCAD, UK100) standen im selben Wochen-Report unter
