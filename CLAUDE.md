@@ -9,7 +9,7 @@ manuell geschickt werden.
 cd frontend && npm run check
 ```
 
-Braucht keine Installation. **Einundzwanzig Prüfer**, Rückgabe 0 = grün.
+Braucht keine Installation. **Dreiundzwanzig Prüfer**, Rückgabe 0 = grün.
 **Rot heisst: nicht committen, erst beheben.**
 
 Mit TypeScript-Prüfung zusammen:
@@ -36,7 +36,7 @@ Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweisl
 an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
 Prüfer, der nie rot wird, ist wertlos.
 
-**Elf Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
+**Dreizehn Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
 TypeScript-Datei und rufen die echte Funktion auf. Damit fällt dort auch ein
 subtil falscher Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle,
 fehlender Null-Fall), der strukturell unauffällig bliebe:
@@ -48,12 +48,14 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `teilgewinn` | `teilgewinnErlaubt()`, `teilgewinnStand()` | 11.08. |
 | `signal-untergrenze` | die Untergrenze der Signalkette | 13.08. |
 | `order-bestaetigung` | `ausstiegsgrund()`, `stopAbstandGenug()` | 13.08. |
-| `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()` | 18.08. |
+| `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()`, `notizenBefund()`, `positionenOhneStammdaten()` | 18.08. |
 | `python-ueberwachung` | `meldePythonAufruf()`, `pythonUebergang()` | 19.08. |
 | `vola-skalierung` | `getVolatilityAdjustedRisk()` | 23.08. |
 | `kurs-riegel` | `checkPriceAvailable()` | 24.08. |
 | `lern-quelle` | `echteGeschlosseneTrades()`, `runLearningCycle()` | 24.08. |
 | `preis-cache` | `preiseUebernehmen()`, `priceCache`, `marketHealth` | 26.08. |
+| `einstellungen-ausfall` | `loadFromDB()`, `get()` bei DB-Ausfall | 01.09. |
+| `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()` | 01.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
