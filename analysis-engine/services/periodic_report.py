@@ -163,9 +163,20 @@ def _journal_konsistenz() -> dict:
              AND (notes IS NULL OR notes NOT LIKE '%"source":"tx-sync"%')
            GROUP BY market
            HAVING COUNT(*) > 1
-           ORDER BY 2 DESC
-           LIMIT 10'''
+           ORDER BY 2 DESC'''
     )
+    # KEIN LIMIT mehr (02.09.).
+    #
+    # Hier stand `LIMIT 10`. Der Bericht meldet aber `len(mehrdeutig)` als ZAHL
+    # DER MAERKTE und summiert `offen_treffbar` ueber genau diese Zeilen —
+    # beides waere ab dem elften Markt zu klein gewesen, ohne dass man es der
+    # Zahl ansieht. Dieselbe Fehlerklasse wie "500 Trades total" im
+    # data-collector, nur eine Ebene hoeher.
+    #
+    # Ungefaehrlich: gruppiert wird nach Markt, und die Watchlist hat 30. Die
+    # Ergebnismenge ist damit von sich aus klein. Fuer die ANZEIGE schneidet
+    # der Bericht ohnehin auf die ersten fuenf (`[:5]`) — gedeckelt wird also
+    # weiterhin, nur nicht mehr die Zaehlung.
     for market, anzahl, offen in rows2:
         ergebnis["mehrdeutig"].append({
             "markt": market or "?",

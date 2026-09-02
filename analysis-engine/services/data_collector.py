@@ -18,6 +18,12 @@ from services.storage import pg_query, redis_set_json
 REDIS_KEY_TRADE_STATS = "analysis:trade_stats"
 TTL = 26 * 60 * 60  # 26h — überlappt den 4h-Zyklus grosszügig
 
+# Deckel für die "allTime"-Auswertung. Als Konstante, damit die Logzeile ihn
+# BENENNEN kann (02.09.) — vorher stand die 500 nur in der SQL-Zeichenkette,
+# und der Log meldete "500 Trades total". Von "es gibt genau 500" war das nicht
+# zu unterscheiden, und am 02.09. griff der Deckel tatsächlich.
+ALLTIME_LIMIT = 500
+
 
 def _exit_grund(notes: str | None) -> str:
     """Ausstiegsgrund aus den Notizen holen (09.08.).
@@ -139,14 +145,29 @@ def _aggregate(rows: list[tuple]) -> dict:
 def run_data_collector() -> None:
     logger.info("[data-collector] Zyklus gestartet")
 
-    # Letzte 500 geschlossene Trades (read-only!)
+    # Letzte N geschlossene Trades (read-only!)
     rows = pg_query(
-        '''SELECT market, direction, strategy, result, "profitLoss", date, notes
+        f'''SELECT market, direction, strategy, result, "profitLoss", date, notes
            FROM "Trade"
            WHERE status = 'CLOSED'
            ORDER BY date DESC
-           LIMIT 500'''
+           LIMIT {ALLTIME_LIMIT}'''
     )
+
+    # Wie viele sind es WIRKLICH? (02.09.)
+    #
+    # `len(rows)` kann den Deckel nicht von der Wahrheit unterscheiden. Am
+    # 02.09. meldete das Log "500 Trades total" — exakt der Deckel, also
+    # greift er, und der Schlüssel heisst trotzdem `allTime`. Ein COUNT(*) auf
+    # denselben Filter kostet praktisch nichts und sagt es genau.
+    #
+    # Schlägt die Zählung fehl, wird NICHTS behauptet: `gesamt` bleibt None,
+    # und Logzeile wie Kennzahl sagen dann "unbekannt" statt einer Zahl.
+    gesamt_rows = pg_query(
+        '''SELECT COUNT(*) FROM "Trade" WHERE status = 'CLOSED' '''
+    )
+    gesamt = int(gesamt_rows[0][0]) if gesamt_rows and gesamt_rows[0] else None
+    gedeckelt = gesamt is not None and len(rows) < gesamt
 
     # Letzte 30 Tage separat (aktuellere Sicht für Forward-Testing)
     rows_30d = pg_query(
@@ -161,7 +182,20 @@ def run_data_collector() -> None:
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "allTime": _aggregate(rows),
         "last30d": _aggregate(rows_30d),
-        "sampleSize": {"allTime": len(rows), "last30d": len(rows_30d)},
+        # `allTime` ist der GEDECKELTE Ausschnitt — der Name luegt, seit der
+        # Deckel greift. Umbenennen wuerde die Leser brechen, also steht die
+        # Wahrheit jetzt DANEBEN: wie viele es wirklich sind und ob gedeckelt
+        # wurde. (Belegt harmlos: ai_learning, backtest_engine und
+        # recommendations lesen ausschliesslich `last30d`, und das hat KEINEN
+        # Deckel. `allTime` geht nur an /api/v1/trade-stats, das im Frontend
+        # keinen Leser hat — nachgeprueft, nicht angenommen.)
+        "sampleSize": {
+            "allTime": len(rows),
+            "last30d": len(rows_30d),
+            "geschlossenGesamt": gesamt,
+            "allTimeGedeckelt": gedeckelt,
+            "allTimeDeckel": ALLTIME_LIMIT,
+        },
         # Nur erhoben, noch NICHT als Kosten angewendet — siehe _spread_je_symbol
         "spreadBySymbol": spreads,
     }
@@ -169,7 +203,10 @@ def run_data_collector() -> None:
     ok = redis_set_json(REDIS_KEY_TRADE_STATS, stats, TTL)
     genug = sum(1 for e in spreads.values() if e["beobachtungen"] >= 10)
     logger.info(
-        f"[data-collector] fertig — {len(rows)} Trades total, "
+        f"[data-collector] fertig — {len(rows)} von "
+        f"{gesamt if gesamt is not None else 'unbekannt vielen'} geschlossenen "
+        f"Trades ausgewertet"
+        f"{f' (Deckel {ALLTIME_LIMIT} GREIFT)' if gedeckelt else ''}, "
         f"{len(rows_30d)} in 30d, Spread gemessen fuer {len(spreads)} Maerkte "
         f"(davon {genug} mit >= 10 Beobachtungen), Redis={'ok' if ok else 'FEHLER'}"
     )

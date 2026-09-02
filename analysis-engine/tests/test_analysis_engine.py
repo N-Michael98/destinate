@@ -269,6 +269,109 @@ def test_konsistenz_ohne_daten_faellt_nicht_um():
     assert r == {"etikett": [], "mehrdeutig": [], "offen_treffbar": 0}
 
 
+def test_konsistenz_deckelt_die_zaehlung_nicht():
+    """Die Abfrage darf keinen Deckel haben (02.09.).
+
+    Der Bericht meldet `len(mehrdeutig)` als ZAHL DER MAERKTE und summiert
+    `offen_treffbar` ueber genau diese Zeilen. Mit `LIMIT 10` waeren beide ab
+    dem elften Markt zu klein, ohne dass man es der Zahl ansieht — dieselbe
+    Fehlerklasse wie "500 Trades total" im data-collector.
+
+    Geprueft wird die SQL SELBST, nicht nur das Ergebnis: der Ersatz unten
+    liefert ohnehin, was man ihm sagt, und wuerde einen Deckel nie zeigen.
+    """
+    import services.periodic_report as _PR
+    gesehen: list[str] = []
+
+    def _stub(sql, *a, **k):
+        s = " ".join(str(sql).split())
+        gesehen.append(s)
+        if "HAVING COUNT(*) > 1" in s:
+            return [(f"M{i}", 2, 1) for i in range(14)]
+        return []
+
+    alt = _PR.pg_query
+    _PR.pg_query = _stub
+    try:
+        r = _PR._journal_konsistenz()
+    finally:
+        _PR.pg_query = alt
+
+    treffer = [s for s in gesehen if "HAVING COUNT(*) > 1" in s]
+    assert treffer, "die Abfrage wurde gar nicht gestellt"
+    assert "LIMIT" not in treffer[0].upper(), \
+        "die Abfrage ist gedeckelt — ab dem elften Markt zaehlt der Bericht zu wenig"
+    assert len(r["mehrdeutig"]) == 14, "nicht alle Maerkte gezaehlt"
+    assert r["offen_treffbar"] == 14, "die Summe deckt nicht alle Zeilen ab"
+
+
+# ── data-collector: der Deckel darf nicht als Gesamtzahl auftreten (02.09.) ──
+#
+# Am 02.09. stand im Log: "[data-collector] fertig — 500 Trades total". 500 ist
+# EXAKT der Deckel der Abfrage. Von "es gibt genau 500 geschlossene Trades" war
+# das nicht zu unterscheiden, und der Redis-Schluessel heisst `allTime`.
+
+def _collector_mit(zeilen, gesamt_zeilen):
+    import services.data_collector as _DC
+    erfasst: dict = {}
+
+    def _stub(sql, *a, **k):
+        s = " ".join(str(sql).split())
+        if "COUNT(*)" in s:
+            return gesamt_zeilen
+        if "30 days" in s:
+            return []
+        return zeilen
+
+    def _redis(_key, wert, _ttl=None):
+        erfasst["stats"] = wert
+        return True
+
+    altq, altr = _DC.pg_query, _DC.redis_set_json
+    _DC.pg_query, _DC.redis_set_json = _stub, _redis
+    try:
+        _DC.run_data_collector()
+    finally:
+        _DC.pg_query, _DC.redis_set_json = altq, altr
+    return erfasst["stats"]
+
+
+def _dc_zeilen(n):
+    """n gleiche Trade-Zeilen in der Form, die run_data_collector liest.
+
+    NICHT `_zeile` nennen — den Namen gibt es in dieser Datei schon (oben, fuer
+    die _aggregate-Tests). Ein zweites `def` haette ihn ueberschrieben und drei
+    bestehende Tests mitgerissen.
+    """
+    return [("EURUSD", "BUY", "s", "WIN", 1.0, None, None)] * n
+
+
+def test_collector_gibt_den_deckel_nicht_als_gesamtzahl_aus():
+    stats = _collector_mit(_dc_zeilen(500), [(1234,)])
+    p = stats["sampleSize"]
+    assert p["allTime"] == 500, "der ausgewertete Ausschnitt fehlt"
+    assert p["geschlossenGesamt"] == 1234, "die echte Gesamtzahl fehlt"
+    assert p["allTimeGedeckelt"] is True, "der greifende Deckel wird nicht gemeldet"
+    assert p["allTimeDeckel"] == 500
+
+
+def test_collector_behauptet_ohne_zaehlung_keine_gesamtzahl():
+    """Schlaegt COUNT(*) fehl, wird NICHTS behauptet — nicht `len(rows)`."""
+    stats = _collector_mit(_dc_zeilen(500), [])
+    p = stats["sampleSize"]
+    assert p["geschlossenGesamt"] is None, \
+        "eine unbekannte Gesamtzahl wird als Zahl ausgegeben"
+    assert p["allTimeGedeckelt"] is False, \
+        "ohne Zaehlung laesst sich ein Deckel nicht behaupten"
+
+
+def test_collector_meldet_keinen_deckel_wenn_keiner_greift():
+    stats = _collector_mit(_dc_zeilen(3), [(3,)])
+    p = stats["sampleSize"]
+    assert p["allTimeGedeckelt"] is False, "meldet einen Deckel, der nicht greift"
+    assert p["geschlossenGesamt"] == 3
+
+
 def test_konsistenz_erscheint_auch_ohne_benannte_ausstiegsgruende():
     """Die Warnung darf NICHT davon abhaengen, ob im Fenster ein Trade mit
     benanntem Ausstiegsgrund liegt.
