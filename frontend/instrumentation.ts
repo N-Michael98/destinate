@@ -371,8 +371,27 @@ export async function register() {
                     const { teilgewinnStand, stammdatenAusNotizen, notizenBefund } = await import("./lib/agents/risk-agent");
                     const db = getPrisma();
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // `dealReference` MUSS mit hinein (02.09.).
+                    //
+                    // Vorher stand hier nur `notes LIKE '%dealId%'`. Eine Zeile,
+                    // die ausschliesslich eine Order-Referenz traegt — genau der
+                    // Fall, den `notizenBefund.mitDealReference` seit gestern
+                    // zaehlen soll — enthaelt die Zeichenkette "dealId" NICHT und
+                    // fiel damit schon aus der ABFRAGE. Die Diagnose konnte den
+                    // Fall, fuer den sie gebaut wurde, gar nicht sehen.
+                    //
+                    // (Dass 01.09. trotzdem "4 Zeilen" gemeldet wurden, liegt am
+                    // Feld `dealIdVersuche` — das enthaelt "dealId" als Teilwort.
+                    // Ein Zufall, kein Entwurf: eine Zeile VOR dem ersten
+                    // Nachtrag-Versuch war unsichtbar.)
+                    //
+                    // Fuer die beiden anderen Verbraucher folgenlos, nachgeprueft:
+                    // `teilgewinnStand` und `stammdatenAusNotizen` verlangen beide
+                    // `m.dealId` und ueberspringen Zeilen ohne. Zusaetzliche
+                    // Zeilen koennen dort nichts aendern.
                     const rows = await (db.$queryRawUnsafe as any)(
-                      `SELECT notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE '%dealId%'`
+                      `SELECT notes FROM "Trade" WHERE status = 'OPEN' `
+                      + `AND (notes LIKE '%dealId%' OR notes LIKE '%dealReference%')`
                     ) as Array<{ notes: string }>;
                     schonTeilgewonnen = teilgewinnStand(rows);
                     stammdaten = stammdatenAusNotizen(rows);
@@ -406,7 +425,8 @@ export async function register() {
                   // ausfuehren und damit nicht beweisen. Der Pruefer
                   // `lifecycle-rueckkehr` ruft genau diese Funktion auf.
                   try {
-                    const { nachzuregistrieren } = await import("./lib/agents/risk-agent");
+                    const { nachzuregistrieren, positionenOhneStammdaten } =
+                      await import("./lib/agents/risk-agent");
                     const bekannt = await pyLifecycleTrades();
                     if (bekannt === null) {
                       console.warn("[py-lifecycle] Trade-Liste nicht abrufbar — diesen Zyklus wird NICHT nachregistriert");
@@ -425,8 +445,25 @@ export async function register() {
                     // "keine offenen Trades in der Datenbank" und "Feld fehlt
                     // in den Notizen" im Log voellig gleich aus. Nur Anzahlen,
                     // kein Notiz-Inhalt.
-                    if (stammdaten.size === 0 && bekannt && bekannt.size < positions.length) {
-                      console.warn("[py-lifecycle] KEINE Stammdaten — Notizen: "
+                    // Bedingung korrigiert (02.09.): gezaehlt wird, wie viele der
+                    // OFFENEN POSITIONEN keine Stammdaten haben — nicht mehr, ob
+                    // die Karte insgesamt leer ist.
+                    //
+                    // `stammdaten.size === 0` war zu eng. Am 02.09. standen zwei
+                    // offene Positionen und `Stammdaten fuer 1` — die eine Zeile
+                    // gehoerte aber zu einer DRITTEN, laengst nicht mehr offenen
+                    // dealId. Beide laufenden Positionen liefen also auf
+                    // GERATENEM Stil (der RiskAgent meldete es fuer beide), und
+                    // die Diagnose schwieg trotzdem, weil die Karte nicht leer
+                    // war. Eine Teil-Luecke ist genauso blind wie eine ganze.
+                    // Die Zaehlung liegt in positionenOhneStammdaten() im
+                    // RiskAgent, NICHT als Schleife hier: eingebettet liesse sie
+                    // sich nicht ausfuehren und damit nicht beweisen. Derselbe
+                    // Grund wie bei nachzuregistrieren() und teilgewinnStand().
+                    const ohneStammdaten = positionenOhneStammdaten(positions, stammdaten);
+                    if (ohneStammdaten > 0 && bekannt && bekannt.size < positions.length) {
+                      console.warn(`[py-lifecycle] ${ohneStammdaten} von ${positions.length} `
+                        + "Positionen OHNE Stammdaten — Notizen: "
                         + (befund
                           ? `${befund.zeilen} Zeilen, ${befund.lesbar} lesbar, `
                             + `${befund.mitDealId} mit dealId, ${befund.mitStil} mit Stil, `
@@ -437,8 +474,7 @@ export async function register() {
                             // aufgegeben? Zwei ganz verschiedene Ursachen.
                             + `, ${befund.mitDealReference} mit Order-Referenz`
                             + `, hoechste Versuchszahl ${befund.maxVersuche}`
-                          : "Abfrage fehlgeschlagen")
-                        + ` | ${positions.length} offene Positionen beim Broker`);
+                          : "Abfrage fehlgeschlagen"));
                     }
                     for (const t of fehlend) {
                       const ok = await pyRegisterTrade(t);

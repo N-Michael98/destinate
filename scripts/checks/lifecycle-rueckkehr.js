@@ -276,6 +276,49 @@ module.exports = function pruefe() {
       String(befundF([z({ dealReference: "R", dealIdVersuche: "1e999" })]).maxVersuche));
   }
 
+  // ── Teil 1b2: positionenOhneStammdaten() wirklich rechnen (02.09.) ───────
+  //
+  // DER ANLASS. Die Diagnose-Zeile in instrumentation.ts hing an
+  // `stammdaten.size === 0` — also daran, ob die Karte INSGESAMT leer ist.
+  //
+  // Am 02.09. standen zwei offene Positionen und "Stammdaten fuer 1". Die eine
+  // Zeile gehoerte aber zu einer DRITTEN, laengst nicht mehr offenen dealId.
+  // Beide laufenden Positionen liefen also auf GERATENEM Stil — der RiskAgent
+  // meldete es fuer beide einzeln — und die Diagnose schwieg trotzdem, weil die
+  // Karte nicht leer war. Fuer die betroffene Position ist der Zeit-Exit
+  // ausgesetzt und der Python-Lifecycle blind: eine Teil-Luecke ist genauso
+  // blind wie eine ganze.
+  const ohneF = m.positionenOhneStammdaten;
+  if (typeof ohneF !== "function") {
+    funde.push("positionenOhneStammdaten wird nicht exportiert — die Zaehlung "
+      + "laege wieder eingebettet in instrumentation.ts und waere nicht pruefbar");
+  } else {
+    const karte = new Map([["D1", { tradingStyle: "SWING", confidence: 70 }]]);
+    pruefe1("eine Position MIT Stammdaten wird als fehlend gezählt",
+      ohneF([{ dealId: "D1" }], karte) === 0);
+    pruefe1("eine Position OHNE Stammdaten wird nicht gezählt",
+      ohneF([{ dealId: "D2" }], karte) === 1);
+    // GENAU DER FALL VOM 02.09.: die Karte ist NICHT leer, aber keine der
+    // offenen Positionen kommt darin vor. `stammdaten.size === 0` ergab hier 0.
+    pruefe1("Teil-Lücke übersehen: Karte gefüllt, aber keine Position darin",
+      ohneF([{ dealId: "D2" }, { dealId: "D3" }], karte) === 2,
+      String(ohneF([{ dealId: "D2" }, { dealId: "D3" }], karte)));
+    pruefe1("gemischter Fall falsch gezählt (eine mit, eine ohne)",
+      ohneF([{ dealId: "D1" }, { dealId: "D2" }], karte) === 1,
+      String(ohneF([{ dealId: "D1" }, { dealId: "D2" }], karte)));
+    // Ohne dealId ist erst recht nichts zuzuordnen — und weder der RiskAgent
+    // noch nachzuregistrieren() fassen so eine Position an.
+    pruefe1("eine Position ohne dealId wird übersehen",
+      ohneF([{ dealId: "" }], karte) === 1);
+    pruefe1("eine dealId aus Leerzeichen gilt als gültig",
+      ohneF([{ dealId: "   " }], karte) === 1);
+    pruefe1("ohne Positionen wird trotzdem etwas gemeldet",
+      ohneF([], karte) === 0);
+    pruefe1("fehlende Eingaben stürzen ab oder zählen falsch",
+      ohneF(null, karte) === 0 && ohneF(undefined, undefined) === 0
+      && ohneF([{ dealId: "D1" }], null) === 1);
+  }
+
   // ── Teil 1c: geratenerStilMelden() wirklich rechnen (19.08.) ─────────────
   // Ohne Datenbankzeile UND ohne Speicher raet der RiskAgent Stil und
   // Confidence. Das entscheidet ueber den Zeit-Exit (24 h statt 168 h) und
@@ -489,6 +532,33 @@ module.exports = function pruefe() {
     + "bleiben unsichtbar",
     /befund\.maxVersuche/.test(ohneKommentare(instr)));
 
+  // ── Die BEDINGUNG der Meldung und die ABFRAGE dahinter (02.09.) ─────────
+  //
+  // Zwei Luecken, beide am 01.09. eingebaut und am 02.09. im Log aufgefallen:
+  //
+  //  1. Die Meldung hing an `stammdaten.size === 0`. Bei "Stammdaten fuer 1"
+  //     und ZWEI Positionen, von denen keine in der Karte stand, schwieg sie —
+  //     obwohl der RiskAgent fuer beide einen geratenen Stil meldete.
+  //  2. Die Abfrage darunter lautete `notes LIKE '%dealId%'`. Eine Zeile mit
+  //     REINER Order-Referenz enthaelt die Zeichenkette "dealId" nicht und fiel
+  //     damit schon aus der ABFRAGE — also genau der Fall, den
+  //     `mitDealReference` zaehlen soll. Dass am 01.09. trotzdem vier Zeilen
+  //     ankamen, lag am Feld `dealIdVersuche`, das "dealId" als Teilwort
+  //     enthaelt: Zufall, kein Entwurf. Eine Zeile VOR dem ersten Versuch war
+  //     unsichtbar.
+  pruefe1("die Meldung haengt wieder an einer LEEREN Karte statt an den "
+    + "einzelnen Positionen",
+    !/stammdaten\.size\s*===\s*0/.test(instrC)
+    && /const\s+ohneStammdaten\s*=\s*positionenOhneStammdaten\(/.test(instrC)
+    && /ohneStammdaten\s*>\s*0/.test(instrC),
+    "eine Teil-Luecke bliebe unsichtbar — genau der Fall vom 02.09.");
+  // ohneKommentare, NICHT ohneKommentareUndTexte: geprueft wird der INHALT
+  // eines SQL-Textes. Kommentare muessen trotzdem weg, sonst genuegte ein
+  // erwaehnendes Wort — dieselbe Fehlerklasse wie am 18.08.
+  pruefe1("die Abfrage findet Zeilen mit reiner Order-Referenz nicht",
+    /notes LIKE '%dealReference%'/.test(ohneKommentare(instr)),
+    "ohne sie faellt genau der Fall aus der Abfrage, den mitDealReference zaehlen soll");
+
   pruefe1("das Ergebnis von nachzuregistrieren wird auch benutzt",
     /const\s+fehlend\s*=\s*nachzuregistrieren\(/.test(instrC)
     && /for\s*\(const\s+\w+\s+of\s+fehlend\)/.test(instrC),
@@ -576,6 +646,29 @@ module.exports = function pruefe() {
   pruefe1("die Bilanz wird gelesen, aber nicht ausgegeben",
     /dealId-Nachtrag/.test(trackerRoh),
     "ohne Logzeile ist ein stiller Nachtrag von 'nie gelaufen' nicht zu trennen");
+
+  // ── Der Aufgabe-Zweig zaehlt, statt nur zu ueberspringen (02.09.) ───────
+  //
+  // `aufgegeben` zaehlt nur den EINEN Zyklus, in dem die Obergrenze gerissen
+  // wird — eine einzige Logzeile, danach nie wieder. Ab dem naechsten Zyklus
+  // faellt die Zeile oben heraus, BEVOR irgendein Zaehler hochgeht: die Bilanz
+  // ist {0,0,0}, die Logzeile erscheint nicht, und ein Eintrag, der dauerhaft
+  // ohne Positions-ID bleibt, ist vollstaendig still. Genau dieser Dauerzustand
+  // ist der interessante — er bedeutet: ohne Risiko-Zustand, ohne
+  // Teilgewinn-Riegel, ohne Nachregistrieren, und niemand erfaehrt es.
+  const aufgabeZweig =
+    /versuche\s*>=\s*DEALID_VERSUCHE_MAX\s*\)\s*\{([\s\S]{0,400}?)\}/.exec(trackerC);
+  pruefe1("der Aufgabe-Zweig ueberspringt, ohne zu zaehlen",
+    !!aufgabeZweig && /bereitsAufgegeben\+\+/.test(aufgabeZweig[1])
+    && /continue;/.test(aufgabeZweig[1]),
+    "ein dauerhaft nicht aufloesbarer Eintrag bliebe damit voellig still");
+  pruefe1("die Bilanz kennt kein Feld fuer den Dauerzustand",
+    /bereitsAufgegeben:\s*0/.test(trackerC));
+  pruefe1("der Dauerzustand fehlt in der Logzeile",
+    /\$\{dealIdBilanz\.bereitsAufgegeben\}/.test(trackerC));
+  pruefe1("die Logzeile bleibt stumm, wenn NUR aufgegebene Eintraege da sind",
+    /dealIdBilanz\.bereitsAufgegeben\s*>\s*0/.test(trackerC),
+    "die Bilanz waere {0,0,0,N} und die Bedingung liesse sie durchfallen");
   const orchRoh = lies("frontend", "lib", "agents", "orchestrator-agent.ts");
 
   pruefe1("das Journal kennt kein eigenes Feld für die Order-Referenz",

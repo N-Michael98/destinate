@@ -931,6 +931,41 @@ export function stammdatenAusNotizen(
   return karte;
 }
 
+/**
+ * Wie viele der OFFENEN POSITIONEN haben keine Stammdaten? (02.09.)
+ *
+ * DER ANLASS. In `instrumentation.ts` hing die Diagnose-Zeile an der
+ * Bedingung `stammdaten.size === 0` — also daran, ob die Karte insgesamt leer
+ * ist. Am 02.09. standen zwei offene Positionen und `Stammdaten fuer 1`, aber
+ * die eine Zeile gehoerte zu einer DRITTEN, laengst geschlossenen dealId.
+ * Beide laufenden Positionen liefen damit auf geratenem Stil — der RiskAgent
+ * meldete es fuer beide einzeln — und die Diagnose schwieg, weil die Karte
+ * nicht leer war.
+ *
+ * Eine Teil-Luecke ist genauso blind wie eine ganze: fuer die betroffene
+ * Position ist der Zeit-Exit ausgesetzt und der Python-Lifecycle kennt sie
+ * nicht. Gezaehlt wird deshalb je Position, nicht ueber die Karte.
+ *
+ * Als eigene Funktion und NICHT als Schleife in `instrumentation.ts`: dort
+ * liesse sie sich nicht aufrufen und damit nicht beweisen — derselbe Grund,
+ * aus dem `nachzuregistrieren()` und `teilgewinnStand()` hier stehen. Der
+ * Pruefer `lifecycle-rueckkehr` ruft genau diese Funktion auf.
+ *
+ * Eine Position OHNE dealId zaehlt mit: sie kann erst recht keine Stammdaten
+ * haben, und weder der RiskAgent noch `nachzuregistrieren()` fassen sie an.
+ */
+export function positionenOhneStammdaten(
+  positionen: ReadonlyArray<{ dealId?: string | null }> | null | undefined,
+  stammdaten: ReadonlyMap<string, LifecycleStammdaten> | null | undefined,
+): number {
+  let ohne = 0;
+  for (const pos of positionen ?? []) {
+    const id = String(pos?.dealId ?? "").trim();
+    if (!id || !stammdaten?.get(id)) ohne++;
+  }
+  return ohne;
+}
+
 const gerateneGemeldet = new Set<string>();
 
 /**

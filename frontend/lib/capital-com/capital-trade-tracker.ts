@@ -340,8 +340,12 @@ export const DEALID_VERSUCHE_MAX = 5;
  */
 export async function ergaenzeFehlendeDealIds(
   apiKey: string, cst: string, securityToken: string,
-): Promise<{ geprueft: number; ergaenzt: number; aufgegeben: number }> {
-  const bilanz = { geprueft: 0, ergaenzt: 0, aufgegeben: 0 };
+): Promise<{ geprueft: number; ergaenzt: number; aufgegeben: number; bereitsAufgegeben: number }> {
+  // `bereitsAufgegeben` nachgetragen 02.09.: siehe die Schleife unten. Ohne
+  // dieses Feld war der DAUERZUSTAND "hat aufgegeben" von "es gab nichts zu
+  // tun" nicht zu unterscheiden — beide ergaben eine Bilanz aus lauter Nullen
+  // und damit gar keine Logzeile.
+  const bilanz = { geprueft: 0, ergaenzt: 0, aufgegeben: 0, bereitsAufgegeben: 0 };
   try {
     const db = getPrisma();
     const rows = await (db.$queryRawUnsafe as (q: string) => Promise<Array<{ id: number; notes: string }>>)(
@@ -356,7 +360,20 @@ export async function ergaenzeFehlendeDealIds(
       const ref = String(m.dealReference ?? "");
       if (!ref) continue;
       const versuche = Number(m.dealIdVersuche ?? 0);
-      if (versuche >= DEALID_VERSUCHE_MAX) continue; // aufgegeben, siehe unten
+      if (versuche >= DEALID_VERSUCHE_MAX) {
+        // ZAEHLEN, nicht nur ueberspringen (02.09.).
+        //
+        // `aufgegeben` weiter unten zaehlt nur den EINEN Zyklus, in dem die
+        // Obergrenze gerissen wird — eine einzige Logzeile, danach nie wieder.
+        // Ab dem naechsten Zyklus faellt die Zeile hier heraus, bevor irgendein
+        // Zaehler hochgeht: die Bilanz ist {0,0,0}, die Logzeile erscheint
+        // nicht, und ein Eintrag, der dauerhaft ohne Positions-ID bleibt, ist
+        // vollstaendig still. Genau dieser Dauerzustand ist der interessante —
+        // er bedeutet: ohne Risiko-Zustand, ohne Teilgewinn-Riegel, ohne
+        // Nachregistrieren, und niemand erfaehrt es.
+        bilanz.bereitsAufgegeben++;
+        continue;
+      }
 
       bilanz.geprueft++;
       const a = await capitalConfirmDeal(apiKey, cst, securityToken, ref);
@@ -428,9 +445,11 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // gibt — sonst wäre sie alle zwei Minuten Rauschen.
     const dealIdBilanz = await ergaenzeFehlendeDealIds(
       session.apiKey, session.cst, session.securityToken);
-    if (dealIdBilanz.geprueft > 0 || dealIdBilanz.ergaenzt > 0 || dealIdBilanz.aufgegeben > 0) {
+    if (dealIdBilanz.geprueft > 0 || dealIdBilanz.ergaenzt > 0
+      || dealIdBilanz.aufgegeben > 0 || dealIdBilanz.bereitsAufgegeben > 0) {
       console.log(`[trade-tracker] dealId-Nachtrag: ${dealIdBilanz.geprueft} geprüft, `
-        + `${dealIdBilanz.ergaenzt} ergänzt, ${dealIdBilanz.aufgegeben} aufgegeben`);
+        + `${dealIdBilanz.ergaenzt} ergänzt, ${dealIdBilanz.aufgegeben} aufgegeben, `
+        + `${dealIdBilanz.bereitsAufgegeben} bleiben dauerhaft ohne Positions-ID`);
     }
 
     const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
