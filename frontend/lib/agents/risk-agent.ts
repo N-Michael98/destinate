@@ -966,6 +966,133 @@ export function positionenOhneStammdaten(
   return ohne;
 }
 
+/** Eine offene Journal-Zeile ohne Positions-ID, wie der Nachtrag sie sieht. */
+export interface OffeneZeile {
+  id: number;
+  market?: string | null;
+  direction?: string | null;
+  entry?: number | null;
+}
+
+/** Eine offene Position beim Broker. */
+export interface OffenePosition {
+  dealId?: string | null;
+  symbol?: string | null;
+  epic?: string | null;
+  direction?: string | null;
+  openLevel?: number | null;
+}
+
+export interface Zuordnung {
+  /** sicher zugeordnet — die Positions-ID darf geschrieben werden */
+  eindeutig: Array<{ id: number; dealId: string }>;
+  /** mehrere Kandidaten, oder auf dem Symbol ist etwas offen, das nicht passt */
+  unklar: number[];
+  /** auf DIESEM Symbol ist beim Broker gar nichts offen */
+  ohnePosition: number[];
+}
+
+/**
+ * Ordnet Journal-Zeilen ohne Positions-ID den offenen Positionen zu (02.09.).
+ *
+ * DER ANLASS. `capitalConfirmDeal` fragt `GET /confirms/{ref}`, und Capital
+ * haelt Bestaetigungen nur kurz vor. Am 02.09. stand im Log:
+ *
+ *   4 Zeilen, 4 lesbar, 0 mit dealId, 4 mit Stil, 4 mit Confidence,
+ *   4 mit Order-Referenz, hoechste Versuchszahl 5
+ *
+ * Also: fuenf Versuche ueber zehn Minuten, alle vergeblich, dann aufgegeben.
+ * Mehr Versuche helfen nicht — das ist damit gemessen, nicht vermutet.
+ *
+ * DIE OFFENE POSITIONSLISTE KANN ES. Sie wird ohnehin alle zwei Minuten
+ * geholt, kostet also keine zusaetzliche Anfrage. Und der Vergleich ist keine
+ * Schaetzung: das Journal schreibt `entry: result.openLevel`
+ * (`orchestrator-agent.ts`), und `capitalGetPositions` liest
+ * `openLevel: Number(pos.level …)`. Dieselbe Zahl aus derselben Quelle.
+ *
+ * ZWEI FAELLE, beide belegt in `capital-com-client.ts`:
+ *   - Bestaetigung lesbar, aber ohne dealId (Zeile 682): `openLevel` IST da,
+ *     `entry` im Journal ist echt.
+ *   - Bestaetigung unlesbar (Zeile 709): KEIN `openLevel`, `entry` ist 0.
+ * Deshalb ist der Kurs ein zusaetzlicher Filter, wenn er da ist — und keine
+ * Bedingung, wenn er fehlt. Sonst waere der zweite Fall nie reparierbar.
+ *
+ * SICHERHEIT GEHT VOR VOLLSTAENDIGKEIT. Geschrieben wird nur, wenn die
+ * Zuordnung in BEIDE Richtungen eindeutig ist: genau eine Position passt zur
+ * Zeile, und genau eine Zeile beansprucht diese Position. Alles andere landet
+ * in `unklar` und wird nicht angefasst. Ein zu strenger Vergleich bedeutet
+ * "keine Reparatur", nie "falsche Reparatur" — das ist die richtige Richtung.
+ *
+ * `ohnePosition` heisst STRENG: auf diesem Symbol ist beim Broker ueberhaupt
+ * nichts offen. Passt eine Position dem Symbol nach, nur nicht in Richtung
+ * oder Kurs, gilt die Zeile als `unklar` und wird NICHT benannt — sonst
+ * schloesse man womoeglich die Zeile einer laufenden Position.
+ */
+export function zuordnungAusPositionen(
+  zeilen: ReadonlyArray<OffeneZeile> | null | undefined,
+  positionen: ReadonlyArray<OffenePosition> | null | undefined,
+): Zuordnung {
+  const norm = (s: unknown) => String(s ?? "").toUpperCase().replace(/[\s/]/g, "");
+  const kurs = (n: unknown) => {
+    const z = Number(n);
+    return Number.isFinite(z) && z > 0 ? z.toFixed(5) : "";
+  };
+
+  // Eine Position ohne eigene ID ist als ZIEL wertlos — sie kann nicht
+  // geschrieben werden. Fuer die Frage "ist auf diesem Symbol ueberhaupt etwas
+  // offen?" zaehlt sie aber sehr wohl mit: sonst gaelte eine Zeile als Phantom,
+  // waehrend beim Broker eine Position dazu laeuft, und sie wuerde spaeter
+  // geschlossen. Deshalb ZWEI Listen.
+  const alle = positionen ?? [];
+  const posListe = alle.filter((p) => String(p?.dealId ?? "").trim());
+
+  const treffer = new Map<number, string[]>();
+  const symbolOffen = new Map<number, boolean>();
+
+  for (const z of zeilen ?? []) {
+    const id = Number(z?.id);
+    if (!Number.isFinite(id)) continue;
+    const sym = norm(z?.market);
+    const ri = norm(z?.direction);
+    const ku = kurs(z?.entry);
+    if (!sym || (ri !== "BUY" && ri !== "SELL")) {
+      // Ohne Symbol oder ohne lesbare Richtung ist nichts zu entscheiden.
+      treffer.set(id, []);
+      symbolOffen.set(id, true);   // vorsichtshalber als "nicht benennbar"
+      continue;
+    }
+    symbolOffen.set(id, alle.some(
+      (p) => norm(p?.symbol) === sym || norm(p?.epic) === sym));
+    treffer.set(id, posListe
+      .filter((p) => norm(p.symbol) === sym || norm(p.epic) === sym)
+      .filter((p) => {
+        if (norm(p.direction) !== ri) return false;
+        const pk = kurs(p.openLevel);
+        return !(ku && pk && ku !== pk);
+      })
+      .map((p) => String(p.dealId)));
+  }
+
+  // Wie oft wird jede Position beansprucht? Zwei Zeilen auf dieselbe Position
+  // heisst: mindestens eine davon ist falsch. Dann keine von beiden.
+  const beansprucht = new Map<string, number>();
+  for (const ids of treffer.values()) {
+    for (const d of ids) beansprucht.set(d, (beansprucht.get(d) ?? 0) + 1);
+  }
+
+  const aus: Zuordnung = { eindeutig: [], unklar: [], ohnePosition: [] };
+  for (const [id, ids] of treffer) {
+    if (ids.length === 1 && beansprucht.get(ids[0]) === 1) {
+      aus.eindeutig.push({ id, dealId: ids[0] });
+    } else if (ids.length === 0 && symbolOffen.get(id) === false) {
+      aus.ohnePosition.push(id);
+    } else {
+      aus.unklar.push(id);
+    }
+  }
+  return aus;
+}
+
 const gerateneGemeldet = new Set<string>();
 
 /**

@@ -319,6 +319,113 @@ module.exports = function pruefe() {
       && ohneF([{ dealId: "D1" }], null) === 1);
   }
 
+  // ── Teil 1b4: zuordnungAusPositionen() wirklich rechnen (02.09.) ─────────
+  //
+  // DER ANLASS, gemessen statt vermutet. Am 02.09. stand im Log:
+  //
+  //   4 Zeilen, 4 lesbar, 0 mit dealId, 4 mit Stil, 4 mit Confidence,
+  //   4 mit Order-Referenz, hoechste Versuchszahl 5
+  //
+  // Fuenf Versuche ueber zehn Minuten gegen `GET /confirms/{ref}` — alle
+  // vergeblich, dann aufgegeben. Capital haelt Bestaetigungen nur kurz vor;
+  // mehr Versuche helfen nachweislich nicht. Die offene Positionsliste holen
+  // wir ohnehin alle zwei Minuten, und der Vergleich ist keine Schaetzung:
+  // das Journal schreibt `entry: result.openLevel`, `capitalGetPositions`
+  // liest `openLevel: Number(pos.level …)` — dieselbe Zahl, dieselbe Quelle.
+  //
+  // GESCHRIEBEN WIRD NUR BEI EINDEUTIGKEIT IN BEIDE RICHTUNGEN. Ein zu
+  // strenger Vergleich heisst "keine Reparatur", nie "falsche Reparatur".
+  const zuF = m.zuordnungAusPositionen;
+  if (typeof zuF !== "function") {
+    funde.push("zuordnungAusPositionen wird nicht exportiert — die Zuordnung "
+      + "laege wieder eingebettet im Tracker und waere nicht pruefbar");
+  } else {
+    const P = (dealId, symbol, direction, openLevel) =>
+      ({ dealId, symbol, epic: symbol, direction, openLevel });
+    const Z = (id, market, direction, entry) => ({ id, market, direction, entry });
+
+    let r = zuF([Z(1, "USDCHF", "BUY", 0.81337)], [P("D1", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("die eindeutige Zuordnung wird nicht gefunden",
+      r.eindeutig.length === 1 && r.eindeutig[0].dealId === "D1" && r.eindeutig[0].id === 1);
+
+    // War die Bestaetigung UNLESBAR, liefert der Broker kein openLevel und im
+    // Journal steht entry 0 (capital-com-client.ts:709). Genau dieser Fall ist
+    // ueber /confirms nicht mehr reparierbar — er MUSS hier durchkommen.
+    r = zuF([Z(1, "USDCHF", "BUY", 0)], [P("D1", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("ohne Einstiegskurs wird gar nicht zugeordnet",
+      r.eindeutig.length === 1,
+      "dann bliebe der haeufigste Fall dauerhaft unreparierbar");
+
+    r = zuF([Z(1, "USDCHF", "BUY", 0.9)], [P("D1", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("ein abweichender Einstiegskurs wird trotzdem zugeordnet",
+      r.eindeutig.length === 0 && r.unklar.length === 1);
+
+    r = zuF([Z(1, "USDCHF", "SELL", 0.81337)], [P("D1", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("die Gegenrichtung wird zugeordnet", r.eindeutig.length === 0);
+    pruefe1("die Gegenrichtung gilt als 'nichts offen' und waere schliessbar",
+      r.ohnePosition.length === 0 && r.unklar.length === 1,
+      "damit wuerde die Zeile einer LAUFENDEN Position geschlossen");
+
+    r = zuF([Z(1, "USDCHF", "BUY", 0), Z(2, "USDCHF", "BUY", 0)],
+      [P("D1", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("zwei Zeilen beanspruchen dieselbe Position und werden geschrieben",
+      r.eindeutig.length === 0 && r.unklar.length === 2,
+      "mindestens eine davon waere falsch");
+
+    r = zuF([Z(1, "USDCHF", "BUY", 0)],
+      [P("D1", "USDCHF", "BUY", 0.81), P("D2", "USDCHF", "BUY", 0.82)]);
+    pruefe1("zwei passende Positionen und trotzdem eine Zuordnung",
+      r.eindeutig.length === 0 && r.unklar.length === 1);
+    r = zuF([Z(1, "USDCHF", "BUY", 0.82)],
+      [P("D1", "USDCHF", "BUY", 0.81), P("D2", "USDCHF", "BUY", 0.82)]);
+    pruefe1("der Einstiegskurs entscheidet den mehrdeutigen Fall nicht",
+      r.eindeutig.length === 1 && r.eindeutig[0].dealId === "D2");
+
+    r = zuF([Z(1, "XAUUSD", "BUY", 1900)], [P("D1", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("eine Zeile ohne jede Position auf ihrem Symbol wird nicht erkannt",
+      r.ohnePosition.length === 1 && r.unklar.length === 0);
+
+    // Eine Position OHNE eigene ID kann kein Ziel sein — sie belegt das Symbol
+    // aber trotzdem. Sonst gaelte die Zeile als Phantom, waehrend beim Broker
+    // eine Position dazu laeuft.
+    r = zuF([Z(1, "USDCHF", "BUY", 0.81337)], [P("", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("eine Position ohne eigene ID gilt als 'Symbol frei' — die Zeile "
+      + "waere schliessbar",
+      r.eindeutig.length === 0 && r.ohnePosition.length === 0 && r.unklar.length === 1);
+
+    r = zuF([Z(1, "USDCHF", "BUY", 0.81337)],
+      [{ dealId: "D1", symbol: null, epic: "USDCHF", direction: "BUY", openLevel: 0.81337 }]);
+    pruefe1("die Zuordnung über das Epic fehlt", r.eindeutig.length === 1);
+
+    r = zuF([Z(1, "usd/chf", "buy", 0.81337)], [P("D1", "USDCHF", "BUY", 0.81337)]);
+    pruefe1("Schreibweise (Schrägstrich, Kleinbuchstaben) verhindert die Zuordnung",
+      r.eindeutig.length === 1);
+
+    r = zuF([Z(1, "XAUUSD", "", 0)], []);
+    pruefe1("eine Zeile ohne lesbare Richtung wird zum Schliessen freigegeben",
+      r.ohnePosition.length === 0 && r.unklar.length === 1);
+    r = zuF([Z(1, "", "BUY", 0)], []);
+    pruefe1("eine Zeile ohne Markt wird zum Schliessen freigegeben",
+      r.ohnePosition.length === 0 && r.unklar.length === 1);
+
+    // DER BEOBACHTETE FALL VOM 02.09.: vier Zeilen, zwei offene Positionen.
+    const beob = zuF(
+      [Z(1, "USDCHF", "BUY", 0.81337), Z(2, "USOIL", "BUY", 65.4),
+        Z(3, "GBPJPY", "BUY", 195.1), Z(4, "EURUSD", "BUY", 1.09)],
+      [P("D-CHF", "USDCHF", "BUY", 0.81337), P("D-OIL", "USOIL", "BUY", 65.4)]);
+    pruefe1("der beobachtete Fall vom 02.09. (4 Zeilen, 2 Positionen) wird falsch "
+      + "aufgeteilt",
+      beob.eindeutig.length === 2 && beob.ohnePosition.length === 2
+      && beob.unklar.length === 0,
+      `eindeutig ${beob.eindeutig.length} / unklar ${beob.unklar.length} / `
+      + `ohnePosition ${beob.ohnePosition.length}`);
+
+    pruefe1("leere Eingaben stürzen ab oder melden falsch",
+      zuF(null, null).eindeutig.length === 0
+      && zuF([], []).ohnePosition.length === 0
+      && zuF(undefined, [P("D1", "USDCHF", "BUY", 1)]).unklar.length === 0);
+  }
+
   // ── Teil 1c: geratenerStilMelden() wirklich rechnen (19.08.) ─────────────
   // Ohne Datenbankzeile UND ohne Speicher raet der RiskAgent Stil und
   // Confidence. Das entscheidet ueber den Zeit-Exit (24 h statt 168 h) und
@@ -669,6 +776,56 @@ module.exports = function pruefe() {
   pruefe1("die Logzeile bleibt stumm, wenn NUR aufgegebene Eintraege da sind",
     /dealIdBilanz\.bereitsAufgegeben\s*>\s*0/.test(trackerC),
     "die Bilanz waere {0,0,0,N} und die Bedingung liesse sie durchfallen");
+
+  // ── Der ZWEITE Weg zur Positions-ID (02.09.) ────────────────────────────
+  //
+  // /confirms ist nachweislich tot: "hoechste Versuchszahl 5" im Log vom
+  // 02.09. heisst fuenf Versuche ueber zehn Minuten, alle vergeblich. Ohne
+  // einen zweiten Weg blieben die Zeilen dauerhaft ohne Positions-ID — und
+  // damit ohne Stammdaten, ohne Teilgewinn-Riegel, mit geratenem Handelsstil
+  // und ausgesetztem Zeit-Exit. Schliessen konnte sie ausserdem NIEMAND: die
+  // P&L-Schleife ueberspringt jede Zeile ohne dealId.
+  pruefe1("es gibt keinen zweiten Weg zur Positions-ID",
+    /export async function ergaenzeDealIdsAusPositionen/.test(trackerRoh)
+    && aufrufe(trackerRoh, "ergaenzeDealIdsAusPositionen") >= 1,
+    "ueber /confirms ist der Fall nachweislich nicht mehr reparierbar");
+  pruefe1("die Entscheidung liegt wieder als Schleife im Tracker statt in einer "
+    + "aufrufbaren Funktion",
+    /zuordnungAusPositionen\(/.test(trackerC),
+    "eingebettet liesse sie sich nicht ausfuehren und damit nicht beweisen");
+
+  {
+    const iPos = trackerC.indexOf("capitalGetPositions(session.apiKey");
+    const iZuo = trackerC.indexOf("ergaenzeDealIdsAusPositionen(posResult.positions");
+    const iSch = trackerC.indexOf("for (const trade of openTrades)");
+    pruefe1("die Zuordnung laeuft nicht zwischen Positionsabruf und Journal-Schleife",
+      iPos > -1 && iZuo > iPos && iSch > iZuo,
+      "davor gibt es die Liste noch nicht, danach ist die Zeile schon als "
+      + "verschwundene Position behandelt");
+  }
+
+  {
+    const rumpf = funktionsRumpf(trackerC, "ergaenzeDealIdsAusPositionen");
+    pruefe1("nur eindeutige Zuordnungen duerfen eine dealId schreiben",
+      /of zu\.eindeutig\)/.test(rumpf),
+      "alles andere waere geraten");
+    pruefe1("das Benennen als NIE_BESTAETIGT haengt nicht an der Obergrenze des "
+      + "/confirms-Weges",
+      /versuche\s*<\s*DEALID_VERSUCHE_MAX/.test(rumpf),
+      "eine frisch aufgegebene Order kann noch als Position auftauchen");
+    pruefe1("es gibt keine Beobachtungsfrist — ein einzelner Broker-Aussetzer "
+      + "mit leerer Positionsliste schloesse Journal-Zeilen",
+      /OHNE_POSITION_ZYKLEN_MAX/.test(rumpf)
+      && /export const OHNE_POSITION_ZYKLEN_MAX = 3/.test(trackerC));
+    pruefe1("der Phantom-Zaehler wird bei wiedergefundener Zuordnung nicht "
+      + "zurueckgesetzt",
+      /of zu\.unklar\)/.test(rumpf) && /delete neu\.ohnePositionZyklen/.test(rumpf),
+      "sonst schluege er beim naechsten Aussetzer sofort durch");
+    pruefe1("eine unklare Zeile wird geschlossen statt in Ruhe gelassen",
+      !/zu\.unklar[\s\S]{0,400}?status.{0,4}=.{0,4}.CLOSED/.test(rumpf));
+  }
+  pruefe1("die Bilanz der Zuordnung wird nicht ausgegeben",
+    /Zuordnung aus Positionsliste/.test(trackerC));
   const orchRoh = lies("frontend", "lib", "agents", "orchestrator-agent.ts");
 
   pruefe1("das Journal kennt kein eigenes Feld für die Order-Referenz",

@@ -408,6 +408,131 @@ export async function ergaenzeFehlendeDealIds(
   return bilanz;
 }
 
+/** Nach so vielen Zyklen ohne passende Position gilt eine aufgegebene Zeile als
+ *  Phantom. Drei Zyklen sind rund sechs Minuten Beleg statt einer
+ *  Momentaufnahme: ein einzelner Broker-Aussetzer mit leerer Positionsliste
+ *  darf keine Journal-Zeile schliessen. */
+export const OHNE_POSITION_ZYKLEN_MAX = 3;
+
+/**
+ * Traegt fehlende Positions-IDs aus der OFFENEN POSITIONSLISTE nach (02.09.).
+ *
+ * `ergaenzeFehlendeDealIds` fragt `GET /confirms/{ref}`. Am 02.09. war gemessen,
+ * dass dieser Weg tot ist: vier Zeilen, alle mit Order-Referenz, hoechste
+ * Versuchszahl 5 — fuenf Versuche ueber zehn Minuten, dann aufgegeben. Capital
+ * haelt Bestaetigungen nur kurz vor.
+ *
+ * Die Positionsliste haben wir ohnehin. Die Entscheidung liegt in
+ * `zuordnungAusPositionen()` im RiskAgent, NICHT als Schleife hier —
+ * eingebettet liesse sie sich nicht ausfuehren und damit nicht beweisen.
+ *
+ * DREI AUSGAENGE, streng getrennt:
+ *   eindeutig    -> Positions-ID schreiben. Damit greifen Stammdaten,
+ *                   Teilgewinn-Riegel und Nachregistrieren wieder, und der
+ *                   Zeit-Exit rechnet mit dem ECHTEN Stil statt zu raten.
+ *   unklar       -> nichts anfassen. Nur zaehlen.
+ *   ohnePosition -> auf dem Symbol ist beim Broker gar nichts offen. Erst wenn
+ *                   der /confirms-Weg aufgegeben hat UND das drei Zyklen lang
+ *                   so bleibt, wird die Zeile als NIE_BESTAETIGT geschlossen.
+ *                   Ohne diesen Ausgang stuende sie fuer immer auf OPEN: die
+ *                   P&L-Abstimmung unten ueberspringt jede Zeile ohne dealId,
+ *                   es gibt also keinen anderen Weg, der sie je schliesst.
+ *
+ * Non-fatal in jedem Zweig.
+ */
+export async function ergaenzeDealIdsAusPositionen(
+  positionen: ReadonlyArray<{
+    dealId?: string | null; symbol?: string | null; epic?: string | null;
+    direction?: string | null; openLevel?: number | null;
+  }>,
+): Promise<{ ergaenzt: number; unklar: number; beobachtet: number; benannt: number }> {
+  const bilanz = { ergaenzt: 0, unklar: 0, beobachtet: 0, benannt: 0 };
+  try {
+    const db = getPrisma();
+    const rows = await (db.$queryRawUnsafe as (q: string) => Promise<Array<{
+      id: number; market: string | null; direction: string | null;
+      entry: number | null; notes: string;
+    }>>)(
+      `SELECT "id", "market", "direction", "entry", "notes" FROM "Trade" `
+      + `WHERE status = 'OPEN' AND notes LIKE '%dealReference%'`
+    );
+
+    const meta = new Map<number, Record<string, unknown>>();
+    const markt = new Map<number, string>();
+    const offen: Array<{ id: number; market: string | null; direction: string | null; entry: number | null }> = [];
+    for (const z of rows ?? []) {
+      let m: Record<string, unknown>;
+      try { m = JSON.parse(z.notes) as Record<string, unknown>; } catch { continue; }
+      if (m.dealId) continue;                                   // schon aufgeloest
+      if (!String(m.dealReference ?? "").trim()) continue;       // nichts zu verknuepfen
+      meta.set(z.id, m);
+      markt.set(z.id, String(z.market ?? "?"));
+      offen.push({ id: z.id, market: z.market, direction: z.direction, entry: z.entry });
+    }
+    if (offen.length === 0) return bilanz;
+
+    const { zuordnungAusPositionen } = await import("../agents/risk-agent");
+    const zu = zuordnungAusPositionen(offen, positionen);
+    bilanz.unklar = zu.unklar.length;
+
+    for (const { id, dealId } of zu.eindeutig) {
+      const m = meta.get(id);
+      if (!m) continue;
+      const neu: Record<string, unknown> = { ...m, dealId, dealIdQuelle: "POSITIONSLISTE" };
+      delete neu.ohnePositionZyklen;
+      await db.$executeRawUnsafe(
+        `UPDATE "Trade" SET "notes" = $1 WHERE "id" = $2`, JSON.stringify(neu), id);
+      bilanz.ergaenzt++;
+      console.log(`[trade-tracker] ✅ dealId aus Positionsliste: Zeile ${id} `
+        + `(${markt.get(id)}) -> ${dealId}`);
+    }
+
+    // Eine Zeile, die wieder Anschluss hat, darf ihren Phantom-Zaehler nicht
+    // behalten — sonst schluege er beim naechsten Aussetzer sofort durch.
+    for (const id of zu.unklar) {
+      const m = meta.get(id);
+      if (!m || Number(m.ohnePositionZyklen ?? 0) === 0) continue;
+      const neu: Record<string, unknown> = { ...m };
+      delete neu.ohnePositionZyklen;
+      await db.$executeRawUnsafe(
+        `UPDATE "Trade" SET "notes" = $1 WHERE "id" = $2`, JSON.stringify(neu), id);
+    }
+
+    for (const id of zu.ohnePosition) {
+      const m = meta.get(id);
+      if (!m) continue;
+      // Solange der /confirms-Weg noch laeuft, wird NICHT benannt: eine frisch
+      // aufgegebene Order kann noch als Position auftauchen.
+      const versuche = Number(m.dealIdVersuche ?? 0);
+      if (!Number.isFinite(versuche) || versuche < DEALID_VERSUCHE_MAX) {
+        bilanz.beobachtet++;
+        continue;
+      }
+      const roh = Number(m.ohnePositionZyklen ?? 0);
+      const zyklen = (Number.isFinite(roh) ? roh : 0) + 1;
+      if (zyklen < OHNE_POSITION_ZYKLEN_MAX) {
+        await db.$executeRawUnsafe(
+          `UPDATE "Trade" SET "notes" = $1 WHERE "id" = $2`,
+          JSON.stringify({ ...m, ohnePositionZyklen: zyklen }), id);
+        bilanz.beobachtet++;
+        continue;
+      }
+      await db.$executeRawUnsafe(
+        `UPDATE "Trade" SET "status" = 'CLOSED', "result" = 'BREAKEVEN', `
+        + `"profitLoss" = 0, "notes" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+        JSON.stringify({ ...m, ohnePositionZyklen: zyklen, exitReason: "NIE_BESTAETIGT" }), id);
+      bilanz.benannt++;
+      console.warn(`[trade-tracker] ⚠️ Zeile ${id} (${markt.get(id)}): nach `
+        + `${DEALID_VERSUCHE_MAX} Bestaetigungsversuchen und ${zyklen} Zyklen ohne `
+        + `passende Position — als NIE_BESTAETIGT geschlossen, P&L 0`);
+    }
+  } catch (e) {
+    console.warn("[trade-tracker] Zuordnung aus der Positionsliste uebersprungen:",
+      e instanceof Error ? e.message : String(e));
+  }
+  return bilanz;
+}
+
 export async function syncCapitalPositionsToJournal(): Promise<void> {
   try {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
@@ -458,6 +583,23 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     const openDealIds = new Set(
       (posResult.positions ?? []).map((p) => p.dealId ?? "").filter(Boolean)
     );
+
+    // ── Zweiter Weg zur Positions-ID (02.09.) ────────────────────────────
+    //
+    // MUSS hier stehen, nicht frueher: davor gibt es die Positionsliste noch
+    // nicht. Und MUSS vor der Schleife weiter unten stehen: die ueberspringt
+    // jede Zeile ohne dealId (`if (!meta.dealId) continue`), eine gerade
+    // aufgeloeste Zeile wird also im selben Zyklus richtig behandelt. Die
+    // frisch geschriebenen IDs stammen aus genau dieser Liste und stehen damit
+    // bereits in `openDealIds` — eine wiederhergestellte Zeile sieht deshalb
+    // NICHT wie eine verschwundene Position aus.
+    const ausListe = await ergaenzeDealIdsAusPositionen(posResult.positions ?? []);
+    if (ausListe.ergaenzt > 0 || ausListe.unklar > 0
+      || ausListe.beobachtet > 0 || ausListe.benannt > 0) {
+      console.log(`[trade-tracker] Zuordnung aus Positionsliste: ${ausListe.ergaenzt} ergänzt, `
+        + `${ausListe.unklar} unklar, ${ausListe.beobachtet} beobachtet, `
+        + `${ausListe.benannt} als NIE_BESTAETIGT geschlossen`);
+    }
 
     // Fetch recent transactions for P&L (last 24h) — more reliable than activity endpoint
     const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
