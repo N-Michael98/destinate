@@ -288,8 +288,41 @@ module.exports = function pruefe() {
     /SET "result" = \$1, "profitLoss" = \$2, "notes" = \$3/.test(tracker2));
   pruefe1("der Nachtrag holt stopLoss und takeProfit nicht",
     /SELECT "id","market","entry","notes","stopLoss","takeProfit"/.test(tracker2));
-  pruefe1("ein bereits gesetzter Grund wird ueberschrieben",
-    /if \(!notizen\.exitReason\)/.test(tracker2));
+  // ── EIGENSCHAFT statt WORTLAUT (02.09.) ─────────────────────────────────
+  //
+  // Hier stand `/if \(!notizen\.exitReason\)/` — der festgenagelte Wortlaut
+  // EINER Zeile. Als der Nachtrag am 02.09. praeziser wurde, meldete diese
+  // Pruefung die KORREKTUR als Regression. Genau die dritte Falle aus
+  // CLAUDE.md: pruefe die Eigenschaft, nicht den Text.
+  //
+  // DER GRUNDSATZ IST UNVERAENDERT und wird jetzt RECHNEND belegt: ein echter
+  // Grund aus dem Hauptpfad (ZIEL/STOP/DAZWISCHEN, aus dem Schlusskurs
+  // abgeleitet) darf vom Nachtrag NIE ueberschrieben werden. Neu erlaubt ist
+  // ausschliesslich das Ersetzen von "NIE_BESTAETIGT" und "KEIN_PNL" — beide
+  // behaupten "kein Ergebnis bekannt", und ein gefundener echter P&L widerlegt
+  // genau das.
+  pruefe1("die Bedingung des Nachtrags fehlt — er ueberschriebe jeden Grund",
+    /if \(!notizen\.exitReason \|\| etikettWiderlegt\(notizen\.exitReason\)\)/.test(tracker2));
+  const wF = geladenT.exports && geladenT.exports.etikettWiderlegt;
+  if (typeof wF !== "function") {
+    funde.push("etikettWiderlegt wird nicht exportiert — welche Gruende "
+      + "ueberschrieben werden duerfen, bleibt ungeprueft");
+  } else {
+    for (const echt of ["ZIEL", "STOP", "DAZWISCHEN", "UNBEKANNT", "KEIN_SCHLUSSKURS"]) {
+      pruefe1(`ein echter Grund (${echt}) darf ueberschrieben werden`,
+        wF(echt) === false);
+    }
+    for (const leer of ["NIE_BESTAETIGT", "KEIN_PNL"]) {
+      pruefe1(`"${leer}" behauptet kein Ergebnis, bleibt aber stehen`,
+        wF(leer) === true);
+    }
+    pruefe1("Schreibweise/Leerzeichen heben den Ersatz auf",
+      wF(" nie_bestaetigt ") === true);
+    pruefe1("ein leerer Grund gilt als echter Grund",
+      wF("") === false && wF(null) === false && wF(undefined) === false);
+    pruefe1("ein unbekanntes Etikett wird vorsichtshalber ueberschrieben",
+      wF("IRGENDWAS") === false);
+  }
 
   // DIE WURZEL: sync-journal darf keinen Trade mehr abschliessen.
   pruefe1("sync-journal schliesst wieder Trades ab und entzieht sie dem Tracker",

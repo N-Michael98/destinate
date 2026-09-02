@@ -826,6 +826,24 @@ module.exports = function pruefe() {
   }
   pruefe1("die Bilanz der Zuordnung wird nicht ausgegeben",
     /Zuordnung aus Positionsliste/.test(trackerC));
+
+  // Der geteilte Zustand auch STRUKTURELL festhalten — die Zwei-Instanzen-
+  // Prüfung oben fängt den Rückbau zwar, aber der Name hier macht im Diff
+  // sofort sichtbar, worum es geht.
+  pruefe1("die Warteschlange liegt wieder modul-scoped statt auf global",
+    /global\.__ausstehende_journal_zeilen__/.test(trackerC)
+    && !/\bconst ausstehendeZeilen\b/.test(trackerC),
+    "API-Route und Schleife saehen verschiedene Kopien — Killswitch 28.07., "
+    + "Preis-Cache 26.08., Journal-Warteschlange 02.09.");
+
+  // Ein Etikett, das "kein Ergebnis bekannt" behauptet, ist widerlegt, sobald
+  // der Nachtrag einen echten P&L findet. Bis zum 02.09. blieb es stehen.
+  // WAS als widerlegt gilt, prueft `order-bestaetigung` rechnend (es ruft
+  // etikettWiderlegt auf). Hier nur: der Nachtrag fragt ueberhaupt danach.
+  pruefe1("ein widerlegtes Etikett (NIE_BESTAETIGT/KEIN_PNL) bleibt stehen, "
+    + "obwohl ein echter P&L gefunden wurde",
+    /etikettWiderlegt\(notizen\.exitReason\)/.test(trackerC),
+    "der Trade zaehlte dauerhaft in der falschen Ausstiegsgrund-Gruppe");
   const orchRoh = lies("frontend", "lib", "agents", "orchestrator-agent.ts");
 
   pruefe1("das Journal kennt kein eigenes Feld für die Order-Referenz",
@@ -956,6 +974,47 @@ module.exports = function pruefe() {
         ausstehendeAnzahl() === AUSSTEHEND_MAX, String(ausstehendeAnzahl()));
       ausstehendeLeeren();
       pruefe1("Leeren wirkt nicht", ausstehendeAnzahl() === 0);
+
+      // ── Die Warteschlange muss GETEILT sein (02.09.) ────────────────────
+      //
+      // Bis heute stand sie als modul-scoped `const` in der Datei. Nachgeprüft,
+      // nicht vermutet:
+      //   schreibt  saveCapitalTradeToJournal
+      //             ← app/api/auto-execute/route.ts:186        API-ROUTE
+      //             ← app/api/capital-com/execute/route.ts:38  API-ROUTE
+      //             ← lib/agents/orchestrator-agent.ts:384
+      //   leert     schreibeAusstehendeZeilen (via syncCapitalPositionsToJournal)
+      //             ← instrumentation.ts:303                   SCHLEIFE, nur dort
+      //
+      // API-Routen und die Loops in instrumentation.ts sehen VERSCHIEDENE
+      // Kopien desselben Moduls. Eine über eine Route eröffnete Position, deren
+      // Journal-Zeile scheitert, landete damit in einer Schlange, die NIEMAND
+      // je abarbeitet — dauerhaft. Genau der am 02.09. beobachtete Zustand:
+      // laufende Positionen ohne Journal-Zeile.
+      //
+      // Dieselbe Fehlerklasse wie Killswitch 28.07. und Preis-Cache 26.08.
+      // ALLE Prüfungen oben laufen in EINER Instanz und blieben grün. Deshalb
+      // hier: Modul ZWEIMAL laden, über die eine schreiben, über die andere
+      // lesen. Eine Struktur-Prüfung sieht diesen Fehler nicht.
+      const tr2 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+      pruefe1("zweite Modul-Instanz lässt sich nicht laden", !tr2.fehler, tr2.fehler);
+      if (!tr2.fehler && typeof tr2.exports.ausstehendeAnzahl === "function") {
+        merkeAusstehendeZeile({ symbol: "XAUUSD", direction: "BUY", dealReference: "o_1" });
+        pruefe1("die Warteschlange ist NICHT geteilt — modul-scoped statt global",
+          tr2.exports.ausstehendeAnzahl() === 1,
+          `zweite Instanz sieht ${tr2.exports.ausstehendeAnzahl()} statt 1 — genau so `
+          + `verliert eine über eine API-Route eröffnete Position ihre Journal-Zeile`);
+        tr2.exports.merkeAusstehendeZeile({ symbol: "USOIL", direction: "SELL" });
+        pruefe1("die Rückrichtung ist nicht geteilt", ausstehendeAnzahl() === 2,
+          String(ausstehendeAnzahl()));
+        tr2.exports.ausstehendeLeeren();
+        pruefe1("Leeren über die zweite Instanz wirkt nicht auf die erste",
+          ausstehendeAnzahl() === 0);
+      } else if (!tr2.fehler) {
+        funde.push("die zweite Instanz exportiert ausstehendeAnzahl nicht — der "
+          + "geteilte Zustand bleibt ungeprüft");
+      }
+      ausstehendeLeeren();
 
       let geworfenQ = false;
       try { merkeAusstehendeZeile(undefined); ausstehendeAnzahl(); } catch { geworfenQ = true; }

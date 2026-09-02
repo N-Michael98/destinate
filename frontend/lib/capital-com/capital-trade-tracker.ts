@@ -49,7 +49,36 @@ export interface TradeRecord {
 // Bis heute stand hier nur ein `console.error`. Ein Datenbank-Aussetzer von
 // wenigen Sekunden — etwa waehrend des Postgres-Patches bei Railway — haette
 // die Zeile DAUERHAFT gekostet.
-const ausstehendeZeilen: TradeRecord[] = [];
+// ── AUF `global`, NICHT modul-scoped (02.09.) ────────────────────────────
+//
+// Hier stand `const ausstehendeZeilen: TradeRecord[] = []`. Das ist genau die
+// Fehlerklasse, die in CLAUDE.md steht und die in diesem Projekt schon zweimal
+// zugeschlagen hat (Killswitch 28.07., Preis-Cache 26.08.) — hier spiegel-
+// verkehrt: geschrieben von einer API-ROUTE, geleert von der SCHLEIFE.
+//
+// Nachgeprueft, nicht vermutet:
+//   schreibt  `saveCapitalTradeToJournal`
+//             <- app/api/auto-execute/route.ts:186
+//             <- app/api/capital-com/execute/route.ts:38
+//             <- lib/agents/orchestrator-agent.ts:384
+//   leert     `schreibeAusstehendeZeilen` (via syncCapitalPositionsToJournal)
+//             <- instrumentation.ts:303   — und NUR von dort
+//
+// API-Routen und die Loops in instrumentation.ts sehen VERSCHIEDENE Kopien
+// desselben Moduls. Eine ueber eine Route eroeffnete Position, deren
+// Journal-Zeile scheitert, landete damit in einer Warteschlange, die NIEMAND
+// je abarbeitet — dauerhaft. Genau der beobachtete Zustand: laufende
+// Positionen ohne Journal-Zeile, mit allen Folgen aus dem Absatz darueber.
+//
+// Auf `global` sehen beide dieselbe Schlange.
+declare global {
+  var __ausstehende_journal_zeilen__: TradeRecord[] | undefined;
+}
+
+function warteschlange(): TradeRecord[] {
+  if (!global.__ausstehende_journal_zeilen__) global.__ausstehende_journal_zeilen__ = [];
+  return global.__ausstehende_journal_zeilen__;
+}
 
 /** Obergrenze der Warteschlange. Ohne sie waere sie ein Leck: bei einem langen
  *  Datenbank-Ausfall wuechse sie mit jedem Trade weiter. Fuenfzig ist mehr als
@@ -61,18 +90,19 @@ export const AUSSTEHEND_MAX = 50;
 export function merkeAusstehendeZeile(trade: TradeRecord): void {
   try {
     if (!trade) return;
-    ausstehendeZeilen.push(trade);
-    while (ausstehendeZeilen.length > AUSSTEHEND_MAX) ausstehendeZeilen.shift();
+    const q = warteschlange();
+    q.push(trade);
+    while (q.length > AUSSTEHEND_MAX) q.shift();
   } catch { /* Merken darf nie stoeren */ }
 }
 
 export function ausstehendeAnzahl(): number {
-  return ausstehendeZeilen.length;
+  return warteschlange().length;
 }
 
 /** Nur für Tests und Prüfer. */
 export function ausstehendeLeeren(): void {
-  ausstehendeZeilen.length = 0;
+  warteschlange().length = 0;
 }
 
 /**
@@ -86,21 +116,22 @@ export function ausstehendeLeeren(): void {
  */
 export async function schreibeAusstehendeZeilen(): Promise<{ geschrieben: number; offen: number }> {
   const bilanz = { geschrieben: 0, offen: 0 };
-  if (ausstehendeZeilen.length === 0) return bilanz;
+  const q = warteschlange();
+  if (q.length === 0) return bilanz;
   // Von vorne arbeiten, damit die Reihenfolge der Eroeffnungen erhalten bleibt.
-  for (let i = ausstehendeZeilen.length - 1; i >= 0; i--) {
-    const trade = ausstehendeZeilen[i];
+  for (let i = q.length - 1; i >= 0; i--) {
+    const trade = q[i];
     // Immer mit Doppelpruefung: die Zeile kann seit dem Merken laengst
     // geschrieben worden sein.
     const ok = await versucheJournalZeile(trade, true);
     if (ok) {
-      ausstehendeZeilen.splice(i, 1);
+      q.splice(i, 1);
       bilanz.geschrieben++;
       console.log(`[trade-tracker] Journal-Zeile nachgetragen: ${trade.symbol} `
         + `${trade.direction} deal=${trade.dealId || trade.dealReference || "?"}`);
     }
   }
-  bilanz.offen = ausstehendeZeilen.length;
+  bilanz.offen = q.length;
   if (bilanz.geschrieben > 0 || bilanz.offen > 0) {
     console.log(`[trade-tracker] ausstehende Journal-Zeilen: ${bilanz.geschrieben} nachgetragen, `
       + `${bilanz.offen} offen`);
@@ -285,6 +316,39 @@ export function ausstiegsgrund(
     : exitPosition <= 0.05 ? "STOP"
     : "DAZWISCHEN";
   return { exitPosition: Number(exitPosition.toFixed(4)), exitReason };
+}
+
+/** Etiketten, die "kein Ergebnis bekannt" BEHAUPTEN — keine echten Gründe. */
+export const ETIKETTEN_OHNE_ERGEBNIS = ["NIE_BESTAETIGT", "KEIN_PNL"];
+
+/**
+ * Darf ein BEREITS GESETZTER Ausstiegsgrund überschrieben werden, wenn der
+ * Nachtrag einen echten P&L findet? (02.09.)
+ *
+ * DER GRUNDSATZ BLEIBT: NEIN. Der Hauptpfad leitet den Grund aus dem echten
+ * Schlusskurs ab (ZIEL / STOP / DAZWISCHEN). Der Nachtrag hat schlechtere
+ * Daten und darf ihn nicht überschreiben — genau das sichert der Prüfer
+ * `order-bestaetigung` seit dem 17.08. ab, und daran ändert sich nichts.
+ *
+ * DIE AUSNAHME, und nur diese: `NIE_BESTAETIGT` und `KEIN_PNL` sind keine
+ * Gründe, sondern die Aussage "kein Ergebnis bekannt". Findet der Nachtrag
+ * einen echten P&L, ist genau das WIDERLEGT — den Trade hat es sehr wohl
+ * gegeben. Das Etikett stehen zu lassen hiesse, ihn dauerhaft in der falschen
+ * Gruppe der Ausstiegsgrund-Statistik zu zählen.
+ *
+ * Wichtiger geworden, seit `ergaenzeDealIdsAusPositionen` Zeilen als
+ * NIE_BESTAETIGT schliesst: erst dadurch geraten sie überhaupt in diesen
+ * Nachtrag — der Hauptpfad sieht nur `status = 'OPEN'` und überspringt jede
+ * Zeile ohne dealId.
+ *
+ * ALS FUNKTION, nicht als Ausdruck in der Zeile: der Prüfer nagelte bis heute
+ * den WORTLAUT `if (!notizen.exitReason)` fest und meldete diese Korrektur als
+ * Regression — die dritte Falle aus CLAUDE.md. Jetzt prüft er die
+ * EIGENSCHAFT, indem er diese Funktion aufruft.
+ */
+export function etikettWiderlegt(grund: unknown): boolean {
+  const g = String(grund ?? "").trim().toUpperCase();
+  return ETIKETTEN_OHNE_ERGEBNIS.includes(g);
 }
 
 /**
@@ -815,7 +879,19 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           // dieselbe Funktion), es braucht keinen zusaetzlichen Abruf.
           let notizen: Record<string, unknown> = {};
           try { notizen = JSON.parse(t.notes) as Record<string, unknown>; } catch { notizen = {}; }
-          if (!notizen.exitReason) {
+          // WIDERLEGTE ETIKETTEN ERSETZEN (02.09.).
+          //
+          // "NIE_BESTAETIGT" und "KEIN_PNL" heissen beide: kein Ergebnis
+          // bekannt. Wird hier ein ECHTER P&L gefunden, ist genau das
+          // widerlegt — den Trade hat es sehr wohl gegeben. Bis heute blieb das
+          // Etikett stehen, und die Ausstiegsgrund-Statistik zaehlte ihn
+          // dauerhaft in der falschen Gruppe.
+          //
+          // Wichtiger geworden, seit `ergaenzeDealIdsAusPositionen` Zeilen als
+          // NIE_BESTAETIGT schliesst: erst dadurch geraten sie ueberhaupt in
+          // diesen Nachtrag (der Hauptpfad sieht nur status = 'OPEN' und
+          // ueberspringt jede Zeile ohne dealId).
+          if (!notizen.exitReason || etikettWiderlegt(notizen.exitReason)) {
             const schluss = closeByEpicOpen.get(key) ?? null;
             const grund = ausstiegsgrund(schluss, Number(t.stopLoss), Number(t.takeProfit));
             notizen.closeLevel = schluss ?? 0;
