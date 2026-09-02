@@ -100,7 +100,23 @@ async def lifespan(app: FastAPI):
                           id="muster", misfire_grace_time=3600)
 
         scheduler.start()
-        logger.info("Scheduler gestartet — data-collector (4h), news-intel (2h), backtest (02:00), ai-learning (03:30)")
+        # ── Die Zeile leitet sich AB, statt zu behaupten (01.09.) ────────────
+        #
+        # Hier stand eine von Hand gepflegte Aufzaehlung mit vier Namen —
+        # registriert sind aber ELF Jobs. Sieben davon waren im Log unsichtbar,
+        # darunter weekly-report und monthly-report. Wer nachsehen will, ob ein
+        # Report ueberhaupt eingeplant ist, fand die Antwort nicht.
+        #
+        # Dieselbe Fehlerklasse wie an mehreren anderen Stellen in diesem
+        # Projekt: eine Liste wird zweimal gefuehrt und laeuft auseinander.
+        # `get_jobs()` fragt den Scheduler selbst — die Zeile kann nicht mehr
+        # veralten.
+        jobs = sorted(
+            (j.id or "?", str(getattr(j, "trigger", "?"))) for j in scheduler.get_jobs()
+        )
+        logger.info(f"Scheduler gestartet — {len(jobs)} Jobs")
+        for jid, trig in jobs:
+            logger.info(f"  [job] {jid}: {trig}")
     except Exception as e:
         logger.error(f"Scheduler-Start fehlgeschlagen (non-fatal): {e}")
 
