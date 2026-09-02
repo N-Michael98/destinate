@@ -996,6 +996,23 @@ export interface NotizenBefund {
   mitDealId: number;
   mitStil: number;
   mitConfidence: number;
+  /** Wie viele Zeilen tragen eine Order-Referenz, aus der sich die dealId
+   *  noch auflösen liesse? (01.09.)
+   *
+   *  Ohne diese Zahl war "0 mit dealId" nicht deutbar: entweder gab die
+   *  Bestätigung des Brokers nie eine Referenz her — dann ist nichts
+   *  aufzulösen und der Eintrag bleibt für immer ohne ID — oder die Referenz
+   *  ist da und der Nachtrag kommt nicht durch. Zwei ganz verschiedene
+   *  Ursachen, im Log bisher ununterscheidbar. */
+  mitDealReference: number;
+  /** Höchste Zahl vergeblicher Auflösungsversuche über alle Zeilen (01.09.).
+   *
+   *  `ergaenzeFehlendeDealIds` gibt nach DEALID_VERSUCHE_MAX auf und
+   *  überspringt die Zeile danach mit `continue` — BEVOR irgendetwas gezählt
+   *  oder geloggt wird. Aufgegebene Einträge sind damit vollständig still.
+   *  Diese Zahl macht sie sichtbar, ohne dass hier die Obergrenze aus dem
+   *  Tracker bekannt sein muss. */
+  maxVersuche: number;
 }
 
 /**
@@ -1020,11 +1037,15 @@ export function notizenBefund(
 ): NotizenBefund {
   const aus: NotizenBefund = {
     zeilen: 0, lesbar: 0, mitDealId: 0, mitStil: 0, mitConfidence: 0,
+    mitDealReference: 0, maxVersuche: 0,
   };
   for (const zeile of zeilen ?? []) {
     aus.zeilen++;
     if (!zeile?.notes) continue;
-    let m: { dealId?: unknown; tradingStyle?: unknown; confidence?: unknown };
+    let m: {
+      dealId?: unknown; tradingStyle?: unknown; confidence?: unknown;
+      dealReference?: unknown; dealIdVersuche?: unknown;
+    };
     try {
       m = JSON.parse(zeile.notes) as typeof m;
     } catch {
@@ -1035,6 +1056,11 @@ export function notizenBefund(
     if (String(m.tradingStyle ?? "").trim()) aus.mitStil++;
     if (typeof m.confidence === "number" && Number.isFinite(m.confidence)) {
       aus.mitConfidence++;
+    }
+    if (String(m.dealReference ?? "").trim()) aus.mitDealReference++;
+    const versuche = Number(m.dealIdVersuche ?? 0);
+    if (Number.isFinite(versuche) && versuche > aus.maxVersuche) {
+      aus.maxVersuche = versuche;
     }
   }
   return aus;

@@ -223,6 +223,57 @@ module.exports = function pruefe() {
     try { befundF([{ notes: 42 }, {}, null]); } catch { geworfenB = true; }
     pruefe1("notizenBefund wirft bei Unsinn — das würde den Zyklus abbrechen",
       !geworfenB);
+
+    // ── Order-Referenz und Versuchszahl (01.09.) ─────────────────────────
+    //
+    // ANLASS. Am 01.09. stand im Log "4 Zeilen, 4 lesbar, 0 mit dealId,
+    // 4 mit Stil, 4 mit Confidence" bei FÜNF offenen Positionen. Damit liess
+    // sich nicht sagen, WARUM keine dealId da ist:
+    //
+    //   keine Order-Referenz  -> die Bestätigung des Brokers gab nie eine her,
+    //                            es ist nichts aufzulösen, der Eintrag bleibt
+    //                            für immer ohne ID
+    //   Referenz vorhanden    -> der Nachtrag kommt nicht durch. Dann sagt die
+    //                            Versuchszahl, ob noch gefragt wird oder ob
+    //                            nach DEALID_VERSUCHE_MAX aufgegeben wurde —
+    //                            aufgegebene Zeilen überspringt
+    //                            `ergaenzeFehlendeDealIds` mit `continue`,
+    //                            BEVOR irgendetwas gezählt oder geloggt wird.
+    //
+    // Zwei ganz verschiedene Ursachen, im Log bisher ununterscheidbar.
+    pruefe1("mitDealReference fehlt — die Ursache fehlender dealIds bleibt offen",
+      typeof b0.mitDealReference === "number");
+    pruefe1("maxVersuche fehlt — aufgegebene Einträge bleiben unsichtbar",
+      typeof b0.maxVersuche === "number");
+
+    const b2 = befundF([
+      z({ dealReference: "REF-1", tradingStyle: "SWING", confidence: 70 }),
+      z({ dealReference: "REF-2", tradingStyle: "SWING", confidence: 70, dealIdVersuche: 5 }),
+      z({ dealReference: "   ", tradingStyle: "SWING", confidence: 70 }),  // leer
+      z({ tradingStyle: "SWING", confidence: 70 }),                        // gar keine
+      z({ dealId: "D9", tradingStyle: "SWING", confidence: 70, dealIdVersuche: 2 }),
+    ]);
+    pruefe1("Order-Referenz wird gezählt", b2.mitDealReference === 2,
+      String(b2.mitDealReference));
+    pruefe1("leere Order-Referenz zählt als vorhanden",
+      befundF([z({ dealReference: "  " })]).mitDealReference === 0);
+    pruefe1("die höchste Versuchszahl wird gemeldet", b2.maxVersuche === 5,
+      String(b2.maxVersuche));
+    pruefe1("ohne Versuchsfeld bleibt die Zahl 0",
+      befundF([z({ dealReference: "R" })]).maxVersuche === 0);
+    // Text ohne Zahlwert ergibt NaN, und `NaN > 0` ist false — der Wert kann
+    // das Maximum also ohnehin nicht anheben. Diese Zeile hält das fest,
+    // unterscheidet aber NICHT, ob der Number.isFinite-Wächter noch dasteht.
+    pruefe1("unsinnige Versuchszahl verfälscht das Maximum",
+      befundF([z({ dealReference: "R", dealIdVersuche: "viele" })]).maxVersuche === 0);
+    // DAS hier unterscheidet ihn. Im Sabotage-Lauf vom 01.09. rutschte
+    // "Number.isFinite entfernt" zuerst durch, weil oben nur NaN geprüft
+    // wurde. `Number("1e999")` ergibt Infinity, und `Infinity > 0` ist WAHR —
+    // ohne den Wächter stünde im Log "höchste Versuchszahl Infinity".
+    // JSON kennt kein Infinity, über eine Zeichenkette kommt es aber hinein.
+    pruefe1("Infinity als Versuchszahl kommt durch — der Wächter fehlt",
+      befundF([z({ dealReference: "R", dealIdVersuche: "1e999" })]).maxVersuche === 0,
+      String(befundF([z({ dealReference: "R", dealIdVersuche: "1e999" })]).maxVersuche));
   }
 
   // ── Teil 1c: geratenerStilMelden() wirklich rechnen (19.08.) ─────────────
@@ -425,6 +476,19 @@ module.exports = function pruefe() {
     && /befund\.zeilen/.test(ohneKommentare(instr))
     && /befund\.mitStil/.test(ohneKommentare(instr)),
     "sonst sieht 'keine offenen Trades' aus wie 'Feld fehlt in den Notizen'");
+
+  // ── Die neuen Werte muessen auch im LOG landen (01.09.) ─────────────────
+  //
+  // Eine Zaehlung, die niemand ausgibt, ist so gut wie keine. Genau das war
+  // bei der Bilanz von ergaenzeFehlendeDealIds der Fall: die Funktion rechnet
+  // {geprueft, ergaenzt, aufgegeben} aus, und der Aufrufer verwarf sie.
+  pruefe1("die Order-Referenz steht nicht in der Meldung — dann bleibt offen, "
+    + "ob es ueberhaupt etwas aufzuloesen gibt",
+    /befund\.mitDealReference/.test(ohneKommentare(instr)));
+  pruefe1("die Versuchszahl steht nicht in der Meldung — aufgegebene Eintraege "
+    + "bleiben unsichtbar",
+    /befund\.maxVersuche/.test(ohneKommentare(instr)));
+
   pruefe1("das Ergebnis von nachzuregistrieren wird auch benutzt",
     /const\s+fehlend\s*=\s*nachzuregistrieren\(/.test(instrC)
     && /for\s*\(const\s+\w+\s+of\s+fehlend\)/.test(instrC),
@@ -505,6 +569,13 @@ module.exports = function pruefe() {
   // solche Trades DAUERHAFT ins Leere, ohne ein Wort.
   const trackerRoh = lies("frontend", "lib", "capital-com", "capital-trade-tracker.ts");
   const trackerC = ohneKommentare(trackerRoh);
+
+  pruefe1("die Bilanz von ergaenzeFehlendeDealIds wird verworfen statt gemeldet",
+    /=\s*await ergaenzeFehlendeDealIds\(/.test(trackerC),
+    "der Rueckgabewert {geprueft, ergaenzt, aufgegeben} wird nicht einmal gelesen");
+  pruefe1("die Bilanz wird gelesen, aber nicht ausgegeben",
+    /dealId-Nachtrag/.test(trackerRoh),
+    "ohne Logzeile ist ein stiller Nachtrag von 'nie gelaufen' nicht zu trennen");
   const orchRoh = lies("frontend", "lib", "agents", "orchestrator-agent.ts");
 
   pruefe1("das Journal kennt kein eigenes Feld für die Order-Referenz",

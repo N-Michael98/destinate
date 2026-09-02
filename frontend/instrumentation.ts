@@ -431,6 +431,12 @@ export async function register() {
                           ? `${befund.zeilen} Zeilen, ${befund.lesbar} lesbar, `
                             + `${befund.mitDealId} mit dealId, ${befund.mitStil} mit Stil, `
                             + `${befund.mitConfidence} mit Confidence`
+                            // 01.09. ergaenzt: ohne diese beiden war "0 mit
+                            // dealId" nicht deutbar. Gibt es ueberhaupt eine
+                            // Referenz zum Aufloesen, und wurde schon
+                            // aufgegeben? Zwei ganz verschiedene Ursachen.
+                            + `, ${befund.mitDealReference} mit Order-Referenz`
+                            + `, hoechste Versuchszahl ${befund.maxVersuche}`
                           : "Abfrage fehlgeschlagen")
                         + ` | ${positions.length} offene Positionen beim Broker`);
                     }

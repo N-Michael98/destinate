@@ -410,7 +410,28 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // DANN fehlende Positions-IDs nachtragen (19.08.). Muss vor dem Abgleich
     // unten laufen: ein Eintrag ohne dealId laesst sich mit keiner offenen
     // Position vergleichen und saehe sonst aus wie eine verschwundene.
-    await ergaenzeFehlendeDealIds(session.apiKey, session.cst, session.securityToken);
+    // ── Die Bilanz gehört ins Log (01.09.) ──────────────────────────────
+    //
+    // Hier stand nur der Aufruf; der Rückgabewert {geprueft, ergaenzt,
+    // aufgegeben} wurde verworfen. Die Funktion rechnet ihn also aus, und
+    // niemand sieht ihn.
+    //
+    // Am 01.09. standen fünf offene Positionen beim Broker, vier Journal-
+    // Zeilen und NULL mit dealId — und im Log keine einzige Zeile des
+    // Nachtrags. Aus dem Log liess sich nicht sagen, ob überhaupt eine
+    // Referenz zum Auflösen da war, ob Capital die Bestätigung verweigert
+    // oder ob nach fünf Versuchen aufgegeben wurde: alle drei sind still.
+    // Ein Eintrag, der `DEALID_VERSUCHE_MAX` erreicht hat, wird mit `continue`
+    // übersprungen, BEVOR `geprueft` hochgezählt wird.
+    //
+    // Reine Beobachtung. Die Zeile erscheint nur, wenn es etwas zu berichten
+    // gibt — sonst wäre sie alle zwei Minuten Rauschen.
+    const dealIdBilanz = await ergaenzeFehlendeDealIds(
+      session.apiKey, session.cst, session.securityToken);
+    if (dealIdBilanz.geprueft > 0 || dealIdBilanz.ergaenzt > 0 || dealIdBilanz.aufgegeben > 0) {
+      console.log(`[trade-tracker] dealId-Nachtrag: ${dealIdBilanz.geprueft} geprüft, `
+        + `${dealIdBilanz.ergaenzt} ergänzt, ${dealIdBilanz.aufgegeben} aufgegeben`);
+    }
 
     const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
     if (!posResult.ok) return;
