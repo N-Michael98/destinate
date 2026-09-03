@@ -30,6 +30,20 @@
 
 const { read, ladeTsModul } = require("./_lib");
 
+/**
+ * Entfernt NUR Kommentare, lässt Zeichenketten stehen (03.09.).
+ *
+ * Gebraucht, weil hier SQL-TEXTE geprüft werden — die schärfere Variante
+ * (`ohneKommentareUndTexte`) würde sie mitlöschen. Kommentare müssen trotzdem
+ * weg: sonst genügte ein erwähnendes Wort, und genau diese Fehlerklasse hat
+ * 2026 mehrfach zugeschlagen (siehe CLAUDE.md).
+ */
+function ohneKommentare(text) {
+  return String(text)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
 module.exports = function pruefe() {
   const funde = [];
   let geprueft = 0;
@@ -279,6 +293,7 @@ module.exports = function pruefe() {
 
   const tracker2 = read("frontend/lib/capital-com/capital-trade-tracker.ts");
   const sync = read("frontend/app/api/capital-com/sync-journal/route.ts");
+  const syncC = ohneKommentare(sync);
 
   pruefe1("der Hauptpfad leitet den Grund nicht mehr ab",
     /const \{ exitPosition, exitReason \} = ausstiegsgrund\(/.test(tracker2));
@@ -324,11 +339,107 @@ module.exports = function pruefe() {
       wF("IRGENDWAS") === false);
   }
 
-  // DIE WURZEL: sync-journal darf keinen Trade mehr abschliessen.
-  pruefe1("sync-journal schliesst wieder Trades ab und entzieht sie dem Tracker",
-    !/SET "status" = 'CLOSED'/.test(sync), "status CLOSED in sync-journal gefunden");
+  // DIE WURZEL: der Vermerk "Position beim Broker weg" darf NICHT abschliessen.
+  //
+  // Hier stand `!/SET "status" = 'CLOSED'/` — auf die ganze Datei und mit
+  // festen Leerzeichen um das Gleichheitszeichen. Beides zu schwach: Schritt 3
+  // schliesst sehr wohl Trades (mit echtem P&L, das ist gewollt), und ein
+  // entferntes Leerzeichen haette den Riegel ausgehebelt. Geprueft wird jetzt
+  // der BLOCK um `brokerPositionWeg` — dort und nur dort gilt: melden, nicht
+  // entscheiden (17.08.).
+  pruefe1("der Vermerk 'Position beim Broker weg' schreibt nicht nur die Notiz",
+    /brokerPositionWeg[\s\S]{0,400}?UPDATE "Trade" SET "notes" = \$1, "updatedAt" = NOW\(\)/.test(sync),
+    "der manuelle Abgleich soll melden, nicht entscheiden");
+  pruefe1("zwischen dem Vermerk und seinem UPDATE steht wieder ein CLOSED",
+    !/brokerPositionWeg[\s\S]{0,400}?SET "status"\s*=\s*'CLOSED'/.test(sync),
+    "damit naehme der Knopf dem Tracker den Trade wieder aus der Hand");
   pruefe1("sync-journal vermerkt die verschwundene Position nicht",
     /brokerPositionWeg/.test(sync));
+
+  // ── sync-journal: Zuordnung und Notizen (03.09.) ────────────────────────
+  //
+  // Befund 3 und 4 der Generalkontrolle, beide nachgeprueft und behoben:
+  //
+  //  4. Die Zuordnung war EINE Abfrage mit OR. Der Kommentar versprach
+  //     "market+direction+CLOSED within 24h window" — geprueft wurde davon NUR
+  //     `market`. Ohne `status`-Filter konnte sie die Zeile einer LAUFENDEN
+  //     Position treffen und mit dem P&L eines fremden Trades schliessen. Und
+  //     `ORDER BY id DESC` liess die juengere lockere Uebereinstimmung den
+  //     exakten dealId-Treffer schlagen.
+  //  3. Der UPDATE schrieb `notes` nicht mit. Ein widerlegtes Etikett
+  //     (NIE_BESTAETIGT / KEIN_PNL) blieb damit FUER IMMER stehen: der
+  //     Nachtrag im Tracker sieht nur `profitLoss = 0`, hier wird aber ein
+  //     Wert ungleich null geschrieben.
+  pruefe1("die lockere Zuordnung kann wieder eine OFFENE Zeile treffen",
+    /AND "status" = 'CLOSED'/.test(sync),
+    "ohne status-Filter schloesse der Abgleich eine laufende Position");
+  pruefe1("die lockere Zuordnung hat kein Zeitfenster",
+    /AND "updatedAt" >= NOW\(\) - INTERVAL '24 hours'/.test(sync));
+  pruefe1("der exakte dealId-Treffer gewinnt nicht mehr strukturell",
+    /WHERE notes::text LIKE \$1\s*\n\s*ORDER BY id DESC LIMIT 1/.test(sync),
+    "mit OR entschied die hoehere id statt der exakten Uebereinstimmung");
+  pruefe1("der Abschluss schreibt die Notizen nicht mit",
+    /"notes" = \$3, "updatedAt" = NOW\(\) WHERE "id" = \$4/.test(sync)
+    && /notizenNachSync\(/.test(syncC),
+    "sonst bleibt ein widerlegtes Etikett dauerhaft stehen");
+  pruefe1("der INSERT erfindet wieder eine Richtung",
+    !/VALUES \(\$1,\s*'BUY'/.test(sync),
+    "die Transaktion von Capital fuehrt keine Richtung mit");
+  pruefe1("der INSERT schreibt wieder den Text UNKNOWN als Markt",
+    !/\?\?\s*"UNKNOWN"/.test(sync),
+    "der kaeme als Symbol der Laenge 7 durch den Lern-Filter");
+  pruefe1("die Antwort meldet wieder eine Zahl ohne Bedeutung",
+    !/\bskipped\b/.test(syncC),
+    "`skipped` wurde nie hochgezaehlt, die Oberflaeche zeigte immer 0");
+  for (const feld of ["markiert", "aktualisiert", "neuAngelegt", "uebersprungen"]) {
+    pruefe1(`die Aufschluesselung fehlt: ${feld}`,
+      new RegExp(`\\b${feld}\\+\\+`).test(syncC),
+      "drei verschiedene Vorgaenge in einem Zaehler sind nicht deutbar");
+  }
+
+  // notizenNachSync() RECHNEND — der Wortlaut einer SQL-Zeile sagt nicht,
+  // WELCHE Notizen entstehen.
+  const nF = geladenT.exports && geladenT.exports.notizenNachSync;
+  if (typeof nF !== "function") {
+    funde.push("notizenNachSync wird nicht exportiert — was der manuelle "
+      + "Abgleich in die Notizen schreibt, bleibt ungeprueft");
+  } else {
+    const Z = "2026-09-03T12:00:00.000Z";
+    const a = nF(JSON.stringify({ dealId: "D1", tradingStyle: "SWING" }), Z);
+    pruefe1("die Quelle des P&L wird nicht vermerkt", a.pnlQuelle === "tx-sync");
+    pruefe1("der Zeitpunkt wird nicht vermerkt", a.syncedAt === Z);
+    pruefe1("bestehende Felder gehen verloren",
+      a.dealId === "D1" && a.tradingStyle === "SWING");
+    pruefe1("ohne Etikett wird eines erfunden", a.exitReason === undefined);
+
+    for (const leer of ["NIE_BESTAETIGT", "KEIN_PNL"]) {
+      const r = nF(JSON.stringify({ exitReason: leer }), Z);
+      pruefe1(`"${leer}" bleibt stehen, obwohl ein echter P&L es widerlegt`,
+        r.exitReason === "UNBEKANNT", String(r.exitReason));
+      pruefe1(`der alte Wert "${leer}" verschwindet still`,
+        r.exitReasonVorher === leer, String(r.exitReasonVorher));
+    }
+    for (const echt of ["ZIEL", "STOP", "DAZWISCHEN"]) {
+      const r = nF(JSON.stringify({ exitReason: echt }), Z);
+      pruefe1(`ein echter Grund (${echt}) wird ueberschrieben`,
+        r.exitReason === echt && r.exitReasonVorher === undefined);
+    }
+    for (const [name, roh] of [
+      ["kaputt", "{nicht json"], ["null", "null"], ["Liste", "[1,2]"],
+      ["Text", '"abc"'], ["fehlend", null], ["undefined", undefined],
+    ]) {
+      const r = nF(roh, Z);
+      pruefe1(`unbrauchbare Notizen (${name}) stuerzen ab oder liefern Unsinn`,
+        !!r && typeof r === "object" && r.pnlQuelle === "tx-sync" && r.syncedAt === Z,
+        JSON.stringify(r));
+      // Ohne diese Zeile rutscht eine fehlende Objekt-Pruefung durch: `[1,2]`
+      // und `"abc"` lassen sich ausbreiten und ergeben {0:…,1:…}. Die Pruefung
+      // oben waere gruen geblieben, die Notizen trugen aber Muell.
+      pruefe1(`unbrauchbare Notizen (${name}) schleppen Muell mit`,
+        Object.keys(r).sort().join(",") === "pnlQuelle,syncedAt",
+        Object.keys(r).join(","));
+    }
+  }
 
   return { titel: `Order-Bestätigung + Stop-Abstand (${geprueft} Prüfungen)`, funde };
 };

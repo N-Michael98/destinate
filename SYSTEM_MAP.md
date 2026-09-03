@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 468 · Kanten: 1016
+Dateien mit internen Abhängigkeiten: 468 · Kanten: 1017
 
 
 ## analysis-engine/api
@@ -328,6 +328,7 @@ Dateien mit internen Abhängigkeiten: 468 · Kanten: 1016
 - `frontend/app/api/capital-com/sync-journal/route.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
 - `frontend/app/api/claude-risk/assess/route.ts`
   - → `frontend/lib/ai-config/ai-config-store.ts`
   - → `frontend/lib/claude-risk-engine/index.ts`

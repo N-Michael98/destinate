@@ -1549,7 +1549,9 @@ export default function TradingJournal() {
       const res = await fetch("/api/capital-com/sync-journal", { method: "POST" });
       const data = await res.json();
       if (data.ok) {
-        alert(`Sync abgeschlossen: ${data.imported} importiert, ${data.skipped} bereits vorhanden`);
+        // `data.skipped` stand hier bis zum 03.09. — die Route hat es NIE
+        // hochgezählt, die Meldung sagte also immer "0 bereits vorhanden".
+        alert(`Sync abgeschlossen: ${data.message ?? `${data.imported} aktualisiert`}`);
         await loadTrades();
       } else {
         alert(`Sync Fehler: ${data.error}`);

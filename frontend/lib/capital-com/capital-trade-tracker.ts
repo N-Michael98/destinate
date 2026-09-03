@@ -352,6 +352,46 @@ export function etikettWiderlegt(grund: unknown): boolean {
 }
 
 /**
+ * Welche Notizen bekommt eine Zeile, die der MANUELLE Abgleich
+ * (`/api/capital-com/sync-journal`) mit einem echten P&L schliesst? (03.09.)
+ *
+ * DER ANLASS. Dort stand:
+ *
+ *   UPDATE "Trade" SET "status"='CLOSED', "result" = $1, "profitLoss" = $2 …
+ *
+ * — `notes` wurde NICHT mitgeschrieben. Folge: ein Etikett wie
+ * `NIE_BESTAETIGT` oder `KEIN_PNL` blieb stehen, obwohl gerade ein echter P&L
+ * gefunden wurde, der es widerlegt. Und der Nachtrag im Tracker holt das NICHT
+ * nach: er sieht nur `profitLoss = 0`, hier wird aber ein Wert ungleich null
+ * geschrieben. Das falsche Etikett bliebe also FUER IMMER stehen.
+ *
+ * Es wird kein Grund ERFUNDEN. Ohne Schlusskurs laesst sich nicht sagen, ob
+ * der Trade am Ziel oder am Stop endete — also `UNBEKANNT`, und der alte Wert
+ * bleibt als `exitReasonVorher` erhalten, damit nichts still verschwindet.
+ *
+ * Als Funktion, damit der Pruefer sie AUSFUEHREN kann statt den Wortlaut einer
+ * SQL-Zeile festzunageln.
+ */
+export function notizenNachSync(
+  roh: string | null | undefined,
+  zeitpunkt: string,
+): Record<string, unknown> {
+  let m: unknown;
+  try { m = JSON.parse(String(roh ?? "{}")); } catch { m = null; }
+  // JSON.parse liefert auch `null`, Zahlen und Listen — nur ein Objekt taugt.
+  const basis = (m && typeof m === "object" && !Array.isArray(m))
+    ? (m as Record<string, unknown>) : {};
+  const aus: Record<string, unknown> = { ...basis };
+  aus.pnlQuelle = "tx-sync";
+  aus.syncedAt = zeitpunkt;
+  if (etikettWiderlegt(aus.exitReason)) {
+    aus.exitReasonVorher = aus.exitReason;
+    aus.exitReason = "UNBEKANNT";
+  }
+  return aus;
+}
+
+/**
  * Meldet dem Python-Lifecycle, dass ein Trade geschlossen ist (18.08.).
  *
  * WARUM DAS FEHLTE. `pyCloseTrade()` existierte seit jeher, hatte aber KEINEN

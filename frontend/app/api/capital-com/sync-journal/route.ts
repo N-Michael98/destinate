@@ -53,8 +53,16 @@ export async function POST(request: Request) {
   const session = getCapitalSession()!;
   const h = authHeaders(session.apiKey, session.cst, session.securityToken);
   const db = getPrisma();
-  let imported = 0;
-  let skipped = 0;
+  // ── Ehrliche Zähler (03.09.) ───────────────────────────────────────────
+  //
+  // Hier standen `imported` und `skipped`. `imported` zählte DREI verschiedene
+  // Vorgänge in einen Topf (markiert / aktualisiert / neu angelegt), und
+  // `skipped` wurde NIE hochgezählt — die Oberfläche meldete trotzdem
+  // "0 bereits vorhanden", eine Zahl ohne jede Bedeutung.
+  let markiert = 0;        // Position beim Broker weg — nur vermerkt
+  let aktualisiert = 0;    // bestehende Zeile mit echtem P&L geschlossen
+  let neuAngelegt = 0;     // Transaktion ohne Journal-Zeile
+  let uebersprungen = 0;   // Transaktion ohne verwertbaren P&L
 
   // ── Step 1: Get currently OPEN positions from Capital.com ──────────────────
   const posRes = await fetch(`${DEMO_BASE}/positions`, { headers: h });
@@ -106,7 +114,7 @@ export async function POST(request: Request) {
         JSON.stringify(notizen),
         t.id
       );
-    imported++;
+    markiert++;
   }
 
   // ── Step 3: Try /history/transactions for P&L ─────────────────────────────
@@ -134,58 +142,125 @@ export async function POST(request: Request) {
         ? parseFloat(String(pnlRaw).replace("+", "")) || 0
         : Number(pnlRaw);
 
-      if (Math.abs(profitLoss) < 0.0001) continue; // skip literally-zero entries only
+      if (Math.abs(profitLoss) < 0.0001) { uebersprungen++; continue; }
 
       // Spread losses (e.g. -2.34) are LOSS not BREAKEVEN
       const result_str = profitLoss > 0.01 ? "WIN" : profitLoss < -0.01 ? "LOSS" : "BREAKEVEN";
 
-      // Match by exact dealId OR by market+direction+CLOSED within 24h window (position vs working order ID mismatch)
+      // ── Die EXAKTE Positions-ID gewinnt IMMER (03.09.) ──────────────────
+      //
+      // Hier stand EINE Abfrage mit `OR` und `ORDER BY id DESC LIMIT 1`. Zwei
+      // Fehler darin, beide nachgeprüft:
+      //
+      //  1. Der Kommentar versprach "market+direction+CLOSED within 24h
+      //     window". Geprüft wurde davon NUR `market`. Kein `status`, keine
+      //     Richtung, kein Zeitfenster. Ohne `status`-Filter konnte der lockere
+      //     Zweig die Zeile einer LAUFENDEN Position treffen und sie mit dem
+      //     P&L eines fremden Trades schliessen.
+      //  2. Durch `OR` + `ORDER BY id DESC` gewann schlicht die höhere id: eine
+      //     lockere Übereinstimmung schlug den exakten dealId-Treffer, sobald
+      //     sie jünger war.
+      //
+      // Jetzt zwei Abfragen nacheinander — der exakte Treffer gewinnt
+      // STRUKTURELL, nicht durch Glück in der Sortierung.
+      //
+      // EHRLICH BENANNT: `direction` wird weiterhin NICHT geprüft. Die
+      // Transaktion von Capital führt keine Richtung mit (siehe den INSERT
+      // unten, der genau deshalb keine erfinden darf). Statt einen Filter zu
+      // bauen, für den die Daten fehlen, steht die Lücke hier. Der Kommentar
+      // behauptet nichts mehr, was der Code nicht tut.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const existing = await (db.$queryRawUnsafe as any)(
-        `SELECT id, status FROM "Trade"
+      let treffer = await (db.$queryRawUnsafe as any)(
+        `SELECT id, status, notes FROM "Trade"
          WHERE notes::text LIKE $1
-         OR (
-           "market" = $2
-           AND ("profitLoss" = 0 OR "profitLoss" IS NULL)
-           AND notes::text NOT LIKE '%"source":"tx-sync"%'
-         )
          ORDER BY id DESC LIMIT 1`,
-        `%"dealId":"${dealId}"%`,
-        String(tx.instrumentName ?? "")
-      ) as Array<{ id: number; status: string }>;
+        `%"dealId":"${dealId}"%`
+      ) as Array<{ id: number; status: string; notes: string | null }>;
 
-      if (existing.length > 0) {
+      if (treffer.length === 0) {
+        const markt = String(tx.instrumentName ?? "").trim();
+        if (markt) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          treffer = await (db.$queryRawUnsafe as any)(
+            `SELECT id, status, notes FROM "Trade"
+             WHERE "market" = $1
+               AND "status" = 'CLOSED'
+               AND ("profitLoss" = 0 OR "profitLoss" IS NULL)
+               AND notes::text NOT LIKE '%"source":"tx-sync"%'
+               AND "updatedAt" >= NOW() - INTERVAL '24 hours'
+             ORDER BY id DESC LIMIT 1`,
+            markt
+          ) as Array<{ id: number; status: string; notes: string | null }>;
+        }
+      }
+
+      if (treffer.length > 0) {
+        // `notes` MUSS mitgeschrieben werden (03.09.). Vorher blieb ein
+        // Etikett wie NIE_BESTAETIGT stehen, obwohl der gerade gefundene echte
+        // P&L es widerlegt — und der Nachtrag im Tracker holt das nicht nach,
+        // denn der sieht nur `profitLoss = 0`. Die Entscheidung liegt in
+        // notizenNachSync() im Tracker, damit der Prüfer sie ausführen kann.
+        const { notizenNachSync } = await import("../../../../lib/capital-com/capital-trade-tracker");
+        const notizen = notizenNachSync(treffer[0].notes, new Date().toISOString());
         await db.$executeRawUnsafe(
-          `UPDATE "Trade" SET "status"='CLOSED', "result" = $1, "profitLoss" = $2, "updatedAt" = NOW() WHERE "id" = $3`,
-          result_str, profitLoss, existing[0].id
+          `UPDATE "Trade" SET "status"='CLOSED', "result" = $1, "profitLoss" = $2, `
+          + `"notes" = $3, "updatedAt" = NOW() WHERE "id" = $4`,
+          result_str, profitLoss, JSON.stringify(notizen), treffer[0].id
         );
-        imported++;
+        aktualisiert++;
       } else {
-        const epic = String(tx.instrumentName ?? tx.epic ?? "UNKNOWN");
+        // ── KEINE erfundene Richtung mehr (03.09.) ────────────────────────
+        //
+        // Hier stand `'BUY'` fest verdrahtet — für JEDE unzugeordnete
+        // Transaktion, unabhängig davon, was sie wirklich war. Die Richtung
+        // kommt nirgendwoher: die Transaktion von Capital führt keine mit.
+        // Eine erfundene Richtung ist keine Kleinigkeit, sie landet über
+        // `echteGeschlosseneTrades()` in der Lerntabelle.
+        //
+        // EHRLICH EINGEORDNET, damit hier nichts überversprochen wird: der
+        // Lernpfad macht in `trade-feedback-engine.ts:99` aus JEDEM Wert ausser
+        // SELL/SHORT ein "BUY". Am Gelernten ändert diese Zeile also noch
+        // nichts — aber in Datenbank und Bericht steht jetzt die Wahrheit
+        // statt einer Behauptung, und die Lücke ist damit sichtbar statt
+        // getarnt. Sie zu schliessen ist eine eigene Entscheidung.
+        //
+        // Auch der Markt wird nicht mehr erfunden: statt des Textes "UNKNOWN"
+        // (der als Symbol mit Länge 7 durch den Lern-Filter kommt und dort eine
+        // eigene Win-Rate für einen Markt bekäme, den es nicht gibt) bleibt das
+        // Feld LEER. `echteGeschlosseneTrades()` wirft leere Märkte aus und
+        // MELDET das — genau der Weg vom 24.08.
+        const epic = String(tx.instrumentName ?? tx.epic ?? "").trim();
         const dateStr = String(tx.date ?? tx.dateUtc ?? new Date().toISOString()).slice(0, 19).replace("T", " ");
         await db.$executeRawUnsafe(
           `INSERT INTO "Trade" (
             "market", "direction", "strategy", "entry", "stopLoss", "takeProfit",
             "status", "result", "profitLoss", "accountSize", "riskPercent", "riskAmount",
             "riskReward", "positionSize", "notes", "createdAt", "updatedAt"
-          ) VALUES ($1,'BUY','Capital.com DEMO | Sync',0,0,0,'CLOSED',$2,$3,$4,1,0,0,0,$5,$6::timestamp,NOW())`,
+          ) VALUES ($1,'UNBEKANNT','Capital.com DEMO | Sync',0,0,0,'CLOSED',$2,$3,$4,1,0,0,0,$5,$6::timestamp,NOW())`,
           epic, result_str, profitLoss,
           session.balance > 0 ? session.balance : 10000,
-          JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "tx-sync" }),
+          JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "tx-sync",
+                          richtungUnbekannt: true }),
           dateStr
         );
-        imported++;
+        neuAngelegt++;
       }
     }
   }
 
   return NextResponse.json({
     ok: true,
-    imported,
-    skipped,
+    // `imported` bleibt als Summe erhalten, damit ältere Aufrufer nicht
+    // brechen — die Aufschlüsselung daneben sagt, WAS geschehen ist.
+    imported: markiert + aktualisiert + neuAngelegt,
+    markiert,
+    aktualisiert,
+    neuAngelegt,
+    uebersprungen,
     txStatus: txRes.status,
     txTotal: txCount,
     txTrades: txTradeCount,
-    message: `${imported} Trades aktualisiert`
+    message: `${markiert} markiert, ${aktualisiert} mit echtem P&L geschlossen, `
+      + `${neuAngelegt} neu angelegt, ${uebersprungen} ohne P&L übersprungen`
   });
 }
