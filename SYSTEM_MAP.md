@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 468 · Kanten: 1017
+Dateien mit internen Abhängigkeiten: 470 · Kanten: 1024
 
 
 ## analysis-engine/api
@@ -312,6 +312,10 @@ Dateien mit internen Abhängigkeiten: 468 · Kanten: 1017
   - → `frontend/lib/broker-reputation-memory/index.ts`
 - `frontend/app/api/broker-routing-layer/route.ts`
   - → `frontend/lib/broker-routing-layer/index.ts`
+- `frontend/app/api/broker-status/route.ts`
+  - → `frontend/lib/broker-status/broker-status.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
 - `frontend/app/api/capital-com/execute/route.ts`
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
@@ -363,6 +367,9 @@ Dateien mit internen Abhängigkeiten: 468 · Kanten: 1017
 - `frontend/app/api/execution-queue-position-sync/route.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/execution-queue-position-sync/index.ts`
+- `frontend/app/api/execution-status/route.ts`
+  - → `frontend/lib/execution-status/execution-status.ts`
+  - → `frontend/lib/settings/settings-store.ts`
 - `frontend/app/api/execution/queue/route.ts`
   - → `frontend/lib/execution-preparation/index.ts`
 - `frontend/app/api/execution/tickets/route.ts`
@@ -416,10 +423,12 @@ Dateien mit internen Abhängigkeiten: 468 · Kanten: 1017
   - → `frontend/lib/mission-control/event-log.ts`
 - `frontend/app/api/mission-control/health/route.ts`
   - → `frontend/lib/ai-config/index.ts`
-  - → `frontend/lib/broker-health-monitor/index.ts`
+  - → `frontend/lib/broker-status/broker-status.ts`
+  - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/dependency-scanner/index.ts`
   - → `frontend/lib/evolution-governance/index.ts`
   - → `frontend/lib/execution-preparation/index.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/learning/trade-feedback-engine.ts`
   - → `frontend/lib/market-data-engine/index.ts`
   - → `frontend/lib/market-universe/opportunity-scanner.ts`
@@ -1542,18 +1551,18 @@ Dateien mit internen Abhängigkeiten: 468 · Kanten: 1017
 ## Am häufigsten benutzt (Änderung hier trifft am meisten)
 
 - `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
+- `frontend/lib/capital-com/capital-com-session.ts` — von 21 Dateien
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
-- `frontend/lib/capital-com/capital-com-session.ts` — von 19 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 16 Dateien
+- `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
-- `frontend/lib/icmarkets/icmarkets-session.ts` — von 13 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
+- `frontend/lib/settings/settings-store.ts` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 10 Dateien
-- `frontend/lib/settings/settings-store.ts` — von 9 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 8 Dateien
 - `frontend/lib/icmarkets/icmarkets-client.ts` — von 8 Dateien
 

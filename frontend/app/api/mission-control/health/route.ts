@@ -6,12 +6,17 @@ import { missionControlEndpointRegistry } from "@/lib/mission-control-endpoint-r
 // Direct function imports — no HTTP self-fetch, no URL issues
 import { getDependencyScannerReport } from "@/lib/dependency-scanner";
 import { runPortfolioBrain } from "@/lib/portfolio-brain/brain-manager";
-import { getBrokerHealthMonitorReport } from "@/lib/broker-health-monitor";
+// 03.09.: `getBrokerHealthMonitorReport` aus @/lib/broker-health-monitor ist
+// hier entfallen — der Broker-Zustand wird jetzt aus den echten Sitzungen
+// abgeleitet. Damit haengt diese Route nicht mehr an einem Modul, das von
+// keinem Handelspfad benutzt wird und dessen Route null Aufrufer hat.
 import { marketDataManager } from "@/lib/market-data-engine";
 import { buildOpportunityScannerReport } from "@/lib/market-universe/opportunity-scanner";
 import { generateEvolutionGovernanceReport } from "@/lib/evolution-governance";
 import { getLearningState } from "@/lib/learning/trade-feedback-engine";
-import { TradeTicketBuilder, ExecutionQueue } from "@/lib/execution-preparation";
+// `TradeTicketBuilder` ist am 03.09. entfallen: er diente nur dazu, dem
+// Gesundheits-Check ein erfundenes Ticket zu bauen, damit er bestand.
+import { ExecutionQueue } from "@/lib/execution-preparation";
 import { getAISettings } from "@/lib/ai-config";
 
 type HealthStatus = "READY" | "WARNING" | "ERROR";
@@ -51,19 +56,38 @@ async function checkEndpoint(key: string, checkedAt: string): Promise<{ status: 
         const ai = await getAISettings();
         return { status: "READY", summary: ai.anthropic.connected ? `Connected (${ai.anthropic.model})` : "Simulation mode" };
       }
-      case "executionTickets": {
-        const tickets = [
-          TradeTicketBuilder.build("XAUUSD", "BUY", 3365, 3345, 3390, 3420, 96, true, "Consensus BUY"),
-        ];
-        return { status: "READY", summary: `${tickets.length} tickets` };
-      }
+      // 03.09.: Hier stand
+      //   const tickets = [TradeTicketBuilder.build("XAUUSD","BUY",3365,…,96,…)];
+      //   return { status: "READY", summary: `${tickets.length} tickets` };
+      // Der Gesundheits-Check baute sich sein eigenes Ticket und meldete dann
+      // "1 tickets, READY". Er bestand also, weil er sich die Eingabe selbst
+      // erfunden hatte. Jetzt wird die ECHTE Warteschlange gelesen — die ist
+      // strukturell leer, weil `lib/execution-preparation` keinen Aufrufer im
+      // Handelspfad hat (System-Karte, 03.09.). Genau das steht jetzt da.
+      case "executionTickets":
       case "executionQueue": {
         const queue = ExecutionQueue.getAll();
-        return { status: "READY", summary: `${queue.length} queued` };
+        return {
+          status: "READY",
+          summary: `${queue.length} in der Warteschlange — kein Handelspfad füllt sie`,
+        };
       }
+      // 03.09.: Hier stand `getBrokerHealthMonitorReport()` aus
+      // `lib/broker-health-monitor` — ein Modul mit fest verdrahteten Werten,
+      // das von keinem Handelspfad benutzt wird und dessen Route null Aufrufer
+      // hat. Die Kachel meldete daraus "N/M brokers healthy". Jetzt aus den
+      // ECHTEN Sitzungen abgeleitet.
       case "brokerHealth": {
-        const r = getBrokerHealthMonitorReport();
-        return { status: "READY", summary: `${r.healthyBrokers ?? 0}/${r.totalBrokers ?? 0} brokers healthy` };
+        const { brokerZustand } = await import("@/lib/broker-status/broker-status");
+        const { getCapitalSession } = await import("@/lib/capital-com/capital-com-session");
+        const { getICMarketsSession } = await import("@/lib/icmarkets/icmarkets-session");
+        const z = brokerZustand(getCapitalSession(), getICMarketsSession());
+        // Kein Broker verbunden heisst: der Handelszyklus ueberspringt jeden
+        // Durchlauf. Das ist eine WARNUNG, kein READY.
+        return {
+          status: z.verbunden > 0 ? "READY" : "WARNING",
+          summary: `${z.verbunden}/${z.gesamt} Broker verbunden`,
+        };
       }
       // 26.08.: isReady() gab bedingungslos `true` zurück, die Kachel meldete
       // also immer "Online". Der dahinterliegende Preis-Cache hatte zudem
