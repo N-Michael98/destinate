@@ -22,7 +22,7 @@ const path = require("path");
 const WURZEL = path.resolve(__dirname, "..", "..", "frontend");
 const funde = [];
 
-function lade(relPfad) {
+function lade(relPfad, ersatz = {}) {
   const ts = require(path.join(WURZEL, "node_modules", "typescript"));
   const datei = path.join(WURZEL, relPfad);
   const js = ts.transpileModule(fs.readFileSync(datei, "utf8"), {
@@ -36,9 +36,30 @@ function lade(relPfad) {
     apply: () => { throw new Error("keine Datenbank im Prüfstand"); },
     construct: () => ({}),
   });
+  // Gezielter Ersatz vor dem Stellvertreter (06.09.): der Einstellungs-Store
+  // braucht eine ANTWORTENDE Datenbank. Seit dem 06.09. weigert er sich zu
+  // speichern, solange die Einstellungen nicht gelesen werden konnten — sonst
+  // schriebe er Standardwerte ueber alles. Ohne Attrappe testete dieser
+  // Pruefstand also einen Pfad, den es so nicht gibt.
+  const holen = (angabe) => {
+    for (const [teil, objekt] of Object.entries(ersatz)) {
+      if (String(angabe).includes(teil)) return objekt;
+    }
+    return stellvertreter();
+  };
   new Function("exports", "require", "module", "__filename", "__dirname", js)(
-    modul.exports, stellvertreter, modul, datei, path.dirname(datei));
+    modul.exports, holen, modul, datei, path.dirname(datei));
   return modul.exports;
+}
+
+/** Datenbank-Attrappe fuer den Einstellungs-Store: leer beim Start (legitimer
+ *  Erstlauf, `ausDB: true`), merkt sich danach, was geschrieben wurde. */
+function einstellungenDb() {
+  const stand = { data: null };
+  return {
+    $queryRaw: () => Promise.resolve(stand.data ? [{ data: stand.data }] : []),
+    $executeRawUnsafe: async (_sql, data) => { stand.data = data; return 1; },
+  };
 }
 
 const pruefe = (name, ok, zusatz) => {
@@ -48,7 +69,12 @@ const pruefe = (name, ok, zusatz) => {
 (async () => {
   let store, risk;
   try {
-    store = lade("lib/settings/settings-store.ts");
+    // EINE Attrappe, nicht je Aufruf eine neue — sonst schriebe der Store in
+    // die eine Instanz und laese aus einer anderen, und der Prueflauf waere
+    // nur deshalb gruen, weil `get()` zwischenspeichert.
+    const einstellungenStand = einstellungenDb();
+    store = lade("lib/settings/settings-store.ts",
+      { prisma: { getPrisma: () => einstellungenStand } });
     risk = lade("lib/agents/risk-agent.ts");
   } catch (e) {
     funde.push(`Module nicht ausführbar: ${e.message}`);

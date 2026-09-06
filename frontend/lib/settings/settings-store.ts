@@ -142,16 +142,26 @@ async function loadFromDB(): Promise<Ladeergebnis> {
   }
 }
 
+/**
+ * Schreibt die Einstellungen — und WIRFT bei einem Fehlschlag (06.09.).
+ *
+ * Hier stand `catch { /* non-fatal *\/ }`. Zusammen mit `set()`, das den
+ * Speicherwert VOR dem Schreiben setzte, und der Route, die danach
+ * `{ ok: true, settings }` zurückgab, ergab das den schlimmsten Fall einer
+ * stillen Lüge: die Oberfläche zeigte den neuen Wert an, in der Datenbank stand
+ * weiter der alte, und beim nächsten Neustart war die Änderung weg.
+ *
+ * Genau das erklärt "ich hatte die Schwelle gesenkt und es hat nichts geändert".
+ * Ein Schreibfehler MUSS bis zur Oberfläche durchschlagen.
+ */
 async function saveToDB(s: SystemSettings): Promise<void> {
-  try {
-    const db = await getPrisma();
-    const data = JSON.stringify(s);
-    await db.$executeRawUnsafe(
-      `INSERT INTO "SystemSettings" (id, data, "updatedAt") VALUES ('singleton', $1, NOW())
-       ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
-      data
-    );
-  } catch { /* non-fatal */ }
+  const db = await getPrisma();
+  const data = JSON.stringify(s);
+  await db.$executeRawUnsafe(
+    `INSERT INTO "SystemSettings" (id, data, "updatedAt") VALUES ('singleton', $1, NOW())
+     ON CONFLICT (id) DO UPDATE SET data = $1, "updatedAt" = NOW()`,
+    data
+  );
 }
 
 // In-memory cache so we don't hit DB on every read within same process
@@ -213,9 +223,50 @@ export function einstellungenAusDB(): boolean {
   return global.__system_settings__ !== undefined;
 }
 
+/**
+ * ZUERST schreiben, DANN merken (06.09.).
+ *
+ * Umgekehrt stand der neue Wert im Speicher, auch wenn die Datenbank ihn nie
+ * bekam — und `getSettings()` gab ihn danach brav zurück. Die Anzeige stimmte,
+ * die Wirklichkeit nicht. Schlägt das Schreiben fehl, bleibt jetzt der alte
+ * Wert im Speicher stehen und der Fehler geht nach oben.
+ */
 async function set(s: SystemSettings): Promise<void> {
-  global.__system_settings__ = s;
   await saveToDB(s);
+  global.__system_settings__ = s;
+}
+
+/**
+ * Grundlage für eine Änderung — mit Riegel gegen das Überschreiben mit
+ * Standardwerten (06.09.).
+ *
+ * DER FALL. `get()` liefert bei einem Datenbank-Ausfall bewusst die
+ * STANDARDWERTE zurück (und speichert sie bewusst nicht zwischen, damit sich
+ * das System von selbst erholt — Fix vom 01.09.). `updateBotSettings` nahm
+ * genau dieses Ergebnis als Grundlage:
+ *
+ *   const s = await get();                       // = Standardwerte im Ausfall
+ *   await set({ ...s, botSettings: { ...s.botSettings, ...patch } });
+ *
+ * und `saveToDB` schreibt mit `ON CONFLICT DO UPDATE SET data = $1` die GANZE
+ * Zeile. Ein einziges Speichern während eines Datenbank-Aussetzers hätte damit
+ * ALLE übrigen Einstellungen auf Standard zurückgesetzt — Risikohöhe,
+ * Tageslimit, Schwellen, Broker-Verbindungen.
+ *
+ * Der Erstlauf ohne Datensatz ist NICHT betroffen: `loadFromDB` meldet dort
+ * `ausDB: true` (die Datenbank hat geantwortet, es gibt nur noch nichts), und
+ * der Wert wird zwischengespeichert. `einstellungenAusDB()` ist dann wahr.
+ */
+async function basisFuerAenderung(): Promise<SystemSettings> {
+  const s = await get();
+  if (!einstellungenAusDB()) {
+    throw new Error(
+      "Einstellungen sind gerade nicht lesbar — es gelten die Standardwerte. "
+      + "Gespeichert wird NICHT: das würde alle übrigen Einstellungen "
+      + "(Risiko, Tageslimit, Schwellen, Broker) auf Standard zurücksetzen."
+    );
+  }
+  return s;
 }
 
 export async function getSettings(): Promise<SystemSettings> {
@@ -223,17 +274,20 @@ export async function getSettings(): Promise<SystemSettings> {
 }
 
 export async function updateBotSettings(patch: Partial<BotSettings>): Promise<void> {
-  const s = await get();
+  const s = await basisFuerAenderung();
   await set({ ...s, botSettings: { ...s.botSettings, ...patch }, updatedAt: new Date().toISOString() });
 }
 
 export async function updateRiskSettings(patch: Partial<RiskSettings>): Promise<void> {
-  const s = await get();
+  const s = await basisFuerAenderung();
   await set({ ...s, riskSettings: { ...s.riskSettings, ...patch }, updatedAt: new Date().toISOString() });
 }
 
 export async function updateBrokerConnection(patch: Partial<BrokerConnection> & { brokerKey: BrokerConnection["brokerKey"] }): Promise<void> {
-  const s = await get();
+  // Auch hier der Riegel (06.09.): nachgeprüft, alle Aufrufer sind vom Nutzer
+  // ausgelöste Routen — kein automatischer Wiederverbinder. Ein lautes
+  // Scheitern ist deshalb richtig und bricht nichts, was von selbst läuft.
+  const s = await basisFuerAenderung();
   await set({ ...s, connections: s.connections.map((c) => c.brokerKey === patch.brokerKey ? { ...c, ...patch } : c), updatedAt: new Date().toISOString() });
 }
 

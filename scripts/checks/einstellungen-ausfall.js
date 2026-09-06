@@ -24,7 +24,7 @@
 // WARUM RECHNEND. Eine Struktur-Prüfung sieht "es gibt ein catch" und ist
 // zufrieden. Ob der Ausfall zwischengespeichert wird und ob sich das System
 // erholt, zeigt nur ein Durchlauf.
-const { ladeTsModul } = require("./_lib");
+const { ladeTsModul, read } = require("./_lib");
 
 const ECHTE_EINSTELLUNGEN = JSON.stringify({
   version: "V17.0.0",
@@ -157,11 +157,126 @@ module.exports = async function pruefe() {
       pruefe1("Erstlauf ohne Datensatz wird nicht zwischengespeichert",
         global.__system_settings__ !== undefined);
     }
+    // ── Phase 4: SCHREIBEN (06.09.) ───────────────────────────────────────
+    //
+    // Zwei Fehler, beide am 06.09. gefunden und behoben — zusammen erklaeren
+    // sie "ich hatte die Schwelle gesenkt und es hat nichts geaendert":
+    //
+    //  a) `updateBotSettings` nahm `get()` als Grundlage. Faellt die Datenbank
+    //     beim LESEN aus, sind das die STANDARDWERTE (bewusst, siehe oben) —
+    //     und `saveToDB` schreibt mit `ON CONFLICT DO UPDATE SET data = $1` die
+    //     GANZE Zeile. Ein einziges Speichern waehrend eines Aussetzers haette
+    //     Risiko, Tageslimit, Schwellen und Broker auf Standard zurueckgesetzt.
+    //
+    //  b) `saveToDB` verschluckte jeden Schreibfehler (`catch { }`), und
+    //     `set()` legte den neuen Wert VORHER in den Speicher. Die Route gab
+    //     danach `{ ok: true, settings }` mit dem neuen Wert zurueck. Die
+    //     Anzeige stimmte, die Datenbank nicht — bis zum naechsten Neustart.
+    delete global.__system_settings__;
+    delete global.__settings_letzte_warnung__;
+
+    let schreibVersuche = 0;
+    let schreibenGeht = true;
+    let letzterInhalt = null;
+    const wStub = {
+      $queryRaw: () => {
+        leseVersuche++;
+        if (!dbAntwortet) throw new Error("connect ECONNREFUSED (Prüfstand)");
+        return Promise.resolve([{ data: ECHTE_EINSTELLUNGEN }]);
+      },
+      $executeRawUnsafe: async (_sql, data) => {
+        schreibVersuche++;
+        if (!schreibenGeht) throw new Error("write failed (Prüfstand)");
+        letzterInhalt = data;
+        return 1;
+      },
+    };
+    const m3 = ladeTsModul("lib/settings/settings-store.ts", {
+      prisma: { getPrisma: () => wStub },
+      "telegram-sender": { sendTelegram: async () => {} },
+    });
+    if (m3.fehler) {
+      funde.push(`Schreibpfad nicht ladbar: ${m3.fehler}`);
+    } else if (typeof m3.exports.updateBotSettings !== "function") {
+      funde.push("updateBotSettings wird nicht exportiert — der Schreibpfad "
+        + "bleibt ungeprueft");
+    } else {
+      const { updateBotSettings, getSettings: g3 } = m3.exports;
+
+      // (a) Datenbank beim LESEN weg → es darf gar NICHT geschrieben werden.
+      dbAntwortet = false;
+      schreibenGeht = true;
+      schreibVersuche = 0;
+      let warfA = false;
+      try { await updateBotSettings({ autoApproveThreshold: 72 }); }
+      catch { warfA = true; }
+      pruefe1("bei DB-Ausfall wird trotzdem geschrieben — das setzt ALLE "
+        + "uebrigen Einstellungen auf Standardwerte zurueck",
+        warfA && schreibVersuche === 0,
+        `warf=${warfA}, Schreibversuche=${schreibVersuche}`);
+
+      // (b) Lesen geht, SCHREIBEN scheitert.
+      delete global.__system_settings__;
+      dbAntwortet = true;
+      await g3();                       // einmal sauber laden und merken
+      schreibenGeht = false;
+      let warfB = false;
+      try { await updateBotSettings({ autoApproveThreshold: 72 }); }
+      catch { warfB = true; }
+      pruefe1("ein fehlgeschlagenes Schreiben wird verschluckt — die "
+        + "Oberflaeche meldet Erfolg", warfB);
+      const nachB = await g3();
+      pruefe1("nach fehlgeschlagenem Schreiben steht der NEUE Wert im Speicher "
+        + "— die Anzeige luegt bis zum naechsten Neustart",
+        nachB.botSettings.autoApproveThreshold !== 72,
+        String(nachB.botSettings.autoApproveThreshold));
+
+      // (c) Alles geht → Wert wird geschrieben, gemerkt, und der Rest bleibt.
+      schreibenGeht = true;
+      letzterInhalt = null;
+      await updateBotSettings({ autoApproveThreshold: 72 });
+      const nachC = await g3();
+      pruefe1("ein erfolgreiches Schreiben kommt nicht im Speicher an",
+        nachC.botSettings.autoApproveThreshold === 72,
+        String(nachC.botSettings.autoApproveThreshold));
+      pruefe1("der geschriebene Inhalt enthaelt den neuen Wert nicht",
+        typeof letzterInhalt === "string"
+        && letzterInhalt.includes('"autoApproveThreshold":72'));
+      pruefe1("beim Speichern gehen andere Einstellungen verloren",
+        nachC.botSettings.mode === "AUTO", String(nachC.botSettings.mode));
+    }
   } finally {
     console.error = echtesError;
     delete global.__system_settings__;
     delete global.__settings_letzte_warnung__;
   }
+
+  // ── Der Fehler muss bis zur OBERFLAECHE durchschlagen (06.09.) ──────────
+  //
+  // Die Rechnungen oben belegen, dass der Store wirft. Das nuetzt nichts, wenn
+  // die Route daraus wieder ein `{ ok: true }` macht oder die Oberflaeche
+  // `d.ok` nie liest — und genau das war der Zustand: `postAction` pruefte den
+  // Erfolg NIE.
+  const ohneKommentare = (x) => String(x)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+  const routeQ = ohneKommentare(read("frontend/app/api/settings/route.ts"));
+  // NICHT `/catch\s*\(/ && /ok: false/` — beides steht auch anderswo in der
+  // Datei ("Unknown action"). Geprueft wird die konkrete Umklammerung.
+  pruefe1("die Einstellungs-Route faengt einen Speicherfehler nicht ab",
+    /return await bearbeite\(request\)/.test(routeQ) && /status: 503/.test(routeQ),
+    "ohne das wird ein Fehlschlag zu einem nackten 500 oder verschwindet");
+  pruefe1("die Route meldet einen Fehlschlag nicht als Fehlschlag",
+    /Nicht gespeichert/.test(read("frontend/app/api/settings/route.ts")));
+
+  const uiQ = ohneKommentare(read("frontend/components/SettingsDashboard.tsx"));
+  pruefe1("die Oberflaeche prueft den Erfolg des Speicherns nicht",
+    /d\.ok === false/.test(uiQ),
+    "ein Fehlschlag sah bis zum 06.09. aus wie ein Erfolg");
+  pruefe1("die Oberflaeche zeigt einen Speicherfehler nicht an",
+    /speicherFehler/.test(uiQ) && /NICHT gespeichert/.test(
+      read("frontend/components/SettingsDashboard.tsx")));
 
   return {
     titel: `Einstellungen bei DB-Ausfall (${geprueft} Rechnungen, echte Funktion)`,

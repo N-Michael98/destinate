@@ -13,6 +13,27 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  try {
+    return await bearbeite(request);
+  } catch (e) {
+    // Ein Speicherfehler MUSS bis zur Oberfläche durchschlagen (06.09.).
+    //
+    // Bis heute verschluckte `saveToDB` jeden Schreibfehler und die Antwort
+    // lautete trotzdem `{ ok: true, settings }` — mit dem NEUEN Wert, denn
+    // `set()` hatte ihn vorher schon in den Speicher gelegt. Die Oberfläche
+    // zeigte also eine Änderung an, die nie in der Datenbank ankam, und beim
+    // nächsten Neustart war sie weg. Genau so verschwindet eine gesenkte
+    // Freigabe-Schwelle, ohne dass jemand etwas merkt.
+    const grund = e instanceof Error ? e.message : String(e);
+    console.error("[settings] ⛔ Speichern fehlgeschlagen — NICHTS wurde geändert:", grund);
+    return NextResponse.json(
+      { ok: false, error: `Nicht gespeichert: ${grund}` },
+      { status: 503 },
+    );
+  }
+}
+
+async function bearbeite(request: Request) {
   const body = await request.json().catch(() => ({}));
   const action: string = body.action ?? "";
 

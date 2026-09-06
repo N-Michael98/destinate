@@ -195,6 +195,11 @@ export default function SettingsDashboard() {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [aiSettings, setAISettings] = useState<AISettings | null>(null);
   const [saving, setSaving] = useState(false);
+  // 06.09.: Ein fehlgeschlagenes Speichern war bis heute UNSICHTBAR —
+  // `postAction` las `d.ok` nie. Zusammen mit dem verschluckten Schreibfehler
+  // im Store hiess das: die Oberfläche zeigte den neuen Wert, die Datenbank
+  // behielt den alten, und beim nächsten Neustart war die Änderung weg.
+  const [speicherFehler, setSpeicherFehler] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<BrokerKey, ConnectionForm>>({
     CAPITAL_COM: { apiKey: "", login: "", password: "", accountMode: "DEMO", loading: false, error: null, success: null },
     IC_MARKETS: { apiKey: "", login: "", password: "", accountMode: "DEMO", loading: false, error: null, success: null },
@@ -329,15 +334,28 @@ export default function SettingsDashboard() {
 
   const postAction = async (payload: Record<string, unknown>) => {
     setSaving(true);
-    const r = await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const d = await r.json();
-    if (d.settings) setSettings(d.settings);
-    setSaving(false);
-    return d;
+    setSpeicherFehler(null);
+    try {
+      const r = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const d = await r.json();
+      // `d.ok` wurde bis zum 06.09. NIE geprüft. Ein Fehlschlag sah aus wie ein
+      // Erfolg — die Einstellung galt als gespeichert und war es nicht.
+      if (d.ok === false) {
+        setSpeicherFehler(String(d.error ?? "Unbekannter Fehler"));
+      } else if (d.settings) {
+        setSettings(d.settings);
+      }
+      return d;
+    } catch (e) {
+      setSpeicherFehler(e instanceof Error ? e.message : String(e));
+      return { ok: false };
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleConnect = async (key: BrokerKey) => {
@@ -1529,6 +1547,35 @@ export default function SettingsDashboard() {
           padding: "10px 16px", borderRadius: "8px", fontSize: "12px", fontFamily: "monospace",
         }}>
           Saving...
+        </div>
+      )}
+
+      {speicherFehler && (
+        <div style={{
+          position: "fixed", bottom: "20px", right: "20px", maxWidth: "460px",
+          background: "rgba(153,27,27,0.96)", color: "#fff", border: "1px solid #f87171",
+          padding: "14px 18px", borderRadius: "10px", fontSize: "13px", zIndex: 60,
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: "6px" }}>
+            ⛔ NICHT gespeichert
+          </div>
+          <div style={{ fontFamily: "monospace", fontSize: "12px", lineHeight: 1.5 }}>
+            {speicherFehler}
+          </div>
+          <div style={{ marginTop: "8px", fontSize: "11px", opacity: 0.85 }}>
+            Die Einstellung gilt weiterhin mit dem alten Wert.
+          </div>
+          <button
+            type="button"
+            onClick={() => setSpeicherFehler(null)}
+            style={{
+              marginTop: "10px", background: "rgba(0,0,0,0.25)", color: "#fff",
+              border: "1px solid rgba(255,255,255,0.35)", borderRadius: "6px",
+              padding: "4px 10px", fontSize: "11px", cursor: "pointer",
+            }}
+          >
+            schliessen
+          </button>
         </div>
       )}
     </div>
