@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 470 · Kanten: 1024
+Dateien mit internen Abhängigkeiten: 461 · Kanten: 1012
 
 
 ## analysis-engine/api
@@ -713,10 +713,6 @@ Dateien mit internen Abhängigkeiten: 470 · Kanten: 1024
 - `frontend/lib/adaptive-broker-weighting/index.ts`
   - → `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-engine.ts`
   - → `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-types.ts`
-- `frontend/lib/adaptive-confidence/confidence-adjuster.ts`
-  - → `frontend/lib/adaptive-confidence/confidence-types.ts`
-- `frontend/lib/adaptive-confidence/confidence-engine.ts`
-  - → `frontend/lib/adaptive-confidence/confidence-adjuster.ts`
 - `frontend/lib/agents/analysis-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
   - → `frontend/lib/broker-config/index.ts`
@@ -889,13 +885,6 @@ Dateien mit internen Abhängigkeiten: 470 · Kanten: 1024
   - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-types.ts`
 - `frontend/lib/broker-routing-layer/index.ts`
   - → `frontend/lib/broker-routing-layer/broker-routing-types.ts`
-- `frontend/lib/brokers/auth/auth-manager.ts`
-  - → `frontend/lib/brokers/auth/capital-demo.ts`
-  - → `frontend/lib/brokers/auth/icmarkets-demo.ts`
-- `frontend/lib/brokers/auth/index.ts`
-  - → `frontend/lib/brokers/auth/auth-manager.ts`
-  - → `frontend/lib/brokers/auth/capital-demo.ts`
-  - → `frontend/lib/brokers/auth/icmarkets-demo.ts`
 - `frontend/lib/capital-com/active-trade-manager.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/agent-bus.ts`
@@ -969,12 +958,6 @@ Dateien mit internen Abhängigkeiten: 470 · Kanten: 1024
   - → `frontend/lib/consensus-engine/consensus-types.ts`
 - `frontend/lib/db-store.ts`
   - → `frontend/app/lib/prisma.ts`
-- `frontend/lib/demo-execution/execution-engine.ts`
-  - → `frontend/lib/demo-execution/order-generator.ts`
-- `frontend/lib/demo-execution/execution-manager.ts`
-  - → `frontend/lib/demo-execution/execution-engine.ts`
-- `frontend/lib/demo-execution/order-generator.ts`
-  - → `frontend/lib/demo-execution/execution-types.ts`
 - `frontend/lib/dependency-scanner/dependency-scanner-engine.ts`
   - → `frontend/lib/dependency-scanner/dependency-scanner-types.ts`
 - `frontend/lib/dependency-scanner/index.ts`
@@ -1063,8 +1046,6 @@ Dateien mit internen Abhängigkeiten: 470 · Kanten: 1024
   - → `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
   - → `frontend/lib/gpt-analyst-engine/reasoning-builder.ts`
   - → `frontend/lib/gpt-analyst-engine/risk-reward-planner.ts`
-- `frontend/lib/icmarkets-connector/icmarkets-client.ts`
-  - → `frontend/lib/icmarkets-connector/icmarkets-types.ts`
 - `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
@@ -1080,8 +1061,6 @@ Dateien mit internen Abhängigkeiten: 470 · Kanten: 1024
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
-- `frontend/lib/intelligence/economic-calendar.ts`
-  - → `frontend/lib/intelligence/news-types.ts`
 - `frontend/lib/killswitch/index.ts`
   - → `frontend/lib/killswitch/killswitch-engine.ts`
   - → `frontend/lib/killswitch/killswitch-types.ts`
