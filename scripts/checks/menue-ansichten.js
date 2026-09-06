@@ -29,7 +29,9 @@ function ohneKommentare(text) {
 
 const SEITE = "frontend/app/page.tsx";
 
-module.exports = function pruefe() {
+// async seit 06.09.: die Routen werden wirklich aufgerufen (siehe unten).
+// `run-all.js` wartet auf das Ergebnis — andere Prüfer sind ebenso async.
+module.exports = async function pruefe() {
   const funde = [];
   const roh = read(SEITE);
 
@@ -263,6 +265,90 @@ module.exports = function pruefe() {
     pruefe1("ein unlesbarer Scan-Zeitstempel ergibt 0 Minuten statt unbekannt",
       af(null, { opportunities: [], updatedAt: "kaputt" }, null, T)
         .letzterScanAlterMinuten === null);
+  }
+
+  // ── Die ROUTEN wirklich aufrufen (06.09.) ────────────────────────────────
+  //
+  // Die Prüfungen oben rechnen die reinen Funktionen. Ob die ROUTE sie richtig
+  // verdrahtet — Import, Alias, Rückgabeform — sagt bis hierher nur der
+  // Compiler. Genau dort sass in diesem Projekt schon mehrfach der Fehler:
+  // eine Funktion war korrekt und wurde falsch oder gar nicht gerufen.
+  //
+  // `next/server` wird ersetzt, damit `NextResponse.json(x)` schlicht `x`
+  // zurückgibt. Die Sitzungen und die Einstellungen sind Attrappen — es geht
+  // um die Verdrahtung, nicht um echte Daten.
+  {
+    const bsMod = ladeTsModul("lib/broker-status/broker-status.ts");
+    const r1 = bsMod.fehler ? { fehler: bsMod.fehler } : ladeTsModul(
+      "app/api/broker-status/route.ts", {
+        "next/server": { NextResponse: { json: (o) => o } },
+        "broker-status/broker-status": bsMod.exports,
+        "capital-com-session": { getCapitalSession: () => ({
+          accountId: "A1", accountType: "DEMO", balance: 1560.63, currency: "CHF",
+          connectedAt: new Date(Date.now() - 3600000).toISOString() }) },
+        "icmarkets-session": { getICMarketsSession: () => null },
+      });
+    if (r1.fehler) {
+      funde.push(`/api/broker-status nicht ausfuehrbar: ${r1.fehler}`);
+    } else if (typeof r1.exports.GET !== "function") {
+      funde.push("/api/broker-status hat kein GET");
+    } else {
+      const a = await r1.exports.GET();
+      // Defensiv lesen: fehlt `broker`, soll das als BEFUND erscheinen und den
+      // Prüfer nicht abstürzen lassen — ein Absturz sagt nicht, was fehlt.
+      const zeilen = a && Array.isArray(a.broker) ? a.broker : [];
+      pruefe1("/api/broker-status antwortet nicht mit ok", !!a && a.ok === true);
+      pruefe1("/api/broker-status meldet nicht genau zwei Broker",
+        zeilen.length === 2, `${zeilen.length} Zeile(n)`);
+      pruefe1("/api/broker-status zaehlt die Verbindung falsch", a && a.verbunden === 1,
+        String(a && a.verbunden));
+      pruefe1("/api/broker-status reicht den echten Saldo nicht durch",
+        zeilen[0] && zeilen[0].saldo === 1560.63,
+        String(zeilen[0] && zeilen[0].saldo));
+      pruefe1("/api/broker-status macht aus 'nicht verbunden' eine Null",
+        !!zeilen[1] && zeilen[1].saldo === null,
+        String(zeilen[1] && zeilen[1].saldo));
+    }
+  }
+
+  {
+    const esMod = ladeTsModul("lib/execution-status/execution-status.ts");
+    const heute = new Date().toISOString().slice(0, 10);
+    const altTrades = global.__daily_trades__;
+    const altScan = global.__last_scan_result__;
+    global.__daily_trades__ = { date: heute, count: 2, byStyle: { DAYTRADING: 2 } };
+    global.__last_scan_result__ = { opportunities: [1, 2, 3], updatedAt: new Date().toISOString() };
+    try {
+      const r2 = esMod.fehler ? { fehler: esMod.fehler } : ladeTsModul(
+        "app/api/execution-status/route.ts", {
+          "next/server": { NextResponse: { json: (o) => o } },
+          "execution-status/execution-status": esMod.exports,
+          "settings/settings-store": { getSettings: async () => ({
+            botSettings: { maxTradesPerDay: 5, tradeLimitEnabled: true,
+              maxTradesPerDayByStyle: { DAYTRADING: 3, SWING: 2 } } }) },
+        });
+      if (r2.fehler) {
+        funde.push(`/api/execution-status nicht ausfuehrbar: ${r2.fehler}`);
+      } else if (typeof r2.exports.GET !== "function") {
+        funde.push("/api/execution-status hat kein GET");
+      } else {
+        const b = await r2.exports.GET();
+        pruefe1("/api/execution-status antwortet nicht mit ok", b && b.ok === true);
+        pruefe1("/api/execution-status reicht den Tageszaehler nicht durch",
+          b && b.heute === 2, String(b && b.heute));
+        pruefe1("/api/execution-status liest die Grenze nicht aus den Einstellungen",
+          b && b.grenze === 5, String(b && b.grenze));
+        pruefe1("/api/execution-status haelt den heutigen Zaehler fuer veraltet",
+          b && b.aktuell === true);
+        pruefe1("/api/execution-status zaehlt die Gelegenheiten des Scans nicht",
+          b && b.letzterScanGefunden === 3, String(b && b.letzterScanGefunden));
+      }
+    } finally {
+      if (altTrades === undefined) delete global.__daily_trades__;
+      else global.__daily_trades__ = altTrades;
+      if (altScan === undefined) delete global.__last_scan_result__;
+      else global.__last_scan_result__ = altScan;
+    }
   }
 
   return {
