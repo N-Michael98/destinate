@@ -9,7 +9,7 @@
 // Quelltext, nicht das Laufzeitverhalten.
 const fs = require("fs");
 const path = require("path");
-const { read } = require("./_lib");
+const { read, ladeTsModul } = require("./_lib");
 
 /** Benutzt ein Prüfer die naive Kommentar-Entfernung ohne URL-Schutz?
  *
@@ -351,5 +351,59 @@ module.exports = function pruefe() {
     }
   }
 
-  return { titel: `Sicherheitsnetze (${pruefungen.length + 23} Prüfungen)`, funde };
+  // ══ Das Handelszeit-Tor RECHNEN (07.09.) ═════════════════════════════════
+  //
+  // `isWithinTradingSession()` entscheidet ueber JEDEN neuen Trade — und war
+  // von keinem einzigen Pruefer abgesichert. Eine verrutschte Grenze
+  // (>= statt >, 21 statt 22, ein vergessener Wochentag) haette den Bot
+  // entweder ausserhalb der Handelszeit eroeffnen lassen oder ihn stumm
+  // stillgelegt. Beides faellt erst im Log auf, wenn es zu spaet ist.
+  //
+  // Seit dem 07.09. haengt daran zusaetzlich der teure Teil: ausserhalb der
+  // Session wird die Analyse gar nicht mehr gerechnet.
+  let zusatz = 0;
+  const torPruefung = (name, bedingung, extra) => {
+    zusatz++;
+    if (!bedingung) funde.push(`${name}${extra ? ` — ${extra}` : ""}`);
+  };
+
+  const orchModul = ladeTsModul("lib/agents/orchestrator-agent.ts");
+  if (orchModul.fehler) {
+    funde.push(`orchestrator-agent nicht ladbar: ${orchModul.fehler}`);
+  } else if (typeof orchModul.exports.isWithinTradingSession !== "function") {
+    funde.push("isWithinTradingSession wird nicht exportiert — das Tor, das "
+      + "ueber jeden neuen Trade entscheidet, bleibt ungeprueft");
+  } else {
+    const imFenster = orchModul.exports.isWithinTradingSession;
+    // 07.09.2026 ist ein Montag, 11.09. ein Freitag, 12.09. Samstag,
+    // 06.09. Sonntag — nachgerechnet, nicht angenommen.
+    for (const [name, iso, soll] of [
+      ["Montag 07:59 UTC — eine Minute zu frueh", "2026-09-07T07:59:00Z", false],
+      ["Montag 08:00 UTC — London oeffnet", "2026-09-07T08:00:00Z", true],
+      ["Montag 21:59 UTC — letzte Minute", "2026-09-07T21:59:00Z", true],
+      ["Montag 22:00 UTC — New York schliesst", "2026-09-07T22:00:00Z", false],
+      ["Freitag 21:59 UTC — Wochenschluss", "2026-09-11T21:59:00Z", true],
+      ["Samstag 12:00 UTC", "2026-09-12T12:00:00Z", false],
+      ["Sonntag 12:00 UTC", "2026-09-06T12:00:00Z", false],
+    ]) {
+      const ist = imFenster(new Date(iso));
+      torPruefung(`Handelsfenster falsch: ${name}`, ist === soll,
+        `ist ${ist}, soll ${soll}`);
+    }
+  }
+
+  // Strukturell: die teure Analyse muss VOR dem Ruecksprung stehen bleiben —
+  // sonst rechnet der Zyklus wieder fuer nichts.
+  torPruefung("ausserhalb der Session wird die Analyse wieder gerechnet",
+    /if \(blockNewTrades\) \{[\s\S]{0,600}?return;\s*\}\s*const analysisResult = await runAnalysisAgent/
+      .test(orch),
+    "der Ruecksprung muss VOR runAnalysisAgent stehen, nicht danach");
+  torPruefung("es steht nicht im Log, dass die Analyse ausgelassen wurde",
+    /Analyse AUSGELASSEN/.test(orch),
+    "sonst sieht ein stiller Zyklus wie ein Ausfall aus");
+
+  return {
+    titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
+    funde,
+  };
 };

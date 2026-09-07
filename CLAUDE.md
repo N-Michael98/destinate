@@ -36,7 +36,7 @@ Jeder Prüfer wurde gegen eine gezielte Sabotage getestet und schlägt nachweisl
 an. Wird ein Prüfer erweitert, muss dieser Nachweis erneut erbracht werden — ein
 Prüfer, der nie rot wird, ist wertlos.
 
-**Vierzehn Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
+**Fünfzehn Prüfer sind die Ausnahme: sie RECHNEN.** Sie übersetzen die echte
 TypeScript-Datei und rufen die echte Funktion auf. Damit fällt dort auch ein
 subtil falscher Umbau auf (Kehrwert statt Anteil, vertauschte Schwelle,
 fehlender Null-Fall), der strukturell unauffällig bliebe:
@@ -57,6 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()` | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 

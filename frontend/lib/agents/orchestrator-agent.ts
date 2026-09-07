@@ -412,8 +412,21 @@ async function postTradeActions(params: {
 // Overlap:  13:00–17:00 UTC  (aktivste Zeit)
 // Gesamt:   08:00–22:00 UTC, Montag–Freitag
 
-function isWithinTradingSession(): boolean {
-  const now = new Date();
+/**
+ * Exportiert und mit einstellbarem Zeitpunkt (07.09.).
+ *
+ * Dieses Tor entscheidet ueber JEDEN neuen Trade — und war von keinem einzigen
+ * Pruefer abgesichert. Eine verrutschte Grenze (>= statt >, 21 statt 22, ein
+ * vergessener Wochentag) haette den Bot entweder ausserhalb der Handelszeit
+ * eroeffnen lassen oder ihn stumm stillgelegt; beides waere erst im Log
+ * aufgefallen, wenn es zu spaet ist.
+ *
+ * `jetzt` ist ein Parameter, damit der Pruefer die Grenzen WIRKLICH ausrechnen
+ * kann statt den Wortlaut festzunageln. Ohne Angabe verhaelt sich die Funktion
+ * exakt wie vorher.
+ */
+export function isWithinTradingSession(jetzt: Date = new Date()): boolean {
+  const now = jetzt;
   const dayUTC = now.getUTCDay(); // 0=So, 1=Mo, ..., 5=Fr, 6=Sa
   if (dayUTC === 0 || dayUTC === 6) return false; // Wochenende
 
@@ -556,6 +569,44 @@ export async function runOrchestratorCycle(): Promise<void> {
   }
 
   // ── 4. AnalysisAgent ──────────────────────────────────────────────────────
+  //
+  // AUSSERHALB DER HANDELSZEIT GAR NICHT ERST ANALYSIEREN (07.09.).
+  //
+  // Hier stand die Analyse, und ZWANZIG ZEILEN SPÄTER wurde ihr Ergebnis mit
+  // `if (blockNewTrades) return;` verworfen — unter der Überschrift
+  // "Kosten-Guards: AI-Entscheidung nur wenn sie etwas bewirken kann". Gespart
+  // wurde damit der EINE Meta-Aufruf; der teure Teil lief davor bereits
+  // vollständig: ein GPT-Sammelaufruf über 30 Märkte plus ein Claude-Aufruf je
+  // Markt mit Richtung (am 07.09. gemessen: 19 von 30).
+  //
+  // Ausserhalb der Session kann daraus nachweislich NIE ein Trade entstehen.
+  // Das Handelsfenster ist Mo–Fr 08:00–22:00 UTC, also 70 von 168
+  // Wochenstunden: 58 % der Zyklen rechneten für nichts. Seit dem 07.09. läuft
+  // der Scan zudem auf den konfigurierten Modellen (gpt-4o statt mini, Sonnet
+  // statt Haiku) — dieselbe Verschwendung kostet damit ein Vielfaches.
+  //
+  // WAS DAS NICHT BERÜHRT, jede Stelle nachgeprüft:
+  //   • Der Preis-Cache wird VORHER gefüllt (`fetchMarkets`) und bleibt damit
+  //     aktuell — die drei Ansichten, die daraus lesen, merken nichts.
+  //   • Die Positionsverwaltung läuft in einer EIGENEN Schleife
+  //     (`position-monitor`, alle 2 Minuten): Breakeven, Teilgewinn, Trailing,
+  //     Zeit-Exit, Tracker und Python-Lifecycle sind unberührt.
+  //   • Bei NULL offenen Positionen kehrt der Zyklus schon weiter oben um;
+  //     dieser Pfad greift also nur, wenn eine Position läuft.
+  //
+  // EINZIGER VERLUST: die Scanner-Ansicht bleibt ausserhalb der Handelszeit auf
+  // ihrem letzten Stand. Der ist nicht geraten, sondern ausgewiesen —
+  // `updatedAt` im Ergebnis, und /api/execution-status meldet ihn als
+  // `letzterScanAlterMinuten`.
+  if (blockNewTrades) {
+    const stand = global.__last_scan_result__?.updatedAt;
+    console.log("[orchestrator] Ausserhalb Session — Analyse AUSGELASSEN "
+      + "(daraus koennte kein Trade entstehen; Positionen werden weiter von der "
+      + "2-Minuten-Schleife verwaltet). Scanner-Ansicht steht auf "
+      + `${stand ?? "noch keinem Stand"}.`);
+    return;
+  }
+
   const analysisResult = await runAnalysisAgent(markets);
 
   // Scanner-UI aktualisieren
@@ -564,11 +615,7 @@ export async function runOrchestratorCycle(): Promise<void> {
     updatedAt: new Date().toISOString(),
   };
 
-  // ── 4b. Kosten-Guards: AI-Entscheidung nur wenn sie etwas bewirken kann ───
-  if (blockNewTrades) {
-    console.log("[orchestrator] Ausserhalb Session — Analyse fertig, kein Trade-Execution (kein AI-Call)");
-    return;
-  }
+  // ── 4b. Kosten-Guard: AI-Entscheidung nur wenn sie etwas bewirken kann ────
   if (analysisResult.approved.length === 0) {
     console.log("[orchestrator] Keine approved Signale — Zyklus beendet (kein AI-Call)");
     return;
