@@ -153,6 +153,46 @@ module.exports = function pruefe() {
     /stop_reason \?\? ""\) === "max_tokens"/.test(quell),
     "eine abgerissene Begruendung zaehlt sonst als Ablehnung");
 
+  // ── Teil 5: eine Modell-Sperre darf die Analyse nicht schwaerzen (07.09.) ─
+  //
+  // GEMESSEN am 07.09., direkt nach der Umstellung auf die konfigurierten
+  // Modelle:
+  //
+  //   🎯 Scan nutzt die konfigurierten Modelle: gpt-4o / claude-sonnet-4-6
+  //   ⛔ GPT HTTP 403: Project `proj_…` does not have access to model `gpt-4o`
+  //   GPT-Batch: KEINE ANTWORT → 0 Opportunities
+  //   Trichter: 30 Märkte → … → Richtung≠WAIT 0 → 0 = GO
+  //
+  // Das Netz dafuer EXISTIERTE, mit genau diesem Versprechen im Kommentar —
+  // aber die Bedingung `scanGptModel !== ai.openai.model` feuerte NUR, wenn das
+  // guenstige Modell benutzt worden war. Im Ernstfall war es abgeschaltet.
+  pruefe1("das GPT-Netz greift wieder nur in eine Richtung",
+    /const zweitModell = scanGptModel === ai\.openai\.model/.test(quell)
+    && /zweitModell !== scanGptModel/.test(quell),
+    "eine gesperrte Modellwahl schwaerzt sonst jeden Zyklus");
+  pruefe1("es steht nicht im Log, wenn das ZWEITE Modell geantwortet hat",
+    /Die Analyse läuft mit \$\{zweitModell\}/.test(quell),
+    "sonst sieht man oben 'nutzt die konfigurierten Modelle' und glaubt es");
+  pruefe1("fuer Claude gibt es gar kein Netz",
+    /const zweitClaude = scanClaudeModel === ai\.anthropic\.model/.test(quell)
+    && /zweitClaude !== scanClaudeModel/.test(quell));
+
+  // Und der schwerere Teil: was, wenn BEIDE nicht antworten.
+  pruefe1("ein ausgefallener Claude-Aufruf erfindet wieder einen Risiko-Wert",
+    /if \(raw === null\)[\s\S]{0,1800}?claude = simulateClaude\(gpt, market\);/.test(quell),
+    "`riskScore ?? 50` liess das Risiko-Tor still wegfallen (50 < 60 ist wahr)");
+  pruefe1("ein ausgefallener Claude-Aufruf traegt wieder das Etikett CLAUDE_REAL",
+    /if \(raw === null\)[\s\S]*?\} else \{[\s\S]{0,600}?source: "CLAUDE_REAL"/.test(quell),
+    "dieselbe Luege, die am 01.09. fuer simulateClaude behoben wurde");
+  // NICHT einfach `/ohneClaude\+\+/` — den Ausdruck gibt es auch im Zweig
+  // "kein Claude-Schluessel". Im Sabotage-Lauf vom 07.09. rutschte "Zaehlung
+  // entfernt" damit durch: der Pruefer fand die ANDERE Fundstelle. Dieselbe
+  // Fehlerklasse, vor der CLAUDE.md warnt — geprueft wird jetzt IM Block.
+  pruefe1("der Ausfall wird nicht gezaehlt und nicht gemeldet",
+    /if \(raw === null\)[\s\S]{0,1800}?Claude hat nicht geantwortet[\s\S]{0,400}?ohneClaude\+\+/
+      .test(quell),
+    "ohne Zaehlung faellt ein dauerhafter Claude-Ausfall nicht auf");
+
   return {
     titel: `Prompt-Zahlen (${geprueft} Rechnungen, echte Funktion)`,
     funde,

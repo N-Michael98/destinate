@@ -963,12 +963,40 @@ each market's own data, never from habit or from these examples' direction:
     // frühere feste Wert 4000 stammte aus der Testphase mit ~22 Märkten.
     const platz = tokenBudget(validMarkets.length);
     let raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt, platz);
-    // Sicherheitsnetz: Wenn das günstige Modell im OpenAI-Projekt gesperrt ist
-    // (403 model access), einmal mit dem konfigurierten Modell nachversuchen —
-    // eine Modell-Sperre darf nie die komplette Analyse schwärzen.
-    if (raw === null && scanGptModel !== ai.openai.model) {
-      console.warn(`[ai-engine] ↩️ Fallback auf Config-Modell ${ai.openai.model} (${scanGptModel} nicht verfügbar?)`);
-      raw = await callGPT(ai.openai.apiKey, ai.openai.model, prompt, platz);
+
+    // ── Das Sicherheitsnetz greift jetzt in BEIDE Richtungen (07.09.) ──────
+    //
+    // Hier stand `if (raw === null && scanGptModel !== ai.openai.model)`, mit
+    // dem Versprechen darüber: "eine Modell-Sperre darf nie die komplette
+    // Analyse schwärzen". Die Bedingung hielt das aber nur in EINE Richtung —
+    // sie feuerte ausschliesslich, wenn das GÜNSTIGE Modell benutzt worden war.
+    //
+    // GEMESSEN am 07.09., genau der andere Fall:
+    //
+    //   🎯 Scan nutzt die konfigurierten Modelle: gpt-4o / claude-sonnet-4-6
+    //   ⛔ GPT HTTP 403: Project `proj_…` does not have access to model `gpt-4o`
+    //   GPT-Batch: KEINE ANTWORT (Call fehlgeschlagen) → 0 Opportunities
+    //   Trichter: 30 Märkte → … → Richtung≠WAIT 0 → … 0 = GO
+    //
+    // `scanGptModel === ai.openai.model`, also war die Bedingung falsch und das
+    // Netz abgeschaltet — in dem Moment, für den es gebaut wurde. Der Scanner
+    // lieferte NULL Gelegenheiten, und zwar in jedem Zyklus.
+    //
+    // Jetzt wird bei einem Fehlschlag das jeweils ANDERE Modell versucht. Und
+    // wenn das zweite antwortet, steht das ausdrücklich im Log: sonst sieht man
+    // oben "nutzt die konfigurierten Modelle" und glaubt, die Umstellung greife.
+    const zweitModell = scanGptModel === ai.openai.model
+      ? (CHEAP_GPT[ai.openai.model] ?? "")
+      : ai.openai.model;
+    if (raw === null && zweitModell && zweitModell !== scanGptModel) {
+      console.warn(`[ai-engine] ↩️ ${scanGptModel} hat nicht geantwortet — `
+        + `zweiter Versuch mit ${zweitModell}`);
+      raw = await callGPT(ai.openai.apiKey, zweitModell, prompt, platz);
+      if (raw !== null) {
+        console.warn(`[ai-engine] ⚠️ Die Analyse läuft mit ${zweitModell} statt `
+          + `${scanGptModel} — die Modellwahl greift NICHT. Prüfen, ob das Projekt `
+          + `bei OpenAI Zugriff auf ${scanGptModel} hat.`);
+      }
     }
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
     for (const opp of parsed.opportunities ?? []) {
@@ -1268,20 +1296,60 @@ Return ONLY valid JSON:
 
 Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
 
-      const raw = await callClaude(ai.anthropic.apiKey, scanClaudeModel, prompt);
-      const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
-      const riskScore = parsed.riskScore ?? 50;
-      const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
-      claude = {
-        symbol: market.symbol,
-        approved: riskScore < 60 && parsedRR >= 1.5,
-        riskScore,
-        maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
-        reasoning: parsed.reasoning ?? "",
-        rewardRiskRatio: parsedRR,
-        source: "CLAUDE_REAL",
-        eigenesUrteil: parsed.approved,
-      };
+      let raw = await callClaude(ai.anthropic.apiKey, scanClaudeModel, prompt);
+
+      // ── Zweites Modell, dann ehrlich aufgeben (07.09.) ──────────────────
+      //
+      // Dieselbe Sperre wie bei GPT kann auch hier zuschlagen — und der Anlass
+      // ist frisch: am 07.09. lieferte OpenAI ein 403 "does not have access to
+      // model gpt-4o", nachdem der Scan auf die konfigurierten Modelle gestellt
+      // wurde. Fuer Anthropic gab es bis dahin GAR KEIN Netz.
+      const zweitClaude = scanClaudeModel === ai.anthropic.model
+        ? (CHEAP_CLAUDE[ai.anthropic.model] ?? "")
+        : ai.anthropic.model;
+      if (raw === null && zweitClaude && zweitClaude !== scanClaudeModel) {
+        console.warn(`[ai-engine] ↩️ ${scanClaudeModel} hat nicht geantwortet — `
+          + `zweiter Versuch mit ${zweitClaude}`);
+        raw = await callClaude(ai.anthropic.apiKey, zweitClaude, prompt);
+      }
+
+      if (raw === null) {
+        // WAS HIER STAND, und es war doppelt falsch:
+        //
+        //   const riskScore = parsed.riskScore ?? 50;   // erfundene 50
+        //   approved: riskScore < 60 && parsedRR >= 1.5 // 50 < 60 ist WAHR
+        //   source: "CLAUDE_REAL"                       // obwohl nichts kam
+        //
+        // Antwortete Claude nicht, fiel das Risiko-Tor also STILL weg — die
+        // Freigabe haengte nur noch am R/R — und das Ergebnis trug trotzdem
+        // das Etikett einer echten Beurteilung. Genau die Luege, die am 01.09.
+        // eine Zeile weiter unten fuer `simulateClaude` behoben wurde.
+        //
+        // Jetzt derselbe ehrliche Weg wie ohne Schluessel: `simulateClaude`
+        // leitet den Risiko-Wert aus der Confidence AB, heisst
+        // CLAUDE_SIMULATED und ist STRENGER (verlangt zusaetzlich
+        // Confidence >= MIN_SIGNAL_CONFIDENCE). Ein Ausfall macht die Freigabe
+        // damit enger, nicht weiter.
+        console.error(`[ai-engine] ⛔ ${market.symbol}: Claude hat nicht geantwortet `
+          + `(${scanClaudeModel}${zweitClaude ? ` und ${zweitClaude}` : ""}) — `
+          + `regelbasiertes Ersatzurteil, KEINE echte Risikopruefung`);
+        ohneClaude++;
+        claude = simulateClaude(gpt, market);
+      } else {
+        const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
+        const riskScore = parsed.riskScore ?? 50;
+        const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
+        claude = {
+          symbol: market.symbol,
+          approved: riskScore < 60 && parsedRR >= 1.5,
+          riskScore,
+          maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
+          reasoning: parsed.reasoning ?? "",
+          rewardRiskRatio: parsedRR,
+          source: "CLAUDE_REAL",
+          eigenesUrteil: parsed.approved,
+        };
+      }
     } else {
       // Nur zählen, wenn ein HANDELBARES Signal vorlag. Bei direction=WAIT ist
       // der Rückfall der Normalfall (23 von 30 Märkten) und keine Meldung wert.
