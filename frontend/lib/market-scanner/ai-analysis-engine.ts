@@ -248,7 +248,44 @@ async function fetchStrategySignals(symbols: string[]): Promise<Map<string, Stra
 }
 
 // ── Real OpenAI API call ───────────────────────────────────────────────────────
-async function callGPT(apiKey: string, model: string, prompt: string): Promise<string | null> {
+/**
+ * Wieviel Ausgabe darf die Sammel-Antwort haben? (06.09.)
+ *
+ * HIER STAND `max_tokens: 4000` mit dem Kommentar "Urteil für ALLE ~22 Märkte
+ * (Testphase) ≈ 2500-3500 Tokens Output". Die Watchlist hat inzwischen DREISSIG
+ * Märkte, und der Wert wurde nie mitgezogen.
+ *
+ * GEMESSEN am 06.09.: 9654 Zeichen Antwort für 30 Märkte, also rund 322 Zeichen
+ * je Markt. JSON mit englischem Fliesstext liegt bei etwa 3,7 Zeichen je Token
+ * — das sind ~87 Token je Markt, in Summe ~2600. Bei 4000 ist das schon in
+ * Sichtweite der Grenze.
+ *
+ * WARUM DAS JETZT ZAEHLT: wird der Scan auf das konfigurierte (staerkere)
+ * Modell umgestellt, faellt die Begruendung je Markt laenger aus. Reisst die
+ * Antwort die Grenze, schneidet OpenAI sie mitten im JSON ab — `parseJSON`
+ * faellt auf `{ opportunities: [] }` zurueck, und der Scan meldet NULL
+ * Gelegenheiten. Von "das Modell sieht nichts" waere das nicht zu
+ * unterscheiden.
+ *
+ * Eingeplant wird deshalb das Doppelte des Gemessenen, ABGELEITET aus der Zahl
+ * der Maerkte statt fest verdrahtet — damit der Wert nicht wieder veraltet,
+ * wenn die Watchlist waechst. Nach unten auf den bisherigen Wert geklemmt (es
+ * soll nie WENIGER Platz sein als bisher), nach oben auf 16000 (Ausgabegrenze
+ * der GPT-4o-Familie).
+ *
+ * `max_tokens` ist eine OBERGRENZE, keine Vorgabe: ein hoeherer Wert kostet
+ * nichts, solange das Modell ihn nicht ausschoepft.
+ */
+export function tokenBudget(anzahlMaerkte: number): number {
+  const n = Number.isFinite(anzahlMaerkte) && anzahlMaerkte > 0
+    ? Math.floor(anzahlMaerkte) : 0;
+  const roh = 500 + 175 * n;
+  return Math.min(16000, Math.max(4000, roh));
+}
+
+async function callGPT(
+  apiKey: string, model: string, prompt: string, maxTokens = 4000,
+): Promise<string | null> {
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -257,7 +294,7 @@ async function callGPT(apiKey: string, model: string, prompt: string): Promise<s
         model,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
-        max_tokens: 4000, // Urteil für ALLE ~22 Märkte (Testphase) ≈ 2500-3500 Tokens Output
+        max_tokens: maxTokens,
         response_format: { type: "json_object" },
       }),
     });
@@ -267,7 +304,19 @@ async function callGPT(apiKey: string, model: string, prompt: string): Promise<s
       return null;
     }
     const data = await res.json() as Record<string, unknown>;
-    const choices = data.choices as Array<{ message: { content: string } }>;
+    const choices = data.choices as Array<{ message: { content: string }; finish_reason?: string }>;
+    // ABGESCHNITTEN ist nicht dasselbe wie SCHLECHT (06.09.).
+    //
+    // Bis heute wurde `finish_reason` nicht gelesen. Riss die Antwort die
+    // Token-Grenze, kam unvollstaendiges JSON zurueck, `parseJSON` fiel auf
+    // die leere Liste, und im Log stand "→ 0 Opportunities" — genau wie bei
+    // einem Modell, das nichts findet. Zwei voellig verschiedene Ursachen,
+    // ununterscheidbar. Jetzt sagt es die Zeile.
+    if (choices?.[0]?.finish_reason === "length") {
+      console.error(`[ai-engine] ⛔ GPT-Antwort ABGESCHNITTEN (finish_reason=length, `
+        + `max_tokens=${maxTokens}) — das JSON ist unvollstaendig, dieser Scan `
+        + `verliert Gelegenheiten. Grenze erhoehen.`);
+    }
     return choices?.[0]?.message?.content ?? null;
   } catch (e) {
     console.warn(`[ai-engine] ⛔ GPT Call fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
@@ -297,6 +346,14 @@ async function callClaude(apiKey: string, model: string, prompt: string): Promis
       return null;
     }
     const data = await res.json() as Record<string, unknown>;
+    // Dieselbe Prüfung wie bei GPT (06.09.): eine abgeschnittene Antwort ist
+    // etwas anderes als eine ablehnende. Claude urteilt hier über die Freigabe
+    // eines Trades — eine an der Token-Grenze abgerissene Begründung ergäbe
+    // unlesbares JSON und damit eine Ablehnung, die keine ist.
+    if (String(data.stop_reason ?? "") === "max_tokens") {
+      console.error("[ai-engine] ⛔ Claude-Antwort ABGESCHNITTEN (stop_reason=max_tokens) "
+        + "— das Urteil ist unvollständig und zählt als Ablehnung. Grenze erhöhen.");
+    }
     const content = data.content as Array<{ text: string }>;
     return content?.[0]?.text ?? null;
   } catch (e) {
@@ -902,13 +959,16 @@ each market's own data, never from habit or from these examples' direction:
   ]
 }`;
 
-    let raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt);
+    // Platz für die Antwort aus der Zahl der Märkte ABLEITEN (06.09.) — der
+    // frühere feste Wert 4000 stammte aus der Testphase mit ~22 Märkten.
+    const platz = tokenBudget(validMarkets.length);
+    let raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt, platz);
     // Sicherheitsnetz: Wenn das günstige Modell im OpenAI-Projekt gesperrt ist
     // (403 model access), einmal mit dem konfigurierten Modell nachversuchen —
     // eine Modell-Sperre darf nie die komplette Analyse schwärzen.
     if (raw === null && scanGptModel !== ai.openai.model) {
       console.warn(`[ai-engine] ↩️ Fallback auf Config-Modell ${ai.openai.model} (${scanGptModel} nicht verfügbar?)`);
-      raw = await callGPT(ai.openai.apiKey, ai.openai.model, prompt);
+      raw = await callGPT(ai.openai.apiKey, ai.openai.model, prompt, platz);
     }
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
     for (const opp of parsed.opportunities ?? []) {

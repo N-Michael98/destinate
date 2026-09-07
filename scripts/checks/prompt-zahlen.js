@@ -107,6 +107,52 @@ module.exports = function pruefe() {
     }
   }
 
+  // ── Teil 4: Platz für die Sammel-Antwort (06.09.) ────────────────────────
+  //
+  // Hier stand `max_tokens: 4000` mit dem Kommentar "für ALLE ~22 Märkte
+  // (Testphase)". Die Watchlist hat DREISSIG Märkte, und der Wert wurde nie
+  // mitgezogen. Gemessen am 06.09.: 9654 Zeichen Antwort für 30 Märkte
+  // (~2600 Token) — schon in Sichtweite der Grenze.
+  //
+  // Reisst die Antwort die Grenze, schneidet OpenAI sie mitten im JSON ab,
+  // `parseJSON` fällt auf die leere Liste zurück, und im Log steht
+  // "→ 0 Opportunities" — genau wie bei einem Modell, das nichts findet. Diese
+  // beiden Ursachen MUESSEN unterscheidbar bleiben, sonst sucht man beim
+  // nächsten Stillstand wieder tagelang.
+  const tb = modul.exports.tokenBudget;
+  if (typeof tb !== "function") {
+    funde.push("tokenBudget wird nicht exportiert — der Platz für die "
+      + "Sammel-Antwort bleibt ungeprüft");
+  } else {
+    pruefe1("der Platz waechst nicht mit der Zahl der Maerkte",
+      tb(30) > tb(22), `30 -> ${tb(30)}, 22 -> ${tb(22)}`);
+    pruefe1("bei 30 Maerkten ist der Platz nicht mindestens doppelt so gross "
+      + "wie die gemessenen ~2600 Token",
+      tb(30) >= 5200, String(tb(30)));
+    pruefe1("der Platz faellt unter den frueheren Festwert 4000",
+      tb(0) >= 4000 && tb(1) >= 4000 && tb(30) >= 4000,
+      `${tb(0)} / ${tb(1)} / ${tb(30)}`);
+    pruefe1("der Platz ueberschreitet die Ausgabegrenze der GPT-4o-Familie",
+      tb(1000) <= 16000, String(tb(1000)));
+    pruefe1("unsinnige Eingaben ergeben keinen brauchbaren Wert",
+      tb(NaN) === 4000 && tb(-5) === 4000 && tb(Infinity) <= 16000,
+      `${tb(NaN)} / ${tb(-5)} / ${tb(Infinity)}`);
+  }
+
+  // Strukturell: der abgeleitete Wert muss auch ANKOMMEN, und ein Abschneiden
+  // muss auffallen. Ohne diese beiden Zeilen waere die Rechnung oben folgenlos.
+  const quell = read(`frontend/${PFAD}`);
+  pruefe1("der abgeleitete Platz kommt nicht beim Aufruf an",
+    /max_tokens: maxTokens/.test(quell)
+    && /tokenBudget\(validMarkets\.length\)/.test(quell),
+    "sonst rechnet die Funktion, und der Aufruf nimmt weiter einen Festwert");
+  pruefe1("ein abgeschnittenes GPT-Urteil bleibt unbemerkt",
+    /finish_reason === "length"/.test(quell),
+    "abgeschnitten sieht dann aus wie 'nichts gefunden'");
+  pruefe1("ein abgeschnittenes Claude-Urteil bleibt unbemerkt",
+    /stop_reason \?\? ""\) === "max_tokens"/.test(quell),
+    "eine abgerissene Begruendung zaehlt sonst als Ablehnung");
+
   return {
     titel: `Prompt-Zahlen (${geprueft} Rechnungen, echte Funktion)`,
     funde,
