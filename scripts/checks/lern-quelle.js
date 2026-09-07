@@ -43,6 +43,23 @@ const ZEILEN = [
 // setzen, ohne dass etwas rot wurde — der Stub hatte die Bedingung schlicht
 // ignoriert. Ein Prüfstand, der die Abfrage nicht nachbildet, prüft die
 // Abfrage nicht.
+// Zeilen MIT Markt, aber ohne lesbare Richtung (07.09.). Eigener Satz, damit
+// die von Hand nachgerechneten Zahlen oben unberührt bleiben.
+//
+// "UNBEKANNT" ist kein erfundener Prüffall: genau dieses Wort schreibt der
+// Journal-Abgleich seit dem 03.09. in die Spalte
+// (app/api/capital-com/sync-journal/route.ts, INSERT mit 'UNBEKANNT'), weil er
+// für eine Broker-Transaktion ohne Journal-Zeile die Richtung nicht kennt.
+// Vorher stand dort ein fest verdrahtetes 'BUY' — die Ehrlichkeit von 03.09.
+// wurde im Lernpfad wieder zurückgedreht.
+const RICHTUNGS_ZEILEN = [
+  { market: "AAA", direction: "BUY",       profitLoss:  10, updatedAt: new Date("2026-09-01") },
+  { market: "AAA", direction: "UNBEKANNT", profitLoss:  20, updatedAt: new Date("2026-09-02") },
+  { market: "AAA", direction: null,        profitLoss: -30, updatedAt: new Date("2026-09-03") },
+  { market: "AAA", direction: "",          profitLoss:  40, updatedAt: new Date("2026-09-04") },
+  { market: "AAA", direction: "LONG",      profitLoss:  50, updatedAt: new Date("2026-09-05") },
+];
+
 const OFFENE = [
   { market: "GBPUSD", direction: "BUY", profitLoss: 5000, status: "OPEN", updatedAt: new Date("2026-08-10") },
   { market: "USDJPY", direction: "SELL", profitLoss: -3000, status: "OPEN", updatedAt: new Date("2026-08-11") },
@@ -146,6 +163,69 @@ module.exports = async function pruefe() {
     pruefe1("kleingeschriebenes buy wird nicht erkannt", kleinBuy?.direction === "BUY",
       String(kleinBuy?.direction));
 
+    // ── Teil 1b: eine unlesbare Richtung wird NICHT erfunden (07.09.) ────
+    //
+    // DER FUND. Hier stand
+    //
+    //   /^(SELL|SHORT)$/i.test(String(z.direction ?? "")) ? "SELL" : "BUY"
+    //
+    // — ein Zweiwege-Schalter ohne dritten Ausgang. Aus `null`, aus dem leeren
+    // Feld und aus dem ausdrücklichen "UNBEKANNT" wurde damit ein **BUY**. Der
+    // Kommentar daneben begründete das damit, beide Quellen sollten "nicht
+    // unterschiedlich raten" — geraten wurde also zugegebenermassen.
+    //
+    // ZWEI FEHLER SIND MÖGLICH, und dieser Prüfer muss BEIDE fangen:
+    //   1. wieder raten  -> aus null wird "BUY"
+    //   2. überkorrigieren -> die Zeile wird weggeworfen, und mit ihr ein
+    //      ECHTES Ergebnis aus der Win-Rate. Das Feld hat keinen Leser, das
+    //      Ergebnis schon; Wegwerfen wäre also schlimmer als der Fehler.
+    if (typeof M.lesbareRichtung !== "function") {
+      funde.push("lesbareRichtung wird nicht exportiert — die Richtung wird "
+        + "wieder inline geraten");
+      geprueft++;
+    } else {
+      const lr = M.lesbareRichtung;
+      for (const [roh, erwartet] of [
+        ["BUY", "BUY"], ["SELL", "SELL"],
+        ["SHORT", "SELL"], ["LONG", "BUY"],
+        ["buy", "BUY"], ["  sell  ", "SELL"],
+        // Der Kern: alles Unklare ist null, NICHT "BUY".
+        ["UNBEKANNT", null], ["", null], ["   ", null],
+        [null, null], [undefined, null], [123, null], [{}, null],
+        // Nicht "beginnt mit BUY", sondern gleich BUY. Ein "BUY_LIMIT" ist
+        // eine Orderart, keine belegte Richtung — lieber unbekannt als geraten.
+        ["BUY_LIMIT", null],
+      ]) {
+        pruefe1(`lesbareRichtung(${JSON.stringify(roh)}) falsch`,
+          lr(roh) === erwartet, `${JSON.stringify(lr(roh))} statt ${JSON.stringify(erwartet)}`);
+      }
+    }
+
+    const rm = baue(RICHTUNGS_ZEILEN);
+    pruefe1("Richtungs-Prüfstand lädt nicht", !rm.fehler, rm.fehler);
+    if (!rm.fehler) {
+      const rt = await rm.exports.echteGeschlosseneTrades();
+      // KEINE Zeile darf verschwinden — sonst fehlt ein echtes WIN/LOSS.
+      pruefe1("eine Zeile ohne lesbare Richtung wird weggeworfen — "
+        + "damit fehlt ihr Ergebnis in der Win-Rate",
+        rt.length === 5, `${rt.length} statt 5`);
+      const richtungen = rt.map((t) => t.direction);
+      pruefe1("eine unlesbare Richtung wird wieder zu BUY erfunden",
+        richtungen.filter((d) => d === null).length === 3,
+        JSON.stringify(richtungen));
+      pruefe1("LONG wird nicht als BUY gelesen",
+        rt.find((t) => t.pnl === 50)?.direction === "BUY",
+        String(rt.find((t) => t.pnl === 50)?.direction));
+      pruefe1("UNBEKANNT gilt als Richtung",
+        rt.find((t) => t.pnl === 20)?.direction === null,
+        String(rt.find((t) => t.pnl === 20)?.direction));
+      // Und das Ergebnis zählt weiter: 4 Gewinne, 1 Verlust.
+      pruefe1("das Ergebnis der Zeilen ohne Richtung ging verloren",
+        rt.filter((t) => t.outcome === "WIN").length === 4
+        && rt.filter((t) => t.outcome === "LOSS").length === 1,
+        JSON.stringify(rt.map((t) => t.outcome)));
+    }
+
     // ── Teil 2: der Zyklus rechnet daraus die richtigen Kennzahlen ───────
     const echt = await M.runLearningCycle(["capital"], "echt");
     pruefe1("die Quelle steht nicht im Bericht", echt.quelle === "echt", String(echt.quelle));
@@ -215,6 +295,32 @@ module.exports = async function pruefe() {
     /await\s+echteGeschlosseneTrades\(\)/.test(src));
   pruefe1("die Quelle wird nicht in den Bericht geschrieben",
     /\bquelle,?\s*\n\s*\};/.test(src) || /quelle:\s*quelle/.test(src));
+
+  // ── Der PAPIERPFAD benutzt dieselbe Funktion (07.09.) ─────────────────
+  //
+  // Dort stand derselbe Fehler in schärferer Form:
+  //
+  //   typeof p?.direction === "string" ? p.direction as "BUY" | "SELL" : "BUY"
+  //
+  // Ein fehlendes Feld wurde zu "BUY", und `as "BUY" | "SELL"` war eine
+  // BEHAUPTUNG gegenüber dem Compiler statt einer Prüfung: ein "LONG" aus dem
+  // Ereignis-Payload lief unverändert durch und galt fortan als gültige
+  // Richtung, obwohl es keine der beiden ist.
+  //
+  // EHRLICHE ABGRENZUNG: dieser Teil ist eine STRUKTUR-Prüfung, keine
+  // Rechnung. `extractClosedTrades` ist nicht exportiert, und die Richtung
+  // steht in keinem Feld des Berichts — über `runLearningCycle` ist sie also
+  // nicht messbar. Der echte Pfad oben wird gerechnet, dieser nicht. Die
+  // Kommentare sind vorher entfernt (`src`), sonst fände sich der zitierte
+  // alte Wortlaut im Kommentar wieder — die Fehlerklasse aus CLAUDE.md.
+  pruefe1("der Papierpfad rät die Richtung wieder selbst",
+    !/direction\s+as\s+"BUY"\s*\|\s*"SELL"/.test(src),
+    "`as` ist eine Behauptung, keine Prüfung");
+  const nutzung = (src.match(/lesbareRichtung\(/g) || []).length;
+  pruefe1("nicht beide Quellen benutzen dieselbe Richtungs-Prüfung",
+    nutzung >= 3, `${nutzung} Aufrufe (echt: filter + map, Papier: 1 erwartet)`);
+  pruefe1("der Zweiwege-Schalter ohne dritten Ausgang ist zurück",
+    !/\?\s*"SELL"\s*:\s*"BUY"/.test(src));
 
   // ── Teil 6: der Zyklus wird auch WIRKLICH gefahren ────────────────────
   //

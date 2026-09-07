@@ -24,7 +24,11 @@ const BACKTEST_BASELINE: Record<string, number> = {
 
 type ClosedTrade = {
   symbol: string;
-  direction: "BUY" | "SELL";
+  /** `null` = die Quelle hat keine lesbare Richtung geliefert (07.09.).
+   *  Vorher war das Feld `"BUY" | "SELL"` — und genau deshalb musste jede
+   *  Quelle eine Richtung ERFINDEN, wenn sie keine hatte. Siehe
+   *  `lesbareRichtung()`. */
+  direction: "BUY" | "SELL" | null;
   pnl: number;
   outcome: "WIN" | "LOSS" | "BREAKEVEN";
   closedAt: string;
@@ -43,6 +47,41 @@ type ClosedTrade = {
  * aber ausdrücklich verlangt werden und steht im Bericht.
  */
 export type LernQuelle = "echt" | "papier" | "beide";
+
+/** BUY/SELL aus der freien Textspalte — oder `null`, wenn nicht lesbar (07.09.).
+ *
+ * `Trade.direction` ist in der Datenbank ein freier Text und wird von mehreren
+ * Schreibern gefüllt. Bis heute stand hier
+ *
+ *     /^(SELL|SHORT)$/i.test(String(z.direction ?? "")) ? "SELL" : "BUY"
+ *
+ * — ein Zweiwege-Schalter ohne dritten Ausgang. Damit wurde aus einem leeren
+ * Feld, aus `null` und aus dem ausdrücklichen "UNBEKANNT" ein **BUY**. Die
+ * Begründung im Kommentar lautete, beide Quellen sollten "nicht unterschiedlich
+ * raten" — geraten wurde also zugegebenermassen, nur einheitlich.
+ *
+ * `null` heisst ausdrücklich "nicht lesbar" und wird auch so weitergereicht.
+ *
+ * BEWUSST NICHT AUSSORTIERT — anders als beim fehlenden Markt (24.08.).
+ * Nachgemessen statt vermutet: `ClosedTrade.direction` wird in dieser Datei
+ * GESCHRIEBEN, aber von der Auswertung nirgends gelesen. Die Symbol-Statistik
+ * in `analyzeTradeFeedback()` rechnet ausschliesslich mit `outcome` und `pnl`
+ * (`wins`/`losses`/`winRate`/`totalPnl`), und der einzige Leser von
+ * `.direction` weiter unten ist `p.direction` aus `PredictionRecord` — ein
+ * anderes Objekt. Eine Zeile wegen der Richtung zu verwerfen würde also ein
+ * ECHTES Ergebnis aus der Win-Rate entfernen, um ein Feld zu retten, das
+ * niemand liest. Das wäre schlechter als der Fehler, der hier behoben wird.
+ *
+ * LONG/SHORT werden mitgelesen, weil der Broker-Pfad diese Wörter benutzt;
+ * beides ist eindeutig und muss nicht geraten werden.
+ */
+export function lesbareRichtung(roh: unknown): "BUY" | "SELL" | null {
+  if (typeof roh !== "string") return null;
+  const t = roh.trim().toUpperCase();
+  if (t === "SELL" || t === "SHORT") return "SELL";
+  if (t === "BUY" || t === "LONG") return "BUY";
+  return null;
+}
 
 /** Geschlossene Trades aus der ECHTEN Trade-Tabelle.
  *
@@ -89,14 +128,36 @@ export async function echteGeschlosseneTrades(): Promise<ClosedTrade[]> {
         `[learning] ${zeilen.length - brauchbar.length} geschlossene Trades ohne Markt — nicht gelernt`
       );
     }
+    // Die Richtung wird nicht mehr ERFUNDEN (07.09.).
+    //
+    // Hier stand: `/^(SELL|SHORT)$/i.test(…) ? "SELL" : "BUY"` — mit der
+    // Begründung, beide Quellen sollten "nicht unterschiedlich raten". Genau
+    // das war der Fehler: aus einem LEEREN Feld, aus `null` und aus
+    // "UNBEKANNT" wurde damit ein **BUY**. Geraten wurde trotzdem, nur
+    // einheitlich.
+    //
+    // Der Anlass ist konkret: der manuelle Journal-Abgleich legt für
+    // Transaktionen ohne Journal-Zeile eine Zeile an, und deren Richtung ist
+    // schlicht unbekannt — seit dem 03.09. steht dort ehrlich "UNBEKANNT"
+    // statt eines fest verdrahteten "BUY". Diese Zeilen kamen hier als BUY
+    // wieder heraus, und damit wäre die Ehrlichkeit von 03.09. an dieser
+    // Stelle wieder zurückgedreht worden.
+    //
+    // Die Zeile BLEIBT (Begründung bei `lesbareRichtung()`: das Feld hat
+    // keinen Leser, ihr `outcome` und `pnl` aber schon). Gemeldet wird
+    // trotzdem — eine stille Lücke ist der Anfang der nächsten Vermutung.
+    const ohneRichtung = brauchbar.filter((z) => lesbareRichtung(z.direction) === null).length;
+    if (ohneRichtung > 0) {
+      console.warn(
+        `[learning] ${ohneRichtung} von ${brauchbar.length} geschlossenen Trades `
+        + "ohne lesbare Richtung — Richtung bleibt unbekannt (Ergebnis zählt weiter)"
+      );
+    }
     return brauchbar.map((z) => {
       const pnl = typeof z.profitLoss === "number" ? z.profitLoss : 0;
       return {
         symbol: (z.market as string).trim(),
-        // Die Spalte ist ein freier Text. Alles, was nicht eindeutig SELL/SHORT
-        // ist, gilt als BUY — dieselbe Vorgabe wie im Papierpfad, damit die
-        // beiden Quellen nicht unterschiedlich raten.
-        direction: /^(SELL|SHORT)$/i.test(String(z.direction ?? "")) ? "SELL" : "BUY",
+        direction: lesbareRichtung(z.direction),
         pnl,
         // Gleiche Schwelle wie im Papierpfad: ein Cent Rauschen ist kein
         // Gewinn und kein Verlust.
@@ -127,7 +188,21 @@ function extractClosedTrades(slot = "capital"): ClosedTrade[] {
     if (pnl === 0 && event.event !== "POSITION_CLOSED") continue;
 
     const symbol = typeof p?.symbol === "string" ? p.symbol : "UNKNOWN";
-    const direction = typeof p?.direction === "string" ? p.direction as "BUY" | "SELL" : "BUY";
+    // Derselbe Umbau wie im echten Pfad (07.09.) — hier stand:
+    //
+    //   typeof p?.direction === "string" ? p.direction as "BUY" | "SELL" : "BUY"
+    //
+    // Zwei Fehler in einer Zeile. Erstens wurde aus einem FEHLENDEN Feld ein
+    // "BUY". Zweitens war `as "BUY" | "SELL"` eine Behauptung gegenüber dem
+    // Compiler, keine Prüfung: ein "LONG" oder "UNBEKANNT" aus dem
+    // Ereignis-Payload wurde unverändert durchgereicht und galt fortan als
+    // gültige Richtung, obwohl es keine der beiden ist.
+    //
+    // Beide Quellen benutzen jetzt DIESELBE Funktion. Der alte Kommentar im
+    // echten Pfad verlangte ausdrücklich, dass sie "nicht unterschiedlich
+    // raten" — das Verlangen war richtig, nur die Umsetzung falsch: sie raten
+    // jetzt gar nicht mehr, und zwar beide gleich.
+    const direction = lesbareRichtung(p?.direction);
     const outcome: "WIN" | "LOSS" | "BREAKEVEN" =
       pnl > 0.01 ? "WIN" : pnl < -0.01 ? "LOSS" : "BREAKEVEN";
 
