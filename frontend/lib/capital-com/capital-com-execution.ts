@@ -9,6 +9,7 @@ import {
   type OrderResult,
 } from "./capital-com-client";
 import { getCapitalSession } from "./capital-com-session";
+import { isKillswitchActive } from "../killswitch/killswitch-engine";
 
 export interface ExecutionRequest {
   symbol: string;
@@ -206,6 +207,41 @@ function calcPositionSize(
 export async function executeCapitalDemoOrder(
   req: ExecutionRequest
 ): Promise<ExecutionResult> {
+  // ── NOTAUS ZUERST (07.09.) ────────────────────────────────────────────────
+  //
+  // Der Killswitch war bis heute an KEINER Ausführungsstelle abgefragt. Er
+  // wirkte nur mittelbar: `triggerKillswitch()` baut die Broker-Sitzung ab,
+  // danach schlägt der `!session`-Riegel direkt darunter an.
+  //
+  // EHRLICH EINGEORDNET, weil das der Unterschied zwischen "Loch" und
+  // "Zusicherung" ist: über den normalen Weg griff das. Aber die Deckung ist
+  // MITTELBAR und hat ein Zeitfenster. `triggerKillswitch()` ruft
+  // `disconnectBrokers()`, und das ist ein *fire-and-forget*-IIFE
+  // (killswitch-engine.ts:115-130) — es wartet nicht. Darin wird zuerst
+  // `capitalDeleteSession()` über das Netz zu Capital.com geschickt und ERST
+  // DANACH `global.__capital_session__ = null` gesetzt
+  // (capital-com-session.ts:268-278). Zwischen dem Auslösen des Notaus und
+  // dem Nullen der Sitzung ist `getCapitalSession()` also noch gültig —
+  // und hängt der Netzaufruf, bleibt sie es.
+  //
+  // Dieselbe Begründung wie bei `checkPriceAvailable` am 24.08.: eine
+  // Zusicherung gehört an die Stelle, an der sie gilt, und darf nicht davon
+  // abhängen, dass ein anderes Modul vorsichtig war. Diese Funktion ist der
+  // Punkt, an dem Geld bewegt wird — sie wird von der Route, vom
+  // ExecutionAgent und über den Orchestrator aus `instrumentation.ts`
+  // gerufen. Ein Riegel HIER deckt alle drei auf einmal.
+  //
+  // KEINE Ausnahme, kein Schalter, keine Einstellung: der Notaus ist der
+  // einzige Riegel, der immer halten muss.
+  //
+  // Rückgabe statt `throw`, genau wie die beiden Riegel darunter — ein
+  // geworfener Fehler würde die Handelsschleife töten (Fehlerklasse vom
+  // 19.08., Datenbank-Vorlauf in instrumentation.ts).
+  if (isKillswitchActive()) {
+    console.warn(`[capital-execution] 🔴 Killswitch aktiv — Order ${req.symbol} ${req.direction} NICHT ausgeführt`);
+    return { ok: false, broker: "CAPITAL_COM", mode: "DEMO", symbol: req.symbol, direction: req.direction, size: 0, epic: "", error: "Killswitch aktiv — keine neuen Orders (/reset zum Entsperren)", executedAt: new Date().toISOString() };
+  }
+
   const session = getCapitalSession();
   if (!session) {
     return { ok: false, broker: "CAPITAL_COM", mode: "DEMO", symbol: req.symbol, direction: req.direction, size: 0, epic: "", error: "Capital.com not connected", executedAt: new Date().toISOString() };

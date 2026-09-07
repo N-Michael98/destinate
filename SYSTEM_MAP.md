@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 454 · Kanten: 981
+Dateien mit internen Abhängigkeiten: 454 · Kanten: 983
 
 
 ## analysis-engine/api
@@ -888,6 +888,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 981
 - `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/killswitch/killswitch-engine.ts`
 - `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
@@ -1040,6 +1041,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 981
 - `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/killswitch/killswitch-engine.ts`
 - `frontend/lib/icmarkets/icmarkets-journal-sync.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`

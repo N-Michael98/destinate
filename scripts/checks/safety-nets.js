@@ -55,7 +55,9 @@ function pruefeTextfilter() {
   return funde;
 }
 
-module.exports = function pruefe() {
+// ASYNC seit 07.09.: der Killswitch-Teil unten RUFT die echten
+// Ausfuehrungsfunktionen auf, und die sind async. `run-all.js` erwartet das.
+module.exports = async function pruefe() {
   const funde = [];
   const filters = read("frontend/lib/trading-filters/trade-filters.ts");
   const orch    = read("frontend/lib/agents/orchestrator-agent.ts");
@@ -429,6 +431,137 @@ module.exports = function pruefe() {
   torPruefung("es steht nicht im Log, dass die Analyse ausgelassen wurde",
     /Analyse AUSGELASSEN/.test(orch),
     "sonst sieht ein stiller Zyklus wie ein Ausfall aus");
+
+  // ══ DER NOTAUS SPERRT JEDE NEUE ORDER — AUSGEFUEHRT (07.09.) ═════════════
+  //
+  // DER FUND. `isKillswitchActive()` wurde an KEINER Ausfuehrungsstelle
+  // abgefragt. Der Notaus wirkte nur MITTELBAR: `triggerKillswitch()` baut die
+  // Broker-Sitzung ab, danach schlaegt der `!session`-Riegel an.
+  //
+  // Das ist kein geschlossenes Loch gewesen, aber eine Deckung mit Zeitfenster:
+  // `disconnectBrokers()` ist ein fire-and-forget-IIFE (killswitch-engine.ts),
+  // und darin geht erst ein NETZAUFRUF zu Capital.com raus, bevor
+  // `global.__capital_session__ = null` gesetzt wird. Bis dahin ist die Sitzung
+  // gueltig. Bei IC Markets ist es schwaecher: der erste Riegel dort
+  // (`isICMarketsConfigured()`) prueft Zugangsdaten, nicht die Sitzung — den
+  // beruehrt der Killswitch gar nicht.
+  //
+  // Geprueft wird RECHNEND, nicht nach Wortlaut: das echte Modul wird geladen,
+  // der Killswitch-Stellvertreter auf "aktiv" gestellt und die echte
+  // Ausfuehrungsfunktion GERUFEN.
+  //
+  // Der zweite Teil ist der eigentliche Beweis: mit AKTIVER Sitzung. Stuende
+  // der Riegel hinter der Sitzungspruefung, waere er im Ernstfall — genau im
+  // Rennfenster — wirkungslos. Dieselbe Fehlerklasse wie am 07.09. beim
+  // Modell-Rueckfall: "ein Netz, das nur in eine Richtung greift".
+  const brokerFaelle = [
+    {
+      name: "Capital.com",
+      pfad: "lib/capital-com/capital-com-execution.ts",
+      funktion: "executeCapitalDemoOrder",
+      // Eine Sitzung, die es WIRKLICH gibt — sonst faenge der !session-Riegel
+      // den Fall ab und der Test bewiese nichts ueber den Killswitch.
+      sitzung: {
+        getCapitalSession: () => ({
+          apiKey: "x", cst: "y", securityToken: "z",
+          balance: 10000, currency: "USD", accountId: "A1",
+        }),
+      },
+      sitzungsModul: "capital-com-session",
+      req: {
+        symbol: "EURUSD", direction: "BUY", riskPercent: 1,
+        accountBalance: 10000, stopLossPrice: 1.05, takeProfitPrice: 1.15,
+        confidence: 80, strategy: "T", tradingStyle: "DAYTRADING",
+      },
+    },
+    {
+      name: "IC Markets",
+      pfad: "lib/icmarkets/icmarkets-execution.ts",
+      funktion: "executeICMarketsOrder",
+      sitzung: {
+        getICMarketsSession: () => ({ accessToken: "t", accountId: 1, balance: 10000 }),
+      },
+      sitzungsModul: "icmarkets-session",
+      req: {
+        symbol: "EURUSD", direction: "BUY", riskPercent: 1,
+        accountBalance: 10000, stopLossPrice: 1.05, takeProfitPrice: 1.15,
+        confidence: 80, tradingStyle: "DAYTRADING",
+      },
+    },
+  ];
+
+  // Die echten Funktionen loggen. Ohne Daempfung stuenden ihre Zeilen mitten
+  // in der Pruefausgabe und man haelt sie fuer einen Befund.
+  const echtesLog = console.log, echteWarnung = console.warn, echterFehler = console.error;
+  console.log = () => {}; console.warn = () => {}; console.error = () => {};
+  try {
+  for (const f of brokerFaelle) {
+    const laden = (aktiv) => ladeTsModul(f.pfad, {
+      "killswitch-engine": { isKillswitchActive: () => aktiv },
+      [f.sitzungsModul]: f.sitzung,
+      // Der Broker-Client MUSS explodieren, wenn er trotzdem gerufen wird —
+      // sonst koennte ein durchgerutschter Auftrag als "ok: false" enden und
+      // wie ein greifender Riegel aussehen.
+      "icmarkets-client": {
+        isICMarketsConfigured: () => true,
+        icPlaceOrder: () => { throw new Error("ORDER RAUSGEGANGEN trotz Killswitch"); },
+        icGetPrice: () => { throw new Error("PREISABFRAGE trotz Killswitch"); },
+      },
+      "capital-com-client": {
+        EPIC_MAP: { EURUSD: "EURUSD" },
+        capitalPlaceOrder: () => { throw new Error("ORDER RAUSGEGANGEN trotz Killswitch"); },
+        capitalGetPositions: () => { throw new Error("POSITIONSABFRAGE trotz Killswitch"); },
+        capitalClosePosition: () => { throw new Error("SCHLIESSEN trotz Killswitch"); },
+      },
+    });
+
+    const modul = laden(true);
+    if (modul.fehler) {
+      torPruefung(`${f.name}: Ausfuehrungsmodul nicht ladbar`, false, modul.fehler);
+      continue;
+    }
+    const fn = modul.exports[f.funktion];
+    if (typeof fn !== "function") {
+      torPruefung(`${f.name}: ${f.funktion} wird nicht exportiert`, false, "Umbenennung?");
+      continue;
+    }
+
+    let ergebnis = null;
+    let geworfen = null;
+    try {
+      ergebnis = await fn(f.req);
+    } catch (e) { geworfen = e; }
+
+    // 1. Kein Wurf — ein geworfener Fehler wuerde die Handelsschleife toeten.
+    torPruefung(`${f.name}: der Killswitch-Riegel WIRFT statt zurueckzugeben`,
+      geworfen === null,
+      geworfen ? String(geworfen.message) : "");
+    // 2. Die Order wird abgelehnt — bei GUELTIGER Sitzung.
+    torPruefung(`${f.name}: bei aktivem Killswitch wird trotzdem ausgefuehrt`,
+      ergebnis !== null && ergebnis.ok === false,
+      JSON.stringify(ergebnis)?.slice(0, 160));
+    // 3. Und zwar MIT NENNUNG des Grundes — sonst ist im Log nicht zu sehen,
+    //    warum nichts passiert, und ein Notaus sieht aus wie ein Ausfall.
+    torPruefung(`${f.name}: die Ablehnung nennt den Killswitch nicht`,
+      typeof ergebnis?.error === "string" && /Killswitch/i.test(ergebnis.error),
+      String(ergebnis?.error).slice(0, 120));
+
+    // 4. GEGENPROBE: ohne Killswitch darf der Riegel NICHT greifen. Ein Riegel,
+    //    der immer sperrt, wuerde den Handel komplett anhalten — das faellt
+    //    sonst erst im Betrieb auf. Hier explodiert der Client-Stellvertreter
+    //    absichtlich: dass es bis dorthin kommt, IST der Beweis, dass der
+    //    Killswitch-Riegel nicht mehr im Weg steht.
+    const offen = laden(false);
+    let e2 = null, r2 = null;
+    try { r2 = await offen.exports[f.funktion](f.req); } catch (e) { e2 = e; }
+    const kamDurch = (e2 !== null)
+      || (r2 && !(typeof r2.error === "string" && /Killswitch/i.test(r2.error)));
+    torPruefung(`${f.name}: der Riegel sperrt AUCH OHNE Killswitch — der Handel stuende still`,
+      kamDurch, JSON.stringify(r2)?.slice(0, 160));
+  }
+  } finally {
+    console.log = echtesLog; console.warn = echteWarnung; console.error = echterFehler;
+  }
 
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,

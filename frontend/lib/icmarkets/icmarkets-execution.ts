@@ -7,6 +7,7 @@
 
 import { icPlaceOrder, isICMarketsConfigured, icGetPrice } from "./icmarkets-client";
 import { getICMarketsSession } from "./icmarkets-session";
+import { isKillswitchActive } from "../killswitch/killswitch-engine";
 
 // cTrader symbol mapping: our internal symbol → exact cTrader symbolName
 // Verified via /api/icmarkets/symbols endpoint (351 symbols)
@@ -128,6 +129,23 @@ export async function executeICMarketsOrder(req: {
   tradingStyle: string;
 }): Promise<ICExecutionResult> {
   const ts = new Date().toISOString();
+
+  // ── NOTAUS ZUERST (07.09.) — Begründung wie in capital-com-execution.ts ──
+  //
+  // Hier ist die mittelbare Deckung sogar SCHWÄCHER als auf der Capital-Seite:
+  // der erste Riegel darunter ist `isICMarketsConfigured()`, und der prüft
+  // Zugangsdaten aus der Umgebung, nicht die Sitzung — der Killswitch berührt
+  // ihn also gar nicht. Erst der zweite (`!session`) greift mittelbar, und
+  // auch der erst, nachdem `clearICMarketsSession()` im fire-and-forget-Zweig
+  // von `disconnectBrokers()` durchgelaufen ist.
+  //
+  // Diese Datei ist ausserdem von KEINEM Prüfer abgesichert gewesen
+  // (`system-map --impact` meldete "keiner"). Der neue Prüfteil in
+  // `safety-nets` deckt jetzt beide Broker.
+  if (isKillswitchActive()) {
+    console.warn(`[icmarkets-execution] 🔴 Killswitch aktiv — Order ${req.symbol} ${req.direction} NICHT ausgeführt`);
+    return { ok: false, broker: "IC_MARKETS", symbol: req.symbol, ctraderSymbol: "", direction: req.direction, volume: 0, error: "Killswitch aktiv — keine neuen Orders (/reset zum Entsperren)", executedAt: ts };
+  }
 
   if (!isICMarketsConfigured()) {
     return { ok: false, broker: "IC_MARKETS", symbol: req.symbol, ctraderSymbol: "", direction: req.direction, volume: 0, error: "IC Markets not configured", executedAt: ts };
