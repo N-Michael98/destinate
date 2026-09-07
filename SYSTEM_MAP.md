@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 461 · Kanten: 1013
+Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
 
 
 ## analysis-engine/api
@@ -282,15 +282,8 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1013
   - → `frontend/lib/auth/jwt.ts`
 - `frontend/app/api/auto-execute/route.ts`
   - → `frontend/lib/cache/redis-cache.ts`
-  - → `frontend/lib/capital-com/capital-com-client.ts`
-  - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
-  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
-  - → `frontend/lib/icmarkets/icmarkets-execution.ts`
-  - → `frontend/lib/icmarkets/icmarkets-session.ts`
-  - → `frontend/lib/market-scanner/ai-analysis-engine.ts`
   - → `frontend/lib/settings/settings-store.ts`
-  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/app/api/autonomous-broker-optimization/route.ts`
   - → `frontend/lib/autonomous-broker-optimization/index.ts`
 - `frontend/app/api/autonomous-trading-evolution-memory/route.ts`
@@ -1533,10 +1526,10 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1013
 - `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 21 Dateien
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
-- `frontend/lib/capital-com/capital-com-client.ts` — von 16 Dateien
-- `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
-- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 15 Dateien
+- `frontend/lib/capital-com/capital-com-client.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
+- `frontend/lib/icmarkets/icmarkets-session.ts` — von 14 Dateien
+- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien

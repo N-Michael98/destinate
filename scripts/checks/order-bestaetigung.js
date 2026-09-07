@@ -198,18 +198,74 @@ module.exports = function pruefe() {
   pruefe1("die Notizen des Trades tragen unbestaetigt nicht",
     /trade\.unbestaetigt \? \{ unbestaetigt: true \}/.test(tracker));
 
-  // Alle DREI Speicherstellen muessen es mitgeben — eine zu vergessen hiesse,
-  // dass Phantom-Trades aus genau diesem Pfad unerkannt bleiben.
+  // Alle Speicherstellen muessen es mitgeben — eine zu vergessen hiesse, dass
+  // Phantom-Trades aus genau diesem Pfad unerkannt bleiben.
+  //
+  // WAREN DREI, SIND ZWEI (07.09.) — und das ist keine Abschwaechung.
+  // `app/api/auto-execute/route.ts` war die dritte Stelle. Dieser POST ist
+  // stillgelegt worden, weil er Orders ausfuehrte OHNE Killswitch, ohne
+  // Handelszeitfenster, ohne Filterkette, ohne Vola-Skalierung, mit
+  // ungeklemmter Schwelle — und weil er `body.opportunities` ungeprueft aus
+  // dem Request-Body uebernahm, also an der gesamten Analyse und allen neun
+  // Filterstufen vorbei. Ein Pfad, der nicht mehr ausfuehrt, kann auch keinen
+  // Phantom-Trade mehr erzeugen; ihn hier weiter zu zaehlen waere die
+  // Buchhaltung eines Weges, den es nicht gibt.
+  //
+  // Damit aus dem Wegfall keine Luecke wird, steht darunter die Gegenprobe:
+  // der Pfad muss stillgelegt BLEIBEN. Wer die Ausfuehrung zurueckbaut, wird
+  // dort rot — die Pruefung ist also strenger geworden, nicht schwaecher.
   let stellen = 0;
   for (const datei of [
-    "frontend/app/api/auto-execute/route.ts",
     "frontend/app/api/capital-com/execute/route.ts",
     "frontend/lib/agents/orchestrator-agent.ts",
   ]) {
     if (/unbestaetigt: result\?\.unbestaetigt/.test(read(datei))) stellen++;
   }
-  pruefe1("nicht alle drei Speicherstellen geben unbestaetigt mit",
-    stellen === 3, `${stellen} von 3`);
+  pruefe1("nicht alle zwei Speicherstellen geben unbestaetigt mit",
+    stellen === 2, `${stellen} von 2`);
+
+  // ── Gegenprobe: der stillgelegte Pfad fuehrt NICHTS mehr aus ────────────
+  //
+  // Kommentare und Zeichenketten werden vorher entfernt. Der Kopfkommentar der
+  // Route zaehlt die fehlenden Riegel namentlich auf und nennt die alte Zeile
+  // `body.opportunities as …`; die Ablehnungsmeldung nennt sie ebenfalls. Wer
+  // hier nur nach Woertern sucht, findet seine eigene Begruendung wieder —
+  // genau die Fehlerklasse aus CLAUDE.md.
+  const autoRoh = read("frontend/app/api/auto-execute/route.ts");
+  const auto = autoRoh
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/`(?:[^`\\]|\\.)*`/g, "``");
+  for (const [was, muster] of [
+    ["fuehrt wieder Capital-Orders aus", /executeCapitalDemoOrder\s*\(/],
+    ["fuehrt wieder IC-Markets-Orders aus", /executeICMarketsOrder\s*\(/],
+    ["schreibt wieder ins Journal", /saveCapitalTradeToJournal\s*\(/],
+    ["scannt wieder selbst", /analyzeMarkets\s*\(/],
+    ["uebernimmt wieder Gelegenheiten aus dem Request-Body", /body\.opportunities\s+as\b/],
+  ]) {
+    pruefe1(`der stillgelegte Auto-Execute-Pfad ${was}`, !muster.test(auto),
+      "er hat weder Killswitch noch Filterkette — er darf nicht ausfuehren");
+  }
+  pruefe1("der stillgelegte Auto-Execute-Pfad lehnt nicht mehr ab",
+    /status:\s*410/.test(auto), "POST muss 410 zurueckgeben");
+
+  // Und der GET darf den Tageszaehler NICHT anlegen (07.09.).
+  //
+  // Er tat es: `ensureDailyTrades()` schrieb `{ count: 0 }` nach
+  // global.__daily_trades__. Der Orchestrator stellt den Zaehler nach einem
+  // Neustart nur wieder her, WENN er fehlt oder von gestern ist
+  // (orchestrator-agent.ts:511). Wer zuerst anlegt, gewinnt — und das war
+  // dieser GET: MarketScannerPanel ruft ihn bei Auto-Scan alle 60 Sekunden,
+  // der Orchestrator laeuft alle 5 Minuten. Nach jedem Deploy mit offenem
+  // Dashboard war das Tageslimit damit still auf 0 zurueckgesetzt.
+  pruefe1("der Statusbericht legt den Tageszaehler wieder selbst an",
+    !/global\.__daily_trades__\s*=/.test(auto),
+    "ein Lesepfad darf den Zaehler des Handelszyklus nicht schreiben");
+  pruefe1("der Statusbericht fragt Redis nicht",
+    /daily_trades:/.test(autoRoh) && /cacheGet/.test(auto),
+    "sonst meldet er 0, waehrend der Zyklus den echten Stand hat");
 
   // Und der Tracker muss daraus wirklich etwas machen.
   pruefe1("der Tracker unterscheidet einen Phantom-Trade nicht",
