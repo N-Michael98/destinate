@@ -288,14 +288,26 @@ export default function SettingsDashboard() {
   }, []);
 
   const postAI = async (payload: Record<string, unknown>) => {
+    setSpeicherFehler(null);
     const r = await fetch("/api/ai-config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }).catch(() => null);
-    if (!r) return null;
+    if (!r) {
+      setSpeicherFehler("AI-Konfiguration nicht erreichbar");
+      return null;
+    }
     const d = await r.json().catch(() => null);
-    if (d?.settings) setAISettings(d.settings);
+    // 07.09.: `d.ok` wurde hier NIE geprüft. Einzelne Aufrufer zeigten ein
+    // generisches "Fehler beim Speichern" ohne Grund — bei einem
+    // Datenbank-Aussetzer stand also nirgends, WARUM. Jetzt derselbe rote
+    // Kasten wie bei den übrigen Einstellungen, mitsamt Ursache.
+    if (d?.ok === false) {
+      setSpeicherFehler(String(d.error ?? "Unbekannter Fehler"));
+    } else if (d?.settings) {
+      setAISettings(d.settings);
+    }
     return d;
   };
 

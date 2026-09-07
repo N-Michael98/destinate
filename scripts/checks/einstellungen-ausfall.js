@@ -251,6 +251,112 @@ module.exports = async function pruefe() {
     delete global.__settings_letzte_warnung__;
   }
 
+  // ══ Teil 5: DIESELBE Fehlerklasse im AI-Konfigurationsspeicher (07.09.) ══
+  //
+  // `lib/ai-config/ai-config-store.ts` hatte alle vier Defekte, die oben fuer
+  // die Einstellungen behoben sind — und die Folge trifft genau die Umstellung
+  // vom 07.09. auf das konfigurierte Modell:
+  //
+  //   DEFAULT_AI_SETTINGS.openai.model    = "gpt-4o-mini"
+  //   DEFAULT_AI_SETTINGS.anthropic.model = "claude-haiku-4-5-20251001"
+  //
+  // Ein einziger fehlgeschlagener Lesevorgang beim Start klemmte das Modell
+  // fuer die GESAMTE Prozesslaufzeit auf die billige Variante. Und weil der
+  // Scan dann `scanGptModel === ai.openai.model` sieht, meldet er die
+  // BERUHIGENDE Zeile "nutzt die konfigurierten Modelle" — mit den billigen.
+  // Der API-Schluessel faellt nicht weg (Railway-Variable), nur das Modell.
+  {
+    // console.error auch hier abfangen — sonst steht die Ausfall-Warnung
+    // bei JEDEM Pruefer-Lauf in der Ausgabe und stumpft ab.
+    const aiEchtesError = console.error;
+    console.error = () => {};
+    try {
+    delete global.__ai_config_store__;
+    delete global.__ai_config_letzte_warnung__;
+    let aiLiest = false;
+    let aiSchreibt = true;
+    let aiSchreibVersuche = 0;
+    const AI_ECHT = JSON.stringify({
+      openai: { model: "gpt-4o", apiKey: "sk-x", connected: true },
+      anthropic: { model: "claude-sonnet-4-6", apiKey: "sk-ant-x" },
+      telegram: { botToken: "", channels: {} },
+    });
+    const aiStub = {
+      $queryRaw: () => {
+        if (!aiLiest) throw new Error("connect ECONNREFUSED (Prüfstand)");
+        return Promise.resolve([{ data: AI_ECHT }]);
+      },
+      $executeRawUnsafe: async () => {
+        aiSchreibVersuche++;
+        if (!aiSchreibt) throw new Error("write failed (Prüfstand)");
+        return 1;
+      },
+    };
+    const mAI = ladeTsModul("lib/ai-config/ai-config-store.ts", {
+      prisma: { getPrisma: () => aiStub },
+      "telegram-sender": { sendTelegram: async () => {} },
+    });
+    if (mAI.fehler) {
+      funde.push(`ai-config-store nicht ladbar: ${mAI.fehler}`);
+    } else if (typeof mAI.exports.getAISettings !== "function"
+      || typeof mAI.exports.updateOpenAI !== "function") {
+      funde.push("getAISettings/updateOpenAI werden nicht exportiert — der "
+        + "AI-Konfigurationsspeicher bleibt ungeprueft");
+    } else {
+      const { getAISettings, updateOpenAI } = mAI.exports;
+
+      // (a) Lesefehler darf sich NICHT einbrennen.
+      aiLiest = false;
+      const a1 = await getAISettings();
+      pruefe1("bei DB-Ausfall gilt nicht das Standardmodell",
+        a1.openai.model === "gpt-4o-mini", a1.openai.model);
+      aiLiest = true;
+      const a2 = await getAISettings();
+      pruefe1("der Ausfall brennt sich ein — das Modell bliebe bis zum Neustart "
+        + "auf der billigen Variante",
+        a2.openai.model === "gpt-4o", a2.openai.model);
+
+      // (b) Waehrend eines Lesefehlers darf NICHT geschrieben werden.
+      delete global.__ai_config_store__;
+      aiLiest = false;
+      aiSchreibVersuche = 0;
+      let warfAI = false;
+      try { await updateOpenAI({ model: "gpt-4o" }); } catch { warfAI = true; }
+      pruefe1("bei DB-Ausfall wird die AI-Konfiguration trotzdem geschrieben — "
+        + "das setzt Modelle und Telegram-Kanaele auf Standard zurueck",
+        warfAI && aiSchreibVersuche === 0,
+        `warf=${warfAI}, Schreibversuche=${aiSchreibVersuche}`);
+
+      // (c) Schreibfehler muss durchschlagen, der Speicher darf ihn nicht
+      //     vortaeuschen.
+      delete global.__ai_config_store__;
+      aiLiest = true;
+      await getAISettings();
+      aiSchreibt = false;
+      let warfAI2 = false;
+      try { await updateOpenAI({ model: "gpt-4o-mini" }); } catch { warfAI2 = true; }
+      pruefe1("ein fehlgeschlagenes Schreiben der AI-Konfiguration wird verschluckt",
+        warfAI2);
+      const a3 = await getAISettings();
+      pruefe1("nach fehlgeschlagenem Schreiben steht der neue Wert im Speicher",
+        a3.openai.model === "gpt-4o", a3.openai.model);
+
+      // (d) Erfolgsfall.
+      aiSchreibt = true;
+      await updateOpenAI({ temperature: 0.5 });
+      const a4 = await getAISettings();
+      pruefe1("ein erfolgreiches Schreiben kommt nicht im Speicher an",
+        a4.openai.temperature === 0.5, String(a4.openai.temperature));
+      pruefe1("beim Speichern geht das Modell verloren",
+        a4.openai.model === "gpt-4o", a4.openai.model);
+    }
+    } finally {
+      console.error = aiEchtesError;
+      delete global.__ai_config_store__;
+      delete global.__ai_config_letzte_warnung__;
+    }
+  }
+
   // ── Der Fehler muss bis zur OBERFLAECHE durchschlagen (06.09.) ──────────
   //
   // Die Rechnungen oben belegen, dass der Store wirft. Das nuetzt nichts, wenn
@@ -277,6 +383,12 @@ module.exports = async function pruefe() {
   pruefe1("die Oberflaeche zeigt einen Speicherfehler nicht an",
     /speicherFehler/.test(uiQ) && /NICHT gespeichert/.test(
       read("frontend/components/SettingsDashboard.tsx")));
+  // Auch der AI-Konfigurationspfad muss den Fehlschlag zeigen (07.09.) — bis
+  // heute pruefte `postAI` den Erfolg nie, und einzelne Aufrufer meldeten ein
+  // generisches "Fehler beim Speichern" ohne Grund.
+  pruefe1("die Oberflaeche prueft den Erfolg beim Speichern der AI-Konfiguration nicht",
+    /const postAI[\s\S]{0,900}?d\?\.ok === false/.test(uiQ),
+    "ein Datenbank-Aussetzer bliebe ohne Begruendung");
 
   return {
     titel: `Einstellungen bei DB-Ausfall (${geprueft} Rechnungen, echte Funktion)`,
