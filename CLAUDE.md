@@ -54,7 +54,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `kurs-riegel` | `checkPriceAvailable()` | 24.08. |
 | `lern-quelle` | `echteGeschlosseneTrades()`, `runLearningCycle()` | 24.08. |
 | `preis-cache` | `preiseUebernehmen()`, `priceCache`, `marketHealth` | 26.08. |
-| `einstellungen-ausfall` | `loadFromDB()`, `get()` bei DB-Ausfall | 01.09. |
+| `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()` | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
 
@@ -127,6 +127,54 @@ Kommentar, einer Logzeile oder an einer anderen Aufrufstelle — während die
 echte Verdrahtung fehlte. Zuletzt am 18.08. im Sabotage-Lauf von
 `lifecycle-rueckkehr`. Wer zählt, ob etwas *benutzt* wird, muss Kommentare und
 Zeichenketten vorher entfernen (`ohneKommentareUndTexte()` dort).
+
+## Ein Netz, das nur in eine Richtung greift, ist keines
+
+Am **07.09.** wurde der Scan auf das konfigurierte Modell umgestellt. OpenAI
+antwortete mit `403 — Project … does not have access to model gpt-4o`, und der
+Scanner lieferte in **jedem** Zyklus null Gelegenheiten.
+
+Das Netz dagegen existierte. Der Kommentar darüber lautete wörtlich „eine
+Modell-Sperre darf nie die komplette Analyse schwärzen". Die Bedingung war:
+
+```ts
+if (raw === null && scanGptModel !== ai.openai.model)
+```
+
+Sie feuert nur, wenn das **günstige** Modell benutzt wurde. Nach der Umstellung
+sind beide gleich — **das Netz war genau im Ernstfall abgeschaltet**. Für
+Anthropic gab es gar keines.
+
+Wer einen Rückfall baut, prüft **beide** Richtungen. Und wenn der Rückfall
+greift, gehört das ins Log: sonst steht oben „nutzt die konfigurierten Modelle"
+und man glaubt es.
+
+## Ein Ausfall darf sich nicht als Ergebnis ausgeben
+
+Dieselbe Runde, eine Stufe weiter. Antwortete Claude nicht:
+
+```ts
+const riskScore = parsed.riskScore ?? 50;    // erfundene 50
+approved: riskScore < 60 && parsedRR >= 1.5  // 50 < 60 ist WAHR
+source: "CLAUDE_REAL"                        // obwohl nichts kam
+```
+
+Das Risiko-Tor fiel **still** weg — die Freigabe hing nur noch am R/R — und das
+Ergebnis trug trotzdem das Etikett einer echten Beurteilung. Exakt die Lüge,
+die am 01.09. eine Zeile weiter unten für `simulateClaude` behoben wurde; im
+Zweig daneben stand sie noch.
+
+Ein Rückfallwert (`?? 50`) an einer Stelle, die über Geld entscheidet, ist fast
+immer falsch: er macht aus „unbekannt" eine Messung. Jetzt führt der Ausfall auf
+`simulateClaude` — abgeleitet statt erfunden, ehrlich benannt
+(`CLAUDE_SIMULATED`) und **strenger** als der Rückfall vorher.
+
+Dieselbe Fehlerklasse in der Konfiguration: `ai-config-store.ts` speicherte
+einen Lesefehler bedingungslos zwischen, und seine Standardwerte lauten
+`gpt-4o-mini` / `claude-haiku-4-5`. Ein Aussetzer beim Start hätte das Modell
+für die ganze Laufzeit auf die billige Variante geklemmt — und der Scan hätte
+dazu „nutzt die konfigurierten Modelle" gemeldet. Behoben am 07.09., abgesichert
+in `einstellungen-ausfall`.
 
 ## Gelernt wird aus echten Trades, nicht aus Simulationen
 
