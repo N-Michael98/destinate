@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
+Dateien mit internen Abhängigkeiten: 454 · Kanten: 981
 
 
 ## analysis-engine/api
@@ -800,9 +800,6 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
   - → `frontend/lib/cache/redis-cache.ts`
 - `frontend/lib/auth/auth-store.ts`
   - → `frontend/app/lib/prisma.ts`
-- `frontend/lib/auth/index.ts`
-  - → `frontend/lib/auth/auth-store.ts`
-  - → `frontend/lib/auth/jwt.ts`
 - `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-engine.ts`
   - → `frontend/lib/adaptive-broker-weighting/index.ts`
   - → `frontend/lib/autonomous-broker-optimization/autonomous-broker-optimization-types.ts`
@@ -1189,14 +1186,6 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
 - `frontend/lib/paper-position-account-sync/paper-position-account-sync-engine.ts`
   - → `frontend/lib/paper-position-account-sync/paper-position-account-sync-types.ts`
   - → `frontend/lib/paper-trading/paper-singleton.ts`
-- `frontend/lib/paper-trading/index.ts`
-  - → `frontend/lib/paper-trading/paper-account-manager.ts`
-  - → `frontend/lib/paper-trading/paper-history.ts`
-  - → `frontend/lib/paper-trading/paper-order-manager.ts`
-  - → `frontend/lib/paper-trading/paper-pnl-engine.ts`
-  - → `frontend/lib/paper-trading/paper-position-manager.ts`
-  - → `frontend/lib/paper-trading/paper-trading-manager.ts`
-  - → `frontend/lib/paper-trading/paper-types.ts`
 - `frontend/lib/paper-trading/paper-account-manager.ts`
   - → `frontend/lib/paper-trading/paper-types.ts`
 - `frontend/lib/paper-trading/paper-history.ts`
@@ -1251,12 +1240,6 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
 - `frontend/lib/portfolio-brain/execution-queue-engine.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
-- `frontend/lib/portfolio-brain/index.ts`
-  - → `frontend/lib/portfolio-brain/brain-decision.ts`
-  - → `frontend/lib/portfolio-brain/brain-inputs.ts`
-  - → `frontend/lib/portfolio-brain/brain-manager.ts`
-  - → `frontend/lib/portfolio-brain/brain-safety.ts`
-  - → `frontend/lib/portfolio-brain/brain-types.ts`
 - `frontend/lib/portfolio-brain/paper-trading-execution-engine.ts`
   - → `frontend/lib/portfolio-brain/execution-queue-engine.ts`
 - `frontend/lib/portfolio-brain/portfolio-brain-adaptive-confidence.ts`
@@ -1441,21 +1424,6 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
   - → `frontend/lib/python-backend/auth-header.ts`
   - → `frontend/lib/strategy-evolution/confidence-engine.ts`
   - → `frontend/lib/strategy-evolution/evolution-types.ts`
-- `frontend/lib/strategy-evolution/evolution-manager.ts`
-  - → `frontend/lib/strategy-evolution/evolution-engine.ts`
-  - → `frontend/lib/strategy-evolution/market-adapter.ts`
-  - → `frontend/lib/strategy-evolution/strategy-ranker.ts`
-- `frontend/lib/strategy-evolution/index.ts`
-  - → `frontend/lib/strategy-evolution/confidence-engine.ts`
-  - → `frontend/lib/strategy-evolution/evolution-engine.ts`
-  - → `frontend/lib/strategy-evolution/evolution-manager.ts`
-  - → `frontend/lib/strategy-evolution/evolution-types.ts`
-  - → `frontend/lib/strategy-evolution/market-adapter.ts`
-  - → `frontend/lib/strategy-evolution/strategy-ranker.ts`
-- `frontend/lib/strategy-evolution/market-adapter.ts`
-  - → `frontend/lib/strategy-evolution/evolution-types.ts`
-- `frontend/lib/strategy-evolution/strategy-ranker.ts`
-  - → `frontend/lib/strategy-evolution/evolution-types.ts`
 - `frontend/lib/strategy-lifecycle/index.ts`
   - → `frontend/lib/strategy-lifecycle/strategy-lifecycle-engine.ts`
   - → `frontend/lib/strategy-lifecycle/strategy-lifecycle-types.ts`
@@ -1536,6 +1504,6 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
 - `analysis-engine/services/storage.py` — von 10 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 10 Dateien
-- `frontend/lib/auth/auth-store.ts` — von 8 Dateien
 - `frontend/lib/icmarkets/icmarkets-client.ts` — von 8 Dateien
+- `frontend/lib/ai-agent/memory/agent-memory.ts` — von 7 Dateien
 
