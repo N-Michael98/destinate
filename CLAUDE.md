@@ -83,6 +83,34 @@ schreibt über die eine Instanz und liest über die andere. Wer einen neuen
 geteilten Zustand baut, prüft ihn genauso — eine Struktur-Prüfung sieht diesen
 Fehler nicht.
 
+### Und die Kehrseite: ein Lesepfad darf ihn nicht ANLEGEN (07.09.)
+
+Der Zustand kann korrekt auf `global` liegen und trotzdem verlorengehen — wenn
+zwei Stellen ihn **erstmalig anlegen** und die eine dabei weniger weiss als die
+andere. Wer zuerst anlegt, gewinnt.
+
+Belegt an `global.__daily_trades__`. Der Orchestrator stellt den Zähler nach
+einem Neustart aus Redis wieder her, aber nur unter einer Bedingung
+(`orchestrator-agent.ts:511`):
+
+```ts
+if (!global.__daily_trades__ || global.__daily_trades__.date !== today) {
+  global.__daily_trades__ = { date: today, count: redisDailyRaw?.count ?? 0, … };
+}
+```
+
+Der **Statusbericht** `GET /api/auto-execute` legte denselben Zähler per
+`ensureDailyTrades()` mit `count: 0` an — ohne Redis zu fragen. Er läuft alle
+60 Sekunden (`MarketScannerPanel` bei Auto-Scan), der Orchestrator alle 5
+Minuten. Nach jedem Deploy mit geöffnetem Dashboard sah der Orchestrator also
+einen vorhandenen Eintrag mit heutigem Datum, übersprang die Wiederherstellung
+— und `maxTradesPerDay` begann von vorn. Redeploys sind hier Routine.
+
+Regel: **Ein Lesepfad schreibt gemeinsamen Zustand nicht.** Braucht er einen
+Wert, den es noch nicht gibt, liest er dieselbe Quelle wie der Besitzer (hier
+Redis) und meldet, was er findet. Der Prüfer `order-bestaetigung` sichert genau
+das ab.
+
 ## Das Dashboard ist EINE Seite, kein Satz von Seiten
 
 `app/page.tsx` hält oben `navGroups` (die Menüeinträge) und 3500 Zeilen weiter
