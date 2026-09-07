@@ -102,5 +102,67 @@ module.exports = function pruefe() {
   pruefe1("die Logzeile zeigt noch den rohen statt des wirksamen Werts",
     !/autoApprove \$\{settings\.botSettings\.autoApproveThreshold/.test(orch));
 
+  // ══ Die Untergrenze muss NACH der Meta-Anpassung noch gelten (07.09.) ════
+  //
+  // Die Signalkette verlangt an drei Stellen `confidence >= 70`. Der
+  // Meta-Schritt SENKT die Confidence danach aber noch — sein Prompt verlangt
+  // ausdruecklich "Confidence < 72 → adjustedConfidence reduzieren" — und das
+  // Ergebnis landete unveraendert in `approved`. Im Log vom 04.09. sichtbar:
+  //
+  //   [orchestrator] 🚫 … EURUSD: Confidence 68 < Schwelle 77
+  //
+  // Eine 68 haette die Kette gar nicht erreichen duerfen.
+  //
+  // SCHWERER WOG DER ZWEITE TEIL: `adjustedConfidence` kam UNGEPRUEFT aus der
+  // Modellantwort. Fehlte das Feld, stand `undefined` in der Confidence — und
+  // der Riegel lautet `if (o.gpt.confidence < threshold)`. `undefined < 77` ist
+  // FALSE, das Signal waere also nicht verworfen worden, sondern haette die
+  // Freigabeschwelle vollstaendig umgangen. Dieselbe Falle wie `NaN <= 0` beim
+  // Kurs-Riegel am 24.08.
+  const analyseModul = ladeTsModul("lib/agents/analysis-agent.ts");
+  if (analyseModul.fehler) {
+    funde.push(`analysis-agent nicht ladbar: ${analyseModul.fehler}`);
+  } else if (typeof analyseModul.exports.gepruefteConfidence !== "function") {
+    funde.push("gepruefteConfidence wird nicht exportiert — die angepasste "
+      + "Confidence bleibt ungeprueft");
+  } else {
+    const gc = analyseModul.exports.gepruefteConfidence;
+    pruefe1("ein brauchbarer Wert wird nicht uebernommen", gc(75, 70) === 75,
+      String(gc(75, 70)));
+    // DER GEFAEHRLICHE FALL: fehlt das Feld, darf NIE undefined durchkommen.
+    for (const [name, roh] of [
+      ["fehlend", undefined], ["null", null], ["leer", ""],
+      ["NaN", NaN], ["Text", "abc"],
+    ]) {
+      pruefe1(`unbrauchbare Confidence (${name}) kommt durch — `
+        + `\`undefined < Schwelle\` ist FALSE und umgeht den Riegel`,
+        gc(roh, 70) === 70, String(gc(roh, 70)));
+    }
+    pruefe1("eine Zahl als Text wird verworfen", gc("72", 70) === 72,
+      String(gc("72", 70)));
+    pruefe1("ein Wert ueber 100 wird nicht geklemmt", gc(150, 70) === 100,
+      String(gc(150, 70)));
+    pruefe1("ein negativer Wert wird nicht geklemmt", gc(-5, 70) === 0,
+      String(gc(-5, 70)));
+    // Eine echte 0 ist eine MESSUNG, kein fehlender Wert.
+    pruefe1("eine echte 0 wird als 'fehlt' behandelt", gc(0, 70) === 0,
+      String(gc(0, 70)));
+  }
+
+  // Kommentare MUESSEN weg, bevor gezaehlt wird. Beim ersten Lauf am 07.09.
+  // schlug diese Pruefung an — weil der Kommentar ueber der korrigierten Zeile
+  // die alte Fassung `confidence: meta.adjustedConfidence` zitiert. Genau die
+  // Fehlerklasse aus CLAUDE.md: ein Wort im Kommentar ist keine Verwendung.
+  const agentQ = read("frontend/lib/agents/analysis-agent.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  pruefe1("die angepasste Confidence wird wieder ungeprueft uebernommen",
+    /confidence: angepasst/.test(agentQ)
+    && !/confidence: meta\.adjustedConfidence/.test(agentQ),
+    "sonst landet undefined in der Confidence");
+  pruefe1("die Untergrenze gilt nach der Meta-Anpassung nicht mehr",
+    /angepasst < MIN_SIGNAL_CONFIDENCE/.test(agentQ),
+    "ein auf 68 gesenktes Signal bliebe sonst in `approved`");
+
   return { titel: `Signal-Untergrenze (${geprueft} Prüfungen, Grenze ${grenze})`, funde };
 };

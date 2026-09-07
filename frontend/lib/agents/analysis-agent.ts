@@ -116,6 +116,29 @@ export interface AnalysisAgentResult {
 
 // ── Hauptfunktion ─────────────────────────────────────────────────────────────
 
+/**
+ * Prüft die vom Meta-Schritt angepasste Confidence, statt sie zu übernehmen
+ * (07.09.).
+ *
+ * `adjustedConfidence` kam bis heute ungeprüft aus der Modellantwort. Fehlte
+ * das Feld, stand `undefined` in der Confidence — und der Riegel im
+ * Orchestrator lautet `if (o.gpt.confidence < threshold)`. `undefined < 77` ist
+ * **false**, das Signal wäre also nicht verworfen worden, sondern hätte die
+ * Freigabeschwelle vollständig umgangen. Dieselbe Falle wie `NaN <= 0` beim
+ * Kurs-Riegel am 24.08.
+ *
+ * Ein unbrauchbarer Wert lässt die Confidence deshalb UNVERÄNDERT — das ist der
+ * konservative Ausgang: es gilt weiter, was GPT selbst gesagt hat, und die
+ * Untergrenze der Signalkette greift danach wie bei jedem anderen Signal.
+ * Brauchbare Werte werden auf 0–100 geklemmt; ausserhalb liegt kein sinnvoller
+ * Prozentwert.
+ */
+export function gepruefteConfidence(roh: unknown, ausgangswert: number): number {
+  const n = Number(roh);
+  if (roh === null || roh === "" || !Number.isFinite(n)) return ausgangswert;
+  return Math.min(100, Math.max(0, n));
+}
+
 export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<AnalysisAgentResult> {
   const scannedAt = new Date().toISOString();
   console.log(`[analysis-agent] Starte Analyse: ${markets.length} Märkte`);
@@ -157,11 +180,39 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
       continue;
     }
 
-    // Confidence aktualisieren falls Meta-AI sie angepasst hat
+    // ── Die angepasste Confidence wird GEPRUEFT, nicht uebernommen (07.09.) ──
+    //
+    // Hier stand `confidence: meta.adjustedConfidence` — der Wert kam
+    // ungeprueft aus der Modellantwort (`adjustedConfidence: r.adjustedConfidence`
+    // weiter oben). Zwei Loecher:
+    //
+    //  1. FEHLT der Wert in der Antwort, steht `undefined` in der Confidence.
+    //     Im Orchestrator lautet der Riegel `if (o.gpt.confidence < threshold)`
+    //     — und `undefined < 77` ist FALSE. Das Signal waere also NICHT
+    //     verworfen worden, sondern haette die Freigabeschwelle vollstaendig
+    //     umgangen.
+    //  2. Der Prompt des Meta-Schritts verlangt ausdruecklich "Confidence < 72
+    //     → adjustedConfidence reduzieren". Ein auf 68 gesenktes Signal blieb
+    //     in `approved` — obwohl die Signalkette an drei Stellen
+    //     `confidence >= MIN_SIGNAL_CONFIDENCE` verlangt. Genau diese
+    //     Untergrenze war nach der Anpassung nicht mehr wirksam.
+    //     (Im Log vom 04.09. sichtbar: "EURUSD: Confidence 68 < Schwelle 77" —
+    //     eine 68 haette die Kette gar nicht erreichen duerfen.)
+    //
+    // Die Pruefung liegt in `gepruefteConfidence()` — als Funktion, damit der
+    // Pruefer sie AUSFUEHREN kann statt den Wortlaut festzunageln.
+    const angepasst = gepruefteConfidence(meta.adjustedConfidence, opp.gpt.confidence);
+    if (angepasst < MIN_SIGNAL_CONFIDENCE) {
+      const grund = `Meta-AI senkte Confidence auf ${angepasst} — unter der `
+        + `Untergrenze ${MIN_SIGNAL_CONFIDENCE} der Signalkette`;
+      rejected.push({ symbol: opp.symbol, reason: grund });
+      console.log(`[analysis-agent] ❌ ${opp.symbol} abgelehnt: ${grund}`);
+      continue;
+    }
     const enriched: ScannerOpportunity = {
       ...opp,
-      gpt: { ...opp.gpt, confidence: meta.adjustedConfidence },
-      finalScore: (opp.finalScore + meta.adjustedConfidence / 100) / 2,
+      gpt: { ...opp.gpt, confidence: angepasst },
+      finalScore: (opp.finalScore + angepasst / 100) / 2,
     };
     approved.push(enriched);
 
@@ -172,14 +223,14 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
       payload: {
         symbol: opp.symbol,
         direction: opp.gpt.direction,
-        confidence: meta.adjustedConfidence,
+        confidence: angepasst,
         status: "APPROVED",
         priority: meta.priority,
         concern: meta.concern,
       },
     });
 
-    console.log(`[analysis-agent] ✅ ${opp.symbol} ${opp.gpt.direction} conf=${meta.adjustedConfidence}% priority=${meta.priority}`);
+    console.log(`[analysis-agent] ✅ ${opp.symbol} ${opp.gpt.direction} conf=${angepasst}% priority=${meta.priority}`);
   }
 
   // Alle nicht-GO Signale als WAIT publizieren (für DiagnosticsAgent)
