@@ -1515,9 +1515,9 @@ Dateien mit internen Abhängigkeiten: 461 · Kanten: 1006
 - `frontend/lib/trading-style-priority-engine/index.ts`
   - → `frontend/lib/trading-style-priority-engine/trading-style-priority-types.ts`
 
-## frontend/middleware.ts
+## frontend/proxy.ts
 
-- `frontend/middleware.ts`
+- `frontend/proxy.ts`
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/security-watchdog/security-event-logger.ts`
 

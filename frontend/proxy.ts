@@ -1,5 +1,30 @@
-export const runtime = "nodejs";
-
+// ── middleware.ts → proxy.ts (07.09., Next.js 16.2.6) ───────────────────────
+//
+// Next 16 hat die Konvention umbenannt; der Build meldete bei jedem Lauf:
+//   ⚠ The "middleware" file convention is deprecated. Please use "proxy".
+//
+// KEIN reiner Rename. Hier stand als erste Zeile `export const runtime =
+// "nodejs";` — die ist ERSATZLOS ENTFALLEN, und zwar zwingend. Die
+// mitgelieferte Doku sagt es wörtlich
+// (node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/
+// proxy.md, Abschnitt "Runtime"):
+//
+//   "Proxy defaults to using the Node.js runtime. The runtime config option is
+//    not available in Proxy files. Setting the runtime config option in Proxy
+//    will throw an error."
+//
+// Stehengeblieben hätte die Zeile also nicht die alte Laufzeit gesichert,
+// sondern den Proxy zum Werfen gebracht — und damit die Anmeldung, die
+// IP-Blockliste und die Brute-Force-Erkennung für JEDE Anfrage lahmgelegt.
+//
+// Verhaltensneutral ist der Wegfall trotzdem: Proxy läuft laut derselben
+// Zeile ohnehin auf der Node.js-Laufzeit. Genau darauf ist diese Datei
+// angewiesen — `jose` und die dynamischen Importe der Redis-gestützten
+// Blockliste laufen auf der Edge-Laufzeit nicht.
+//
+// Alles Übrige ist unverändert: Honeypots, Muster-Erkennung, Blockliste,
+// Brute-Force-Zählung, HTTPS-Zwang, öffentliche Pfade und die JWT-Prüfung
+// stehen Zeile für Zeile wie vorher. `config.matcher` ebenfalls.
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
@@ -101,7 +126,7 @@ function bruteForceAufraeumen(now: number): void {
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const ip = getClientIP(request);
 
@@ -127,7 +152,7 @@ export async function middleware(request: NextRequest) {
         new Promise<false>((resolve) => setTimeout(() => resolve(false), 800)),
       ]);
       if (blocked) {
-        console.log(`[middleware] 🚫 Geblockte IP abgewiesen: ${ip} | ${pathname}`);
+        console.log(`[proxy] 🚫 Geblockte IP abgewiesen: ${ip} | ${pathname}`);
         return new NextResponse("Access denied", { status: 403 });
       }
     } catch { /* fail-open */ }
@@ -156,7 +181,7 @@ export async function middleware(request: NextRequest) {
   const eventType = detected?.type ?? (bruteForce ? "BRUTE_FORCE" : null);
 
   if (eventType) {
-    console.log(`[middleware] Security event detected: ${eventType} | IP: ${ip} | Path: ${pathname}`);
+    console.log(`[proxy] Security event detected: ${eventType} | IP: ${ip} | Path: ${pathname}`);
   }
 
   if (eventType) {

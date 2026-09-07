@@ -18,7 +18,7 @@ import Anthropic from "@anthropic-ai/sdk";
  * ist der Zustand belegbar statt behauptet.
  *
  * Der Schlüssel selbst wird NIEMALS zurückgegeben, nur ob er vorhanden ist und
- * wie er sich verhält. Die Route liegt hinter dem Login (middleware.ts schützt
+ * wie er sich verhält. Die Route liegt hinter dem Login (proxy.ts schützt
  * alles ausser PUBLIC_PATHS). Kosten pro Aufruf: wenige Token.
  */
 

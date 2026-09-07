@@ -252,7 +252,13 @@ module.exports = function pruefe() {
 
   // ── Der Brute-Force-Zähler räumt auf (26.08.) ───────────────────────────
   //
-  // ANLASS. `bruteForceMap` in middleware.ts bekam für JEDE anonyme Anfrage
+  // HEISST SEIT 07.09. proxy.ts — Next.js 16 hat die Dateikonvention
+  // umbenannt (`middleware` ist abgekündigt). Der Inhalt ist derselbe; nur
+  // der Pfad hier und der Funktionsname in der Datei haben sich geändert.
+  // Zusätzlich geprüft wird jetzt, dass die alte Datei WIRKLICH weg ist:
+  // lägen beide da, wäre nicht mehr erkennbar, welche greift.
+  //
+  // ANLASS. `bruteForceMap` in proxy.ts bekam für JEDE anonyme Anfrage
   // einen Eintrag und hat ihn nie wieder entfernt — eine IP, die einmal
   // vorbeikommt, blieb bis zum nächsten Deploy stehen. Ein öffentlich
   // erreichbarer Server wird dauerhaft von Scannern abgeklopft; die Karte
@@ -265,11 +271,33 @@ module.exports = function pruefe() {
   //
   // OHNE KOMMENTARE — der Name steht auch in der Erklärung darüber.
   {
-    const mw = read("frontend/middleware.ts")
+    const mw = read("frontend/proxy.ts")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
     if (!/function\s+bruteForceAufraeumen/.test(mw)) {
-      funde.push("FEHLT: middleware.ts räumt bruteForceMap nicht auf — Speicherleck");
+      funde.push("FEHLT: proxy.ts räumt bruteForceMap nicht auf — Speicherleck");
+    }
+    // Die umbenannte Datei muss den Einstiegspunkt auch WIRKLICH exportieren.
+    // Ein Rename der Datei ohne Rename der Funktion ergibt einen Proxy, den
+    // Next.js nie aufruft — und damit fielen Anmeldung, IP-Blockliste und
+    // Brute-Force-Erkennung STILL aus, ohne Fehlermeldung.
+    if (!/export\s+async\s+function\s+proxy\s*\(/.test(mw)) {
+      funde.push("FEHLT: proxy.ts exportiert keine Funktion `proxy` — "
+        + "Next.js 16 ruft dann nichts auf (Auth/Blockliste still aus)");
+    }
+    // `export const runtime` wirft in einer Proxy-Datei (Next-16-Doku,
+    // proxy.md Abschnitt "Runtime"). Beim Umbenennen stehengelassen hätte es
+    // den Proxy für JEDE Anfrage zum Werfen gebracht.
+    if (/export\s+const\s+runtime\s*=/.test(mw)) {
+      funde.push("proxy.ts setzt `runtime` — das wirft in einer Proxy-Datei "
+        + "(Next-16-Doku proxy.md, Abschnitt Runtime)");
+    }
+    // Und die alte Datei darf nicht danebenliegen.
+    if (require("fs").existsSync(
+      require("path").join(__dirname, "../../frontend/middleware.ts")
+    )) {
+      funde.push("frontend/middleware.ts liegt noch da — neben proxy.ts ist "
+        + "nicht mehr erkennbar, welche Datei greift");
     }
     if (!/bruteForceMap\.delete\(/.test(mw)) {
       funde.push("FEHLT: bruteForceAufraeumen löscht nichts");
