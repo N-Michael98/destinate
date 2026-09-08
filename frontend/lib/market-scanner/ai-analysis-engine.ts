@@ -351,8 +351,21 @@ async function callClaude(apiKey: string, model: string, prompt: string): Promis
     // eines Trades — eine an der Token-Grenze abgerissene Begründung ergäbe
     // unlesbares JSON und damit eine Ablehnung, die keine ist.
     if (String(data.stop_reason ?? "") === "max_tokens") {
+      // DIE MELDUNG STIMMTE NICHT (08.09.). Hier wurde protokolliert, das
+      // abgeschnittene Urteil "zählt als Ablehnung" — und danach wurde der
+      // abgeschnittene Text trotzdem zurückgegeben. Weiter unten fiel er auf
+      // `riskScore ?? 50`, und `50 < 60` ist WAHR: aus der angekündigten
+      // Ablehnung wurde eine FREIGABE. Genau die Klasse Fehler, die dieses
+      // Programm wiederholt getroffen hat — eine Logzeile, die etwas
+      // behauptet, das der Code nicht tut.
+      //
+      // Jetzt tut er es: `null` bedeutet "kein Urteil". Der Aufrufer geht
+      // damit denselben Weg wie bei einer ausgebliebenen Antwort — zweites
+      // Modell, sonst `simulateClaude`, und das ist STRENGER (verlangt
+      // zusätzlich Confidence >= MIN_SIGNAL_CONFIDENCE).
       console.error("[ai-engine] ⛔ Claude-Antwort ABGESCHNITTEN (stop_reason=max_tokens) "
-        + "— das Urteil ist unvollständig und zählt als Ablehnung. Grenze erhöhen.");
+        + "— das Urteil ist unvollständig und wird VERWORFEN. Grenze erhöhen.");
+      return null;
     }
     const content = data.content as Array<{ text: string }>;
     return content?.[0]?.text ?? null;
@@ -1341,18 +1354,54 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         claude = simulateClaude(gpt, market);
       } else {
         const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
-        const riskScore = parsed.riskScore ?? 50;
-        const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
-        claude = {
-          symbol: market.symbol,
-          approved: riskScore < 60 && parsedRR >= 1.5,
-          riskScore,
-          maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
-          reasoning: parsed.reasoning ?? "",
-          rewardRiskRatio: parsedRR,
-          source: "CLAUDE_REAL",
-          eigenesUrteil: parsed.approved,
-        };
+        // ── DIESELBE LUECKE, EIN ZWEIG WEITER (08.09.) ─────────────────────
+        //
+        // Hier stand `const riskScore = parsed.riskScore ?? 50;`. Am 07.09.
+        // wurde genau diese Zeile im Zweig DARUEBER behoben (Claude hat nicht
+        // geantwortet) — im Zweig daneben blieb sie stehen. Das ist bereits
+        // das dritte Mal, dass diese Fehlerklasse an einer Nachbarstelle
+        // ueberlebt hat; CLAUDE.md haelt den Fall vom 01.09. wortgleich fest.
+        //
+        // Erreichbar ist er so: Claude ANTWORTET (raw !== null), aber die
+        // Antwort ist nicht lesbar oder unvollstaendig — abgeschnitten an der
+        // Token-Grenze, in Prosa statt JSON, oder mit fehlendem riskScore.
+        // `parseJSON` faellt dann auf `{}` zurueck, und damit galt:
+        //
+        //   riskScore = 50
+        //   approved: 50 < 60 && rr >= 1.5   -> das Risiko-Tor faellt WEG
+        //   source: "CLAUDE_REAL"            -> obwohl nichts Lesbares kam
+        //
+        // Die Freigabe haengt dann nur noch am Chance-Risiko, und das Ergebnis
+        // traegt trotzdem das Etikett einer echten Beurteilung.
+        //
+        // `null` ist der gefaehrlichste Wert: `Number(null)` ist 0, und 0 < 60
+        // ist WAHR. Deshalb wird auf den TYP geprueft, nicht auf Endlichkeit
+        // allein — dieselbe Falle wie `NaN <= 0` beim Kurs-Riegel (24.08.).
+        const rohRisiko: unknown = parsed.riskScore;
+        const risikoBrauchbar =
+          typeof rohRisiko === "number" && Number.isFinite(rohRisiko);
+        if (!risikoBrauchbar) {
+          console.error(`[ai-engine] ⛔ ${market.symbol}: Claude hat GEANTWORTET, `
+            + `aber ohne brauchbaren riskScore (${JSON.stringify(rohRisiko)}) — `
+            + `regelbasiertes Ersatzurteil, KEINE echte Risikopruefung`);
+          ohneClaudeAusfall++;
+          claude = simulateClaude(gpt, market);
+        } else {
+          const riskScore = rohRisiko;
+          // `rrRatio` ist am ECHTEN Einstieg gerechnet (realesChanceRisiko) —
+          // eine Messung, kein Rueckfallwert. Sie darf hier stehen bleiben.
+          const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
+          claude = {
+            symbol: market.symbol,
+            approved: riskScore < 60 && parsedRR >= 1.5,
+            riskScore,
+            maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
+            reasoning: parsed.reasoning ?? "",
+            rewardRiskRatio: parsedRR,
+            source: "CLAUDE_REAL",
+            eigenesUrteil: parsed.approved,
+          };
+        }
       }
     } else {
       // Nur zählen, wenn ein HANDELBARES Signal vorlag. Bei direction=WAIT ist

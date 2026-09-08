@@ -39,8 +39,16 @@ interface PosMeta {
   trailSL: number | null;
   confidence: number;
   tradingStyle: string;
+  /** Der Stil stammt aus KEINER Quelle, sondern ist der Standardwert (08.09.).
+   *  Dann setzt der Zeit-Exit aus — siehe Begründung dort. Gleichzieher mit
+   *  `stilGeraten` im Capital.com-Pfad (risk-agent.ts, seit 19.08.). */
+  stilGeraten?: boolean;
 }
 const positionMeta: Map<string, PosMeta> = new Map();
+
+/** Einmal je Position melden, nicht alle zwei Minuten (gleiches Muster wie
+ *  `gerateneGemeldet` im risk-agent). */
+const gerateneGemeldetIC = new Set<string>();
 
 function getLevel(score: number): { beAt: number; trailDist: number } {
   if (score >= 80) return { beAt: 0.70, trailDist: 0.40 };
@@ -67,12 +75,16 @@ export async function runICMarketsTradeManager(): Promise<void> {
     try {
       const m = JSON.parse(t.notes);
       if (m.icPositionId) {
+        // `stilGeraten` mitführen (08.09.) — Begründung beim Zeit-Exit unten.
+        const stilBekannt = typeof (m.tradingStyle ?? m.strategy) === "string"
+          && String(m.tradingStyle ?? m.strategy).trim().length > 0;
         dbMeta.set(String(m.icPositionId), {
           beSet:       m.icBeSet ?? m.beSet ?? false,
           partialDone: m.icPartialDone ?? m.partialDone ?? false,
           trailSL:     m.icTrailSL ?? m.trailSL ?? null,
           confidence:  m.confidence ?? 72,
-          tradingStyle: m.tradingStyle ?? m.strategy ?? "DAYTRADING",
+          tradingStyle: stilBekannt ? String(m.tradingStyle ?? m.strategy) : "DAYTRADING",
+          stilGeraten: !stilBekannt,
         });
       }
     } catch { /* skip */ }
@@ -93,7 +105,11 @@ export async function runICMarketsTradeManager(): Promise<void> {
     const currentPrice = isBuy ? (priceResult.bid ?? 0) : (priceResult.ask ?? 0);
     if (!currentPrice) continue;
 
-    const mem = positionMeta.get(positionId) ?? { beSet: false, partialDone: false, trailSL: null, confidence: 72, tradingStyle: "DAYTRADING" };
+    // Ohne Speicher- UND ohne Datenbankeintrag ist der Stil GERATEN — das muss
+    // mitgeführt werden, sonst schliesst der Zeit-Exit unten auf einer Annahme.
+    const mem = positionMeta.get(positionId)
+      ?? { beSet: false, partialDone: false, trailSL: null, confidence: 72,
+           tradingStyle: "DAYTRADING", stilGeraten: true };
     const meta: PosMeta = dbMeta.get(positionId) ?? mem;
 
     const lvl = getLevel(meta.confidence);
@@ -123,7 +139,31 @@ export async function runICMarketsTradeManager(): Promise<void> {
     const maxHours = STYLE_MAX_HOURS[style] ?? STYLE_MAX_HOURS.DAYTRADING;
     const openedAt = new Date(pos.openTime ?? Date.now());
     const ageHours = (Date.now() - openedAt.getTime()) / (1000 * 60 * 60);
-    if (ageHours >= maxHours) {
+    // ── KEIN Zeit-Exit auf geratenem Handelsstil (08.09.) ──────────────────
+    //
+    // Gleichzieher mit dem Capital.com-Pfad, wo derselbe Riegel seit dem
+    // 19.08. steht (`risk-agent.ts:587`, Begründung dort wörtlich: "Das ist
+    // kein Schutz mehr, das ist ein Eingriff auf einer Annahme, und er kostet
+    // echtes Geld"). Bei IC Markets fehlte er — dieselbe Fehlerklasse, ein
+    // Broker behoben, der andere nicht.
+    //
+    // Der Rechenweg ist identisch: ohne Journal-Zeile und ohne
+    // Speicher-Eintrag stand der Stil auf dem Standardwert DAYTRADING, also
+    // 24 Stunden. Wäre die Position in Wirklichkeit SWING (168 h), würde sie
+    // 144 Stunden zu früh geschlossen — auf einer Annahme.
+    //
+    // Breakeven, Teilgewinn und Trailing laufen weiter: die prüfen zusätzlich
+    // den ECHTEN Stop beim Broker (`alreadyAtBE`, `meta.trailSL ?? liveSL`)
+    // und hängen nicht am geratenen Stil.
+    if (ageHours >= maxHours && meta.stilGeraten === true) {
+      if (!gerateneGemeldetIC.has(positionId)) {
+        gerateneGemeldetIC.add(positionId);
+        console.warn(`[ic-trade-mgr] ⏸ Zeit-Exit AUSGESETZT: ${symbol} ${pos.direction} `
+          + `age=${ageHours.toFixed(1)}h — Handelsstil ist GERATEN (weder Journal-Zeile `
+          + `noch Speicher-Eintrag). Auf ${style} zu schliessen waere ein Eingriff `
+          + `auf einer Annahme.`);
+      }
+    } else if (ageHours >= maxHours) {
       const closeResult = await icClosePosition(positionId);
       if (closeResult.ok) {
         positionMeta.delete(positionId);
@@ -213,5 +253,11 @@ export async function runICMarketsTradeManager(): Promise<void> {
   const liveIds = new Set(posResult.positions.map(p => p.positionId).filter(Boolean));
   for (const id of positionMeta.keys()) {
     if (!liveIds.has(id)) positionMeta.delete(id);
+  }
+  // Das Meldungs-Gedaechtnis mit aufraeumen (08.09.) — sonst waechst es mit
+  // jeder je gesehenen Position weiter. Genau das Leck, das am 26.08. in der
+  // Brute-Force-Karte gefunden wurde: ein Set, das nur waechst.
+  for (const id of gerateneGemeldetIC) {
+    if (!liveIds.has(id)) gerateneGemeldetIC.delete(id);
   }
 }

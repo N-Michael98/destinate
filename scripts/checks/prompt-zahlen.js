@@ -222,6 +222,49 @@ module.exports = function pruefe() {
   pruefe1("die Ausfall-Meldung behauptet weiterhin einen fehlenden Schluessel",
     ausfallBlock !== "" && !/Kein Anthropic-Schl/.test(ausfallBlock),
     "der Schluessel IST hinterlegt, wenn der Aufruf mit 400 scheitert");
+  // ══ DER ZWEIG DANEBEN — dritter Anlauf (08.09.) ═════════════════════════
+  //
+  // Am 07.09. wurde `riskScore ?? 50` fuer den Fall behoben, dass Claude NICHT
+  // antwortet. Im Zweig daneben — Claude ANTWORTET, aber unlesbar oder
+  // unvollstaendig — stand die Zeile weiter. `parseJSON` faellt dort auf `{}`,
+  // und damit galt:
+  //
+  //   riskScore = 50
+  //   approved: 50 < 60 && rr >= 1.5   -> das Risiko-Tor faellt WEG
+  //   source: "CLAUDE_REAL"            -> obwohl nichts Lesbares kam
+  //
+  // Das ist das DRITTE Mal, dass diese Fehlerklasse an einer Nachbarstelle
+  // ueberlebt hat (01.09., 07.09., 08.09.). Deshalb wird jetzt geprueft, dass
+  // die Zahl NIRGENDS mehr per `?? 50` entsteht.
+  pruefe1("ein unlesbares Claude-Urteil erfindet wieder einen Risiko-Wert",
+    !/riskScore\s*(=|\?\?)\s*(parsed\.riskScore\s*)?\?\?\s*50/.test(ohneKomm)
+    && !/parsed\.riskScore \?\? 50/.test(ohneKomm),
+    "`50 < 60` ist wahr — das Tor faellt still weg");
+  pruefe1("ein fehlender riskScore fuehrt nicht auf das Ersatzurteil",
+    /risikoBrauchbar[\s\S]{0,400}?claude = simulateClaude\(gpt, market\)/.test(ohneKomm),
+    "sonst traegt eine Nicht-Beurteilung das Etikett CLAUDE_REAL");
+  // `null` ist der gefaehrlichste Wert: Number(null) ist 0, und 0 < 60 ist wahr.
+  pruefe1("die Pruefung des riskScore laesst null durch",
+    /typeof rohRisiko === "number" && Number\.isFinite\(rohRisiko\)/.test(ohneKomm),
+    "Number(null) ist 0 — eine reine Endlichkeitspruefung reicht nicht");
+
+  // ── Eine abgeschnittene Antwort ist KEIN Urteil ─────────────────────────
+  //
+  // Die Logzeile sagte "zaehlt als Ablehnung" — und danach wurde der
+  // abgeschnittene Text trotzdem zurueckgegeben. Ueber `?? 50` wurde daraus
+  // eine FREIGABE. Eine Meldung, die etwas behauptet, das der Code nicht tut.
+  // ENG ANGEBUNDEN. Die erste Fassung erlaubte 400 Zeichen zwischen der
+  // Meldung und `return null;` — und fand im Sabotage-Lauf das `return null;`
+  // des catch-Blocks weiter unten. Der Riegel liess sich also entfernen, ohne
+  // dass etwas rot wurde. Jetzt muss die Rueckgabe UNMITTELBAR auf die
+  // Meldung folgen.
+  pruefe1("eine abgeschnittene Claude-Antwort wird wieder weitergereicht",
+    /Grenze erhöhen\.\"\);\s*return null;/.test(ohneKomm),
+    "sie muss verworfen werden, nicht bewertet");
+  pruefe1("die Abschneide-Meldung behauptet wieder eine Ablehnung",
+    !/zählt als Ablehnung/.test(ohneKomm),
+    "der Code lehnte nicht ab, er gab frei");
+
   pruefe1("die Ausfall-Meldung verweist nicht auf den echten Grund",
     /Grund `\s*\n?\s*\+ `steht in den ⛔-Zeilen|steht in den ⛔-Zeilen/.test(ausfallBlock),
     "HTTP-Status und Antworttext stehen dort und sollen nicht neu erfunden werden");

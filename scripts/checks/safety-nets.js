@@ -827,6 +827,78 @@ module.exports = async function pruefe() {
       "zwei Kopien derselben Entscheidung");
   }
 
+  // ══ KEIN ZEIT-EXIT AUF GERATENEM STIL — BEIDE BROKER (08.09.) ════════════
+  //
+  // DER FUND aus der Generalkontrolle. Der Riegel existierte seit dem 19.08.
+  // NUR im Capital.com-Pfad (`risk-agent.ts`, `stilGeraten`). Die Begruendung
+  // dort woertlich: "Waere die Position in Wirklichkeit SWING gedacht (168 h),
+  // wuerde sie 144 Stunden zu frueh geschlossen. Das ist kein Schutz mehr, das
+  // ist ein Eingriff auf einer Annahme, und er kostet echtes Geld."
+  //
+  // Bei IC MARKETS fehlte er. Dort stand
+  //   tradingStyle: m.tradingStyle ?? m.strategy ?? "DAYTRADING"
+  // und im Speicher-Rueckfall ebenso — und direkt danach schloss der Zeit-Exit
+  // auf genau diesem geratenen Wert. Dieselbe Fehlerklasse, ein Broker
+  // behoben, der andere nicht.
+  //
+  // Kommentare weg: die Begruendungen in beiden Dateien nennen den Namen.
+  {
+    const ohne = (p) => read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    for (const [name, datei] of [
+      ["Capital.com", "frontend/lib/agents/risk-agent.ts"],
+      ["IC Markets", "frontend/lib/icmarkets/icmarkets-trade-manager.ts"],
+    ]) {
+      const q = ohne(datei);
+      torPruefung(`${name}: kein Riegel gegen den Zeit-Exit auf geratenem Stil`,
+        /stilGeraten/.test(q),
+        "ein Eingriff auf einer Annahme, der Geld kostet");
+      // BEIDE Quellen einzeln pruefen, nicht per ODER. Die erste Fassung
+      // erlaubte "abgeleitet ODER fest true" — im Sabotage-Lauf liess sich
+      // damit die ABGELEITETE Kennzeichnung auf `false` setzen, waehrend der
+      // Speicher-Rueckfall mit `true` die Pruefung gruen hielt. Ein Treffer an
+      // EINER Stelle ist kein Beweis fuer die andere (CLAUDE.md).
+      torPruefung(`${name}: der geratene Stil wird nicht aus den Daten ABGELEITET`,
+        /stilGeraten:\s*!/.test(q),
+        "ohne Ableitung ist die Kennzeichnung eine Behauptung");
+    }
+    // Und im IC-Pfad muss die Bedingung WIRKLICH vor dem Schliessen stehen.
+    const ic = ohne("frontend/lib/icmarkets/icmarkets-trade-manager.ts");
+    // IC hat ZWEI Quellen (Datenbank-Notizen und Speicher-Karte) und deshalb
+    // zwei Stellen, an denen der Stil entstehen kann. Capital.com deckt beide
+    // in EINEM abgeleiteten Ausdruck ab (`!dbEntry && !hatSpeicher`) und
+    // braucht kein literales `true` — die erste Fassung dieser Pruefung
+    // verlangte es von beiden und wurde bei Capital.com zu Unrecht rot.
+    // Hier gilt es: der Speicher-Rueckfall ohne jede Quelle MUSS als geraten
+    // gelten, sonst faellt genau der ungedeckteste Fall durch.
+    torPruefung("IC Markets: der Speicher-Rueckfall gilt nicht als geraten",
+      /tradingStyle: "DAYTRADING",\s*stilGeraten: true/.test(ic),
+      "genau dort ist der Stil am wenigsten belegt");
+    torPruefung("IC Markets: der Zeit-Exit prueft den geratenen Stil nicht",
+      /ageHours >= maxHours && meta\.stilGeraten === true/.test(ic),
+      "sonst schliesst er weiter auf DAYTRADING");
+    torPruefung("IC Markets: das Aussetzen wird nicht gemeldet",
+      /Zeit-Exit AUSGESETZT/.test(ic),
+      "ein stiller Verzicht ist von einem Ausfall nicht zu unterscheiden");
+    // Breakeven/Teilgewinn/Trailing duerfen NICHT mit ausgesetzt werden — die
+    // haengen am echten Broker-Stop, nicht am Stil.
+    //
+    // Die erste Fassung dieser Pruefung suchte `partialDone` und `stilGeraten`
+    // innerhalb von 80 Zeichen — und schlug an, weil beide im selben
+    // Objekt-Literal stehen. Ein Fehlalarm im PRUEFER, keine Kopplung im Code.
+    // Jetzt wird gezaehlt, WO die Entscheidung `meta.stilGeraten` faellt: sie
+    // darf genau EINMAL abgefragt werden, und zwar im Zeit-Exit.
+    const entscheidungen = (ic.match(/meta\.stilGeraten/g) || []).length;
+    torPruefung("IC Markets: `meta.stilGeraten` wird nicht genau einmal abgefragt",
+      entscheidungen === 1,
+      `${entscheidungen}x — nur der Zeit-Exit darf davon abhaengen`);
+    // Das Meldungs-Gedaechtnis darf nicht wachsen (Leck-Klasse vom 26.08.).
+    torPruefung("IC Markets: das Meldungs-Gedaechtnis wird nie aufgeraeumt",
+      /gerateneGemeldetIC\.delete\(/.test(ic),
+      "ein Set, das nur waechst — dasselbe Leck wie in der Brute-Force-Karte");
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
