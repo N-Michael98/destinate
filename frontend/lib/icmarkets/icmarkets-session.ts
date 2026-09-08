@@ -136,7 +136,17 @@ export async function keepAliveICMarkets(): Promise<void> {
     const account = await icGetAccount();
     if (!account.ok) {
       console.warn(`[IC Markets] Keep-alive failed (${account.error}) — attempting reconnect`);
-      await autoReconnectICMarkets();
+      // Das ERGEBNIS des Versuchs gehört ins Log (08.09.). Vorher wurde der
+      // Rückgabewert weggeworfen: im Betriebslog stand stundenlang alle zwei
+      // Minuten "attempting reconnect" und NIE, ob es geklappt hat. Ein
+      // Wiederholungsversuch, dessen Ausgang niemand sieht, ist von einem
+      // Fehlschlag nicht zu unterscheiden.
+      const wieder = await autoReconnectICMarkets();
+      console[wieder.ok ? "log" : "error"](
+        wieder.ok
+          ? "[IC Markets] Reconnect ✅ erfolgreich"
+          : `[IC Markets] Reconnect ❌ fehlgeschlagen: ${wieder.error ?? "unbekannt"}`
+      );
       return;
     }
     // Update balance in session

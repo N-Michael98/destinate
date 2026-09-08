@@ -1040,7 +1040,11 @@ each market's own data, never from habit or from these examples' direction:
   // andere Entscheidungsregel: der Rückfall prüft den Risiko-Score gar nicht.
   // Läuft er, soll es dastehen — eine Simulation im Handelspfad darf nicht
   // still sein.
-  let ohneClaude = 0;
+  // ZWEI Zähler statt einem (08.09.). Sie standen zusammen in `ohneClaude`,
+  // und die Zusammenfassung unten schloss daraus pauschal auf einen fehlenden
+  // Schlüssel — siehe die Begründung dort.
+  let ohneClaudeKeinSchluessel = 0;   // gar kein ANTHROPIC_API_KEY gesetzt
+  let ohneClaudeAusfall = 0;          // Schlüssel da, Aufruf fehlgeschlagen
   // Wie viele abgelehnte Signale verletzten dabei GPTs eigene Prompt-Regeln?
   // Trennt "der Markt gibt nichts her" von "das Modell haelt sich nicht daran".
   let promptVerstossZaehler = 0;
@@ -1333,7 +1337,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         console.error(`[ai-engine] ⛔ ${market.symbol}: Claude hat nicht geantwortet `
           + `(${scanClaudeModel}${zweitClaude ? ` und ${zweitClaude}` : ""}) — `
           + `regelbasiertes Ersatzurteil, KEINE echte Risikopruefung`);
-        ohneClaude++;
+        ohneClaudeAusfall++;
         claude = simulateClaude(gpt, market);
       } else {
         const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
@@ -1353,7 +1357,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     } else {
       // Nur zählen, wenn ein HANDELBARES Signal vorlag. Bei direction=WAIT ist
       // der Rückfall der Normalfall (23 von 30 Märkten) und keine Meldung wert.
-      if (!hasClaude && gpt.direction !== "WAIT" && gpt.stopLoss > 0) ohneClaude++;
+      if (!hasClaude && gpt.direction !== "WAIT" && gpt.stopLoss > 0) ohneClaudeKeinSchluessel++;
       claude = simulateClaude(gpt, market);
     }
 
@@ -1583,11 +1587,41 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     );
   }
   // Eine Simulation im Handelspfad darf nicht still laufen (27.08.).
-  if (ohneClaude > 0) {
+  //
+  // DIE URSACHE WIRD NICHT MEHR ERFUNDEN (08.09.). Hier stand eine einzige
+  // Meldung, die pauschal endete mit „Kein Anthropic-Schlüssel hinterlegt."
+  // Beide Fälle liefen in denselben Zähler: der fehlende Schlüssel UND der
+  // fehlgeschlagene Aufruf.
+  //
+  // Im Betriebslog vom 08.09. 17:21 stand deshalb wörtlich „Kein
+  // Anthropic-Schlüssel hinterlegt", während drei Zeilen darüber der echte
+  // Grund stand:
+  //
+  //   [ai-engine] ⛔ Claude HTTP 400: {"type":"invalid_request_error",
+  //   "message":"Your credit balance is too low to access the Anthropic API…"}
+  //
+  // Ein 400 wegen Guthaben beweist, dass der Schlüssel DA ist — ohne Schlüssel
+  // käme man gar nicht bis zur Abrechnung. Die Meldung schickte also auf die
+  // Suche nach einer fehlenden Umgebungsvariable, während in Wahrheit das
+  // Guthaben leer war. Dieselbe Fehlerklasse wie in CLAUDE.md: eine Diagnose,
+  // die eine Ursache behauptet, die sie nicht gemessen hat.
+  //
+  // Der Grund wird hier NICHT wiederholt, sondern verwiesen — er steht schon
+  // mit HTTP-Status und Antworttext in den ⛔-Zeilen. Ihn ein zweites Mal zu
+  // formulieren hiesse, ihn ein zweites Mal raten zu können.
+  if (ohneClaudeKeinSchluessel > 0) {
     console.warn(
-      `[ai-engine] ⚠️ ${ohneClaude} handelbare(s) Signal(e) ohne Claude bewertet — `
+      `[ai-engine] ⚠️ ${ohneClaudeKeinSchluessel} handelbare(s) Signal(e) ohne Claude bewertet — `
       + `es galt der REGELBASIERTE Rückfall, und der prüft den Risiko-Score nicht. `
-      + `Kein Anthropic-Schlüssel hinterlegt.`
+      + `Kein Anthropic-Schlüssel hinterlegt (ANTHROPIC_API_KEY fehlt).`
+    );
+  }
+  if (ohneClaudeAusfall > 0) {
+    console.warn(
+      `[ai-engine] ⚠️ ${ohneClaudeAusfall} handelbare(s) Signal(e) ohne Claude bewertet — `
+      + `es galt der REGELBASIERTE Rückfall, und der prüft den Risiko-Score nicht. `
+      + `Der Schlüssel IST hinterlegt; die Aufrufe sind fehlgeschlagen — Grund `
+      + `steht in den ⛔-Zeilen oben (HTTP-Status und Antworttext).`
     );
   }
 

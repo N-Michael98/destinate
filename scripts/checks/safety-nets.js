@@ -563,6 +563,153 @@ module.exports = async function pruefe() {
     console.log = echtesLog; console.warn = echteWarnung; console.error = echterFehler;
   }
 
+  // ══ IC-MARKETS: DIE MCP-SITZUNG WIRD WIRKLICH ERNEUERT — AUSGEFUEHRT ═════
+  //
+  // DER FUND (08.09., aus dem Betriebslog). Alle zwei Minuten stand dort:
+  //
+  //   [IC Markets] Keep-alive failed (IC Markets MCP error: HTTP 404 —
+  //   {"jsonrpc":"2.0","error":{"code":-32000,
+  //    "message":"Session not found; re-initialize"},"id":null})
+  //
+  // Der Wiederherstellungszweig in `mcpCall` lautete `text.includes("session")`
+  // — mit KLEINEM s. In der Antwort steht "Session" mit grossem S, und ein
+  // kleingeschriebenes "session" kommt darin nicht vor. Die Bedingung war also
+  // immer false: es wurde geworfen statt neu angemeldet. Der Server sagte
+  // woertlich "re-initialize", und genau das ist nie passiert.
+  //
+  // Dass die geworfene Meldung im Log steht, BEWEIST es: sie stammt aus der
+  // Zeile UNTER dem Zweig.
+  //
+  // Geprueft wird rechnend, mit gestelltem `fetch` — eine Struktur-Pruefung
+  // saehe den Unterschied zwischen "session" und /session/i nicht an.
+  {
+    const icPfad = path.join(__dirname, "../../frontend/lib/icmarkets/icmarkets-client.ts");
+    if (!fs.existsSync(icPfad)) {
+      torPruefung("icmarkets-client.ts fehlt", false, icPfad);
+    } else {
+      const SITZUNGSFEHLER = '{"jsonrpc":"2.0","error":{"code":-32000,'
+        + '"message":"Session not found; re-initialize"},"id":null}';
+
+      // `immerKaputt`: der Server gibt den Sitzungsfehler IMMER zurueck.
+      // Damit wird der zweite Teil geprueft — dass EIN Versuch reicht und die
+      // Rekursion nicht endlos laeuft.
+      const bauen = (immerKaputt) => {
+        const zaehler = { initialize: 0, toolsCall: 0 };
+        const echtesFetch = global.fetch;
+        global.fetch = async (_url, opts) => {
+          const body = JSON.parse(String(opts?.body ?? "{}"));
+          if (body.method === "initialize") {
+            zaehler.initialize++;
+            return {
+              ok: true, status: 200,
+              headers: { get: (h) => (h === "mcp-session-id" ? "SID-NEU" : null) },
+              json: async () => ({ result: {} }),
+              text: async () => "{}",
+            };
+          }
+          zaehler.toolsCall++;
+          // NOTBREMSE im Pruefstand. Ohne Wiederholungs-Riegel ruft sich
+          // `mcpCall` ueber `return mcpCall(...)` selbst auf — und weil das
+          // ASYNCHRON geschieht, waechst kein Stack: es gaebe keinen
+          // Ueberlauf, sondern eine Endlosschleife, die den Pruefer AUFHAENGT
+          // statt ihn rot zu machen. Ein Pruefer, der haengt, meldet nichts.
+          if (zaehler.toolsCall > 5) {
+            throw new Error("Pruefstand-Notbremse: mehr als 5 Versuche — "
+              + "die Wiederholung ist nicht begrenzt");
+          }
+          // Erster Aufruf scheitert immer; danach nur noch, wenn immerKaputt.
+          if (zaehler.toolsCall === 1 || immerKaputt) {
+            return {
+              ok: false, status: 404,
+              headers: { get: () => null },
+              text: async () => SITZUNGSFEHLER,
+              json: async () => ({}),
+            };
+          }
+          return {
+            ok: true, status: 200,
+            headers: { get: () => "application/json" },
+            json: async () => ({ result: { balance: 1234 } }),
+            text: async () => "{}",
+          };
+        };
+        // Der Zustand liegt auf `global` — zwischen den Faellen zuruecksetzen,
+        // sonst traegt der zweite die Sitzung des ersten.
+        global.__icmarkets_mcp_session__ = null;
+        const modul = ladeTsModul("lib/icmarkets/icmarkets-client.ts", {});
+        return { modul, zaehler, aufraeumen: () => { global.fetch = echtesFetch; } };
+      };
+
+      const stillesLog = console.warn;
+      console.warn = () => {};
+      try {
+        // ── Fall 1: Sitzung abgelaufen, Neuanmeldung hilft ────────────────
+        const a = bauen(false);
+        if (a.modul.fehler) {
+          torPruefung("icmarkets-client nicht ladbar", false, a.modul.fehler);
+          a.aufraeumen();
+        } else {
+          let ergebnis = null, fehler = null;
+          try { ergebnis = await a.modul.exports.mcpCall("get_account", {}); }
+          catch (e) { fehler = e; }
+          a.aufraeumen();
+          torPruefung("eine abgelaufene MCP-Sitzung wird NICHT erneuert — "
+            + "der Keep-alive scheitert dann alle 2 Minuten endlos",
+            fehler === null && ergebnis !== null,
+            fehler ? String(fehler.message).slice(0, 120) : "");
+          torPruefung("nach dem Sitzungsfehler wurde nicht neu angemeldet",
+            a.zaehler.initialize >= 2,
+            `initialize ${a.zaehler.initialize}x (1x beim Start + 1x nach dem Fehler erwartet)`);
+          torPruefung("der Aufruf wurde nach der Neuanmeldung nicht wiederholt",
+            a.zaehler.toolsCall === 2, `tools/call ${a.zaehler.toolsCall}x`);
+        }
+
+        // ── Fall 2: Sitzung bleibt kaputt — GENAU EIN Versuch ─────────────
+        //
+        // Der Zweig war tot; ihn zu beleben legt frei, dass `mcpCall` sich
+        // selbst aufruft. Ohne Riegel waere daraus eine Endlosrekursion
+        // geworden — ein neuer Fehler, schlimmer als der behobene.
+        const b = bauen(true);
+        if (!b.modul.fehler) {
+          let fehler2 = null;
+          try { await b.modul.exports.mcpCall("get_account", {}); }
+          catch (e) { fehler2 = e; }
+          b.aufraeumen();
+          torPruefung("eine dauerhaft kaputte Sitzung wirft nicht, sondern laeuft weiter",
+            fehler2 !== null, "erwartet wird ein Fehler nach einem Versuch");
+          torPruefung("die Wiederholung ist nicht begrenzt — Gefahr der Endlosrekursion",
+            b.zaehler.toolsCall === 2, `tools/call ${b.zaehler.toolsCall}x statt genau 2x`);
+          // Und der Beweis, dass es NICHT an einem Stack-Overflow lag:
+          torPruefung("der Abbruch kam nicht vom Sitzungsfehler",
+            fehler2 !== null && /HTTP 404/.test(String(fehler2.message)),
+            String(fehler2?.message).slice(0, 100));
+        } else {
+          b.aufraeumen();
+        }
+      } finally {
+        console.warn = stillesLog;
+      }
+
+      // Der Zustand gehoert auf `global` — beide Seiten (API-Routen und die
+      // 2-Minuten-Schleife aus instrumentation.ts) benutzen diese Datei.
+      const icQuell = read("frontend/lib/icmarkets/icmarkets-client.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      torPruefung("die MCP-Sitzungskennung liegt wieder modul-scoped",
+        !/^\s*let\s+mcpSessionId/m.test(icQuell)
+        && /global\.__icmarkets_mcp_session__/.test(icQuell),
+        "API-Routen und die Keep-alive-Schleife saehen sonst verschiedene Kopien");
+      // Und das Ergebnis des Reconnect-Versuchs muss im Log stehen.
+      const icSess = read("frontend/lib/icmarkets/icmarkets-session.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      torPruefung("das Ergebnis des Reconnect-Versuchs wird verworfen",
+        /const\s+\w+\s*=\s*await autoReconnectICMarkets\(\)/.test(icSess)
+        && /Reconnect/.test(icSess),
+        "sonst steht im Log nur 'attempting reconnect' und nie, ob es klappte");
+    }
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

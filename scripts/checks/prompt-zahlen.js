@@ -189,9 +189,42 @@ module.exports = function pruefe() {
   // entfernt" damit durch: der Pruefer fand die ANDERE Fundstelle. Dieselbe
   // Fehlerklasse, vor der CLAUDE.md warnt — geprueft wird jetzt IM Block.
   pruefe1("der Ausfall wird nicht gezaehlt und nicht gemeldet",
-    /if \(raw === null\)[\s\S]{0,1800}?Claude hat nicht geantwortet[\s\S]{0,400}?ohneClaude\+\+/
+    /if \(raw === null\)[\s\S]{0,1800}?Claude hat nicht geantwortet[\s\S]{0,400}?ohneClaudeAusfall\+\+/
       .test(quell),
     "ohne Zaehlung faellt ein dauerhafter Claude-Ausfall nicht auf");
+
+  // ── Die URSACHE darf nicht erfunden werden (08.09.) ──────────────────────
+  //
+  // Beide Faelle liefen in EINEN Zaehler `ohneClaude`, und die Zusammenfassung
+  // endete pauschal mit „Kein Anthropic-Schluessel hinterlegt." Im Betriebslog
+  // vom 08.09. 17:21 stand genau das — waehrend drei Zeilen darueber der echte
+  // Grund stand: `Claude HTTP 400 … "Your credit balance is too low"`.
+  //
+  // Ein 400 wegen Guthaben BEWEIST, dass der Schluessel da ist; ohne Schluessel
+  // kaeme man nicht bis zur Abrechnung. Die Meldung schickte also auf die Suche
+  // nach einer fehlenden Umgebungsvariable. Dieselbe Fehlerklasse wie in
+  // CLAUDE.md: eine Diagnose, die eine Ursache behauptet, die sie nicht
+  // gemessen hat.
+  pruefe1("Ausfall und fehlender Schluessel laufen wieder in EINEN Zaehler",
+    /ohneClaudeKeinSchluessel/.test(quell) && /ohneClaudeAusfall/.test(quell),
+    "dann behauptet die Meldung eine Ursache, die sie nicht kennt");
+  pruefe1("der Zweig 'kein Schluessel' zaehlt nicht mehr getrennt",
+    /!hasClaude[\s\S]{0,120}?ohneClaudeKeinSchluessel\+\+/.test(quell));
+  // Und die Meldung selbst: der Ausfall-Fall darf NICHT behaupten, der
+  // Schluessel fehle. Kommentare vorher weg — die Begruendung oben zitiert den
+  // alten Wortlaut, und ein Pruefer, der seine eigene Erklaerung findet, prueft
+  // nichts (CLAUDE.md, sechsmal zugeschlagen).
+  const ohneKomm = quell
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const ausfallBlock = (ohneKomm.match(
+    /if \(ohneClaudeAusfall > 0\)[\s\S]{0,700}?\n  \}/) || [""])[0];
+  pruefe1("die Ausfall-Meldung behauptet weiterhin einen fehlenden Schluessel",
+    ausfallBlock !== "" && !/Kein Anthropic-Schl/.test(ausfallBlock),
+    "der Schluessel IST hinterlegt, wenn der Aufruf mit 400 scheitert");
+  pruefe1("die Ausfall-Meldung verweist nicht auf den echten Grund",
+    /Grund `\s*\n?\s*\+ `steht in den ⛔-Zeilen|steht in den ⛔-Zeilen/.test(ausfallBlock),
+    "HTTP-Status und Antworttext stehen dort und sollen nicht neu erfunden werden");
 
   return {
     titel: `Prompt-Zahlen (${geprueft} Rechnungen, echte Funktion)`,

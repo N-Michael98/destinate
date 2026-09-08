@@ -15,7 +15,30 @@ function authHeaders() {
   };
 }
 
-let mcpSessionId: string | null = null;
+// ── Die MCP-Sitzungskennung gehört auf `global` (08.09.) ────────────────────
+//
+// Hier stand `let mcpSessionId` — modul-scoped. In diesem Projekt ist das die
+// dokumentierte Fehlerklasse (CLAUDE.md, belegt am Killswitch 28.07. und am
+// Preis-Cache 26.08.): API-Routen und die Schleifen aus `instrumentation.ts`
+// sehen verschiedene Kopien desselben Moduls.
+//
+// Nachgeprüft, nicht vermutet — `system-map --impact` nennt für diese Datei
+// beide Seiten: acht API-Routen (connect, status, symbols, telegram/webhook …)
+// UND über icmarkets-session.ts die 2-Minuten-Schleife in instrumentation.ts.
+// Damit gab es mehrere Sitzungskennungen nebeneinander, und die Erneuerung in
+// der einen Kopie half der anderen nicht: die Route arbeitete weiter mit einer
+// Kennung, die der Server längst verworfen hatte.
+declare global {
+  var __icmarkets_mcp_session__: string | null | undefined;
+}
+if (global.__icmarkets_mcp_session__ === undefined) global.__icmarkets_mcp_session__ = null;
+
+function sitzungsId(): string | null {
+  return global.__icmarkets_mcp_session__ ?? null;
+}
+function setzeSitzungsId(wert: string | null): void {
+  global.__icmarkets_mcp_session__ = wert;
+}
 
 // Parse SSE response body — server sends "event: message\ndata: {...}\n\n"
 async function parseSseOrJson(res: Response): Promise<{ result?: Record<string, unknown>; error?: { message: string } }> {
@@ -58,17 +81,23 @@ async function mcpInitialize(): Promise<void> {
     throw new Error(`MCP initialize failed: HTTP ${res.status}${text ? " — " + text.slice(0, 200) : ""}`);
   }
 
-  mcpSessionId = res.headers.get("mcp-session-id") ?? res.headers.get("x-session-id") ?? "active";
+  setzeSitzungsId(res.headers.get("mcp-session-id") ?? res.headers.get("x-session-id") ?? "active");
 
   const data = await parseSseOrJson(res);
   if (data.error) throw new Error(`MCP initialize error: ${data.error.message}`);
 }
 
-export async function mcpCall(toolName: string, toolArgs: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-  if (!mcpSessionId) await mcpInitialize();
+export async function mcpCall(
+  toolName: string,
+  toolArgs: Record<string, unknown> = {},
+  // Nur EIN Wiederholungsversuch (08.09.) — siehe Begründung unten.
+  bereitsErneuert = false,
+): Promise<Record<string, unknown>> {
+  if (!sitzungsId()) await mcpInitialize();
 
   const headers: Record<string, string> = { ...authHeaders() };
-  if (mcpSessionId && mcpSessionId !== "active") headers["mcp-session-id"] = mcpSessionId;
+  const sid = sitzungsId();
+  if (sid && sid !== "active") headers["mcp-session-id"] = sid;
 
   const res = await fetch(MCP_URL, {
     method: "POST",
@@ -83,10 +112,36 @@ export async function mcpCall(toolName: string, toolArgs: Record<string, unknown
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    if (text.includes("session")) {
-      mcpSessionId = null;
+    // ── GROSS-/KLEINSCHREIBUNG (08.09.) ────────────────────────────────────
+    //
+    // Hier stand `text.includes("session")` — und dieser Zweig ist deshalb NIE
+    // gelaufen. Der Server antwortet wörtlich:
+    //
+    //   {"jsonrpc":"2.0","error":{"code":-32000,
+    //    "message":"Session not found; re-initialize"},"id":null}
+    //
+    // "Session" mit grossem S. Ein kleingeschriebenes "session" kommt in dieser
+    // Antwort NICHT vor — nachgerechnet, nicht geschätzt. Die Prüfung war also
+    // false, es wurde geworfen statt neu angemeldet, und im Deploy-Log stand
+    // seit Stunden alle zwei Minuten:
+    //
+    //   [IC Markets] Keep-alive failed (IC Markets MCP error: HTTP 404 — …
+    //   "Session not found; re-initialize") — attempting reconnect
+    //
+    // Die geworfene Meldung ist die aus der Zeile darunter — sie belegt selbst,
+    // dass der Wiederherstellungszweig nicht gegriffen hat. Der Server sagte
+    // "re-initialize", und genau das ist nie passiert.
+    //
+    // WICHTIG — der Riegel dazu: dieser Zweig war TOT. Ihn zu beleben legt
+    // frei, dass `return mcpCall(...)` sich unbegrenzt selbst aufrief. Bleibt
+    // die Sitzung serverseitig kaputt, wäre daraus eine Endlosrekursion
+    // geworden — ein neuer Fehler, schlimmer als der behobene. Deshalb genau
+    // EIN Versuch: klappt die Neuanmeldung nicht, wird geworfen wie bisher.
+    if (/session/i.test(text) && !bereitsErneuert) {
+      console.warn(`[IC Markets] MCP-Sitzung abgelaufen (HTTP ${res.status}) — melde neu an und wiederhole "${toolName}"`);
+      setzeSitzungsId(null);
       await mcpInitialize();
-      return mcpCall(toolName, toolArgs);
+      return mcpCall(toolName, toolArgs, true);
     }
     throw new Error(`IC Markets MCP error: HTTP ${res.status}${text ? " — " + text.slice(0, 200) : ""}`);
   }
@@ -120,9 +175,10 @@ export async function mcpCall(toolName: string, toolArgs: Record<string, unknown
 
 export async function icListTools(): Promise<string[]> {
   try {
-    if (!mcpSessionId) await mcpInitialize();
+    if (!sitzungsId()) await mcpInitialize();
     const headers: Record<string, string> = { ...authHeaders() };
-    if (mcpSessionId && mcpSessionId !== "active") headers["mcp-session-id"] = mcpSessionId;
+    const sid = sitzungsId();
+    if (sid && sid !== "active") headers["mcp-session-id"] = sid;
 
     const res = await fetch(MCP_URL, {
       method: "POST",
