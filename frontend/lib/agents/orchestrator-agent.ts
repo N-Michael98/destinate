@@ -86,17 +86,16 @@ interface OrchestratorDecision {
   pauseMinutes?: number;
 }
 
-let lastOrchestratorGateAlertAt = 0;
+// Die Meldung liegt jetzt in `lib/ai-gate/ai-gate-alert.ts` (08.09.).
+//
+// Hier stand eine eigene Fassung samt eigenem `let lastOrchestratorGateAlertAt`
+// — und eine WORTGLEICHE zweite in `execution-agent.ts`. Zwei Kopien derselben
+// Entscheidung: eine Textänderung hätte nur die halbe Wirkung gehabt. Der
+// Drosselungs-Zustand lag ausserdem modul-scoped, in diesem Projekt die
+// dokumentierte Fehlerklasse.
 async function alertAIGateFallback(gate: string, err: unknown): Promise<void> {
-  const now = Date.now();
-  if (now - lastOrchestratorGateAlertAt < 60 * 60 * 1000) return; // max 1x/Stunde
-  lastOrchestratorGateAlertAt = now;
-  try {
-    const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
-    await sendTelegram(
-      `⚠️ AI-Sicherheitsgate "${gate}" nicht erreichbar — Fallback aktiv (Trades laufen ungeprüft weiter, andere Sicherheitsschichten bleiben aktiv). Fehler: ${err instanceof Error ? err.message : String(err)}`
-    );
-  } catch { /* non-fatal */ }
+  const { meldeAIGateAusfall } = await import("../ai-gate/ai-gate-alert");
+  await meldeAIGateAusfall(gate, err);
 }
 
 async function askAIManager(context: {

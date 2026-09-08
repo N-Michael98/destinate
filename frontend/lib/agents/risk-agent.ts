@@ -463,6 +463,21 @@ Nur das Feld angeben, das zur anstehenden Massnahme passt.`
     const text = err instanceof Error ? err.message : String(err);
     meldeAIEntscheidung(action, "FALLBACK", text);
     console.warn(`[risk-agent] AI Manager nicht verfügbar — Rule-Based Fallback (${text})`);
+    // MELDEN, nicht nur loggen (08.09.).
+    //
+    // AN DER AUSSTIEGSLOGIK ÄNDERT SICH NICHTS: der Rückfall gibt weiterhin
+    // `APPROVE` zurück, die regelbasierten Ausstiege (Breakeven, Teilgewinn,
+    // Trailing, Zeit-Exit) laufen unverändert. Die KI ist hier beratend, nicht
+    // entscheidend — das steht so in CLAUDE.md und bleibt so.
+    //
+    // Neu ist ausschliesslich, dass der Ausfall SICHTBAR wird. Am 08.09. fiel
+    // dieses Tor den ganzen Tag aus (leeres Anthropic-Guthaben) und stand nur
+    // in der Serverkonsole; über Telegram meldete sich allein der Orchestrator.
+    // `void` mit Absicht: eine fehlgeschlagene Meldung darf die Positions-
+    // Überwachung nicht mitreissen (Fehlerklasse 19.08.).
+    void import("../ai-gate/ai-gate-alert")
+      .then(({ meldeAIGateAusfall }) => meldeAIGateAusfall("Risk-Agent", err))
+      .catch(() => {});
   }
   // Fallback: immer approven (Rule-Based läuft weiter)
   return { action: "APPROVE", reason: "fallback" };

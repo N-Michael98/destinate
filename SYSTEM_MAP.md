@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 454 · Kanten: 983
+Dateien mit internen Abhängigkeiten: 455 · Kanten: 988
 
 
 ## analysis-engine/api
@@ -708,6 +708,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 983
   - → `frontend/lib/adaptive-broker-weighting/adaptive-broker-weighting-types.ts`
 - `frontend/lib/agents/analysis-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/ai-gate/ai-gate-alert.ts`
   - → `frontend/lib/broker-config/index.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/market-scanner/ai-analysis-engine.ts`
@@ -718,16 +719,17 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 983
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/agents/execution-agent.ts`
   - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/ai-gate/ai-gate-alert.ts`
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
-  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/agents/orchestrator-agent.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/agent-bus.ts`
   - → `frontend/lib/agents/analysis-agent.ts`
   - → `frontend/lib/agents/diagnostics-agent.ts`
   - → `frontend/lib/agents/execution-agent.ts`
+  - → `frontend/lib/ai-gate/ai-gate-alert.ts`
   - → `frontend/lib/analysis-engine/insights-reader.ts`
   - → `frontend/lib/analysis-engine/overrides-store.ts`
   - → `frontend/lib/broker-config/index.ts`
@@ -745,6 +747,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 983
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/agent-bus.ts`
   - → `frontend/lib/agents/ai-manager-status.ts`
+  - → `frontend/lib/ai-gate/ai-gate-alert.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/agents/validation-agent.ts`
@@ -794,6 +797,8 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 983
   - → `frontend/lib/ai-config/ai-config-types.ts`
 - `frontend/lib/ai-execution-scheduler/index.ts`
   - → `frontend/lib/ai-execution-scheduler/ai-execution-scheduler-types.ts`
+- `frontend/lib/ai-gate/ai-gate-alert.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/analysis-engine/insights-reader.ts`
   - → `frontend/lib/cache/redis-cache.ts`
 - `frontend/lib/analysis-engine/overrides-store.ts`
@@ -1315,6 +1320,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 983
   - → `frontend/lib/malwarebytes-integration/index.ts`
   - → `frontend/lib/security-center/security-center-types.ts`
 - `frontend/lib/security-watchdog/claude-watchdog.ts`
+  - → `frontend/lib/ai-gate/ai-gate-alert.ts`
   - → `frontend/lib/killswitch/index.ts`
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/security-watchdog/security-event-logger.ts`

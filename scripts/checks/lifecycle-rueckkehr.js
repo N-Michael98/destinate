@@ -29,7 +29,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { ROOT, ladeTsModul } = require("./_lib");
+const { ROOT, ladeTsModul, read } = require("./_lib");
 
 function ladeRiskAgent(funde) {
   const tsPfad = path.join(ROOT, "frontend", "node_modules", "typescript");
@@ -131,7 +131,10 @@ function aufrufe(rohText, name) {
   return n;
 }
 
-module.exports = function pruefe() {
+// ASYNC seit 08.09.: der Nachtrag-Teil unten RUFT die echte Funktion
+// `ergaenzeFehlendeJournalZeilen` auf, und die ist async. `run-all.js`
+// erwartet das.
+module.exports = async function pruefe() {
   const funde = [];
   const m = ladeRiskAgent(funde);
   if (!m) return { titel: "Lifecycle-Rückkehr (nicht ausführbar)", funde };
@@ -1061,6 +1064,132 @@ module.exports = function pruefe() {
   pruefe1("der Verlust einer Journal-Zeile wird nicht gemeldet",
     /Journal-Zeile konnte nicht geschrieben werden/.test(ohneKommentare(trRoh)),
     "eine laufende Position ohne Zeile darf man nicht nur im Log entdecken");
+
+  // ══ EINE POSITION GANZ OHNE ZEILE WIRD NACHGETRAGEN (08.09.) ═════════════
+  //
+  // DIE LUECKE. Es gab zwei Reparaturwege, und beide setzen eine BESTEHENDE
+  // Zeile voraus: `schreibeAusstehendeZeilen()` schreibt gemerkte nach,
+  // `ergaenzeDealIdsAusPositionen()` traegt die Positions-ID in eine
+  // vorhandene nach. Fuer eine Broker-Position ganz OHNE Zeile war niemand
+  // zustaendig — und die Warteschlange lebt nur im Speicher, ein Deploy
+  // verliert sie. Im Log vom 08.09.:
+  //
+  //   [py-lifecycle] 1 von 1 Positionen OHNE Stammdaten — Notizen: 0 Zeilen,
+  //   0 lesbar, 0 mit dealId, 0 mit Stil, 0 mit Confidence
+  //
+  // Ohne Zeile kann `pyRegisterTrade` die Position nicht anmelden (keine
+  // Stop-Nachfuehrung) und der RiskAgent arbeitet auf geratenem Stil.
+  //
+  // GEPRUEFT WIRD VOR ALLEM DIE SICHERHEITSBEDINGUNG: bei mehrdeutiger Lage
+  // darf NICHTS angelegt werden. Eine offene Zeile ohne dealId koennte genau
+  // diese Position sein; eine zweite anzulegen ergaebe einen Doppeleintrag und
+  // eine doppelt gezaehlte Position — schlimmer als die Luecke.
+  {
+    const POS = [{
+      dealId: "DEAL-1", symbol: "EURUSD", direction: "BUY",
+      size: 0.5, openLevel: 1.1, stopLevel: 1.09, profitLevel: 1.13,
+    }];
+    // `zeilen` = was die Datenbank als OFFENE Trades zurueckgibt.
+    const baueTracker = (zeilen) => {
+      const geschrieben = [];
+      return {
+        geschrieben,
+        modul: ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+          prisma: {
+            getPrisma: () => ({
+              $queryRawUnsafe: async (q, ...a) => {
+                if (/SELECT "notes" FROM "Trade"/.test(q)) return zeilen;
+                // Die Doppel-Pruefung in versucheJournalZeile.
+                if (/SELECT 1 FROM "Trade"/.test(q)) {
+                  const kennung = String(a[0] ?? "").replace(/%/g, "");
+                  return zeilen.some((z) => String(z.notes ?? "").includes(kennung)) ? [1] : [];
+                }
+                return [];
+              },
+              // Die Zeile wird ueber $executeRawUnsafe geschrieben, NICHT ueber
+              // $queryRawUnsafe. Beim ersten Lauf fehlte dieser Stellvertreter,
+              // der Aufruf lief in den Proxy, warf, und `angelegt` blieb 0 —
+              // das sah aus wie ein Fehler im Code und war einer im Pruefstand.
+              $executeRawUnsafe: async (q, ...a) => { geschrieben.push({ q, a }); return 1; },
+            }),
+          },
+        }),
+      };
+    };
+    const stillesWarn = console.warn, stillesLog = console.log;
+    console.warn = () => {}; console.log = () => {};
+    try {
+      // ── Fall 1: keine Zeilen -> anlegen ────────────────────────────────
+      const a = baueTracker([]);
+      if (a.modul.fehler || typeof a.modul.exports.ergaenzeFehlendeJournalZeilen !== "function") {
+        pruefe1("ergaenzeFehlendeJournalZeilen wird nicht exportiert",
+          false, a.modul.fehler ?? "fehlt");
+      } else {
+        const r1 = await a.modul.exports.ergaenzeFehlendeJournalZeilen(POS, 10000);
+        pruefe1("eine Position ganz ohne Journal-Zeile wird nicht nachgetragen",
+          r1.angelegt === 1, JSON.stringify(r1));
+        pruefe1("beim Nachtragen wurde nichts geschrieben",
+          a.geschrieben.length >= 1, `${a.geschrieben.length} Schreibvorgaenge`);
+
+        // ── Fall 2: Zeile mit DIESER dealId -> nichts tun ────────────────
+        const b = baueTracker([{ notes: JSON.stringify({ dealId: "DEAL-1" }) }]);
+        const r2 = await b.modul.exports.ergaenzeFehlendeJournalZeilen(POS, 10000);
+        pruefe1("eine bereits vorhandene Zeile wird ein zweites Mal angelegt",
+          r2.angelegt === 0 && r2.vorhanden === 1, JSON.stringify(r2));
+
+        // ── Fall 3: DER KERN — offene Zeile OHNE dealId -> NICHT anlegen ─
+        //
+        // Sie koennte genau diese Position sein (dafuer gibt es den
+        // dealId-Nachtrag). Anlegen ergaebe einen Doppeleintrag.
+        const c = baueTracker([{ notes: JSON.stringify({ dealReference: "o_77" }) }]);
+        const r3 = await c.modul.exports.ergaenzeFehlendeJournalZeilen(POS, 10000);
+        pruefe1("bei einer unaufgeloesten Zeile wird trotzdem angelegt — Doppeleintrag",
+          r3.angelegt === 0 && r3.mehrdeutig === 1, JSON.stringify(r3));
+
+        // ── Fall 4: unlesbare Notizen zaehlen ebenfalls als mehrdeutig ───
+        const d = baueTracker([{ notes: "kein json" }]);
+        const r4 = await d.modul.exports.ergaenzeFehlendeJournalZeilen(POS, 10000);
+        pruefe1("eine unlesbare Notiz gilt faelschlich als eindeutig",
+          r4.angelegt === 0 && r4.mehrdeutig === 1, JSON.stringify(r4));
+
+        // ── Fall 5: Position ohne dealId -> gar nichts ───────────────────
+        const e = baueTracker([]);
+        const r5 = await e.modul.exports.ergaenzeFehlendeJournalZeilen(
+          [{ dealId: "", symbol: "EURUSD", direction: "BUY" }], 10000);
+        pruefe1("eine Position OHNE dealId wird trotzdem angelegt",
+          r5.angelegt === 0, JSON.stringify(r5));
+      }
+    } finally {
+      console.warn = stillesWarn; console.log = stillesLog;
+    }
+
+    // Es darf NICHTS erfunden werden: Stil und Confidence sind unbekannt.
+    const trQ = read("frontend/lib/capital-com/capital-trade-tracker.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    pruefe1("der Nachtrag erfindet einen Handelsstil",
+      /tradingStyle: "UNBEKANNT"/.test(trQ),
+      "ein geratener Stil steuert den Zeit-Exit");
+    pruefe1("der Nachtrag erfindet eine Confidence",
+      /confidence: 0,/.test(trQ));
+    // Und er muss NACH dem dealId-Nachtrag laufen, sonst haelt er geloeste
+    // Zeilen fuer unaufgeloest — oder legt vor dem Nachtrag doppelt an.
+    // Auf die AUFRUFSTELLEN pruefen, nicht auf die Namen: die Definition von
+    // `ergaenzeFehlendeJournalZeilen` steht weiter OBEN in der Datei als beide
+    // Aufrufe. Beim ersten Lauf schlug diese Pruefung deshalb an, obwohl die
+    // Reihenfolge stimmte — sie hatte die Definition gefunden.
+    const iDealIds = trQ.indexOf("await ergaenzeDealIdsAusPositionen(");
+    const iNachtrag = trQ.indexOf("await ergaenzeFehlendeJournalZeilen(");
+    pruefe1("eine der beiden Aufrufstellen fehlt", iDealIds >= 0 && iNachtrag >= 0,
+      `dealIds@${iDealIds} nachtrag@${iNachtrag}`);
+    pruefe1("der Nachtrag laeuft vor der Zuordnung aus der Positionsliste",
+      iDealIds >= 0 && iNachtrag > iDealIds,
+      "Reihenfolge entscheidet ueber Doppeleintraege");
+    // Und die rekonstruierte Zeile muss als solche erkennbar sein.
+    pruefe1("eine rekonstruierte Zeile gibt sich als auto-scan aus",
+      /rekonstruiert \? "rekonstruiert-aus-position" : "auto-scan"/.test(trQ),
+      "sonst behauptet sie, aus dem Scan zu stammen");
+  }
 
   return {
     titel: `Lifecycle-Rückkehr (${geprueft} Prüfungen, Entscheidung ausgeführt)`,

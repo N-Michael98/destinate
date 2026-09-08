@@ -710,6 +710,123 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ JEDES ausgefallene KI-TOR MELDET SICH — AUSGEFUEHRT (08.09.) ═════════
+  //
+  // DER FUND. Am 08.09. war das Anthropic-Guthaben leer. Ueber Telegram kam
+  // stuendlich GENAU EINE Meldung — die des Orchestrators. Ausgefallen waren
+  // aber fuenf Tore:
+  //
+  //   Orchestrator AI Manager     proceed: true                 meldete
+  //   ExecutionAgent AI Manager   approve: true, beide Broker    meldete
+  //   Meta-KI (analysis-agent)    ALLE Kandidaten approved       schwieg
+  //   Risk-Agent AI (Ausstiege)   action: "APPROVE"              schwieg
+  //   Security-Watchdog           return null, keine Eskalation  schwieg
+  //
+  // Der Text sagte dazu "andere Sicherheitsschichten bleiben aktiv". Fuer die
+  // NICHT-KI-Schichten stimmt das; fuer die anderen KI-Tore nicht. Am
+  // schwersten wog der Watchdog: ohne Beurteilung kann `handleAttack()` nicht
+  // laufen, der automatische Killswitch bei einem Angriff loest NICHT aus.
+  //
+  // Dazu stand `alertAIGateFallback` ZWEIMAL wortgleich im Code, jede Fassung
+  // mit eigenem modul-scoped Zeitstempel — dieselbe Entscheidung an zwei
+  // Stellen, in diesem Projekt die haeufigste Fehlerklasse.
+  const torModul = ladeTsModul("lib/ai-gate/ai-gate-alert.ts", {});
+  if (torModul.fehler) {
+    torPruefung("ai-gate-alert nicht ladbar", false, torModul.fehler);
+  } else if (typeof torModul.exports.alarmFaellig !== "function") {
+    torPruefung("alarmFaellig wird nicht exportiert", false, "Umbenennung?");
+  } else {
+    const faellig = torModul.exports.alarmFaellig;
+    global.__ai_gate_alert__ = {};
+    const t0 = 1_000_000_000_000;
+    torPruefung("die erste Meldung eines Tors wird unterdrueckt",
+      faellig("Watchdog", t0) === true);
+    torPruefung("dasselbe Tor meldet sich innerhalb der Stunde erneut",
+      faellig("Watchdog", t0 + 59 * 60 * 1000) === false);
+    torPruefung("nach einer Stunde meldet sich dasselbe Tor nicht wieder",
+      faellig("Watchdog", t0 + 60 * 60 * 1000 + 1) === true);
+    // DER KERN: die Drossel gilt JE TOR. Ein gemeinsamer Zeitstempel haette
+    // den zweiten Ausfall fuer eine Stunde verschluckt — und genau die
+    // Vollstaendigkeit ist der Zweck.
+    global.__ai_gate_alert__ = {};
+    faellig("Orchestrator", t0);
+    torPruefung("ein zweites Tor wird von der Drossel des ersten verschluckt",
+      faellig("Meta-KI", t0) === true, "die Drossel muss JE TOR gelten");
+    torPruefung("ein drittes Tor ebenfalls",
+      faellig("Risk-Agent", t0) === true);
+    // Der Zustand gehoert auf `global`.
+    torPruefung("der Drosselungs-Zustand liegt nicht auf global",
+      global.__ai_gate_alert__ && typeof global.__ai_gate_alert__ === "object"
+      && global.__ai_gate_alert__["Orchestrator"] === t0,
+      "modul-scoped saehen Routen und Schleife verschiedene Drosseln");
+    // Jedes Tor braucht einen eigenen Folgentext — sonst meldet es zwar, sagt
+    // aber nicht, was jetzt fehlt.
+    const folgen = torModul.exports.TOR_FOLGE ?? {};
+    for (const tor of ["Orchestrator", "ExecutionAgent", "Meta-KI", "Risk-Agent", "Watchdog"]) {
+      torPruefung(`Tor "${tor}" hat keinen eigenen Folgentext`,
+        typeof folgen[tor] === "string" && folgen[tor].length > 20, String(folgen[tor]));
+    }
+    torPruefung("der Watchdog-Text nennt den ausbleibenden Killswitch nicht",
+      /[Kk]illswitch/.test(String(folgen["Watchdog"] ?? "")),
+      "ohne Beurteilung kann handleAttack() nicht ausloesen");
+  }
+
+  // Und alle FUENF Tore muessen die gemeinsame Meldung wirklich rufen.
+  // Kommentare weg — die Begruendungen oben nennen die Tore namentlich.
+  const ohneKomm = (p) => read(p)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  for (const [name, datei] of [
+    ["Orchestrator", "frontend/lib/agents/orchestrator-agent.ts"],
+    ["ExecutionAgent", "frontend/lib/agents/execution-agent.ts"],
+    ["Meta-KI", "frontend/lib/agents/analysis-agent.ts"],
+    ["Risk-Agent", "frontend/lib/agents/risk-agent.ts"],
+    ["Watchdog", "frontend/lib/security-watchdog/claude-watchdog.ts"],
+  ]) {
+    torPruefung(`Tor "${name}" meldet seinen Ausfall nicht`,
+      /meldeAIGateAusfall/.test(ohneKomm(datei)),
+      "der Ausfall stuende dann nur in der Serverkonsole");
+  }
+
+  // ── JEDER stille Ausgang des Watchdogs muss melden ───────────────────────
+  //
+  // Die Pruefung darueber sucht den Namen EINMAL je Datei. Der Watchdog hat
+  // aber ZWEI Ausgaenge, die `null` zurueckgeben — den API-Fehler und die
+  // Antwort ohne Textblock. Im Sabotage-Lauf vom 08.09. liess sich deshalb
+  // jede der beiden Meldungen einzeln entfernen, ohne dass etwas rot wurde:
+  // die jeweils andere erfuellte die Suche. Genau die Fehlerklasse, vor der
+  // CLAUDE.md warnt — ein Treffer an EINER Stelle ist kein Beweis fuer die
+  // andere.
+  //
+  // Beide Ausgaenge bedeuten dasselbe: nicht beurteilt, also keine Eskalation
+  // und kein automatischer Killswitch.
+  {
+    const wd = ohneKomm("frontend/lib/security-watchdog/claude-watchdog.ts");
+    const stellen = [...wd.matchAll(/return null;/g)];
+    torPruefung("der Watchdog hat keine null-Ausgaenge mehr — Pruefung ins Leere",
+      stellen.length >= 2, `${stellen.length} gefunden, 2 erwartet`);
+    let ungemeldet = 0;
+    for (const m of stellen) {
+      const davor = wd.slice(Math.max(0, m.index - 300), m.index);
+      if (!/meldeAIGateAusfall/.test(davor)) ungemeldet++;
+    }
+    torPruefung("ein stiller Ausgang des Watchdogs meldet nichts",
+      ungemeldet === 0,
+      `${ungemeldet} von ${stellen.length} `
+      + `return-null-Ausgaengen ohne Meldung — keine Eskalation, kein Killswitch`);
+  }
+  // Die alte, zu weit gefasste Behauptung darf nicht zurueckkehren.
+  torPruefung("die Meldung behauptet wieder pauschal, andere Schichten seien aktiv",
+    !/andere Sicherheitsschichten bleiben aktiv/.test(ohneKomm("frontend/lib/ai-gate/ai-gate-alert.ts")),
+    "vier von fuenf KI-Toren koennen GLEICHZEITIG aus sein");
+  // Und keine zweite Fassung der Drossel mehr.
+  for (const datei of ["frontend/lib/agents/orchestrator-agent.ts",
+                       "frontend/lib/agents/execution-agent.ts"]) {
+    torPruefung(`${datei.split("/").pop()}: eigene Drossel wieder eingebaut`,
+      !/last\w*GateAlertAt/.test(ohneKomm(datei)),
+      "zwei Kopien derselben Entscheidung");
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

@@ -47,17 +47,12 @@ interface AIExecutionDecision {
   adjustedRiskPercent?: number;
 }
 
-let lastExecutionGateAlertAt = 0;
+// Zweite, wortgleiche Fassung — entfernt (08.09.). Siehe die Begründung in
+// `lib/ai-gate/ai-gate-alert.ts`: dieselbe Entscheidung stand hier und in
+// `orchestrator-agent.ts`, jede mit eigenem modul-scoped Zeitstempel.
 async function alertAIGateFallback(gate: string, err: unknown): Promise<void> {
-  const now = Date.now();
-  if (now - lastExecutionGateAlertAt < 60 * 60 * 1000) return; // max 1x/Stunde
-  lastExecutionGateAlertAt = now;
-  try {
-    const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
-    await sendTelegram(
-      `⚠️ AI-Sicherheitsgate "${gate}" nicht erreichbar — Fallback aktiv (Trades laufen ungeprüft weiter, andere Sicherheitsschichten bleiben aktiv). Fehler: ${err instanceof Error ? err.message : String(err)}`
-    );
-  } catch { /* non-fatal */ }
+  const { meldeAIGateAusfall } = await import("../ai-gate/ai-gate-alert");
+  await meldeAIGateAusfall(gate, err);
 }
 
 async function askAIManager(req: ExecutionAgentRequest): Promise<AIExecutionDecision> {

@@ -3,6 +3,7 @@ import { getSecurityEvents, clearSecurityEvents } from "./security-event-logger"
 import { blockIP } from "./ip-blocklist";
 import { triggerKillswitch } from "@/lib/killswitch";
 import { sendTelegram } from "@/lib/telegram-notifications/telegram-sender";
+import { meldeAIGateAusfall } from "@/lib/ai-gate/ai-gate-alert";
 
 type WatchdogVerdict = "SAFE" | "SUSPICIOUS" | "ATTACK";
 
@@ -68,6 +69,11 @@ Respond ONLY with the JSON object, nothing else.`;
     const textBlock = msg.content.find((b) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") {
       console.warn("[watchdog] No text block in Claude response");
+      // ZWEITER stiller Ausgang, derselbe Ausgang (08.09.). Auch hier wurde
+      // nicht beurteilt — die Folge ist dieselbe wie im catch unten: keine
+      // Eskalation, kein Killswitch. Nur den einen Weg zu melden hiesse, den
+      // anderen weiterhin zu verschweigen.
+      await meldeAIGateAusfall("Watchdog", new Error("Antwort ohne Textblock"));
       return null;
     }
 
@@ -171,6 +177,18 @@ Events in window: ${result.eventCount}
     return result;
   } catch (err) {
     console.error("[watchdog] Claude API error:", err instanceof Error ? err.message : String(err));
+    // MELDEN — hier wiegt das Schweigen am schwersten (08.09.).
+    //
+    // Dieser Rückgabewert `null` heisst: die Sicherheitsereignisse wurden NICHT
+    // beurteilt. Damit kann `handleAttack()` nicht laufen, und der automatische
+    // Killswitch bei einem Angriff LÖST NICHT AUS. Genau das lief am 08.09. den
+    // ganzen Tag (leeres Anthropic-Guthaben), ohne dass es irgendwo ausser in
+    // der Serverkonsole stand.
+    //
+    // Die Ereignisse bleiben erhalten: `clearSecurityEvents()` steht im
+    // try-Zweig VOR diesem catch und läuft bei einem Ausfall nicht. Der nächste
+    // erfolgreiche Zyklus sieht sie also noch — nachgeprüft, nicht angenommen.
+    await meldeAIGateAusfall("Watchdog", err);
     return null;
   }
 }

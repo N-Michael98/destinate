@@ -31,6 +31,12 @@ export interface TradeRecord {
    *  Position nie, schliesst der Tracker sie als BREAKEVEN mit P&L 0 —
    *  ununterscheidbar von einem echten Nulltrade. */
   unbestaetigt?: boolean;
+  /** Zeile nachträglich aus einer laufenden Broker-Position gebaut (08.09.).
+   *  Ohne diese Kennzeichnung stünde in den Notizen `source: "auto-scan"` —
+   *  also die Behauptung, die Zeile stamme aus dem Scan, obwohl sie
+   *  rekonstruiert ist. Stil und Confidence sind bei diesen Zeilen UNBEKANNT,
+   *  und man muss das später ansehen können. */
+  rekonstruiert?: boolean;
 }
 
 // ── Journal-Zeilen, die noch nicht geschrieben werden konnten (20.08.) ───────
@@ -58,9 +64,10 @@ export interface TradeRecord {
 //
 // Nachgeprueft, nicht vermutet:
 //   schreibt  `saveCapitalTradeToJournal`
-//             <- app/api/auto-execute/route.ts:186
 //             <- app/api/capital-com/execute/route.ts:38
 //             <- lib/agents/orchestrator-agent.ts:384
+//             (auto-execute/route.ts stand hier bis 07.09. — dieser zweite
+//              Ausfuehrungsweg ist stillgelegt, siehe caf3d04)
 //   leert     `schreibeAusstehendeZeilen` (via syncCapitalPositionsToJournal)
 //             <- instrumentation.ts:303   — und NUR von dort
 //
@@ -207,7 +214,8 @@ async function versucheJournalZeile(
         tradingStyle: trade.tradingStyle,
         confidence: trade.confidence,
         broker: "Capital.com DEMO",
-        source: "auto-scan",
+        source: trade.rekonstruiert ? "rekonstruiert-aus-position" : "auto-scan",
+        ...(trade.rekonstruiert ? { rekonstruiert: true } : {}),
         ...(trade.icPositionId ? { icPositionId: trade.icPositionId } : {}),
         ...(trade.entryContext ? { entryContext: trade.entryContext } : {}),
         ...(trade.unbestaetigt ? { unbestaetigt: true } : {}),
@@ -637,6 +645,109 @@ export async function ergaenzeDealIdsAusPositionen(
   return bilanz;
 }
 
+/**
+ * Legt eine Journal-Zeile für eine laufende Broker-Position an, zu der es
+ * GAR KEINE gibt (08.09.).
+ *
+ * DIE LÜCKE. Es gab zwei Reparaturwege und beide setzen eine Zeile voraus:
+ * `schreibeAusstehendeZeilen()` schreibt gemerkte Zeilen nach, und
+ * `ergaenzeFehlendeDealIds()`/`ergaenzeDealIdsAusPositionen()` tragen die
+ * Positions-ID in eine BESTEHENDE Zeile nach. Für eine Position ohne jede
+ * Zeile war niemand zuständig.
+ *
+ * Und die Warteschlange lebt nur im Speicher (`global`, nicht in Redis): ein
+ * Deploy verliert sie. Danach existiert die Position beim Broker weiter, die
+ * Zeile ist für immer weg, und kein Weg legt sie neu an. Genau dieser Zustand
+ * stand am 08.09. im Log:
+ *
+ *   [py-lifecycle] 1 von 1 Positionen OHNE Stammdaten — Notizen: 0 Zeilen,
+ *   0 lesbar, 0 mit dealId, 0 mit Stil, 0 mit Confidence, 0 mit Order-Referenz
+ *
+ * Was das kostet: ohne Zeile kann `pyRegisterTrade` die Position nicht
+ * anmelden — keine Stop-Nachführung aus dem Python-Lifecycle — und der
+ * RiskAgent arbeitet auf einem GERATENEN Handelsstil.
+ *
+ * ES WIRD NICHTS ERFUNDEN. Übernommen wird ausschliesslich, was der Broker
+ * selbst liefert: dealId, Symbol, Richtung, Einstieg, Grösse, Stop und Ziel.
+ * Was wir nicht wissen, heisst auch so: `tradingStyle` und `strategy` stehen
+ * auf "UNBEKANNT" (dieselbe Schreibweise wie im Journal-Abgleich seit 03.09.),
+ * `confidence` und `riskPercent` auf 0. Der Zeit-Exit bleibt damit für diese
+ * Position ausgesetzt — das ist gewollt und bereits so gebaut.
+ *
+ * KONSERVATIV MIT ABSICHT. Angelegt wird nur bei EINDEUTIGER Lage:
+ *  - die Position hat eine dealId, und
+ *  - keine offene Zeile trägt diese dealId schon, und
+ *  - es gibt KEINE offene Zeile OHNE dealId.
+ *
+ * Die letzte Bedingung ist die wichtigste: eine Zeile ohne dealId KÖNNTE genau
+ * diese Position sein (dafür gibt es den dealId-Nachtrag). Eine zweite
+ * anzulegen ergäbe einen Doppeleintrag im Journal und eine doppelt gezählte
+ * Position — schlimmer als die Lücke. In dem Fall wird gemeldet statt geraten.
+ */
+export async function ergaenzeFehlendeJournalZeilen(
+  positionen: Array<{
+    dealId?: string | null; symbol?: string | null; direction?: string | null;
+    size?: number | null; openLevel?: number | null;
+    stopLevel?: number | null; profitLevel?: number | null;
+  }>,
+  kontostand: number,
+): Promise<{ angelegt: number; vorhanden: number; mehrdeutig: number }> {
+  const bilanz = { angelegt: 0, vorhanden: 0, mehrdeutig: 0 };
+  try {
+    if (!positionen.length) return bilanz;
+    const db = getPrisma();
+    const rows = await (db.$queryRawUnsafe as (q: string) => Promise<Array<{
+      notes: string | null;
+    }>>)(`SELECT "notes" FROM "Trade" WHERE status = 'OPEN'`);
+
+    const bekannteDealIds = new Set<string>();
+    let ohneDealId = 0;
+    for (const z of rows ?? []) {
+      let m: Record<string, unknown>;
+      try { m = JSON.parse(z.notes ?? "{}") as Record<string, unknown>; } catch { ohneDealId++; continue; }
+      const d = String(m.dealId ?? "").trim();
+      if (d) bekannteDealIds.add(d); else ohneDealId++;
+    }
+
+    for (const p of positionen) {
+      const dealId = String(p.dealId ?? "").trim();
+      if (!dealId) continue;
+      if (bekannteDealIds.has(dealId)) { bilanz.vorhanden++; continue; }
+      if (ohneDealId > 0) {
+        // Eine unaufgeloeste Zeile koennte genau diese Position sein.
+        bilanz.mehrdeutig++;
+        continue;
+      }
+      const richtung = String(p.direction ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY";
+      const ok = await versucheJournalZeile({
+        dealId,
+        symbol: String(p.symbol ?? "").trim() || "UNBEKANNT",
+        direction: richtung,
+        tradingStyle: "UNBEKANNT",
+        strategy: "UNBEKANNT",
+        entry: Number(p.openLevel ?? 0),
+        stopLoss: Number(p.stopLevel ?? 0),
+        takeProfit: Number(p.profitLevel ?? 0),
+        size: Number(p.size ?? 0),
+        accountBalance: kontostand,
+        riskPercent: 0,
+        confidence: 0,
+        rekonstruiert: true,
+      }, true);
+      if (ok) {
+        bilanz.angelegt++;
+        console.warn(`[trade-tracker] Journal-Zeile REKONSTRUIERT aus der Broker-Position `
+          + `${p.symbol} ${richtung} deal=${dealId} — Stil und Confidence sind UNBEKANNT, `
+          + `der Zeit-Exit bleibt fuer sie ausgesetzt`);
+      }
+    }
+  } catch (e) {
+    console.warn("[trade-tracker] Rekonstruktion fehlender Journal-Zeilen uebersprungen:",
+      e instanceof Error ? e.message : String(e));
+  }
+  return bilanz;
+}
+
 export async function syncCapitalPositionsToJournal(): Promise<void> {
   try {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
@@ -703,6 +814,21 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       console.log(`[trade-tracker] Zuordnung aus Positionsliste: ${ausListe.ergaenzt} ergänzt, `
         + `${ausListe.unklar} unklar, ${ausListe.beobachtet} beobachtet, `
         + `${ausListe.benannt} als NIE_BESTAETIGT geschlossen`);
+    }
+
+    // ── ERST JETZT die ganz fehlenden Zeilen (08.09.) ────────────────────
+    //
+    // Reihenfolge ist wesentlich: `ergaenzeDealIdsAusPositionen` läuft VORHER
+    // und löst Zeilen ohne dealId auf. Liefe die Rekonstruktion zuerst, sähe
+    // sie diese Zeilen noch als „ohne dealId", hielte die Lage für mehrdeutig
+    // und täte nichts — oder schlimmer, sie liefe VOR dem Nachtrag und legte
+    // eine zweite Zeile für dieselbe Position an.
+    const fehlendeZeilen = await ergaenzeFehlendeJournalZeilen(
+      posResult.positions ?? [], session.balance > 0 ? session.balance : 0);
+    if (fehlendeZeilen.angelegt > 0 || fehlendeZeilen.mehrdeutig > 0) {
+      console.log(`[trade-tracker] Fehlende Journal-Zeilen: ${fehlendeZeilen.angelegt} rekonstruiert, `
+        + `${fehlendeZeilen.mehrdeutig} nicht eindeutig (offene Zeile ohne dealId — `
+        + `es wird NICHT geraten), ${fehlendeZeilen.vorhanden} waren vorhanden`);
     }
 
     // Fetch recent transactions for P&L (last 24h) — more reliable than activity endpoint

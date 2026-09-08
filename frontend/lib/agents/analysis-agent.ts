@@ -89,6 +89,18 @@ Antworte NUR mit JSON Array:
     }
   } catch (err) {
     console.warn(`[analysis-agent] Meta-AI Fehler — alle Kandidaten approved (${err})`);
+    // MELDEN, nicht nur loggen (08.09.).
+    //
+    // Dieser Rückfall öffnet das Tor GANZ: jeder Kandidat gilt als freigegeben,
+    // die Gegenprüfung auf RSI-Extreme und TA-Widerspruch entfällt vollständig.
+    // Am 08.09. lief genau das den ganzen Tag (leeres Anthropic-Guthaben) und
+    // stand NUR in der Serverkonsole — über Telegram meldete sich allein der
+    // Orchestrator, dessen Text zudem behauptete, die anderen Schichten seien
+    // aktiv. `void` mit Absicht: die Meldung darf die Analyse nicht aufhalten
+    // und nie mitreissen.
+    void import("../ai-gate/ai-gate-alert")
+      .then(({ meldeAIGateAusfall }) => meldeAIGateAusfall("Meta-KI", err))
+      .catch(() => {});
     // Fallback: alle approven
     for (const c of candidates) {
       decisions.set(c.symbol, {
