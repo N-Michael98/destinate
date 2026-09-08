@@ -463,6 +463,42 @@ function wirksameApproveSchwelle(gespeichert: number | undefined): number {
   return wert;
 }
 
+/**
+ * Der Bypass-Wert, der bei erreichtem Tageslimit WIRKLICH gilt (08.09.).
+ *
+ * DIESELBE FEHLERKLASSE WIE 13.08., eine Einstellung weiter. Die Oberflaeche
+ * verspricht woertlich: "Limit erreicht → trotzdem Trade wenn Score ≥
+ * Bypass-Wert". Beide Regler laufen aber von 70 bis 99, und die Rechnung
+ * lautet `Math.max(baseThreshold, bypassScore)`. Liegt der Bypass UNTER der
+ * Freigabe-Schwelle, gilt weiterhin die Schwelle — das Versprechen der
+ * Oberflaeche trifft dann nicht zu:
+ *
+ *   autoApprove 90, Bypass 70  ->  es gilt 90, nicht 70
+ *   autoApprove 77, Bypass 75  ->  es gilt 77, nicht 75
+ *
+ * An der RECHNUNG ist nichts falsch — `Math.max` ist richtig, ein Bypass darf
+ * die Freigabe nie aufweichen. Falsch war das Schweigen: ein Wert, der nicht
+ * wirkt und niemandem auffaellt, ist genau die Klasse Fehler, die am 13.08.
+ * fuer die Approve-Schwelle behoben wurde.
+ *
+ * Exportiert, damit der Pruefer die Entscheidung AUSFUEHREN kann statt den
+ * Wortlaut festzunageln.
+ */
+export function wirksamerBypass(
+  gespeichert: number | undefined,
+  basisSchwelle: number,
+): number {
+  const wert = gespeichert ?? 0;
+  if (wert > 0 && wert < basisSchwelle) {
+    console.warn(
+      `[orchestrator] Bypass-Wert ${wert} liegt UNTER der Freigabe-Schwelle `
+      + `${basisSchwelle} — er wirkt nicht. Bei erreichtem Tageslimit gilt `
+      + `weiterhin ${basisSchwelle}, nicht ${wert}. Damit der Bypass etwas `
+      + `bewirkt, muss er hoeher liegen als die Schwelle.`);
+  }
+  return Math.max(basisSchwelle, wert);
+}
+
 export async function runOrchestratorCycle(): Promise<void> {
   console.log(`[orchestrator] Zyklus gestartet`);
 
@@ -654,7 +690,12 @@ export async function runOrchestratorCycle(): Promise<void> {
   );
   // Bei erreichtem Tageslimit gilt zusätzlich die (höhere) Bypass-Schwelle —
   // siehe Kommentar beim Tageslimit oben.
-  const threshold = dailyLimitReached ? Math.max(baseThreshold, bypassScore) : baseThreshold;
+  // `wirksamerBypass` rechnet dasselbe `Math.max` — meldet aber, wenn der
+  // gespeicherte Wert unter der Schwelle liegt und damit wirkungslos ist
+  // (08.09., Begruendung bei der Funktion).
+  const threshold = dailyLimitReached
+    ? wirksamerBypass(bypassScore, baseThreshold)
+    : baseThreshold;
   const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
 
   // Walk-Forward-Robustheit (04.08.). Bis heute landeten diese Ergebnisse NUR

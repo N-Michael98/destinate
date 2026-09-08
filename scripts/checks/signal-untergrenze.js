@@ -164,5 +164,71 @@ module.exports = function pruefe() {
     /angepasst < MIN_SIGNAL_CONFIDENCE/.test(agentQ),
     "ein auf 68 gesenktes Signal bliebe sonst in `approved`");
 
+  // ══ DER BYPASS-REGLER DARF EBENFALLS NICHT LUEGEN (08.09.) ═══════════════
+  //
+  // Dieselbe Fehlerklasse wie oben, eine Einstellung weiter. Die Oberflaeche
+  // verspricht woertlich "Limit erreicht → trotzdem Trade wenn Score ≥
+  // Bypass-Wert". Beide Regler laufen von 70 bis 99, und gerechnet wird
+  // `Math.max(baseThreshold, bypassScore)`. Liegt der Bypass UNTER der
+  // Freigabe-Schwelle, gilt weiterhin die Schwelle:
+  //
+  //   autoApprove 90, Bypass 70  ->  es gilt 90, nicht 70
+  //   autoApprove 77, Bypass 75  ->  es gilt 77, nicht 75
+  //
+  // An der Rechnung ist nichts falsch — ein Bypass darf die Freigabe nie
+  // aufweichen. Falsch war das Schweigen.
+  //
+  // AUSGEFUEHRT, nicht gelesen: die echte Funktion wird gerufen.
+  const orchModul = ladeTsModul("lib/agents/orchestrator-agent.ts");
+  if (orchModul.fehler) {
+    funde.push(`orchestrator-agent nicht ladbar: ${orchModul.fehler}`);
+    geprueft++;
+  } else if (typeof orchModul.exports.wirksamerBypass !== "function") {
+    funde.push("wirksamerBypass wird nicht exportiert — ein wirkungsloser "
+      + "Bypass-Wert bliebe unbemerkt");
+    geprueft++;
+  } else {
+    const wb = orchModul.exports.wirksamerBypass;
+    const stilleWarnung = console.warn;
+    let warnungen = 0;
+    console.warn = () => { warnungen++; };
+    try {
+      // JEDER Fall wird GENAU EINMAL gerufen und das Ergebnis gemerkt.
+      // Die erste Fassung rief `wb(...)` in der Bedingung UND im
+      // Meldungstext — also doppelt, und zaehlte damit vier Warnungen statt
+      // zwei. Ein Prueffehler, kein Codefehler: wer Warnungen zaehlt, darf
+      // die gepruefte Funktion nicht mehrfach aufrufen.
+      const e = {
+        live:   wb(81, 77),        // der LIVE eingestellte Fall (08.09.)
+        knapp:  wb(75, 77),        // Bypass unter der Schwelle
+        weit:   wb(70, 90),        // Bypass weit unter der Schwelle
+        gleich: wb(80, 80),        // Gleichstand
+        ohne:   wb(undefined, 77), // kein Bypass gesetzt
+        null_:  wb(0, 77),         // Bypass 0 = ausgeschaltet
+      };
+      pruefe1("ein Bypass UEBER der Schwelle wirkt nicht", e.live === 81, String(e.live));
+      pruefe1("ein Bypass UNTER der Schwelle weicht die Freigabe auf",
+        e.knapp === 77, `${e.knapp} statt 77 — der Bypass darf nie lockern`);
+      pruefe1("ein weit tieferer Bypass weicht die Freigabe auf", e.weit === 90, String(e.weit));
+      pruefe1("Gleichstand wird falsch behandelt", e.gleich === 80, String(e.gleich));
+      pruefe1("ohne Bypass gilt nicht die Schwelle", e.ohne === 77, String(e.ohne));
+      // 0 heisst "ausgeschaltet" — das ist kein wirkungsloser Regler, sondern
+      // eine bewusste Einstellung und darf deshalb NICHT melden.
+      pruefe1("ein ausgeschalteter Bypass (0) wird faelschlich gemeldet",
+        e.null_ === 77, String(e.null_));
+    } finally {
+      console.warn = stilleWarnung;
+    }
+    // Und es muss GEMELDET werden — sonst faellt ein toter Regler nie auf.
+    // Erwartet: genau zwei Meldungen (75/77 und 70/90). Gleichstand, "kein
+    // Bypass" und 0 duerfen NICHT melden, sonst waere die Warnung Rauschen.
+    pruefe1("ein wirkungsloser Bypass wird nicht gemeldet — oder zu oft",
+      warnungen === 2, `${warnungen} Meldungen bei 6 Faellen, erwartet 2`);
+    // Die Verdrahtung: die Funktion muss auch WIRKLICH gerufen werden.
+    pruefe1("der Zyklus benutzt den geprueften Bypass nicht",
+      /wirksamerBypass\(bypassScore, baseThreshold\)/.test(orch),
+      "sonst rechnet die Funktion, und der Zyklus nimmt weiter Math.max");
+  }
+
   return { titel: `Signal-Untergrenze (${geprueft} Prüfungen, Grenze ${grenze})`, funde };
 };
