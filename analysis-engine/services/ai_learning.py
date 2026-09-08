@@ -75,7 +75,43 @@ def _build_prompt(comparison: list[dict], news: dict) -> str:
 PHILOSOPHIE: Schlechte Performance = Wissenslücke. Märkte werden NICHT gemieden,
 sondern diagnostiziert: Warum verliert der Markt live? Was zeigt der Backtest als Alternative?
 
-LIVE (30 Tage) vs. NÄCHTLICHER BACKTEST (1h-Kerzen, 3 Monate):
+WAS DIE ZAHLEN SIND — BITTE GENAU LESEN (korrigiert 08.09.):
+
+Die Live-Zahlen und die Backtest-Zahlen stammen aus ZWEI VERSCHIEDENEN
+SYSTEMEN. Sie stehen nebeneinander, sind aber KEIN Vorher/Nachher derselben
+Strategie:
+
+- liveTrades/liveWinRate/livePnl: echte geschlossene Trades der letzten 30
+  Tage. Über Richtung, Stop und Ziel hat der GPT-Scanner entschieden, Markt
+  für Markt, aus Indikatoren und Kursstruktur. Die Trade-Zeile speichert als
+  "strategy" den HANDELSSTIL (DAYTRADING/SCALPING/SWING), keinen
+  Strategienamen.
+
+- backtestStrategy/backtestParams/backtestWinRate: die im nächtlichen Backtest
+  beste Strategie für dieses Symbol (1h-Kerzen, 3 Monate). Diese Strategien
+  heissen EMA_CROSS, RSI_REVERSION, BREAKOUT usw. — sie haben NIE einen
+  Live-Trade ausgelöst. Ihre Parameter (z.B. 12/26) setzen KEINE Live-Stops
+  und keine Live-Ziele. Sie fliessen nur als Kontext in den Scanner ein
+  (Konsens, Entry-Quality).
+
+DARAUS FOLGT, und das ist verbindlich:
+1. Schreibe NICHT "EMA_CROSS versagt live" oder "BREAKOUT-Execution schlägt
+   fehl". Eine Strategie, die nichts ausgeführt hat, kann live nicht versagt
+   haben. Der Live-Verlust gehört der Scanner-Entscheidung.
+2. Empfiehl KEINE Umparametrisierung einer Backtest-Strategie als Mittel
+   gegen Live-Verluste ("Fast-Periode auf 9"). Das ändert nur den Kontext,
+   nicht die Ausführung. Wenn du Parameter meinst, sag ausdrücklich dazu,
+   dass es der Backtest-Kontext ist.
+3. liveTrades = 0 heisst NICHT, dass das Symbol ungenutzt oder ignoriert wird.
+   JEDES Symbol dieser Liste wird in jedem Zyklus analysiert. Null Trades
+   heisst: kein Signal hat die Tore passiert (Confidence-Schwelle,
+   Chance-Risiko >= 1.5, Filterkette). Schreibe das so, statt "System nutzt
+   das Symbol nicht" oder "Ignoranz".
+4. Eine grosse Lücke zwischen Backtest und Live ist ein Hinweis auf
+   ÜBERANPASSUNG des Backtests — nicht auf einen Ausführungsfehler.
+
+LIVE (30 Tage, GPT-Scanner) vs. NÄCHTLICHER BACKTEST (1h-Kerzen, 3 Monate,
+hat NICHT gehandelt):
 {json.dumps(comparison, ensure_ascii=False)}
 
 NEWS/GEOPOLITIK HEUTE:
@@ -92,7 +128,11 @@ Antworte NUR mit JSON (kein Markdown):
 Regeln:
 - score = Handels-Qualität des Symbols aktuell (Live+Backtest kombiniert)
 - diagnosis/fix nur für auffällige Symbole (max 8), kurz und konkret
-- fix soll umsetzbar sein (Strategie-Wechsel, SL/TP-Anpassung, Style-Wechsel)"""
+- fix soll umsetzbar sein. Am Live-Handel wirklich verstellbar sind:
+  die Confidence-Freigabeschwelle, die Positions- und Tageslimits, das
+  Risiko je Trade, der Schalter gegen überangepasste Märkte
+  (blockOverfitMarkets) und die Stop-/Ziel-Vorgaben im Scanner-Prompt.
+  Die Parameter der Backtest-Strategien gehören NICHT dazu (siehe oben)."""
 
 
 def _ask_claude(prompt: str, retry: bool = True) -> tuple[dict | None, str | None]:

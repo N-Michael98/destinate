@@ -2209,3 +2209,85 @@ def test_wurzel_nennt_die_ausloeser_getrennt():
     assert all(p.startswith("/api/v1/run/") for p in aus["trigger"]), aus["trigger"]
     # Und sie duerfen NICHT in der Leseliste auftauchen.
     assert not (set(aus["trigger"]) & set(aus["endpoints"])), aus
+
+
+# ── Der Learning-Report darf Live und Backtest nicht verwechseln (08.09.) ────
+#
+# DER FUND aus dem Telegram-Report vom 07./08.09. Dort stand woertlich:
+#
+#   "Systemisches Problem: Langperiodige EMA-Crosses (12/26, 20/50) versagen
+#    live zu 100% auf Intraday-Moves"
+#   "PRIORITAET 1: EMA_CROSS-Strategien komplett re-parameterisieren"
+#   "GER40: System nutzt GER40 nicht aktiv. Keine Daten, keine Wissensluecke
+#    — nur Ignoranz."
+#
+# Alle drei Aussagen sind falsch, und zwar nachpruefbar:
+#
+#  - EMA_CROSS/RSI_REVERSION/BREAKOUT kommen im gesamten Ausfuehrungspfad
+#    NICHT vor (gesucht in lib/agents und lib/capital-com). Sie haben nie
+#    einen Live-Trade ausgeloest. Ueber Richtung, Stop und Ziel entscheidet
+#    der GPT-Scanner.
+#  - Die Spalte `strategy` einer Trade-Zeile enthaelt den HANDELSSTIL
+#    (`${tradingStyle} | ${strategy}` mit strategy = gpt.tradingStyle),
+#    keinen Strategienamen.
+#  - GER40 steht in der WATCHLIST (orchestrator-agent.ts) und wird in jedem
+#    Zyklus analysiert. Null Trades heisst "kein Signal kam durch die Tore",
+#    nicht "wird ignoriert".
+#
+# Der Prompt stellte beide Zahlenreihen nebeneinander, ohne zu sagen, dass sie
+# aus verschiedenen Systemen stammen. Claude las sie als Vorher/Nachher
+# derselben Strategie — die naheliegende Lesart. Der Fehler lag im Prompt.
+#
+# Geprueft wird der ECHTE Prompt-Text, nicht eine Nachbildung.
+
+def _learning_modul():
+    import importlib
+    return importlib.import_module("services.ai_learning")
+
+
+def _lern_prompt():
+    M = _learning_modul()
+    vergleich = [{
+        "symbol": "NAS100", "liveTrades": 2, "liveWinRate": 0.0, "livePnl": -12.5,
+        "backtestStrategy": "EMA_CROSS", "backtestParams": {"fast": 12, "slow": 26},
+        "backtestWinRate": 43.3, "backtestProfitFactor": 1.4,
+    }]
+    return M._build_prompt(vergleich, {})
+
+
+def test_lernreport_nennt_die_zwei_quellen_getrennt():
+    p = _lern_prompt()
+    # Die Backtest-Strategien duerfen nicht als Live-Ausfuehrende gelten.
+    assert "NIE einen" in p and "Live-Trade" in p, p[:400]
+    # Und der Scanner muss als Entscheider benannt sein.
+    assert "GPT-Scanner" in p, p[:400]
+
+
+def test_lernreport_verbietet_umparametrisierung_als_livefix():
+    p = _lern_prompt()
+    assert "Umparametrisierung" in p or "umparametris" in p.lower(), p[:600]
+    # Der frueher empfohlene Griff muss ausdruecklich ausgeschlossen sein.
+    assert "Fast-Periode" in p, "das konkrete Fehlbeispiel fehlt"
+
+
+def test_lernreport_deutet_null_trades_nicht_als_ignoranz():
+    p = _lern_prompt()
+    assert "liveTrades = 0" in p, p[:600]
+    assert "Ignoranz" in p, "die falsche Lesart muss namentlich ausgeschlossen sein"
+    assert "Tore passiert" in p or "Tore" in p, p[:600]
+
+
+def test_lernreport_nennt_nur_wirklich_verstellbare_hebel():
+    """`fix` soll umsetzbar sein — die Backtest-Parameter sind es nicht."""
+    p = _lern_prompt()
+    assert "blockOverfitMarkets" in p, p[-800:]
+    # Der alte Text lud ausdruecklich zum Strategie-Wechsel ein.
+    assert "Strategie-Wechsel, SL/TP-Anpassung" not in p, "alter Regeltext noch da"
+
+
+def test_lernreport_uebergibt_die_zahlen_unveraendert():
+    """Die Korrektur betrifft den TEXT, nicht die Daten — die Zahlen muessen
+    weiterhin vollstaendig im Prompt stehen."""
+    p = _lern_prompt()
+    for stueck in ["NAS100", "43.3", "EMA_CROSS"]:
+        assert stueck in p, stueck
