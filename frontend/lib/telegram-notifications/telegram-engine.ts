@@ -46,6 +46,37 @@ const DEFAULT_CHANNELS: TelegramChannelConfig[] = [
 let _channels: TelegramChannelConfig[] = DEFAULT_CHANNELS.map((c) => ({ ...c }));
 let _botToken: string | null = null;
 let _recentMessages: TelegramMessage[] = [];
+
+/** Obergrenze der Nachrichtenliste (08.09., Generalkontrolle).
+ *
+ * Die Liste wurde an VIER Stellen befüllt und an KEINER gekürzt — sie wuchs
+ * mit jeder je gesendeten Nachricht. Das ist nicht theoretisch: Telegram
+ * bekommt stündliche Tor-Meldungen, jede Trade-Ausführung und die täglichen
+ * Reports. Dasselbe Muster wie das Leck in der Brute-Force-Karte (26.08.).
+ *
+ * Dass nur wenige gebraucht werden, stand schon im Lesepfad: der Bericht gibt
+ * `[..._recentMessages].slice(-50)` aus. Gewollt waren also immer 50; 200 ist
+ * bewusst grosszügiger, damit auch ein längerer Rückblick möglich bleibt.
+ */
+export const TELEGRAM_VERLAUF_MAX = 200;
+
+/** Nimmt eine Nachricht in den Verlauf — die EINZIGE Stelle, die schreibt.
+ *
+ * Vorher stand `_recentMessages.push(msg)` viermal im Code. Eine Obergrenze
+ * an drei von vier Stellen wäre keine Obergrenze; deshalb geht das Anhängen
+ * jetzt über eine Funktion, und die kürzt. */
+function merkeNachricht(msg: TelegramMessage): void {
+  _recentMessages.push(msg);
+  while (_recentMessages.length > TELEGRAM_VERLAUF_MAX) _recentMessages.shift();
+}
+
+/** Nur für Tests und Prüfer. */
+export function telegramVerlaufLaenge(): number {
+  return _recentMessages.length;
+}
+export function telegramVerlaufLeeren(): void {
+  _recentMessages.length = 0;
+}
 let _totalSent = 0;
 let _totalFailed = 0;
 
@@ -105,7 +136,7 @@ export async function sendTelegramMessage(
       status: "SIMULATED",
       source,
     };
-    _recentMessages.push(msg);
+    merkeNachricht(msg);
     return { ok: true, status: "SIMULATED", message: "Channel not configured — simulated." };
   }
 
@@ -119,7 +150,7 @@ export async function sendTelegramMessage(
       status: "SIMULATED",
       source,
     };
-    _recentMessages.push(msg);
+    merkeNachricht(msg);
     return { ok: true, status: "SIMULATED", message: "No bot token — simulated." };
   }
 
@@ -152,7 +183,7 @@ export async function sendTelegramMessage(
         status: "SENT",
         source,
       };
-      _recentMessages.push(msg);
+      merkeNachricht(msg);
       _totalSent++;
       return { ok: true, status: "SENT" };
     } else {
@@ -166,7 +197,7 @@ export async function sendTelegramMessage(
         status: "FAILED",
         source,
       };
-      _recentMessages.push(msg);
+      merkeNachricht(msg);
       return { ok: false, status: "FAILED", message: data.description };
     }
   } catch {

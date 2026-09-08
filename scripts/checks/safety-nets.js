@@ -899,6 +899,88 @@ module.exports = async function pruefe() {
       "ein Set, das nur waechst — dasselbe Leck wie in der Brute-Force-Karte");
   }
 
+  // ══ ZWEI SAMMLUNGEN OHNE OBERGRENZE — AUSGEFUEHRT (08.09.) ═══════════════
+  //
+  // Aus der Generalkontrolle: jede wachsende Sammlung im Programm wurde auf
+  // ihre Kuerzung geprueft. `anomalies` und `heartbeats` im Diagnostics-Agent
+  // sind durch ihre Schluessel begrenzt (Typ:Symbol bzw. Agent-Name), der
+  // Symbol-Cache des IC-Clients durch die Zahl der Symbole. ZWEI waren es
+  // nicht:
+  //
+  //  - `_recentMessages` im Telegram-Modul: an VIER Stellen befuellt, an
+  //    keiner gekuerzt. Telegram bekommt stuendliche Tor-Meldungen, jede
+  //    Ausfuehrung und die taeglichen Reports — die Liste wuchs mit jeder je
+  //    gesendeten Nachricht. Dass nur wenige gebraucht werden, stand schon im
+  //    Lesepfad: `slice(-50)`.
+  //  - `portfolioBrainMemory`: `unshift` ohne Deckel, und jeder Eintrag traegt
+  //    den vollstaendigen Report.
+  //
+  // Dieselbe Klasse wie das Leck in der Brute-Force-Karte (26.08.). Geprueft
+  // wird RECHNEND — eine Struktur-Pruefung saehe eine Obergrenze, aber nicht,
+  // ob sie greift.
+  {
+    const tg = ladeTsModul("lib/telegram-notifications/telegram-engine.ts", {});
+    if (tg.fehler || typeof tg.exports.sendTelegramMessage !== "function") {
+      torPruefung("telegram-engine nicht ausfuehrbar", false, tg.fehler ?? "Export fehlt");
+    } else {
+      const max = tg.exports.TELEGRAM_VERLAUF_MAX;
+      torPruefung("die Telegram-Liste hat keine Obergrenze",
+        typeof max === "number" && max > 0, String(max));
+      tg.exports.telegramVerlaufLeeren();
+      // Ohne Token/Chat-ID landet jede Nachricht als SIMULATED im Verlauf —
+      // genau der Pfad, der ohne Netz laeuft.
+      for (let i = 0; i < max + 25; i++) {
+        await tg.exports.sendTelegramMessage("TRADES", `test ${i}`, "NORMAL", "Pruefer");
+      }
+      const laenge = tg.exports.telegramVerlaufLaenge();
+      torPruefung("die Telegram-Liste waechst ueber ihre Obergrenze hinaus",
+        laenge === max, `${laenge} statt ${max} nach ${max + 25} Nachrichten`);
+      tg.exports.telegramVerlaufLeeren();
+
+      // STRUKTURELL DAZU, und das ist noetig: der Prueflauf oben erreicht nur
+      // den SIMULATED-Pfad (ohne Bot-Token). Die beiden Stellen fuer SENT und
+      // FAILED laufen nur mit echtem Token und echter Antwort — im
+      // Sabotage-Lauf liess sich genau dort `merkeNachricht` wieder durch ein
+      // direktes `push` ersetzen, ohne dass etwas rot wurde. Deshalb: das
+      // direkte Anhaengen darf es GENAU EINMAL geben, naemlich in der
+      // kuerzenden Funktion selbst.
+      const tgQ = read("frontend/lib/telegram-notifications/telegram-engine.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const direkt = (tgQ.match(/_recentMessages\.push\(/g) || []).length;
+      torPruefung("es gibt wieder mehr als eine Stelle, die direkt anhaengt",
+        direkt === 1, `${direkt}x — eine Obergrenze an drei von vier Stellen ist keine`);
+      torPruefung("die kuerzende Funktion fehlt",
+        /function merkeNachricht\([\s\S]{0,200}?_recentMessages\.push\(/.test(tgQ));
+    }
+
+    const pb = ladeTsModul("lib/portfolio-brain/portfolio-brain-memory.ts", {});
+    if (pb.fehler || typeof pb.exports.savePortfolioBrainMemory !== "function") {
+      torPruefung("portfolio-brain-memory nicht ausfuehrbar", false, pb.fehler ?? "Export fehlt");
+    } else {
+      const max = pb.exports.PORTFOLIO_BRAIN_MEMORY_MAX;
+      torPruefung("die Portfolio-Brain-Liste hat keine Obergrenze",
+        typeof max === "number" && max > 0, String(max));
+      // UNTERSCHEIDBARE Eintraege — sonst laesst sich nicht pruefen, WELCHER
+      // beim Kuerzen herausfliegt. Die erste Fassung schickte lauter gleiche
+      // und fragte nur, ob der erste existiert; im Sabotage-Lauf liess sich
+      // `pop()` durch `shift()` ersetzen (der NEUESTE fliegt raus), und der
+      // Pruefer blieb gruen.
+      for (let i = 0; i < max + 20; i++) {
+        pb.exports.savePortfolioBrainMemory({ version: `V${i}`, status: "OK", mode: "TEST" });
+      }
+      const liste = pb.exports.getPortfolioBrainMemory();
+      torPruefung("die Portfolio-Brain-Liste waechst ueber ihre Obergrenze hinaus",
+        liste.length === max, `${liste.length} statt ${max} nach ${max + 20} Eintraegen`);
+      torPruefung("beim Kuerzen fliegt der NEUESTE Eintrag heraus statt der aelteste",
+        liste[0]?.version === `V${max + 19}`,
+        `vorne steht ${liste[0]?.version}, erwartet V${max + 19}`);
+      torPruefung("die aeltesten Eintraege bleiben stehen statt zu weichen",
+        !liste.some((e) => e.version === "V0"),
+        "V0 ist der aelteste und muss als erster weichen");
+    }
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
