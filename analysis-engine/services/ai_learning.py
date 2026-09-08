@@ -109,6 +109,21 @@ DARAUS FOLGT, und das ist verbindlich:
    das Symbol nicht" oder "Ignoranz".
 4. Eine grosse Lücke zwischen Backtest und Live ist ein Hinweis auf
    ÜBERANPASSUNG des Backtests — nicht auf einen Ausführungsfehler.
+5. STICHPROBENGRÖSSE IST BINDEND (08.09.). `liveTrades` liegt derzeit bei
+   1 bis 4 je Symbol, insgesamt unter 20. Aus so wenigen Trades folgt fast
+   nichts:
+     - 0 Gewinne aus 2 Trades schliesst eine wahre Trefferquote von 70 %
+       NICHT aus (Regel der Drei: bei n=2 reicht das 95-%-Intervall bis
+       etwa 78 %).
+     - 1 Gewinn aus 1 Trade ist keine Trefferquote von 100 %.
+   Schreibe deshalb NICHT "versagt zu 100 %", "systemisches Problem" oder
+   "einzige konsistente Performance", solange liveTrades < 10 ist. Nenne
+   stattdessen die Zahl und sage ausdrücklich, dass sie nicht trägt
+   ("2 Trades — zu wenig für eine Aussage").
+   Der `score` muss das abbilden: bei liveTrades < 5 darf er nicht unter 40
+   und nicht über 60 liegen, egal wie das Ergebnis aussieht. Ein Symbol mit
+   einem einzigen Gewinn ist nicht besser belegt als eines mit einem
+   einzigen Verlust.
 
 LIVE (30 Tage, GPT-Scanner) vs. NÄCHTLICHER BACKTEST (1h-Kerzen, 3 Monate,
 hat NICHT gehandelt):

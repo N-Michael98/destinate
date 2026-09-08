@@ -2291,3 +2291,44 @@ def test_lernreport_uebergibt_die_zahlen_unveraendert():
     p = _lern_prompt()
     for stueck in ["NAS100", "43.3", "EMA_CROSS"]:
         assert stueck in p, stueck
+
+
+# ── Der Report darf aus 2 Trades kein Urteil machen (08.09.) ─────────────────
+#
+# ZWEITER FUND aus demselben Telegram-Report. Nachgezaehlt ueber alle genannten
+# Symbole: 16 Live-Trades insgesamt, 1 bis 4 je Symbol. Darauf stuetzte der
+# Report:
+#
+#   NAS100  2 Trades, 0 %   -> Score 15/100, "systemisches Problem"
+#   UK100   1 Trade, 100 %  -> Score 85/100
+#   XAUUSD  3 Trades, 33 %  -> Score 88/100, "EINZIGE konsistente Performance"
+#
+# Bei n=2 und null Treffern reicht das 95-%-Intervall der wahren Trefferquote
+# noch bis rund 78 % (Regel der Drei: 3/n). "Versagt live zu 100 %" ist bei
+# zwei Trades keine Messung, sondern Rauschen — und ein Score von 85 fuer
+# einen einzigen Gewinn ebenso.
+#
+# Dieselbe Fehlerklasse wie in CLAUDE.md: eine Zahl, die als Messung auftritt,
+# ohne eine zu sein.
+
+def test_lernreport_bindet_die_stichprobengroesse():
+    p = _lern_prompt()
+    assert "STICHPROBENGRÖSSE IST BINDEND" in p, p[:900]
+    # Die konkrete Grenze muss dastehen, nicht nur die Mahnung.
+    assert "liveTrades < 10" in p, "ohne Schwelle bleibt es eine Floskel"
+    assert "liveTrades < 5" in p, "die Score-Klemme fehlt"
+
+
+def test_lernreport_verbietet_die_konkreten_floskeln():
+    """Genau die Formulierungen, die im Report vom 07./08.09. standen."""
+    p = _lern_prompt()
+    for floskel in ["versagt zu 100 %", "systemisches Problem",
+                    "einzige konsistente Performance"]:
+        assert floskel in p, f"'{floskel}' wird nicht ausgeschlossen"
+
+
+def test_lernreport_nennt_die_regel_der_drei():
+    p = _lern_prompt()
+    assert "Regel der Drei" in p, "die Begruendung fehlt"
+    # Und ein Rechenbeispiel, damit die Regel nicht abstrakt bleibt.
+    assert "78" in p, "das Zahlenbeispiel zu n=2 fehlt"
