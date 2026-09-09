@@ -261,7 +261,11 @@ export async function checkTotalDrawdownLimit(
     const { cacheGet, cacheSet } = await import("../cache/redis-cache");
     const KEY = "peak_balance";
     const TTL = 365 * 24 * 60 * 60; // 1 Jahr
-    const stored = await cacheGet<{ peak: number }>(KEY);
+    // `alerted` wie beim Wochenlimit: die Meldung soll einmal je Hoechststand
+    // kommen, nicht alle fuenf Minuten. Ein neuer Peak ueberschreibt den
+    // Schluessel unten OHNE das Feld — damit meldet der naechste Einbruch
+    // wieder, und zwar genau einmal.
+    const stored = await cacheGet<{ peak: number; alerted?: boolean }>(KEY);
     const peak = stored?.peak ?? 0;
 
     if (currentBalance > peak) {
@@ -273,6 +277,57 @@ export async function checkTotalDrawdownLimit(
     const ddPct = ((peak - currentBalance) / peak) * 100;
     if (ddPct >= maxTotalDrawdownPct) {
       console.log(`[filter] 🛑 GESAMT-DRAWDOWN: -${ddPct.toFixed(2)}% vom Höchststand ${peak.toFixed(2)} >= ${maxTotalDrawdownPct}% — kein weiterer Trade`);
+      // ── DIESER RIEGEL MUSS SICH MELDEN (09.09.) ──────────────────────────
+      //
+      // Er tat es nicht. `sendTelegram` stand in dieser Datei ausschliesslich
+      // in der Wochen-Grenze; der Gesamt-Drawdown sperrte NUR mit einer
+      // Logzeile in der Serverkonsole.
+      //
+      // Das ist kein Schoenheitsfehler. Belegt am 09.09. 15:33:
+      //
+      //   [filter] 🔴 GESAMT-DRAWDOWN: -10.72% vom Höchststand 1749.66 >= 10%
+      //   [orchestrator] 🚫 XRPUSD GEBLOCKT [TOTAL_DRAWDOWN_LIMIT]
+      //
+      // XRPUSD hatte Confidence 77 und war durch ALLE vorherigen Tore. Der
+      // Riegel hielt tagelang jeden Trade auf — und niemand erfuhr es. Genau
+      // die Fehlerklasse "Diagnose schweigt im interessanten Fall".
+      //
+      // ER IST AUSSERDEM EINE SACKGASSE, und das gehoert in die Meldung: der
+      // Drawdown wird vom hoechsten je gesehenen Kontostand gemessen. Sind
+      // keine Positionen offen, gibt es keinen Weg zurueck — neue Trades sind
+      // gesperrt, und ohne Trades steigt der Kontostand nicht. Ohne Eingriff
+      // bleibt es dabei. Die Meldung nennt deshalb BEIDE Auswege konkret:
+      // den noetigen Kontostand und die noetige Grenze.
+      //
+      // Einmal pro Hoechststand, wie beim Wochenlimit: ein neuer Peak
+      // ueberschreibt den Schluessel und setzt `alerted` damit zurueck.
+      if (!stored?.alerted) {
+        await cacheSet(KEY, { peak, alerted: true }, TTL);
+        try {
+          const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+          const noetigerStand = peak * (1 - maxTotalDrawdownPct / 100);
+          await sendTelegram(
+`🛑 <b>GESAMT-DRAWDOWN-SCHUTZ AKTIV — ALLE neuen Trades gesperrt</b>
+
+Drawdown: -${ddPct.toFixed(2)}% (Limit: -${maxTotalDrawdownPct}%)
+Höchststand: ${peak.toFixed(2)}
+Aktueller Stand: ${currentBalance.toFixed(2)}
+
+⛔ Es wird KEIN neuer Trade mehr eröffnet — auch nicht bei perfektem Signal.
+✅ Offene Positionen werden weiter verwaltet (BE/Trail/TP).
+
+<b>Das löst sich nicht von selbst:</b> gemessen wird vom Höchststand. Ohne
+offene Positionen kann der Kontostand nicht steigen, und ohne steigenden
+Kontostand wird nicht gehandelt.
+
+Zwei Auswege:
+• Kontostand über ${noetigerStand.toFixed(2)} bringen
+• "Max Total Drawdown (%)" in den Einstellungen über ${ddPct.toFixed(1)}% setzen
+
+🕐 ${new Date().toLocaleString("de-CH")}`
+          );
+        } catch { /* non-fatal */ }
+      }
       return { allowed: false, reason: `Gesamt-Drawdown-Limit: -${ddPct.toFixed(1)}% (Max: -${maxTotalDrawdownPct}%)` };
     }
     return { allowed: true, reason: "" };

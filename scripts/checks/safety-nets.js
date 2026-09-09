@@ -1057,6 +1057,88 @@ module.exports = async function pruefe() {
         console.log = stillesLog;
       }
     }
+    // ── DER GESAMT-DRAWDOWN-RIEGEL MUSS SICH MELDEN (09.09.) ──────────────
+    //
+    // DER FUND, und er hat eine Woche gekostet. Am 09.09. 15:33 stand im Log:
+    //
+    //   [filter] 🔴 GESAMT-DRAWDOWN: -10.72% vom Höchststand 1749.66 >= 10%
+    //   [orchestrator] 🚫 XRPUSD GEBLOCKT [TOTAL_DRAWDOWN_LIMIT]
+    //
+    // XRPUSD hatte Confidence 77 und war durch ALLE vorherigen Tore. Der
+    // Riegel hielt jeden Trade auf — und meldete NICHTS. `sendTelegram` stand
+    // in dieser Datei ausschliesslich in der Wochen-Grenze.
+    //
+    // Er ist ausserdem eine SACKGASSE: gemessen wird vom hoechsten je
+    // gesehenen Kontostand. Ohne offene Positionen kann der Stand nicht
+    // steigen, und ohne steigenden Stand wird nicht gehandelt.
+    {
+      const speicher2 = {};
+      const gesendet = [];
+      const bauDD = () => ladeTsModul("lib/trading-filters/trade-filters.ts", {
+        "redis-cache": {
+          cacheGet: async (k) => (k in speicher2 ? speicher2[k] : null),
+          cacheSet: async (k, v) => { speicher2[k] = v; return true; },
+        },
+        "telegram-sender": { sendTelegram: async (t) => { gesendet.push(t); } },
+      });
+      const d1 = bauDD();
+      if (d1.fehler || typeof d1.exports.checkTotalDrawdownLimit !== "function") {
+        torPruefung("checkTotalDrawdownLimit nicht ausfuehrbar", false,
+          d1.fehler ?? "Export fehlt");
+      } else {
+        const stillesLog2 = console.log;
+        console.log = () => {};
+        try {
+          const f = d1.exports.checkTotalDrawdownLimit;
+          // Hoechststand setzen (die echten Zahlen aus dem Log vom 09.09.).
+          const a = await f(1749.66, 10);
+          torPruefung("ein neuer Hoechststand blockt", a.allowed === true, JSON.stringify(a));
+          // Knapp darunter: erlaubt.
+          const b = await f(1600, 10);
+          torPruefung("ein Drawdown UNTER der Grenze blockt schon",
+            b.allowed === true, `-8.6 % ${JSON.stringify(b)}`);
+          // Der echte Fall: 1562.14 -> -10.72 %.
+          const c = await f(1562.14, 10);
+          torPruefung("der echte Fall vom 09.09. blockt nicht",
+            c.allowed === false, `-10.72 % ${JSON.stringify(c)}`);
+          torPruefung("die Sperre wird nicht gemeldet — sie sperrte tagelang still",
+            gesendet.length === 1, `${gesendet.length} Meldungen`);
+          // Die Meldung muss den AUSWEG nennen — sonst sucht man wieder tagelang.
+          const txt = gesendet[0] ?? "";
+          torPruefung("die Meldung nennt den noetigen Kontostand nicht",
+            /1574\.69/.test(txt), txt.slice(0, 80));
+          torPruefung("die Meldung nennt die Einstellung nicht",
+            /Max Total Drawdown/.test(txt));
+          torPruefung("die Meldung sagt nicht, dass es sich nicht von selbst loest",
+            /nicht von selbst/.test(txt));
+          // NICHT bei jedem Zyklus melden — sonst ist es Rauschen.
+          await f(1562.14, 10);
+          await f(1562.14, 10);
+          torPruefung("die Meldung wiederholt sich bei jedem Zyklus",
+            gesendet.length === 1, `${gesendet.length} nach drei Sperren`);
+          // Neuer Hoechststand -> die Meldung darf wieder kommen.
+          await f(1800, 10);
+          const e3 = await f(1500, 10);
+          torPruefung("nach einem neuen Hoechststand blockt der Riegel nicht",
+            e3.allowed === false, JSON.stringify(e3));
+          torPruefung("nach einem neuen Hoechststand meldet er nicht erneut",
+            gesendet.length === 2, `${gesendet.length} Meldungen`);
+          // Redis weg -> nicht blockieren.
+          const d2 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-cache": {
+              cacheGet: async () => { throw new Error("Redis weg"); },
+              cacheSet: async () => { throw new Error("Redis weg"); },
+            },
+          });
+          const g2 = await d2.exports.checkTotalDrawdownLimit(1000, 10);
+          torPruefung("ein Redis-Ausfall sperrt den Handel",
+            g2.allowed === true, JSON.stringify(g2));
+        } finally {
+          console.log = stillesLog2;
+        }
+      }
+    }
+
     // Und die modul-scoped Variable darf nicht zurueckkehren.
     const tfQ = read("frontend/lib/trading-filters/trade-filters.ts")
       .replace(/\/\*[\s\S]*?\*\//g, " ")
