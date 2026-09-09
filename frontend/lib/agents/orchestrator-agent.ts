@@ -464,6 +464,43 @@ function wirksameApproveSchwelle(gespeichert: number | undefined): number {
 }
 
 /**
+ * Die "Min Signal Confidence", die WIRKLICH gilt (09.09.).
+ *
+ * DERSELBE RIEGEL WIE FÜR DIE APPROVE-SCHWELLE, eine Einstellung weiter —
+ * und er fehlte. Am 13.08. wurde beides erkannt: der Regler in der Oberfläche
+ * beginnt seither bei MIN_SIGNAL_CONFIDENCE, weil tiefere Werte in
+ * `Math.max(...)` ohnehin verschluckt werden. Die Approve-Schwelle bekam
+ * dazu `wirksameApproveSchwelle()` mit Meldung — die Min-Confidence nicht.
+ *
+ * DER GESPEICHERTE WERT VON DAMALS BLIEB ABER STEHEN. Am 09.09. im
+ * Einstellungs-Bild sichtbar: der Regler zeigt **69 %**, sein Bereich beginnt
+ * bei 70. Ein Wert, den der Regler gar nicht mehr erzeugen kann, und im
+ * Betriebslog steht er in jedem Zyklus mit:
+ *
+ *   Confidence 74 < Schwelle 76 (autoApprove 76, minConfidence 69)
+ *
+ * Er wirkt nicht — `Math.max(76, 69)` ist 76 — und niemand sagt es.
+ *
+ * AN DER RECHNUNG ÄNDERT SICH NICHTS. `Math.max` ist richtig: diese
+ * Einstellung darf nur VERSCHÄRFEN, nie aufweichen. Behoben wird das
+ * Schweigen, nicht das Verhalten.
+ *
+ * Exportiert, damit der Prüfer die Entscheidung AUSFÜHREN kann.
+ */
+export function wirksameMinConfidence(gespeichert: number | undefined): number {
+  const wert = gespeichert ?? 0;
+  if (wert > 0 && wert < MIN_SIGNAL_CONFIDENCE) {
+    console.warn(
+      `[orchestrator] Min Signal Confidence ${wert} liegt unter der Untergrenze `
+      + `${MIN_SIGNAL_CONFIDENCE} der Signalkette — sie wirkt nicht. Der Regler `
+      + `beginnt seit dem 13.08. bei ${MIN_SIGNAL_CONFIDENCE}; dieser Wert ist `
+      + `ein Altbestand von davor. Auf ${MIN_SIGNAL_CONFIDENCE} oder hoeher `
+      + `setzen, damit die Einstellung wieder etwas bedeutet.`);
+  }
+  return wert;
+}
+
+/**
  * Der Bypass-Wert, der bei erreichtem Tageslimit WIRKLICH gilt (08.09.).
  *
  * DIESELBE FEHLERKLASSE WIE 13.08., eine Einstellung weiter. Die Oberflaeche
@@ -686,7 +723,7 @@ export async function runOrchestratorCycle(): Promise<void> {
   // damit die Einstellung die bestehende Freigabe-Schwelle nie aufweichen kann.
   const baseThreshold = Math.max(
     wirksameApproveSchwelle(settings.botSettings.autoApproveThreshold),
-    settings.riskSettings?.minConfidenceScore ?? 0,
+    wirksameMinConfidence(settings.riskSettings?.minConfidenceScore),
   );
   // Bei erreichtem Tageslimit gilt zusätzlich die (höhere) Bypass-Schwelle —
   // siehe Kommentar beim Tageslimit oben.

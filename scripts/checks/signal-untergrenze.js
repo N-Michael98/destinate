@@ -234,7 +234,14 @@ module.exports = function pruefe() {
   // aufweichen. Falsch war das Schweigen.
   //
   // AUSGEFUEHRT, nicht gelesen: die echte Funktion wird gerufen.
-  const orchModul = ladeTsModul("lib/agents/orchestrator-agent.ts");
+  // MIT der echten Untergrenze laden. Ohne sie bekommt das Modul den
+  // Stellvertreter, und `wirksameMinConfidence` bringt ihn beim Formatieren
+  // der Meldung zum Werfen ("keine Aussenwelt im Pruefstand") — der Pruefer
+  // stuerzte ab statt zu pruefen. `grenze` stammt aus der echten Datei, die
+  // oben schon geladen und geprueft wurde.
+  const orchModul = ladeTsModul("lib/agents/orchestrator-agent.ts", {
+    "broker-config": { MIN_SIGNAL_CONFIDENCE: grenze },
+  });
   if (orchModul.fehler) {
     funde.push(`orchestrator-agent nicht ladbar: ${orchModul.fehler}`);
     geprueft++;
@@ -283,6 +290,55 @@ module.exports = function pruefe() {
     pruefe1("der Zyklus benutzt den geprueften Bypass nicht",
       /wirksamerBypass\(bypassScore, baseThreshold\)/.test(orch),
       "sonst rechnet die Funktion, und der Zyklus nimmt weiter Math.max");
+
+    // ══ UND DIE MIN-CONFIDENCE — dritter Regler derselben Klasse (09.09.) ══
+    //
+    // Am 13.08. wurde BEIDES erkannt: der Regler in der Oberflaeche beginnt
+    // seither bei MIN_SIGNAL_CONFIDENCE, weil tiefere Werte in `Math.max`
+    // ohnehin verschluckt werden. Die Approve-Schwelle bekam dazu
+    // `wirksameApproveSchwelle()` mit Meldung — die Min-Confidence NICHT.
+    //
+    // Der gespeicherte Wert von damals blieb stehen. Am 09.09. im
+    // Einstellungs-Bild sichtbar: der Regler zeigt 69 %, sein Bereich beginnt
+    // bei 70. Und im Betriebslog steht er in JEDEM Zyklus:
+    //
+    //   Confidence 74 < Schwelle 76 (autoApprove 76, minConfidence 69)
+    //
+    // Er wirkt nicht, und niemand sagt es.
+    const wmc = orchModul.exports.wirksameMinConfidence;
+    if (typeof wmc !== "function") {
+      funde.push("wirksameMinConfidence wird nicht exportiert — ein "
+        + "wirkungsloser Min-Confidence-Wert bliebe unbemerkt");
+      geprueft++;
+    } else {
+      const stille2 = console.warn;
+      let meldungen = 0;
+      console.warn = () => { meldungen++; };
+      let w;
+      try {
+        // Jeder Fall GENAU EINMAL gerufen — sonst zaehlt die Meldung doppelt.
+        w = {
+          alt:    wmc(69),         // der LIVE gespeicherte Altbestand
+          grenze: wmc(70),         // genau die Untergrenze
+          hoeher: wmc(80),         // darueber
+          aus:    wmc(0),          // nicht gesetzt
+          fehlt:  wmc(undefined),  // gar kein Wert
+        };
+      } finally { console.warn = stille2; }
+      pruefe1("der Altbestand 69 wird veraendert statt nur gemeldet",
+        w.alt === 69, `${w.alt} — die Rechnung darf sich NICHT aendern`);
+      pruefe1("genau die Untergrenze wird faelschlich beanstandet",
+        w.grenze === 70, String(w.grenze));
+      pruefe1("ein hoeherer Wert wird veraendert", w.hoeher === 80, String(w.hoeher));
+      pruefe1("ein nicht gesetzter Wert ergibt nicht 0", w.aus === 0 && w.fehlt === 0,
+        `${w.aus} / ${w.fehlt}`);
+      // GEMELDET werden darf nur der eine Fall — 0 heisst "nicht gesetzt".
+      pruefe1("ein wirkungsloser Min-Confidence-Wert wird nicht gemeldet — oder zu oft",
+        meldungen === 1, `${meldungen} Meldungen bei 5 Faellen, erwartet 1`);
+      pruefe1("der Zyklus benutzt die gepruefte Min-Confidence nicht",
+        /wirksameMinConfidence\(settings\.riskSettings\?\.minConfidenceScore\)/.test(orch),
+        "sonst rechnet die Funktion, und der Zyklus nimmt weiter den Rohwert");
+    }
   }
 
   return { titel: `Signal-Untergrenze (${geprueft} Prüfungen, Grenze ${grenze})`, funde };
