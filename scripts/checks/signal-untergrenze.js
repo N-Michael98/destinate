@@ -164,6 +164,61 @@ module.exports = function pruefe() {
     /angepasst < MIN_SIGNAL_CONFIDENCE/.test(agentQ),
     "ein auf 68 gesenktes Signal bliebe sonst in `approved`");
 
+  // ══ DIE ZUORDNUNG DER META-URTEILE (09.09.) ══════════════════════════════
+  //
+  // DER FUND aus der Kettenkontrolle. Die Meta-Urteile wurden unter
+  // `r.symbol` abgelegt und mit `opp.symbol` gesucht — ein EXAKTER
+  // Zeichenvergleich. Ein Fehlschlag endet in
+  //
+  //   if (!meta || !meta.approve)  ->  rejected: "Meta-AI hat abgelehnt"
+  //
+  // Schreibt das Modell also "EUR/USD" statt "EURUSD", wird der Kandidat
+  // VERWORFEN — und im Log steht eine Ablehnung, die nie stattgefunden hat.
+  // Eine verfehlte Zuordnung war von einer echten Ablehnung nicht zu
+  // unterscheiden.
+  //
+  // Das Tor ist seit dem Aufladen des Anthropic-Guthabens wieder scharf: am
+  // 08.09. fiel die Meta-KI aus und liess im Rueckfall alles durch.
+  if (analyseModul.fehler) {
+    funde.push("analysis-agent nicht ladbar — die Zuordnung bleibt ungeprueft");
+    geprueft++;
+  } else if (typeof analyseModul.exports.schluessel !== "function") {
+    funde.push("schluessel wird nicht exportiert — die Zuordnung der "
+      + "Meta-Urteile bleibt ein exakter Zeichenvergleich");
+    geprueft++;
+  } else {
+    const s = analyseModul.exports.schluessel;
+    // Alle Schreibweisen desselben Marktes muessen denselben Schluessel geben.
+    for (const [roh, soll] of [
+      ["EURUSD", "EURUSD"], ["EUR/USD", "EURUSD"], ["eurusd", "EURUSD"],
+      [" EURUSD ", "EURUSD"], ["EUR USD", "EURUSD"], ["eur-usd", "EURUSD"],
+      ["XAUUSD", "XAUUSD"], ["NAS100", "NAS100"],
+      [null, ""], [undefined, ""], ["", ""],
+    ]) {
+      pruefe1(`schluessel(${JSON.stringify(roh)}) falsch`, s(roh) === soll,
+        `${JSON.stringify(s(roh))} statt ${JSON.stringify(soll)}`);
+    }
+    // Und VERSCHIEDENE Maerkte duerfen NICHT zusammenfallen — sonst bekaeme
+    // ein Symbol das Urteil eines anderen.
+    const watchlist = ["NAS100","SPX500","UK100","GER40","DJ30","JPN225",
+      "XAUUSD","USOIL","UKOIL","XAGUSD","NATGAS","EURUSD","GBPUSD","USDJPY",
+      "USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","GBPJPY","EURJPY","BTCUSD",
+      "ETHUSD","LTCUSD","XRPUSD","ADAUSD","SOLUSD","DOTUSD","LNKUSD","BNBUSD"];
+    const schluesselMenge = new Set(watchlist.map(s));
+    pruefe1("zwei verschiedene Maerkte fallen auf denselben Schluessel",
+      schluesselMenge.size === watchlist.length,
+      `${schluesselMenge.size} Schluessel fuer ${watchlist.length} Symbole`);
+    // Beide Seiten muessen ihn benutzen — Ablegen UND Nachschlagen.
+    pruefe1("die Meta-Urteile werden ohne Schluessel abgelegt",
+      /decisions\.set\(schluessel\(/.test(agentQ));
+    pruefe1("die Meta-Urteile werden ohne Schluessel nachgeschlagen",
+      /metaDecisions\.get\(schluessel\(opp\.symbol\)\)/.test(agentQ));
+    // Und eine verfehlte Zuordnung muss AUFFALLEN, statt als Ablehnung zu enden.
+    pruefe1("eine verfehlte Zuordnung wird nicht gemeldet",
+      /KEINES passt zu einem Kandidaten/.test(agentQ),
+      "sonst sieht sie aus wie eine Ablehnung, die nie stattfand");
+  }
+
   // ══ DER BYPASS-REGLER DARF EBENFALLS NICHT LUEGEN (08.09.) ═══════════════
   //
   // Dieselbe Fehlerklasse wie oben, eine Einstellung weiter. Die Oberflaeche

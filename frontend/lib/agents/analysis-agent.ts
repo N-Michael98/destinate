@@ -34,6 +34,25 @@ interface MetaAnalysisDecision {
   priority: "HIGH" | "MEDIUM" | "LOW";
 }
 
+/** Einheitlicher Schlüssel für die Zuordnung Modellantwort → Kandidat (09.09.).
+ *
+ * Vorher wurde die Antwort unter `r.symbol` abgelegt und mit `opp.symbol`
+ * gesucht — ein EXAKTER Zeichenvergleich. Schreibt das Modell "EUR/USD",
+ * " EURUSD" oder "eurusd", findet die Suche nichts, und der Kandidat landet in
+ * `if (!meta || !meta.approve)` — also in einer Ablehnung mit dem Text
+ * "Meta-AI hat abgelehnt". Eine verfehlte Zuordnung war von einer echten
+ * Ablehnung nicht zu unterscheiden.
+ *
+ * Entfernt wird alles, was keine Ziffer und kein Buchstabe ist, und der Rest
+ * in Grossbuchstaben gesetzt. "EUR/USD", "eur usd" und "EURUSD" ergeben damit
+ * denselben Schlüssel. Zwei VERSCHIEDENE Märkte fallen dabei nicht zusammen —
+ * die Watchlist enthält keine zwei Symbole, die sich nur in Trennzeichen oder
+ * Gross-/Kleinschreibung unterscheiden.
+ */
+export function schluessel(symbol: unknown): string {
+  return String(symbol ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
 async function runMetaAnalysis(candidates: ScannerOpportunity[]): Promise<Map<string, MetaAnalysisDecision>> {
   const decisions = new Map<string, MetaAnalysisDecision>();
   if (!candidates.length) return decisions;
@@ -79,12 +98,41 @@ Antworte NUR mit JSON Array:
     if (json) {
       const results = JSON.parse(json) as Array<MetaAnalysisDecision & { symbol: string }>;
       for (const r of results) {
-        decisions.set(r.symbol, {
+        decisions.set(schluessel(r.symbol), {
           approve: r.approve,
           adjustedConfidence: r.adjustedConfidence,
           concern: r.concern,
           priority: r.priority,
         });
+      }
+      // ── Verfehlte Zuordnung MUSS auffallen (09.09.) ──────────────────────
+      //
+      // Die Entscheidungen werden unten mit `metaDecisions.get(opp.symbol)`
+      // geholt, und ein Fehlschlag endet in `if (!meta || !meta.approve)` —
+      // also in einer ABLEHNUNG mit dem Text "Meta-AI hat abgelehnt". Eine
+      // nicht gefundene Antwort sah damit genau aus wie eine ablehnende.
+      //
+      // Das ist keine Kleinigkeit: gibt das Modell die Symbole in einer
+      // anderen Schreibweise zurueck ("EUR/USD" statt "EURUSD") oder laesst es
+      // eines aus, wird JEDER betroffene Kandidat verworfen — und im Log steht
+      // eine Ablehnung, die nie stattgefunden hat. Deshalb wird jetzt
+      // normalisiert (siehe `schluessel`) UND gemeldet, wenn trotzdem keine
+      // einzige Zuordnung gelingt.
+      const gefragt = candidates.map((c) => schluessel(c.symbol));
+      const getroffen = gefragt.filter((s) => decisions.has(s)).length;
+      if (results.length > 0 && getroffen === 0) {
+        console.error(
+          `[analysis-agent] ⛔ Meta-AI antwortete mit ${results.length} Urteilen, `
+          + `aber KEINES passt zu einem Kandidaten. Geliefert: `
+          + `[${results.map((r) => r.symbol).join(", ")}] — gefragt: `
+          + `[${candidates.map((c) => c.symbol).join(", ")}]. Alle Kandidaten `
+          + `wuerden jetzt als "abgelehnt" gelten, obwohl nichts abgelehnt wurde.`
+        );
+      } else if (getroffen < gefragt.length) {
+        console.warn(
+          `[analysis-agent] ⚠️ Meta-AI hat ${gefragt.length - getroffen} von `
+          + `${gefragt.length} Kandidaten nicht beurteilt — diese gelten als abgelehnt`
+        );
       }
     }
   } catch (err) {
@@ -103,7 +151,7 @@ Antworte NUR mit JSON Array:
       .catch(() => {});
     // Fallback: alle approven
     for (const c of candidates) {
-      decisions.set(c.symbol, {
+      decisions.set(schluessel(c.symbol), {
         approve: true,
         adjustedConfidence: c.gpt.confidence,
         concern: "fallback",
@@ -170,7 +218,8 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
   const rejected: Array<{ symbol: string; reason: string }> = [];
 
   for (const opp of goSignals) {
-    const meta = metaDecisions.get(opp.symbol);
+    // Beide Seiten ueber denselben Schluessel — Begruendung bei `schluessel()`.
+    const meta = metaDecisions.get(schluessel(opp.symbol));
 
     if (!meta || !meta.approve) {
       const reason = meta?.concern ?? "Meta-AI hat abgelehnt";

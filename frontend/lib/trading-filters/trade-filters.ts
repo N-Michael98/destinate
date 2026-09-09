@@ -102,30 +102,60 @@ export function checkCorrelation(
 
 // ── 3. Max. Tages-Verlust Limit ───────────────────────────────────────────────
 // Stoppt alle Trades wenn Tagesverlust > maxDailyLossPct
-const _dayStart: Record<string, number> = {}; // date → startBalance
-
-export function checkDailyLossLimit(
+/**
+ * DER TAGESSTART-KONTOSTAND GEHÖRT NACH REDIS (09.09.).
+ *
+ * Hier stand `const _dayStart: Record<string, number> = {}` — modul-scoped und
+ * damit nach jedem Deploy leer. Der erste Aufruf nach einem Neustart schrieb
+ * dann den AKTUELLEN Kontostand als „Tagesstart" fest:
+ *
+ *   Tagesstart 1600 → Verlust auf 1540 (−3,75 %) → Deploy →
+ *   „Tagesstart" 1540 → gemessener Verlust 0,0 % → Schutz aus, bis Mitternacht
+ *
+ * Der Riegel konnte für den Rest des Tages nicht mehr auslösen. Redeploys sind
+ * in diesem Projekt Routine.
+ *
+ * DASS ES SO SEIN MUSS, STAND SCHON IN DIESER DATEI: die Wochen-Grenze zwei
+ * Funktionen tiefer legt ihren Startwert seit dem 13.08. in Redis, und ihr
+ * Kommentar sagt wörtlich „Redis-persistent, überlebt Deploys". Dieselbe
+ * Anforderung, dieselbe Datei — nur die Tages-Grenze hatte sie nicht.
+ *
+ * Wirkungsrichtung, ehrlich benannt: der Fehler machte den Schutz SCHWÄCHER,
+ * nicht strenger. Er ist also NICHT die Ursache dafür, dass keine Trades
+ * entstehen — er ist eine Lücke im Verlustschutz.
+ *
+ * Aufbau 1:1 wie bei der Wochen-Grenze, inklusive „bei Fehler nicht blocken":
+ * ein Redis-Aussetzer darf den Handel nicht anhalten.
+ */
+export async function checkDailyLossLimit(
   currentBalance: number,
   maxDailyLossPct: number = 3.0 // Default 3%
-): FilterResult {
-  const today = new Date().toISOString().slice(0, 10);
-  if (!_dayStart[today]) {
-    // Ersten Balance des Tages merken
-    _dayStart[today] = currentBalance;
-    // Gestern löschen
-    for (const k of Object.keys(_dayStart)) {
-      if (k !== today) delete _dayStart[k];
+): Promise<FilterResult> {
+  try {
+    if (currentBalance <= 0) return { allowed: true, reason: "" };
+    const { cacheGet, cacheSet } = await import("../cache/redis-cache");
+    const today = new Date().toISOString().slice(0, 10);
+    const key = `day_start_balance:${today}`;
+    const stored = await cacheGet<{ balance: number }>(key);
+
+    if (!stored) {
+      // Erster Zyklus des Tages: Startkontostand festhalten (48 h TTL — der
+      // Schlüssel trägt das Datum, ein Rest vom Vortag stört also nicht und
+      // verfällt von selbst).
+      await cacheSet(key, { balance: currentBalance }, 48 * 60 * 60);
+      return { allowed: true, reason: "" };
+    }
+    if (stored.balance <= 0) return { allowed: true, reason: "" };
+
+    const lossPct = ((stored.balance - currentBalance) / stored.balance) * 100;
+    if (lossPct >= maxDailyLossPct) {
+      console.log(`[filter] 🛑 TAGESVERLUST LIMIT: ${lossPct.toFixed(2)}% >= ${maxDailyLossPct}% — kein weiterer Trade heute (Tagesstart ${stored.balance.toFixed(2)}, jetzt ${currentBalance.toFixed(2)})`);
+      return { allowed: false, reason: `Tagesverlust-Limit erreicht: -${lossPct.toFixed(1)}% (Max: -${maxDailyLossPct}%)` };
     }
     return { allowed: true, reason: "" };
+  } catch {
+    return { allowed: true, reason: "" }; // bei Fehler nicht blocken
   }
-  const startBal = _dayStart[today];
-  if (startBal <= 0) return { allowed: true, reason: "" };
-  const lossPct = ((startBal - currentBalance) / startBal) * 100;
-  if (lossPct >= maxDailyLossPct) {
-    console.log(`[filter] 🛑 TAGESVERLUST LIMIT: ${lossPct.toFixed(2)}% >= ${maxDailyLossPct}% — kein weiterer Trade heute`);
-    return { allowed: false, reason: `Tagesverlust-Limit erreicht: -${lossPct.toFixed(1)}% (Max: -${maxDailyLossPct}%)` };
-  }
-  return { allowed: true, reason: "" };
 }
 
 // ── 4. Wochen-Drawdown Guard ──────────────────────────────────────────────────
@@ -464,7 +494,7 @@ export async function runAllFilters(params: {
   if (!corrFilter.allowed) return { allowed: false, blockedBy: "CORRELATION", reason: corrFilter.reason };
 
   // 3. Daily Loss
-  const lossFilter = checkDailyLossLimit(currentBalance, maxDailyLossPct);
+  const lossFilter = await checkDailyLossLimit(currentBalance, maxDailyLossPct);
   if (!lossFilter.allowed) return { allowed: false, blockedBy: "DAILY_LOSS_LIMIT", reason: lossFilter.reason };
 
   // 4. Weekly Drawdown Guard

@@ -981,6 +981,94 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DER TAGESVERLUST-RIEGEL UEBERLEBT EINEN DEPLOY (09.09.) ══════════════
+  //
+  // DER FUND aus der Kettenkontrolle. Der Tagesstart-Kontostand lag in einer
+  // modul-scoped Variablen (`const _dayStart: Record<string, number> = {}`) und
+  // war nach jedem Deploy leer. Der erste Aufruf danach schrieb den AKTUELLEN
+  // Kontostand als "Tagesstart" fest:
+  //
+  //   Tagesstart 1600 -> Verlust auf 1540 (-3,75 %) -> Deploy ->
+  //   "Tagesstart" 1540 -> gemessener Verlust 0,0 % -> Schutz aus
+  //
+  // Dass es anders sein muss, stand SCHON IN DERSELBEN DATEI: die Wochen-
+  // Grenze zwei Funktionen tiefer legt ihren Startwert seit dem 13.08. in
+  // Redis, mit dem Kommentar "Redis-persistent, ueberlebt Deploys".
+  //
+  // WIRKUNGSRICHTUNG ehrlich benannt: der Fehler machte den Schutz SCHWAECHER.
+  // Er ist NICHT die Ursache fuer ausbleibende Trades.
+  //
+  // Geprueft wird RECHNEND mit gestelltem Redis — eine Struktur-Pruefung saehe
+  // einen Schluessel, aber nicht, ob der Riegel danach greift.
+  {
+    const bauFilter = (speicher) => ladeTsModul("lib/trading-filters/trade-filters.ts", {
+      "redis-cache": {
+        cacheGet: async (k) => (k in speicher ? speicher[k] : null),
+        cacheSet: async (k, v) => { speicher[k] = v; return true; },
+      },
+    });
+    const speicher = {};
+    const f1 = bauFilter(speicher);
+    if (f1.fehler || typeof f1.exports.checkDailyLossLimit !== "function") {
+      torPruefung("checkDailyLossLimit nicht ausfuehrbar", false, f1.fehler ?? "Export fehlt");
+    } else {
+      const stillesLog = console.log;
+      console.log = () => {};
+      try {
+        // Erster Lauf des Tages: Startwert merken, nicht blocken.
+        const a = await f1.exports.checkDailyLossLimit(1600, 3);
+        torPruefung("der erste Lauf des Tages blockt bereits", a.allowed === true,
+          JSON.stringify(a));
+        // Verlust unter der Grenze -> weiter erlaubt.
+        const b = await f1.exports.checkDailyLossLimit(1570, 3);
+        torPruefung("ein Verlust UNTER der Grenze blockt schon",
+          b.allowed === true, `1600->1570 = -1.9 % ${JSON.stringify(b)}`);
+        // Verlust ueber der Grenze -> blocken.
+        const c = await f1.exports.checkDailyLossLimit(1540, 3);
+        torPruefung("ein Verlust UEBER der Grenze blockt nicht",
+          c.allowed === false, `1600->1540 = -3.75 % ${JSON.stringify(c)}`);
+
+        // ── DER KERN: nach einem "Deploy" muss der Riegel weiter greifen ───
+        //
+        // Ein Deploy = neue Modul-Instanz, aber DERSELBE Redis-Inhalt. Vorher
+        // war der Tagesstart damit weg und der Verlust wieder 0 %.
+        const f2 = bauFilter(speicher);
+        const d = await f2.exports.checkDailyLossLimit(1540, 3);
+        torPruefung("nach einem Deploy ist der Tagesverlust-Riegel wieder offen — "
+          + "der Startkontostand ging verloren",
+          d.allowed === false, JSON.stringify(d));
+
+        // Gegenprobe: ein LEERER Speicher (neuer Tag) darf nicht blocken.
+        const f3 = bauFilter({});
+        const e2 = await f3.exports.checkDailyLossLimit(1540, 3);
+        torPruefung("ein neuer Tag blockt sofort", e2.allowed === true,
+          JSON.stringify(e2));
+        // Und ein Redis-Ausfall darf den Handel NICHT anhalten.
+        const f4 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+          "redis-cache": {
+            cacheGet: async () => { throw new Error("Redis weg"); },
+            cacheSet: async () => { throw new Error("Redis weg"); },
+          },
+        });
+        const g = await f4.exports.checkDailyLossLimit(1540, 3);
+        torPruefung("ein Redis-Ausfall haelt den Handel an",
+          g.allowed === true, JSON.stringify(g));
+      } finally {
+        console.log = stillesLog;
+      }
+    }
+    // Und die modul-scoped Variable darf nicht zurueckkehren.
+    const tfQ = read("frontend/lib/trading-filters/trade-filters.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    torPruefung("der Tagesstart liegt wieder modul-scoped",
+      !/const _dayStart/.test(tfQ),
+      "nach einem Deploy waere der Schutz wieder aus");
+    torPruefung("der Aufruf wartet nicht auf den nun asynchronen Riegel",
+      /await checkDailyLossLimit\(/.test(tfQ),
+      "ohne await waere `allowed` undefined und der Riegel wirkungslos");
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
