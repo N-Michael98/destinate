@@ -1274,8 +1274,9 @@ module.exports = async function pruefe() {
   // das nur, weil jemand gezielt danach gesucht hat. NICHTS im Netz haette
   // eine zweite solche Route bemerkt.
   //
-  // Am 15.09. wurden deshalb ALLE 150 API-Routen durchgemessen: 65 haben
-  // keinen Aufrufer im Quelltext. Das ist fuer sich kein Fehler — aber eine
+  // Am 15.09. wurden deshalb ALLE 150 API-Routen durchgemessen: 68 haben
+  // keinen Aufrufer im Quelltext (kommentarbereinigt — die erste Zaehlung
+  // ergab 65, weil Namen in Kommentaren als Aufruf galten). Das ist fuer sich kein Fehler — aber eine
   // davon koennte morgen Orders platzieren, und niemand wuerde es sehen.
   //
   // Diese Pruefung dreht das um: es wird nicht gesucht, was tot ist, sondern

@@ -46,7 +46,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `ai-clamp` | `inGrenzen()` | 11.08. |
 | `exit-schwellen` | `wirksameSchwellen()` | 10.08. |
 | `teilgewinn` | `teilgewinnErlaubt()`, `teilgewinnStand()` | 11.08. |
-| `signal-untergrenze` | die Untergrenze der Signalkette | 13.08. |
+| `signal-untergrenze` | die Untergrenze der Signalkette; seit 15.09. auch `wirksameApproveSchwelle()` und `rrVerteilung()` | 13.08. |
 | `order-bestaetigung` | `ausstiegsgrund()`, `stopAbstandGenug()` | 13.08. |
 | `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()`, `notizenBefund()`, `positionenOhneStammdaten()` | 18.08. |
 | `python-ueberwachung` | `meldePythonAufruf()`, `pythonUebergang()` | 19.08. |
@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()` | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz) und `dateiFreigegeben()` auf Windows- UND Linux-Semantik | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -263,10 +263,16 @@ Gemessen am **15.09.** über alle Routen, gesucht ausschliesslich im Quelltext
 (`tsconfig.tsbuildinfo` und `.next` enthalten jeden Dateipfad und haben in
 dieser Sitzung zweimal tote Routen „benutzt" aussehen lassen):
 
-**150 API-Routen, 65 ohne jeden Aufrufer.**
+**150 API-Routen, 68 ohne jeden Aufrufer** (korrigiert am 15.09. abends; hier
+stand 65, eine zweite Messung am Mittag ergab 64).
 
-Dabei zwei Fehler in der eigenen Messung gefunden und behoben — beide gehören
+Dabei drei Fehler in der eigenen Messung gefunden und behoben — alle gehören
 zur Methode, nicht zum Code:
+- **Kommentare wurden mitgezählt.** `/api/validation-agent`, `/api/ai-health`,
+  `/api/debug-pnl` und `/api/icmarkets/symbols` galten als benutzt, weil ihr
+  Name in einem Kommentar steht („Nutzung: … via /api/validation-agent").
+  Genau die Fehlerklasse aus dem Abschnitt oben — diesmal in der Messung, die
+  sie aufdecken sollte. Erst kommentarbereinigt sind es 68.
 - Routen mit dynamischem Segment (`/api/trades/[id]`) werden als
   `` `/api/trades/${id}` `` gerufen; der literale Pfad steht nirgends. Sie
   müssen über ihren **statischen Anfang** gesucht werden, sonst gelten sie zu
