@@ -276,9 +276,18 @@ export default function LearningFeedbackPanel() {
               <AccuracyBadge label="Claude" data={report.predictionAccuracy.claude} />
               <AccuracyBadge label="Consensus" data={report.predictionAccuracy.consensus} />
             </div>
+            {/* Der Text sagte bis zum 15.09. "Wird gefüllt sobald AI-Predictions
+                mit Paper Trade Resultaten abgeglichen werden können" — ein
+                Versprechen, das nichts einlösen kann: `storePrediction()` hat
+                im ganzen Programm KEINEN Aufrufer, `pendingPredictions` bleibt
+                damit immer leer. Die Badges zeigen darum korrekt "—", aber der
+                Hinweis las sich wie "kommt bald". Er sagt jetzt, woran es
+                liegt. */}
             {report.predictionAccuracy.consensus.total === 0 && (
               <div className="text-xs text-slate-500 text-center mt-2">
-                Wird gefüllt sobald AI-Predictions mit Paper Trade Resultaten abgeglichen werden können.
+                Noch nicht verdrahtet: Es werden derzeit keine AI-Vorhersagen
+                gespeichert, deshalb gibt es nichts abzugleichen. Die Anzeige
+                bleibt leer, bis die Signalkette ihre Vorhersagen festhält.
               </div>
             )}
           </div>

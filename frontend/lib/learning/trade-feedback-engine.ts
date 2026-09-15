@@ -370,8 +370,35 @@ export async function runLearningCycle(
       new Date(t.closedAt) > new Date(p.timestamp)
     );
     if (!match) return false;
-    const correct = (p.direction === "BUY" && match.outcome === "WIN") ||
-                    (p.direction === "SELL" && match.outcome === "WIN");
+    // ── DIE RICHTUNGSPRÜFUNG TAT NICHTS (15.09.) ──────────────────────────
+    //
+    // Hier stand:
+    //
+    //   const correct = (p.direction === "BUY"  && match.outcome === "WIN") ||
+    //                   (p.direction === "SELL" && match.outcome === "WIN");
+    //
+    // Beide Zweige verlangen `outcome === "WIN"`, und `p.direction` ist
+    // `"BUY" | "SELL"`. Der Ausdruck ist damit gleichbedeutend mit
+    // `match.outcome === "WIN"` — die Richtung wurde zwar zweimal genannt,
+    // aber nie ausgewertet. JEDER Gewinn hätte als richtige Vorhersage
+    // gezählt, auch wenn die Vorhersage in die Gegenrichtung ging.
+    //
+    // ERREICHBAR IST DAS HEUTE NICHT: `storePrediction()` hat im ganzen Repo
+    // keinen Aufrufer, `pendingPredictions` bleibt leer, diese Schleife läuft
+    // nie. Es ist keine falsche Zahl im Betrieb, sondern eine Falle für den
+    // Tag, an dem jemand die Vorhersagen verdrahtet — und dann wäre die
+    // Trefferquote strukturell zu hoch, ohne dass es auffiele.
+    //
+    // Richtig ist: die Vorhersage stimmte, wenn der zugeordnete Trade in
+    // DIESELBE Richtung ging UND gewonnen hat.
+    //
+    // Ist die Richtung des Trades unbekannt (`null` seit dem 07.09., wenn die
+    // Quelle keine lesbare Richtung lieferte), lässt sich gar nichts
+    // beurteilen. Dann wird die Vorhersage NICHT gewertet — weder als richtig
+    // noch als falsch — statt sie zu raten. Sie bleibt offen und kann später
+    // einem Trade mit bekannter Richtung zugeordnet werden.
+    if (match.direction === null) return false;
+    const correct = p.direction === match.direction && match.outcome === "WIN";
     p.resolved = true;
     p.correct = correct;
     predAccuracy[p.source].total++;

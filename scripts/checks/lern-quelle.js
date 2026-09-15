@@ -281,6 +281,90 @@ module.exports = async function pruefe() {
     console.log = echtesLog; console.warn = echteWarnung; console.error = echterFehler;
   }
 
+  // ══ Teil 4b: die VORHERSAGE-TREFFERQUOTE wertet die Richtung aus ════════
+  //
+  // DER FUND (15.09.). Hier stand:
+  //
+  //   const correct = (p.direction === "BUY"  && match.outcome === "WIN") ||
+  //                   (p.direction === "SELL" && match.outcome === "WIN");
+  //
+  // Beide Zweige verlangen WIN, und `p.direction` ist "BUY" | "SELL" — der
+  // Ausdruck ist gleichbedeutend mit `match.outcome === "WIN"`. Die Richtung
+  // wurde zweimal GENANNT und nie AUSGEWERTET. Jeder Gewinn haette als
+  // richtige Vorhersage gezaehlt, auch ein Kaufsignal auf einen gewinnenden
+  // VERKAUF.
+  //
+  // Im Betrieb ist es heute unerreichbar (`storePrediction()` hat keinen
+  // Aufrufer), aber genau deshalb gehoert es gepruefte — wer die Vorhersagen
+  // spaeter verdrahtet, bekaeme sonst eine strukturell zu hohe Trefferquote.
+  //
+  // GERECHNET, nicht gelesen: der Zyklus wird mit gesetzten Vorhersagen und
+  // passenden Trades gefahren, und die Trefferquote wird nachgezaehlt.
+  {
+    const P_ZEILEN = [
+      // Gewinn in Richtung BUY
+      { market: "PRED1", direction: "BUY",       profitLoss: 100, updatedAt: new Date("2026-08-20") },
+      // Gewinn in Richtung SELL — eine BUY-Vorhersage lag hier FALSCH
+      { market: "PRED2", direction: "SELL",      profitLoss: 100, updatedAt: new Date("2026-08-20") },
+      // Gewinn, Richtung UNBEKANNT — nicht beurteilbar
+      { market: "PRED3", direction: "UNBEKANNT", profitLoss: 100, updatedAt: new Date("2026-08-20") },
+    ];
+    const leer = () => ({ correct: 0, total: 0, accuracy: 0 });
+    let pZustand = {
+      learningCycles: 0, totalTradesAnalyzed: 0, symbolPerformance: {},
+      strategyAdjustments: {},
+      predictionAccuracy: { gpt: leer(), claude: leer(), consensus: leer() },
+      pendingPredictions: [
+        { id: "p1", symbol: "PRED1", direction: "BUY", source: "gpt",
+          confidence: 80, timestamp: "2026-08-01T00:00:00.000Z", resolved: false },
+        { id: "p2", symbol: "PRED2", direction: "BUY", source: "claude",
+          confidence: 80, timestamp: "2026-08-01T00:00:00.000Z", resolved: false },
+        { id: "p3", symbol: "PRED3", direction: "BUY", source: "consensus",
+          confidence: 80, timestamp: "2026-08-01T00:00:00.000Z", resolved: false },
+      ],
+      insights: [], lastAnalyzed: "",
+    };
+    const pModul = ladeTsModul("lib/learning/trade-feedback-engine.ts", {
+      prisma: {
+        getPrisma: () => ({
+          trade: { findMany: async (args) => findManyNachbau([...P_ZEILEN], args) },
+        }),
+      },
+      "paper-history": { PaperHistory: { getAll: () => [] } },
+      "learning-store": {
+        readLearningState: () => pZustand,
+        writeLearningState: (s) => { pZustand = s; },
+      },
+    });
+    if (pModul.fehler) {
+      pruefe1("Vorhersage-Pruefstand laedt nicht", false, pModul.fehler);
+    } else {
+      const stillesLog2 = console.log, stilleWarnung2 = console.warn;
+      console.log = () => {}; console.warn = () => {};
+      let bericht;
+      try { bericht = await pModul.exports.runLearningCycle(["capital"], "echt"); }
+      finally { console.log = stillesLog2; console.warn = stilleWarnung2; }
+      const pa = bericht?.predictionAccuracy ?? {};
+      // BUY vorhergesagt, BUY-Trade gewonnen -> richtig.
+      pruefe1("eine richtige Vorhersage wird nicht als richtig gezaehlt",
+        pa.gpt?.total === 1 && pa.gpt?.correct === 1,
+        JSON.stringify(pa.gpt));
+      // DER KERN: BUY vorhergesagt, aber der GEWINN kam aus einem SELL-Trade.
+      // Vorher zaehlte das als richtig — der Fehler, um den es geht.
+      pruefe1("eine Vorhersage in der GEGENRICHTUNG zaehlt als richtig",
+        pa.claude?.total === 1 && pa.claude?.correct === 0,
+        `${JSON.stringify(pa.claude)} — ein Gewinn allein macht die Vorhersage nicht richtig`);
+      // Unbekannte Richtung -> gar nicht werten, weder richtig noch falsch.
+      pruefe1("ein Trade OHNE lesbare Richtung wird trotzdem gewertet",
+        pa.consensus?.total === 0 && pa.consensus?.correct === 0,
+        JSON.stringify(pa.consensus));
+      // Und die Quote muss zur Zaehlung passen.
+      pruefe1("die Trefferquote passt nicht zur Zaehlung",
+        pa.gpt?.accuracy === 100 && pa.claude?.accuracy === 0,
+        `gpt ${pa.gpt?.accuracy} / claude ${pa.claude?.accuracy}`);
+    }
+  }
+
   // ── Teil 5: die Voreinstellung ist ECHT, nicht Papier ─────────────────
   //
   // Ohne diese Prüfung liesse sich der Standard still auf "papier"
