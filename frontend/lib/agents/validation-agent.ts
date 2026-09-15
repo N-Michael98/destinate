@@ -54,14 +54,91 @@ export interface ValidationResult {
 
 // ── Hilfsfunktionen ───────────────────────────────────────────────────────────
 
+/**
+ * Darf diese Datei-Angabe gelesen werden? (15.09.)
+ *
+ * DER FUND. Die Funktion hiess `readFilesSafe` und war es nicht. Sie rechnete:
+ *
+ *   path.resolve(base, f.replace(/^frontend\//, ""))
+ *
+ * mit `f` direkt aus dem Anfrage-Rumpf (`filesToTouch`). `path.resolve`
+ * begrenzt nichts — nachgerechnet, nicht vermutet:
+ *
+ *   "lib/foo.ts"   -> /app/frontend/lib/foo.ts     (gewollt)
+ *   "../.env"      -> /app/.env
+ *   "/etc/passwd"  -> /etc/passwd                  (absolut schlaegt base)
+ *   ".env.local"   -> /app/frontend/.env.local     (LIEGT IN base!)
+ *
+ * Der Inhalt ging anschliessend in den Prompt an Claude. CLAUDE.md sagt
+ * woertlich: `.env`-Dateien niemals anzeigen. Genau das war hier moeglich —
+ * und `.env.local` haette selbst eine reine Wurzel-Begrenzung durchgelassen,
+ * weil sie INNERHALB des Projektordners liegt.
+ *
+ * EHRLICH EINGEORDNET. Der Proxy laesst diese Route nicht ohne gueltiges JWT
+ * durch (`PUBLIC_PATHS` kennt sie nicht), und das Anmelde-Cookie ist
+ * `httpOnly` + `secure` + `sameSite: "lax"` — ein fremder Seitenaufruf kann
+ * den POST also nicht mitschicken. Es war kein offenes Tor ins Internet,
+ * sondern ein fehlender Riegel eine Schicht dahinter. Er gehoert trotzdem
+ * dorthin: die Funktion gibt mit ihrem Namen ein Versprechen, das sie nicht
+ * gehalten hat.
+ *
+ * Reine Rechnung, kein Dateizugriff — damit ein Pruefer sie wirklich aufrufen
+ * kann.
+ */
+export function dateiFreigegeben(
+  basis: string,
+  angabe: unknown,
+): { erlaubt: boolean; pfad: string | null; grund: string } {
+  if (typeof angabe !== "string" || angabe.trim() === "") {
+    return { erlaubt: false, pfad: null, grund: "keine gültige Angabe" };
+  }
+  const roh = angabe.replace(/^frontend\//, "");
+
+  // Absolute Angaben schlagen `basis` — sie muessen VOR dem Aufloesen raus.
+  // Windows-Laufwerke und UNC-Pfade ausdruecklich mit: `path.posix.isAbsolute`
+  // kennt "C:\…" nicht, und dieser Code laeuft lokal wie im Linux-Container.
+  if (path.isAbsolute(roh) || /^[a-zA-Z]:[\\/]/.test(roh) || roh.startsWith("\\\\")) {
+    return { erlaubt: false, pfad: null, grund: "absoluter Pfad" };
+  }
+
+  const aufgeloest = path.resolve(basis, roh);
+  const wurzel = path.resolve(basis);
+  // `wurzel + sep` als Praefix: sonst gilt "/app/frontend-geheim" als innerhalb
+  // von "/app/frontend".
+  if (aufgeloest !== wurzel && !aufgeloest.startsWith(wurzel + path.sep)) {
+    return { erlaubt: false, pfad: null, grund: "liegt ausserhalb des Projekts" };
+  }
+
+  // Und INNERHALB des Projekts bleiben Geheimnisse trotzdem tabu. Der Name
+  // wird auf jedem Pfadstueck geprueft, nicht nur am Ende — `config/.env`
+  // zaehlt genauso.
+  const stuecke = aufgeloest.split(/[\\/]/);
+  if (stuecke.some((s) => /^\.env(\.|$)/i.test(s))) {
+    return { erlaubt: false, pfad: null, grund: "Geheimnis-Datei (.env)" };
+  }
+  if (stuecke.some((s) => s === ".git" || s === "node_modules")) {
+    return { erlaubt: false, pfad: null, grund: "Fremd- oder Versionsdaten" };
+  }
+
+  return { erlaubt: true, pfad: aufgeloest, grund: "ok" };
+}
+
 async function readFilesSafe(files: string[]): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
   const base = path.resolve(process.cwd()); // /frontend im Railway-Container
 
   for (const f of files.slice(0, 8)) { // max 8 Dateien um Prompt klein zu halten
+    const urteil = dateiFreigegeben(base, f);
+    if (!urteil.erlaubt || urteil.pfad === null) {
+      // BENANNT abgelehnt, nicht still verschluckt: sonst sieht eine
+      // abgewiesene Anfrage aus wie eine fehlende Datei, und niemand merkt
+      // den Versuch.
+      console.warn(`[validation-agent] 🚫 Datei abgelehnt (${urteil.grund}): ${String(f).slice(0, 120)}`);
+      result[String(f)] = `[abgelehnt: ${urteil.grund}]`;
+      continue;
+    }
     try {
-      const fullPath = path.resolve(base, f.replace(/^frontend\//, ""));
-      const content = await fs.readFile(fullPath, "utf-8");
+      const content = await fs.readFile(urteil.pfad, "utf-8");
       result[f] = content.slice(0, 3000); // max 3000 Zeichen pro Datei
     } catch {
       result[f] = "[Datei nicht lesbar oder existiert noch nicht]";
