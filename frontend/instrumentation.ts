@@ -653,6 +653,23 @@ export async function register() {
             await runOrchestratorCycle();
           } catch (err) {
             console.error("[orchestrator] Zyklus-Fehler:", err instanceof Error ? err.message : String(err));
+            // Und der Nutzer erfaehrt es AUCH (15.09.). Bis hierher landete
+            // ein sterbender Zyklus ausschliesslich im Railway-Log — von
+            // aussen nicht von „gerade keine Gelegenheit" zu unterscheiden.
+            // Dasselbe Muster trug den Stillstand seit dem 30.06.: der
+            // Gesamt-Drawdown-Riegel sperrte korrekt, aber still.
+            //
+            // Gedrosselt auf 30 Minuten je Fehlertext, sonst waeren es bei
+            // einem dauerhaft kaputten Zyklus zwoelf Nachrichten pro Stunde —
+            // und dann schaltet man die Benachrichtigungen ab. Begruendung und
+            // Regeln in `lib/zyklus-alarm/zyklus-alarm.ts`.
+            //
+            // `meldeZyklusFehler` wirft nie und wird bewusst NICHT erwartet:
+            // der naechste Tick soll nicht auf Telegram warten.
+            try {
+              const { meldeZyklusFehler } = await import("./lib/zyklus-alarm/zyklus-alarm");
+              void meldeZyklusFehler("Orchestrator (5-Minuten-Zyklus)", err);
+            } catch { /* non-fatal — der Alarm darf die Schleife nie stoppen */ }
           } finally {
             orchestratorRunning = false;
           }

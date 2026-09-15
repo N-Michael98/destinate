@@ -1618,6 +1618,138 @@ module.exports = async function pruefe() {
       "einschalten ist eine Entscheidung des Nutzers, kein Standard");
   }
 
+  // ══ EIN ABSTURZ IM ZYKLUS ERREICHT DEN NUTZER (15.09.) ═══════════════════
+  //
+  // Bis heute lief ein sterbender Orchestrator-Zyklus in ein
+  // `console.error` — also ins Railway-Log. Der Nutzer liest Telegram. Von
+  // aussen war ein Zyklus, der bei JEDEM Lauf stirbt, nicht von „gerade keine
+  // Gelegenheit" zu unterscheiden. Genau dieses Muster hat den Stillstand seit
+  // dem 30.06. so lange getragen.
+  //
+  // Die Drossel ist der schwierige Teil und wird deshalb GERECHNET, nicht nur
+  // gesucht: alle 5 Minuten dieselbe Nachricht waeren zwoelf pro Stunde, und
+  // dann schaltet man die Benachrichtigungen ab — ein Alarm, der nervt, ist
+  // schlechter als keiner. Umgekehrt darf eine Drossel den Alarm nie ganz
+  // verschlucken.
+  {
+    const modul = ladeTsModul("lib/zyklus-alarm/zyklus-alarm.ts");
+    if (modul.fehler) {
+      funde.push(`zyklus-alarm.ts nicht ausfuehrbar — die Absturz-Meldung `
+        + `bleibt ungeprueft: ${modul.fehler}`);
+      zusatz++;
+    } else {
+      const ent = modul.exports.alarmEntscheidung;
+      const RUHE = modul.exports.ALARM_RUHE_MS;
+      if (typeof ent !== "function") {
+        funde.push("alarmEntscheidung wird nicht exportiert — die Drossel waere ungeprueft");
+        zusatz++;
+      } else {
+        torPruefung("die Ruhezeit ist keine sinnvolle Dauer",
+          RUHE >= 5 * 60_000 && RUHE <= 6 * 60 * 60_000, `${RUHE} ms`);
+
+        const z = {};
+        const t0 = 1_000_000;
+        const a = ent("orch", "boom", t0, z);
+        torPruefung("der ERSTE Absturz wird nicht gemeldet",
+          a.melden === true && a.unterdrueckt === 0, JSON.stringify(a));
+
+        // Gleicher Fehler waehrend der Ruhezeit: zaehlen, nicht melden.
+        const b = ent("orch", "boom", t0 + 5 * 60_000, z);
+        const c = ent("orch", "boom", t0 + 10 * 60_000, z);
+        torPruefung("derselbe Fehler wird alle 5 Minuten erneut gemeldet",
+          b.melden === false && c.melden === false, `${b.melden} / ${c.melden}`);
+        torPruefung("die unterdrueckten Faelle werden nicht mitgezaehlt",
+          b.unterdrueckt === 1 && c.unterdrueckt === 2, `${b.unterdrueckt} / ${c.unterdrueckt}`);
+
+        // Nach der Ruhezeit wieder melden — MIT der Zahl der geschluckten.
+        // Ohne die waere nicht zu erkennen, ob es einmal oder dauernd kracht.
+        const d = ent("orch", "boom", t0 + RUHE, z);
+        torPruefung("nach der Ruhezeit wird nicht wieder gemeldet",
+          d.melden === true, String(d.melden));
+        torPruefung("die geschluckten Faelle werden nicht mitgeteilt",
+          d.unterdrueckt === 2, `${d.unterdrueckt} — erwartet 2`);
+
+        // Und danach faengt die Zaehlung bei 0 an, sonst waechst sie ewig.
+        const e = ent("orch", "boom", t0 + RUHE + 60_000, z);
+        torPruefung("der Zaehler wird nach einer Meldung nicht zurueckgesetzt",
+          e.unterdrueckt === 1, `${e.unterdrueckt} — erwartet 1`);
+
+        // Ein ANDERER Fehler ist neue Information -> sofort.
+        const f = ent("orch", "ganz anderer Fehler", t0 + RUHE + 2 * 60_000, z);
+        torPruefung("ein NEUER Fehlertext wird von der Drossel verschluckt",
+          f.melden === true, "eine andere Meldung ist neue Information");
+
+        // Genau AUF der Ruhezeit zaehlt als vorbei (`>=`). Ohne diesen Fall
+        // bliebe ein `>` unentdeckt — dieselbe Luecke wie heute bei der
+        // R/R-Verteilung.
+        const g = {};
+        ent("x", "b", 0, g);
+        torPruefung("genau auf der Ruhezeit wird noch geschluckt",
+          ent("x", "b", RUHE, g).melden === true);
+
+        // Bereiche sind unabhaengig: ein kaputter Positionswaechter darf nicht
+        // vom Orchestrator gedrosselt werden.
+        const h = {};
+        ent("A", "boom", 0, h);
+        torPruefung("zwei verschiedene Bereiche drosseln sich gegenseitig",
+          ent("B", "boom", 0, h).melden === true);
+
+        // IM ZWEIFEL MELDEN. Eine kaputte oder rueckwaerts laufende Uhr darf
+        // einen Alarm nicht verschlucken — das waere genau der Fehler, den
+        // dieses Modul beheben soll.
+        const i = {};
+        ent("A", "boom", 1000, i);
+        torPruefung("eine unbrauchbare Uhr (NaN) verschluckt den Alarm",
+          ent("A", "boom", NaN, i).melden === true);
+        const j = {};
+        ent("A", "boom", 1_000_000, j);
+        torPruefung("eine rueckwaerts laufende Uhr verschluckt den Alarm",
+          ent("A", "boom", 1000, j).melden === true);
+      }
+
+      // Der gemeinsame Zustand gehoert auf `global` — modul-scoped sehen
+      // Route und Schleife verschiedene Kopien (28.07. Killswitch, 26.08.
+      // Preis-Cache). Eine Drossel pro Kopie meldete mehrfach.
+      const alarmQuelle = read("frontend/lib/zyklus-alarm/zyklus-alarm.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      // BEIDE Stellen einzeln. Die erste Fassung suchte nur, OB der Name
+      // irgendwo vorkommt — im Sabotage-Lauf durfte die Anlege-Zeile deshalb
+      // ersatzlos verschwinden, weil der Name eine Zeile weiter im Aufruf noch
+      // stand. Genau die Fehlerklasse „ein Wort ist keine Verwendung", nur
+      // eine Ebene feiner: DIESE Verwendung ist nicht die gesuchte.
+      torPruefung("der Drossel-Zustand wird nicht auf global ANGELEGT",
+        /global\.__zyklus_alarm__\s*\?\?=/.test(alarmQuelle),
+        "modul-scoped sehen Route und Schleife verschiedene Kopien (28.07., 26.08.)");
+      // `[\s\S]{0,120}?` statt `[^)]*`: die erste Fassung kam an `Date.now()`
+      // nicht vorbei — die Klammer darin beendete die Zeichenklasse. Damit war
+      // die Pruefung IMMER rot, und im Sabotage-Lauf sah alles nach 12/12 aus,
+      // weil jeder Lauf ohnehin rot war. Ein Pruefer, der nie gruen wird, ist
+      // genauso wertlos wie einer, der nie rot wird — er beweist nichts.
+      torPruefung("die Entscheidung laeuft nicht ueber den globalen Zustand",
+        /alarmEntscheidung\([\s\S]{0,120}?global\.__zyklus_alarm__\s*\)/.test(alarmQuelle),
+        "sonst drosselt sie auf einer Kopie, die niemand sonst sieht");
+      torPruefung("der Alarm kann die Schleife mit in den Abgrund ziehen",
+        /catch\s*\{/.test(alarmQuelle) && /Promise<boolean>/.test(alarmQuelle),
+        "meldeZyklusFehler muss alles abfangen und darf nie werfen");
+
+      // Und die Verdrahtung: der Orchestrator-catch MUSS ihn rufen.
+      const instr = read("frontend/instrumentation.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      torPruefung("der Orchestrator-Zyklus meldet einen Absturz nicht mehr",
+        /meldeZyklusFehler\(/.test(instr),
+        "sonst stirbt der Zyklus wieder still ins Railway-Log");
+      torPruefung("die Absturz-Meldung haengt nicht am Orchestrator-Fehler",
+        /\[orchestrator\] Zyklus-Fehler[\s\S]{0,700}meldeZyklusFehler\(/.test(instr),
+        "sie muss in genau diesem catch stehen, nicht irgendwo");
+      // `void` statt `await`: der naechste Tick darf nicht auf Telegram warten.
+      torPruefung("der Zyklus wartet auf die Telegram-Meldung",
+        /void\s+meldeZyklusFehler\(/.test(instr),
+        "await hier haengt den naechsten Tick an eine Netzanfrage");
+    }
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
