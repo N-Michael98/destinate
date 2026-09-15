@@ -16,7 +16,9 @@ export interface RiskAssessment {
 
   approved: boolean;
 
-  confidence: number;
+  /* `confidence: number` entfallen (15.09.) — der Manager gab hier
+     bedingungslos 85 zurueck. Eine ungemessene Zahl gehoert nicht in die
+     Antwort; Begruendung in `claude-risk-manager.ts`. */
 
   reasoning: string;
 

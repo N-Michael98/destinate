@@ -32,8 +32,11 @@ export class GPTAnalystManager {
 
       ...targets,
 
-      confidence: 80,
-
+      // `confidence: 80` ERSATZLOS ENTFALLEN (15.09.) — bedingungslos
+      // zurueckgegeben und im Dashboard als „Confidence — Average score"
+      // angezeigt, mit Auto-Refresh alle 20 Sekunden. Vollstaendige
+      // Begruendung in `claude-risk-engine/claude-risk-manager.ts`; dort stand
+      // dieselbe Konstruktion mit 85.
       reasoning:
         buildReasoning(
           trend,

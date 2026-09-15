@@ -1799,7 +1799,10 @@ type ClaudeRiskAssessment = {
   volatilityRisk: string;
   overallRisk: string;
   approved: boolean;
-  confidence: number;
+  // `confidence: number` entfallen (15.09.) — die Route gab hier
+  // bedingungslos 85 zurueck, und diese Seite hat daraus einen
+  // "Average score" gemacht. Begruendung in
+  // `lib/claude-risk-engine/claude-risk-manager.ts`.
   reasoning: string;
   createdAt: string;
 };
@@ -1829,7 +1832,11 @@ type GPTAnalysisApiItem = {
   stopLoss: number;
   takeProfit1: number;
   takeProfit2: number;
-  confidence: number;
+  // OPTIONAL seit 15.09.: der ECHTE GPT-Pfad liefert eine Confidence (der
+  // Prompt verlangt `"confidence": 60-95`), der regelbasierte Rueckfall nicht
+  // mehr — er hatte bedingungslos 80 eingesetzt. Fehlt sie, wird "—" gezeigt
+  // statt einer erfundenen Zahl.
+  confidence?: number;
   reasoning: string;
   createdAt: string;
 };
@@ -2540,12 +2547,15 @@ function ClaudeRiskLiveCenter() {
       item.volatilityRisk === "EXTREME"
   ).length;
 
-  const averageConfidence =
-    risks.length > 0
-      ? Math.round(
-          risks.reduce((sum, item) => sum + item.confidence, 0) / risks.length
-        )
-      : 0;
+  // `averageConfidence` entfallen (15.09.). Der Durchschnitt wurde aus einer
+  // KONSTANTE gebildet: die Route gab je Symbol bedingungslos 85 zurueck, der
+  // "Average score" war also immer 85 — und sah bei Auto-Refresh alle 20
+  // Sekunden aus wie eine laufende Messung.
+  //
+  // An seine Stelle tritt eine Zahl, die es WIRKLICH gibt: wie viele der
+  // bewerteten Symbole freigegeben sind. Die wird oben aus `approved`
+  // gerechnet, das der Manager aus den Risiko-Stufen ableitet.
+  const freigegeben = risks.filter((item) => item.approved).length;
 
   return (
     <section className="bg-gray-900 border border-red-900 rounded-2xl p-8">
@@ -2568,7 +2578,7 @@ function ClaudeRiskLiveCenter() {
         <StatCard title="Assessments" value={`${risks.length}`} subtitle="Risk reviews" accent="text-blue-400" border="border-blue-900" />
         <StatCard title="Approved" value={`${approvedCount}`} subtitle="Allowed ideas" accent="text-green-400" border="border-green-900" />
         <StatCard title="Blocked" value={`${blockedCount}`} subtitle="Rejected ideas" accent="text-red-400" border="border-red-900" />
-        <StatCard title="Confidence" value={`${averageConfidence}%`} subtitle="Average score" accent="text-cyan-400" border="border-cyan-900" />
+        <StatCard title="Freigegeben" value={`${freigegeben}/${risks.length}`} subtitle="Symbole mit approved" accent="text-cyan-400" border="border-cyan-900" />
       </div>
 
       <div className="bg-black border border-red-900 rounded-2xl p-6 mb-8">
@@ -2693,7 +2703,7 @@ function ClaudeRiskLiveCenter() {
             <StatusPill label="Approved Ideas" value={`${approvedCount}`} accent="text-green-400" />
             <StatusPill label="Blocked Ideas" value={`${blockedCount}`} accent="text-red-400" />
             <StatusPill label="High Risk Flags" value={`${highRiskCount}`} accent="text-orange-400" />
-            <StatusPill label="Average Confidence" value={`${averageConfidence}%`} accent="text-cyan-400" />
+            <StatusPill label="Freigegeben" value={`${freigegeben}/${risks.length}`} accent="text-cyan-400" />
           </div>
         </div>
 
@@ -2791,13 +2801,26 @@ function GPTAnalystLiveCenter() {
   const bullishCount = analyses.filter((item) => item.bias === "BULLISH").length;
   const bearishCount = analyses.filter((item) => item.bias === "BEARISH").length;
   const neutralCount = analyses.filter((item) => item.bias === "NEUTRAL").length;
+  // Confidence NUR ueber die Analysen mitteln, die WIRKLICH eine haben
+  // (15.09.). Der echte GPT-Pfad liefert sie (der Prompt verlangt
+  // `"confidence": 60-95`), der regelbasierte Rueckfall nicht mehr — dort
+  // stand bedingungslos 80.
+  //
+  // Vorher lief `reduce` ueber ALLE Eintraege: fehlte das Feld auch nur bei
+  // einem, ergab `0 + undefined` NaN, und die Kachel zeigte "NaN%". Genau das
+  // passierte im Claude-Risk-Bereich bei jeder echten Antwort — dort verlangt
+  // der Prompt naemlich gar keine Confidence.
+  const mitConfidence = analyses.filter(
+    (item): item is typeof item & { confidence: number } =>
+      typeof item.confidence === "number" && Number.isFinite(item.confidence)
+  );
   const averageConfidence =
-    analyses.length > 0
-      ? Math.round(
-          analyses.reduce((sum, item) => sum + item.confidence, 0) /
-            analyses.length
-        )
-      : 0;
+    mitConfidence.length > 0
+      ? `${Math.round(
+          mitConfidence.reduce((sum, item) => sum + item.confidence, 0) /
+            mitConfidence.length
+        )}%`
+      : "—";
 
   return (
     <section className="bg-gray-900 border border-cyan-900 rounded-2xl p-8">
@@ -2843,7 +2866,7 @@ function GPTAnalystLiveCenter() {
       <div className="grid grid-cols-5 gap-6 mb-8">
         <StatCard title="Engine" value="Online" subtitle="GPT analyst core" accent="text-cyan-400" border="border-cyan-900" />
         <StatCard title="Analyses" value={`${analyses.length}`} subtitle="Trade ideas" accent="text-blue-400" border="border-blue-900" />
-        <StatCard title="Confidence" value={`${averageConfidence}%`} subtitle="Average score" accent="text-green-400" border="border-green-900" />
+        <StatCard title="Confidence" value={averageConfidence} subtitle="nur gemessene Werte" accent="text-green-400" border="border-green-900" />
         <StatCard title="Bullish" value={`${bullishCount}`} subtitle="Long bias" accent="text-green-400" border="border-green-900" />
         <StatCard title="Bearish" value={`${bearishCount}`} subtitle="Short bias" accent="text-red-400" border="border-red-900" />
       </div>
@@ -2881,9 +2904,16 @@ function GPTAnalystLiveCenter() {
                     </p>
                   </div>
 
+                  {/* Confidence nur zeigen, wenn es eine GIBT (15.09.). Der
+                      echte GPT-Pfad liefert sie; der regelbasierte Rueckfall
+                      setzte hier bedingungslos 80 und war von der echten Zahl
+                      nicht zu unterscheiden. Fehlt sie, steht "—" — dasselbe
+                      Muster wie beim AccuracyBadge im Lern-Bereich. */}
                   <div className="bg-black border border-gray-800 rounded-xl p-4 text-right min-w-[120px]">
                     <p className="text-gray-400">Confidence</p>
-                    <p className="text-green-400 text-2xl font-black">{item.confidence}%</p>
+                    <p className="text-green-400 text-2xl font-black">
+                      {typeof item.confidence === "number" ? `${item.confidence}%` : "—"}
+                    </p>
                   </div>
                 </div>
 
@@ -2936,7 +2966,7 @@ function GPTAnalystLiveCenter() {
             <StatusPill label="Bullish Ideas" value={`${bullishCount}`} accent="text-green-400" />
             <StatusPill label="Bearish Ideas" value={`${bearishCount}`} accent="text-red-400" />
             <StatusPill label="Neutral Ideas" value={`${neutralCount}`} accent="text-yellow-400" />
-            <StatusPill label="Average Confidence" value={`${averageConfidence}%`} accent="text-cyan-400" />
+            <StatusPill label="Ø Confidence" value={averageConfidence} accent="text-cyan-400" />
           </div>
         </div>
 

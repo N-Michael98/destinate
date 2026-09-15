@@ -1329,6 +1329,74 @@ module.exports = async function pruefe() {
       "er hatte weder Killswitch noch Filterkette");
   }
 
+  // ══ KEINE ERFUNDENE CONFIDENCE IM DASHBOARD (15.09.) ═════════════════════
+  //
+  // DER FUND. Zwei Anzeige-Manager gaben eine Confidence BEDINGUNGSLOS
+  // zurueck: `claude-risk-manager.ts` immer 85, `gpt-analyst-manager.ts`
+  // immer 80. Beide Routen werden vom Dashboard gelesen, dort zu einem
+  // "Average score" verrechnet und mit Auto-Refresh alle 20 Sekunden
+  // angezeigt — ein konstanter Wert sah aus wie eine laufende Messung.
+  //
+  // NACHGERECHNET, und es war schlimmer als konstant:
+  //   CLAUDE_REAL      -> der Prompt verlangt GAR KEINE confidence
+  //                       -> `0 + undefined` = NaN -> die Kachel zeigte "NaN%"
+  //   CLAUDE_RISK_LIVE -> Rueckfall, bedingungslos 85 -> "85%"
+  //
+  // DER UNTERSCHIED ZWISCHEN DEN BEIDEN ENGINES IST WESENTLICH und wird hier
+  // festgehalten, damit ihn niemand einebnet:
+  //   - claude-risk: der Prompt verlangt KEINE Confidence -> das Feld ist
+  //     ganz entfallen, die Kachel zeigt stattdessen "Freigegeben x/y".
+  //   - gpt-analyst: der Prompt verlangt `"confidence": 60-95` -> das Feld
+  //     BLEIBT (echte Modellantwort), nur der Rueckfall erfindet es nicht
+  //     mehr. Fehlt es, steht "—".
+  //
+  // Beide Manager sind NICHT im Handelspfad — `--impact` zeigt sie nur an
+  // ihren eigenen Routen. Es ging um die Anzeige, nicht um Geld.
+  {
+    const ohneK2 = (p) => read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    const crm = ohneK2("frontend/lib/claude-risk-engine/claude-risk-manager.ts");
+    const gam = ohneK2("frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts");
+    torPruefung("claude-risk-manager erfindet wieder eine Confidence",
+      !/confidence\s*:\s*[0-9]/.test(crm),
+      "der Prompt der Route verlangt gar keine — sie waere frei erfunden");
+    torPruefung("gpt-analyst-manager erfindet wieder eine Confidence",
+      !/confidence\s*:\s*[0-9]/.test(gam),
+      "der Rueckfall darf die echte Modellzahl nicht nachahmen");
+
+    // Der ECHTE GPT-Pfad muss seine Confidence behalten — sonst waere aus dem
+    // Fix ein Datenverlust geworden.
+    const gptRoute = read("frontend/app/api/gpt-analyst/analyze/route.ts");
+    torPruefung("der GPT-Prompt verlangt keine Confidence mehr",
+      /"confidence":\s*60-95/.test(gptRoute),
+      "die echte Modellzahl darf nicht mit dem Rueckfall mitentfernt werden");
+
+    // Und die Anzeige darf NICHT mehr blind ueber alle Eintraege mitteln —
+    // genau das ergab NaN, sobald ein Eintrag das Feld nicht hatte.
+    const seite = ohneK2("frontend/app/page.tsx");
+    torPruefung("die Confidence wird wieder blind ueber alle Eintraege gemittelt",
+      /mitConfidence\.reduce\(/.test(seite)
+      && !/analyses\.reduce\(\(sum, item\) => sum \+ item\.confidence/.test(seite),
+      "`0 + undefined` ergibt NaN — die Kachel zeigte dann 'NaN%'");
+    // UND die Wache muss ueber DERSELBEN Liste laufen wie die Summe.
+    //
+    // Im Sabotage-Lauf vom 15.09. liess sich `mitConfidence.length > 0` durch
+    // `analyses.length > 0` ersetzen, ohne dass etwas rot wurde — die Summe
+    // lief weiter ueber `mitConfidence`. Genau diese Mischung bringt NaN
+    // zurueck: gibt es Analysen, aber keine davon mit Confidence, rechnet
+    // `0 / 0`. Eine Pruefung, die nur die Summe ansieht, sieht das nicht.
+    torPruefung("die Wache der Confidence-Mittelung laeuft ueber eine ANDERE Liste als die Summe",
+      /mitConfidence\.length > 0/.test(seite),
+      "`0 / 0` ergibt NaN — Wache und Summe muessen dieselbe Liste benutzen");
+    torPruefung("eine fehlende Confidence wird wieder als Zahl dargestellt",
+      /typeof item\.confidence === "number" \? `\$\{item\.confidence\}%` : "—"/.test(seite),
+      "fehlt sie, gehoert dort '—' hin");
+    torPruefung("der Claude-Risk-Bereich zeigt wieder eine Confidence",
+      !/risks\.reduce\(\(sum, item\) => sum \+ item\.confidence/.test(seite),
+      "dort gibt es keine — die Kachel zeigt jetzt 'Freigegeben'");
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
