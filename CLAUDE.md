@@ -55,9 +55,9 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `lern-quelle` | `echteGeschlosseneTrades()`, `runLearningCycle()` | 24.08. |
 | `preis-cache` | `preiseUebernehmen()`, `priceCache`, `marketHealth` | 26.08. |
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
-| `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()` | 01.09. |
+| `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz) und ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
