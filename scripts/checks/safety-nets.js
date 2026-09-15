@@ -1751,6 +1751,171 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DER WATCHDOG SIEHT ALLES — UND STOPPT NICHT BEI JEDER SCANNER-WELLE (15.09.)
+  //
+  // BEWIESEN, mit den echten Funktionen gegen einen nachgebildeten Redis:
+  //   - 20 gleichzeitige Ereignisse von 20 IPs -> 1 gespeichert
+  //     (lesen-einfuegen-zurueckschreiben ohne Sperre)
+  //   - was WAEHREND der Claude-Analyse eintraf, wurde danach mit `[]`
+  //     ueberschrieben — ungeprueft geloescht
+  //   - keine Sperre gegen ueberlappende Laeufe (SDK-Timeout 10 min,
+  //     Intervall 3 min)
+  //
+  // Entscheidung des Nutzers: Speicher reparieren UND die Eskalation zugleich
+  // anpassen. Der Verlust hatte die Regel "ATTACK + >= 5 IPs -> Killswitch"
+  // vermutlich zufaellig entschaerft; mit vollstaendigem Speicher haette jede
+  // Scanner-Welle den Handel stoppen koennen. Jetzt: Block umgangen ->
+  // sofort; >= 5 IPs -> erst beim zweiten Zyklus in Folge.
+  {
+    const wdModul = ladeTsModul("lib/security-watchdog/claude-watchdog.ts");
+    if (wdModul.fehler) {
+      funde.push(`claude-watchdog.ts nicht ausfuehrbar: ${wdModul.fehler}`);
+      zusatz++;
+    } else {
+      const { watchdogDarfStarten: darf, eskalationsEntscheidung: esk,
+        WATCHDOG_HAENGER_MS: HAENGER, KOORDINIERT_FENSTER_MS: FENSTER } = wdModul.exports;
+      if (typeof darf !== "function" || typeof esk !== "function") {
+        funde.push("watchdogDarfStarten / eskalationsEntscheidung nicht exportiert — "
+          + "Sperre und Eskalationsregel waeren ungeprueft");
+        zusatz++;
+      } else {
+        const sicher = (fn) => { try { return fn(); } catch (e) { return { wirft: e.message }; } };
+
+        // ── Sperre ──
+        torPruefung("ohne laufenden Lauf startet der Watchdog nicht",
+          darf(null, 1000).starten === true && darf(undefined, 1000).starten === true);
+        torPruefung("ein laufender Lauf wird ueberlappt",
+          darf(0, 3 * 60_000).starten === false && darf(0, HAENGER - 1).starten === false,
+          "sonst stapeln sich Laeufe bei haengender API");
+        torPruefung("ein haengender Lauf blockiert den Watchdog fuer immer",
+          darf(0, HAENGER).starten === true && darf(0, HAENGER * 4).starten === true,
+          "eine Sperre, die nie aufgeht, schaltet ihn still ab");
+        torPruefung("eine unbrauchbare oder rueckwaerts laufende Uhr blockiert den Watchdog",
+          darf(NaN, 1000).starten === true && darf(5000, 1000).starten === true);
+        torPruefung("die Haengerzeit ist keine sinnvolle Dauer",
+          HAENGER >= 11 * 60_000 && HAENGER <= 60 * 60_000,
+          `${HAENGER} ms — muss ueber dem SDK-Timeout von 10 min liegen`);
+
+        // ── Eskalation ──
+        const jetzt = 10_000_000;
+        const f = (bypassedIP, distinctIPs, vorher, t = jetzt) =>
+          sicher(() => esk({ bypassedIP, distinctIPs, vorherKoordiniertAm: vorher, jetzt: t }));
+        torPruefung("ein umgangener Block loest den Killswitch nicht SOFORT aus",
+          f("1.2.3.4", 1, null).killswitch === true && f("1.2.3.4", 9, null).killswitch === true,
+          "das ist kein Laerm — die Sperre wurde ueberwunden");
+        torPruefung("eine einzelne IP loest den Killswitch aus",
+          f(null, 4, jetzt - 60_000).killswitch === false && f(null, 1, null).killswitch === false);
+        const erster = f(null, 5, null);
+        torPruefung("der ERSTE koordinierte Zyklus stoppt den Handel — eine Scanner-Welle reicht dann",
+          erster.killswitch === false && erster.merkeKoordiniert === true, JSON.stringify(erster));
+        torPruefung("der ZWEITE koordinierte Zyklus in Folge loest den Killswitch nicht aus",
+          f(null, 5, jetzt - 3 * 60_000).killswitch === true
+          && f(null, 12, jetzt - FENSTER).killswitch === true,
+          "genau auf der Fenstergrenze zaehlt noch als in Folge");
+        torPruefung("ein koordinierter Zyklus nach der Fensterzeit gilt faelschlich als in Folge",
+          f(null, 5, jetzt - FENSTER - 1).killswitch === false
+          && f(null, 5, jetzt - FENSTER - 1).merkeKoordiniert === true);
+        torPruefung("eine rueckwaerts laufende Uhr oder ein kaputter Merkwert stoppt den Handel",
+          f(null, 5, jetzt + 60_000).killswitch === false && f(null, 5, NaN).killswitch === false);
+        torPruefung("eine unbrauchbare IP-Zahl gilt als koordiniert",
+          f(null, NaN, jetzt - 60_000).killswitch === false && f(null, NaN, null).merkeKoordiniert === false);
+        torPruefung("das Fenster fuer 'in Folge' ist nicht sinnvoll",
+          FENSTER >= 3 * 60_000 && FENSTER <= 15 * 60_000,
+          `${FENSTER} ms — Intervall ist 3 min`);
+      }
+    }
+
+    // ── Der echte Speicher: redis-cache.ts im Rueckfall ohne Redis ──
+    // `redis` wird durch einen Wurf ersetzt: auch wenn REDIS_URL gesetzt ist,
+    // verbindet sich der Pruefer nie mit einem echten Redis.
+    const altListen = global.__speicher_listen__;
+    delete global.__speicher_listen__;
+    try {
+      const cache = ladeTsModul("lib/cache/redis-cache.ts", {
+        "redis": { createClient: () => { throw new Error("kein Redis im Pruefstand"); } },
+      });
+      const log = cache.fehler ? cache : ladeTsModul("lib/security-watchdog/security-event-logger.ts",
+        { "redis-cache": cache.exports });
+      if (log.fehler) {
+        funde.push(`Ereignis-Speicher nicht ausfuehrbar: ${log.fehler}`);
+        zusatz++;
+      } else {
+        const { logSecurityEvent, leseSicherheitsereignisse, entferneAnalysierte } = log.exports;
+        await logSecurityEvent({ type: "HONEYPOT_ACCESS", ip: "1.1.1.1", path: "/.env", ts: 1 });
+        const erst = await leseSicherheitsereignisse();
+        await logSecurityEvent({ type: "SQL_INJECTION", ip: "6.6.6.6", path: "/api", ts: 2 });
+        await entferneAnalysierte(erst.roh);
+        const danach = (await leseSicherheitsereignisse()).ereignisse;
+        torPruefung("ein Ereignis WAEHREND der Analyse wird mit geloescht — ungeprueft",
+          erst.ereignisse.length === 1 && danach.length === 1 && danach[0].type === "SQL_INJECTION",
+          `analysiert ${erst.ereignisse.length}, danach ${danach.length}`);
+        await entferneAnalysierte((await leseSicherheitsereignisse()).roh);
+
+        await Promise.all(Array.from({ length: 20 }, (_, i) =>
+          logSecurityEvent({ type: "PATH_TRAVERSAL", ip: `9.9.9.${i}`, path: "/x", ts: 100 + i })));
+        const zwanzig = (await leseSicherheitsereignisse()).ereignisse;
+        torPruefung("gleichzeitige Ereignisse gehen verloren — ein koordinierter Angriff waere unsichtbar",
+          zwanzig.length === 20 && new Set(zwanzig.map((e) => e.ip)).size === 20,
+          `${zwanzig.length} von 20 gespeichert`);
+
+        await Promise.all(Array.from({ length: 250 }, (_, i) =>
+          logSecurityEvent({ type: "BRUTE_FORCE", ip: `8.8.8.${i % 250}`, path: "/y", ts: 1000 + i })));
+        // Den SPEICHER messen, nicht das Lesen: `leseSicherheitsereignisse`
+        // liest ohnehin hoechstens 200. Im Sabotage-Lauf blieb "Obergrenze
+        // entfernt" deshalb gruen — gespeichert waren 270, gelesen 200.
+        const gespeichert = global.__speicher_listen__?.get("security:events:liste")?.werte?.length;
+        torPruefung("die Obergrenze der Ereignisliste greift nicht — der Speicher waechst unbegrenzt",
+          gespeichert === 200, `${gespeichert} im Speicher nach 270 Ereignissen`);
+      }
+    } finally {
+      if (altListen === undefined) delete global.__speicher_listen__;
+      else global.__speicher_listen__ = altListen;
+    }
+
+    // ── Verdrahtung (kommentarbereinigt) ──
+    const wdCode = read("frontend/lib/security-watchdog/claude-watchdog.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const logCode = read("frontend/lib/security-watchdog/security-event-logger.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const cacheCode = read("frontend/lib/cache/redis-cache.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("irgendwo wird die Ereignisliste wieder komplett geloescht",
+      !/clearSecurityEvents/.test(wdCode) && !/clearSecurityEvents/.test(logCode)
+      && !/cacheSet\(/.test(logCode) && !/cacheGet\(/.test(logCode),
+      "lesen-einfuegen-zurueckschreiben verliert gleichzeitige Ereignisse");
+    torPruefung("der Watchdog entfernt nicht genau die analysierten Ereignisse",
+      /await entferneAnalysierte\(roh\);\s*return result;/.test(wdCode),
+      "und zwar im try-Zweig — bei einem Ausfall muessen sie stehen bleiben");
+    torPruefung("der Watchdog-Lauf hat keine Ueberlappungssperre",
+      /watchdogDarfStarten\(global\.__watchdog_laeuft_seit__/.test(wdCode)
+      && /if \(global\.__watchdog_laeuft_seit__ === kennung\) global\.__watchdog_laeuft_seit__ = null;/.test(wdCode),
+      "ohne Kennung gaebe ein spaet endender Haenger die Sperre des neuen Laufs frei");
+    // Die drei folgenden sind im Sabotage-Lauf ENTWISCHT: die Rechnung der
+    // reinen Funktionen stimmte, aber der Zyklus beachtete sie nicht.
+    torPruefung("die Ueberlappungssperre wird berechnet, aber nicht beachtet",
+      /if \(!darf\.starten\) \{[\s\S]{0,160}?return \{ uebersprungen: true/.test(wdCode),
+      "sonst laufen Zyklen trotz Sperre uebereinander");
+    torPruefung("der erste koordinierte Zyklus wird nicht gemerkt — der zweite waere nie 'in Folge'",
+      /else if \(entscheidung\.merkeKoordiniert\) \{[\s\S]{0,200}?cacheSet\(KOORDINIERT_SCHLUESSEL, Date\.now\(\)/.test(wdCode)
+      && /cacheGet<number>\(KOORDINIERT_SCHLUESSEL\)/.test(wdCode)
+      && /vorherKoordiniertAm: typeof vorher === "number" \? vorher : null/.test(wdCode),
+      "ohne Merkwert loest ein koordinierter Angriff nie mehr aus");
+    torPruefung("ein ruhiger Zyklus setzt 'koordiniert' nicht zurueck — 'in Folge' waere keine Folge",
+      /\} else \{\s*await koordiniertVergessen\(\);\s*\}/.test(wdCode)
+      && /events\.length === 0\) \{[\s\S]{0,200}?await koordiniertVergessen\(\)/.test(wdCode),
+      "SAFE/SUSPICIOUS und der Zyklus ohne Ereignisse muessen die Zaehlung unterbrechen");
+    const handleAttackAufrufe = (wdCode.match(/handleAttack\(/g) || []).length;
+    torPruefung("der Killswitch haengt nicht (nur) an der Eskalationsentscheidung",
+      handleAttackAufrufe === 2 && /if \(entscheidung\.killswitch\) \{[\s\S]{0,120}handleAttack\(/.test(wdCode),
+      `${handleAttackAufrufe} Vorkommen (1 Aufruf + 1 Definition erwartet)`);
+    torPruefung("der atomare Listen-Speicher benutzt kein MULTI mehr",
+      /multi\(\)\.lPush\(key, roh\)\.lTrim\(key, 0, max - 1\)\.expire\(key, ttlSeconds\)\.exec\(\)/.test(cacheCode)
+      && /m\.lRem\(key, -1, r\)/.test(cacheCode));
+    torPruefung("der Speicher-Rueckfall der Listen liegt nicht auf global",
+      /global\.__speicher_listen__\s*\?\?=/.test(cacheCode),
+      "Proxy (Schreiber) und Schleife (Leser) sehen sonst verschiedene Kopien");
+  }
+
   // ══ KEIN DATEIZUGRIFF IM PROGRAMM OHNE FREIGABE (15.09. abends) ══════════
   //
   // DIE VORGESCHICHTE. `lib/agents/validation-agent.ts` war der EINZIGE

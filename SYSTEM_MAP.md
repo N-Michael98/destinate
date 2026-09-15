@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 454 · Kanten: 991
+Dateien mit internen Abhängigkeiten: 454 · Kanten: 992
 
 
 ## analysis-engine/api
@@ -1321,6 +1321,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 991
   - → `frontend/lib/security-center/security-center-types.ts`
 - `frontend/lib/security-watchdog/claude-watchdog.ts`
   - → `frontend/lib/ai-gate/ai-gate-alert.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/killswitch/index.ts`
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/security-watchdog/security-event-logger.ts`
@@ -1507,9 +1508,9 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 991
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
+- `frontend/lib/cache/redis-cache.ts` — von 14 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
-- `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
