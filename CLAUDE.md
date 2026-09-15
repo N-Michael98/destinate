@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()` | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz) und `dateiFreigegeben()` auf Windows- UND Linux-Semantik | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz) und ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -263,8 +263,18 @@ Gemessen am **15.09.** über alle Routen, gesucht ausschliesslich im Quelltext
 (`tsconfig.tsbuildinfo` und `.next` enthalten jeden Dateipfad und haben in
 dieser Sitzung zweimal tote Routen „benutzt" aussehen lassen):
 
-**150 API-Routen, 68 ohne jeden Aufrufer** (korrigiert am 15.09. abends; hier
-stand 65, eine zweite Messung am Mittag ergab 64).
+**149 API-Routen, 67 ohne jeden Aufrufer** (Stand 15.09. abends; hier stand
+65, eine zweite Messung am Mittag ergab 64, kommentarbereinigt waren es 68 —
+davon wurde `/api/validation-agent` entfernt).
+
+**`/api/validation-agent` gibt es nicht mehr.** Sie war der einzige
+Dateizugriff im ganzen Programm: sie las Dateien nach Namen aus dem
+Anfrage-Rumpf (`.env.local` wäre durchgekommen), rief `git diff` per exec, und
+ihre dynamischen Pfade liessen Turbopack das **ganze Projekt** ins
+`standalone`-Bündel verfolgen — gemessen 331 Quelldateien samt `CLAUDE.md` im
+Railway-Image. Nach dem Entfernen: 0 Build-Warnungen, 0 Quelldateien im Bündel,
+Prisma-Engine weiter enthalten. `safety-nets` lässt jeden neuen `fs`-Import
+rot werden, solange er nicht namentlich freigegeben ist.
 
 Dabei drei Fehler in der eigenen Messung gefunden und behoben — alle gehören
 zur Methode, nicht zum Code:

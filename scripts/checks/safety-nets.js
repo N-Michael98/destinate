@@ -1751,141 +1751,69 @@ module.exports = async function pruefe() {
     }
   }
 
-  // ══ KEINE FREMDE DATEI IN EINEN PROMPT (15.09. abends) ═══════════════════
+  // ══ KEIN DATEIZUGRIFF IM PROGRAMM OHNE FREIGABE (15.09. abends) ══════════
   //
-  // DER FUND. `validation-agent.ts` hatte eine Funktion namens
-  // `readFilesSafe` — und sie war es nicht. Sie rechnete
-  // `path.resolve(base, f)` mit `f` direkt aus dem Anfrage-Rumpf
-  // (`filesToTouch`) und schob den Inhalt in einen Prompt. `path.resolve`
-  // begrenzt nichts:
+  // DIE VORGESCHICHTE. `lib/agents/validation-agent.ts` war der EINZIGE
+  // `fs`-Nutzer im ganzen Programm. Er las Dateien, deren Namen aus dem
+  // Anfrage-Rumpf kamen (`.env.local` lag INNERHALB des Projekts und waere
+  // durch jede blosse Wurzel-Begrenzung gerutscht), rief `git diff` per exec
+  // auf, und seine dynamischen Pfade liessen Turbopack das GANZE Projekt ins
+  // `standalone`-Buendel verfolgen, das der Dockerfile vollstaendig ins
+  // Railway-Image kopiert (gemessen: 331 Quelldateien, CLAUDE.md).
   //
-  //   "/etc/passwd"  -> /etc/passwd        (absolut schlaegt base)
-  //   "../.env"      -> /app/.env
-  //   ".env.local"   -> /app/frontend/.env.local   -- LIEGT IN base!
+  // Die Route hatte keinen einzigen Aufrufer. Sie wurde am 15.09. entfernt —
+  // und mit ihr der Riegel, der sie abgesichert hatte.
   //
-  // Der letzte Fall ist der wichtige: eine reine Wurzel-Begrenzung haette ihn
-  // durchgelassen. CLAUDE.md sagt woertlich: `.env` niemals anzeigen.
+  // DIESE PRUEFUNG sichert nicht mehr die eine Datei, sondern die KLASSE: kein
+  // Code in app/, lib/, components/, instrumentation.ts oder proxy.ts darf
+  // `fs` importieren, ohne hier namentlich freigegeben zu sein. Heute ist die
+  // Liste LEER — nachgemessen. Wer Dateizugriff braucht, traegt die Datei ein
+  // und begruendet es; ein stiller neuer Leser faellt sofort auf.
   //
-  // EHRLICH EINGEORDNET: der Proxy verlangt fuer die Route ein gueltiges JWT,
-  // und das Cookie ist httpOnly + secure + sameSite lax. Es war kein offenes
-  // Tor ins Internet, sondern ein fehlender Riegel dahinter.
-  //
-  // GERECHNET, nicht gesucht: eine Wurzel-Begrenzung sieht in jeder Fassung
-  // richtig aus. Ob sie `.env.local` faengt, sagt nur der Aufruf.
-  //
-  // BEIDE PLATTFORMEN (nachgeschaerft im Sabotage-Lauf). Die erste Fassung
-  // rechnete nur mit dem `path` der Maschine, auf der der Pruefer laeuft —
-  // hier Windows. Produktion ist Railway, also LINUX, und dort gelten andere
-  // Regeln: `path.posix.isAbsolute("C:\\Windows\\win.ini")` ist false. Eine
-  // Pruefung, die nur die Semantik des Entwicklerrechners kennt, sichert die
-  // Produktion nicht ab. Gemessen, nicht vermutet (win32 vs. posix).
-  const vaLaden = (pfadModul) => ladeTsModul("lib/agents/validation-agent.ts", {
-    // Die echten Node-Module: `promisify(exec)` laeuft auf Modulebene und
-    // scheitert sonst am Stellvertreter. `import x from "y"` wird zu
-    // `y_1.default` — deshalb beide Formen.
-    "child_process": require("child_process"),
-    "fs/promises": Object.assign({ default: require("fs/promises") }, require("fs/promises")),
-    "util": require("util"),
-    "path": Object.assign({ default: pfadModul }, pfadModul),
-    "@anthropic-ai/sdk": class { },
-    "telegram-sender": { sendTelegram: async () => false },
-  });
-  for (const [plattform, pfadModul, basis] of [
-    ["win32", path.win32, "C:\\app\\frontend"],
-    ["linux", path.posix, "/app/frontend"],       // so laeuft Railway
-  ]) {
-    const vaModul = vaLaden(pfadModul);
-    if (vaModul.fehler) {
-      funde.push(`[${plattform}] validation-agent.ts nicht ausfuehrbar — der `
-        + `Datei-Riegel bleibt ungeprueft: ${vaModul.fehler}`);
-      zusatz++;
-      continue;
-    }
-    {
-      const frei = vaModul.exports.dateiFreigegeben;
-      if (typeof frei !== "function") {
-        funde.push("dateiFreigegeben wird nicht exportiert — der Riegel gegen "
-          + "fremde Dateien im Prompt waere unmessbar");
-        zusatz++;
-      } else {
-        // Ein WURF ist ein Befund, kein Absturz. Im Sabotage-Lauf brach der
-        // ganze Pruefer bei `null.replace` ab — rot, aber aus dem falschen
-        // Grund, und alle Pruefungen danach liefen gar nicht mehr.
-        const urteil = (a) => {
-          try { return frei(basis, a); }
-          catch (e) { return { erlaubt: "WIRFT", pfad: null, grund: `wirft: ${e.message}` }; }
-        };
-        const erlaubt = (a) => urteil(a).erlaubt === true;
-        const wirft = (a) => urteil(a).erlaubt === "WIRFT";
-
-        // Was WEITER GEHEN MUSS. Ein zu strenger Riegel ist auch ein Fehler —
-        // dieselbe Lehre wie beim Kurs-Riegel am 24.08.
-        torPruefung(`[${plattform}] eine gewoehnliche Quelldatei wird faelschlich abgelehnt`,
-          erlaubt("lib/foo.ts") && erlaubt("frontend/lib/foo.ts")
-          && erlaubt("lib/../lib/ok.ts"),
-          "der Riegel darf den eigentlichen Zweck nicht zerstoeren");
-
-        // Und was NICHT durchkommen darf.
-        const verboten = [
-          ["/etc/passwd", "absolut — schlaegt jede Wurzel"],
-          ["C:\\Windows\\win.ini", "absolut, Windows-Laufwerk"],
-          ["\\\\server\\share\\x", "absolut, UNC"],
-          ["../.env", "eine Ebene hoeher"],
-          ["../../.env", "zwei Ebenen hoeher"],
-          ["lib/../../.env", "Umweg ueber einen gueltigen Ordner"],
-          [".env", "INNERHALB des Projekts"],
-          [".env.local", "INNERHALB — faengt keine Wurzel-Begrenzung"],
-          [".ENV.production", "Gross-/Kleinschreibung"],
-          ["config/.env", "tiefer im Baum"],
-          [".git/config", "Versionsdaten"],
-          ["node_modules/x/y.js", "Fremdcode"],
-          ["../frontend-geheim/x.ts", "Praefix-Falle: beginnt mit dem Wurzelnamen"],
-          ["", "leer"],
-          [null, "nicht gesetzt"],
-          [42, "keine Zeichenkette"],
-          ["..", "der Elternordner selbst"],
-        ];
-        // Kein Eingabewert darf den Riegel zum Werfen bringen: im Lesepfad
-        // steht der Aufruf ausserhalb des try — ein Wurf risse die ganze
-        // Anfrage mit, statt die eine Datei abzulehnen.
-        const werfer = verboten.filter(([a]) => wirft(a));
-        torPruefung(`[${plattform}] der Datei-Riegel wirft bei ungueltiger Eingabe`,
-          werfer.length === 0,
-          werfer.map(([a]) => `${JSON.stringify(a)}: ${urteil(a).grund}`).join(", "));
-
-        const durchgerutscht = verboten.filter(([a]) => erlaubt(a));
-        torPruefung(`[${plattform}] eine fremde oder geheime Datei kommt in den Prompt`,
-          durchgerutscht.length === 0,
-          durchgerutscht.map(([a, w]) => `${JSON.stringify(a)} (${w})`).join(", "));
-
-        // Der Grund muss benannt sein — eine stille Ablehnung sieht aus wie
-        // eine fehlende Datei, und niemand merkt den Versuch (Fund 06.08.).
-        const abgelehnt = urteil("/etc/passwd");
-        torPruefung(`[${plattform}] eine Ablehnung nennt keinen Grund`,
-          typeof abgelehnt.grund === "string" && abgelehnt.grund.length > 3,
-          JSON.stringify(abgelehnt));
-        torPruefung(`[${plattform}] eine Ablehnung liefert trotzdem einen Pfad`,
-          abgelehnt.pfad === null,
-          "sonst koennte ein Aufrufer ihn versehentlich benutzen");
-      }
-    }
-  }
-  // Und der Riegel muss WIRKLICH im Lesepfad stehen — einmal, nicht je
-  // Plattform. Die Rechnung oben waere wertlos, wenn `readFilesSafe` sie
-  // nicht aufruft.
+  // Gezaehlt werden statische UND dynamische Importe, `require()` und
+  // `node:`-Praefix. Kommentare und Zeichenketten zaehlen nicht — die
+  // Begruendung oben nennt `fs` selbst.
   {
-    const va = read("frontend/lib/agents/validation-agent.ts")
-      .replace(/\/\*[\s\S]*?\*\//g, " ")
-      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
-    torPruefung("readFilesSafe ruft den Datei-Riegel nicht auf",
-      /dateiFreigegeben\(\s*base\s*,\s*f\s*\)/.test(va),
-      "sonst rechnet der Riegel, und gelesen wird weiter ungeprueft");
-    torPruefung("readFilesSafe loest den Pfad wieder selbst auf",
-      !/path\.resolve\(\s*base\s*,/.test(va),
-      "genau diese Zeile war das Leck");
-    torPruefung("gelesen wird nicht der freigegebene Pfad",
-      /fs\.readFile\(\s*urteil\.pfad\s*,/.test(va),
-      "sonst pruefte der Riegel das eine und gelesen wuerde das andere");
+    const FS_ERLAUBT = [];   // bewusst leer — siehe oben
+    const wurzel = path.join(__dirname, "../../frontend");
+    const bereiche = ["app", "lib", "components"];
+    const einzeln = ["instrumentation.ts", "proxy.ts"];
+    const dateien = [];
+    const sammle = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          // Generierter Prisma-Client: fremder Code, liest seine eigene Engine.
+          if (e.name === "generated") continue;
+          sammle(p);
+        } else if (/\.(ts|tsx|js|mjs)$/.test(e.name)) dateien.push(p);
+      }
+    };
+    for (const b of bereiche) sammle(path.join(wurzel, b));
+    for (const d of einzeln) { const p = path.join(wurzel, d); if (fs.existsSync(p)) dateien.push(p); }
+
+    const FS_IMPORT = /(?:from\s*["'](?:node:)?fs(?:\/promises)?["']|import\s*\(\s*["'](?:node:)?fs(?:\/promises)?["']\s*\)|require\s*\(\s*["'](?:node:)?fs(?:\/promises)?["']\s*\))/;
+    const nutzer = [];
+    for (const p of dateien) {
+      // NUR Kommentare entfernen, Zeichenketten bleiben: der Modulname IST
+      // eine Zeichenkette ("fs"). Kommentare mit `(^|[^:])`-Schutz fuer URLs.
+      const code = fs.readFileSync(p, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      if (FS_IMPORT.test(code)) nutzer.push(path.relative(wurzel, p).replace(/\\/g, "/"));
+    }
+    const unerlaubt = nutzer.filter((n) => !FS_ERLAUBT.includes(n));
+
+    torPruefung("der Dateizugriffs-Riegel hat nichts angesehen — Pruefung ins Leere",
+      dateien.length >= 300, `${dateien.length} Dateien`);
+    torPruefung("Code im Programm importiert `fs` ohne Freigabe — Dateinamen aus Anfragen, "
+      + "ganzes Projekt im Image, .env im Prompt: alles schon passiert",
+      unerlaubt.length === 0, unerlaubt.join(", "));
+    torPruefung("die entfernte Dev-Route ist zurueck",
+      !fs.existsSync(path.join(wurzel, "app/api/validation-agent"))
+      && !fs.existsSync(path.join(wurzel, "lib/agents/validation-agent.ts")),
+      "sie las Dateien nach Namen aus der Anfrage und rief git per exec");
   }
 
   return {

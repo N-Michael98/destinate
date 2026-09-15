@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 456 · Kanten: 993
+Dateien mit internen Abhängigkeiten: 454 · Kanten: 991
 
 
 ## analysis-engine/api
@@ -573,8 +573,6 @@ Dateien mit internen Abhängigkeiten: 456 · Kanten: 993
   - → `frontend/app/lib/prisma.ts`
 - `frontend/app/api/trading-style-priority-engine/route.ts`
   - → `frontend/lib/trading-style-priority-engine/index.ts`
-- `frontend/app/api/validation-agent/route.ts`
-  - → `frontend/lib/agents/validation-agent.ts`
 - `frontend/app/generated/prisma/browser.ts`
   - → `frontend/app/generated/prisma/enums.ts`
   - → `frontend/app/generated/prisma/internal/prismaNamespaceBrowser.ts`
@@ -753,8 +751,6 @@ Dateien mit internen Abhängigkeiten: 456 · Kanten: 993
   - → `frontend/lib/agents/ai-manager-status.ts`
   - → `frontend/lib/ai-gate/ai-gate-alert.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
-  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
-- `frontend/lib/agents/validation-agent.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/lib/ai-agent/ai-paper-trader.ts`
   - → `frontend/lib/ai-agent/adaptive-confidence-engine.ts`
@@ -1510,8 +1506,8 @@ Dateien mit internen Abhängigkeiten: 456 · Kanten: 993
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 15 Dateien
-- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
+- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien
