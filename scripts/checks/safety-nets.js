@@ -1266,6 +1266,69 @@ module.exports = async function pruefe() {
       "eine stehende Sitzung allein ist keine Ausfuehrung");
   }
 
+  // ══ NUR ZWEI ROUTEN DUERFEN ORDERS PLATZIEREN (15.09.) ═══════════════════
+  //
+  // ANLASS. Am 07.09. stellte sich heraus, dass `POST /api/auto-execute`
+  // echte Orders ausloeste — ohne Killswitch, ohne Handelszeitfenster, ohne
+  // Filterkette, und mit Gelegenheiten aus dem Request-Body. Gefunden wurde
+  // das nur, weil jemand gezielt danach gesucht hat. NICHTS im Netz haette
+  // eine zweite solche Route bemerkt.
+  //
+  // Am 15.09. wurden deshalb ALLE 150 API-Routen durchgemessen: 65 haben
+  // keinen Aufrufer im Quelltext. Das ist fuer sich kein Fehler — aber eine
+  // davon koennte morgen Orders platzieren, und niemand wuerde es sehen.
+  //
+  // Diese Pruefung dreht das um: es wird nicht gesucht, was tot ist, sondern
+  // festgehalten, WER ueberhaupt Orders platzieren darf. Kommt eine dritte
+  // Route dazu, wird sie hier rot — ganz gleich, ob sie aufgerufen wird.
+  //
+  // Kommentare und Zeichenketten raus: die Begruendung oben nennt
+  // `auto-execute` und die Funktionsnamen, und in der stillgelegten Route
+  // stehen sie ebenfalls im Kopfkommentar.
+  {
+    const apiWurzel = path.join(__dirname, "../../frontend/app/api");
+    const ORDER = /executeCapitalDemoOrder\s*\(|executeICMarketsOrder\s*\(|capitalPlaceOrder\s*\(|icPlaceOrder\s*\(|runExecutionAgent\s*\(/;
+    const ERLAUBT = ["/api/capital-com/execute", "/api/icmarkets/execute"];
+
+    const routen = [];
+    (function suche(dir) {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) suche(p);
+        else if (e.name === "route.ts") routen.push(p);
+      }
+    })(apiWurzel);
+
+    const platzierer = [];
+    for (const p of routen) {
+      const code = fs.readFileSync(p, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+        .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+        .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+        .replace(/`(?:[^`\\]|\\.)*`/g, "``");
+      if (ORDER.test(code)) {
+        platzierer.push("/api/" + path.relative(apiWurzel, p)
+          .replace(/\\/g, "/").replace(/\/route\.ts$/, ""));
+      }
+    }
+    platzierer.sort();
+
+    torPruefung("es gibt keine Route mehr, die Orders platziert — Pruefung ins Leere",
+      platzierer.length > 0, "erwartet werden genau zwei");
+    torPruefung("eine NEUE Route platziert Orders",
+      platzierer.every((r) => ERLAUBT.includes(r)),
+      `unerwartet: ${platzierer.filter((r) => !ERLAUBT.includes(r)).join(", ")}`);
+    torPruefung("eine der beiden erlaubten Routen platziert keine Orders mehr",
+      ERLAUBT.every((r) => platzierer.includes(r)),
+      `gefunden: ${platzierer.join(", ")}`);
+    // Und der stillgelegte Pfad bleibt still — doppelt gesichert, weil genau
+    // er der Anlass war.
+    torPruefung("der stillgelegte /api/auto-execute platziert wieder Orders",
+      !platzierer.includes("/api/auto-execute"),
+      "er hatte weder Killswitch noch Filterkette");
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

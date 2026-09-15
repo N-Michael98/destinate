@@ -231,11 +231,61 @@ keiner Schleife. Der Weg vom Gelernten zum Handel ist eine eigene, bewusste
 Entscheidung — und gehört erst gegangen, wenn gemessen ist, dass das Lernsignal
 etwas taugt.
 
-**Zweiter Lernstrang, weiterhin schlafend:**
-`lib/learning-feedback-integration/` und `lib/outcome-learning-auto-update/`
-rechnen mit fest eingebauten Mock-Daten und haben **gar keinen** Konsumenten.
-Ins Dashboard gelangt daraus nur `learning: READY`, keine erfundenen Zahlen.
-Entscheidung offen: verdrahten oder entfernen.
+**Zweiter Lernstrang — ERLEDIGT, die Entscheidung ist gefallen (15.09.).**
+Hier stand bis heute: „`lib/learning-feedback-integration/` und
+`lib/outcome-learning-auto-update/` rechnen mit fest eingebauten Mock-Daten und
+haben gar keinen Konsumenten. Entscheidung offen: verdrahten oder entfernen."
+
+**Beide Ordner gibt es nicht mehr** — entfernt in `e3afcf8` („Das Dashboard
+zeigte die Gesundheit erfundener Trades — jetzt die echte"). Die Anweisung
+beschrieb also seit Wochen eine offene Entscheidung, die längst getroffen war.
+Nachgeprüft, nicht vermutet: `ls frontend/lib` kennt beide Namen nicht, und
+`git log` nennt den Commit.
+
+Das ist die Fehlerklasse „ein Wort im Kommentar ist keine Verwendung", eine
+Ebene höher: **eine Anweisung, die etwas beschreibt, das es nicht mehr gibt.**
+Wer sie liest, sucht nach Arbeit, die keine ist.
+
+Noch vorhanden sind drei ähnlich benannte Module —
+`broker-execution-quality-learning`, `outcome-learning-evolution-feedback-sync`
+und `performance-outcome-learning-sync`. Sie sind **nicht** dasselbe: keine
+Mock-Spuren, und sie hängen aneinander bzw. an einer API-Route. Sie gehören zum
+toten Bereich auf Routen-Ebene (siehe unten), nicht zu den entfernten
+Mock-Modulen.
+
+## Der tote Bereich liegt bei den ROUTEN, nicht bei den Modulen
+
+Die Reichweiten-Rechnung auf Modul-Ebene sagt „erreichbar", sobald **irgendeine**
+API-Route ein Modul importiert. Sie fragt nicht, ob diese Route je gerufen wird.
+Genau dort liegt der tote Bereich.
+
+Gemessen am **15.09.** über alle Routen, gesucht ausschliesslich im Quelltext
+(`tsconfig.tsbuildinfo` und `.next` enthalten jeden Dateipfad und haben in
+dieser Sitzung zweimal tote Routen „benutzt" aussehen lassen):
+
+**150 API-Routen, 65 ohne jeden Aufrufer.**
+
+Dabei zwei Fehler in der eigenen Messung gefunden und behoben — beide gehören
+zur Methode, nicht zum Code:
+- Routen mit dynamischem Segment (`/api/trades/[id]`) werden als
+  `` `/api/trades/${id}` `` gerufen; der literale Pfad steht nirgends. Sie
+  müssen über ihren **statischen Anfang** gesucht werden, sonst gelten sie zu
+  Unrecht als tot (betraf `/api/trades/[id]` und `/api/python/[...path]`).
+- Ein Gefahren-Regex auf `.create(` traf `openai.responses.create(` und machte
+  aus `/api/chat` fälschlich einen Datenbank-Schreiber.
+
+**Das wichtigste Ergebnis ist ein negatives:** von den 65 kann **keine** eine
+Order platzieren, schliessen oder einen Stop verschieben. Genau **zwei** Routen
+im ganzen Programm platzieren Orders — `/api/capital-com/execute` und
+`/api/icmarkets/execute` — und beide haben einen Aufrufer.
+
+Damit das so bleibt, hält `safety-nets` jetzt eine **Positivliste**: kommt eine
+dritte Route dazu, die Orders platziert, wird sie rot — egal ob sie gerufen
+wird. Genau das hätte `/api/auto-execute` am 07.09. von selbst gefunden.
+
+Der Telegram-Webhook schliesst Positionen (Notfall-Befehl) und ist die einzige
+gewollte Ausnahme — abgesichert durch Chat-ID-Liste **und** Admin-Passwort vor
+jedem zustandsändernden Befehl.
 
 ## Vorgehen bei Änderungen
 
