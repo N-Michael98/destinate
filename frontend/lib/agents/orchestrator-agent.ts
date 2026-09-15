@@ -450,8 +450,16 @@ export function isWithinTradingSession(jetzt: Date = new Date()): boolean {
  * direkter API-Aufruf) kann darunter liegen. Dann wird das GEMELDET statt
  * stillschweigend hingenommen — ein Wert, der nicht wirkt und niemandem
  * auffaellt, ist genau die Klasse Fehler, die hier behoben wird.
+ *
+ * EXPORTIERT seit 15.09. — nur fuer den Pruefer, am Verhalten aendert das
+ * nichts. Anlass: das Vergleichszeichen unten auf `>` gedreht, und alle 23
+ * Pruefer blieben GRUEN. Eine gespeicherte 76 waere damit still zu 70
+ * geworden — genau die Schwelle, an der die Signale derzeit sterben. Der
+ * Pruefer suchte nur den Text `wert < MIN_SIGNAL_CONFIDENCE`, und den gibt es
+ * wortgleich auch in `wirksameMinConfidence` darunter. Die beiden Geschwister
+ * wurden gerechnet, diese Funktion nicht.
  */
-function wirksameApproveSchwelle(gespeichert: number | undefined): number {
+export function wirksameApproveSchwelle(gespeichert: number | undefined): number {
   const wert = gespeichert ?? 71;
   if (wert < MIN_SIGNAL_CONFIDENCE) {
     console.warn(

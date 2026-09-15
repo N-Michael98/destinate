@@ -339,6 +339,54 @@ module.exports = function pruefe() {
         /wirksameMinConfidence\(settings\.riskSettings\?\.minConfidenceScore\)/.test(orch),
         "sonst rechnet die Funktion, und der Zyklus nimmt weiter den Rohwert");
     }
+
+    // ── Die Auto-Approve-Schwelle selbst: GERECHNET (15.09.) ────────────────
+    //
+    // Die bindende Schwelle der ganzen Kette — hier stirbt derzeit jedes
+    // Signal zwischen 70 und 75 ("Confidence 74 < Schwelle 76"). Bis heute
+    // wurde sie nur per Text gesucht: `wert < MIN_SIGNAL_CONFIDENCE`. Der Text
+    // steht wortgleich AUCH in `wirksameMinConfidence`. Vorgefuehrt: das
+    // Zeichen in dieser Funktion auf `>` gedreht — eine gespeicherte 76 wird
+    // still zu 70 — und alle 23 Pruefer blieben gruen.
+    const was = orchModul.exports.wirksameApproveSchwelle;
+    if (typeof was !== "function") {
+      funde.push("wirksameApproveSchwelle wird nicht exportiert — die bindende "
+        + "Schwelle der Signalkette waere nur per Text geprueft");
+      geprueft++;
+    } else {
+      const stille3 = console.warn;
+      let meldungen3 = 0;
+      console.warn = () => { meldungen3++; };
+      let s;
+      try {
+        // Jeder Fall GENAU EINMAL — sonst zaehlt die Meldung doppelt (Lehre 09.09.).
+        s = {
+          live:    was(76),          // der LIVE-Wert vom 09.09.
+          grenze:  was(grenze),      // genau die Untergrenze
+          darunter: was(grenze - 1), // wirkungslos -> Untergrenze + Meldung
+          tief:    was(50),          // weit darunter
+          fehlt:   was(undefined),   // nicht gesetzt -> Standard
+        };
+      } finally { console.warn = stille3; }
+      pruefe1("die gespeicherte Schwelle 76 wird veraendert — sie muss GENAU so gelten",
+        s.live === 76, `${s.live} — ein gedrehtes Zeichen macht daraus still ${grenze}`);
+      pruefe1("genau die Untergrenze wird veraendert", s.grenze === grenze, String(s.grenze));
+      pruefe1("ein Wert unter der Untergrenze wird nicht auf die Untergrenze angehoben",
+        s.darunter === grenze && s.tief === grenze, `${s.darunter} / ${s.tief}`);
+      pruefe1("ohne gespeicherten Wert gilt nicht der Standard 71",
+        s.fehlt === 71, String(s.fehlt));
+      pruefe1("ein wirkungsloser Approve-Wert wird nicht gemeldet — oder zu oft",
+        meldungen3 === 2, `${meldungen3} Meldungen bei 5 Faellen, erwartet 2 (${grenze - 1} und 50)`);
+
+      // Und die Entscheidung muss BEIDE wirksamen Werte zusammenfuehren —
+      // kommentarbereinigt, damit ein Beispiel im Kommentar nicht zaehlt.
+      const orchCode = orch
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      pruefe1("die Freigabe-Schwelle fuehrt nicht beide wirksamen Werte zusammen",
+        /Math\.max\(\s*wirksameApproveSchwelle\(settings\.botSettings\.autoApproveThreshold\)\s*,\s*wirksameMinConfidence\(settings\.riskSettings\?\.minConfidenceScore\)\s*,?\s*\)/.test(orchCode),
+        "sonst gilt nur einer der beiden Regler — der andere luegt");
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
