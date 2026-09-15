@@ -889,10 +889,29 @@ module.exports = async function pruefe() {
     // Objekt-Literal stehen. Ein Fehlalarm im PRUEFER, keine Kopplung im Code.
     // Jetzt wird gezaehlt, WO die Entscheidung `meta.stilGeraten` faellt: sie
     // darf genau EINMAL abgefragt werden, und zwar im Zeit-Exit.
+    // GENAU ZWEI Stellen, und beide benannt (15.09. geschaerft):
+    //   1. der Zeit-Exit — die einzige ENTSCHEIDUNG, die davon abhaengen darf
+    //   2. die Meldung — sie entscheidet nichts, sie macht das Raten sichtbar
+    //
+    // Die erste Fassung verlangte GENAU EINE Stelle. Als am 15.09. die Meldung
+    // dazukam (der Capital-Pfad meldet seit dem 19.08., IC schwieg bis dahin),
+    // schlug sie an — zu Recht, denn sie konnte "Entscheidung" und "Meldung"
+    // nicht unterscheiden. Statt die Zahl stumpf hochzusetzen wird jetzt
+    // geprueft, WOFUER die beiden Stellen da sind. Eine dritte faellt weiter
+    // auf.
     const entscheidungen = (ic.match(/meta\.stilGeraten/g) || []).length;
-    torPruefung("IC Markets: `meta.stilGeraten` wird nicht genau einmal abgefragt",
-      entscheidungen === 1,
-      `${entscheidungen}x — nur der Zeit-Exit darf davon abhaengen`);
+    torPruefung("IC Markets: `meta.stilGeraten` wird an mehr als zwei Stellen gelesen",
+      entscheidungen === 2,
+      `${entscheidungen}x — erlaubt sind Zeit-Exit und Meldung, sonst nichts`);
+    torPruefung("IC Markets: die zweite Stelle ist keine Meldung, sondern eine Entscheidung",
+      /meta\.stilGeraten === true && !gerateneGemeldetIC\.has\(positionId\)/.test(ic),
+      "nur der Zeit-Exit darf vom geratenen Stil abhaengen");
+    // Und das Raten muss gemeldet werden, SOBALD es passiert — nicht erst,
+    // wenn der Zeit-Exit greifen wuerde. Genau das war die Luecke gegenueber
+    // dem Capital-Pfad.
+    torPruefung("IC Markets: die geratene Confidence wird nicht gemeldet",
+      /Stil und Confidence GERATEN/.test(ic),
+      "Capital meldet beides seit dem 19.08. — IC schwieg");
     // Das Meldungs-Gedaechtnis darf nicht wachsen (Leck-Klasse vom 26.08.).
     torPruefung("IC Markets: das Meldungs-Gedaechtnis wird nie aufgeraeumt",
       /gerateneGemeldetIC\.delete\(/.test(ic),

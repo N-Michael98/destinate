@@ -112,6 +112,32 @@ export async function runICMarketsTradeManager(): Promise<void> {
            tradingStyle: "DAYTRADING", stilGeraten: true };
     const meta: PosMeta = dbMeta.get(positionId) ?? mem;
 
+    // ── Das RATEN selbst melden, nicht erst seine Folge (15.09.) ───────────
+    //
+    // Bis heute stand die Meldung nur im Zeit-Exit-Zweig — sie kam also erst,
+    // wenn die Position alt genug war. Bis dahin lief die Verwaltung still auf
+    // geratenen Werten.
+    //
+    // Der Capital-Pfad macht es seit dem 19.08. richtig (`risk-agent.ts`,
+    // `geratenerStilMelden`): er meldet, SOBALD geraten wird, und nennt beides
+    // — Stil UND Confidence — samt dem, was daran haengt. Dieselbe
+    // Asymmetrie wie beim Zeit-Exit, den ich am 08.09. nachgezogen habe.
+    //
+    // Die Confidence ist dabei nicht gefaehrlich, aber sie ist erfunden: 72
+    // faellt in die UNTERSTE Stufe von `getLevel` (Breakeven bei 0.40 statt
+    // 0.70, Trail 0.60) — also die frueher absichernde. Sie geht trotzdem in
+    // jede Exit-Entscheidung ein, und dass sie geraten ist, muss man sehen.
+    //
+    // Einmal je Position, ueber dasselbe Gedaechtnis wie der Zeit-Exit.
+    if (meta.stilGeraten === true && !gerateneGemeldetIC.has(positionId)) {
+      gerateneGemeldetIC.add(positionId);
+      console.warn(`[ic-trade-mgr] ⚠️ ${symbol} pos=${positionId}: weder Journal-Zeile `
+        + `noch Speicher-Eintrag — Stil und Confidence GERATEN `
+        + `(${meta.tradingStyle}, ${meta.confidence}). Der Zeit-Exit bleibt `
+        + `deshalb AUSGESETZT; Breakeven und Trailing laufen weiter, haengen `
+        + `aber an dieser geratenen Confidence-Stufe.`);
+    }
+
     const lvl = getLevel(meta.confidence);
     const liveSL = pos.stopLoss ?? 0;
     const liveTP = pos.takeProfit ?? 0;
