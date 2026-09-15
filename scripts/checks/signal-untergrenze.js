@@ -341,5 +341,154 @@ module.exports = function pruefe() {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Die LETZTE Untergrenze der Kette: das Chance-Risiko (15.09.)
+  //
+  // Die Confidence-Grenze oben ist nicht die einzige Hürde, an der Signale
+  // sterben — am 08.09. starben DREI von VIER am R/R-Tor (`rr >= 1.5`), mit
+  // gemessenen Werten von 0.52, 0.59 und 0.64. Der Trichter meldete davon nur
+  // "→ 0 = GO". Wie weit es war, stand nirgends.
+  //
+  // `rrVerteilung()` macht daraus eine Zahl. Damit gilt hier dieselbe Regel
+  // wie für jeden Regler in dieser Datei: die Zahl darf nicht lügen. Zwei
+  // Arten, wie sie lügen könnte, sind konkret vorstellbar:
+  //
+  //   1. `abGrenze` zählt Signale mit, die AUSSERDEM am Risiko-Score
+  //      scheitern. Dann verspricht das Log Trades, die eine tiefere Grenze
+  //      gar nicht freigäbe.
+  //   2. Jemand verwechselt die Beobachtungsmarke mit der Handelsschwelle und
+  //      setzt `approved` auf 1.2. Das wäre kein Anzeigefehler mehr, sondern
+  //      gelockertes Risiko — still.
+  //
+  // Beides wird unten geprüft, das zweite am Quelltext, das erste rechnend.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const engineModul = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts", {
+    // Mit dem ECHTEN Wert, nicht mit dem Stellvertreter: das Modul liest die
+    // Konstante beim Laden, und ein Proxy führte hier zum Absturz statt zum
+    // Befund (dieselbe Falle wie am 09.09. im Orchestrator-Prüfer).
+    "broker-config": { MIN_SIGNAL_CONFIDENCE: grenze },
+  });
+  if (engineModul.fehler) {
+    funde.push(`ai-analysis-engine.ts nicht ausführbar — die R/R-Verteilung `
+      + `bleibt ungeprüft: ${engineModul.fehler}`);
+    geprueft++;
+  } else {
+    const rv = engineModul.exports.rrVerteilung;
+    if (typeof rv !== "function") {
+      funde.push("rrVerteilung wird nicht exportiert — die Verteilung der "
+        + "abgelehnten Chance-Risiko-Werte wäre wieder unmessbar");
+      geprueft++;
+    } else {
+      // Leere Menge: KEINE Zeile. Sonst sähe "0 Abgelehnte, Median NaN" wie
+      // eine Messung aus — genau der Fehler aus dem Dashboard (0/0).
+      pruefe1("eine leere Menge ergibt keine Meldung", rv([], 1.2) === null,
+        JSON.stringify(rv([], 1.2)));
+      pruefe1("undefined stürzt ab statt null zu ergeben",
+        rv(undefined, 1.2) === null);
+
+      // Der gemessene Fall vom 08.09. — hier darf nichts freigegeben werden.
+      const echt = rv([
+        { symbol: "XRPUSD", rr: 0.52, nurRR: true },
+        { symbol: "XAGUSD", rr: 0.59, nurRR: true },
+        { symbol: "NAS100", rr: 0.64, nurRR: true },
+      ], 1.2);
+      pruefe1("der gemessene Fall vom 08.09. wird falsch zusammengefasst",
+        echt && echt.anzahl === 3 && echt.median === 0.59 && echt.nurRR === 3
+        && echt.abGrenze === 0, JSON.stringify(echt));
+
+      // ── DER KERN: `abGrenze` darf NUR nurRR-Einträge zählen ──────────────
+      // Ohne diesen Filter meldete das Log "1 würde freikommen", obwohl das
+      // Signal am Risiko-Score hängt und von einer tieferen R/R-Grenze nie
+      // profitiert. Eine Hoffnung, die nicht eintritt, ist schlimmer als
+      // keine Angabe.
+      const gemischt = rv([
+        { symbol: "A", rr: 1.40, nurRR: false },  // hoch, aber Score-Problem
+        { symbol: "B", rr: 0.50, nurRR: true },
+      ], 1.2);
+      pruefe1("abGrenze zählt Signale mit, die AUSSERDEM am Risiko-Score scheitern",
+        gemischt && gemischt.abGrenze === 0,
+        `abGrenze=${gemischt && gemischt.abGrenze}, erwartet 0 — 1.40 liegt über 1.2, `
+        + "hilft aber nicht, weil nurRR=false");
+      pruefe1("nurRR wird nicht gezählt", gemischt && gemischt.nurRR === 1,
+        String(gemischt && gemischt.nurRR));
+
+      // Der Median läuft bewusst über ALLE Abgelehnten — er beschreibt, was
+      // das Modell liefert, unabhängig vom Ablehnungsgrund. Würde er nur über
+      // nurRR laufen, käme hier 0.50 statt 0.95 heraus.
+      pruefe1("der Median läuft nicht über alle Abgelehnten",
+        gemischt && gemischt.median === 0.95,
+        `${gemischt && gemischt.median} — erwartet 0.95 = (0.50+1.40)/2`);
+
+      // Gerade Anzahl: Mittel der beiden mittleren Werte, nicht "irgendeiner".
+      const vier = rv([
+        { symbol: "A", rr: 4, nurRR: true }, { symbol: "B", rr: 1, nurRR: true },
+        { symbol: "C", rr: 3, nurRR: true }, { symbol: "D", rr: 2, nurRR: true },
+      ], 1.2);
+      pruefe1("der Median bei gerader Anzahl ist falsch",
+        vier && vier.median === 2.5, String(vier && vier.median));
+      // Drei, nicht vier: die 1 liegt UNTER 1.2. Genau daran ist diese
+      // Erwartung beim Schreiben zuerst gescheitert — die Grenze ist ein
+      // `>=`, kein "alle mit nurRR".
+      pruefe1("abGrenze zählt bei gerader Anzahl falsch",
+        vier && vier.abGrenze === 3, `${vier && vier.abGrenze} — erwartet 3 (die 1 liegt unter 1.2)`);
+
+      // GENAU auf der Marke zählt mit. Ohne diesen Fall bliebe ein `>` statt
+      // `>=` unentdeckt — keine der Mengen oben liegt auf der Grenze, und die
+      // Lücke fiel erst beim Durchgehen der Sabotage-Liste auf.
+      const aufDerMarke = rv([{ symbol: "A", rr: 1.2, nurRR: true }], 1.2);
+      pruefe1("ein Wert GENAU auf der Marke wird nicht mitgezählt",
+        aufDerMarke && aufDerMarke.abGrenze === 1, String(aufDerMarke && aufDerMarke.abGrenze));
+
+      // Unbrauchbare Zahlen dürfen den Median nicht vergiften. `realesChanceRisiko`
+      // gibt bei entarteten Setups 0 zurück, aber eine NaN aus einer anderen
+      // Quelle würde sonst jede Aussage der Zeile zerstören.
+      const mitMuell = rv([
+        { symbol: "A", rr: NaN, nurRR: true },
+        { symbol: "B", rr: Infinity, nurRR: true },
+        { symbol: "C", rr: 1.0, nurRR: true },
+      ], 1.2);
+      pruefe1("nicht endliche Werte vergiften den Median",
+        mitMuell && mitMuell.anzahl === 1 && mitMuell.median === 1.0,
+        JSON.stringify(mitMuell));
+      pruefe1("eine Menge aus lauter Unsinn ergibt keine Meldung",
+        rv([{ symbol: "A", rr: NaN, nurRR: true }], 1.2) === null);
+    }
+
+    // ── Die Beobachtungsmarke darf die Handelsschwelle nicht ersetzen ────────
+    //
+    // Die Entscheidung heisst `rewardRiskRatio >= 1.5` und steht in
+    // `simulateClaude` sowie in der Prompt-Regel. Träte RR_PRUEFGRENZE dort
+    // auf, wäre das echte Tor still von 1.5 auf 1.2 gerutscht.
+    const ohneKomm = engine
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const pruefgrenzeStellen = (ohneKomm.match(/RR_PRUEFGRENZE/g) || []).length;
+    pruefe1("RR_PRUEFGRENZE fehlt — die Was-wäre-wenn-Marke steht wieder als Literal im Log",
+      pruefgrenzeStellen >= 2, `${pruefgrenzeStellen} Vorkommen`);
+    // Die ZÄHLUNG muss die Konstante bekommen, nicht nur der Beschriftungstext.
+    // Im Sabotage-Lauf ist genau das entwischt: das Literal im Aufruf, die
+    // Konstante weiter im Log — Zahl und Beschriftung dürfen auseinanderlaufen,
+    // ohne dass ein Vorkommen-Zähler etwas merkt.
+    pruefe1("rrVerteilung wird nicht mit RR_PRUEFGRENZE gerufen — "
+      + "gezählte und genannte Marke könnten auseinanderlaufen",
+      /rrVerteilung\(\s*abgelehnteRR\s*,\s*RR_PRUEFGRENZE\s*\)/.test(ohneKomm));
+    pruefe1("RR_PRUEFGRENZE steht in der Entscheidung statt nur im Log — "
+      + "damit wäre die Handelsschwelle still gesenkt",
+      !/approved[\s\S]{0,200}RR_PRUEFGRENZE/.test(ohneKomm)
+      && !/RR_PRUEFGRENZE[\s\S]{0,120}approved/.test(ohneKomm));
+    pruefe1("die Handelsschwelle 1.5 ist aus dem Rückfall verschwunden",
+      /rrRatio\s*>=\s*1\.5/.test(ohneKomm),
+      "simulateClaude muss weiter gegen 1.5 entscheiden");
+
+    // Und die Sammlung muss aus DENSELBEN Bedingungen gespeist werden wie die
+    // Ablehnungs-Meldung. Zwei getrennte Rechnungen für dieselbe Frage sind der
+    // Weg, auf dem die eine später geändert wird und die andere nicht.
+    pruefe1("nurRR wird nicht aus den geprüften Ablehnungsgründen abgeleitet",
+      /nurRR:\s*rrZuKlein\s*&&\s*!scoreZuHoch/.test(ohneKomm),
+      "sonst kann die Sammlung etwas anderes behaupten als die Zeile darüber");
+    pruefe1("die Ablehnungs-Meldung nutzt die abgeleiteten Bedingungen nicht",
+      /if\s*\(\s*rrZuKlein\s*\)/.test(ohneKomm) && /if\s*\(\s*scoreZuHoch\s*\)/.test(ohneKomm));
+  }
+
   return { titel: `Signal-Untergrenze (${geprueft} Prüfungen, Grenze ${grenze})`, funde };
 };

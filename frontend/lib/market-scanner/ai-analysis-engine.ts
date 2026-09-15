@@ -563,6 +563,66 @@ function realesChanceRisiko(
   return chance / risiko;
 }
 
+/** Ein an der Risiko-Freigabe gescheitertes Signal, wie es die Verteilung sieht. */
+export type AbgelehntesRR = { symbol: string; rr: number; nurRR: boolean };
+
+/**
+ * Die Vergleichsmarke der BEOBACHTUNG — ausdrücklich NICHT die Handelsgrenze.
+ *
+ * Die Handelsgrenze ist 1.5 und steht in `simulateClaude` sowie in der
+ * Prompt-Regel `approved=true only if … rewardRiskRatio >= 1.5`. Hier wird
+ * nur gefragt: wie viele Signale läge eine tiefere Grenze frei? Die Antwort
+ * geht ins Log, nicht in eine Entscheidung.
+ *
+ * Getrennte Konstante, damit die Frage verändert werden kann, ohne dass
+ * jemand versehentlich die Schwelle verschiebt — und damit der Prüfer beide
+ * Zahlen auseinanderhalten kann.
+ */
+const RR_PRUEFGRENZE = 1.2;
+
+/**
+ * Verteilung der Chance-Risiko-Werte, an denen Signale gescheitert sind (15.09.).
+ *
+ * ANLASS. Der Trichter meldet seit dem 03.08., WIE VIELE Signale an der
+ * Risiko-Freigabe sterben — nicht, wie knapp. Am 08.09. lagen die drei
+ * abgelehnten Werte bei 0.52, 0.59 und 0.64 gegen eine Grenze von 1.5. Das ist
+ * eine ganz andere Lage als drei Werte bei 1.45, und ohne die Zahlen sind
+ * beide Faelle im Log ununterscheidbar: man sieht nur "→ 0 = GO".
+ *
+ * `abGrenze` zaehlt AUSSCHLIESSLICH Eintraege mit `nurRR`. Ein Signal, das
+ * zusaetzlich am Risiko-Score scheitert, wuerde von einer tieferen R/R-Grenze
+ * nicht frei — es mitzuzaehlen hiesse, eine Erleichterung zu versprechen, die
+ * nicht eintritt. Genau diese Sorte Zahl hat hier schon zweimal in die Irre
+ * gefuehrt (`?? 50` im Risiko-Tor, `averageConfidence` im Dashboard).
+ *
+ * `median` dagegen laeuft ueber ALLE Abgelehnten: er beschreibt, was das
+ * Modell liefert, und diese Aussage haengt nicht am Ablehnungsgrund. Die
+ * Trennung ist Absicht, kein Versehen.
+ *
+ * Nicht endliche Werte fliegen raus, statt den Median zu NaN zu machen.
+ * `null` heisst: nichts zu berichten — und genau dann wird keine Zeile
+ * gedruckt, damit eine leere Menge nicht wie eine Messung aussieht.
+ *
+ * Reine Beobachtung: kein Aufrufer trifft anhand dieser Werte eine
+ * Entscheidung, sie gehen ausschliesslich ins Log.
+ */
+export function rrVerteilung(
+  eintraege: ReadonlyArray<AbgelehntesRR>,
+  pruefGrenze: number,
+): { anzahl: number; median: number; nurRR: number; abGrenze: number } | null {
+  const gueltig = (eintraege ?? []).filter((e) => e && Number.isFinite(e.rr));
+  if (gueltig.length === 0) return null;
+  const werte = gueltig.map((e) => e.rr).sort((a, b) => a - b);
+  const median = werte.length % 2 === 1
+    ? werte[(werte.length - 1) / 2]
+    : (werte[werte.length / 2 - 1] + werte[werte.length / 2]) / 2;
+  const nurRR = gueltig.filter((e) => e.nurRR === true);
+  const abGrenze = Number.isFinite(pruefGrenze)
+    ? nurRR.filter((e) => e.rr >= pruefGrenze).length
+    : 0;
+  return { anzahl: gueltig.length, median, nurRR: nurRR.length, abGrenze };
+}
+
 /**
  * Regelbasierter Rückfall, wenn kein Claude-Schlüssel hinterlegt ist oder GPT
  * keine handelbare Richtung genannt hat.
@@ -1061,6 +1121,11 @@ each market's own data, never from habit or from these examples' direction:
   // Wie viele abgelehnte Signale verletzten dabei GPTs eigene Prompt-Regeln?
   // Trennt "der Markt gibt nichts her" von "das Modell haelt sich nicht daran".
   let promptVerstossZaehler = 0;
+  /** Chance-Risiko der Signale, die bis SL/TP kamen und dann an der
+   *  Risiko-Freigabe scheiterten (15.09.). `nurRR`: das R/R war der EINZIGE
+   *  Ablehnungsgrund — nur die koennte eine andere Grenze freigeben.
+   *  Begruendung an der Sammelstelle. */
+  const abgelehnteRR: Array<{ symbol: string; rr: number; nurRR: boolean }> = [];
   // Verteilung der Risiko-Scores (27.08.). Am 27.08. lagen SIEBEN von acht auf
   // exakt 72 — bei R/R-Werten von 0.45 bis 2.67. Eine Bewertung, die fuer
   // alles dieselbe Zahl liefert, bewertet nichts. Von Hand faellt das nicht
@@ -1518,14 +1583,46 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         : (market.bid || market.ask);
       const stopAbstand = Math.abs(einstieg - gpt.stopLoss);
       const zielAbstand = Math.abs(gpt.takeProfit - einstieg);
-      const gruende: string[] = [];
-      if (!(claude.rewardRiskRatio >= 1.5)) {
-        gruende.push(`R/R ${claude.rewardRiskRatio.toFixed(2)} < 1.5`);
-      }
+      // Die beiden Bedingungen EINMAL rechnen und beides daraus speisen: die
+      // Meldung unten und die Sammlung fuer die Verteilung (15.09.). Zweimal
+      // dieselbe Bedingung zu schreiben ist genau der Weg, auf dem die eine
+      // spaeter geaendert wird und die andere nicht.
+      const rrZuKlein = !(claude.rewardRiskRatio >= 1.5);
       // Der Risiko-Score ist NUR im echten Claude-Pfad eine Bedingung — der
       // Rückfall prüft ihn nicht. Ihn dort zu nennen wäre irreführend.
-      if (claude.source === "CLAUDE_REAL" && claude.riskScore >= 60) {
+      const scoreZuHoch = claude.source === "CLAUDE_REAL" && claude.riskScore >= 60;
+      const gruende: string[] = [];
+      if (rrZuKlein) {
+        gruende.push(`R/R ${claude.rewardRiskRatio.toFixed(2)} < 1.5`);
+      }
+      if (scoreZuHoch) {
         gruende.push(`Risiko-Score ${claude.riskScore} >= 60`);
+      }
+      // ── WIE WEIT war es bis zur Grenze? (15.09.) ───────────────────────
+      //
+      // Der Trichter sagt, WIE VIELE hier sterben — nicht, wie knapp. Das ist
+      // der Unterschied zwischen einer Zahl und einer Entscheidungsgrundlage:
+      //
+      //   R/R 1.45 bei Grenze 1.5  -> eine kleine Anpassung wuerde wirken
+      //   R/R 0.52 bei Grenze 1.5  -> die Grenze ist nicht das Problem, das
+      //                               Ziel liegt naeher am Einstieg als der Stop
+      //
+      // Gemessen am 08.09.: 0.52, 0.59, 0.64 — also der zweite Fall. Bisher
+      // musste man diese Werte von Hand aus den Einzelmeldungen zusammensuchen;
+      // die Sammelzeile am Ende des Zyklus macht daraus eine Verteilung.
+      //
+      // `nurRR` ist der Grund, warum das hier steht und nicht oben am Trichter:
+      // ein Signal, das ZUSAETZLICH am Risiko-Score scheitert, wuerde von einer
+      // tieferen R/R-Grenze nicht frei. Es mitzuzaehlen hiesse, eine Hoffnung
+      // zu melden, die nicht eintritt.
+      //
+      // Reine Beobachtung — an keiner Bedingung ist etwas geaendert.
+      if (Number.isFinite(claude.rewardRiskRatio)) {
+        abgelehnteRR.push({
+          symbol: market.symbol,
+          rr: claude.rewardRiskRatio,
+          nurRR: rrZuKlein && !scoreZuHoch,
+        });
       }
       // Hat GPT dabei seine eigenen Prompt-Regeln verletzt? Das trennt
       // "der Markt gibt gerade nichts her" von "das Modell haelt sich nicht
@@ -1601,6 +1698,28 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     ` → Confidence≥70 ${trichter.confidence} → SL/TP gesetzt ${trichter.slTp}` +
     ` → Risiko-Freigabe (R/R≥1.5) ${trichter.go} = GO`
   );
+  // Die Verteilung der Abgelehnten — sagt, OB eine andere Grenze etwas
+  // brächte. `null` = keine Abgelehnten, dann bleibt die Zeile weg.
+  //
+  // RR_PRUEFGRENZE ist NICHT die Handelsschwelle. Die steht bei 1.5 und wird
+  // hier nicht angefasst; das ist eine Was-waere-wenn-Frage ans Log.
+  const verteilung = rrVerteilung(abgelehnteRR, RR_PRUEFGRENZE);
+  if (verteilung) {
+    const mitStern = abgelehnteRR
+      .map((a) => `${a.symbol} ${a.rr.toFixed(2)}${a.nurRR ? "" : "*"}`)
+      .join(", ");
+    console.log(
+      `[ai-engine] 📏 Chance-Risiko der ${verteilung.anzahl} an der Freigabe `
+      + `gescheiterten: ${mitStern}`
+      + ` | Median ${verteilung.median.toFixed(2)}, Handelsgrenze 1.50`
+      + ` | allein am R/R gescheitert: ${verteilung.nurRR}`
+      + (verteilung.nurRR < verteilung.anzahl ? " (* = zusätzlich Risiko-Score)" : "")
+      + ` | davon ab ${RR_PRUEFGRENZE.toFixed(2)}: ${verteilung.abGrenze}`
+      + (verteilung.abGrenze === 0
+          ? ` — eine Grenze bei ${RR_PRUEFGRENZE.toFixed(2)} würde NICHTS freigeben; die Ziele liegen zu nah am Einstieg, das ist kein Schwellenproblem`
+          : ` — bei diesen würde eine Grenze bei ${RR_PRUEFGRENZE.toFixed(2)} wirken`)
+    );
+  }
   console.log(
     `[ai-engine] 🧮 Konsens-Trichter: ${konsens.gptWait} mit GPT-WAIT → TA-Lib STRONG ${konsens.taStark}` +
     ` → Strategien einig≥70 ${konsens.strategienEinig} → Entry-Quality GOOD/EXCELLENT ${konsens.qualitaetEinig}` +
