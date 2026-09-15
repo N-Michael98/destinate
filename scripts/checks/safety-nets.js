@@ -1556,6 +1556,68 @@ module.exports = async function pruefe() {
       fehlende.length === 0, fehlende.join(", "));
   }
 
+  // ══ DIE ÜBERANPASSUNGS-SPERRE MUSS IN BEIDE RICHTUNGEN EHRLICH SEIN ══════
+  //
+  // `blockOverfitMarkets` steht auf AUS. Der Snapshot sichert genau das — den
+  // STANDARDWERT. Dass der Schalter etwas TUT, wenn man ihn einschaltet, und
+  // vor allem: dass er NICHTS tut, solange er aus ist, prueft bisher niemand.
+  //
+  // Beide Richtungen sind gefaehrlich, und die zweite mehr:
+  //
+  //   AN, aber wirkungslos  -> der Nutzer glaubt sich geschuetzt und ist es
+  //                            nicht. Die Klasse "ein Regler darf nicht
+  //                            luegen" (13.08., 08.09., 09.09. -- dreimal).
+  //   AUS, aber wirksam     -> Maerkte werden gesperrt, die niemand gesperrt
+  //                            hat. Seit dem 30.06. ist die Trade-Zahl das
+  //                            Problem dieses Programms; ein still gesetzter
+  //                            Ausschluss waere genau die falsche Richtung und
+  //                            im Log von "kein Signal" nicht zu unterscheiden.
+  //
+  // Das `if (sperren)` ist die einzige Zeile zwischen beiden Zustaenden.
+  {
+    const orch = read("frontend/lib/agents/orchestrator-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+
+    // STRIKT `=== true`. Ein `?? false` oder eine truthy-Pruefung wuerde einen
+    // gespeicherten String "false" als EIN lesen — dieselbe Falle wie bei den
+    // Einstellungen, die aus der Datenbank kommen.
+    torPruefung("die Ueberanpassungs-Sperre prueft nicht strikt auf true",
+      /blockOverfitMarkets\s*===\s*true/.test(orch),
+      "alles andere liest einen gespeicherten String als EIN");
+
+    // Die Liste darf NUR gefuellt werden, wenn der Schalter an ist.
+    torPruefung("die Sperrliste wird unabhaengig vom Schalter gefuellt — "
+      + "dann sperrt sie IMMER, auch wenn der Nutzer sie aus hat",
+      /if\s*\(\s*sperren\s*\)\s*ueberangepasst\s*=/.test(orch),
+      "das `if (sperren)` ist die einzige Zeile zwischen AN und AUS");
+
+    // Und umgekehrt: sie muss auch wirklich angewandt werden, sonst ist der
+    // Schalter im AN-Zustand eine Attrappe.
+    torPruefung("die Sperrliste wird nirgends angewandt — der Schalter waere "
+      + "im AN-Zustand eine Attrappe",
+      /ueberangepasst\.includes\(\s*o\.symbol\s*\)/.test(orch));
+
+    // Der Ausschluss muss benannt werden. Ein stiller Ausschluss ist im Log
+    // nicht von "kein Signal" zu unterscheiden — der Fund vom 06.08.
+    torPruefung("ein Walk-Forward-Ausschluss wird nicht benannt",
+      /verworfen\.push\([^)]*Walk-Forward/.test(orch),
+      "sonst sieht ein gesperrter Markt aus wie gar kein Signal");
+
+    // Die Logzeile muss BEIDE Zustaende unterscheiden. Meldete sie immer
+    // "werden GESPERRT", glaubte man dem Schutz auch im AUS-Zustand.
+    torPruefung("die Walk-Forward-Meldung unterscheidet AN und AUS nicht",
+      /sperren\s*\?\s*"[^"]*GESPERRT[^"]*"\s*:\s*"[^"]*nicht gesperrt/.test(orch));
+
+    // Und der Standard bleibt AUS. Steht zwar im Snapshot, aber dort als eine
+    // Zahl unter 299 — hier steht dabei, WARUM: die Datengrundlage war am
+    // 15.09. 16 Trades, n=1..4 je Symbol. Das traegt keine Sperre.
+    const speicher = read("frontend/lib/settings/settings-store.ts");
+    torPruefung("der Standard der Ueberanpassungs-Sperre ist nicht mehr AUS",
+      /blockOverfitMarkets:\s*false/.test(speicher),
+      "einschalten ist eine Entscheidung des Nutzers, kein Standard");
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
