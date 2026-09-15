@@ -12,6 +12,11 @@ const DEFAULT_SETTINGS: SystemSettings = {
     tradeLimitEnabled: true,
     tradeLimitBypassScore: 80,
     maxTradesPerDayByStyle: { DAYTRADING: 3, SCALPING: 5, SWING: 2 },
+    // IC-Markets-Ausführung standardmässig AUS (15.09.) — Begründung beim
+    // Feld in broker-config-types.ts: IC bekam jede Order mit, wurde mit dem
+    // 12.7-fachen Kontostand dimensioniert und von KEINER Schutzschicht
+    // erfasst.
+    icMarketsExecutionEnabled: false,
     // Pyramiding standardmässig AUS — bisheriges Verhalten (1 Position pro
     // Symbol) bleibt unverändert, bis der User es in den Einstellungen aktiviert.
     pyramidingEnabled: false,

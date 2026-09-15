@@ -825,7 +825,29 @@ export async function runOrchestratorCycle(): Promise<void> {
 
   // ── 7. Pro Kandidat: Filter → ExecutionAgent ──────────────────────────────
   const { runAllFilters, getVolatilityAdjustedRisk } = await import("../trading-filters/trade-filters");
-  const currentBalance = session.balance > 0 ? session.balance : 10000;
+  // ── Welche Konten die Grenzen unten ueberhaupt SEHEN (15.09.) ─────────────
+  //
+  // Hier stand nur `const currentBalance = …`. Damit war nirgends
+  // festgehalten, dass alle folgenden Grenzen ausschliesslich das
+  // Capital-Konto betreffen — und genau das war jahrelang unsichtbar, obwohl
+  // der ExecutionAgent parallel an IC Markets lieferte.
+  //
+  // `risikoUmfang()` ist jetzt die EINE Stelle, an der das steht. Handelt ein
+  // Broker, den keine Grenze erfasst, wird das GEMELDET statt verschwiegen.
+  // Wie IC spaeter hineinkommt, steht dort dokumentiert.
+  const { risikoUmfang, ueberwachtesKapital, lueckeMeldung } =
+    await import("../risk-scope/risk-scope");
+  const { isICMarketsConnected } = await import("../icmarkets/icmarkets-session");
+  const umfang = risikoUmfang({
+    capitalBalance: session.balance > 0 ? session.balance : 10000,
+    capitalAvailable: session.accounts?.[0]?.available ?? null,
+    // Nur wahr, wenn IC WIRKLICH Orders bekommt: Sitzung UND Freigabe.
+    icFuehrtAus: settings.botSettings.icMarketsExecutionEnabled === true
+      && isICMarketsConnected(),
+  });
+  const luecke = lueckeMeldung(umfang);
+  if (luecke) console.warn(luecke);
+  const currentBalance = ueberwachtesKapital(umfang) || 10000;
   // "Pause on Loss" war ein Regler ohne Wirkung (Generalkontroll-Fund 30.07.).
   // Jetzt aktiv, aber bewusst nur VERSCHÄRFEND: ist er eingeschaltet, gilt der
   // strengere der beiden Werte. Damit kann die Einstellung den bestehenden,

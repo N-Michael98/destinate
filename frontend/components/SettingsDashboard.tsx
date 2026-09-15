@@ -1295,6 +1295,48 @@ export default function SettingsDashboard() {
               </p>
             </div>
 
+            {/* ───── IC-MARKETS-AUSFÜHRUNG (15.09.) ─────
+                Bis heute gab es diesen Schalter nicht: IC bekam jede Order
+                mit, sobald nur die Sitzung stand — mit dem eigenen, 12.7×
+                grösseren Kontostand dimensioniert und von KEINER der sieben
+                Schutzschichten erfasst. Standard AUS. */}
+            <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                <label style={{ fontSize: "10px", color: "#64748b", flex: 1, textTransform: "uppercase" }}>
+                  IC-Markets-Ausführung
+                  <span style={{ marginLeft: "8px", fontSize: "9px", color: "#475569" }}>
+                    {(settings.botSettings.icMarketsExecutionEnabled ?? false)
+                      ? "— Orders gehen AUCH an IC Markets"
+                      : "— nur Capital.com wird gehandelt"}
+                  </span>
+                </label>
+                <button
+                  onClick={() => updateBotField("icMarketsExecutionEnabled", !(settings.botSettings.icMarketsExecutionEnabled ?? false))}
+                  style={{
+                    width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                    background: (settings.botSettings.icMarketsExecutionEnabled ?? false) ? "#f59e0b" : "rgba(255,255,255,0.1)",
+                    position: "relative", transition: "background 0.15s",
+                  }}
+                >
+                  <div style={{
+                    width: "18px", height: "18px", borderRadius: "50%", background: "#fff",
+                    position: "absolute", top: "3px",
+                    left: (settings.botSettings.icMarketsExecutionEnabled ?? false) ? "23px" : "3px",
+                    transition: "left 0.15s",
+                  }} />
+                </button>
+                <span style={{ fontSize: "12px", color: (settings.botSettings.icMarketsExecutionEnabled ?? false) ? "#f59e0b" : "#64748b" }}>
+                  {(settings.botSettings.icMarketsExecutionEnabled ?? false) ? "ON" : "OFF"}
+                </span>
+              </div>
+              <p style={{ fontSize: "9px", color: "#475569", marginTop: "6px" }}>
+                ⚠️ Die Verlust-, Drawdown-, Exposure- und Positionsgrenzen rechnen
+                derzeit ausschliesslich mit dem Capital.com-Konto. Wird dieser
+                Schalter eingeschaltet, handelt IC Markets OHNE diese Absicherung
+                und mit seinem eigenen (deutlich grösseren) Kontostand.
+              </p>
+            </div>
+
             {/* ───── PYRAMIDING (30.07.) ───── */}
             <div style={{ marginTop: "16px", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>

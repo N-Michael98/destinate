@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 455 · Kanten: 988
+Dateien mit internen Abhängigkeiten: 455 · Kanten: 991
 
 
 ## analysis-engine/api
@@ -723,6 +723,7 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 988
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/settings/settings-store.ts`
 - `frontend/lib/agents/orchestrator-agent.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/agent-bus.ts`
@@ -737,9 +738,11 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 988
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/market-data-engine/price-cache.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
   - → `frontend/lib/python-backend/python-client.ts`
+  - → `frontend/lib/risk-scope/risk-scope.ts`
   - → `frontend/lib/settings/settings-store.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
   - → `frontend/lib/trading-filters/trade-filters.ts`
@@ -1502,15 +1505,15 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 988
 - `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 21 Dateien
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
+- `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
-- `frontend/lib/icmarkets/icmarkets-session.ts` — von 14 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien
+- `frontend/lib/settings/settings-store.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
-- `frontend/lib/settings/settings-store.ts` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 10 Dateien
 - `frontend/lib/icmarkets/icmarkets-client.ts` — von 8 Dateien
 - `frontend/lib/ai-agent/memory/agent-memory.ts` — von 7 Dateien

@@ -130,7 +130,30 @@ export async function runExecutionAgent(req: ExecutionAgentRequest): Promise<Exe
   };
 
   const useCapital = aiDecision.brokers.includes("CAPITAL");
-  const useIC = aiDecision.brokers.includes("IC_MARKETS");
+  // ── IC Markets braucht eine ausdrückliche Freigabe (15.09.) ───────────────
+  //
+  // Hier stand nur `aiDecision.brokers.includes("IC_MARKETS")`. Der Rückfall
+  // der KI lautet `brokers: ["CAPITAL", "IC_MARKETS"]` — und bei
+  // `skipAIValidation` steht dasselbe fest im Code. IC bekam damit praktisch
+  // jede Order, sobald nur die Sitzung stand.
+  //
+  // Das ist der ungeschützte Pfad: IC wird mit dem EIGENEN Kontostand
+  // dimensioniert (19864.27 gegen 1562.14, also 12.7×), und keine der sieben
+  // Schutzschichten sieht dieses Konto — sie rechnen alle mit der
+  // Capital-Positionsliste und dem Capital-Kontostand. Vollständige
+  // Begründung am Feld `icMarketsExecutionEnabled`.
+  //
+  // Die Einstellung steht UND-verknüpft davor, nicht anstelle: die KI darf IC
+  // weiterhin ablehnen, aber nicht mehr allein freigeben. Standard AUS.
+  const { getSettings } = await import("../settings/settings-store");
+  const einstellungen = await getSettings().catch(() => null);
+  const icFreigegeben = einstellungen?.botSettings?.icMarketsExecutionEnabled === true;
+  const useIC = aiDecision.brokers.includes("IC_MARKETS") && icFreigegeben;
+  if (aiDecision.brokers.includes("IC_MARKETS") && !icFreigegeben) {
+    console.log(`[exec-agent] ℹ️ ${req.symbol}: IC Markets übersprungen — `
+      + `Ausführung dort ist ausgeschaltet (Einstellungen → IC-Markets-Ausführung). `
+      + `Nur Capital.com wird von den Schutzschichten erfasst.`);
+  }
 
   // ── Parallel-Execution auf beiden Brokern ──────────────────────────────────
   const [capitalResult, icResult] = await Promise.all([

@@ -51,6 +51,39 @@ export interface BotSettings {
     SCALPING: number;
     SWING: number;
   };
+  /** Darf IC Markets Orders bekommen? Standard AUS (15.09.).
+   *
+   * BIS HEUTE GAB ES DIESEN SCHALTER NICHT. Der ExecutionAgent schickte jede
+   * Order an BEIDE Broker — der Rückfall der KI lautet
+   * `brokers: ["CAPITAL", "IC_MARKETS"]`, und das einzige Tor davor war
+   * `isICMarketsConnected()`. Die Sitzung war laut Betriebslog aktiv
+   * (`[IC Markets] keep-alive ✅ balance=19864.27`), also lief IC mit.
+   *
+   * WARUM DAS EIN PROBLEM IST — nachgerechnet, nicht geschätzt:
+   *
+   *   Broker        Kontostand   Risiko/Trade   6 gleichzeitig
+   *   Capital.com      1562.14          15.62            93.73
+   *   IC Markets      19864.27         198.64          1191.86
+   *
+   * IC wird mit seinem EIGENEN Kontostand dimensioniert
+   * (`execution-agent.ts`: `accountBalance: icSession?.balance ?? …`), also
+   * mit dem 12.7-fachen. Und KEINE der sieben Schutzschichten sieht dieses
+   * Konto: Tages-, Wochen- und Gesamtverlustgrenze, Exposure-Grenze,
+   * Positionslimit, Duplikat- und Korrelationsschutz rechnen alle mit der
+   * Capital-Positionsliste und dem Capital-Kontostand.
+   *
+   * Reichbar war dadurch auch ein Aufschaukeln: `ok` gilt, sobald EIN Broker
+   * erfolgreich war (`execution-agent.ts`). Scheitert Capital (z.B. Margin)
+   * und IC gelingt, steht die Position nur bei IC — und weil der
+   * Duplikat-Schutz nur Capital liest, käme im nächsten Zyklus dieselbe
+   * Position bei IC noch einmal dazu.
+   *
+   * Standard AUS deckt sich mit der Vorgabe des Nutzers, sich vorerst auf
+   * Capital.com zu konzentrieren. Die Schutzschichten werden so gebaut, dass
+   * IC später bewusst dazugenommen werden kann — siehe `ueberwachteKonten()`
+   * in `lib/risk-scope/`.
+   */
+  icMarketsExecutionEnabled: boolean;
   // ── Pyramiding (30.07.) — mehrere Positionen im selben Markt ──────────────
   // Standard = aus / 1 Position pro Symbol, also exakt das bisherige Verhalten.
   // Erst wenn der User es in den Einstellungen aktiviert, ändert sich etwas.

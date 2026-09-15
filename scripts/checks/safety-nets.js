@@ -1151,6 +1151,102 @@ module.exports = async function pruefe() {
       "ohne await waere `allowed` undefined und der Riegel wirkungslos");
   }
 
+  // ══ IC MARKETS HANDELT NICHT UNBEOBACHTET MIT (15.09.) ═══════════════════
+  //
+  // DER FUND. Der ExecutionAgent schickte jede Order an BEIDE Broker: der
+  // Rueckfall der KI lautet `brokers: ["CAPITAL", "IC_MARKETS"]`, bei
+  // `skipAIValidation` steht dasselbe fest im Code, und das einzige Tor davor
+  // war `isICMarketsConnected()`. Laut Betriebslog stand die Sitzung
+  // (`[IC Markets] keep-alive ✅ balance=19864.27`).
+  //
+  // Nachgerechnet:
+  //   Broker        Kontostand   Risiko/Trade   6 gleichzeitig
+  //   Capital.com      1562.14          15.62            93.73
+  //   IC Markets      19864.27         198.64          1191.86
+  //
+  // IC wird mit dem EIGENEN Kontostand dimensioniert (12.7-faches Risiko) —
+  // und KEINE der sieben Schutzschichten sieht dieses Konto. Sie rechnen alle
+  // mit der Capital-Positionsliste und dem Capital-Kontostand.
+  //
+  // Dazu ein erreichbares Aufschaukeln: `ok` gilt, sobald EIN Broker
+  // erfolgreich war. Scheitert Capital und gelingt IC, steht die Position nur
+  // bei IC — und weil der Duplikat-Schutz nur Capital liest, kaeme sie im
+  // naechsten Zyklus noch einmal dazu.
+  //
+  // Vorgabe des Nutzers: IC vorerst beiseite, aber so bauen, dass es spaeter
+  // integriert werden kann. Deshalb ZWEI Dinge: ein Schalter (Standard AUS)
+  // und `risk-scope.ts` als die EINE Stelle, die sagt, welche Konten unter
+  // Schutz stehen.
+  {
+    const rs = ladeTsModul("lib/risk-scope/risk-scope.ts", {});
+    if (rs.fehler || typeof rs.exports.risikoUmfang !== "function") {
+      torPruefung("risk-scope nicht ausfuehrbar", false, rs.fehler ?? "Export fehlt");
+    } else {
+      const { risikoUmfang, ueberwachtesKapital, lueckeMeldung } = rs.exports;
+      // Heutiger Normalfall: nur Capital, IC aus -> keine Luecke.
+      const a = risikoUmfang({ capitalBalance: 1562.14, capitalAvailable: 1500, icFuehrtAus: false });
+      torPruefung("Capital steht nicht unter Schutz",
+        a.konten.length === 1 && a.konten[0].broker === "CAPITAL_COM",
+        JSON.stringify(a.konten));
+      torPruefung("ohne IC-Ausfuehrung wird faelschlich eine Luecke gemeldet",
+        a.nichtUeberwacht.length === 0 && lueckeMeldung(a) === null,
+        JSON.stringify(a.nichtUeberwacht));
+      torPruefung("das ueberwachte Kapital stimmt nicht",
+        Math.abs(ueberwachtesKapital(a) - 1562.14) < 0.001,
+        String(ueberwachtesKapital(a)));
+
+      // DER KERN: handelt IC, MUSS die Luecke benannt werden.
+      const b = risikoUmfang({ capitalBalance: 1562.14, icFuehrtAus: true, icBalance: 19864.27 });
+      torPruefung("handelndes IC wird NICHT als unbeobachtet gemeldet",
+        b.nichtUeberwacht.includes("IC_MARKETS"), JSON.stringify(b.nichtUeberwacht));
+      const m = lueckeMeldung(b);
+      torPruefung("die Luecken-Meldung fehlt", typeof m === "string" && m.length > 40, String(m));
+      torPruefung("die Luecken-Meldung nennt den Broker nicht",
+        /IC_MARKETS/.test(String(m)));
+      torPruefung("die Luecken-Meldung sagt nicht, dass keine Grenze greift",
+        /KEINER/.test(String(m)) || /keiner/.test(String(m)), String(m).slice(0, 90));
+      // Das IC-Kapital darf NICHT mitgezaehlt werden, solange es nicht
+      // ueberwacht ist — sonst rechneten die Grenzen mit Geld, das sie nicht
+      // schuetzen, und der Drawdown saehe kuenstlich klein aus.
+      torPruefung("unbeobachtetes IC-Kapital wird mitgezaehlt",
+        Math.abs(ueberwachtesKapital(b) - 1562.14) < 0.001,
+        `${ueberwachtesKapital(b)} — es darf NUR Capital sein`);
+      // Unbrauchbare Eingaben ergeben kein Konto (statt eines Null-Kontos).
+      const c = risikoUmfang({ capitalBalance: 0, icFuehrtAus: false });
+      const d = risikoUmfang({ capitalBalance: NaN, icFuehrtAus: false });
+      torPruefung("ein Kontostand 0 oder NaN ergibt ein Konto",
+        c.konten.length === 0 && d.konten.length === 0,
+        `${c.konten.length} / ${d.konten.length}`);
+    }
+
+    // ── Der Schalter: IC bekommt nur mit ausdruecklicher Freigabe Orders ───
+    const ohneK = (p) => read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    const exec = ohneK("frontend/lib/agents/execution-agent.ts");
+    torPruefung("IC bekommt wieder ohne Freigabe Orders",
+      /useIC = aiDecision\.brokers\.includes\("IC_MARKETS"\) && icFreigegeben/.test(exec),
+      "der KI-Rueckfall enthaelt IC_MARKETS — sie darf es nicht allein freigeben");
+    torPruefung("die Freigabe wird nicht aus den Einstellungen gelesen",
+      /icMarketsExecutionEnabled === true/.test(exec));
+    // Standard MUSS AUS sein.
+    const store = ohneK("frontend/lib/settings/settings-store.ts");
+    torPruefung("die IC-Ausfuehrung ist standardmaessig EIN",
+      /icMarketsExecutionEnabled:\s*false/.test(store),
+      "ein unbeobachteter Broker darf nicht der Standard sein");
+    // Und der Orchestrator muss den Umfang wirklich benutzen.
+    const orchK = ohneK("frontend/lib/agents/orchestrator-agent.ts");
+    torPruefung("der Zyklus bestimmt den Risiko-Umfang nicht",
+      /risikoUmfang\(\{/.test(orchK) && /ueberwachtesKapital\(umfang\)/.test(orchK),
+      "sonst steht nirgends, welche Konten die Grenzen erfassen");
+    torPruefung("eine Luecke wird im Zyklus nicht gemeldet",
+      /lueckeMeldung\(umfang\)/.test(orchK) && /console\.warn\(luecke\)/.test(orchK));
+    // `icFuehrtAus` muss BEIDES verlangen — Sitzung UND Freigabe.
+    torPruefung("der Umfang haelt IC schon bei blosser Sitzung fuer handelnd",
+      /icMarketsExecutionEnabled === true\s*\n?\s*&& isICMarketsConnected\(\)/.test(orchK),
+      "eine stehende Sitzung allein ist keine Ausfuehrung");
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

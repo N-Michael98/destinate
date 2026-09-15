@@ -1,6 +1,6 @@
 {
   "hinweis": "Von scripts/checks/snapshot.js erzeugt. Nicht von Hand ändern — mit --update neu schreiben.",
-  "erstelltAm": "2026-08-27T19:26:03.359Z",
+  "erstelltAm": "2026-09-15T15:08:36.919Z",
   "werte": {
     "epicMap": {
       "EURUSD": "EURUSD",
@@ -240,6 +240,7 @@
       "maxPriceAgeMinutes": 30,
       "pauseOnLoss": true,
       "tradeLimitEnabled": true,
+      "icMarketsExecutionEnabled": false,
       "pyramidingEnabled": false,
       "useFullModelsForScan": false,
       "blockOverfitMarkets": false,
