@@ -563,6 +563,47 @@ function realesChanceRisiko(
   return chance / risiko;
 }
 
+/**
+ * Der Handelsstil, wie GPT ihn liefert — auf einen der drei gültigen Werte
+ * gebracht, oder `null` (15.09., Entscheidung des Nutzers).
+ *
+ * DER FUND. Der Stil wurde an keiner Stelle geprüft, nur umgetypt:
+ *
+ *   tradingStyle: (gptData.tradingStyle ?? "DAYTRADING") as GPTMarketAnalysis["tradingStyle"]
+ *
+ * `as` prüft nichts. Ein Wert wie "DAY_TRADING" oder "INTRADAY" lief bis in
+ * die Ausführung durch, und dort schaute jede Stelle in einer Tabelle nach,
+ * die ihn nicht kennt — mit einem Rückfall, der ihn verschluckt:
+ *
+ *   orchestrator-agent.ts   Stil-Limit `?? 999`      -> Grenze OFFEN
+ *   risk-agent.ts           Haltedauer `?? DAYTRADING` -> still geraten
+ *   capital-com-execution   Stop `?? 20`             -> Einheitswert
+ *
+ * Und ein FEHLENDER Stil wurde zu "DAYTRADING" erfunden und im Journal als
+ * bekannt gespeichert — `stilGeraten` im Risk-Agent sprang dann nicht an.
+ *
+ * DIE REGEL. Vereinheitlicht wird nur, was offensichtlich DASSELBE WORT ist:
+ * Gross/Klein, Leer- und Trennzeichen fallen weg ("Day Trading",
+ * "day_trading" -> DAYTRADING), und "Swing Trading" ist Swing. Alles andere —
+ * auch ein fehlender Stil — ergibt `null`, und das Signal wird zu WAIT. Nichts
+ * wird geraten: ein falsch zugeordneter Stil verschiebt Stop, Haltedauer und
+ * Tageslimit gleichzeitig.
+ *
+ * Ob GPT das je liefert, war am 15.09. NICHT gemessen. Deshalb wird jeder Fall
+ * namentlich geloggt — die Wirkung auf die Trade-Zahl ist damit sichtbar.
+ */
+export function normalisiereStil(roh: unknown): GPTMarketAnalysis["tradingStyle"] | null {
+  if (typeof roh !== "string") return null;
+  const buchstaben = roh.toUpperCase().replace(/[^A-Z]/g, "");
+  switch (buchstaben) {
+    case "SCALPING":     return "SCALPING";
+    case "DAYTRADING":   return "DAYTRADING";
+    case "SWING":
+    case "SWINGTRADING": return "SWING";
+    default:             return null;
+  }
+}
+
 /** Ein an der Risiko-Freigabe gescheitertes Signal, wie es die Verteilung sieht. */
 export type AbgelehntesRR = { symbol: string; rr: number; nurRR: boolean };
 
@@ -1142,8 +1183,14 @@ each market's own data, never from habit or from these examples' direction:
     // GPT Signal
     let gpt: GPTMarketAnalysis;
     const gptData = gptBatchResult[market.epic];
+    // GPT hat eine Richtung genannt, das Signal wurde aber wegen eines
+    // unbekannten Stils auf WAIT gesetzt (15.09.). Das ist KEIN GPT-WAIT — der
+    // gemessene Konsens darf hier nicht uebernehmen. Begruendung dort.
+    let stilVerworfen = false;
 
     if (hasGPT && gptData?.direction) {
+      // Stil GEPRUEFT statt umgetypt (15.09.) — Begruendung bei normalisiereStil().
+      const stil = normalisiereStil(gptData.tradingStyle);
       gpt = {
         symbol: market.symbol, epic: market.epic,
         direction: gptData.direction as GPTMarketAnalysis["direction"],
@@ -1152,9 +1199,26 @@ each market's own data, never from habit or from these examples' direction:
         entry: gptData.entry ?? market.ask,
         stopLoss: gptData.stopLoss ?? 0,
         takeProfit: gptData.takeProfit ?? 0,
-        tradingStyle: (gptData.tradingStyle ?? "DAYTRADING") as GPTMarketAnalysis["tradingStyle"],
+        // Nur fuer die Form des Objekts: ist `stil` null, wird das Signal direkt
+        // darunter zu WAIT und dieser Wert erreicht keine Entscheidung.
+        tradingStyle: stil ?? "DAYTRADING",
         source: "GPT_REAL",
       };
+      if (stil === null && gpt.direction !== "WAIT") {
+        console.log(
+          `[ai-engine] 🚫 ${market.symbol} ${gpt.direction}: Handelsstil `
+          + `${JSON.stringify(gptData.tradingStyle ?? null)} ist keiner von `
+          + `SCALPING/DAYTRADING/SWING — Signal auf WAIT (conf war ${gpt.confidence}). `
+          + `Ein geratener Stil verschiebt Stop, Haltedauer und Tageslimit.`
+        );
+        stilVerworfen = true;
+        gpt = {
+          ...gpt,
+          direction: "WAIT",
+          confidence: 0,
+          reasoning: `Signal verworfen: Handelsstil ${JSON.stringify(gptData.tradingStyle ?? null)} unbekannt`,
+        };
+      }
     } else if (hasGPT) {
       // GPT hat dieses Symbol trotz Anweisung nicht beantwortet → sicherer WAIT
       gpt = { ...noSignal(market), source: "GPT_REAL" };
@@ -1193,7 +1257,13 @@ each market's own data, never from habit or from these examples' direction:
     // Standardmässig ausgeschaltet; alle sieben nachgelagerten Tore gelten
     // unverändert weiter (echtes Chance-Risiko, Confidence-Schwelle, Meta-AI,
     // Auto-Approve, Filterkette, Broker-Stops, Grössen-Klemme).
-    if (gpt.direction === "WAIT" && ta && ta.atr > 0) {
+    // `!stilVerworfen` (15.09.): der Konsens darf laut Entscheidung vom 04.08.
+    // nur uebernehmen, "wenn GPT nicht widerspricht". Ein wegen unbekannten
+    // Stils verworfenes Signal HATTE aber eine Richtung — sagte GPT SELL und
+    // TA-Lib STRONG_BUY, wuerde sonst gegen GPT gekauft. Vor der Stil-Pruefung
+    // war das unmoeglich (die Richtung blieb stehen), und es darf durch sie
+    // nicht moeglich werden.
+    if (gpt.direction === "WAIT" && !stilVerworfen && ta && ta.atr > 0) {
       const sr = strategyData.get(market.symbol);
       const eq = sr?.entry_quality;
       const richtung: "BUY" | "SELL" | null =

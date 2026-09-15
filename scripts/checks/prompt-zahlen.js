@@ -269,6 +269,69 @@ module.exports = function pruefe() {
     /Grund `\s*\n?\s*\+ `steht in den ⛔-Zeilen|steht in den ⛔-Zeilen/.test(ausfallBlock),
     "HTTP-Status und Antworttext stehen dort und sollen nicht neu erfunden werden");
 
+  // ══ DER HANDELSSTIL WIRD GEPRUEFT, NICHT UMGETYPT (15.09.) ═══════════════
+  //
+  // Bis heute: `(gptData.tradingStyle ?? "DAYTRADING") as …`. `as` prueft
+  // nichts. Ein "DAY_TRADING" oder "INTRADAY" lief bis in die Ausfuehrung und
+  // traf dort drei Rueckfaelle, die ihn verschluckten — darunter das
+  // Stil-Limit `?? 999` im Orchestrator, also eine OFFENE Grenze. Ein fehlender
+  // Stil wurde zu DAYTRADING erfunden und als bekannt gespeichert.
+  //
+  // Entscheidung des Nutzers: offensichtlich dasselbe Wort vereinheitlichen,
+  // alles andere wird WAIT. GERECHNET, weil eine Normalisierung in jeder
+  // Fassung plausibel aussieht — ob "INTRADAY" durchrutscht, sagt nur der Aufruf.
+  const stilRoh = modul.exports.normalisiereStil;
+  // Ein Wurf ist ein BEFUND, kein Absturz des Pruefers (Lehre vom 15.09.:
+  // `null.replace` riss einen ganzen Pruefer mit, rot aus dem falschen Grund).
+  const stilFn = (r) => { try { return stilRoh(r); } catch (e) { return `WIRFT(${e.message})`; } };
+  if (typeof stilRoh !== "function") {
+    pruefe1("normalisiereStil wird nicht exportiert — der Handelsstil waere wieder ungeprueft", false);
+  } else {
+    const gleich = [
+      ["DAYTRADING", "DAYTRADING"], ["daytrading", "DAYTRADING"], ["Day Trading", "DAYTRADING"],
+      ["day_trading", "DAYTRADING"], ["DAY-TRADING", "DAYTRADING"], [" DayTrading ", "DAYTRADING"],
+      ["SCALPING", "SCALPING"], ["scalping", "SCALPING"],
+      ["SWING", "SWING"], ["Swing", "SWING"], ["Swing Trading", "SWING"], ["swing_trading", "SWING"],
+    ];
+    const falschZugeordnet = gleich.filter(([roh, soll]) => stilFn(roh) !== soll);
+    pruefe1("eine gueltige Schreibweise wird nicht erkannt — ein echtes Signal ginge verloren",
+      falschZugeordnet.length === 0,
+      falschZugeordnet.map(([r, s]) => `${JSON.stringify(r)} -> ${stilFn(r)} statt ${s}`).join(", "));
+
+    // Was NICHT dasselbe Wort ist, darf nicht zugeordnet werden — sonst wird
+    // wieder geraten, nur an anderer Stelle.
+    const fremd = ["INTRADAY", "POSITION", "SCALP", "DAY", "SWINGS", "DAYTRADE",
+      "DAYTRADINGX", "SCALPINGSWING", "", "   ", null, undefined, 42, {}, ["SWING"]];
+    const geraten = fremd.filter((r) => stilFn(r) !== null);
+    pruefe1("ein unbekannter oder fehlender Stil wird einem gueltigen zugeordnet — das ist Raten",
+      geraten.length === 0,
+      geraten.map((r) => `${JSON.stringify(r)} -> ${stilFn(r)}`).join(", "));
+  }
+
+  // Und die Pruefung muss an DER Stelle stehen, an der GPT-Rohdaten zum Signal
+  // werden — kommentarbereinigt, weil der Kopfkommentar das alte Muster zitiert.
+  pruefe1("der GPT-Zweig benutzt die Stil-Pruefung nicht",
+    /const stil = normalisiereStil\(gptData\.tradingStyle\)/.test(ohneKomm));
+  pruefe1("irgendwo wird der GPT-Stil wieder roh umgetypt",
+    !/gptData\.tradingStyle\s*\?\?\s*"/.test(ohneKomm)
+    && !/\(gptData\.tradingStyle[^)]*\)\s*as\s/.test(ohneKomm),
+    "genau dieses Muster war der Fehler");
+  const stilBlock = (ohneKomm.match(/if \(stil === null && gpt\.direction !== "WAIT"\) \{[\s\S]{0,900}?\n      \}/) || [""])[0];
+  pruefe1("ein unbekannter Stil setzt das Signal nicht auf WAIT",
+    stilBlock !== "" && /direction: "WAIT"/.test(stilBlock) && /confidence: 0/.test(stilBlock),
+    "sonst laeuft er mit Platzhalter-Stil in die Ausfuehrung");
+  pruefe1("ein verworfener Stil wird nicht benannt geloggt",
+    /console\.log\(/.test(stilBlock),
+    "ohne Zeile ist die Wirkung auf die Trade-Zahl unsichtbar");
+  // Der Konsens darf ein wegen Stil verworfenes Signal nicht wiederbeleben —
+  // er wuerde dann gegen die Richtung handeln, die GPT genannt hatte
+  // (Entscheidung 04.08.: nur "wenn GPT nicht widerspricht").
+  pruefe1("ein stil-verworfenes Signal wird nicht als solches markiert",
+    /stilVerworfen = true;/.test(stilBlock));
+  pruefe1("der gemessene Konsens kann ein stil-verworfenes Signal uebernehmen — "
+    + "er wuerde gegen GPTs genannte Richtung handeln",
+    /if \(gpt\.direction === "WAIT" && !stilVerworfen && ta && ta\.atr > 0\)/.test(ohneKomm));
+
   return {
     titel: `Prompt-Zahlen (${geprueft} Rechnungen, echte Funktion)`,
     funde,
