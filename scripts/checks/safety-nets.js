@@ -1397,6 +1397,165 @@ module.exports = async function pruefe() {
       "dort gibt es keine — die Kachel zeigt jetzt 'Freigegeben'");
   }
 
+  // ══ QUARANTÄNE: erfundene Zahlen erreichen den Handelspfad nicht (15.09.) ══
+  //
+  // DER BEFUND. `broker-execution-quality-learning` gibt feste Latenzen aus:
+  // 28, 34, 58, 74, 62 ms. Hier wird keine Latenz gemessen — die Zahlen sind
+  // erfunden. Bisher galt das als "toter Ballast, 0 UI-Aufrufer". Beim
+  // Nachmessen am 15.09. stimmte das so nicht: es ist eine KETTE aus fuenf
+  // Motoren, und sie endet in Broker-GEWICHTEN.
+  //
+  //   broker-execution-quality-learning   (erfundene Latenz/Spread/Slippage)
+  //     -> adaptive-broker-weighting      (macht daraus Gewichte 0..100)
+  //       -> autonomous-broker-optimization
+  //         -> broker-reputation-memory
+  //           -> broker-evolution-intelligence
+  //
+  // Gemessen ueber die System-Karte: 14 Aufrufer, alle innerhalb derselben
+  // Familie plus vier API-Routen, die niemand ruft. Der Handelspfad wird NICHT
+  // erreicht — heute.
+  //
+  // WARUM DAS TROTZDEM EIN RIEGEL BRAUCHT. Genau diese Fehlerklasse hat hier
+  // schon dreimal zugeschlagen: `?? 50` im Risiko-Tor, `confidence: 85` im
+  // Dashboard, die festen Zeilen in `market-health.ts`. Jedes Mal gab sich
+  // etwas Erfundenes als Messung aus. Wuerde jemand `adaptive-broker-weighting`
+  // an die Broker-Auswahl haengen — der Name legt es nahe, und die Funktion
+  // sieht fertig aus — entschiede eine erfundene Latenz mit, ueber welchen
+  // Broker echtes Geld laeuft. Niemand wuerde es bemerken.
+  //
+  // Diese Pruefung ist das Gegenstueck zur Order-Positivliste oben: dort wird
+  // festgehalten, wer Orders platzieren DARF, hier, wen der Handelspfad NICHT
+  // anfassen darf. Loeschen waere die Alternative — das ist eine Entscheidung
+  // des Nutzers. Bis dahin ist die Grenze wenigstens bewacht statt bloss
+  // behauptet.
+  {
+    // Module, die Zahlen ERFINDEN statt zu messen. Nachgeprueft, nicht geraten:
+    // jedes hat feste Zahlenprofile im Quelltext und keine Datenquelle.
+    const QUARANTAENE = [
+      "lib/broker-execution-quality-learning",
+      "lib/adaptive-broker-weighting",
+      "lib/autonomous-broker-optimization",
+      "lib/broker-reputation-memory",
+      "lib/broker-evolution-intelligence",
+      "lib/broker-performance-memory",
+      "lib/dynamic-position-allocation",
+    ];
+    // Der Handelspfad, von dem aus gesucht wird. Das sind genau die Dateien
+    // mit erhoehtem Risiko aus CLAUDE.md plus der Einstiegspunkt.
+    const HANDELSPFAD = [
+      "instrumentation.ts",
+      "lib/agents/orchestrator-agent.ts",
+      "lib/agents/execution-agent.ts",
+      "lib/agents/risk-agent.ts",
+      "lib/trading-filters/trade-filters.ts",
+      "lib/capital-com/capital-com-execution.ts",
+      "lib/market-scanner/ai-analysis-engine.ts",
+    ];
+
+    const wurzel = path.join(__dirname, "../../frontend");
+    const liesCode = (rel) => {
+      for (const endung of ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+        const p = path.join(wurzel, rel + endung);
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+          return { pfad: (rel + endung).replace(/\\/g, "/"), code: fs.readFileSync(p, "utf8") };
+        }
+      }
+      return null;
+    };
+
+    // Statisch UND dynamisch (`await import(...)`) — von letzteren gibt es in
+    // diesem Programm ueber neunzig, und genau sie waeren der bequeme Weg,
+    // eine Simulation nachtraeglich anzuhaengen.
+    const importe = (code, vonDatei) => {
+      const ohne = code
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      const angaben = [];
+      const muster = /(?:from\s*|import\s*\(\s*)["']([^"']+)["']/g;
+      let m;
+      while ((m = muster.exec(ohne)) !== null) angaben.push(m[1]);
+      const basis = path.posix.dirname(vonDatei);
+      return angaben
+        .map((a) => {
+          if (a.startsWith("@/")) return a.slice(2);
+          if (a.startsWith(".")) return path.posix.normalize(path.posix.join(basis, a));
+          return null;                       // Pakete interessieren hier nicht
+        })
+        .filter(Boolean);
+    };
+
+    // Breitensuche ueber den Handelspfad. Tiefe begrenzt, damit ein Zyklus
+    // den Pruefer nicht haengen laesst — `gesehen` verhindert das ohnehin.
+    const gesehen = new Set();
+    const warteschlange = [...HANDELSPFAD];
+    const verstoesse = [];
+    while (warteschlange.length > 0) {
+      const rel = warteschlange.shift();
+      if (gesehen.has(rel)) continue;
+      gesehen.add(rel);
+      const datei = liesCode(rel);
+      if (!datei) continue;
+      for (const ziel of importe(datei.code, datei.pfad)) {
+        const verboten = QUARANTAENE.find((q) => ziel === q || ziel.startsWith(q + "/"));
+        if (verboten) {
+          // Nur der ERSTE Uebertritt wird gemeldet, und danach NICHT
+          // weitergelaufen. Sonst meldet der Pruefer auch noch jede interne
+          // Kante der Quarantaene-Familie: beim Sabotage-Lauf waren das ueber
+          // 5000 Zeichen fuer einen einzigen Import. Ein Befund, den niemand
+          // liest, wird ignoriert — und dann nuetzt der Riegel nichts.
+          verstoesse.push(`${datei.pfad} → ${ziel}`);
+          continue;
+        }
+        if (!gesehen.has(ziel)) warteschlange.push(ziel);
+      }
+    }
+
+    const einmalig = [...new Set(verstoesse)];
+    torPruefung("der Handelspfad erreicht ein Modul mit ERFUNDENEN Zahlen",
+      einmalig.length === 0,
+      einmalig.slice(0, 5).join(" ; ") + (einmalig.length > 5 ? ` … (+${einmalig.length - 5})` : ""));
+
+    // Und die Suche muss wirklich gelaufen sein. Ohne diesen Nachweis waere
+    // die Pruefung oben auch dann gruen, wenn kein einziger Pfad aufloesbar
+    // war — ein Pruefer, der nichts findet, weil er nichts angesehen hat, ist
+    // die gefaehrlichste Sorte.
+    //
+    // BENANNTE Dateien statt einer Zahl. Beim Bau stand hier zuerst
+    // `gesehen.size >= 100`; gemessen wurden 65, und die Pruefung wurde rot,
+    // ohne dass etwas kaputt war. Eine geratene Zahl haette ich dann einfach
+    // angepasst — und damit nie erfahren, ob der Lauf die richtigen Dateien
+    // trifft. Diese Liste kann man nicht stillschweigend passend machen:
+    // fehlt eine, ist die Verdrahtung wirklich unterbrochen.
+    const norm = (s) => s.replace(/(\/index)?\.(ts|tsx)$/, "");
+    const erreicht = new Set([...gesehen].map(norm));
+    const MUSS_ERREICHT = [
+      "lib/killswitch",
+      "lib/capital-com/capital-com-client",
+      "lib/capital-com/capital-com-execution",
+      "lib/settings/settings-store",
+      "lib/agents/execution-agent",
+      "lib/agents/analysis-agent",
+      "lib/trading-filters/trade-filters",
+      "lib/agents/risk-agent",
+      "lib/market-scanner/ai-analysis-engine",
+      "lib/telegram-notifications/telegram-sender",
+      "lib/risk-scope/risk-scope",
+    ];
+    const nichtErreicht = MUSS_ERREICHT.filter((m) => !erreicht.has(m));
+    torPruefung("die Quarantaene-Suche erreicht den echten Handelspfad nicht — "
+      + "dann sagt ihr gruenes Ergebnis nichts aus",
+      nichtErreicht.length === 0,
+      `nicht erreicht: ${nichtErreicht.join(", ")} (${gesehen.size} Dateien besucht)`);
+
+    // Die Module muessen auch noch existieren — sonst prueft die Liste ins
+    // Leere, und nach einem spaeteren Loeschen bliebe ein toter Riegel stehen,
+    // der Sicherheit vortaeuscht.
+    const fehlende = QUARANTAENE.filter((q) => !fs.existsSync(path.join(wurzel, q)));
+    torPruefung("die Quarantaene-Liste nennt Module, die es nicht mehr gibt — "
+      + "entweder Liste kuerzen oder Loeschung rueckgaengig",
+      fehlende.length === 0, fehlende.join(", "));
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
