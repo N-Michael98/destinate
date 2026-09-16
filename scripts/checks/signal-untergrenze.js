@@ -127,8 +127,22 @@ module.exports = function pruefe() {
       + "Confidence bleibt ungeprueft");
   } else {
     const gc = analyseModul.exports.gepruefteConfidence;
-    pruefe1("ein brauchbarer Wert wird nicht uebernommen", gc(75, 70) === 75,
-      String(gc(75, 70)));
+    // SEIT 16.09.: die Meta-KI darf nur SENKEN. Hier stand bis heute
+    // `gc(75, 70) === 75` — der Pruefer schrieb das Anheben fest, und damit
+    // konnte die Meta-KI ein 72er-Signal ueber die Nutzer-Schwelle 76 heben.
+    pruefe1("eine Senkung durch die Meta-KI wird nicht uebernommen", gc(65, 70) === 65,
+      String(gc(65, 70)));
+    pruefe1("die Meta-KI kann die Confidence ANHEBEN — die Nutzer-Schwelle waere umgehbar",
+      gc(75, 70) === 70 && gc(80, 72) === 72 && gc("90", 76) === 76,
+      `${gc(75, 70)} / ${gc(80, 72)} / ${gc("90", 76)}`);
+    let ueber = 0;
+    for (const aus of [70, 72, 76, 90]) {
+      for (const roh of [0, 50, 69, 70, 71, 75, 76, 77, 99, 100, 150, "80", "71"]) {
+        if (!(gc(roh, aus) <= aus)) ueber++;
+      }
+    }
+    pruefe1("das Ergebnis liegt irgendwo UEBER der GPT-Confidence", ueber === 0, `${ueber} Faelle`);
+    pruefe1("ein Wahrheitswert gilt als Confidence", gc(true, 70) === 70, String(gc(true, 70)));
     // DER GEFAEHRLICHE FALL: fehlt das Feld, darf NIE undefined durchkommen.
     for (const [name, roh] of [
       ["fehlend", undefined], ["null", null], ["leer", ""],
@@ -138,10 +152,33 @@ module.exports = function pruefe() {
         + `\`undefined < Schwelle\` ist FALSE und umgeht den Riegel`,
         gc(roh, 70) === 70, String(gc(roh, 70)));
     }
-    pruefe1("eine Zahl als Text wird verworfen", gc("72", 70) === 72,
-      String(gc("72", 70)));
-    pruefe1("ein Wert ueber 100 wird nicht geklemmt", gc(150, 70) === 100,
+    pruefe1("eine Zahl als Text wird verworfen", gc("68", 70) === 68,
+      String(gc("68", 70)));
+    pruefe1("ein Wert ueber 100 hebt die Confidence an", gc(150, 70) === 70,
       String(gc(150, 70)));
+
+    // Das Urteil selbst: nur `true` ist eine Zustimmung (16.09.).
+    const pm = analyseModul.exports.pruefeMetaUrteil;
+    if (typeof pm !== "function") {
+      funde.push("pruefeMetaUrteil wird nicht exportiert — ein Text \"false\" koennte wieder freigeben");
+      geprueft++;
+    } else {
+      const u = (r) => { try { return pm(r); } catch (e) { return { approve: `WIRFT ${e.message}`, concern: "" }; } };
+      pruefe1("ein Text \"false\" gibt frei",
+        u({ approve: "false" }).approve === false && u({ approve: "true" }).approve === false
+        && u({ approve: 1 }).approve === false && u({}).approve === false && u(null).approve === false,
+        "`!meta.approve` ist fuer einen Text wahr — deshalb nur `true` als Zustimmung");
+      pruefe1("ein echtes true wird nicht als Zustimmung erkannt",
+        u({ approve: true }).approve === true && u({ approve: false }).approve === false);
+      pruefe1("eine unlesbare Ablehnung traegt keinen eigenen Grund",
+        /unlesbar/.test(u({ approve: "false" }).concern) && u({ approve: false, concern: "RSI 75" }).concern === "RSI 75",
+        "sonst sieht sie in der Zyklus-Bilanz wie ein inhaltliches Urteil aus");
+      pruefe1("eine fehlende oder falsche Confidence wird nicht als unbrauchbar markiert",
+        Number.isNaN(u({ approve: true }).adjustedConfidence)
+        && Number.isNaN(u({ approve: true, adjustedConfidence: "80" }).adjustedConfidence)
+        && u({ approve: true, adjustedConfidence: 70 }).adjustedConfidence === 70,
+        "gepruefteConfidence faellt dann auf GPTs Wert zurueck");
+    }
     pruefe1("ein negativer Wert wird nicht geklemmt", gc(-5, 70) === 0,
       String(gc(-5, 70)));
     // Eine echte 0 ist eine MESSUNG, kein fehlender Wert.
@@ -163,6 +200,30 @@ module.exports = function pruefe() {
   pruefe1("die Untergrenze gilt nach der Meta-Anpassung nicht mehr",
     /angepasst < MIN_SIGNAL_CONFIDENCE/.test(agentQ),
     "ein auf 68 gesenktes Signal bliebe sonst in `approved`");
+
+  // ── Meta-KI und GPT-Prompt widersprechen sich nicht (16.09.) ─────────────
+  // Die Anfrage ist eine Zeichenkette — deshalb wird hier der Quelltext MIT
+  // Zeichenketten, aber ohne Kommentare gelesen (`agentQ`).
+  const metaAnfrage = (agentQ.match(/content: `Meta-Analyse[\s\S]*?`\s*\}\]/) || [""])[0];
+  pruefe1("die Meta-Anfrage ist nicht auffindbar", metaAnfrage !== "");
+  pruefe1("die Meta-KI verlangt wieder ein uebereinstimmendes TA-Signal — der GPT-Prompt erlaubt Trend ODER Signal",
+    !/TA-Signal muss/.test(metaAnfrage)
+    && /BUY, obwohl weder trend1D=BULLISH noch taSignal=BUY\/STRONG_BUY/.test(metaAnfrage)
+    && /SELL, obwohl weder trend1D=BEARISH noch taSignal=SELL\/STRONG_SELL/.test(metaAnfrage)
+    && /NEUTRALES taSignal ist KEIN\s+Ablehnungsgrund/.test(metaAnfrage));
+  pruefe1("die Meta-KI hat wieder eine eigene Confidence-Schwelle oder die falsche Score-Skala",
+    !/Confidence < \d+/.test(metaAnfrage) && !/Score < 0\./.test(metaAnfrage));
+  pruefe1("die Meta-KI darf die Confidence wieder erhoehen",
+    /Erhöhe sie nie\./.test(metaAnfrage));
+  pruefe1("ein fehlender RSI wird wieder als Zahl erfunden",
+    !/rsi:\s*c\.taSignals\?\.rsi\s*\?\?\s*\d/.test(agentQ)
+    && /rsi: typeof c\.taSignals\?\.rsi === "number" \? c\.taSignals\.rsi : null/.test(agentQ),
+    "RSI 0 hiesse 'extrem ueberverkauft' — ein Grund, ein SELL abzulehnen");
+  pruefe1("das Meta-Urteil wird wieder ungeprueft uebernommen",
+    /decisions\.set\(schluessel\(r\?\.symbol\), pruefeMetaUrteil\(r\)\)/.test(agentQ)
+    && !/approve: r\.approve/.test(agentQ));
+  pruefe1("der finalScore der Freigabe mischt wieder zwei Skalen",
+    /finalScore: \(opp\.finalScore \+ angepasst\) \/ 2/.test(agentQ));
 
   // ══ DIE ZUORDNUNG DER META-URTEILE (09.09.) ══════════════════════════════
   //

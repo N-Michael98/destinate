@@ -61,34 +61,60 @@ async function runMetaAnalysis(candidates: ScannerOpportunity[]): Promise<Map<st
     const ai = getAI();
 
     // Alle Top-Kandidaten in einem einzigen AI-Call bewerten (günstiger)
+    // FEHLENDE WERTE BLEIBEN FEHLEND (16.09.). Hier stand `rsi: … ?? 0` —
+    // ein fehlender RSI kam als "RSI 0" an, also extrem ueberverkauft, und die
+    // Regel darunter nennt genau das einen Grund, ein SELL abzulehnen. Dieselbe
+    // Fehlerklasse wie `riskScore ?? 50`.
     const candidateSummary = candidates.map(c => ({
       symbol: c.symbol,
       direction: c.gpt.direction,
       confidence: c.gpt.confidence,
-      finalScore: c.finalScore,
-      taSignal: c.taSignals?.signal ?? "N/A",
-      rsi: c.taSignals?.rsi ?? 0,
-      trend: c.taSignals?.trend ?? "N/A",
-      riskApproved: c.claude.approved,
+      taSignal: c.taSignals?.signal ?? null,
+      rsi: typeof c.taSignals?.rsi === "number" ? c.taSignals.rsi : null,
+      trend1D: c.taSignals?.trend ?? null,
       riskScore: c.claude.riskScore,
     }));
 
+    // ── DIE REGELN SIND DIE DES ANALYSTEN (16.09.) ─────────────────────────
+    //
+    // Bis heute stand hier "TA-Signal muss mit Direction übereinstimmen". Der
+    // GPT-Prompt erlaubt BUY aber ausdruecklich bei "1D trend=BULLISH ODER
+    // signal=BUY" — ein regelkonformes Signal mit bullishem Trend und
+    // neutralem TA-Signal konnte hier also sterben. Zwei Tore mit
+    // widersprechenden Regeln: genau das, was der Nutzer ausgeschlossen hat.
+    //
+    // Entfallen:
+    //  - "Score < 0.65 → ablehnen": finalScore liegt bei ~50–110. Die Regel
+    //    griff nie — oder das Modell las sie falsch. finalScore geht nicht mehr
+    //    in die Anfrage.
+    //  - "Confidence < 72 → reduzieren": eine eigene, fest eingebaute Schwelle
+    //    neben der vom Nutzer eingestellten. Die Confidence-Grenze setzt der
+    //    Orchestrator.
+    //  - `riskApproved`: jeder Kandidat hier IST freigegeben (goSignal).
     const msg = await ai.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
       messages: [{
         role: "user",
-        content: `Meta-Analyse von ${candidates.length} Handelssignalen:
+        content: `Meta-Analyse von ${candidates.length} Handelssignalen.
+
+Du bist die GEGENPRÜFUNG eines Analysten, keine zweite Bewertung. Jedes Signal hat
+die Analyse, die Risiko-Freigabe und die Mindest-Confidence bereits bestanden.
 
 ${JSON.stringify(candidateSummary, null, 2)}
 
-Bewerte jeden Kandidaten. Achte auf:
-- RSI Überkauft (>70 BUY = riskant) / Überverkauft (<30 SELL = riskant)
-- TA-Signal muss mit Direction übereinstimmen
-- Confidence < 72 → adjustedConfidence reduzieren
-- Score < 0.65 → ablehnen
+Lehne ab (approve=false), wenn EINE dieser Regeln verletzt ist:
+- BUY bei rsi > 70, oder SELL bei rsi < 30 (Überdehnung gegen die Richtung).
+- BUY, obwohl weder trend1D=BULLISH noch taSignal=BUY/STRONG_BUY.
+- SELL, obwohl weder trend1D=BEARISH noch taSignal=SELL/STRONG_SELL.
+Das sind die Regeln des Analysten selbst. Ein NEUTRALES taSignal ist KEIN
+Ablehnungsgrund, wenn trend1D zur Richtung passt. Ein Wert null heisst "nicht
+gemessen" und ist ebenfalls KEIN Ablehnungsgrund.
 
-Antworte NUR mit JSON Array:
+adjustedConfidence: übernimm die Confidence. Senke sie nur für einen konkreten
+Grund, den du in "concern" nennst. Erhöhe sie nie.
+
+Antworte NUR mit JSON Array, ein Eintrag je Symbol:
 [{"symbol":"X","approve":true,"adjustedConfidence":75,"concern":"kurz","priority":"HIGH"}]`
       }]
     });
@@ -96,14 +122,11 @@ Antworte NUR mit JSON Array:
     const text = (msg.content[0] as { type: string; text: string }).text.trim();
     const json = text.match(/\[[\s\S]*\]/)?.[0];
     if (json) {
-      const results = JSON.parse(json) as Array<MetaAnalysisDecision & { symbol: string }>;
+      const geparst: unknown = JSON.parse(json);
+      const results = (Array.isArray(geparst) ? geparst : []) as Array<Record<string, unknown>>;
       for (const r of results) {
-        decisions.set(schluessel(r.symbol), {
-          approve: r.approve,
-          adjustedConfidence: r.adjustedConfidence,
-          concern: r.concern,
-          priority: r.priority,
-        });
+        // Geprueft statt uebernommen (16.09.) — siehe pruefeMetaUrteil().
+        decisions.set(schluessel(r?.symbol), pruefeMetaUrteil(r));
       }
       // ── Verfehlte Zuordnung MUSS auffallen (09.09.) ──────────────────────
       //
@@ -190,13 +213,48 @@ export interface AnalysisAgentResult {
  * Ein unbrauchbarer Wert lässt die Confidence deshalb UNVERÄNDERT — das ist der
  * konservative Ausgang: es gilt weiter, was GPT selbst gesagt hat, und die
  * Untergrenze der Signalkette greift danach wie bei jedem anderen Signal.
- * Brauchbare Werte werden auf 0–100 geklemmt; ausserhalb liegt kein sinnvoller
- * Prozentwert.
+ *
+ * ── NUR NOCH SENKEN (16.09.) ──────────────────────────────────────────────
+ * Bis heute wurde auf 0–100 geklemmt — ein ANHEBEN war also erlaubt, und der
+ * Pruefer schrieb es sogar fest (`gc(75, 70) === 75`). Damit konnte die
+ * Meta-KI ein Signal, das GPT mit 72 bewertet hatte, auf 80 setzen, und der
+ * Orchestrator rechnete mit 80: die vom Nutzer eingestellte Schwelle (76)
+ * waere umgangen. Die Meta-KI ist die GEGENPRUEFUNG der Analyse, keine zweite
+ * Bewertung, die sie ueberstimmen darf — Entscheidung des Nutzers vom 16.09.:
+ * keine widerspruechlichen Ergebnisse zwischen den Toren. Deshalb gilt jetzt
+ * dieselbe Regel wie beim Risiko der Ausfuehrungs-KI: senken ja, anheben nie.
+ *
+ * Nur Zahlen und Zahlen-Texte zaehlen; `true` ist keine Confidence (Number(true)
+ * waere 1).
  */
 export function gepruefteConfidence(roh: unknown, ausgangswert: number): number {
-  const n = Number(roh);
-  if (roh === null || roh === "" || !Number.isFinite(n)) return ausgangswert;
-  return Math.min(100, Math.max(0, n));
+  const n = typeof roh === "number" ? roh
+    : typeof roh === "string" && roh.trim() !== "" ? Number(roh)
+    : NaN;
+  if (!Number.isFinite(n)) return ausgangswert;
+  return Math.max(0, Math.min(ausgangswert, n));
+}
+
+/**
+ * Das Urteil der Meta-KI fuer EINEN Kandidaten, geprueft (16.09.).
+ *
+ * `approve: r.approve` wurde ungeprueft uebernommen, und abgefragt wurde
+ * `!meta.approve` — ein Text "false" ist wahr und haette FREIGEGEBEN. Jetzt
+ * gilt nur `true` als Zustimmung; alles andere ist eine Ablehnung MIT Grund,
+ * damit sie in der Zyklus-Bilanz nicht wie ein inhaltliches Urteil aussieht.
+ */
+export function pruefeMetaUrteil(r: unknown): MetaAnalysisDecision {
+  const o = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
+  const lesbar = typeof o.approve === "boolean";
+  const priority = o.priority === "HIGH" || o.priority === "LOW" ? o.priority : "MEDIUM";
+  return {
+    approve: o.approve === true,
+    adjustedConfidence: typeof o.adjustedConfidence === "number" ? o.adjustedConfidence : NaN,
+    concern: lesbar
+      ? String(o.concern ?? "")
+      : `Urteil unlesbar (approve=${JSON.stringify(o.approve ?? null)})`,
+    priority,
+  };
 }
 
 export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<AnalysisAgentResult> {
@@ -297,7 +355,11 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
     const enriched: ScannerOpportunity = {
       ...opp,
       gpt: { ...opp.gpt, confidence: angepasst },
-      finalScore: (opp.finalScore + angepasst / 100) / 2,
+      // Skala korrigiert (16.09.): hier stand `angepasst / 100`. finalScore
+      // liegt bei ~50–110, die Confidence bei 0–100 — geteilt durch 100
+      // halbierte die Zeile den Score nur. Gelesen wird der Wert nachweislich
+      // nirgends weiter (Orchestrator sortiert nicht danach).
+      finalScore: (opp.finalScore + angepasst) / 2,
     };
     approved.push(enriched);
     meldeTorEntscheidung(AGENT_ID, {
