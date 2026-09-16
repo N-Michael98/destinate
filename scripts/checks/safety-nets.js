@@ -1756,6 +1756,95 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DER AGENT-BUS IST EIN BUS — FUER DEN GANZEN PROZESS (16.09.) ═════════
+  //
+  // Vorher: `export const agentBus = new AgentBus()` (modul-scoped, dasselbe
+  // Muster wie Killswitch 28.07. und Preis-Cache 26.08.), und
+  // `Promise.resolve(h(event))` liess einen SYNCHRON werfenden Empfaenger den
+  // Sender mitreissen. Nachgebildet wie in `preis-cache`: das Modul wird
+  // ZWEIMAL geladen, gesendet wird ueber die eine Kopie, empfangen ueber die
+  // andere.
+  {
+    const altBus = global.__agent_bus__;
+    delete global.__agent_bus__;
+    try {
+      const kopieA = ladeTsModul("lib/agents/agent-bus.ts");
+      const kopieB = ladeTsModul("lib/agents/agent-bus.ts");
+      if (kopieA.fehler || kopieB.fehler) {
+        funde.push(`agent-bus.ts nicht ausfuehrbar: ${kopieA.fehler ?? kopieB.fehler}`);
+        zusatz++;
+      } else {
+        const busA = kopieA.exports.agentBus;
+        const busB = kopieB.exports.agentBus;
+        torPruefung("zwei Modulkopien haben zwei verschiedene Busse — Sender und Empfaenger reden aneinander vorbei",
+          busA === busB && global.__agent_bus__ === busA,
+          "der Bus gehoert auf global (28.07. Killswitch, 26.08. Preis-Cache)");
+
+        const stille = console.error;
+        const stilleLog = console.log;
+        console.error = () => {};
+        console.log = () => {};
+        let empfangen = 0;
+        let warf = null;
+        try {
+          busB.subscribe("CYCLE:FINISHED", () => { throw new Error("synchron kaputt"); });
+          busB.subscribe("CYCLE:FINISHED", async () => { throw new Error("asynchron kaputt"); });
+          busB.subscribe("CYCLE:FINISHED", () => { empfangen++; });
+          try {
+            busA.publish({ type: "CYCLE:FINISHED", agentId: "Pruefstand", timestamp: "x", payload: {} });
+          } catch (e) { warf = e.message; }
+          // Der asynchrone Fehler wird erst im naechsten Takt protokolliert —
+          // vorher die Konsole zurueckzusetzen, liess Stapelspuren in die
+          // Pruefer-Ausgabe laufen.
+          await new Promise((r) => setImmediate(r));
+        } finally {
+          console.error = stille;
+          console.log = stilleLog;
+        }
+        torPruefung("ein synchron werfender Empfaenger reisst den SENDER mit",
+          warf === null, `publish() warf: ${warf}`);
+        torPruefung("nach einem werfenden Empfaenger werden die uebrigen nicht mehr beliefert",
+          empfangen === 1, `${empfangen} Zustellungen, erwartet 1`);
+
+        // Das Ereignisprotokoll bleibt begrenzt.
+        console.log = () => {};
+        try {
+          for (let i = 0; i < 700; i++) {
+            busA.publish({ type: "RISK:HEARTBEAT", agentId: "Pruefstand", timestamp: String(i), payload: {} });
+          }
+        } finally { console.log = stilleLog; }
+        const log = busA.getRecentEvents(undefined, 10_000);
+        torPruefung("das Ereignisprotokoll des Busses waechst unbegrenzt",
+          log.length === 500, `${log.length} Eintraege nach ueber 700 Ereignissen`);
+
+        // Die Tor-Meldung wirft nie und kommt an.
+        const melde = kopieA.exports.meldeTorEntscheidung;
+        let torEmpfangen = null;
+        busB.subscribe("GATE:DECISION", (ev) => { torEmpfangen = ev.payload; });
+        let torWarf = false;
+        try { melde("Pruefstand", { gate: "Meta-KI", symbol: "EURUSD", approve: false, reason: "test" }); }
+        catch { torWarf = true; }
+        torPruefung("eine Tor-Entscheidung kommt nicht ueber den Bus an",
+          !torWarf && torEmpfangen && torEmpfangen.gate === "Meta-KI" && torEmpfangen.approve === false,
+          JSON.stringify(torEmpfangen));
+      }
+    } finally {
+      if (altBus === undefined) delete global.__agent_bus__;
+      else global.__agent_bus__ = altBus;
+    }
+    const busCode = read("frontend/lib/agents/agent-bus.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("der Bus wird wieder modul-scoped angelegt",
+      /export const agentBus: AgentBus = \(global\.__agent_bus__ \?\?= new AgentBus\(\)\);/.test(busCode)
+      && !/export const agentBus\s*=\s*new AgentBus\(\)/.test(busCode));
+    const exAblehnung = read("frontend/lib/agents/execution-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("eine KI-Ablehnung wird wieder als geschlossener Trade gemeldet",
+      !/EXECUTION:TRADE_CLOSED/.test(exAblehnung)
+      && /meldeTorEntscheidung\(AGENT_ID, \{\s*gate: "Ausfuehrungs-KI"/.test(exAblehnung),
+      "es war nie ein Trade offen");
+  }
+
   // ══ DIE AUSFUEHRUNGS-KI DARF DAS RISIKO NUR SENKEN (16.09.) ══════════════
   //
   // `riskPercent: aiDecision.adjustedRiskPercent ?? req.riskPercent` ersetzte

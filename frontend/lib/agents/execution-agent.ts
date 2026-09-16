@@ -10,7 +10,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { agentBus } from "./agent-bus";
+import { agentBus, meldeTorEntscheidung } from "./agent-bus";
 import { executeCapitalDemoOrder, type ExecutionRequest, type ExecutionResult } from "../capital-com/capital-com-execution";
 
 const AGENT_ID = "ExecutionAgent";
@@ -145,11 +145,15 @@ export async function runExecutionAgent(req: ExecutionAgentRequest): Promise<Exe
 
   if (!aiDecision.approve) {
     console.log(`[exec-agent] ❌ AI hat abgelehnt: ${aiDecision.reason}`);
-    agentBus.publish({
-      type: "EXECUTION:TRADE_CLOSED",
-      agentId: AGENT_ID,
-      timestamp: new Date().toISOString(),
-      payload: { symbol: req.symbol, direction: req.direction, reason: "AI_REJECTED", aiReason: aiDecision.reason },
+    // Eine Ablehnung ist eine TOR-ENTSCHEIDUNG, kein geschlossener Trade (16.09.).
+    // Hier stand `EXECUTION:TRADE_CLOSED` — es war aber nie ein Trade offen.
+    meldeTorEntscheidung(AGENT_ID, {
+      gate: "Ausfuehrungs-KI",
+      symbol: req.symbol,
+      direction: req.direction,
+      approve: false,
+      reason: String(aiDecision.reason ?? "ohne Begruendung"),
+      confidence: req.confidence,
     });
     return {
       ok: false,
