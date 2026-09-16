@@ -686,6 +686,41 @@ export function rrVerteilung(
  * Risiko-Score gar nicht. Deshalb steht die Herkunft jetzt auch in der
  * Ablehnungs-Zeile im Log — sonst wäre der genannte Grund nicht einzuordnen.
  */
+/**
+ * Wird Claude fuer dieses Signal gefragt? (16.09., Entscheidung des Nutzers)
+ *
+ * GEMESSEN am 16.09. 20:29–20:30: die EINZIGEN `await`s im Markt-Loop sind die
+ * Claude-Aufrufe, und sie liefen fuer USDJPY 66, EURJPY 60 und GBPJPY 62 —
+ * rund 30 Sekunden bis zum Trichter. Keines dieser Signale konnte je handeln:
+ * `goSignal` verlangt `confidence >= MIN_SIGNAL_CONFIDENCE`, und zwischen
+ * Claude und `goSignal` hebt nichts die Confidence an (nachgelesen). Claudes
+ * Urteil wirkte dort nur auf `finalScore`, also die Rangfolge der Anzeige.
+ *
+ * REIHENFOLGE ist Absicht:
+ *   1. kein handelbares Signal (WAIT oder kein Stop) -> nichts zu fragen
+ *   2. unter der Untergrenze -> kann nicht freigegeben werden
+ *   3. erst dann: ist ueberhaupt ein Schluessel da?
+ * Vorher zaehlte ein Signal unter 70 ohne Schluessel als "handelbar ohne
+ * Claude" — es war aber gar nicht handelbar.
+ *
+ * `!(x >= grenze)` statt `x < grenze`: eine NaN-Confidence wird NICHT gefragt.
+ * Sie kann auch nicht freigegeben werden, und Claude zu bezahlen, um das zu
+ * erfahren, waere dieselbe Verschwendung.
+ */
+export type ClaudeWeg = "FRAGEN" | "KEIN_SIGNAL" | "UNTER_GRENZE" | "KEIN_SCHLUESSEL";
+
+export function claudeFragen(s: {
+  hatSchluessel: boolean;
+  direction: string;
+  stopLoss: number;
+  confidence: number;
+}): ClaudeWeg {
+  if (s.direction === "WAIT" || !(s.stopLoss > 0)) return "KEIN_SIGNAL";
+  if (!(s.confidence >= MIN_SIGNAL_CONFIDENCE)) return "UNTER_GRENZE";
+  if (!s.hatSchluessel) return "KEIN_SCHLUESSEL";
+  return "FRAGEN";
+}
+
 function simulateClaude(gpt: GPTMarketAnalysis, markt: { bid: number; ask: number }): ClaudeRiskAssessment {
   const rrRatio = realesChanceRisiko(gpt, markt);
   const riskScore = Math.max(10, 80 - gpt.confidence);
@@ -1159,6 +1194,8 @@ each market's own data, never from habit or from these examples' direction:
   // Schlüssel — siehe die Begründung dort.
   let ohneClaudeKeinSchluessel = 0;   // gar kein ANTHROPIC_API_KEY gesetzt
   let ohneClaudeAusfall = 0;          // Schlüssel da, Aufruf fehlgeschlagen
+  /** Richtungssignale unter der Untergrenze — Claude bewusst NICHT gefragt (16.09.). */
+  const claudeUnterGrenze: string[] = [];
   // Wie viele abgelehnte Signale verletzten dabei GPTs eigene Prompt-Regeln?
   // Trennt "der Markt gibt nichts her" von "das Modell haelt sich nicht daran".
   let promptVerstossZaehler = 0;
@@ -1420,7 +1457,14 @@ each market's own data, never from habit or from these examples' direction:
 
     // Claude Risk Assessment
     let claude: ClaudeRiskAssessment;
-    if (hasClaude && gpt.direction !== "WAIT" && gpt.stopLoss > 0) {
+    // Nur fragen, wo das Urteil etwas entscheiden KANN (16.09.) — claudeFragen().
+    const claudeWeg = claudeFragen({
+      hatSchluessel: hasClaude,
+      direction: gpt.direction,
+      stopLoss: gpt.stopLoss,
+      confidence: gpt.confidence,
+    });
+    if (claudeWeg === "FRAGEN") {
       // Am ECHTEN Einstiegskurs gerechnet, nicht an GPTs genannter Zahl —
       // siehe realesChanceRisiko(). Claude bekommt denselben Wert zu sehen.
       const rrRatio = realesChanceRisiko(gpt, market);
@@ -1541,7 +1585,9 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     } else {
       // Nur zählen, wenn ein HANDELBARES Signal vorlag. Bei direction=WAIT ist
       // der Rückfall der Normalfall (23 von 30 Märkten) und keine Meldung wert.
-      if (!hasClaude && gpt.direction !== "WAIT" && gpt.stopLoss > 0) ohneClaudeKeinSchluessel++;
+      // Seit 16.09. zaehlt "handelbar" erst ab der Untergrenze — siehe claudeFragen().
+      if (claudeWeg === "KEIN_SCHLUESSEL") ohneClaudeKeinSchluessel++;
+      if (claudeWeg === "UNTER_GRENZE") claudeUnterGrenze.push(`${market.symbol} ${gpt.confidence}`);
       claude = simulateClaude(gpt, market);
     }
 
@@ -1860,6 +1906,17 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       + `es galt der REGELBASIERTE Rückfall, und der prüft den Risiko-Score nicht. `
       + `Der Schlüssel IST hinterlegt; die Aufrufe sind fehlgeschlagen — Grund `
       + `steht in den ⛔-Zeilen oben (HTTP-Status und Antworttext).`
+    );
+  }
+  // Bewusst nicht gefragt — KEIN Ausfall, deshalb `log` statt `warn`. Die Zeile
+  // steht da, damit sichtbar bleibt, wie viele Richtungssignale GPT unter der
+  // Untergrenze liefert (am 16.09.: alle drei nach den Vetos).
+  if (claudeUnterGrenze.length > 0) {
+    console.log(
+      `[ai-engine] ⏭️ Claude nicht gefragt für ${claudeUnterGrenze.length} Richtungssignal(e) `
+      + `unter der Untergrenze ${MIN_SIGNAL_CONFIDENCE}: ${claudeUnterGrenze.join(", ")} — `
+      + `sie können nicht freigegeben werden; regelbasiert bewertet (CLAUDE_SIMULATED), `
+      + `wirkt nur auf die Anzeige-Rangfolge.`
     );
   }
 

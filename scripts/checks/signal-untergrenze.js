@@ -536,6 +536,79 @@ module.exports = function pruefe() {
       "sonst kann die Sammlung etwas anderes behaupten als die Zeile darüber");
     pruefe1("die Ablehnungs-Meldung nutzt die abgeleiteten Bedingungen nicht",
       /if\s*\(\s*rrZuKlein\s*\)/.test(ohneKomm) && /if\s*\(\s*scoreZuHoch\s*\)/.test(ohneKomm));
+
+    // ══ Claude erst ab der Untergrenze (16.09.) ═══════════════════════════════
+    //
+    // Gemessen am 16.09.: Claude lief fuer USDJPY 66, EURJPY 60, GBPJPY 62 —
+    // rund 30 s pro Zyklus fuer Signale, die `goSignal` nie freigeben kann.
+    // Entscheidung des Nutzers: erst ab MIN_SIGNAL_CONFIDENCE fragen.
+    //
+    // Der Beweis, dass sich AM HANDEL NICHTS aendert, ist eine vollstaendige
+    // Wahrheitstabelle: die neue Entscheidung darf von der alten
+    // (`hasClaude && direction !== "WAIT" && stopLoss > 0`) NUR dort abweichen,
+    // wo die Confidence unter der Untergrenze liegt. Ein Signal ab der
+    // Untergrenze, das seine echte Claude-Pruefung verliert, waere eine
+    // stille Lockerung — der Rueckfall prueft den Risiko-Score nicht.
+    const cf = engineModul.exports.claudeFragen;
+    if (typeof cf !== "function") {
+      funde.push("claudeFragen wird nicht exportiert — wann Claude fragt, waere ungeprueft");
+      geprueft++;
+    } else {
+      const sicherCf = (s) => { try { return cf(s); } catch (e) { return `WIRFT(${e.message})`; } };
+      const abweichungen = [];
+      const verloren = [];
+      let faelle = 0;
+      for (const hatSchluessel of [true, false]) {
+        for (const direction of ["BUY", "SELL", "WAIT"]) {
+          for (const stopLoss of [0, -1, NaN, 1.2345]) {
+            for (const confidence of [0, 59, grenze - 1, grenze - 0.01, grenze, grenze + 0.5, 76, 95, NaN]) {
+              faelle++;
+              const alt = hatSchluessel && direction !== "WAIT" && stopLoss > 0;
+              const weg = sicherCf({ hatSchluessel, direction, stopLoss, confidence });
+              const neu = weg === "FRAGEN";
+              const abGrenze = confidence >= grenze;
+              if (neu !== (alt && abGrenze)) abweichungen.push(`${hatSchluessel}/${direction}/${stopLoss}/${confidence} -> ${weg}`);
+              if (alt && abGrenze && !neu) verloren.push(`${direction} conf ${confidence}`);
+            }
+          }
+        }
+      }
+      pruefe1("ein Signal AB der Untergrenze wird Claude nicht mehr vorgelegt — stille Lockerung",
+        verloren.length === 0, verloren.slice(0, 4).join(", "));
+      pruefe1("die Claude-Entscheidung weicht ausserhalb der Untergrenze von der alten ab",
+        abweichungen.length === 0,
+        `${abweichungen.length} von ${faelle}: ${abweichungen.slice(0, 3).join(" ; ")}`);
+
+      // Die Gruende muessen stimmen — sie fuettern zwei verschiedene Meldungen.
+      const g = (h, d, sl, c) => sicherCf({ hatSchluessel: h, direction: d, stopLoss: sl, confidence: c });
+      pruefe1("ein Signal unter der Untergrenze ohne Schluessel gilt als 'handelbar ohne Claude'",
+        g(false, "BUY", 1, grenze - 1) === "UNTER_GRENZE",
+        "es war nie handelbar — die Warnung 'Kein Anthropic-Schluessel' waere falsch");
+      pruefe1("ein handelbares Signal ohne Schluessel wird nicht als solches erkannt",
+        g(false, "SELL", 1, grenze) === "KEIN_SCHLUESSEL");
+      pruefe1("WAIT oder fehlender Stop wird nicht als 'kein Signal' erkannt",
+        g(true, "WAIT", 1, 90) === "KEIN_SIGNAL" && g(true, "BUY", 0, 90) === "KEIN_SIGNAL"
+        && g(true, "BUY", NaN, 90) === "KEIN_SIGNAL");
+      pruefe1("eine unbrauchbare Confidence wird Claude vorgelegt",
+        g(true, "BUY", 1, NaN) === "UNTER_GRENZE");
+
+      // Verdrahtung: der Claude-Aufruf haengt an genau dieser Entscheidung.
+      const cBlock = (ohneKomm.match(/const claudeWeg = claudeFragen\(\{[\s\S]*?\}\);\s*if \(claudeWeg === "FRAGEN"\) \{/) || [""])[0];
+      pruefe1("der Claude-Aufruf haengt nicht an claudeFragen()",
+        cBlock !== "" && /confidence: gpt\.confidence/.test(cBlock) && /hatSchluessel: hasClaude/.test(cBlock));
+      const vorEntscheidung = ohneKomm.slice(0, ohneKomm.indexOf("const claudeWeg = claudeFragen("));
+      pruefe1("Claude wird irgendwo VOR der Entscheidung gerufen",
+        !/await callClaude\(/.test(vorEntscheidung));
+      pruefe1("die Gruende fuettern nicht die richtigen Meldungen",
+        /if \(claudeWeg === "KEIN_SCHLUESSEL"\) ohneClaudeKeinSchluessel\+\+;/.test(ohneKomm)
+        && /if \(claudeWeg === "UNTER_GRENZE"\) claudeUnterGrenze\.push\(/.test(ohneKomm)
+        && /if \(claudeUnterGrenze\.length > 0\) \{\s*console\.log\(/.test(ohneKomm),
+        "sonst verschwinden die uebersprungenen Signale still");
+      // Und die Freigabe verlangt weiter selbst die Untergrenze — sonst waere
+      // der ganze Beweis oben hinfaellig.
+      pruefe1("goSignal verlangt die Untergrenze nicht mehr — dann braeuchte jedes Signal Claude",
+        /const goSignal = isRealAnalysis[\s\S]{0,200}?gpt\.confidence >= MIN_SIGNAL_CONFIDENCE/.test(ohneKomm));
+    }
   }
 
   return { titel: `Signal-Untergrenze (${geprueft} Prüfungen, Grenze ${grenze})`, funde };

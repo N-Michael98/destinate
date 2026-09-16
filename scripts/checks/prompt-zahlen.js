@@ -208,8 +208,18 @@ module.exports = function pruefe() {
   pruefe1("Ausfall und fehlender Schluessel laufen wieder in EINEN Zaehler",
     /ohneClaudeKeinSchluessel/.test(quell) && /ohneClaudeAusfall/.test(quell),
     "dann behauptet die Meldung eine Ursache, die sie nicht kennt");
+  // Seit 16.09. steht die Entscheidung in `claudeFragen()` (rechnend geprueft
+  // in signal-untergrenze: `hatSchluessel=false` -> "KEIN_SCHLUESSEL"). Hier
+  // wird die Verdrahtung gesichert: der Zaehler haengt an GENAU diesem Grund,
+  // und der Ausfall-Zaehler steht nicht an seiner Stelle. Kommentarbereinigt,
+  // weil die Begruendung oben beide Namen nennt.
+  const quellOhneKomm = quell
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
   pruefe1("der Zweig 'kein Schluessel' zaehlt nicht mehr getrennt",
-    /!hasClaude[\s\S]{0,120}?ohneClaudeKeinSchluessel\+\+/.test(quell));
+    /if \(claudeWeg === "KEIN_SCHLUESSEL"\) ohneClaudeKeinSchluessel\+\+;/.test(quellOhneKomm)
+    && !/claudeWeg === "KEIN_SCHLUESSEL"\) ohneClaudeAusfall/.test(quellOhneKomm)
+    && /if \(!s\.hatSchluessel\) return "KEIN_SCHLUESSEL";/.test(quellOhneKomm));
   // Und die Meldung selbst: der Ausfall-Fall darf NICHT behaupten, der
   // Schluessel fehle. Kommentare vorher weg — die Begruendung oben zitiert den
   // alten Wortlaut, und ein Pruefer, der seine eigene Erklaerung findet, prueft
