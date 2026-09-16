@@ -425,7 +425,8 @@ module.exports = async function pruefe() {
   // Strukturell: die teure Analyse muss VOR dem Ruecksprung stehen bleiben —
   // sonst rechnet der Zyklus wieder fuer nichts.
   torPruefung("ausserhalb der Session wird die Analyse wieder gerechnet",
-    /if \(blockNewTrades\) \{[\s\S]{0,600}?return;\s*\}\s*const analysisResult = await runAnalysisAgent/
+    // Seit 16.09. gibt der Ruecksprung seinen Grund zurueck (Zyklus-Bilanz).
+    /if \(blockNewTrades\) \{[\s\S]{0,600}?return(?: "[^"]*")?;\s*\}\s*const analysisResult = await runAnalysisAgent/
       .test(orch),
     "der Ruecksprung muss VOR runAnalysisAgent stehen, nicht danach");
   torPruefung("es steht nicht im Log, dass die Analyse ausgelassen wurde",
@@ -1843,6 +1844,172 @@ module.exports = async function pruefe() {
       !/EXECUTION:TRADE_CLOSED/.test(exAblehnung)
       && /meldeTorEntscheidung\(AGENT_ID, \{\s*gate: "Ausfuehrungs-KI"/.test(exAblehnung),
       "es war nie ein Trade offen");
+  }
+
+  // ══ DIE ZYKLUS-BILANZ HOERT DEN BUS WIRKLICH AB (16.09.) ═════════════════
+  //
+  // Die Bilanz ist der erste echte Empfaenger der Tor-Entscheidungen. Geprueft
+  // wird sie einmal VOLLSTAENDIG ueber den echten Bus: Zyklus-Start, Scan,
+  // Tore, Trade, Ende — und am Schluss muss die Tagessumme im (hier
+  // nachgebildeten) Redis stehen. Dazu die reinen Funktionen einzeln.
+  {
+    const altBus = global.__agent_bus__;
+    const altBilanz = global.__zyklus_bilanz__;
+    delete global.__agent_bus__;
+    delete global.__zyklus_bilanz__;
+    const speicher = new Map();
+    const gesendet = [];
+    const busModul = ladeTsModul("lib/agents/agent-bus.ts");
+    const bilanzModul = busModul.fehler ? busModul : ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts", {
+      "agent-bus": busModul.exports,
+      "redis-cache": {
+        cacheGet: async (k) => (speicher.has(k) ? JSON.parse(speicher.get(k)) : null),
+        cacheSet: async (k, v) => { speicher.set(k, JSON.stringify(v)); },
+      },
+      "telegram-sender": { sendTelegram: async (t) => { gesendet.push(t); return true; } },
+    });
+    try {
+      if (bilanzModul.fehler) {
+        funde.push(`zyklus-bilanz.ts nicht ausfuehrbar: ${bilanzModul.fehler}`);
+        zusatz++;
+      } else {
+        const B = bilanzModul.exports;
+        const bus = busModul.exports.agentBus;
+
+        // ── reine Funktionen ──
+        torPruefung("gleichartige Gruende werden nicht zusammengezaehlt",
+          B.grundSchluessel("Confidence 74 < Schwelle 76 (autoApprove 76, minConfidence 69)")
+          === B.grundSchluessel("Confidence 73 < Schwelle 77 (autoApprove 77, minConfidence 70)")
+          && B.grundSchluessel("Confidence 74 < Schwelle 76") === "Confidence # < Schwelle #",
+          B.grundSchluessel("Confidence 74 < Schwelle 76 (x)"));
+        torPruefung("der Handelstag ist nicht das UTC-Datum",
+          B.handelstag(new Date("2026-09-17T01:30:00+02:00")) === "2026-09-16"
+          && B.handelstag(new Date("2026-09-16T23:30:00Z")) === "2026-09-16");
+        const html = B.tagesbilanzText({
+          ...B.leereTagessumme("2026-09-16"), zyklen: 1,
+          tore: { "Schwelle": { ja: 0, nein: 1, fallback: 0, gruende: { "Confidence # < Schwelle # <b>&": 1 } } },
+        });
+        const tags = (html.match(/<[^>]*>/g) || []).filter((t) => t !== "<b>" && t !== "</b>");
+        torPruefung("ein Grund mit < oder & bricht die Telegram-Nachricht (HTML)",
+          tags.length === 0 && /&lt;b&gt;&amp;/.test(html), tags.join(" "));
+        torPruefung("ein reines Sperr-Tor zeigt ein irrefuehrendes '0 ja'",
+          /Schwelle: 1 nein/.test(html) && !/0 ja/.test(html));
+
+        // Tagessumme: neuer Tag setzt zurueck, gleicher Tag addiert, Eingabe bleibt unberuehrt.
+        const b1 = B.neueBilanz(0);
+        b1.ende = 60_000; b1.ausgang = "Keine freigegebenen Signale";
+        b1.scan = { maerkte: 30, gpt: { WAIT: 25, BUY: 3, SELL: 2 }, vetos: 2, stilVerworfen: 0,
+          unterGrenze: [66, 60, 62], go: 0, rrAbgelehnt: 0, claudeGefragt: 0,
+          regelbrueche: { "BUY an Resistance": 2 }, dauerMs: { GPT: 20000 },
+          kontext: { news: false, performance: true, mtfSymbole: 30 } };
+        B.bilanzVerbuchen(b1, { type: "GATE:DECISION", payload: { gate: "Meta-KI", approve: false, reason: "RSI 72" } });
+        B.bilanzVerbuchen(b1, { type: "GATE:DECISION", payload: { gate: "Meta-KI", approve: "false", reason: "Muell" } });
+        B.bilanzVerbuchen(b1, { type: "GATE:DECISION", payload: { gate: "Ausfuehrungs-KI", approve: true, reason: "fallback", fallback: true } });
+        const t1 = B.tagessummeAddieren(null, b1, "2026-09-16");
+        const t1Kopie = JSON.stringify(t1);
+        const t2 = B.tagessummeAddieren(t1, b1, "2026-09-16");
+        const t3 = B.tagessummeAddieren(t2, b1, "2026-09-17");
+        torPruefung("die Tagessumme zaehlt falsch",
+          t1.zyklen === 1 && t1.gpt.BUY === 3 && t1.vetos === 2 && t1.unterGrenze === 3
+          && t1.confMin === 60 && t1.confMax === 66 && t1.regelbrueche["BUY an Resistance"] === 2
+          && t2.zyklen === 2 && t2.gpt.WAIT === 50 && t2.ausgaenge["Keine freigegebenen Signale"] === 2,
+          JSON.stringify({ z1: t1.zyklen, z2: t2.zyklen, min: t1.confMin, max: t1.confMax }));
+        torPruefung("die Tagessumme veraendert ihre Eingabe",
+          JSON.stringify(t1) === t1Kopie, "sonst zaehlt ein wiederholter Aufruf doppelt");
+        torPruefung("ein neuer Handelstag beginnt nicht bei null",
+          t3.zyklen === 1 && t3.datum === "2026-09-17");
+        torPruefung("ein kaputtes Tor-Ereignis wird mitgezaehlt",
+          t1.tore["Meta-KI"]?.nein === 1 && t1.tore["Meta-KI"]?.ja === 0,
+          JSON.stringify(t1.tore["Meta-KI"]));
+        torPruefung("ein KI-Rueckfall wird als Zustimmung gezaehlt, ohne als Rueckfall zu erscheinen",
+          t1.tore["Ausfuehrungs-KI"]?.fallback === 1);
+        // Obergrenzen
+        const viel = B.neueBilanz(0);
+        for (let i = 0; i < 300; i++) {
+          B.bilanzVerbuchen(viel, { type: "GATE:DECISION", payload: { gate: "Schwelle", approve: false, reason: `Grund Nummer ${i} ${"x".repeat(i % 40)}` } });
+        }
+        const tViel = B.tagessummeAddieren(null, viel, "2026-09-16");
+        torPruefung("die Zyklus- oder Tagesbilanz waechst unbegrenzt",
+          viel.tore.length === 200 && Object.keys(tViel.tore["Schwelle"].gruende).length <= 26,
+          `${viel.tore.length} Tore, ${Object.keys(tViel.tore["Schwelle"].gruende).length} Gruende`);
+
+        // ── ein ganzer Zyklus ueber den ECHTEN Bus ──
+        const stilleLog = console.log;
+        const zeilen = [];
+        console.log = (...a) => { zeilen.push(a.join(" ")); };
+        try {
+          // GLEICHZEITIG und danach noch einmal — keiner darf doppelt anmelden.
+          // Die zweite Pruefung im Modul (nach dem await) schuetzt genau den
+          // gleichzeitigen Fall; ein Nacheinander-Test saehe ihn nie.
+          await Promise.all([B.bilanzAbonnieren(), B.bilanzAbonnieren()]);
+          await B.bilanzAbonnieren();
+          // Ein Scan AUSSERHALB eines Zyklus (Dashboard-Route) darf nicht zaehlen.
+          bus.publish({ type: "ANALYSIS:SCAN_DONE", agentId: "Route", timestamp: "", payload: { scan: b1.scan } });
+          bus.publish({ type: "CYCLE:STARTED", agentId: "OrchestratorAgent", timestamp: "", payload: {} });
+          bus.publish({ type: "ANALYSIS:SCAN_DONE", agentId: "AnalysisAgent", timestamp: "", payload: { scan: b1.scan } });
+          busModul.exports.meldeTorEntscheidung("AnalysisAgent", { gate: "Meta-KI", symbol: "EURUSD", approve: false, reason: "TA-Signal widerspricht" });
+          bus.publish({ type: "EXECUTION:TRADE_OPENED", agentId: "ExecutionAgent", timestamp: "", payload: { symbol: "GBPUSD", direction: "BUY" } });
+          bus.publish({ type: "CYCLE:FINISHED", agentId: "OrchestratorAgent", timestamp: "", payload: { ausgang: "1 Trade(s) eröffnet" } });
+          await new Promise((r) => setTimeout(r, 20));
+          // Nach dem Ende: ein verirrtes Ereignis darf keinen halben Zustand anlegen.
+          bus.publish({ type: "ANALYSIS:SCAN_DONE", agentId: "Route", timestamp: "", payload: { scan: b1.scan } });
+          bus.publish({ type: "GATE:DECISION", agentId: "Route", timestamp: "", payload: { gate: "Meta-KI", approve: false, reason: "x" } });
+        } finally { console.log = stilleLog; }
+        torPruefung("ausserhalb eines Zyklus bleibt ein halber Bilanz-Zustand haengen",
+          global.__zyklus_bilanz__ && global.__zyklus_bilanz__.aktuell === null,
+          "ein Ereignis ohne laufenden Zyklus gehoert zu keinem Zyklus");
+        const tag = B.handelstag();
+        const gespeichert = speicher.has(`zyklus:tag:${tag}`) ? JSON.parse(speicher.get(`zyklus:tag:${tag}`)) : null;
+        torPruefung("die Zyklus-Bilanz kommt nicht ueber den Bus zusammen",
+          gespeichert && gespeichert.zyklen === 1 && gespeichert.scans === 1 && gespeichert.trades === 1
+          && gespeichert.tore["Meta-KI"]?.nein === 1,
+          JSON.stringify(gespeichert && { z: gespeichert.zyklen, s: gespeichert.scans, t: gespeichert.trades }));
+        torPruefung("die Zeile pro Zyklus fehlt oder nennt den Ausgang nicht",
+          zeilen.filter((z) => z.startsWith("[zyklus] 📋")).length === 1
+          && zeilen.some((z) => /Ausgang: 1 Trade\(s\) eröffnet/.test(z) && /Meta-KI nein EURUSD/.test(z)),
+          zeilen.filter((z) => z.startsWith("[zyklus]")).join(" / ").slice(0, 160));
+
+        // Versand — auch an einem Tag OHNE Zyklus.
+        const ok = await B.tagesbilanzSenden("2000-01-01");
+        torPruefung("an einem Tag ohne Zyklus geht keine Bilanz raus",
+          ok === true && gesendet.length === 1 && /KEIN Handelszyklus/.test(gesendet[0]),
+          "genau diese Tage (Trade-Duerre) blieben bisher stumm");
+      }
+    } finally {
+      if (altBus === undefined) delete global.__agent_bus__; else global.__agent_bus__ = altBus;
+      if (altBilanz === undefined) delete global.__zyklus_bilanz__; else global.__zyklus_bilanz__ = altBilanz;
+    }
+
+    // ── Verdrahtung (kommentarbereinigt) ──
+    const oq = read("frontend/lib/agents/orchestrator-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const huelle = (oq.match(/export async function runOrchestratorCycle\(\): Promise<void> \{[\s\S]*?\n\}/) || [""])[0];
+    torPruefung("der Zyklus meldet Anfang oder Ende nicht an den Bus",
+      // `\} finally \{` UNMITTELBAR vor der Meldung. Die erste Fassung fand
+      // ein leeres `finally {}` und das FINISHED weiter unten — nach einem
+      // Absturz fehlte dann die Zyklus-Zeile (im Sabotage-Lauf entwischt).
+      /type: "CYCLE:STARTED"[\s\S]*ausgang = await zyklusInnen\(\);[\s\S]*\} finally \{\s*agentBus\.publish\(\{ type: "CYCLE:FINISHED"/.test(huelle),
+      "das Ende gehoert in finally — auch ein Absturz ist ein Ausgang");
+    torPruefung("ein Absturz wird verschluckt statt weitergeworfen",
+      /catch \(err\) \{[\s\S]*?throw err;/.test(huelle),
+      "instrumentation.ts meldet Abstuerze nur, wenn sie ankommen");
+    const innen = (oq.match(/async function zyklusInnen\(\): Promise<string> \{[\s\S]*?\n\}/) || [""])[0];
+    torPruefung("ein Ausgang des Zyklus nennt keinen Grund",
+      innen !== "" && !/\breturn;/.test(innen) && (innen.match(/return "/g) || []).length >= 12,
+      `${(innen.match(/return "/g) || []).length} benannte Ausgaenge`);
+    for (const [gate, mindestens] of [["Orchestrator-KI", 1], ["Walk-Forward", 1], ["Schwelle", 2], ["Stil-Limit", 1], ["Duplikat", 5], ["Filterkette", 1]]) {
+      const anz = (oq.match(new RegExp(`gate: "${gate}"`, "g")) || []).length;
+      torPruefung(`das Tor "${gate}" meldet seine Entscheidungen nicht`, anz >= mindestens, `${anz} Stellen, erwartet ${mindestens}`);
+    }
+    torPruefung("die gemeldete Orchestrator-Entscheidung kann von der wirksamen abweichen",
+      /approve: !!aiDecision\.proceed,/.test(oq) && /if \(!aiDecision\.proceed\) \{/.test(oq));
+    torPruefung("ein Broker-Fehler wird nicht gemeldet — oder eine KI-Ablehnung doppelt",
+      /if \(!execResult\.skippedByAI\) \{\s*agentBus\.publish\(\{ type: "EXECUTION:TRADE_FAILED"/.test(oq));
+    const iq = read("frontend/instrumentation.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die Tagesbilanz wird nicht nach Handelsschluss verschickt",
+      /cron\.schedule\("5 22 \* \* 1-5", async \(\) => \{[\s\S]{0,200}tagesbilanzSenden\(\)[\s\S]{0,120}\{ timezone: "UTC" \}\)/.test(iq),
+      "Handelsfenster endet Mo–Fr 22:00 UTC");
   }
 
   // ══ DIE AUSFUEHRUNGS-KI DARF DAS RISIKO NUR SENKEN (16.09.) ══════════════

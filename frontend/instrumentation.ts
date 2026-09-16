@@ -275,6 +275,22 @@ export async function register() {
             } catch { /* non-fatal */ }
           }, { timezone: "Europe/Zurich" });
           console.log("[instrumentation] Daily summary cron: täglich 20:00 Zürich");
+
+          // ── Zyklus-Tagesbilanz nach Handelsschluss (16.09.) ──────────────
+          //
+          // Der Bericht darueber geht NUR an Tagen mit geschlossenen Trades
+          // raus (`if (rows.length > 0)`) — waehrend der Trade-Duerre kam also
+          // gar nichts, und niemand erfuhr, WO die Signale starben. Er laeuft
+          // ausserdem um 20:00 Zuerich, das Handelsfenster endet aber erst um
+          // 22:00 UTC. Die Bilanz geht deshalb IMMER und NACH Handelsschluss
+          // raus. Reine Meldung; `tagesbilanzSenden` wirft nie.
+          cron.schedule("5 22 * * 1-5", async () => {
+            try {
+              const { tagesbilanzSenden } = await import("./lib/zyklus-bilanz/zyklus-bilanz");
+              await tagesbilanzSenden();
+            } catch { /* non-fatal */ }
+          }, { timezone: "UTC" });
+          console.log("[instrumentation] Zyklus-Tagesbilanz: Mo–Fr 22:05 UTC");
         } catch { /* non-fatal */ }
 
         // Position monitor every 2min — Capital.com + IC Markets parallel

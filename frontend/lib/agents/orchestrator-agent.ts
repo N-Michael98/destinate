@@ -12,7 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { agentBus } from "./agent-bus";
+import { agentBus, meldeTorEntscheidung } from "./agent-bus";
 import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 import { runAnalysisAgent } from "./analysis-agent";
 import { runExecutionAgent } from "./execution-agent";
@@ -544,7 +544,33 @@ export function wirksamerBypass(
   return Math.max(basisSchwelle, wert);
 }
 
+/**
+ * Ein Handelszyklus — mit Anfang und Ende auf dem Bus (16.09.).
+ *
+ * Die eigentliche Arbeit steht in `zyklusInnen()`. Jeder ihrer Ausgaenge gibt
+ * seinen GRUND zurueck; TypeScript erzwingt, dass keiner ohne bleibt. Die
+ * Zyklus-Bilanz (lib/zyklus-bilanz) hoert `CYCLE:STARTED/FINISHED` ab und
+ * zaehlt, wie oft ein Zyklus wo endet. Ein Absturz wird als Ausgang verbucht
+ * und danach unveraendert weitergeworfen — instrumentation.ts meldet ihn.
+ */
 export async function runOrchestratorCycle(): Promise<void> {
+  try {
+    const { bilanzAbonnieren } = await import("../zyklus-bilanz/zyklus-bilanz");
+    await bilanzAbonnieren();
+  } catch { /* die Messung darf den Zyklus nie verhindern */ }
+  agentBus.publish({ type: "CYCLE:STARTED", agentId: AGENT_ID, timestamp: new Date().toISOString(), payload: {} });
+  let ausgang = "Absturz";
+  try {
+    ausgang = await zyklusInnen();
+  } catch (err) {
+    ausgang = `Absturz: ${err instanceof Error ? err.message : String(err)}`;
+    throw err;
+  } finally {
+    agentBus.publish({ type: "CYCLE:FINISHED", agentId: AGENT_ID, timestamp: new Date().toISOString(), payload: { ausgang } });
+  }
+}
+
+async function zyklusInnen(): Promise<string> {
   console.log(`[orchestrator] Zyklus gestartet`);
 
   // ── 1. Broker + Mode prüfen ────────────────────────────────────────────────
@@ -552,12 +578,12 @@ export async function runOrchestratorCycle(): Promise<void> {
   const { getSettings } = await import("../settings/settings-store");
   if (!isCapitalConnected()) {
     console.log("[orchestrator] Capital nicht verbunden — Zyklus übersprungen");
-    return;
+    return "Capital nicht verbunden";
   }
   const settings = await getSettings();
   if (settings.botSettings.mode !== "AUTO") {
     console.log("[orchestrator] Modus nicht AUTO — Zyklus übersprungen");
-    return;
+    return "Modus nicht AUTO";
   }
 
   // ── 1b. Trading Session prüfen (London 08:00 + New York bis 22:00 UTC) ────
@@ -573,7 +599,7 @@ export async function runOrchestratorCycle(): Promise<void> {
       // Kein return — läuft weiter aber ExecutionAgent wird nicht aufgerufen (openCount >= maxConcurrent gesetzt)
     } else {
       console.log("[orchestrator] Ausserhalb Trading Session (Mo–Fr 08:00–22:00 UTC) — Zyklus übersprungen");
-      return;
+      return "Ausserhalb Handelszeit";
     }
   }
 
@@ -607,7 +633,7 @@ export async function runOrchestratorCycle(): Promise<void> {
   // 2-Minuten-Loop in instrumentation.ts).
   if (!posResult?.ok || !Array.isArray(posResult.positions)) {
     console.warn(`[orchestrator] ⛔ Offene Positionen nicht abrufbar (${posResult?.error ?? "Netzwerkfehler"}) — kein neuer Trade in diesem Zyklus`);
-    return;
+    return "Offene Positionen nicht abrufbar";
   }
 
   // Ausserhalb Session: keine neuen Trades
@@ -615,14 +641,14 @@ export async function runOrchestratorCycle(): Promise<void> {
 
   if (blockNewTrades && openCount === 0) {
     console.log("[orchestrator] Ausserhalb Session, keine offenen Positionen — Zyklus übersprungen");
-    return;
+    return "Ausserhalb Handelszeit, keine Positionen";
   }
   if (blockNewTrades && openCount > 0) {
     console.log(`[orchestrator] Ausserhalb Session — ${openCount} offene Positionen werden überwacht, kein neuer Trade`);
   }
   if (openCount >= maxConcurrent) {
     console.log(`[orchestrator] Max Positionen erreicht (${openCount}/${maxConcurrent}) — übersprungen`);
-    return;
+    return "Max. Positionen erreicht";
   }
   // Tageslimit — mit Bypass für sehr starke Signale.
   // Generalkontroll-Fund 30.07.: tradeLimitBypassScore stand in der Oberfläche
@@ -635,7 +661,7 @@ export async function runOrchestratorCycle(): Promise<void> {
   const dailyLimitReached = tradeLimitEnabled && dailyCount >= maxTradesPerDay;
   if (dailyLimitReached && bypassScore <= 0) {
     console.log(`[orchestrator] Tageslimit erreicht (${dailyCount}/${maxTradesPerDay}) — übersprungen`);
-    return;
+    return "Tageslimit erreicht";
   }
   if (dailyLimitReached) {
     console.log(`[orchestrator] Tageslimit erreicht (${dailyCount}/${maxTradesPerDay}) — nur noch Signale ab Score ${bypassScore}`);
@@ -645,7 +671,7 @@ export async function runOrchestratorCycle(): Promise<void> {
   const markets = await fetchMarkets(session.apiKey, session.cst, session.securityToken);
   if (!markets.length) {
     console.log("[orchestrator] Keine Marktdaten — übersprungen");
-    return;
+    return "Keine Marktdaten";
   }
 
   // ── 4. AnalysisAgent ──────────────────────────────────────────────────────
@@ -684,7 +710,7 @@ export async function runOrchestratorCycle(): Promise<void> {
       + "(daraus koennte kein Trade entstehen; Positionen werden weiter von der "
       + "2-Minuten-Schleife verwaltet). Scanner-Ansicht steht auf "
       + `${stand ?? "noch keinem Stand"}.`);
-    return;
+    return "Ausserhalb Handelszeit, Analyse ausgelassen";
   }
 
   const analysisResult = await runAnalysisAgent(markets);
@@ -698,7 +724,7 @@ export async function runOrchestratorCycle(): Promise<void> {
   // ── 4b. Kosten-Guard: AI-Entscheidung nur wenn sie etwas bewirken kann ────
   if (analysisResult.approved.length === 0) {
     console.log("[orchestrator] Keine approved Signale — Zyklus beendet (kein AI-Call)");
-    return;
+    return "Keine freigegebenen Signale";
   }
 
   // ── 5. OrchestratorAgent AI-Entscheidung ──────────────────────────────────
@@ -712,6 +738,14 @@ export async function runOrchestratorCycle(): Promise<void> {
     approvedSignals: analysisResult.approved.length,
   });
 
+  // Tor-Entscheidung melden (16.09.) — dieselbe Wahrheitspruefung wie die
+  // Bedingung darunter, damit Meldung und Wirkung nie auseinanderlaufen.
+  meldeTorEntscheidung(AGENT_ID, {
+    gate: "Orchestrator-KI",
+    approve: !!aiDecision.proceed,
+    reason: String(aiDecision.reason ?? "ohne Begruendung"),
+    fallback: aiDecision.reason === "fallback",
+  });
   if (!aiDecision.proceed) {
     console.log(`[orchestrator] AI hat Zyklus pausiert: ${aiDecision.reason}`);
     agentBus.publish({
@@ -720,7 +754,7 @@ export async function runOrchestratorCycle(): Promise<void> {
       timestamp: new Date().toISOString(),
       payload: { action: "CYCLE_PAUSED", reason: aiDecision.reason },
     });
-    return;
+    return "Orchestrator-KI pausiert";
   }
 
   // ── 6. Kandidaten filtern ──────────────────────────────────────────────────
@@ -778,6 +812,7 @@ export async function runOrchestratorCycle(): Promise<void> {
     if (ueberangepasst.includes(o.symbol)) {
       console.log(`[orchestrator] 🔬 ${o.symbol} übersprungen — Walk-Forward meldet Überanpassung`);
       verworfen.push(`${o.symbol}: Walk-Forward-Überanpassung`);
+      meldeTorEntscheidung(AGENT_ID, { gate: "Walk-Forward", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: "Überanpassungsverdacht" });
       return false;
     }
     if (o.gpt.confidence < threshold) {
@@ -787,6 +822,7 @@ export async function runOrchestratorCycle(): Promise<void> {
         ` minConfidence ${settings.riskSettings?.minConfidenceScore ?? 0}` +
         `${dailyLimitReached ? `, Tageslimit erreicht → Bypass ${bypassScore}` : ""})`
       );
+      meldeTorEntscheidung(AGENT_ID, { gate: "Schwelle", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: `Confidence ${o.gpt.confidence} < Schwelle ${threshold}`, confidence: o.gpt.confidence });
       return false;
     }
     const s = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
@@ -794,8 +830,10 @@ export async function runOrchestratorCycle(): Promise<void> {
     const grenze = (styleLimit as Record<string, number>)[s] ?? 999;
     if (heute >= grenze) {
       verworfen.push(`${o.symbol}: Tageslimit ${s} erreicht (${heute}/${grenze})`);
+      meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: `Tageslimit ${s} erreicht` });
       return false;
     }
+    meldeTorEntscheidung(AGENT_ID, { gate: "Schwelle", symbol: o.symbol, direction: o.gpt.direction, approve: true, reason: `Confidence ${o.gpt.confidence} >= Schwelle ${threshold}`, confidence: o.gpt.confidence });
     return true;
   });
 
@@ -805,7 +843,7 @@ export async function runOrchestratorCycle(): Promise<void> {
 
   if (!candidates.length) {
     console.log("[orchestrator] Keine Kandidaten nach Filter — Zyklus beendet");
-    return;
+    return "Keine Kandidaten nach Filter";
   }
 
   // ── 6b. Analysis-Engine Insights (rein additiv — null = kein Einfluss) ────
@@ -948,23 +986,28 @@ export async function runOrchestratorCycle(): Promise<void> {
 
       if (!pyrOn || maxPerSym <= 1) {
         console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Position bereits offen (Pyramiding aus)`);
+        meldeTorEntscheidung(AGENT_ID, { gate: "Duplikat", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: `Position bereits offen (Pyramiding aus)` });
         continue;
       }
       if (samePositions.length >= maxPerSym) {
         console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Limit ${samePositions.length}/${maxPerSym} Positionen pro Symbol erreicht`);
+        meldeTorEntscheidung(AGENT_ID, { gate: "Duplikat", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: `Limit ${samePositions.length}/${maxPerSym} Positionen pro Symbol erreicht` });
         continue;
       }
       if (samePositions.some(p => p.direction !== candidate.gpt.direction)) {
         console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — bestehende Position in Gegenrichtung (kein Hedging)`);
+        meldeTorEntscheidung(AGENT_ID, { gate: "Duplikat", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: `bestehende Position in Gegenrichtung (kein Hedging)` });
         continue;
       }
       if (candidate.gpt.confidence < pyrMinConf) {
         console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — Confidence ${candidate.gpt.confidence} unter Pyramiding-Schwelle ${pyrMinConf}`);
+        meldeTorEntscheidung(AGENT_ID, { gate: "Duplikat", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: `Confidence ${candidate.gpt.confidence} unter Pyramiding-Schwelle ${pyrMinConf}` });
         continue;
       }
       const ungesichert = samePositions.filter(p => !isProtected(p));
       if (ungesichert.length > 0) {
         console.log(`[orchestrator] ⏭ ${candidate.symbol} übersprungen — ${ungesichert.length} bestehende Position(en) noch nicht auf Breakeven`);
+        meldeTorEntscheidung(AGENT_ID, { gate: "Duplikat", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: `${ungesichert.length} bestehende Position(en) noch nicht auf Breakeven` });
         continue;
       }
       console.log(`[orchestrator] 🔼 ${candidate.symbol}: Pyramiding erlaubt — ${samePositions.length}/${maxPerSym} offen, alle auf BE+, Confidence ${candidate.gpt.confidence} >= ${pyrMinConf}`);
@@ -1009,6 +1052,7 @@ export async function runOrchestratorCycle(): Promise<void> {
     });
     if (!filterResult.allowed) {
       console.log(`[orchestrator] 🚫 ${candidate.symbol} GEBLOCKT [${filterResult.blockedBy}]: ${filterResult.reason}`);
+      meldeTorEntscheidung(AGENT_ID, { gate: "Filterkette", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: `${filterResult.blockedBy}: ${filterResult.reason}` });
       continue;
     }
 
@@ -1106,8 +1150,14 @@ export async function runOrchestratorCycle(): Promise<void> {
         ? `vom AI-Manager abgelehnt: ${execResult.aiReason}`
         : `Broker: ${execResult.capital?.error ?? execResult.icMarkets?.error ?? "ohne Fehlermeldung"}`;
       console.warn(`[orchestrator] ❌ ${candidate.symbol} nicht ausgeführt — ${brokerGrund}`);
+      // Eine KI-Ablehnung meldet der Ausfuehrungs-Agent selbst als Tor-Entscheidung.
+      if (!execResult.skippedByAI) {
+        agentBus.publish({ type: "EXECUTION:TRADE_FAILED", agentId: AGENT_ID, timestamp: new Date().toISOString(),
+          payload: { symbol: candidate.symbol, direction: candidate.gpt.direction, grund: brokerGrund } });
+      }
     }
   }
 
   console.log(`[orchestrator] Zyklus beendet — ${tradesThisCycle} Trade(s) ausgeführt`);
+  return tradesThisCycle > 0 ? `${tradesThisCycle} Trade(s) eröffnet` : "Alle Kandidaten gescheitert";
 }

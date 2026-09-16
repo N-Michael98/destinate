@@ -163,6 +163,18 @@ export async function runExecutionAgent(req: ExecutionAgentRequest): Promise<Exe
     };
   }
 
+  // Zustimmung melden (16.09.). "fallback" (KI-Ausfall) und "skip-validation"
+  // sind KEIN Urteil — sie heissen in der Bilanz Rueckfall.
+  meldeTorEntscheidung(AGENT_ID, {
+    gate: "Ausfuehrungs-KI",
+    symbol: req.symbol,
+    direction: req.direction,
+    approve: true,
+    reason: String(aiDecision.reason ?? ""),
+    fallback: aiDecision.reason === "fallback" || aiDecision.reason === "skip-validation",
+    confidence: req.confidence,
+  });
+
   // Risiko-Anpassung durch AI — nur nach unten, siehe wirksamesKiRisiko().
   const kiRisiko = wirksamesKiRisiko(req.riskPercent, aiDecision.adjustedRiskPercent);
   if (kiRisiko.hinweis) console.log(`[exec-agent] ${req.symbol}: ${kiRisiko.hinweis}`);

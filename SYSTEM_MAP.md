@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 454 · Kanten: 992
+Dateien mit internen Abhängigkeiten: 455 · Kanten: 998
 
 
 ## analysis-engine/api
@@ -693,6 +693,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 992
   - → `frontend/lib/settings/settings-store.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
   - → `frontend/lib/zyklus-alarm/zyklus-alarm.ts`
+  - → `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
 
 ## frontend/lib
 
@@ -745,6 +746,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 992
   - → `frontend/lib/settings/settings-store.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
   - → `frontend/lib/trading-filters/trade-filters.ts`
+  - → `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
 - `frontend/lib/agents/risk-agent.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/agent-bus.ts`
@@ -1118,6 +1120,7 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 992
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
   - → `frontend/lib/settings/settings-store.ts`
+  - → `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
 - `frontend/lib/market-universe/dynamic-market-data.ts`
   - → `frontend/lib/market-universe/opportunity-scanner.ts`
 - `frontend/lib/market-universe/market-regime-sync.ts`
@@ -1493,6 +1496,10 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 992
   - → `frontend/lib/trading-style-priority-engine/trading-style-priority-types.ts`
 - `frontend/lib/zyklus-alarm/zyklus-alarm.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
+  - → `frontend/lib/agents/agent-bus.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 
 ## frontend/proxy.ts
 
@@ -1505,11 +1512,11 @@ Dateien mit internen Abhängigkeiten: 454 · Kanten: 992
 - `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 21 Dateien
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
+- `frontend/lib/cache/redis-cache.ts` — von 15 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 15 Dateien
+- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
-- `frontend/lib/cache/redis-cache.ts` — von 14 Dateien
-- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 11 Dateien

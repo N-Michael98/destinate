@@ -601,7 +601,8 @@ module.exports = function pruefe() {
         !/await callClaude\(/.test(vorEntscheidung));
       pruefe1("die Gruende fuettern nicht die richtigen Meldungen",
         /if \(claudeWeg === "KEIN_SCHLUESSEL"\) ohneClaudeKeinSchluessel\+\+;/.test(ohneKomm)
-        && /if \(claudeWeg === "UNTER_GRENZE"\) claudeUnterGrenze\.push\(/.test(ohneKomm)
+        // Seit 16.09. ein Block (zusaetzlich die Confidence fuer die Zyklus-Bilanz).
+        && /if \(claudeWeg === "UNTER_GRENZE"\) \{?\s*claudeUnterGrenze\.push\(/.test(ohneKomm)
         && /if \(claudeUnterGrenze\.length > 0\) \{\s*console\.log\(/.test(ohneKomm),
         "sonst verschwinden die uebersprungenen Signale still");
       // Und die Freigabe verlangt weiter selbst die Untergrenze — sonst waere

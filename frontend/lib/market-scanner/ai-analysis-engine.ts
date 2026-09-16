@@ -3,6 +3,7 @@ import { getAISettings } from "../ai-config/ai-config-store";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
 import { MIN_SIGNAL_CONFIDENCE } from "../broker-config";
 import { pythonBackendAuthHeader } from "../python-backend/auth-header";
+import type { ScanDaten } from "../zyklus-bilanz/zyklus-bilanz";
 
 export interface GPTMarketAnalysis {
   symbol: string;
@@ -604,6 +605,83 @@ export function normalisiereStil(roh: unknown): GPTMarketAnalysis["tradingStyle"
   }
 }
 
+/**
+ * Die Richtung, wie GPT sie liefert — BUY, SELL, WAIT oder `null` (16.09.).
+ *
+ * `direction: gptData.direction as …` prueft nichts. Mehrere Stellen fragen
+ * `direction === "BUY" ? … : …` und behandeln damit JEDEN anderen Wert als
+ * SELL — ein "LONG" oder ein kleingeschriebenes "wait" liefe als Verkauf
+ * weiter. Vereinheitlicht wird nur Gross/Klein und Leerraum; "LONG" ist ein
+ * anderes Wort und wird nicht geraten.
+ */
+export function normalisiereRichtung(roh: unknown): "BUY" | "SELL" | "WAIT" | null {
+  if (typeof roh !== "string") return null;
+  const r = roh.trim().toUpperCase();
+  return r === "BUY" || r === "SELL" || r === "WAIT" ? r : null;
+}
+
+/**
+ * Wo widerspricht GPTs Antwort dem EIGENEN Prompt? (16.09., reine Messung)
+ *
+ * Gemessen am 16.09.: BUY USDJPY und USDCAD bei "1D trend bearish", BUY
+ * USDCHF und USDCAD "at resistance", und WAIT fuer EURUSD/GBPUSD/AUDUSD bei
+ * "at support, 1D bullish" — laut Prompt ein "textbook BUY setup". Das war
+ * EIN Zyklus. Diese Funktion zaehlt es in jedem, damit eine Prompt-Aenderung
+ * auf Zahlen beruht statt auf einem Einzelfall.
+ *
+ * Die Regeln sind dem Prompt WOERTLICH entnommen:
+ *   - "ONLY recommend BUY if 1D trend=BULLISH OR signal=BUY/STRONG_BUY"
+ *   - "ONLY recommend SELL if 1D trend=BEARISH OR signal=SELL/STRONG_SELL"
+ *   - "distToRes < 1.0 ATR → price is AT resistance → NO BUY"
+ *   - "distToSup < 1.0 ATR → price is AT support → NO SELL"
+ *   - "distToSup < 1.0 + 1D bullish → textbook BUY — take the BUY rather than WAIT"
+ *   - "distToRes < 1.0 + 1D bearish → textbook SELL — take the SELL rather than WAIT"
+ * Die letzten beiden erlauben "unless something else clearly contradicts it"
+ * — sie sind also HINWEISE, keine sicheren Verstoesse, und heissen so.
+ */
+export function gptRegelbrueche(e: {
+  richtung: unknown;
+  trend?: string | null;
+  signal?: string | null;
+  distRes?: number | null;
+  distSup?: number | null;
+}): string[] {
+  const r = normalisiereRichtung(e.richtung);
+  if (r === null) return ["Richtung unbekannt"];
+  const trend = String(e.trend ?? "").toUpperCase();
+  const signal = String(e.signal ?? "").toUpperCase();
+  const nahe = (x: number | null | undefined) =>
+    typeof x === "number" && Number.isFinite(x) && x >= 0 && x < 1.0;
+  const aus: string[] = [];
+  if (r === "BUY") {
+    if (trend !== "BULLISH" && signal !== "BUY" && signal !== "STRONG_BUY" && trend !== "") {
+      aus.push("BUY ohne bullishen 1D-Trend/Signal");
+    }
+    if (nahe(e.distRes)) aus.push("BUY an Resistance");
+  } else if (r === "SELL") {
+    if (trend !== "BEARISH" && signal !== "SELL" && signal !== "STRONG_SELL" && trend !== "") {
+      aus.push("SELL ohne bearishen 1D-Trend/Signal");
+    }
+    if (nahe(e.distSup)) aus.push("SELL an Support");
+  } else {
+    if (nahe(e.distSup) && trend === "BULLISH") aus.push("WAIT trotz Lehrbuch-BUY (Hinweis)");
+    if (nahe(e.distRes) && trend === "BEARISH") aus.push("WAIT trotz Lehrbuch-SELL (Hinweis)");
+  }
+  return aus;
+}
+
+/** Die Messdaten eines Scans haengen unsichtbar am Ergebnis (16.09.).
+ *  Nicht aufzaehlbar: die Route serialisiert das Ergebnis, und die Messung
+ *  gehoert nicht in die Antwort. Gelesen wird sie nur vom Analyse-Agenten,
+ *  der ausschliesslich im Handelszyklus laeuft. */
+const SCAN_DATEN = Symbol.for("zyklus-bilanz.scan");
+
+export function scanDatenVon(opps: unknown): ScanDaten | null {
+  if (!opps || typeof opps !== "object") return null;
+  const d = (opps as Record<symbol, unknown>)[SCAN_DATEN];
+  return d && typeof d === "object" ? (d as ScanDaten) : null;
+}
+
 /** Ein an der Risiko-Freigabe gescheitertes Signal, wie es die Verteilung sieht. */
 export type AbgelehntesRR = { symbol: string; rr: number; nurRR: boolean };
 
@@ -893,12 +971,19 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
   // ── TA-Lib (1D) + Strategy Signale + Multi-TF + Strategy Performance parallel
   const symbols = validMarkets.map(m => m.symbol).filter(Boolean);
+  // Dauer je Abruf fuer die Zyklus-Bilanz (16.09.) — reine Messung.
+  const scanDauer: Record<string, number> = {};
+  const messen = async <T,>(name: string, p: Promise<T>): Promise<T> => {
+    const begonnen = Date.now();
+    try { return await p; } finally { scanDauer[name] = Date.now() - begonnen; }
+  };
   const [taData, strategyData, mtfData, stratPerfSummary] = await Promise.all([
-    fetchTALibData(symbols),
-    fetchStrategySignals(symbols),
-    fetchMultiTimeframeSummary(symbols),
-    fetchStrategyPerformance(),
+    messen("TA", fetchTALibData(symbols)),
+    messen("Strategien", fetchStrategySignals(symbols)),
+    messen("MTF", fetchMultiTimeframeSummary(symbols)),
+    messen("Backtest", fetchStrategyPerformance()),
   ]);
+  let newsImPrompt = false;
 
   // ── Sicherheits-Check: GPT + TA-Lib müssen beide verfügbar sein ──────────
   // Kein GPT-Key → kein Trade. TA-Lib nicht geantwortet → kein Trade.
@@ -999,6 +1084,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
         }
         if (lines.length > 0) {
           newsBlock = `\n\nCURRENT NEWS & GEOPOLITICAL CONTEXT (risk overlay — reduce confidence or prefer WAIT on negatively affected symbols):\n${lines.slice(0, 10).join("\n")}`;
+          newsImPrompt = true;
         }
       }
     } catch { /* non-fatal — Prompt ohne News wie bisher */ }
@@ -1111,6 +1197,7 @@ each market's own data, never from habit or from these examples' direction:
     // Platz für die Antwort aus der Zahl der Märkte ABLEITEN (06.09.) — der
     // frühere feste Wert 4000 stammte aus der Testphase mit ~22 Märkten.
     const platz = tokenBudget(validMarkets.length);
+    const gptBeginn = Date.now();
     let raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt, platz);
 
     // ── Das Sicherheitsnetz greift jetzt in BEIDE Richtungen (07.09.) ──────
@@ -1147,6 +1234,7 @@ each market's own data, never from habit or from these examples' direction:
           + `bei OpenAI Zugriff auf ${scanGptModel} hat.`);
       }
     }
+    scanDauer.GPT = Date.now() - gptBeginn;
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
     for (const opp of parsed.opportunities ?? []) {
       if (opp.epic) gptBatchResult[opp.epic] = opp;
@@ -1196,6 +1284,14 @@ each market's own data, never from habit or from these examples' direction:
   let ohneClaudeAusfall = 0;          // Schlüssel da, Aufruf fehlgeschlagen
   /** Richtungssignale unter der Untergrenze — Claude bewusst NICHT gefragt (16.09.). */
   const claudeUnterGrenze: string[] = [];
+  const claudeUnterGrenzeConf: number[] = [];
+  // Messwerte fuer die Zyklus-Bilanz (16.09.) — reine Zaehler, entscheiden nichts.
+  const bilanzRichtungen = { WAIT: 0, BUY: 0, SELL: 0 };
+  const regelbrueche: Record<string, number> = {};
+  let vetoZahl = 0;
+  let stilVerworfenZahl = 0;
+  let claudeGefragt = 0;
+  let claudeMs = 0;
   // Wie viele abgelehnte Signale verletzten dabei GPTs eigene Prompt-Regeln?
   // Trennt "der Markt gibt nichts her" von "das Modell haelt sich nicht daran".
   let promptVerstossZaehler = 0;
@@ -1225,6 +1321,24 @@ each market's own data, never from habit or from these examples' direction:
     // gemessene Konsens darf hier nicht uebernehmen. Begruendung dort.
     let stilVerworfen = false;
 
+    // Was GPT WIRKLICH geantwortet hat — vor Vetos und Stil-Pruefung (16.09.).
+    if (hasGPT) {
+      const rohRichtung = normalisiereRichtung(gptData?.direction ?? "WAIT");
+      bilanzRichtungen[rohRichtung ?? "WAIT"]++;
+      if (gptData) {
+        const lvRoh = strategyData.get(market.symbol)?.levels;
+        for (const bruch of gptRegelbrueche({
+          richtung: gptData.direction,
+          trend: ta?.trend,
+          signal: ta?.signal,
+          distRes: lvRoh?.dist_to_resistance_atr,
+          distSup: lvRoh?.dist_to_support_atr,
+        })) {
+          regelbrueche[bruch] = (regelbrueche[bruch] ?? 0) + 1;
+        }
+      }
+    }
+
     if (hasGPT && gptData?.direction) {
       // Stil GEPRUEFT statt umgetypt (15.09.) — Begruendung bei normalisiereStil().
       const stil = normalisiereStil(gptData.tradingStyle);
@@ -1249,6 +1363,7 @@ each market's own data, never from habit or from these examples' direction:
           + `Ein geratener Stil verschiebt Stop, Haltedauer und Tageslimit.`
         );
         stilVerworfen = true;
+        stilVerworfenZahl++;
         gpt = {
           ...gpt,
           direction: "WAIT",
@@ -1445,6 +1560,7 @@ each market's own data, never from habit or from these examples' direction:
       }
 
       if (blockReason) {
+        vetoZahl++;
         console.log(`[ai-engine] 🛑 ${market.symbol} ${gpt.direction} blockiert: ${blockReason}`);
         gpt = {
           ...gpt,
@@ -1492,6 +1608,8 @@ Return ONLY valid JSON:
 
 Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
 
+      claudeGefragt++;
+      const claudeBeginn = Date.now();
       let raw = await callClaude(ai.anthropic.apiKey, scanClaudeModel, prompt);
 
       // ── Zweites Modell, dann ehrlich aufgeben (07.09.) ──────────────────
@@ -1508,6 +1626,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
           + `zweiter Versuch mit ${zweitClaude}`);
         raw = await callClaude(ai.anthropic.apiKey, zweitClaude, prompt);
       }
+      claudeMs += Date.now() - claudeBeginn;
 
       if (raw === null) {
         // WAS HIER STAND, und es war doppelt falsch:
@@ -1587,7 +1706,10 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       // der Rückfall der Normalfall (23 von 30 Märkten) und keine Meldung wert.
       // Seit 16.09. zaehlt "handelbar" erst ab der Untergrenze — siehe claudeFragen().
       if (claudeWeg === "KEIN_SCHLUESSEL") ohneClaudeKeinSchluessel++;
-      if (claudeWeg === "UNTER_GRENZE") claudeUnterGrenze.push(`${market.symbol} ${gpt.confidence}`);
+      if (claudeWeg === "UNTER_GRENZE") {
+        claudeUnterGrenze.push(`${market.symbol} ${gpt.confidence}`);
+        claudeUnterGrenzeConf.push(Number(gpt.confidence));
+      }
       claude = simulateClaude(gpt, market);
     }
 
@@ -1920,7 +2042,28 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     );
   }
 
-  return opportunities
+  const ergebnis = opportunities
     .sort((a, b) => b.finalScore - a.finalScore)
     .map((o, i) => ({ ...o, rank: i + 1 }));
+
+  // Messdaten fuer die Zyklus-Bilanz anhaengen (16.09.) — unsichtbar, siehe
+  // scanDatenVon(). Scheitert das, bleibt das Ergebnis unberuehrt.
+  try {
+    if (claudeMs > 0) scanDauer.Claude = claudeMs;
+    const scanDaten: ScanDaten = {
+      maerkte: validMarkets.length,
+      gpt: bilanzRichtungen,
+      vetos: vetoZahl,
+      stilVerworfen: stilVerworfenZahl,
+      unterGrenze: claudeUnterGrenzeConf,
+      go: trichter.go,
+      rrAbgelehnt: abgelehnteRR.length,
+      claudeGefragt,
+      regelbrueche,
+      dauerMs: scanDauer,
+      kontext: { news: newsImPrompt, performance: stratPerfSummary !== "", mtfSymbole: mtfData.size },
+    };
+    Object.defineProperty(ergebnis, SCAN_DATEN, { value: scanDaten, enumerable: false });
+  } catch { /* Messung darf das Ergebnis nie gefaehrden */ }
+  return ergebnis;
 }

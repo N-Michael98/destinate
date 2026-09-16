@@ -342,6 +342,83 @@ module.exports = function pruefe() {
     + "er wuerde gegen GPTs genannte Richtung handeln",
     /if \(gpt\.direction === "WAIT" && !stilVerworfen && ta && ta\.atr > 0\)/.test(ohneKomm));
 
+  // ══ GPT GEGEN DEN EIGENEN PROMPT — GEZAEHLT (16.09.) ══════════════════════
+  //
+  // Am 16.09. in EINEM Zyklus: BUY bei 1D bearish, BUY an der Resistance, WAIT
+  // bei "at support + 1D bullish" (laut Prompt ein Lehrbuch-BUY). Damit eine
+  // Prompt-Aenderung auf Zahlen statt auf einem Einzelfall beruht, zaehlt
+  // `gptRegelbrueche()` das in jedem Zyklus. Gerechnet, weil die Regeln des
+  // Prompts ein ODER enthalten ("trend=BULLISH OR signal=BUY") — ein UND an
+  // dieser Stelle saehe plausibel aus und zaehlte falsch.
+  const rb = modul.exports.gptRegelbrueche;
+  const nr = modul.exports.normalisiereRichtung;
+  if (typeof rb !== "function" || typeof nr !== "function") {
+    pruefe1("gptRegelbrueche / normalisiereRichtung nicht exportiert — GPTs Regelbrueche waeren unzaehlbar", false);
+  } else {
+    const r = (e) => { try { return rb(e).slice().sort().join("|"); } catch (x) { return `WIRFT(${x.message})`; } };
+    const faelle = [
+      [{ richtung: "BUY", trend: "BEARISH", signal: "NEUTRAL" }, "BUY ohne bullishen 1D-Trend/Signal", "BUY bei 1D bearish ohne Kaufsignal"],
+      [{ richtung: "BUY", trend: "BEARISH", signal: "BUY" }, "", "ODER-Regel: Kaufsignal genuegt"],
+      [{ richtung: "BUY", trend: "BEARISH", signal: "STRONG_BUY" }, "", "ODER-Regel: starkes Kaufsignal genuegt"],
+      [{ richtung: "BUY", trend: "NEUTRAL", signal: "NEUTRAL" }, "BUY ohne bullishen 1D-Trend/Signal", "neutral ist nicht bullish"],
+      [{ richtung: "BUY", trend: "BULLISH", distRes: 0.5 }, "BUY an Resistance", "an der Resistance"],
+      [{ richtung: "BUY", trend: "BULLISH", distRes: 1.0 }, "", "genau 1.0 ATR ist nicht 'nahe' (Prompt: strictly below 1.0)"],
+      [{ richtung: "BUY", trend: "BULLISH", distRes: -0.1 }, "", "negativer Abstand zaehlt nicht"],
+      [{ richtung: "BUY", trend: "BULLISH", distRes: NaN }, "", "unbrauchbarer Abstand zaehlt nicht"],
+      [{ richtung: "SELL", trend: "BULLISH", signal: "NEUTRAL", distSup: 0.2 }, "SELL an Support|SELL ohne bearishen 1D-Trend/Signal", "beide SELL-Brueche"],
+      [{ richtung: "SELL", trend: "BULLISH", signal: "SELL" }, "", "ODER-Regel: Verkaufssignal genuegt"],
+      // Im Sabotage-Lauf entwischt: fuer BUY gab es den STRONG-Fall, fuer SELL nicht.
+      [{ richtung: "SELL", trend: "BULLISH", signal: "STRONG_SELL" }, "", "ODER-Regel: starkes Verkaufssignal genuegt"],
+      [{ richtung: "WAIT", trend: "BULLISH", distSup: 0.3 }, "WAIT trotz Lehrbuch-BUY (Hinweis)", "Lehrbuch-BUY"],
+      [{ richtung: "WAIT", trend: "BEARISH", distRes: 0.3 }, "WAIT trotz Lehrbuch-SELL (Hinweis)", "Lehrbuch-SELL"],
+      [{ richtung: "WAIT", trend: "BEARISH", distSup: 0.3 }, "", "Support bei bearishem Trend ist kein Lehrbuch-BUY"],
+      [{ richtung: "buy", trend: "BULLISH" }, "", "Kleinschreibung ist dasselbe Wort"],
+      [{ richtung: "LONG", trend: "BULLISH" }, "Richtung unbekannt", "LONG ist ein anderes Wort"],
+      [{ richtung: undefined }, "Richtung unbekannt", "fehlende Richtung"],
+      [{ richtung: "BUY", trend: "", signal: "" }, "", "ohne TA-Daten kein Trend-Bruch behaupten"],
+    ];
+    const falsch = faelle.filter(([e, soll]) => r(e) !== soll);
+    pruefe1("die GPT-Regelbrueche werden falsch gezaehlt",
+      falsch.length === 0,
+      falsch.map(([e, soll, was]) => `${was}: ${r(e) || "(keiner)"} statt ${soll || "(keiner)"}`).join(" ; "));
+    const nrs = (x) => { try { return nr(x); } catch { return "WIRFT"; } };
+    pruefe1("die Richtung wird falsch vereinheitlicht",
+      nrs(" sell ") === "SELL" && nrs("Wait") === "WAIT" && nrs("BUY") === "BUY"
+      && nrs("LONG") === null && nrs("") === null && nrs(5) === null && nrs(null) === null);
+
+    // Die Messdaten haengen UNSICHTBAR am Ergebnis — die Route serialisiert es.
+    const sdv = modul.exports.scanDatenVon;
+    const arr = [{ symbol: "X" }];
+    Object.defineProperty(arr, Symbol.for("zyklus-bilanz.scan"), { value: { maerkte: 1 }, enumerable: false });
+    pruefe1("die Scan-Messdaten sind nicht lesbar oder gehen in die Routen-Antwort",
+      typeof sdv === "function" && sdv(arr)?.maerkte === 1 && !JSON.stringify(arr).includes("maerkte")
+      && sdv([]) === null && sdv(null) === null);
+  }
+
+  // Verdrahtung in der Engine (kommentarbereinigt):
+  pruefe1("die Regelbrueche werden nicht aus GPTs ROHER Antwort gezaehlt",
+    /for \(const bruch of gptRegelbrueche\(\{\s*richtung: gptData\.direction,/.test(ohneKomm)
+    && ohneKomm.indexOf("gptRegelbrueche({") < ohneKomm.indexOf("const stil = normalisiereStil(gptData.tradingStyle)"),
+    "nach Veto oder Stil-Pruefung waere die Richtung schon WAIT — gemessen wuerde nichts");
+  pruefe1("Vetos, Stil-Verwerfungen oder Claude-Aufrufe werden nicht gezaehlt",
+    /if \(blockReason\) \{\s*vetoZahl\+\+;/.test(ohneKomm)
+    && /stilVerworfen = true;\s*stilVerworfenZahl\+\+;/.test(ohneKomm)
+    && /claudeGefragt\+\+;\s*const claudeBeginn = Date\.now\(\);\s*let raw = await callClaude\(/.test(ohneKomm));
+  pruefe1("die Messdaten werden nicht unsichtbar ans Ergebnis gehaengt",
+    /Object\.defineProperty\(ergebnis, SCAN_DATEN, \{ value: scanDaten, enumerable: false \}\)/.test(ohneKomm)
+    && /return ergebnis;/.test(ohneKomm));
+  const agentQuelle = read("frontend/lib/agents/analysis-agent.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  pruefe1("der Scan wird nicht an die Zyklus-Bilanz gemeldet",
+    /const scan = scanDatenVon\(opportunities\);/.test(agentQuelle)
+    && /type: "ANALYSIS:SCAN_DONE"/.test(agentQuelle));
+  pruefe1("die Engine meldet den Scan selbst — dann zaehlten auch Dashboard-Scans",
+    !/ANALYSIS:SCAN_DONE/.test(ohneKomm),
+    "die Engine laeuft auch fuer /api/market-scanner");
+  const metaMeldungen = (agentQuelle.match(/gate: "Meta-KI"/g) || []).length;
+  pruefe1("nicht jedes Urteil der Meta-KI geht an den Bus",
+    metaMeldungen === 3, `${metaMeldungen} Meldestellen, erwartet 3 (abgelehnt, unter Untergrenze, freigegeben)`);
+
   return {
     titel: `Prompt-Zahlen (${geprueft} Rechnungen, echte Funktion)`,
     funde,

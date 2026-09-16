@@ -11,8 +11,8 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { agentBus } from "./agent-bus";
-import { analyzeMarkets, type ScannerOpportunity } from "../market-scanner/ai-analysis-engine";
+import { agentBus, meldeTorEntscheidung } from "./agent-bus";
+import { analyzeMarkets, scanDatenVon, type ScannerOpportunity } from "../market-scanner/ai-analysis-engine";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
 import { MIN_SIGNAL_CONFIDENCE } from "../broker-config";
 
@@ -207,6 +207,20 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
   const opportunities = await analyzeMarkets(markets);
   console.log(`[analysis-agent] ${opportunities.length} Opportunities gefunden`);
 
+  // Den Scan an die Zyklus-Bilanz melden (16.09.). NUR hier und nicht in der
+  // Engine: runAnalysisAgent laeuft ausschliesslich im Handelszyklus, die
+  // Engine auch fuer die Dashboard-Route — deren Scans gehoeren nicht in die
+  // Bilanz des Handels.
+  const scan = scanDatenVon(opportunities);
+  if (scan) {
+    agentBus.publish({
+      type: "ANALYSIS:SCAN_DONE",
+      agentId: AGENT_ID,
+      timestamp: scannedAt,
+      payload: { scan },
+    });
+  }
+
   // ── Schritt 2: Nur GO-Signale mit ausreichender Confidence weiterbewerten ──
   const goSignals = opportunities.filter(o => o.goSignal && o.gpt.confidence >= MIN_SIGNAL_CONFIDENCE);
 
@@ -225,6 +239,11 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
       const reason = meta?.concern ?? "Meta-AI hat abgelehnt";
       rejected.push({ symbol: opp.symbol, reason });
       console.log(`[analysis-agent] ❌ ${opp.symbol} abgelehnt: ${reason}`);
+      meldeTorEntscheidung(AGENT_ID, {
+        gate: "Meta-KI", symbol: opp.symbol, direction: opp.gpt.direction,
+        approve: false, reason: meta ? String(reason) : "keine Beurteilung fuer dieses Symbol",
+        confidence: opp.gpt.confidence,
+      });
 
       agentBus.publish({
         type: "ANALYSIS:SIGNAL_GENERATED",
@@ -268,6 +287,11 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
         + `Untergrenze ${MIN_SIGNAL_CONFIDENCE} der Signalkette`;
       rejected.push({ symbol: opp.symbol, reason: grund });
       console.log(`[analysis-agent] ❌ ${opp.symbol} abgelehnt: ${grund}`);
+      // War bis 16.09. STUMM auf dem Bus — die Bilanz haette diese Ablehnung verloren.
+      meldeTorEntscheidung(AGENT_ID, {
+        gate: "Meta-KI", symbol: opp.symbol, direction: opp.gpt.direction,
+        approve: false, reason: grund, confidence: angepasst,
+      });
       continue;
     }
     const enriched: ScannerOpportunity = {
@@ -276,6 +300,13 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
       finalScore: (opp.finalScore + angepasst / 100) / 2,
     };
     approved.push(enriched);
+    meldeTorEntscheidung(AGENT_ID, {
+      gate: "Meta-KI", symbol: opp.symbol, direction: opp.gpt.direction,
+      approve: true, reason: String(meta.concern ?? ""),
+      // Ein KI-Ausfall gibt ALLE frei — das ist kein Urteil und heisst so.
+      fallback: meta.concern === "fallback",
+      confidence: angepasst,
+    });
 
     agentBus.publish({
       type: "ANALYSIS:SIGNAL_GENERATED",
