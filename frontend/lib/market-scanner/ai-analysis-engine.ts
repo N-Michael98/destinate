@@ -1320,6 +1320,8 @@ each market's own data, never from habit or from these examples' direction:
     // unbekannten Stils auf WAIT gesetzt (15.09.). Das ist KEIN GPT-WAIT — der
     // gemessene Konsens darf hier nicht uebernehmen. Begruendung dort.
     let stilVerworfen = false;
+    // Dasselbe fuer eine RICHTUNG, die keine von BUY/SELL/WAIT ist (16.09.).
+    let richtungUnbekannt = false;
 
     // Was GPT WIRKLICH geantwortet hat — vor Vetos und Stil-Pruefung (16.09.).
     if (hasGPT) {
@@ -1342,9 +1344,11 @@ each market's own data, never from habit or from these examples' direction:
     if (hasGPT && gptData?.direction) {
       // Stil GEPRUEFT statt umgetypt (15.09.) — Begruendung bei normalisiereStil().
       const stil = normalisiereStil(gptData.tradingStyle);
+      // Richtung GEPRUEFT statt umgetypt (16.09.) — Begruendung bei normalisiereRichtung().
+      const richtung = normalisiereRichtung(gptData.direction);
       gpt = {
         symbol: market.symbol, epic: market.epic,
-        direction: gptData.direction as GPTMarketAnalysis["direction"],
+        direction: richtung ?? "WAIT",
         confidence: gptData.confidence ?? 60,
         reasoning: gptData.reasoning ?? "",
         entry: gptData.entry ?? market.ask,
@@ -1355,6 +1359,19 @@ each market's own data, never from habit or from these examples' direction:
         tradingStyle: stil ?? "DAYTRADING",
         source: "GPT_REAL",
       };
+      if (richtung === null) {
+        console.log(
+          `[ai-engine] 🚫 ${market.symbol}: Richtung ${JSON.stringify(gptData.direction)} ist keine von `
+          + `BUY/SELL/WAIT — Signal auf WAIT (conf war ${gptData.confidence ?? "?"}). `
+          + `Mehrere Stellen behandeln jeden Wert ausser BUY als SELL.`
+        );
+        richtungUnbekannt = true;
+        gpt = {
+          ...gpt,
+          confidence: 0,
+          reasoning: `Signal verworfen: Richtung ${JSON.stringify(gptData.direction)} unbekannt`,
+        };
+      }
       if (stil === null && gpt.direction !== "WAIT") {
         console.log(
           `[ai-engine] 🚫 ${market.symbol} ${gpt.direction}: Handelsstil `
@@ -1415,7 +1432,7 @@ each market's own data, never from habit or from these examples' direction:
     // TA-Lib STRONG_BUY, wuerde sonst gegen GPT gekauft. Vor der Stil-Pruefung
     // war das unmoeglich (die Richtung blieb stehen), und es darf durch sie
     // nicht moeglich werden.
-    if (gpt.direction === "WAIT" && !stilVerworfen && ta && ta.atr > 0) {
+    if (gpt.direction === "WAIT" && !stilVerworfen && !richtungUnbekannt && ta && ta.atr > 0) {
       const sr = strategyData.get(market.symbol);
       const eq = sr?.entry_quality;
       const richtung: "BUY" | "SELL" | null =

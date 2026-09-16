@@ -338,9 +338,27 @@ module.exports = function pruefe() {
   // (Entscheidung 04.08.: nur "wenn GPT nicht widerspricht").
   pruefe1("ein stil-verworfenes Signal wird nicht als solches markiert",
     /stilVerworfen = true;/.test(stilBlock));
-  pruefe1("der gemessene Konsens kann ein stil-verworfenes Signal uebernehmen — "
-    + "er wuerde gegen GPTs genannte Richtung handeln",
-    /if \(gpt\.direction === "WAIT" && !stilVerworfen && ta && ta\.atr > 0\)/.test(ohneKomm));
+  pruefe1("der gemessene Konsens kann ein stil- oder richtungs-verworfenes Signal uebernehmen — "
+    + "er wuerde gegen GPTs Antwort handeln",
+    /if \(gpt\.direction === "WAIT" && !stilVerworfen && !richtungUnbekannt && ta && ta\.atr > 0\)/.test(ohneKomm));
+
+  // ══ DIE RICHTUNG WIRD GEPRUEFT, NICHT UMGETYPT (16.09.) ════════════════════
+  // `direction: gptData.direction as …` — mehrere Stellen fragen
+  // `direction === "BUY" ? … : …` und behandeln damit JEDEN anderen Wert als
+  // SELL. Ein "LONG" lief bis heute als halber Verkauf weiter.
+  pruefe1("die GPT-Richtung wird nicht geprueft",
+    /const richtung = normalisiereRichtung\(gptData\.direction\);/.test(ohneKomm)
+    && /direction: richtung \?\? "WAIT",/.test(ohneKomm)
+    && !/direction: gptData\.direction as/.test(ohneKomm));
+  const rBlock = (ohneKomm.match(/if \(richtung === null\) \{[\s\S]{0,700}?\n      \}/) || [""])[0];
+  pruefe1("eine unbekannte Richtung wird nicht verworfen, benannt und markiert",
+    rBlock !== "" && /console\.log\(/.test(rBlock) && /richtungUnbekannt = true;/.test(rBlock)
+    && /confidence: 0/.test(rBlock),
+    "sonst traegt ein WAIT die Confidence einer Richtung, die es nie gab");
+  pruefe1("die Richtungspruefung steht nicht VOR der Stil-Pruefung",
+    ohneKomm.indexOf("if (richtung === null) {") > 0
+    && ohneKomm.indexOf("if (richtung === null) {") < ohneKomm.indexOf("if (stil === null && gpt.direction !== \"WAIT\") {"),
+    "ein Stil ist bei unbekannter Richtung bedeutungslos");
 
   // ══ GPT GEGEN DEN EIGENEN PROMPT — GEZAEHLT (16.09.) ══════════════════════
   //
