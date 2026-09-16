@@ -2012,6 +2012,92 @@ module.exports = async function pruefe() {
       "Handelsfenster endet Mo–Fr 22:00 UTC");
   }
 
+  // ══ ORCHESTRATOR- UND AUSFUEHRUNGS-KI: URTEILE GEPRUEFT (16.09.) ═════════
+  //
+  // Beide Tore uebernahmen die Modellantwort per `as` und fragten
+  // `!x.proceed` bzw. `!x.approve` — ein Text "false" ist wahr und gab frei.
+  // Die Regel der Orchestrator-KI "CRITICAL → NEIN" hing allein am Modell, und
+  // die Alters-Regel der Ausfuehrungs-KI pruefte nichts, weil der Zeitstempel
+  // erst bei der Ausfuehrung gesetzt wurde.
+  {
+    const orchM = ladeTsModul("lib/agents/orchestrator-agent.ts", {
+      "broker-config": { MIN_SIGNAL_CONFIDENCE: 70 },
+    });
+    const pe = orchM.exports?.pruefeOrchestratorEntscheidung;
+    if (orchM.fehler || typeof pe !== "function") {
+      funde.push(`pruefeOrchestratorEntscheidung nicht ausfuehrbar: ${orchM.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      const d = (r, st = "HEALTHY") => { try { return pe(r, st); } catch (e) { return { proceed: `WIRFT ${e.message}` }; } };
+      torPruefung("die Orchestrator-KI kann trotz CRITICAL Trades freigeben",
+        d({ proceed: true, maxTradesThisCycle: 1, reason: "ok" }, "CRITICAL").proceed === false
+        && typeof d({ proceed: true }, "CRITICAL").korrektur === "string",
+        "ihre eigene Regel lautet CRITICAL → NEIN");
+      torPruefung("ein Text \"false\" oder ein fehlendes proceed laesst den Zyklus weiterlaufen",
+        d({ proceed: "false" }).proceed === false && d({ proceed: "true" }).proceed === false
+        && d({}).proceed === false && d(null).proceed === false,
+        "`!x.proceed` ist fuer einen Text wahr");
+      torPruefung("eine unlesbare Entscheidung traegt keinen Grund",
+        /unlesbar/.test(d({ proceed: 1 }).reason));
+      torPruefung("ein echtes JA/NEIN wird nicht uebernommen",
+        d({ proceed: true, reason: "Limits ok" }).proceed === true
+        && d({ proceed: false, reason: "voll" }).proceed === false
+        && d({ proceed: true, reason: "x" }).korrektur === null,
+        "DEGRADED ist kein CRITICAL");
+      torPruefung("eine 0 oder Unsinn als maxTradesThisCycle haelt den Zyklus an, obwohl JA gesagt wurde",
+        d({ proceed: true, maxTradesThisCycle: 0 }).maxTradesThisCycle === 1
+        && d({ proceed: true, maxTradesThisCycle: -3 }).maxTradesThisCycle === 1
+        && d({ proceed: true, maxTradesThisCycle: 1.5 }).maxTradesThisCycle === 1
+        && d({ proceed: true, maxTradesThisCycle: "2" }).maxTradesThisCycle === 1
+        && d({ proceed: true, maxTradesThisCycle: 2 }).maxTradesThisCycle === 2);
+      torPruefung("DEGRADED wird wie CRITICAL behandelt", d({ proceed: true }, "DEGRADED").proceed === true);
+    }
+
+    const exM = ladeTsModul("lib/agents/execution-agent.ts");
+    const pa = exM.exports?.pruefeAusfuehrungsUrteil;
+    const sa = exM.exports?.signalAlterSekunden;
+    const MAXA = exM.exports?.SIGNAL_MAX_ALTER_S;
+    if (exM.fehler || typeof pa !== "function" || typeof sa !== "function") {
+      funde.push(`Ausfuehrungs-Pruefungen nicht ausfuehrbar: ${exM.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      const u = (r) => { try { return pa(r); } catch (e) { return { approve: `WIRFT ${e.message}` }; } };
+      torPruefung("ein Text \"false\" gibt die Order frei",
+        u({ approve: "false" }).approve === false && u({ approve: "true" }).approve === false
+        && u({}).approve === false && u({ approve: true }).approve === true);
+      torPruefung("unbekannte Broker-Namen kommen durch",
+        JSON.stringify(u({ approve: true, brokers: ["CAPITAL", "capital", "BINANCE", "IC_MARKETS"] }).brokers)
+        === JSON.stringify(["CAPITAL", "IC_MARKETS"]));
+      torPruefung("eine fehlende Broker-Liste wird nicht als fehlend weitergegeben",
+        u({ approve: true }).brokers === undefined,
+        "der Aufrufer faellt dann auf den Ausfall-Rueckfall zurueck (IC bleibt an die Freigabe gebunden)");
+      const jetzt = Date.parse("2026-09-16T18:35:00Z");
+      torPruefung("das Signal-Alter wird falsch berechnet",
+        sa("2026-09-16T18:28:55Z", jetzt) === 365 && sa("2026-09-16T18:35:00Z", jetzt) === 0
+        && sa("2026-09-16T18:36:00Z", jetzt) === 0
+        && sa(undefined, jetzt) === null && sa("kein Datum", jetzt) === null && sa(123, jetzt) === null,
+        `${sa("2026-09-16T18:28:55Z", jetzt)}`);
+      torPruefung("die Altersgrenze ist nicht die der KI-Regel (300 s)", MAXA === 300, String(MAXA));
+    }
+
+    const oq2 = read("frontend/lib/agents/orchestrator-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die Orchestrator-KI-Antwort wird wieder ungeprueft benutzt",
+      /const aiDecision = pruefeOrchestratorEntscheidung\(\s*diagnostics\.systemStatus === "CRITICAL"/.test(oq2),
+      "geprueft wird an der EINEN Stelle, an der entschieden wird");
+    torPruefung("das Signal-Alter startet wieder erst bei der Ausfuehrung",
+      /signalGeneratedAt: analysisResult\.scannedAt,/.test(oq2)
+      && !/signalGeneratedAt: new Date\(\)/.test(oq2),
+      "dann ist das Alter immer ~0 s und die Regel prueft nichts");
+    const ex2 = read("frontend/lib/agents/execution-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die Ausfuehrungs-KI-Antwort wird wieder ungeprueft benutzt",
+      /if \(json\) return pruefeAusfuehrungsUrteil\(JSON\.parse\(json\)\);/.test(ex2)
+      && !/as AIExecutionDecision;/.test(ex2));
+    torPruefung("ein zu altes Signal wird der KI noch vorgelegt",
+      /if \(alter !== null && alter > SIGNAL_MAX_ALTER_S\) \{\s*aiDecision = \{\s*approve: false,/.test(ex2));
+  }
+
   // ══ DIE AUSFUEHRUNGS-KI DARF DAS RISIKO NUR SENKEN (16.09.) ══════════════
   //
   // `riskPercent: aiDecision.adjustedRiskPercent ?? req.riskPercent` ersetzte

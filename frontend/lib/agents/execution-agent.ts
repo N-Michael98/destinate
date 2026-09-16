@@ -91,11 +91,51 @@ export function wirksamesKiRisiko(
   return { risiko: angefragt, hinweis: null };
 }
 
+/**
+ * Wie alt ist das Signal? (16.09.)
+ *
+ * DER FUND. Die Regel "Signal-Alter > 300s → ABLEHNEN" stand im Prompt — aber
+ * der Orchestrator setzte `signalGeneratedAt: new Date()` erst IM MOMENT DER
+ * AUSFUEHRUNG. Das Alter war also immer ~0 s, und die Regel pruefte nichts.
+ * Jetzt kommt der Zeitstempel vom Scan-Beginn (`analysisResult.scannedAt`) —
+ * bewusst der fruehestmoegliche, damit das Alter eher zu hoch als zu niedrig
+ * gerechnet wird.
+ *
+ * `null` = kein oder kein lesbarer Zeitstempel: dann wird nicht geurteilt.
+ */
+export const SIGNAL_MAX_ALTER_S = 300;
+
+export function signalAlterSekunden(signalGeneratedAt: unknown, jetzt: number): number | null {
+  if (typeof signalGeneratedAt !== "string" || !Number.isFinite(jetzt)) return null;
+  const t = Date.parse(signalGeneratedAt);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.round((jetzt - t) / 1000));
+}
+
+/**
+ * Das Urteil der Ausfuehrungs-KI, geprueft (16.09.). Dieselbe Falle wie bei
+ * Meta- und Orchestrator-KI: `!aiDecision.approve` ist fuer einen Text "false"
+ * wahr. Nur `true` gibt frei; die Broker-Liste enthaelt nur bekannte Namen.
+ */
+export function pruefeAusfuehrungsUrteil(roh: unknown): AIExecutionDecision {
+  const o = (roh && typeof roh === "object" ? roh : {}) as Record<string, unknown>;
+  const lesbar = typeof o.approve === "boolean";
+  const brokers = Array.isArray(o.brokers)
+    ? o.brokers.filter((b): b is "CAPITAL" | "IC_MARKETS" => b === "CAPITAL" || b === "IC_MARKETS")
+    : (undefined as unknown as AIExecutionDecision["brokers"]);
+  return {
+    approve: o.approve === true,
+    brokers,
+    reason: lesbar
+      ? String(o.reason ?? "")
+      : `Urteil unlesbar (approve=${JSON.stringify(o.approve ?? null)})`,
+    adjustedRiskPercent: o.adjustedRiskPercent as number | undefined,
+  };
+}
+
 async function askAIManager(req: ExecutionAgentRequest): Promise<AIExecutionDecision> {
   try {
-    const signalAge = req.signalGeneratedAt
-      ? Math.round((Date.now() - new Date(req.signalGeneratedAt).getTime()) / 1000)
-      : 0;
+    const signalAge = signalAlterSekunden(req.signalGeneratedAt, Date.now()) ?? "unbekannt";
 
     const ai = getAI();
     const msg = await ai.messages.create({
@@ -122,7 +162,7 @@ Antworte NUR mit JSON:
 
     const text = (msg.content[0] as { type: string; text: string }).text.trim();
     const json = text.match(/\{[\s\S]*\}/)?.[0];
-    if (json) return JSON.parse(json) as AIExecutionDecision;
+    if (json) return pruefeAusfuehrungsUrteil(JSON.parse(json));
   } catch (err) {
     console.warn(`[exec-agent] AI Manager Fehler — Fallback approve (${err})`);
     await alertAIGateFallback("ExecutionAgent", err);
@@ -140,7 +180,19 @@ export async function runExecutionAgent(req: ExecutionAgentRequest): Promise<Exe
   let aiDecision: AIExecutionDecision = { approve: true, brokers: ["CAPITAL", "IC_MARKETS"], reason: "skip-validation" };
 
   if (!req.skipAIValidation) {
-    aiDecision = await askAIManager(req);
+    // Die Alters-Regel der KI im Code durchgesetzt (16.09.) — ein zu altes
+    // Signal wird ohne Anfrage abgelehnt, damit Regel und Wirkung nie
+    // auseinanderlaufen. Unbekanntes Alter: die KI urteilt wie bisher.
+    const alter = signalAlterSekunden(req.signalGeneratedAt, Date.now());
+    if (alter !== null && alter > SIGNAL_MAX_ALTER_S) {
+      aiDecision = {
+        approve: false,
+        brokers: [],
+        reason: `Signal zu alt (${alter} s > ${SIGNAL_MAX_ALTER_S} s seit Scan-Beginn)`,
+      };
+    } else {
+      aiDecision = await askAIManager(req);
+    }
   }
 
   if (!aiDecision.approve) {

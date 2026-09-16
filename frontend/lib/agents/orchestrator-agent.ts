@@ -98,6 +98,50 @@ async function alertAIGateFallback(gate: string, err: unknown): Promise<void> {
   await meldeAIGateAusfall(gate, err);
 }
 
+/**
+ * Die Antwort der Orchestrator-KI, geprueft (16.09.).
+ *
+ * Bis heute: `JSON.parse(json) as OrchestratorDecision` und danach
+ * `if (!aiDecision.proceed)`. Ein Text "false" ist wahr — der Zyklus waere
+ * weitergelaufen, obwohl die KI NEIN gesagt hatte. Und die eigene Regel der KI,
+ * "CRITICAL System → NEIN", hing allein daran, dass das Modell sie befolgt.
+ *
+ * Jetzt:
+ *  - CRITICAL -> NEIN, egal was geantwortet wurde (die Regel der KI, im Code
+ *    durchgesetzt; Widerspruch wird als `korrektur` gemeldet)
+ *  - `proceed` muss ein echter Wahrheitswert sein; eine unlesbare Antwort ist
+ *    ein NEIN mit Grund — wie vorher (`!undefined`), jetzt aber benannt
+ *  - `maxTradesThisCycle` nur als ganze Zahl >= 1, sonst 1. Eine 0 hielt den
+ *    Zyklus sonst an, obwohl die KI JA gesagt hatte; mehr als ein Trade pro
+ *    Zyklus verhindert ohnehin das feste `break` nach dem ersten.
+ */
+export function pruefeOrchestratorEntscheidung(
+  roh: unknown,
+  systemStatus: string,
+): OrchestratorDecision & { korrektur: string | null } {
+  const o = (roh && typeof roh === "object" ? roh : {}) as Record<string, unknown>;
+  const reason = typeof o.reason === "string" && o.reason.trim() !== "" ? o.reason : "ohne Begruendung";
+  const mt = o.maxTradesThisCycle;
+  const maxTradesThisCycle = typeof mt === "number" && Number.isInteger(mt) && mt >= 1 ? mt : 1;
+  if (systemStatus === "CRITICAL") {
+    return {
+      proceed: false,
+      maxTradesThisCycle,
+      reason: `System CRITICAL — keine neuen Trades (${reason})`,
+      korrektur: o.proceed === true ? "Orchestrator-KI wollte trotz CRITICAL fortfahren — gesperrt" : null,
+    };
+  }
+  if (typeof o.proceed !== "boolean") {
+    return {
+      proceed: false,
+      maxTradesThisCycle,
+      reason: `Entscheidung unlesbar (proceed=${JSON.stringify(o.proceed ?? null)})`,
+      korrektur: null,
+    };
+  }
+  return { proceed: o.proceed, maxTradesThisCycle, reason, korrektur: null };
+}
+
 async function askAIManager(context: {
   openPositions: number;
   maxConcurrent: number;
@@ -729,14 +773,23 @@ async function zyklusInnen(): Promise<string> {
 
   // ── 5. OrchestratorAgent AI-Entscheidung ──────────────────────────────────
   const diagnostics = getDiagnosticsReport();
-  const aiDecision = await askAIManager({
-    openPositions: openCount,
-    maxConcurrent,
-    dailyCount,
-    maxDaily: maxTradesPerDay,
-    systemStatus: diagnostics.systemStatus,
-    approvedSignals: analysisResult.approved.length,
-  });
+  // Bei CRITICAL gar nicht erst fragen — die Antwort steht in der Regel der KI
+  // selbst ("CRITICAL System → NEIN"). pruefeOrchestratorEntscheidung() setzt
+  // sie auch dann durch, wenn eine Antwort anders lautet (16.09.).
+  const aiDecision = pruefeOrchestratorEntscheidung(
+    diagnostics.systemStatus === "CRITICAL"
+      ? { proceed: false, maxTradesThisCycle: 0, reason: "ohne KI-Anfrage" }
+      : await askAIManager({
+          openPositions: openCount,
+          maxConcurrent,
+          dailyCount,
+          maxDaily: maxTradesPerDay,
+          systemStatus: diagnostics.systemStatus,
+          approvedSignals: analysisResult.approved.length,
+        }),
+    diagnostics.systemStatus,
+  );
+  if (aiDecision.korrektur) console.warn(`[orchestrator] ⚠️ ${aiDecision.korrektur}`);
 
   // Tor-Entscheidung melden (16.09.) — dieselbe Wahrheitspruefung wie die
   // Bedingung darunter, damit Meldung und Wirkung nie auseinanderlaufen.
@@ -1088,7 +1141,10 @@ async function zyklusInnen(): Promise<string> {
       confidence: candidate.gpt.confidence,
       strategy: candidate.gpt.tradingStyle ?? style,
       tradingStyle: style,
-      signalGeneratedAt: new Date().toISOString(),
+      // Der SCAN-Beginn, nicht "jetzt" (16.09.) — mit `new Date()` war das
+      // Signal-Alter fuer die Ausfuehrungs-KI immer ~0 s und ihre Regel
+      // "aelter als 300 s → ablehnen" pruefte nichts.
+      signalGeneratedAt: analysisResult.scannedAt,
     });
 
     if (execResult.ok) {
