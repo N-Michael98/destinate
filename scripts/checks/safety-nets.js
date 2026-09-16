@@ -1243,8 +1243,13 @@ module.exports = async function pruefe() {
       .replace(/\/\*[\s\S]*?\*\//g, " ")
       .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
     const exec = ohneK("frontend/lib/agents/execution-agent.ts");
+    // Seit 16.09. ueber die gesicherte Liste `brokers` (eine KI-Antwort ohne
+    // Broker-Liste warf vorher eine TypeError). Die UND-Verknuepfung mit der
+    // Freigabe bleibt Pflicht, und `brokers` muss aus der KI-Antwort stammen.
     torPruefung("IC bekommt wieder ohne Freigabe Orders",
-      /useIC = aiDecision\.brokers\.includes\("IC_MARKETS"\) && icFreigegeben/.test(exec),
+      /useIC = brokers\.includes\("IC_MARKETS"\) && icFreigegeben/.test(exec)
+      && /const brokers: string\[\] = Array\.isArray\(aiDecision\.brokers\)/.test(exec)
+      && !/aiDecision\.brokers\.includes\(/.test(exec),
       "der KI-Rueckfall enthaelt IC_MARKETS — sie darf es nicht allein freigeben");
     torPruefung("die Freigabe wird nicht aus den Einstellungen gelesen",
       /icMarketsExecutionEnabled === true/.test(exec));
@@ -1749,6 +1754,65 @@ module.exports = async function pruefe() {
         /void\s+meldeZyklusFehler\(/.test(instr),
         "await hier haengt den naechsten Tick an eine Netzanfrage");
     }
+  }
+
+  // ══ DIE AUSFUEHRUNGS-KI DARF DAS RISIKO NUR SENKEN (16.09.) ══════════════
+  //
+  // `riskPercent: aiDecision.adjustedRiskPercent ?? req.riskPercent` ersetzte
+  // das sorgfaeltig gerechnete Risiko (min(Claude, maxRiskPerTrade), danach
+  // Volatilitaets-Kuerzung) durch eine UNGEPRUEFTE Zahl aus einer
+  // Modellantwort; capital-com-execution rechnet sie direkt in die Groesse.
+  // Kein Pruefer sah das. Gerechnet, weil "nur nach unten" in jeder Fassung
+  // plausibel aussieht — ob 0.4 wieder zu 1 wird, zeigt nur der Aufruf.
+  {
+    const exModul = ladeTsModul("lib/agents/execution-agent.ts");
+    if (exModul.fehler) {
+      funde.push(`execution-agent.ts nicht ausfuehrbar: ${exModul.fehler}`);
+      zusatz++;
+    } else if (typeof exModul.exports.wirksamesKiRisiko !== "function") {
+      funde.push("wirksamesKiRisiko nicht exportiert — die KI koennte die Positionsgroesse wieder ungeprueft setzen");
+      zusatz++;
+    } else {
+      const wr = (a, k) => { try { return exModul.exports.wirksamesKiRisiko(a, k); } catch (e) { return { risiko: `WIRFT ${e.message}` }; } };
+      torPruefung("ein KI-Vorschlag ueber dem gerechneten Risiko wird uebernommen",
+        wr(1, 5).risiko === 1 && wr(1, 1.01).risiko === 1,
+        `${wr(1, 5).risiko} / ${wr(1, 1.01).risiko} — die 1-%-Grenze des Nutzers waere ausgehebelt`);
+      torPruefung("ein durch Volatilitaet gekuerztes Risiko wird von der KI wieder angehoben",
+        wr(0.4, 1).risiko === 0.4 && wr(0.4, 1.5).risiko === 0.4,
+        `${wr(0.4, 1).risiko} — die Kuerzung waere wirkungslos`);
+      torPruefung("eine Senkung durch die KI wird nicht uebernommen",
+        wr(1, 0.5).risiko === 0.5 && wr(1, 1).risiko === 1);
+      torPruefung("ohne KI-Wert gilt nicht das gerechnete Risiko",
+        wr(0.8, undefined).risiko === 0.8 && wr(0.8, null).risiko === 0.8
+        && wr(0.8, undefined).hinweis === null);
+      const muell = [NaN, Infinity, -Infinity, -1, 0, "0.5", "5", {}, [], true];
+      const durch = muell.filter((k) => wr(1, k).risiko !== 1);
+      torPruefung("ein unbrauchbarer KI-Wert setzt das Risiko",
+        durch.length === 0, durch.map((k) => `${String(k)} -> ${wr(1, k).risiko}`).join(", "));
+      // Eigenschaft ueber ein Raster: das Ergebnis liegt NIE ueber dem angefragten Wert.
+      let ueber = 0;
+      for (const a of [0.1, 0.25, 0.4, 0.5, 1, 1.5, 2]) {
+        for (const k of [0, 0.05, 0.1, 0.39, 0.4, 0.41, 1, 1.49, 2, 10, 100]) {
+          if (!(wr(a, k).risiko <= a)) ueber++;
+        }
+      }
+      torPruefung("das wirksame Risiko liegt irgendwo UEBER dem gerechneten", ueber === 0, `${ueber} Faelle`);
+      // AUCH ein knapper Erhoehungsversuch (1.01 statt 1) wird benannt. Im
+      // Sabotage-Lauf blieb "Erhoehung erst ab dem Doppelten melden" gruen:
+      // der Handel war trotzdem sicher, aber der Versuch waere still verschwunden.
+      torPruefung("eine Aenderung durch die KI wird nicht benannt",
+        typeof wr(1, 5).hinweis === "string" && typeof wr(1, 1.01).hinweis === "string"
+        && typeof wr(1, 0.5).hinweis === "string" && typeof wr(1, NaN).hinweis === "string"
+        && wr(1, 1).hinweis === null,
+        "jeder Eingriff der KI in die Positionsgroesse gehoert ins Log — und nur ein Eingriff");
+    }
+    const exCode = read("frontend/lib/agents/execution-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die Order bekommt wieder das ungepruefte KI-Risiko",
+      /const kiRisiko = wirksamesKiRisiko\(req\.riskPercent, aiDecision\.adjustedRiskPercent\);/.test(exCode)
+      && /riskPercent: kiRisiko\.risiko,/.test(exCode)
+      && !/adjustedRiskPercent\s*\?\?/.test(exCode),
+      "genau dieser Ausdruck war das Loch");
   }
 
   // ══ DER WATCHDOG SIEHT ALLES — UND STOPPT NICHT BEI JEDER SCANNER-WELLE (15.09.)

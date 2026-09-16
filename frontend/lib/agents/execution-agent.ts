@@ -55,6 +55,42 @@ async function alertAIGateFallback(gate: string, err: unknown): Promise<void> {
   await meldeAIGateAusfall(gate, err);
 }
 
+/**
+ * Das Risiko, mit dem die Order WIRKLICH gerechnet wird (16.09.).
+ *
+ * DER FUND. Hier stand `riskPercent: aiDecision.adjustedRiskPercent ?? req.riskPercent`.
+ * Der Orchestrator rechnet das Risiko sorgfaeltig — `min(Claude, maxRiskPerTrade)`,
+ * danach die Volatilitaets-Kuerzung — und dieser eine Ausdruck ersetzte es
+ * durch eine UNGEPRUEFTE Zahl aus einer Modellantwort. `capital-com-execution`
+ * rechnet sie direkt in die Groesse um (`balance * riskPercent / 100`); danach
+ * begrenzt nur noch MAX_SIZE. Eine Halluzination (5 statt 1) haette die
+ * 1-%-Grenze des Nutzers UND die Volatilitaets-Kuerzung ausgehebelt.
+ *
+ * Dieselbe Fehlerklasse wie `riskScore ?? 50`: eine Zahl, die nicht gemessen
+ * wurde, entscheidet ueber Geld.
+ *
+ * DIE REGEL. Die KI darf das Risiko SENKEN, nie erhoehen — ihr Auftrag im
+ * Prompt lautet ohnehin nur "reduzieren". Alles, was keine endliche positive
+ * Zahl ist, faellt auf den Orchestrator-Wert zurueck. Die Richtung ist damit
+ * eindeutig: gegenueber vorher kann das Ergebnis nur KLEINER werden.
+ */
+export function wirksamesKiRisiko(
+  angefragt: number,
+  kiVorschlag: unknown,
+): { risiko: number; hinweis: string | null } {
+  if (kiVorschlag === undefined || kiVorschlag === null) return { risiko: angefragt, hinweis: null };
+  if (typeof kiVorschlag !== "number" || !Number.isFinite(kiVorschlag) || kiVorschlag <= 0) {
+    return { risiko: angefragt, hinweis: `KI-Risiko ${JSON.stringify(kiVorschlag)} unbrauchbar — es gilt ${angefragt} %` };
+  }
+  if (kiVorschlag > angefragt) {
+    return { risiko: angefragt, hinweis: `KI wollte das Risiko ERHOEHEN (${kiVorschlag} > ${angefragt} %) — ignoriert, es gilt ${angefragt} %` };
+  }
+  if (kiVorschlag < angefragt) {
+    return { risiko: kiVorschlag, hinweis: `KI senkt das Risiko ${angefragt} -> ${kiVorschlag} %` };
+  }
+  return { risiko: angefragt, hinweis: null };
+}
+
 async function askAIManager(req: ExecutionAgentRequest): Promise<AIExecutionDecision> {
   try {
     const signalAge = req.signalGeneratedAt
@@ -123,13 +159,25 @@ export async function runExecutionAgent(req: ExecutionAgentRequest): Promise<Exe
     };
   }
 
-  // Risiko-Anpassung durch AI
+  // Risiko-Anpassung durch AI — nur nach unten, siehe wirksamesKiRisiko().
+  const kiRisiko = wirksamesKiRisiko(req.riskPercent, aiDecision.adjustedRiskPercent);
+  if (kiRisiko.hinweis) console.log(`[exec-agent] ${req.symbol}: ${kiRisiko.hinweis}`);
   const effectiveReq: ExecutionRequest = {
     ...req,
-    riskPercent: aiDecision.adjustedRiskPercent ?? req.riskPercent,
+    riskPercent: kiRisiko.risiko,
   };
 
-  const useCapital = aiDecision.brokers.includes("CAPITAL");
+  // Ohne gueltige Broker-Liste warf `.includes` hier eine TypeError und riss
+  // den Orchestrator-Zyklus mit (16.09.). Es gilt dann derselbe Rueckfall wie
+  // bei einem KI-Ausfall; IC bleibt ohnehin an die Einstellung gebunden.
+  const brokers: string[] = Array.isArray(aiDecision.brokers)
+    ? aiDecision.brokers
+    : ["CAPITAL", "IC_MARKETS"];
+  if (!Array.isArray(aiDecision.brokers)) {
+    console.warn(`[exec-agent] ${req.symbol}: KI-Antwort ohne Broker-Liste — Rueckfall wie bei Ausfall`);
+  }
+
+  const useCapital = brokers.includes("CAPITAL");
   // ── IC Markets braucht eine ausdrückliche Freigabe (15.09.) ───────────────
   //
   // Hier stand nur `aiDecision.brokers.includes("IC_MARKETS")`. Der Rückfall
@@ -148,8 +196,8 @@ export async function runExecutionAgent(req: ExecutionAgentRequest): Promise<Exe
   const { getSettings } = await import("../settings/settings-store");
   const einstellungen = await getSettings().catch(() => null);
   const icFreigegeben = einstellungen?.botSettings?.icMarketsExecutionEnabled === true;
-  const useIC = aiDecision.brokers.includes("IC_MARKETS") && icFreigegeben;
-  if (aiDecision.brokers.includes("IC_MARKETS") && !icFreigegeben) {
+  const useIC = brokers.includes("IC_MARKETS") && icFreigegeben;
+  if (brokers.includes("IC_MARKETS") && !icFreigegeben) {
     console.log(`[exec-agent] ℹ️ ${req.symbol}: IC Markets übersprungen — `
       + `Ausführung dort ist ausgeschaltet (Einstellungen → IC-Markets-Ausführung). `
       + `Nur Capital.com wird von den Schutzschichten erfasst.`);
