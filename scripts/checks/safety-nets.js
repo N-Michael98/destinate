@@ -2243,6 +2243,156 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ BUS-VERDRAHTUNG: KEIN ABO OHNE SENDER (17.09.) ═══════════════════════
+  //
+  // GEFUNDEN BEI DER GENERALKONTROLLE, von Hand: der Diagnose-Agent hoerte auf
+  // `EXECUTION:TRADE_CLOSED` (sendet niemand — der einzige Sender war bis zum
+  // 16.09. eine FALSCH benannte KI-Ablehnung) und auf `DIAGNOSTICS:HEALTH_CHECK`
+  // (sendet niemand), und antwortete darauf mit `DIAGNOSTICS:ALERT` (hoert
+  // niemand). Ein Empfaenger ohne Sender wartet fuer immer und sieht dabei aus
+  // wie eine funktionierende Ueberwachung.
+  //
+  // Zusaetzlich: die Zyklus-Bilanz liest bestimmte Nutzlast-SCHLUESSEL. Wird
+  // `grund` beim Sender in `reason` umbenannt, bleibt alles gruen und die
+  // Tagesbilanz meldet stumm "Broker-Fehler: EURUSD: ". Deshalb werden die
+  // Schluessel hier gegeneinander gehalten.
+  //
+  // Die Sendestellen werden mit einem KLAMMERZAEHLER gelesen, nicht mit einem
+  // Regex bis zum Zeilenende: bei der Handmessung uebersah ein `\n\}\)`-Muster
+  // jede einzeilige Sendestelle und meldete vier Ereignisse faelschlich als
+  // "kein Sender". Die Selbstpruefung unten haelt das fest.
+  {
+    const ohneK = (s) => s.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1 ");
+    const klammerBlock = (src, start) => {
+      let tiefe = 0;
+      for (let i = start; i < src.length && i < start + 4000; i++) {
+        const c = src[i];
+        if (c === "(" || c === "{" || c === "[") tiefe++;
+        else if (c === ")" || c === "}" || c === "]") { tiefe--; if (tiefe === 0) return src.slice(start + 1, i); }
+        else if (c === '"' || c === "'" || c === "`") { const q = c; i++; while (i < src.length && src[i] !== q) { if (src[i] === "\\") i++; i++; } }
+      }
+      return null;
+    };
+    // SCHLUESSEL, NICHT WERTE. Erste Fassung zaehlte jeden Namen vor einem
+    // Komma ODER Doppelpunkt — damit galt bei `direction: req.direction` auch
+    // der WERT als Schluessel. Die Sabotage "Schluessel umbenannt" blieb
+    // deshalb gruen, weil der alte Name im Wert weiterlebte. Jetzt wird auf
+    // Ebene 0 an Kommas zerlegt und je Stueck der Kopf vor dem ersten
+    // Doppelpunkt genommen (Kurzform `{ scan }` ist der ganze Kopf).
+    const schluesselVon = (rumpf) => {
+      const teile = []; let tiefe = 0, akt = "";
+      for (let i = 0; i < rumpf.length; i++) {
+        const c = rumpf[i];
+        if (c === '"' || c === "'" || c === "`") {
+          const q = c; akt += c; i++;
+          while (i < rumpf.length && rumpf[i] !== q) { if (rumpf[i] === "\\") { akt += rumpf[i]; i++; } akt += rumpf[i]; i++; }
+          akt += q; continue;
+        }
+        if (c === "{" || c === "[" || c === "(") tiefe++;
+        else if (c === "}" || c === "]" || c === ")") tiefe--;
+        else if (c === "," && tiefe === 0) { teile.push(akt); akt = ""; continue; }
+        akt += c;
+      }
+      teile.push(akt);
+      const raus = [];
+      for (const t of teile) {
+        const s = t.trim();
+        if (!s) continue;
+        let t2 = 0, dp = -1;
+        for (let i = 0; i < s.length; i++) {
+          const c = s[i];
+          if (c === '"' || c === "'" || c === "`") { const q = c; i++; while (i < s.length && s[i] !== q) { if (s[i] === "\\") i++; i++; } continue; }
+          if (c === "{" || c === "[" || c === "(") t2++;
+          else if (c === "}" || c === "]" || c === ")") t2--;
+          else if (c === ":" && t2 === 0) { dp = i; break; }
+        }
+        const kopf = (dp >= 0 ? s.slice(0, dp) : s).trim().replace(/^\.\.\./, "");
+        if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(kopf)) raus.push(kopf);
+      }
+      return [...new Set(raus)];
+    };
+
+    const wurzel = path.join(__dirname, "..", "..", "frontend");
+    const dateien = [];
+    (function sammeln(dir) {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.name === "node_modules" || e.name === ".next" || e.name.startsWith(".")) continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) sammeln(p);
+        else if (/\.tsx?$/.test(e.name)) dateien.push(p);
+      }
+    })(wurzel);
+
+    const sende = new Map(), hoere = new Map();
+    for (const abs of dateien) {
+      const rel = path.relative(wurzel, abs).replace(/\\/g, "/");
+      const src = ohneK(fs.readFileSync(abs, "utf8"));
+      for (const m of src.matchAll(/\.publish\s*\(/g)) {
+        const rumpf = klammerBlock(src, m.index + m[0].length - 1);
+        if (rumpf === null) continue;
+        const typ = (rumpf.match(/type:\s*["']([A-Z][A-Z_]*:[A-Z_]+)["']/) || [])[1];
+        if (!typ) continue;
+        const plIdx = rumpf.indexOf("payload:");
+        const gk = plIdx >= 0 ? rumpf.indexOf("{", plIdx) : -1;
+        const inner = gk >= 0 ? klammerBlock(rumpf, gk) : null;
+        if (!sende.has(typ)) sende.set(typ, []);
+        sende.get(typ).push({ datei: rel, schluessel: inner === null ? [] : schluesselVon(inner) });
+      }
+      for (const m of src.matchAll(/\.subscribe\(\s*["']([A-Z][A-Z_]*:[A-Z_]+)["']/g)) {
+        if (!hoere.has(m[1])) hoere.set(m[1], []);
+        hoere.get(m[1]).push(rel);
+      }
+      // Abo ueber eine Schleife: `for (const t of [...])` oder ueber eine Liste im Modul.
+      for (const m of src.matchAll(/for\s*\(\s*const\s+(\w+)\s+of\s+([\s\S]{0,400}?)\)\s*\{?([\s\S]{0,300}?)\.subscribe\(\s*(\w+)/g)) {
+        if (m[4] !== m[1]) continue;
+        let quelle = m[2];
+        if (!quelle.includes("[")) {
+          const dekl = src.match(new RegExp(`(?:const|let)\\s+${quelle.trim()}\\s*(?::[^=]+)?=\\s*\\[([\\s\\S]*?)\\]`));
+          quelle = dekl ? dekl[1] : "";
+        }
+        for (const t of quelle.matchAll(/["']([A-Z][A-Z_]*:[A-Z_]+)["']/g)) {
+          if (!hoere.has(t[1])) hoere.set(t[1], []);
+          hoere.get(t[1]).push(rel);
+        }
+      }
+    }
+
+    // SELBSTPRUEFUNG: findet die Messung die bekannten Stellen ueberhaupt?
+    // Ohne das koennte ein kaputtes Muster stillschweigend "0 Befunde" melden.
+    const belege = [
+      ["CYCLE:STARTED", "orchestrator-agent.ts", "s"], ["CYCLE:FINISHED", "orchestrator-agent.ts", "s"],
+      ["EXECUTION:TRADE_FAILED", "orchestrator-agent.ts", "s"], ["ANALYSIS:SCAN_DONE", "analysis-agent.ts", "s"],
+      ["EXECUTION:TRADE_OPENED", "execution-agent.ts", "s"], ["GATE:DECISION", "agent-bus.ts", "s"],
+      ["RISK:HEARTBEAT", "diagnostics-agent.ts", "h"], ["CYCLE:STARTED", "diagnostics-agent.ts", "h"],
+      ["GATE:DECISION", "zyklus-bilanz.ts", "h"], ["CYCLE:FINISHED", "zyklus-bilanz.ts", "h"],
+    ];
+    const blind = belege.filter(([typ, datei, art]) => {
+      const liste = art === "s" ? (sende.get(typ) ?? []).map((x) => x.datei) : (hoere.get(typ) ?? []);
+      return !liste.some((d) => d.includes(datei));
+    });
+    torPruefung("die Bus-Messung findet bekannte Stellen nicht mehr — sie ist blind, nicht das Programm sauber",
+      blind.length === 0, blind.map(([t, d, a]) => `${a === "s" ? "Sender" : "Abo"} ${t} in ${d}`).join(", "));
+
+    if (blind.length === 0) {
+      const ohneSender = [...hoere.keys()].filter((t) => !sende.has(t));
+      torPruefung("ein Abo am Bus hat keinen Sender — der Empfaenger wartet fuer immer",
+        ohneSender.length === 0,
+        ohneSender.map((t) => `${t} (abonniert in ${[...new Set(hoere.get(t))].join(", ")})`).join(" | "));
+
+      // Was die Zyklus-Bilanz aus der Nutzlast liest, muss der Sender auch senden.
+      for (const [typ, noetig] of Object.entries({
+        "ANALYSIS:SCAN_DONE": ["scan"], "CYCLE:FINISHED": ["ausgang"],
+        "EXECUTION:TRADE_OPENED": ["symbol", "direction"], "EXECUTION:TRADE_FAILED": ["symbol", "grund"],
+      })) {
+        const sender = sende.get(typ) ?? [];
+        const schlecht = sender.filter((s) => noetig.some((k) => !s.schluessel.includes(k)));
+        torPruefung(`die Zyklus-Bilanz liest aus ${typ} Schluessel, die nicht gesendet werden`,
+          sender.length > 0 && schlecht.length === 0,
+          sender.length === 0 ? "kein Sender" : schlecht.map((s) => `${s.datei}: sendet ${s.schluessel.join(", ") || "nichts"}, gebraucht ${noetig.join(", ")}`).join(" | "));
+      }
+    }
+  }
+
   // ══ ORCHESTRATOR- UND AUSFUEHRUNGS-KI: URTEILE GEPRUEFT (16.09.) ═════════
   //
   // Beide Tore uebernahmen die Modellantwort per `as` und fragten

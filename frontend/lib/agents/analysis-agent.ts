@@ -387,7 +387,14 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
     console.log(`[analysis-agent] ✅ ${opp.symbol} ${opp.gpt.direction} conf=${angepasst}% priority=${meta.priority}`);
   }
 
-  // Alle nicht-GO Signale als WAIT publizieren (für DiagnosticsAgent)
+  // Alle nicht-GO Signale als WAIT publizieren.
+  // KORREKTUR 17.09.: hier stand "(für DiagnosticsAgent)". Der hoert diesen
+  // Typ nicht ab — gemessen ueber das ganze Programm hat `ANALYSIS:SIGNAL_GENERATED`
+  // keinen einzigen Empfaenger, und das Bus-Log liest niemand. Ein Kommentar,
+  // der einen Verbraucher nennt, den es nicht gibt, ist genau die Fehlerklasse
+  // aus CLAUDE.md. Die Zahlen, auf die es ankommt, gehen seit dem 16.09. ueber
+  // `ANALYSIS:SCAN_DONE` in die Zyklus-Bilanz; dieser Aufruf bleibt als
+  // Bus-Historie stehen und behauptet nichts weiter.
   const waitCount = opportunities.length - goSignals.length;
   if (waitCount > 0) {
     agentBus.publish({

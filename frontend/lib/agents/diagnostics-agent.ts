@@ -202,17 +202,23 @@ function handleEvent(event: AgentEvent): void {
       break;
     }
 
-    case "DIAGNOSTICS:HEALTH_CHECK": {
-      // Anderer Agent fragt nach Status
-      const report = generateReport();
-      agentBus.publish({
-        type: "DIAGNOSTICS:ALERT",
-        agentId: AGENT_ID,
-        timestamp: new Date().toISOString(),
-        payload: { report },
-      });
-      break;
-    }
+    // ── ENTFERNT 17.09.: der Zweig "DIAGNOSTICS:HEALTH_CHECK" ────────────────
+    //
+    // Er erzeugte einen Bericht und sendete ihn als `DIAGNOSTICS:ALERT`.
+    // GEMESSEN ueber das ganze Programm: `DIAGNOSTICS:HEALTH_CHECK` wird
+    // NIRGENDS gesendet, und `DIAGNOSTICS:ALERT` hat KEINEN Empfaenger. Das
+    // Bus-Log liest ausserdem niemand (`getRecentEvents` hat null Aufrufer).
+    // Ein geschlossener toter Kreis, der wie ein Alarmweg aussah.
+    //
+    // Wer den Bericht braucht, holt ihn direkt: `getDiagnosticsReport()` --
+    // so macht es die Route und so macht es der Orchestrator vor jedem Zyklus.
+    // `safety-nets` laesst ab heute jedes Abo rot werden, das keinen Sender hat.
+    //
+    // Ebenso raus: das Abo auf `EXECUTION:TRADE_CLOSED`. Es hatte hier gar
+    // keinen Zweig, und gesendet wird der Typ seit dem 16.09. von niemandem
+    // mehr -- bis dahin nur FALSCH, naemlich fuer eine von der KI abgelehnte
+    // Order, bei der nie ein Trade offen war. Geschlossene Positionen meldet
+    // der RiskAgent als `RISK:POSITION_CLOSED`, und das wird oben verbucht.
   }
 }
 
@@ -399,8 +405,7 @@ export function initDiagnosticsAgent(): void {
     "RISK:HEARTBEAT",
     "RISK:BE_SET", "RISK:TRAIL_UPDATED", "RISK:PARTIAL_TP",
     "RISK:POSITION_CLOSED", "RISK:ERROR",
-    "EXECUTION:TRADE_OPENED", "EXECUTION:TRADE_CLOSED",
-    "DIAGNOSTICS:HEALTH_CHECK",
+    "EXECUTION:TRADE_OPENED",
     // Der Herzschlag des Handelszyklus (16.09.) — ohne ihn war der
     // OrchestratorAgent in `knownAgents` aufgefuehrt, aber nie ueberwacht.
     "CYCLE:STARTED",

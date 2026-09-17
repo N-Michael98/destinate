@@ -831,12 +831,13 @@ async function zyklusInnen(): Promise<string> {
   });
   if (!aiDecision.proceed) {
     console.log(`[orchestrator] AI hat Zyklus pausiert: ${aiDecision.reason}`);
-    agentBus.publish({
-      type: "DIAGNOSTICS:ALERT",
-      agentId: AGENT_ID,
-      timestamp: new Date().toISOString(),
-      payload: { action: "CYCLE_PAUSED", reason: aiDecision.reason },
-    });
+    // Hier ging zusaetzlich ein `DIAGNOSTICS:ALERT` raus. GEMESSEN 17.09.:
+    // dieser Typ hat im ganzen Programm keinen Empfaenger, und das Bus-Log
+    // liest niemand (`getRecentEvents`: null Aufrufer) -- der "Alarm" alarmierte
+    // also nichts. Dieselbe Tatsache steht seit gestern zweimal richtig:
+    // als Tor-Entscheidung "Orchestrator-KI, nein, <Grund>" (drei Zeilen
+    // hoeher) und als Ausgang des Zyklus -- beides landet in der
+    // Zyklus-Bilanz und abends in der Telegram-Tagesbilanz.
     return "Orchestrator-KI pausiert";
   }
 
