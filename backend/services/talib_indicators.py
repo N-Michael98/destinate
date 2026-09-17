@@ -121,19 +121,31 @@ def analyze_talib(symbol: str, interval: str = "1d") -> dict:
         current_price = _safe(c[-1])
         signal_score  = 0
 
-        if _safe(rsi14[-1]) and _safe(rsi14[-1]) < 30:    signal_score += 2
-        elif _safe(rsi14[-1]) and _safe(rsi14[-1]) > 70:  signal_score -= 2
+        # `is not None` STATT WAHRHEITSWERT (17.09.). `_safe()` gibt None
+        # zurueck, wenn ein Indikator nicht berechenbar ist — 0.0 ist dagegen
+        # ein gueltiges Ergebnis. `if _safe(x) and ...` wirft beides in einen
+        # Topf: ein MACD von exakt 0.0 (der Nulldurchgang, ein durchaus
+        # gewoehnlicher Wert) galt als "nicht vorhanden", und der Punkt fiel
+        # still weg. Dieselbe Fehlerklasse wie `or 50` eine Ebene hoeher, nur
+        # in die andere Richtung: hier wurde nichts erfunden, sondern etwas
+        # Vorhandenes verworfen.
+        rsi_val = _safe(rsi14[-1])
+        if rsi_val is not None and rsi_val < 30:    signal_score += 2
+        elif rsi_val is not None and rsi_val > 70:  signal_score -= 2
 
-        if _safe(macd[-1]) and _safe(macd_sig[-1]):
-            if macd[-1] > macd_sig[-1]:  signal_score += 1
+        macd_now, macd_now_sig = _safe(macd[-1]), _safe(macd_sig[-1])
+        if macd_now is not None and macd_now_sig is not None:
+            if macd_now > macd_now_sig:  signal_score += 1
             else:                        signal_score -= 1
 
-        if _safe(ema20[-1]) and _safe(ema50[-1]):
-            if ema20[-1] > ema50[-1]:    signal_score += 1
+        e20, e50 = _safe(ema20[-1]), _safe(ema50[-1])
+        if e20 is not None and e50 is not None:
+            if e20 > e50:                signal_score += 1
             else:                        signal_score -= 1
 
-        if current_price and _safe(ema200[-1]):
-            if current_price > ema200[-1]: signal_score += 1
+        e200 = _safe(ema200[-1])
+        if current_price is not None and e200 is not None:
+            if current_price > e200:       signal_score += 1
             else:                          signal_score -= 1
 
         signal_score += len(bullish_patterns)

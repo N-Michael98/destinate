@@ -79,8 +79,8 @@ interface TAlibSummary {
   macd_signal: string;
   signal: string; // STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL
   score: number;
-  ema_20: number;
-  ema_50: number;
+  ema_20: number | null;
+  ema_50: number | null;
   atr: number;
   // ── Schritt 1 (26.07.): zusätzliche Felder vom Backend (alle optional,
   // damit ein älterer Backend-Stand nichts bricht) ──────────────────────────
@@ -1125,7 +1125,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
     const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${newsBlock}
 
-Analyze these live markets with REAL technical indicator data from TA-Lib. The daily (1D) values are given for every market; a "1H:.../1W:..." field is added only when those timeframes were available for that market — when it is missing, judge on 1D alone and do not assume agreement. Return a judgment for EVERY market listed — use direction "WAIT" (confidence 0, stopLoss 0, takeProfit 0) when there is no clean setup. Do NOT skip any market:
+Analyze these live markets with REAL technical indicator data from TA-Lib. The daily (1D) values are given for every market; a "1H:.../1W:..." field is added only when those timeframes were available for that market — when it is missing, judge on 1D alone and do not assume agreement. A value of "?" or "UNKNOWN" means that indicator could not be computed for that market — treat it as missing information, never as a neutral reading and never as confirmation. Return a judgment for EVERY market listed — use direction "WAIT" (confidence 0, stopLoss 0, takeProfit 0) when there is no clean setup. Do NOT skip any market:
 
 ${marketList}
 

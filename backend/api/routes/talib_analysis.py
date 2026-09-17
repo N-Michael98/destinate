@@ -65,11 +65,35 @@ async def talib_analyze_multi(req: MultiRequest):
         momentum = item.get("momentum", {})
         trend    = item.get("trend", {})
         vol      = item.get("volatility", {})
-        ema20 = trend.get("ema_20") or 0
-        ema50 = trend.get("ema_50") or 0
-        trend_str = "BULLISH" if ema20 > ema50 else "BEARISH" if ema20 < ema50 else "NEUTRAL"
-        macd_val  = momentum.get("macd") or 0
-        macd_sig  = momentum.get("macd_signal") or 0
+        # ── AUS FEHLENDEN WERTEN WIRD KEINE RICHTUNG (17.09.) ──────────────
+        #
+        # Hier stand `trend.get("ema_20") or 0`. `_load_arrays` laesst ab
+        # DREISSIG Kerzen durch (talib_indicators.py), die EMA50 braucht aber
+        # fuenfzig und der MACD vierunddreissig. Bei 30–49 Kerzen ist `ema_50`
+        # deshalb None -> 0, und `ema20 > ema50` ergab "BULLISH": eine
+        # erfundene Richtung, die im Prompt ausdruecklich einen Kauf erlaubt
+        # ("ONLY recommend BUY if 1D trend=BULLISH"). Beim MACD war es noch
+        # schiefer -- der Vergleich kennt gar kein Unentschieden, fehlende
+        # Werte ergaben also IMMER "BEARISH".
+        #
+        # Dazu stand die 0 auch in der Marktzeile: GPT las "ema50=0.000000"
+        # neben "ema20=1.161" und sah einen gewaltigen Aufwaertstrend.
+        #
+        # Fehlt einer der beiden Werte, heisst das jetzt "UNKNOWN". Der
+        # Analyzer selbst macht es an derselben Stelle richtig: er laesst einen
+        # fehlenden Wert einfach nicht in den Score einfliessen.
+        ema20 = trend.get("ema_20")
+        ema50 = trend.get("ema_50")
+        if ema20 is None or ema50 is None:
+            trend_str = "UNKNOWN"
+        else:
+            trend_str = "BULLISH" if ema20 > ema50 else "BEARISH" if ema20 < ema50 else "NEUTRAL"
+        macd_val = momentum.get("macd")
+        macd_sig = momentum.get("macd_signal")
+        if macd_val is None or macd_sig is None:
+            macd_str = "UNKNOWN"
+        else:
+            macd_str = "BULLISH" if macd_val > macd_sig else "BEARISH"
         patterns = item.get("patterns", {})
         results[sym] = {
             "symbol":      sym,
@@ -84,9 +108,15 @@ async def talib_analyze_multi(req: MultiRequest):
             # wurde zu "neutral 50" gedreht. Fehlt er, kommt jetzt null, und
             # der Prompt schreibt "rsi=?" statt einer Zahl.
             "rsi":         momentum.get("rsi_14"),
-            "macd_signal": "BULLISH" if macd_val > macd_sig else "BEARISH",
+            "macd_signal": macd_str,
             "ema_20":      ema20,
             "ema_50":      ema50,
+            # `atr_14 or 0` bleibt ABSICHTLICH und geprueft (17.09.): die 0
+            # wird auf der TS-Seite ueberall als "unbekannt" behandelt --
+            # `getVolatilityAdjustedRisk` faellt bei `!atr` auf 40 % Risiko
+            # (trade-filters.ts), und beide Stop-Pfade der Engine haengen an
+            # `ta.atr > 0`. Erreichbar ist der Fall ohnehin nicht: ATR braucht
+            # 14 Kerzen, durchgelassen wird erst ab 30.
             "atr":         vol.get("atr_14") or 0,
             # ── Schritt 1 (26.07.): bisher berechnet aber verworfen ──────────
             # Bollinger = dynamische S/R-Zonen, ADX = Trendstärke,

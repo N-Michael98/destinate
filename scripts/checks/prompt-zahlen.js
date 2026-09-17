@@ -503,9 +503,56 @@ module.exports = function pruefe() {
       gz(65.4) === "65" && gz(29.6) === "30" && gz(100) === "100",
       `${gz(65.4)} / ${gz(29.6)} / ${gz(100)}`);
     const py = read("backend/api/routes/talib_analysis.py");
+    // KOMMENTARE RAUS, bevor nach "or 0" gesucht wird. Der erste Lauf war rot,
+    // weil die BEGRUENDUNG im Code das alte `trend.get("ema_20") or 0`
+    // woertlich zitiert — ein Wort im Kommentar ist keine Verwendung
+    // (CLAUDE.md), und diesmal ist die Pruefung selbst darauf hereingefallen.
+    const pyOhne = py.replace(/(^|[^"'])#[^\n]*/g, "$1");
     pruefe1("das Python-Backend erfindet wieder einen neutralen RSI",
-      /"rsi":\s*momentum\.get\("rsi_14"\),/.test(py) && !/rsi_14"\)\s*or\s*50/.test(py),
+      /"rsi":\s*momentum\.get\("rsi_14"\),/.test(pyOhne) && !/rsi_14"\)\s*or\s*50/.test(pyOhne),
       "`or 50` macht aus 'unbekannt' eine Messung");
+
+    // ── AUS FEHLENDEN WERTEN WIRD KEINE RICHTUNG (17.09.) ─────────────────
+    //
+    // `_load_arrays` laesst ab 30 Kerzen durch, die EMA50 braucht 50 und der
+    // MACD 34. Bei 30–49 Kerzen war `ema_50` None -> `or 0` -> "BULLISH".
+    // Eine erfundene Richtung, die im Prompt ausdruecklich einen Kauf erlaubt.
+    // Beim MACD gab es nicht einmal ein Unentschieden: fehlende Werte ergaben
+    // IMMER "BEARISH".
+    pruefe1("fehlende EMAs werden wieder zu 0 und ergeben eine Richtung",
+      // `\s+` statt `\s*\n\s*`: die Python-Dateien haben CRLF, ein `\n` im
+      // Muster trifft dann nichts (erster Lauf war genau deshalb rot).
+      /ema20 = trend\.get\("ema_20"\)\s+ema50 = trend\.get\("ema_50"\)/.test(pyOhne)
+      && /if ema20 is None or ema50 is None:\s+trend_str = "UNKNOWN"/.test(pyOhne)
+      && !/ema_20"\)\s*or\s*0/.test(pyOhne) && !/ema_50"\)\s*or\s*0/.test(pyOhne),
+      "30–49 Kerzen ergaben 'BULLISH', und der Prompt erlaubt darauf einen Kauf");
+    pruefe1("ein fehlender MACD ergibt wieder BEARISH",
+      /if macd_val is None or macd_sig is None:\s+macd_str = "UNKNOWN"/.test(pyOhne)
+      && /"macd_signal": macd_str,/.test(pyOhne)
+      && !/macd"\)\s*or\s*0/.test(pyOhne),
+      "der Vergleich kennt kein Unentschieden — 0 > 0 ist falsch, also immer BEARISH");
+    pruefe1("der Prompt erklaert nicht, was ? und UNKNOWN bedeuten",
+      /treat it as missing information, never as a neutral reading and never as confirmation/.test(promptText),
+      "sonst liest GPT 'UNKNOWN' als neutrale Messung");
+    // Und der ATR bleibt bewusst bei 0 — das ist geprueft, nicht vergessen:
+    // jede Verwendung behandelt 0 als unbekannt.
+    const filterQuelle = read("frontend/lib/trading-filters/trade-filters.ts");
+    pruefe1("die 0 des ATR wird nicht mehr ueberall als 'unbekannt' behandelt",
+      /if \(!atr \|\| !currentPrice \|\| currentPrice <= 0\)/.test(filterQuelle)
+      && (ohneKomm.match(/ta\.atr > 0/g) || []).length >= 3,
+      "solange `atr_14 or 0` gesendet wird, MUSS jede Verwendung die 0 abfangen");
+
+    // Der Analyzer selbst: `_safe()` gibt None ODER 0.0 zurueck — ein
+    // Wahrheitswert wirft beides in einen Topf und verwirft eine echte 0.
+    const analyzer = read("backend/services/talib_indicators.py")
+      .replace(/(^|[^"'])#[^\n]*/g, "$1");
+    pruefe1("der Analyzer verwirft wieder eine echte 0 als 'nicht vorhanden'",
+      /rsi_val is not None and rsi_val < 30/.test(analyzer)
+      && /macd_now is not None and macd_now_sig is not None/.test(analyzer)
+      && /e20 is not None and e50 is not None/.test(analyzer)
+      && /current_price is not None and e200 is not None/.test(analyzer)
+      && !/if _safe\(\w+\[-1\]\) and/.test(analyzer),
+      "ein MACD von exakt 0.0 ist der Nulldurchgang, kein fehlender Wert");
     pruefe1("der RSI wird im Prompt wieder ungeprueft formatiert",
       !/ta\.rsi\?\.toFixed/.test(ohneKomm)
       && (ohneKomm.match(/promptGanzzahl\(ta\.rsi\)/g) || []).length === 3,
