@@ -849,18 +849,32 @@ async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string
   try {
     // 1H und 4H parallel zu 1D (1D schon in fetchTALibData)
     // yfinance VALID_INTERVALS: 1h, 1d, 1wk — "4h" nicht unterstützt → "1wk" stattdessen
-    const [r1h, r1wk] = await Promise.all([
-      fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
-        method: "POST", headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
-        body: JSON.stringify({ symbols, interval: "1h" }),
-        signal: AbortSignal.timeout(25000),
-      }).then(r => r.ok ? r.json() as Promise<{ results?: Record<string, { trend: string; signal: string }> }> : null).catch(() => null),
-      fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
-        method: "POST", headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
-        body: JSON.stringify({ symbols, interval: "1wk" }),
-        signal: AbortSignal.timeout(25000),
-      }).then(r => r.ok ? r.json() as Promise<{ results?: Record<string, { trend: string; signal: string }> }> : null).catch(() => null),
-    ]);
+    // ── JEDER AUSFALL WIRD GEMELDET (16.09.) ────────────────────────────────
+    //
+    // Hier stand `.then(r => r.ok ? … : null).catch(() => null)`: jeder der
+    // beiden Abrufe verschluckte seinen Fehler SELBST. Die Warnung im `catch`
+    // unten — ausdruecklich dafuer gebaut, dass "der Ausfall nicht unsichtbar
+    // bleibt" — konnte deshalb bei einem Abruffehler NIE ausloesen. Faellt
+    // 1H oder 1W aus, fehlt GPT die Multi-Timeframe-Zeile, und der Prompt
+    // rechnet trotzdem mit ihr ("if 1H and 1W both confirm … +10").
+    const holen = async (interval: string) => {
+      try {
+        const r = await fetch(`${PYTHON_BASE}/api/v1/talib/analyze/multi`, {
+          method: "POST", headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
+          body: JSON.stringify({ symbols, interval }),
+          signal: AbortSignal.timeout(25000),
+        });
+        if (!r.ok) {
+          console.warn(`[ai-engine] ⚠️ Multi-Timeframe ${interval}: HTTP ${r.status} ${r.statusText} — GPT bekommt diesen Zeitrahmen NICHT`);
+          return null;
+        }
+        return await r.json() as { results?: Record<string, { trend: string; signal: string }> };
+      } catch (e) {
+        console.warn(`[ai-engine] ⚠️ Multi-Timeframe ${interval} fehlgeschlagen nach ${Date.now() - begonnen}ms: ${fehlerText(e)} — GPT bekommt diesen Zeitrahmen NICHT`);
+        return null;
+      }
+    };
+    const [r1h, r1wk] = await Promise.all([holen("1h"), holen("1wk")]);
     for (const sym of symbols) {
       const t1h = r1h?.results?.[sym];
       const t1wk = r1wk?.results?.[sym];
@@ -875,6 +889,14 @@ async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string
     // Der Ausfall bleibt folgenlos (Prompt ohne Multi-Timeframe-Zeile), aber
     // er darf nicht unsichtbar sein.
     console.warn(`[ai-engine] Multi-Timeframe fehlgeschlagen nach ${Date.now() - begonnen}ms: ${fehlerText(e)}`);
+  }
+  // Und wie viele Symbole am Ende WIRKLICH eine Zeile bekommen haben (16.09.).
+  // Ein Teilausfall — etwa 12 von 30 — war bisher nirgends zu sehen.
+  if (result.size < symbols.length) {
+    console.warn(`[ai-engine] ⚠️ Multi-Timeframe nur fuer ${result.size}/${symbols.length} Symbole `
+      + `(${Date.now() - begonnen}ms) — fuer die uebrigen fehlt GPT die 1H/1W-Bestaetigung`);
+  } else {
+    console.log(`[ai-engine] Multi-Timeframe: ${result.size}/${symbols.length} Symbole in ${Date.now() - begonnen}ms`);
   }
   return result;
 }

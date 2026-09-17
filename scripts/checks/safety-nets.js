@@ -2012,6 +2012,98 @@ module.exports = async function pruefe() {
       "Handelsfenster endet Mo–Fr 22:00 UTC");
   }
 
+  // ══ UEBERWACHUNG: HAENGER, MULTI-TIMEFRAME, EHRLICHE DIAGNOSE (16.09.) ═══
+  //
+  // Drei stille Stellen:
+  //  1. Haengt eine Schleife wirklich, schrieb sie nur "ueberspringe diesen
+  //     Tick" — alle 2 bzw. 5 Minuten, und niemand erfuhr es.
+  //  2. Im Multi-Timeframe-Abruf verschluckte JEDER der beiden Aufrufe seinen
+  //     Fehler selbst; die dafuer gebaute Warnung konnte nie ausloesen.
+  //  3. Der Diagnose-Zustand lag modul-scoped: `GET /api/diagnostics-agent`
+  //     sah eine leere Kopie und meldete "Alle 0 Agents aktiv".
+  {
+    const iq2 = read("frontend/instrumentation.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    for (const [name, zaehler, bereich] of [
+      ["Handelszyklus", "orchestratorSkips", "Orchestrator \\(5-Minuten-Zyklus\\)"],
+      ["Positionswaechter", "positionMonitorSkips", "Positionswaechter \\(2-Minuten-Schleife\\)"],
+    ]) {
+      const block = new RegExp(
+        `${zaehler}\\+\\+;[\\s\\S]{0,400}?if \\(${zaehler} >= 3\\) \\{[\\s\\S]{0,500}?void meldeZyklusFehler\\("${bereich}", new Error\\(`
+      );
+      // Der Rücksetzer muss NACH dem Ueberspringen-Zweig stehen. `${zaehler} = 0;`
+      // allein traf auch die Deklaration `let ${zaehler} = 0;` — im Sabotage-Lauf
+      // liess sich der echte Rücksetzer deshalb ersatzlos streichen.
+      torPruefung(`ein haengender ${name} meldet sich nicht`,
+        block.test(iq2) && new RegExp(`return;\\s*\\}\\s*${zaehler} = 0;`).test(iq2),
+        "drei Auslassungen in Folge, und der Zaehler muss beim naechsten echten Lauf zurueckgesetzt werden");
+      // Der Text darf die ZAHL nicht enthalten — sonst ist er bei jeder
+      // Meldung neu und umgeht die 30-Minuten-Drossel (zyklus-alarm).
+      const meldung = (iq2.match(new RegExp(`void meldeZyklusFehler\\("${bereich}", new Error\\(([\\s\\S]{0,400}?)\\)\\);`)) || ["", ""])[1];
+      torPruefung(`die Haenger-Meldung des ${name} enthaelt eine veraenderliche Zahl`,
+        meldung !== "" && !new RegExp(`\\$\\{${zaehler}`).test(meldung),
+        "ein wechselnder Text umgeht die Drossel — alle paar Minuten eine Nachricht");
+    }
+
+    const mq = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const mtfBlock = (mq.match(/async function fetchMultiTimeframeSummary[\s\S]*?\n\}/) || [""])[0];
+    torPruefung("ein Multi-Timeframe-Abruf verschluckt seinen Fehler wieder selbst",
+      mtfBlock !== "" && !/\.catch\(\(\) => null\)/.test(mtfBlock)
+      && /HTTP \$\{r\.status\}/.test(mtfBlock) && /fehlgeschlagen nach/.test(mtfBlock),
+      "dann kann die Warnung im catch nie ausloesen");
+    torPruefung("ein Teilausfall des Multi-Timeframe bleibt unsichtbar",
+      /Multi-Timeframe nur fuer \$\{result\.size\}\/\$\{symbols\.length\}/.test(mtfBlock),
+      "12 von 30 Symbolen ohne 1H/1W war bisher nirgends zu sehen");
+
+    // ── Diagnose: Zustand wirklich geteilt? ──
+    const altDiag = global.__diagnose_zustand__;
+    delete global.__diagnose_zustand__;
+    try {
+      const dA = ladeTsModul("lib/agents/diagnostics-agent.ts");
+      const dB = ladeTsModul("lib/agents/diagnostics-agent.ts");
+      if (dA.fehler || dB.fehler) {
+        funde.push(`diagnostics-agent nicht ausfuehrbar: ${dA.fehler ?? dB.fehler}`);
+        zusatz++;
+      } else {
+        // Ueber den GETEILTEN Zustand schreiben (so wie es der Ereignis-Handler
+        // tut), ueber die ANDERE Kopie den Bericht erzeugen — genau der Fall
+        // der Route. Fehlt der globale Zustand, ist DAS der Befund; im
+        // Sabotage-Lauf stuerzte der Pruefer hier ab statt zu melden.
+        const geteilt = global.__diagnose_zustand__;
+        if (!geteilt || !(geteilt.heartbeats instanceof Map)) {
+          torPruefung("der Diagnose-Zustand wird nicht auf global angelegt — "
+            + "die Route sieht dann eine leere Kopie und meldet 'Alle 0 Agents aktiv'",
+            false, String(geteilt === undefined ? "kein global.__diagnose_zustand__" : typeof geteilt.heartbeats));
+        } else {
+          geteilt.heartbeats.set("RiskAgent", {
+            agentId: "RiskAgent", lastSeen: new Date().toISOString(),
+            cycleCount: 1, errorCount: 0, status: "OK",
+          });
+          const bericht = dB.exports.getDiagnosticsReport();
+          torPruefung("zwei Modulkopien der Diagnose sehen verschiedene Zustaende — "
+            + "die Route meldet dann 'Alle 0 Agents aktiv'",
+            bericht && bericht.agents?.length === 1 && bericht.agents[0].agentId === "RiskAgent",
+            JSON.stringify(bericht && bericht.summary));
+        }
+      }
+    } finally {
+      if (altDiag === undefined) delete global.__diagnose_zustand__;
+      else global.__diagnose_zustand__ = altDiag;
+    }
+    const dq = read("frontend/lib/agents/diagnostics-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("der Diagnose-Zustand liegt wieder modul-scoped",
+      /global\.__diagnose_zustand__ \?\?=/.test(dq)
+      && !/^const anomalies = new Map/m.test(dq));
+    torPruefung("der Handelszyklus wird nicht als Herzschlag abgehoert",
+      /"CYCLE:STARTED",/.test(dq) && /const knownAgents = \["RiskAgent", "OrchestratorAgent"\]/.test(dq),
+      "ohne abonnierten Herzschlag stand der OrchestratorAgent zwar in der Liste, wurde aber nie geprueft");
+    torPruefung("die Diagnose behauptet wieder, alle Agenten zu ueberwachen",
+      !/überwacht alle Agents/.test(dq),
+      "von drei genannten kam nur bei einem je ein Herzschlag an");
+  }
+
   // ══ ORCHESTRATOR- UND AUSFUEHRUNGS-KI: URTEILE GEPRUEFT (16.09.) ═════════
   //
   // Beide Tore uebernahmen die Modellantwort per `as` und fragten

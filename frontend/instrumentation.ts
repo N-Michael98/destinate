@@ -295,11 +295,31 @@ export async function register() {
 
         // Position monitor every 2min — Capital.com + IC Markets parallel
         let positionMonitorRunning = false;
+        // ── EIN HAENGENDER LAUF MELDET SICH (16.09.) ────────────────────────
+        //
+        // Der Ueberlauf-Schutz von 27.07. verhindert, dass sich Laeufe
+        // stapeln. Haengt der laufende aber wirklich, schreibt diese Schleife
+        // nur alle zwei Minuten "ueberspringe diesen Tick" — und niemand
+        // erfaehrt es. Genau das Muster, das den Stillstand seit dem 30.06.
+        // so lange getragen hat. Ab drei Auslassungen in Folge (>= 6 min)
+        // geht eine Meldung raus; der Text ist BEWUSST unveraenderlich,
+        // sonst umginge er die 30-Minuten-Drossel im Alarm-Modul.
+        let positionMonitorSkips = 0;
         setInterval(async () => {
           if (positionMonitorRunning) {
+            positionMonitorSkips++;
             console.warn("[position-monitor] Vorheriger Zyklus läuft noch — überspringe diesen Tick (Audit-Fund #2, 27.07.)");
+            if (positionMonitorSkips >= 3) {
+              try {
+                const { meldeZyklusFehler } = await import("./lib/zyklus-alarm/zyklus-alarm");
+                void meldeZyklusFehler("Positionswaechter (2-Minuten-Schleife)", new Error(
+                  "Der Lauf haengt: mehrere Takte hintereinander uebersprungen. "
+                  + "Breakeven, Teilgewinn, Trailing und Zeit-Exit laufen solange NICHT."));
+              } catch { /* non-fatal */ }
+            }
             return;
           }
+          positionMonitorSkips = 0;
           // Killswitch-Sperre (28.07.): kein Positions-Management solange aktiv.
           // Offene Positionen bleiben bewusst offen (Broker-SL/TP schützen weiter).
           try {
@@ -651,11 +671,24 @@ export async function register() {
       try {
         const { runOrchestratorCycle } = await import("./lib/agents/orchestrator-agent");
         let orchestratorRunning = false;
+        // Dasselbe fuer den Handelszyklus (16.09.): drei Auslassungen in Folge
+        // sind >= 15 Minuten ohne jede Analyse. Stabiler Text wegen der Drossel.
+        let orchestratorSkips = 0;
         setInterval(async () => {
           if (orchestratorRunning) {
+            orchestratorSkips++;
             console.warn("[orchestrator] Vorheriger Zyklus läuft noch — überspringe diesen Tick (Audit-Fund #2, 27.07.)");
+            if (orchestratorSkips >= 3) {
+              try {
+                const { meldeZyklusFehler } = await import("./lib/zyklus-alarm/zyklus-alarm");
+                void meldeZyklusFehler("Orchestrator (5-Minuten-Zyklus)", new Error(
+                  "Der Zyklus haengt: mehrere Takte hintereinander uebersprungen. "
+                  + "Solange entsteht KEIN neuer Trade."));
+              } catch { /* non-fatal */ }
+            }
             return;
           }
+          orchestratorSkips = 0;
           // Killswitch-Sperre (28.07.): keine neuen Trades solange aktiv.
           try {
             const { isKillswitchActive } = await import("./lib/killswitch");

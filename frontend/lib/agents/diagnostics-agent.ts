@@ -45,9 +45,32 @@ interface DiagnosticsReport {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const anomalies = new Map<string, AnomalyRecord>();
-const heartbeats = new Map<string, AgentHeartbeat>();
-const recentErrors: AgentEvent[] = [];
+// ── AUF `global`, NICHT MODUL-SCOPED (16.09.) ───────────────────────────────
+//
+// Der Zustand wird von den Schleifen aus `instrumentation.ts` gefuellt und von
+// `GET /api/diagnostics-agent` gelesen — verschiedene Modulkopien (28.07.
+// Killswitch, 26.08. Preis-Cache). Die Route sah deshalb eine LEERE Kopie und
+// meldete "Alle 0 Agents aktiv, keine kritischen Anomalien": eine Diagnose,
+// die nichts gesehen hat, klingt wie Entwarnung.
+type DiagnoseZustand = {
+  anomalies: Map<string, AnomalyRecord>;
+  heartbeats: Map<string, AgentHeartbeat>;
+  recentErrors: AgentEvent[];
+};
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __diagnose_zustand__: DiagnoseZustand | undefined;
+}
+
+const zustand: DiagnoseZustand = (global.__diagnose_zustand__ ??= {
+  anomalies: new Map<string, AnomalyRecord>(),
+  heartbeats: new Map<string, AgentHeartbeat>(),
+  recentErrors: [],
+});
+const anomalies = zustand.anomalies;
+const heartbeats = zustand.heartbeats;
+const recentErrors = zustand.recentErrors;
 const MAX_ERRORS = 100;
 
 // Schwellenwerte für Alarme
@@ -177,8 +200,19 @@ function handleEvent(event: AgentEvent): void {
 
 function checkAgentHealth(): void {
   const now = Date.now();
-  // Nur periodische Agents überwachen — ExecutionAgent ist on-demand (läuft nur bei Trades)
-  const knownAgents = ["RiskAgent", "OrchestratorAgent", "AnalysisAgent"];
+  // ── EHRLICHE LISTE (16.09.) ───────────────────────────────────────────────
+  //
+  // Hier stand zusaetzlich "AnalysisAgent". Der sendet aber nur
+  // `ANALYSIS:SIGNAL_GENERATED`, und dieser Typ war gar nicht abonniert — sein
+  // Herzschlag kam nie an, `if (!hb) continue` uebersprang ihn, und die
+  // Ueberwachung war fuer ihn wirkungslos. Ihn jetzt aufzunehmen waere falsch
+  // herum: ausserhalb der Handelszeit laeuft die Analyse bewusst nicht, das
+  // gaebe jede Nacht einen Fehlalarm.
+  //
+  // Der aussagekraeftige Herzschlag ist der ZYKLUS selbst: er laeuft rund um
+  // die Uhr alle 5 Minuten und meldet seither `CYCLE:STARTED` (siehe
+  // Abonnement unten). Bleibt er aus, steht der Orchestrator wirklich.
+  const knownAgents = ["RiskAgent", "OrchestratorAgent"];
 
   for (const agentId of knownAgents) {
     const hb = heartbeats.get(agentId);
@@ -329,6 +363,9 @@ export function initDiagnosticsAgent(): void {
     "RISK:POSITION_CLOSED", "RISK:ERROR",
     "EXECUTION:TRADE_OPENED", "EXECUTION:TRADE_CLOSED",
     "DIAGNOSTICS:HEALTH_CHECK",
+    // Der Herzschlag des Handelszyklus (16.09.) — ohne ihn war der
+    // OrchestratorAgent in `knownAgents` aufgefuehrt, aber nie ueberwacht.
+    "CYCLE:STARTED",
   ];
 
   for (const type of eventTypes) {
@@ -338,7 +375,12 @@ export function initDiagnosticsAgent(): void {
   // Health-Check alle 5 Minuten
   healthCheckInterval = setInterval(checkAgentHealth, 5 * 60 * 1000);
 
-  console.log("[diag-agent] ✅ DiagnosticsAgent gestartet — überwacht alle Agents");
+  // Genau benennen, was überwacht wird (16.09.). "überwacht alle Agents" war
+  // zu viel behauptet: von drei genannten Agenten kam nur bei einem je ein
+  // Herzschlag an.
+  console.log("[diag-agent] ✅ DiagnosticsAgent gestartet — Herzschlag von "
+    + "RiskAgent (2-Min-Schleife) und OrchestratorAgent (5-Min-Zyklus), "
+    + "dazu Risiko-Ereignisse, Exit-KI und Python-Backend");
 }
 
 export function getDiagnosticsReport(): DiagnosticsReport {
