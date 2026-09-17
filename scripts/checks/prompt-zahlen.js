@@ -476,6 +476,32 @@ module.exports = function pruefe() {
       "sie fehlt bei einem Teilausfall — dann darf GPT keine Uebereinstimmung annehmen");
   }
 
+  // ── KEIN FREMDER MARKT ALS "SYSTEMLEISTUNG" (17.09.) ────────────────────
+  //
+  // Vor der Marktliste stand "System performance context: Recent backtest
+  // (EURUSD 1mo): WinRate=…" — EIN Backtest, EIN Symbol, EIN Zeitrahmen (1h),
+  // eingespielt bei der Beurteilung von dreissig Maerkten. Fuer BTCUSD oder
+  // XAUUSD ist das schlicht eine fremde Zahl, und GPT kann daraus nur das
+  // Falsche machen (Confidence ueber ALLE Maerkte rauf oder runter).
+  pruefe1("ein fremder Backtest gibt sich wieder als Systemleistung aus",
+    !/System performance context/.test(ohneKomm) && !/backtest\/run/.test(ohneKomm),
+    "eine marktbezogene Quote gibt es (Walk-Forward je Markt, echte Trades) — die geraten wir nicht");
+  pruefe1("der Prompt nennt EURUSD, obwohl jeder Markt einzeln beurteilt wird",
+    !/EURUSD/.test(promptText), "ein Symbol im Systemteil gilt sonst fuer alle");
+
+  // Und die Gegenprobe: was gemessen wird, muss auch ausgegeben werden.
+  // `kontext` wurde bis heute gesammelt und NIRGENDS gezeigt.
+  const bilanzQuelle = read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  pruefe1("der gemessene Prompt-Kontext wird nirgends ausgegeben",
+    /Kontext: News \$\{k\.news \? "ja" : "nein"\}, MTF/.test(bilanzQuelle)
+    && /Multi-Timeframe Ø \$\{mtfSchnitt\}/.test(bilanzQuelle),
+    "eine Zahl, die niemand sieht, ist keine Messung");
+  pruefe1("die Tagessumme kann an alten Redis-Eintraegen NaN werden",
+    /t\.newsZyklen = zahl\(t\.newsZyklen\)/.test(bilanzQuelle)
+    && /t\.mtfSumme = zahl\(t\.mtfSumme\)/.test(bilanzQuelle),
+    "eine Summe von gestern kennt die neuen Felder nicht");
+
   return {
     titel: `Prompt-Zahlen (${geprueft} Rechnungen, echte Funktion)`,
     funde,

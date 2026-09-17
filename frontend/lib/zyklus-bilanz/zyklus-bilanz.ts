@@ -32,7 +32,9 @@ export type ScanDaten = {
   /** GPT-Antworten, die dem eigenen Prompt widersprechen — Anzahl je Art. */
   regelbrueche: Record<string, number>;
   dauerMs: Record<string, number>;
-  kontext: { news: boolean; performance: boolean; mtfSymbole: number };
+  /** Was im Prompt wirklich drinstand. `performance` ist am 17.09. entfallen —
+   *  es war ein EURUSD-Backtest, der fuer alle 30 Maerkte eingespielt wurde. */
+  kontext: { news: boolean; mtfSymbole: number };
 };
 
 export type TorEintrag = {
@@ -70,6 +72,9 @@ export type Tagessumme = {
   go: number;
   rrAbgelehnt: number;
   claudeGefragt: number;
+  /** Wie oft News im Prompt standen, und die Summe der Symbole MIT 1H/1W. */
+  newsZyklen: number;
+  mtfSumme: number;
   regelbrueche: Record<string, number>;
   tore: Record<string, TorSumme>;
   trades: number;
@@ -155,8 +160,14 @@ export function bilanzZeile(b: ZyklusBilanz): string {
     teile.push(`GO ${s.go}`);
     const brueche = Object.entries(s.regelbrueche).filter(([, n]) => n > 0);
     if (brueche.length > 0) teile.push(`Regelbruch GPT: ${brueche.map(([k, n]) => `${k} ${n}`).join(", ")}`);
+    // Was im Prompt wirklich drinstand (17.09.). Bis heute wurde `kontext`
+    // gemessen und NIRGENDS ausgegeben — eine Zahl, die niemand sieht, ist
+    // keine Messung. Faellt der Multi-Timeframe-Abruf aus, urteilt GPT auf 1D
+    // allein; genau das soll man dem Zyklus ansehen.
+    const k = s.kontext;
+    if (k) teile.push(`Kontext: News ${k.news ? "ja" : "nein"}, MTF ${zahl(k.mtfSymbole)}/${zahl(s.maerkte)}`);
     const d = s.dauerMs;
-    const dauerText = Object.entries(d).map(([k, v]) => `${k} ${Math.round(v / 1000)}s`).join(" ");
+    const dauerText = Object.entries(d).map(([k2, v]) => `${k2} ${Math.round(v / 1000)}s`).join(" ");
     if (dauerText) teile.push(`Dauer: ${dauerText}`);
   }
   for (const t of b.tore.filter((t) => !t.approve || t.fallback)) {
@@ -172,7 +183,8 @@ export function leereTagessumme(datum: string): Tagessumme {
     datum, zyklen: 0, ausgaenge: {}, scans: 0, maerkte: 0,
     gpt: { WAIT: 0, BUY: 0, SELL: 0 }, vetos: 0, stilVerworfen: 0,
     unterGrenze: 0, confMin: null, confMax: null, go: 0, rrAbgelehnt: 0,
-    claudeGefragt: 0, regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
+    claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
+    regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
     dauerSummeMs: 0, dauerMaxMs: 0,
   };
 }
@@ -211,6 +223,10 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     t.go += zahl(s.go);
     t.rrAbgelehnt += zahl(s.rrAbgelehnt);
     t.claudeGefragt += zahl(s.claudeGefragt);
+    // `zahl(...)` auch auf der Summenseite: eine Tagessumme aus Redis, die
+    // noch von gestern (ohne diese Felder) stammt, ergaebe sonst NaN.
+    t.newsZyklen = zahl(t.newsZyklen) + (s.kontext?.news === true ? 1 : 0);
+    t.mtfSumme = zahl(t.mtfSumme) + zahl(s.kontext?.mtfSymbole);
     for (const [k, n] of Object.entries(s.regelbrueche ?? {})) {
       t.regelbrueche[k] = (t.regelbrueche[k] ?? 0) + zahl(n);
     }
@@ -256,6 +272,11 @@ export function tagesbilanzText(t: Tagessumme): string {
     zeilen.push(`📉 Unter der Untergrenze: ${t.unterGrenze}${spanne}`);
     zeilen.push(`⚖️ An der Risiko-Freigabe gescheitert (R/R oder Risiko-Score): ${t.rrAbgelehnt}`);
     zeilen.push(`✅ GO: ${t.go} · Claude gefragt: ${t.claudeGefragt}`);
+    // Womit GPT gearbeitet hat. Ein Tag mit "MTF Ø 0" heisst: jedes Urteil kam
+    // allein aus dem Tageschart, obwohl der Prompt 1H/1W vorsieht.
+    const mtfSchnitt = t.scans > 0 ? Math.round(zahl(t.mtfSumme) / t.scans) : 0;
+    zeilen.push(`🧭 Kontext: News in ${zahl(t.newsZyklen)}/${t.scans} Scans · `
+      + `Multi-Timeframe Ø ${mtfSchnitt} Symbole`);
     const brueche = Object.entries(t.regelbrueche).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
     if (brueche.length > 0) {
       zeilen.push(`⚠️ GPT gegen eigenen Prompt: ${brueche.map(([k, n]) => `${htmlSicher(k)} ${n}`).join(", ")}`);

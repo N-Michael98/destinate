@@ -813,32 +813,30 @@ function simulateClaude(gpt: GPTMarketAnalysis, markt: { bid: number; ask: numbe
   };
 }
 
-// ── Feature 4: Strategy Performance Feedback ─────────────────────────────────
-// Cached — wird alle 30min vom Python Backtest neu geholt
-let _stratPerfCache: { data: string; ts: number } | null = null;
-
-async function fetchStrategyPerformance(): Promise<string> {
-  const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
-  if (!PYTHON_BASE) return "";
-  const now = Date.now();
-  if (_stratPerfCache && now - _stratPerfCache.ts < 30 * 60 * 1000) return _stratPerfCache.data;
-  try {
-    const res = await fetch(`${PYTHON_BASE}/api/v1/backtest/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
-      body: JSON.stringify({ symbol: "EURUSD", interval: "1h", period: "1mo", strategy: "multi", initial_balance: 10000 }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return "";
-    const d = await res.json() as Record<string, unknown>;
-    const wr = d.win_rate ? `${Number(d.win_rate).toFixed(0)}%` : "n/a";
-    const pf = d.profit_factor ? `PF=${Number(d.profit_factor).toFixed(2)}` : "";
-    const sr = d.sharpe_ratio ? `Sharpe=${Number(d.sharpe_ratio).toFixed(2)}` : "";
-    const summary = `Recent backtest (EURUSD 1mo): WinRate=${wr} ${pf} ${sr}`.trim();
-    _stratPerfCache = { data: summary, ts: now };
-    return summary;
-  } catch { return ""; }
-}
+// ── ENTFERNT 17.09.: "Feature 4: Strategy Performance Feedback" ─────────────
+//
+// Hier holte `fetchStrategyPerformance()` alle 30 Minuten EINEN Backtest --
+// fest verdrahtet `symbol: "EURUSD", interval: "1h", period: "1mo"` -- und
+// schrieb ihn als "System performance context: Recent backtest (EURUSD 1mo):
+// WinRate=..." VOR die Marktliste. Also vor die Beurteilung von dreissig
+// Maerkten, darunter BTCUSD, XAUUSD und US500.
+//
+// Das ist keine Systemleistung, sondern die Trefferquote EINER Strategie auf
+// EINEM Symbol in EINEM Zeitrahmen, den der Scan gar nicht handelt (1h gegen
+// 1D-Urteile). GPT konnte daraus nur das Falsche machen: eine niedrige Quote
+// druckt die Confidence ueber ALLE Maerkte, eine hohe hebt sie -- in beiden
+// Faellen aufgrund einer Zahl, die mit dem beurteilten Markt nichts zu tun
+// hat. Genau die Fehlerklasse "ein Ausfall/Fremdwert gibt sich als Ergebnis
+// aus", nur eine Stufe frueher: hier gab sich EURUSD als "das System" aus.
+//
+// Es faellt ersatzlos weg, statt durch eine geratene Ersatzzahl ersetzt zu
+// werden. Eine WIRKLICH marktbezogene Quote gibt es im Haus (Walk-Forward je
+// Markt in Redis, echte Trades in der Lern-Tabelle) -- sie in den Prompt zu
+// heben ist eine eigene, bewusste Entscheidung und gehoert erst gemacht, wenn
+// die Zyklus-Bilanz zeigt, dass sie etwas taugt (CLAUDE.md, Lernsystem).
+//
+// Nebenbei entfaellt ein Backtest-Aufruf je Scan (8 s Zeitlimit) und ein
+// modul-scoped Cache.
 
 // ── Feature 6: Multi-Timeframe TA-Lib ────────────────────────────────────────
 async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string, string>> {
@@ -999,11 +997,10 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
     const begonnen = Date.now();
     try { return await p; } finally { scanDauer[name] = Date.now() - begonnen; }
   };
-  const [taData, strategyData, mtfData, stratPerfSummary] = await Promise.all([
+  const [taData, strategyData, mtfData] = await Promise.all([
     messen("TA", fetchTALibData(symbols)),
     messen("Strategien", fetchStrategySignals(symbols)),
     messen("MTF", fetchMultiTimeframeSummary(symbols)),
-    messen("Backtest", fetchStrategyPerformance()),
   ]);
   let newsImPrompt = false;
 
@@ -1082,8 +1079,6 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
       return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${regimeText}${srZones}${swingInfo}${eqInfo}${mtfInfo}${stInfo}`;
     }).join("\n");
 
-    const stratPerfLine = stratPerfSummary ? `\nSystem performance context: ${stratPerfSummary}` : "";
-
     // News-Sentiment aus der Analysis Engine (Redis) — komplett fail-safe:
     // Fehler/leer → newsBlock bleibt "" und der Prompt ist exakt wie bisher.
     let newsBlock = "";
@@ -1111,7 +1106,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
       }
     } catch { /* non-fatal — Prompt ohne News wie bisher */ }
 
-    const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${stratPerfLine}${newsBlock}
+    const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${newsBlock}
 
 Analyze these live markets with REAL technical indicator data from TA-Lib. The daily (1D) values are given for every market; a "1H:.../1W:..." field is added only when those timeframes were available for that market — when it is missing, judge on 1D alone and do not assume agreement. Return a judgment for EVERY market listed — use direction "WAIT" (confidence 0, stopLoss 0, takeProfit 0) when there is no clean setup. Do NOT skip any market:
 
@@ -2100,7 +2095,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       claudeGefragt,
       regelbrueche,
       dauerMs: scanDauer,
-      kontext: { news: newsImPrompt, performance: stratPerfSummary !== "", mtfSymbole: mtfData.size },
+      kontext: { news: newsImPrompt, mtfSymbole: mtfData.size },
     };
     Object.defineProperty(ergebnis, SCAN_DATEN, { value: scanDaten, enumerable: false });
   } catch { /* Messung darf das Ergebnis nie gefaehrden */ }
