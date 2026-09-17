@@ -1113,7 +1113,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
     const prompt = `You are a professional forex and CFD trading analyst with 20 years of experience.${stratPerfLine}${newsBlock}
 
-Analyze these live markets with REAL technical indicator data from TA-Lib (1D + 1H + 4H multi-timeframe). Return a judgment for EVERY market listed — use direction "WAIT" (confidence 0, stopLoss 0, takeProfit 0) when there is no clean setup. Do NOT skip any market:
+Analyze these live markets with REAL technical indicator data from TA-Lib. The daily (1D) values are given for every market; a "1H:.../1W:..." field is added only when those timeframes were available for that market — when it is missing, judge on 1D alone and do not assume agreement. Return a judgment for EVERY market listed — use direction "WAIT" (confidence 0, stopLoss 0, takeProfit 0) when there is no clean setup. Do NOT skip any market:
 
 ${marketList}
 

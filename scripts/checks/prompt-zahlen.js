@@ -437,6 +437,45 @@ module.exports = function pruefe() {
   pruefe1("nicht jedes Urteil der Meta-KI geht an den Bus",
     metaMeldungen === 3, `${metaMeldungen} Meldestellen, erwartet 3 (abgelehnt, unter Untergrenze, freigegeben)`);
 
+  // ── DER PROMPT DARF KEINEN ZEITRAHMEN NENNEN, DEN NIEMAND HOLT (17.09.) ──
+  //
+  // Im Kopf stand woertlich "TA-Lib (1D + 1H + 4H multi-timeframe)". Geholt
+  // werden aber `1h` und `1wk` — 4H unterstuetzt yfinance gar nicht, das steht
+  // seit jeher als Kommentar zwei Zeilen ueber dem Abruf. GPT bewertete also
+  // einen Zeitrahmen, den es nie gesehen hat; die Regel weiter unten sprach
+  // gleichzeitig richtig von "1H and 1W". Zwei Aussagen im selben Prompt, die
+  // sich widersprechen.
+  //
+  // Diese Pruefung leitet die erlaubten Namen aus den ABRUFEN ab, nicht aus
+  // einer Liste: was `holen("…")` nicht holt und nicht das Tagesintervall ist,
+  // darf im Prompt nicht vorkommen.
+  const intervallNamen = { "1h": "1H", "1wk": "1W", "1d": "1D", "4h": "4H", "15m": "15M", "5m": "5M", "1m": "1M" };
+  const geholt = new Set(["1D"]);   // 1D kommt aus fetchTALibData (Standard "1d")
+  for (const m of ohneKomm.matchAll(/holen\(\s*"([^"]+)"\s*\)/g)) {
+    const name = intervallNamen[m[1].toLowerCase()];
+    if (name) geholt.add(name);
+  }
+  pruefe1("die Multi-Timeframe-Abrufe sind nicht mehr auffindbar — die Pruefung waere blind",
+    geholt.size >= 3, `gefunden: ${[...geholt].join(", ")}`);
+  const promptText = (ohneKomm.match(/const prompt = `([\s\S]*?)`;/) || ["", ""])[1];
+  pruefe1("der GPT-Prompt ist nicht auffindbar — die Pruefung waere blind",
+    promptText.length > 500, `${promptText.length} Zeichen`);
+  if (geholt.size >= 3 && promptText.length > 500) {
+    const genannt = [...new Set([...promptText.matchAll(/\b(\d+[DHWM])\b/g)].map((m) => m[1].toUpperCase()))];
+    const erfunden = genannt.filter((z) => !geholt.has(z));
+    pruefe1("der Prompt nennt einen Zeitrahmen, den niemand holt",
+      erfunden.length === 0,
+      `${erfunden.join(", ")} steht im Prompt, geholt werden ${[...geholt].join(", ")}`);
+    // Und umgekehrt: was geholt wird, soll GPT auch kennen — sonst zahlen wir
+    // fuer 30 Abrufe, die im Prompt nicht vorkommen.
+    const ungenutzt = [...geholt].filter((z) => !genannt.includes(z));
+    pruefe1("ein geholter Zeitrahmen kommt im Prompt gar nicht vor",
+      ungenutzt.length === 0, `${ungenutzt.join(", ")} wird geholt, aber nie erwaehnt`);
+    pruefe1("der Prompt verspricht die Multi-Timeframe-Zeile fuer JEDEN Markt",
+      /added only when those timeframes were available/.test(promptText),
+      "sie fehlt bei einem Teilausfall — dann darf GPT keine Uebereinstimmung annehmen");
+  }
+
   return {
     titel: `Prompt-Zahlen (${geprueft} Rechnungen, echte Funktion)`,
     funde,
