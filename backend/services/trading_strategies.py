@@ -512,7 +512,13 @@ def strategy_support_resistance(symbol: str) -> dict:
     highs = high.iloc[-window:]
     lows  = low.iloc[-window:]
 
-    # Signifikante Level: mehr als 2× in der Zone berührt
+    # KORREKTUR 17.09.: hier stand "Signifikante Level: mehr als 2× in der Zone
+    # berührt". Das zählt der Code nicht und hat er nie gezählt — genommen wird
+    # schlicht das HÖCHSTE Hoch und das TIEFSTE Tief der letzten 50 Kerzen,
+    # also die Spanne. Ein Kommentar, der eine Prüfung behauptet, die es nicht
+    # gibt, ist gefährlicher als gar keiner: er lässt "Widerstand" nach einem
+    # bestätigten Level klingen, wo nur ein Extremwert steht. Wer echte
+    # Wendepunkte braucht, nimmt `_swing_points(df)` (siehe unten).
     tolerance = atr * 1.5
     resistance_zone = highs.max()
     support_zone = lows.min()
