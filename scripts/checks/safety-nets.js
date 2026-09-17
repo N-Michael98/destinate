@@ -2160,6 +2160,87 @@ module.exports = async function pruefe() {
     torPruefung("die Diagnose behauptet wieder, alle Agenten zu ueberwachen",
       !/überwacht alle Agents/.test(dq),
       "von drei genannten kam nur bei einem je ein Herzschlag an");
+
+    // ── Diagnose: meldet sie sich doppelt an? Und springt der Alarm durch? ──
+    //
+    // GERECHNET, nicht gelesen (17.09.). Zwei Aufrufer von
+    // initDiagnosticsAgent(): instrumentation.ts und die Route. Das sind
+    // verschiedene Modulkopien. Solange die Sperre modul-scoped war, meldeten
+    // sich BEIDE am selben (globalen) Bus an — jedes Ereignis doppelt gezaehlt,
+    // und der Alarm bei `count === 3` wurde mit 2 → 4 uebersprungen.
+    //
+    // Der Pruefstand baut genau das nach: EIN Bus, ZWEI Modulkopien, ein
+    // Ereignis. Was danach im Bericht steht, ist die Antwort.
+    const altBus = global.__agent_bus__;
+    const altDiag2 = global.__diagnose_zustand__;
+    const altInterval = global.setInterval;
+    const uhren = [];
+    global.setInterval = (...a) => { const h = altInterval(...a); uhren.push(h); return h; };
+    delete global.__agent_bus__;
+    delete global.__diagnose_zustand__;
+    try {
+      const busModul = ladeTsModul("lib/agents/agent-bus.ts");
+      const alarme = [];
+      const ersatz = {
+        "agent-bus": busModul.exports,
+        "telegram-notifications/telegram-sender": {
+          sendTelegram: async (m) => { alarme.push(String(m)); return true; },
+        },
+      };
+      const d1 = ladeTsModul("lib/agents/diagnostics-agent.ts", ersatz);
+      const d2 = ladeTsModul("lib/agents/diagnostics-agent.ts", ersatz);
+      if (busModul.fehler || d1.fehler || d2.fehler) {
+        funde.push(`Diagnose-Pruefstand nicht lauffaehig: ${busModul.fehler ?? d1.fehler ?? d2.fehler}`);
+        zusatz++;
+      } else {
+        const bus = busModul.exports.agentBus;
+        const fehlerEreignis = (symbol) => ({
+          type: "RISK:ERROR", agentId: "RiskAgent", timestamp: new Date().toISOString(),
+          payload: { symbol, error: "Testfehler" },
+        });
+        d1.exports.initDiagnosticsAgent();
+        d2.exports.initDiagnosticsAgent();   // zweite Kopie — darf NICHTS bewirken
+        torPruefung("zwei Modulkopien der Diagnose melden sich beide am Bus an",
+          bus.subscriberCount("RISK:ERROR") === 1,
+          `${bus.subscriberCount("RISK:ERROR")} Empfaenger statt 1 — jedes Ereignis wird doppelt verbucht`);
+
+        bus.publish(fehlerEreignis("EURUSD"));
+        const b1 = d2.exports.getDiagnosticsReport();
+        const a1 = (b1.anomalies ?? []).find((a) => a.type === "RISK_ERROR");
+        torPruefung("ein Ereignis wird mehrfach verbucht",
+          !!a1 && a1.count === 1 && b1.recentErrors.length === 1,
+          `count=${a1 && a1.count}, Fehler=${b1.recentErrors.length} (erwartet je 1)`);
+
+        // Alarm: bei Schwelle 3 genau EINE Meldung, und keine weitere danach.
+        bus.publish(fehlerEreignis("EURUSD"));
+        bus.publish(fehlerEreignis("EURUSD"));
+        bus.publish(fehlerEreignis("EURUSD"));
+        await new Promise((r) => setTimeout(r, 20));
+        torPruefung("der Anomalie-Alarm geht nicht oder mehrfach raus",
+          alarme.filter((m) => m.includes("RISK_ERROR")).length === 1,
+          `${alarme.filter((m) => m.includes("RISK_ERROR")).length} Alarme statt genau 1`);
+
+        // UND: der Merker gehoert an den EINZELNEN Datensatz. Liegt er am
+        // Modul, verschluckt die erste gemeldete Anomalie alle weiteren —
+        // ein Python-Ausfall bliebe stumm, weil vorher ein RISK_ERROR kam.
+        alarme.length = 0;
+        bus.publish(fehlerEreignis("GBPUSD"));
+        bus.publish(fehlerEreignis("GBPUSD"));
+        bus.publish(fehlerEreignis("GBPUSD"));
+        await new Promise((r) => setTimeout(r, 20));
+        torPruefung("eine zweite Anomalie bekommt keinen eigenen Alarm mehr",
+          alarme.filter((m) => m.includes("GBPUSD")).length === 1,
+          `${alarme.filter((m) => m.includes("GBPUSD")).length} Alarme fuer die zweite Anomalie statt 1`);
+      }
+    } catch (e) {
+      funde.push(`Diagnose-Pruefstand abgebrochen: ${e instanceof Error ? e.message : String(e)}`);
+      zusatz++;
+    } finally {
+      for (const h of uhren) clearInterval(h);
+      global.setInterval = altInterval;
+      if (altBus === undefined) delete global.__agent_bus__; else global.__agent_bus__ = altBus;
+      if (altDiag2 === undefined) delete global.__diagnose_zustand__; else global.__diagnose_zustand__ = altDiag2;
+    }
   }
 
   // ══ ORCHESTRATOR- UND AUSFUEHRUNGS-KI: URTEILE GEPRUEFT (16.09.) ═════════

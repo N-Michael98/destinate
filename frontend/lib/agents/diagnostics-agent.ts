@@ -24,6 +24,8 @@ interface AnomalyRecord {
   firstSeen: string;
   lastSeen: string;
   details: string[];
+  /** Der Alarm fuer DIESE Anomalie ist raus — er geht genau einmal. */
+  gemeldet?: boolean;
 }
 
 interface AgentHeartbeat {
@@ -56,6 +58,8 @@ type DiagnoseZustand = {
   anomalies: Map<string, AnomalyRecord>;
   heartbeats: Map<string, AgentHeartbeat>;
   recentErrors: AgentEvent[];
+  /** Ist der Empfaenger am Bus angemeldet? Siehe initDiagnosticsAgent(). */
+  abonniert: boolean;
 };
 
 declare global {
@@ -67,6 +71,7 @@ const zustand: DiagnoseZustand = (global.__diagnose_zustand__ ??= {
   anomalies: new Map<string, AnomalyRecord>(),
   heartbeats: new Map<string, AgentHeartbeat>(),
   recentErrors: [],
+  abonniert: false,
 });
 const anomalies = zustand.anomalies;
 const heartbeats = zustand.heartbeats;
@@ -102,8 +107,23 @@ function recordAnomaly(type: string, detail: string, symbol?: string): void {
   }
 
   const record = anomalies.get(key)!;
-  if (record.count === ANOMALY_ALERT_THRESHOLD) {
-    // Kritische Schwelle erreicht → Telegram-Alarm
+  // ERREICHT STATT GENAU GETROFFEN (17.09.). Vorher hing der Alarm an
+  // `count === ANOMALY_ALERT_THRESHOLD` — er kam also nur, wenn der Zaehler
+  // diesen EINEN Wert genau traf.
+  //
+  // EHRLICH EINGEORDNET: ein Loch war das nicht. `count++` geht in Einerschritten,
+  // und auch die doppelte Anmeldung von oben haette nichts uebersprungen — sie
+  // haette 1,2,3,4 gezaehlt statt 1,2,3 (nachgerechnet im Pruefstand, meine
+  // erste Begruendung hier war falsch). Der Schaden dort ist ein anderer: die
+  // Schwelle waere nach zwei statt drei echten Ereignissen erreicht.
+  //
+  // Die Bedingung bleibt trotzdem: der Alarm soll an der TATSACHE haengen
+  // ("dreimal dasselbe Problem"), nicht am Treffen eines Wertes. `gemeldet`
+  // haelt es dabei bei EINEM Alarm je Anomalie — sonst meldete jedes weitere
+  // Ereignis erneut. Der Merker liegt am Datensatz, nicht am Modul: jede
+  // Anomalie bekommt ihren eigenen Alarm.
+  if (record.count >= ANOMALY_ALERT_THRESHOLD && !record.gemeldet) {
+    record.gemeldet = true;
     sendDiagnosticsAlert(
       `⚠️ Anomalie erkannt: ${type}${symbol ? ` [${symbol}]` : ""}\n` +
       `Anzahl: ${record.count}x seit ${record.firstSeen}\n` +
@@ -349,12 +369,30 @@ async function sendDiagnosticsAlert(message: string): Promise<void> {
 
 // ── Öffentliche API ───────────────────────────────────────────────────────────
 
-let initialized = false;
+// ── DIE ANMELDESPERRE GEHOERT AUF DENSELBEN GETEILTEN ZUSTAND (17.09.) ──────
+//
+// Hier stand `let initialized = false` — modul-scoped, genau die Fehlerklasse
+// aus CLAUDE.md. Zwei Aufrufer gibt es: `instrumentation.ts` beim Start und
+// `app/api/diagnostics-agent/route.ts` beim ersten Request. Das sind
+// verschiedene Modulkopien, jede mit ihrem eigenen `initialized` — beide
+// haetten sich angemeldet.
+//
+// Bis zum 16.09. war das FOLGENLOS, weil jede Kopie auch ihren eigenen Bus
+// hatte. Seit der Bus auf `global` liegt, haengen beide Empfaenger am SELBEN
+// Bus: jedes Ereignis wird dann doppelt verarbeitet. Gemessen im Pruefstand
+// (safety-nets): ein Ereignis, `count` 2 statt 1, der Fehlerspeicher zweimal
+// derselbe Eintrag. Die Alarmschwelle 3 waere nach ZWEI statt drei echten
+// Ereignissen erreicht, `systemStatus: DEGRADED` also bei halber Beweislage —
+// und DEGRADED geht in die Entscheidung der Orchestrator-KI ein.
+//
+// Der Fix an einer Stelle behebt nicht die Fehlerklasse: wer einen geteilten
+// Zustand baut, muss auch die SPERRE dorthin legen, sonst wirkt sie nur in
+// einer Kopie. Derselbe Riegel steht in `bilanzAbonnieren()`.
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 
 export function initDiagnosticsAgent(): void {
-  if (initialized) return;
-  initialized = true;
+  if (zustand.abonniert) return;
+  zustand.abonniert = true;
 
   // Alle Bus-Events abonnieren
   const eventTypes: AgentEventType[] = [
