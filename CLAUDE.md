@@ -46,7 +46,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `ai-clamp` | `inGrenzen()` | 11.08. |
 | `exit-schwellen` | `wirksameSchwellen()` | 10.08. |
 | `teilgewinn` | `teilgewinnErlaubt()`, `teilgewinnStand()` | 11.08. |
-| `signal-untergrenze` | die Untergrenze der Signalkette; seit 15.09. auch `wirksameApproveSchwelle()` und `rrVerteilung()` | 13.08. |
+| `signal-untergrenze` | die Untergrenze der Signalkette; seit 15.09. auch `wirksameApproveSchwelle()` und `rrVerteilung()`; seit 17.09. `stilGrenze()` — ein fehlendes Stil-Tageslimit heisst nicht mehr „unbegrenzt" | 13.08. |
 | `order-bestaetigung` | `ausstiegsgrund()`, `stopAbstandGenug()` | 13.08. |
 | `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()`, `notizenBefund()`, `positionenOhneStammdaten()` | 18.08. |
 | `python-ueberwachung` | `meldePythonAufruf()`, `pythonUebergang()` | 19.08. |
@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung (siehe unten) | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -82,6 +82,52 @@ Der Prüfer `preis-cache` bildet den Fall nach: er lädt das Modul **zweimal**,
 schreibt über die eine Instanz und liest über die andere. Wer einen neuen
 geteilten Zustand baut, prüft ihn genauso — eine Struktur-Prüfung sieht diesen
 Fehler nicht.
+
+### Und die SPERRE gehört mit auf `global` (17.09.)
+
+Der Zustand kann richtig auf `global` liegen und der Fehler trotzdem bleiben —
+wenn die **Anmeldesperre** modul-scoped bleibt.
+
+`diagnostics-agent.ts` hatte seinen Zustand seit dem 16.09. auf
+`global.__diagnose_zustand__`, aber daneben stand weiter `let initialized =
+false`. Aufrufer sind `instrumentation.ts` (Start) und
+`app/api/diagnostics-agent/route.ts` (erster Request) — zwei Modulkopien, jede
+mit eigener Sperre, **beide melden sich an**.
+
+Bis zum 16.09. folgenlos, weil jede Kopie auch ihren eigenen Bus hatte. Seit
+der Bus auf `global` liegt, hängen beide Empfänger am **selben** Bus: jedes
+Ereignis wird doppelt verarbeitet. Gemessen im Prüfstand: ein Ereignis, `count`
+2 statt 1, derselbe Fehler zweimal im Speicher, die Alarmschwelle nach zwei
+statt drei echten Ereignissen — und `systemStatus: DEGRADED` geht in die
+Entscheidung der Orchestrator-KI ein.
+
+Regel: **Wer einen geteilten Zustand baut, legt die Sperre dorthin.** So macht
+es `bilanzAbonnieren()` (`zyklus-bilanz.ts`), so macht es jetzt
+`initDiagnosticsAgent()`. `safety-nets` lädt das Modul **zweimal**, meldet
+beide an und zählt die Empfänger.
+
+### Ein Abo am Bus ohne Sender ist ein Fehler (17.09.)
+
+Drei tote Verdrahtungen, gefunden beim Abgleich aller Sende- und Abo-Stellen:
+der Diagnose-Agent hörte auf `EXECUTION:TRADE_CLOSED` (sendet niemand — der
+einzige Sender war bis zum 16.09. eine falsch benannte KI-Ablehnung) und auf
+`DIAGNOSTICS:HEALTH_CHECK` (sendet niemand), und antwortete darauf mit
+`DIAGNOSTICS:ALERT` (hört niemand). Dazu sendete der Orchestrator denselben
+„Alarm" beim pausierten Zyklus. **`getRecentEvents` hat null Aufrufer** — ein
+Ereignis ohne Empfänger geht wirklich ins Leere.
+
+`safety-nets` hält das jetzt: jedes `.subscribe` ohne Sendestelle wird rot, und
+die Nutzlast-**Schlüssel**, die die Zyklus-Bilanz liest (`scan`, `ausgang`,
+`symbol`+`direction`, `symbol`+`grund`), werden gegen die Sendestellen
+gehalten. Sonst meldet die Tagesbilanz eines Tages stumm „Broker-Fehler:
+EURUSD: ".
+
+**Zwei eigene Messfehler dabei**, beide gehören zur Methode: ein Regex bis zum
+Zeilenende übersah jede **einzeilige** Sendestelle (vier Ereignisse galten
+fälschlich als senderlos) — jetzt ein Klammerzähler mit Selbstprüfung gegen
+zehn bekannte Stellen. Und die Schlüssel-Erkennung zählte auch **Werte**: bei
+`direction: req.direction` galt der Wert als Schlüssel, eine Umbenennung wäre
+grün geblieben.
 
 ### Und die Kehrseite: ein Lesepfad darf ihn nicht ANLEGEN (07.09.)
 
