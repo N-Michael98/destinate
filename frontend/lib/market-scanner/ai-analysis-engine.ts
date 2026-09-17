@@ -858,8 +858,12 @@ async function fetchMultiTimeframeSummary(symbols: string[]): Promise<Map<string
   const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
   if (!PYTHON_BASE || !symbols.length) return result;
   try {
-    // 1H und 4H parallel zu 1D (1D schon in fetchTALibData)
-    // yfinance VALID_INTERVALS: 1h, 1d, 1wk — "4h" nicht unterstützt → "1wk" stattdessen
+    // 1H und 1W parallel zu 1D (1D schon in fetchTALibData).
+    // Hier stand "1H und 4H" — 4H ist nie geholt worden, yfinance kennt das
+    // Intervall gar nicht (VALID_INTERVALS: 1h, 1d, 1wk). Die Richtigstellung
+    // stand nur in der Zeile darunter, und in den Prompt-Kopf war das falsche
+    // "4H" bereits gewandert (17.09. behoben). Erste Zeile jetzt fuer sich
+    // allein richtig — wer nur sie liest, wird nicht in die Irre gefuehrt.
     // ── JEDER AUSFALL WIRD GEMELDET (16.09.) ────────────────────────────────
     //
     // Hier stand `.then(r => r.ok ? … : null).catch(() => null)`: jeder der
