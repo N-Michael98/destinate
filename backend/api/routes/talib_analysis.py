@@ -76,7 +76,14 @@ async def talib_analyze_multi(req: MultiRequest):
             "signal":      item.get("signal", "NEUTRAL"),
             "score":       item.get("score", 0),
             "trend":       trend_str,
-            "rsi":         momentum.get("rsi_14") or 50,
+            # KEIN ERFUNDENER MITTELWERT (17.09.). Hier stand `or 50`. Fehlt
+            # der RSI (zu wenige Kerzen, Indikator nicht berechenbar), wurde
+            # daraus ein exakt neutraler Wert — und GPT las eine Messung, die
+            # es nicht gab. `or` trifft ausserdem die echte 0: ein RSI von 0.0
+            # (vierzehn Abwaertsschluesse in Folge, also maximal ueberverkauft)
+            # wurde zu "neutral 50" gedreht. Fehlt er, kommt jetzt null, und
+            # der Prompt schreibt "rsi=?" statt einer Zahl.
+            "rsi":         momentum.get("rsi_14"),
             "macd_signal": "BULLISH" if macd_val > macd_sig else "BEARISH",
             "ema_20":      ema20,
             "ema_50":      ema50,

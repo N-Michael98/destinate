@@ -483,6 +483,39 @@ module.exports = function pruefe() {
   // eingespielt bei der Beurteilung von dreissig Maerkten. Fuer BTCUSD oder
   // XAUUSD ist das schlicht eine fremde Zahl, und GPT kann daraus nur das
   // Falsche machen (Confidence ueber ALLE Maerkte rauf oder runter).
+  // ── KEIN ERFUNDENER RSI (17.09.) — GERECHNET ────────────────────────────
+  //
+  // `talib_analysis.py` gab `momentum.get("rsi_14") or 50` zurueck: fehlte der
+  // Wert, las GPT eine exakt neutrale Messung, die es nie gab. `or` traf dabei
+  // auch die ECHTE 0 — maximal ueberverkauft wurde zu "neutral". Jetzt kommt
+  // `null`, und `promptGanzzahl()` macht daraus "?" statt "undefined".
+  const gz = modul.exports.promptGanzzahl;
+  if (typeof gz !== "function") {
+    funde.push("promptGanzzahl wird nicht exportiert — der RSI im Prompt waere ungeprueft");
+    geprueft++;
+  } else {
+    pruefe1("ein fehlender RSI wird wieder zu einer Zahl",
+      gz(null) === "?" && gz(undefined) === "?" && gz(NaN) === "?",
+      `null -> "${gz(null)}", undefined -> "${gz(undefined)}", NaN -> "${gz(NaN)}"`);
+    pruefe1("ein RSI von 0 wird verschluckt oder gedreht",
+      gz(0) === "0", `0 -> "${gz(0)}" — 0 ist maximal ueberverkauft, nicht "kein Wert"`);
+    pruefe1("ein RSI verliert seinen Wert",
+      gz(65.4) === "65" && gz(29.6) === "30" && gz(100) === "100",
+      `${gz(65.4)} / ${gz(29.6)} / ${gz(100)}`);
+    const py = read("backend/api/routes/talib_analysis.py");
+    pruefe1("das Python-Backend erfindet wieder einen neutralen RSI",
+      /"rsi":\s*momentum\.get\("rsi_14"\),/.test(py) && !/rsi_14"\)\s*or\s*50/.test(py),
+      "`or 50` macht aus 'unbekannt' eine Messung");
+    pruefe1("der RSI wird im Prompt wieder ungeprueft formatiert",
+      !/ta\.rsi\?\.toFixed/.test(ohneKomm)
+      && (ohneKomm.match(/promptGanzzahl\(ta\.rsi\)/g) || []).length === 3,
+      `${(ohneKomm.match(/promptGanzzahl\(ta\.rsi\)/g) || []).length} Stellen, erwartet 3`);
+    pruefe1("ein fehlender RSI wird auf dem Weg zum Agenten wieder aufgefuellt",
+      /rsi: taEntry\.rsi \?\? undefined/.test(ohneKomm)
+      && /rsi: typeof c\.taSignals\?\.rsi === "number" \? c\.taSignals\.rsi : null/.test(agentQuelle),
+      "fehlend muss fehlend bleiben — auf jeder Stufe");
+  }
+
   pruefe1("ein fremder Backtest gibt sich wieder als Systemleistung aus",
     !/System performance context/.test(ohneKomm) && !/backtest\/run/.test(ohneKomm),
     "eine marktbezogene Quote gibt es (Walk-Forward je Markt, echte Trades) — die geraten wir nicht");

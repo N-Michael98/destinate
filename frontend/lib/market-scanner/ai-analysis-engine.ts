@@ -75,7 +75,7 @@ export interface ScannerOpportunity {
 interface TAlibSummary {
   symbol: string;
   trend: string;
-  rsi: number;
+  rsi: number | null;
   macd_signal: string;
   signal: string; // STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL
   score: number;
@@ -432,6 +432,19 @@ function noSignal(market: CapitalMarket): GPTMarketAnalysis {
  * ROH in den Prompt; nur diese sechs Felder waren betroffen. RSI und ADX
  * bleiben bei `toFixed(0)` — sie sind 0-100-Skalen.
  */
+/**
+ * Dasselbe fuer Werte, bei denen Nachkommastellen nur stoeren (RSI 0–100):
+ * "?" wenn es ihn nicht gibt, sonst ganzzahlig (17.09.).
+ *
+ * Vorher stand im Prompt `ta.rsi?.toFixed(0)`. Solange das Python-Backend bei
+ * fehlendem RSI eine 50 erfand, fiel das nicht auf; seit es ehrlich `null`
+ * liefert, haette dort "rsi=undefined" gestanden.
+ */
+export function promptGanzzahl(wert: number | null | undefined): string {
+  if (wert == null || !Number.isFinite(wert)) return "?";
+  return wert.toFixed(0);
+}
+
 export function promptZahl(wert: number | null | undefined): string {
   if (wert == null || !Number.isFinite(wert)) return "?";
   const betrag = Math.abs(wert);
@@ -1034,7 +1047,7 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
       const sr = strategyData.get(m.symbol);
       const mtf = mtfData.get(m.symbol);
       const taInfo = ta
-        ? ` | 1D:trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${promptZahl(ta.ema_20)} ema50=${promptZahl(ta.ema_50)} atr=${promptZahl(ta.atr)}`
+        ? ` | 1D:trend=${ta.trend} rsi=${promptGanzzahl(ta.rsi)} macd=${ta.macd_signal} signal=${ta.signal} ema20=${promptZahl(ta.ema_20)} ema50=${promptZahl(ta.ema_50)} atr=${promptZahl(ta.atr)}`
         : "";
       // Schritt 3 (26.07.): Bollinger (dynamische S/R), ADX (Trendstärke),
       // EMA200 (Haupttrend), Candlestick-Patterns — bisher nie an GPT gegeben
@@ -1418,7 +1431,7 @@ each market's own data, never from habit or from these examples' direction:
         symbol: market.symbol, epic: market.epic,
         direction: dir,
         confidence: ta.signal.includes("STRONG") ? 68 : 62,
-        reasoning: `TA-Lib: trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} signal=${ta.signal}`,
+        reasoning: `TA-Lib: trend=${ta.trend} rsi=${promptGanzzahl(ta.rsi)} signal=${ta.signal}`,
         entry: market.ask,
         stopLoss: dir === "BUY" ? market.bid - slRange : market.ask + slRange,
         takeProfit: dir === "BUY" ? market.ask + slRange * 2 : market.bid - slRange * 2,
@@ -1618,7 +1631,7 @@ each market's own data, never from habit or from these examples' direction:
       // Am ECHTEN Einstiegskurs gerechnet, nicht an GPTs genannter Zahl —
       // siehe realesChanceRisiko(). Claude bekommt denselben Wert zu sehen.
       const rrRatio = realesChanceRisiko(gpt, market);
-      const taContext = ta ? `\nTA-Lib confirms: trend=${ta.trend} rsi=${ta.rsi?.toFixed(0)} signal=${ta.signal}` : "";
+      const taContext = ta ? `\nTA-Lib confirms: trend=${ta.trend} rsi=${promptGanzzahl(ta.rsi)} signal=${ta.signal}` : "";
       const prompt = `You are a professional risk manager for a forex/CFD trading firm.
 
 Assess this trade setup:
@@ -1945,7 +1958,10 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       claude,
       finalScore,
       goSignal,
-      taSignals: taEntry ? { atr: taEntry.atr, rsi: taEntry.rsi, trend: taEntry.trend, signal: taEntry.signal } : undefined,
+      // `?? undefined`: ein fehlender RSI bleibt FEHLEND. `taSignals.rsi` ist
+      // optional (`rsi?: number`), und der Analyse-Agent macht daraus wieder
+      // ausdruecklich `null` — keine Stufe erfindet hier einen Wert (17.09.).
+      taSignals: taEntry ? { atr: taEntry.atr, rsi: taEntry.rsi ?? undefined, trend: taEntry.trend, signal: taEntry.signal } : undefined,
       entryQualityTier: strategyData.get(market.symbol)?.entry_quality?.tier,
       entryQualityScore: strategyData.get(market.symbol)?.entry_quality?.score,
       // Diagnose-Felder: zeigen warum goSignal false ist
