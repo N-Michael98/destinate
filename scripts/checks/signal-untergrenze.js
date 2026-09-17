@@ -448,6 +448,62 @@ module.exports = function pruefe() {
         /Math\.max\(\s*wirksameApproveSchwelle\(settings\.botSettings\.autoApproveThreshold\)\s*,\s*wirksameMinConfidence\(settings\.riskSettings\?\.minConfidenceScore\)\s*,?\s*\)/.test(orchCode),
         "sonst gilt nur einer der beiden Regler — der andere luegt");
     }
+
+    // ── Das Tageslimit JE HANDELSSTIL — gerechnet (17.09.) ────────────────
+    //
+    // Es stand `styleLimit[stil] ?? 999`: fehlt ein Stil in den gespeicherten
+    // Einstellungen, galten 999 Trades am Tag. Aus "nicht eingestellt" wurde
+    // "unbegrenzt", direkt vor der Order. Eine `0` dagegen MUSS `0` bleiben
+    // (kein Trade dieses Stils) — ein zu strammer Rueckfall waere genauso
+    // falsch wie ein zu lascher.
+    const sg = orchModul.exports.stilGrenze;
+    const std = orchModul.exports.STIL_GRENZE_STANDARD;
+    if (typeof sg !== "function" || !std) {
+      funde.push("stilGrenze/STIL_GRENZE_STANDARD wird nicht exportiert — das "
+        + "Tageslimit je Handelsstil bliebe ungerechnet");
+      geprueft++;
+    } else {
+      const stille4 = console.warn;
+      let meldungen4 = 0;
+      console.warn = () => { meldungen4++; };
+      let g;
+      try {
+        g = {
+          gesetzt:   sg({ DAYTRADING: 4, SCALPING: 5, SWING: 2 }, "DAYTRADING"),
+          null0:     sg({ DAYTRADING: 0 }, "DAYTRADING"),
+          fehlt:     sg({ DAYTRADING: 3 }, "SWING"),
+          leer:      sg({}, "SCALPING"),
+          ohneTab:   sg(undefined, "DAYTRADING"),
+          unsinn:    sg({ SWING: "viele" }, "SWING"),
+          unbekannt: sg({ DAYTRADING: 3 }, "HODL"),
+          negativ:   sg({ SWING: -5 }, "SWING"),
+        };
+      } finally { console.warn = stille4; }
+      pruefe1("ein eingestelltes Stil-Limit wird nicht uebernommen", g.gesetzt === 4, String(g.gesetzt));
+      pruefe1("eine ausdrueckliche 0 wird nicht als 'kein Trade' gelesen", g.null0 === 0, String(g.null0));
+      pruefe1("ein fehlender Stil gilt wieder als unbegrenzt",
+        g.fehlt === std.SWING && g.leer === std.SCALPING && g.ohneTab === std.DAYTRADING,
+        `${g.fehlt} / ${g.leer} / ${g.ohneTab} — erwartet ${std.SWING} / ${std.SCALPING} / ${std.DAYTRADING}`);
+      pruefe1("ein unbrauchbarer Wert wird nicht durch den Standard ersetzt",
+        g.unsinn === std.SWING && g.negativ === std.SWING, `${g.unsinn} / ${g.negativ}`);
+      pruefe1("ein unbekannter Stil bekommt nicht die strengste Grenze",
+        g.unbekannt === Math.min(...Object.values(std)), String(g.unbekannt));
+      pruefe1("das Fehlen einer Stil-Grenze wird nicht gemeldet — oder zu oft",
+        meldungen4 === 6, `${meldungen4} Meldungen bei 8 Faellen, erwartet 6`);
+      pruefe1("die Standard-Grenzen weichen von settings-store.ts ab",
+        /maxTradesPerDayByStyle:\s*\{\s*DAYTRADING:\s*3,\s*SCALPING:\s*5,\s*SWING:\s*2\s*\}/
+          .test(read("frontend/lib/settings/settings-store.ts"))
+        && std.DAYTRADING === 3 && std.SCALPING === 5 && std.SWING === 2,
+        "zwei Tabellen mit denselben Zahlen muessen zusammenbleiben");
+      const orchOhneKomm = orch
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      pruefe1("der Rueckfall 999 steht wieder im Handelspfad",
+        !/\?\?\s*999/.test(orchOhneKomm), "aus 'unbekannt' darf kein 'unbegrenzt' werden");
+      pruefe1("das Stil-Limit wird nicht ueber stilGrenze() geholt",
+        /const grenze = stilGrenze\(/.test(orchOhneKomm),
+        "sonst rechnet der Pruefer etwas, das der Handel nicht benutzt");
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

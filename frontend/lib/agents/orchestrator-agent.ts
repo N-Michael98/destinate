@@ -545,6 +545,42 @@ export function wirksameApproveSchwelle(gespeichert: number | undefined): number
   return wert;
 }
 
+/** Die Tagesgrenzen je Handelsstil — dieselben Werte wie in `settings-store.ts`. */
+export const STIL_GRENZE_STANDARD: Record<string, number> = { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
+
+/**
+ * Das Tageslimit fuer EINEN Handelsstil (17.09.).
+ *
+ * Hier stand `(styleLimit)[s] ?? 999`. Fehlt ein Stil in den gespeicherten
+ * Einstellungen — z. B. weil ein aelterer Stand nur `{ DAYTRADING: 3 }`
+ * enthaelt —, dann galten fuer diesen Stil 999 Trades am Tag, also gar keine
+ * Grenze. Aus "unbekannt" wurde "unbegrenzt", und das an einer Stelle, die
+ * ueber Geld entscheidet (dieselbe Fehlerklasse wie der erfundene Risiko-Wert
+ * `?? 50`, CLAUDE.md).
+ *
+ * Jetzt gilt der STANDARD dieses Stils, und das Fehlen wird benannt. Eine
+ * ausdrueckliche `0` bleibt `0` (kein Trade dieses Stils) — `??` haette sie
+ * ohnehin durchgelassen, aber hier steht es geprueft.
+ *
+ * Ein voellig unbekannter Stil kann die Signalkette nicht passieren
+ * (`normalisiereStil` macht daraus WAIT); trifft er hier trotzdem ein, gilt
+ * die STRENGSTE bekannte Grenze statt einer geratenen.
+ */
+export function stilGrenze(tabelle: Record<string, number> | null | undefined, stil: string): number {
+  const roh = tabelle?.[stil];
+  if (typeof roh === "number" && Number.isFinite(roh) && roh >= 0) return roh;
+  const standard = STIL_GRENZE_STANDARD[stil];
+  if (typeof standard === "number") {
+    console.warn(`[orchestrator] Tageslimit fuer ${stil} fehlt in den Einstellungen — `
+      + `es gilt der Standard ${standard} (frueher: unbegrenzt).`);
+    return standard;
+  }
+  const strengste = Math.min(...Object.values(STIL_GRENZE_STANDARD));
+  console.warn(`[orchestrator] Unbekannter Handelsstil "${stil}" — es gilt die strengste `
+    + `bekannte Grenze ${strengste}.`);
+  return strengste;
+}
+
 /**
  * Die "Min Signal Confidence", die WIRKLICH gilt (09.09.).
  *
@@ -859,7 +895,7 @@ async function zyklusInnen(): Promise<string> {
   const threshold = dailyLimitReached
     ? wirksamerBypass(bypassScore, baseThreshold)
     : baseThreshold;
-  const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 };
+  const styleLimit = settings.botSettings.maxTradesPerDayByStyle ?? STIL_GRENZE_STANDARD;
 
   // Walk-Forward-Robustheit (04.08.). Bis heute landeten diese Ergebnisse NUR
   // im Telegram-Bericht (periodic_report.py) — kein Handelspfad hat sie je
@@ -911,7 +947,7 @@ async function zyklusInnen(): Promise<string> {
     }
     const s = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
     const heute = global.__daily_trades__?.byStyle[s] ?? 0;
-    const grenze = (styleLimit as Record<string, number>)[s] ?? 999;
+    const grenze = stilGrenze(styleLimit as Record<string, number>, s);
     if (heute >= grenze) {
       verworfen.push(`${o.symbol}: Tageslimit ${s} erreicht (${heute}/${grenze})`);
       meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: `Tageslimit ${s} erreicht` });
