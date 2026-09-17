@@ -2012,6 +2012,64 @@ module.exports = async function pruefe() {
       "Handelsfenster endet Mo–Fr 22:00 UTC");
   }
 
+  // ══ EIN OVERRIDE UMGEHT DAS CHANCE-RISIKO NICHT (16.09.) ═════════════════
+  //
+  // Die 1.5er-Huerde wird im Scanner auf GPTs Stop und Ziel gerechnet. Ein
+  // Admin-Override (`/apply` per Telegram) ersetzt GENAU DIESE beiden Werte
+  // danach — die Order konnte mit einem Chance-Risiko von 0.5 rausgehen,
+  // waehrend jedes andere Signal an 1.5 scheitert. Und der Stil des Overrides
+  // wurde nur umgetypt, obwohl er Haltedauer, Stop-Tabelle und Stil-Tageslimit
+  // bestimmt.
+  {
+    const orchM2 = ladeTsModul("lib/agents/orchestrator-agent.ts", {
+      "broker-config": { MIN_SIGNAL_CONFIDENCE: 70 },
+    });
+    const rr = orchM2.exports?.ueberschreibungRR;
+    const MINRR = orchM2.exports?.OVERRIDE_MIN_RR;
+    if (orchM2.fehler || typeof rr !== "function") {
+      funde.push(`ueberschreibungRR nicht ausfuehrbar: ${orchM2.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      const f = (e, sl, tp, buy) => { try { return rr(e, sl, tp, buy); } catch (x) { return `WIRFT ${x.message}`; } };
+      torPruefung("die Override-Huerde ist nicht dieselbe wie im Scanner (1.5)", MINRR === 1.5, String(MINRR));
+      torPruefung("das Chance-Risiko eines Overrides wird falsch gerechnet",
+        f(100, 99, 102, true) === 2 && f(100, 98, 101, true) === 0.5
+        && f(100, 101, 98, false) === 2 && f(100, 102, 99, false) === 0.5,
+        `${f(100, 99, 102, true)} / ${f(100, 98, 101, true)} / ${f(100, 101, 98, false)}`);
+      torPruefung("ein Stop oder Ziel auf der FALSCHEN Seite ergibt nicht 0",
+        f(100, 101, 102, true) === 0 && f(100, 99, 99.5, true) === 0
+        && f(100, 99, 98, false) === 0 && f(100, 101, 102, false) === 0,
+        "ein Ziel unter dem Einstieg bei BUY waere ein sofortiger Verlust");
+      const muell = [
+        [0, 99, 102, true], [NaN, 99, 102, true], [100, undefined, 102, true],
+        [100, 99, undefined, true], [100, NaN, 102, true], [100, 100, 102, true],
+      ];
+      const nichtNull = muell.filter((m) => f(...m) !== 0);
+      torPruefung("unbrauchbare Order-Werte ergeben ein Chance-Risiko > 0",
+        nichtNull.length === 0, JSON.stringify(nichtNull));
+    }
+    const oq3 = read("frontend/lib/agents/orchestrator-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("ein Override-Stil wird wieder ungeprueft uebernommen",
+      /const ovStil = normalisiereStil\(override\.style\);/.test(oq3)
+      && !/^\s*style = override\.style;/m.test(oq3),
+      "er bestimmt Haltedauer, Stop-Tabelle und Stil-Tageslimit");
+    torPruefung("ueberschriebene Stop-/Ziel-Werte werden nicht erneut gegen das Chance-Risiko geprueft",
+      // Fenster gross genug fuer Meldung UND Bus-Ereignis dazwischen — mit 400
+      // Zeichen schlug die Pruefung am eigenen Code fehl.
+      /if \(ueberschrieben\) \{[\s\S]{0,200}?if \(!\(rrOverride >= OVERRIDE_MIN_RR\)\) \{[\s\S]{0,900}?continue;/.test(oq3));
+    torPruefung("die Override-Pruefung laeuft auch ohne Override — das waere eine neue Huerde fuer alle",
+      /ueberschrieben = true;/.test(oq3)
+      && (oq3.match(/ueberschrieben = true;/g) || []).length === 2
+      && /let ueberschrieben = false;/.test(oq3),
+      "sie gilt nur, wenn ein Override Stop oder Ziel wirklich ersetzt hat");
+    // Den AUFRUF zaehlen, nicht den Namen: im Sabotage-Lauf blieb
+    // `{ gate: "Override" … }` als toter Ausdruck stehen und die Zaehlung
+    // stimmte weiter. Ein Wort ist kein Melden.
+    torPruefung("die Override-Entscheidung geht nicht an die Zyklus-Bilanz",
+      (oq3.match(/meldeTorEntscheidung\(AGENT_ID, \{\s*gate: "Override"/g) || []).length === 2);
+  }
+
   // ══ UEBERWACHUNG: HAENGER, MULTI-TIMEFRAME, EHRLICHE DIAGNOSE (16.09.) ═══
   //
   // Drei stille Stellen:

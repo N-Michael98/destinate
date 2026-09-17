@@ -13,6 +13,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { agentBus, meldeTorEntscheidung } from "./agent-bus";
+// Dieselbe Stil-Pruefung wie fuer GPTs Antwort (16.09.) — EINE Regel, nicht zwei.
+import { normalisiereStil } from "../market-scanner/ai-analysis-engine";
 import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
 import { runAnalysisAgent } from "./analysis-agent";
 import { runExecutionAgent } from "./execution-agent";
@@ -96,6 +98,34 @@ interface OrchestratorDecision {
 async function alertAIGateFallback(gate: string, err: unknown): Promise<void> {
   const { meldeAIGateAusfall } = await import("../ai-gate/ai-gate-alert");
   await meldeAIGateAusfall(gate, err);
+}
+
+/**
+ * Das Chance-Risiko der WIRKLICH gesendeten Order-Werte (16.09.).
+ *
+ * Dieselbe Rechnung wie `realesChanceRisiko()` im Scanner, hier fuer den Fall,
+ * dass ein Admin-Override Stop und Ziel nach allen Pruefungen ersetzt hat.
+ * Ein Stop oder Ziel auf der falschen Seite des Einstiegs ergibt 0 — ein
+ * solcher Auftrag waere ein sofortiger Verlust.
+ */
+export const OVERRIDE_MIN_RR = 1.5;
+
+export function ueberschreibungRR(
+  einstieg: number,
+  sl: number | undefined,
+  tp: number | undefined,
+  isBuy: boolean,
+): number {
+  if (!Number.isFinite(einstieg) || einstieg <= 0) return 0;
+  if (!Number.isFinite(sl as number) || !Number.isFinite(tp as number)) return 0;
+  const stop = sl as number;
+  const ziel = tp as number;
+  const stopFalsch = isBuy ? stop >= einstieg : stop <= einstieg;
+  const zielFalsch = isBuy ? ziel <= einstieg : ziel >= einstieg;
+  if (stopFalsch || zielFalsch) return 0;
+  const risiko = Math.abs(einstieg - stop);
+  if (!(risiko > 0)) return 0;
+  return Math.abs(ziel - einstieg) / risiko;
 }
 
 /**
@@ -1014,8 +1044,18 @@ async function zyklusInnen(): Promise<string> {
     // Stufe 1C: Vom Admin bestätigter Override für dieses Symbol
     const override = appliedOverrides[candidate.symbol.toUpperCase()];
     if (override?.style) {
-      style = override.style;
-      console.log(`[orchestrator] 🔧 ${candidate.symbol}: Override aktiv — Style=${style}${override.slPct ? ` SL=${(override.slPct * 100).toFixed(1)}%` : ""}`);
+      // GEPRUEFT statt umgetypt (16.09.): der Stil kommt aus einer Empfehlung
+      // der Analysis-Engine (`rec.suggestion.style ?? "DAYTRADING" as …`) und
+      // wurde hier ungeprueft zur Haltedauer, zum Stop-Tabellenwert und zum
+      // Stil-Tageslimit. Dieselbe Pruefung wie fuer GPTs Stil.
+      const ovStil = normalisiereStil(override.style);
+      if (ovStil) {
+        style = ovStil;
+        console.log(`[orchestrator] 🔧 ${candidate.symbol}: Override aktiv — Style=${style}${override.slPct ? ` SL=${(override.slPct * 100).toFixed(1)}%` : ""}`);
+      } else {
+        console.warn(`[orchestrator] ⚠️ ${candidate.symbol}: Override-Stil ${JSON.stringify(override.style)} `
+          + `ist keiner von SCALPING/DAYTRADING/SWING — es gilt weiter ${style}`);
+      }
     }
 
     // ── Duplikat-Schutz / Pyramiding ──────────────────────────────────────
@@ -1121,13 +1161,43 @@ async function zyklusInnen(): Promise<string> {
     // Override-SL/TP: prozentual vom aktuellen Preis (aus Backtest-Evidenz)
     let slPrice = candidate.gpt.stopLoss > 0 ? candidate.gpt.stopLoss : undefined;
     let tpPrice = candidate.gpt.takeProfit > 0 ? candidate.gpt.takeProfit : undefined;
+    let ueberschrieben = false;
     if (override && entryPrice > 0) {
       if (override.slPct && override.slPct > 0) {
         slPrice = isBuy ? entryPrice * (1 - override.slPct) : entryPrice * (1 + override.slPct);
+        ueberschrieben = true;
       }
       if (override.tpPct && override.tpPct > 0) {
         tpPrice = isBuy ? entryPrice * (1 + override.tpPct) : entryPrice * (1 - override.tpPct);
+        ueberschrieben = true;
       }
+    }
+
+    // ── DAS CHANCE-RISIKO GILT AUCH FUER DEN OVERRIDE (16.09.) ──────────────
+    //
+    // Die 1.5er-Huerde wurde im Scan auf GPTs Stop und Ziel gerechnet. Ein
+    // Override ersetzt genau diese beiden Werte DANACH — die Order konnte also
+    // mit einem Chance-Risiko von 0.5 rausgehen, obwohl jedes andere Signal an
+    // 1.5 scheitert. Geprueft wird NUR, wenn ein Override wirklich eingegriffen
+    // hat: fuer unveraenderte Signale bliebe es dieselbe Rechnung wie im Scan,
+    // nur auf einem inzwischen bewegten Kurs — das waere eine neue Huerde fuer
+    // alle und ist nicht gemeint.
+    if (ueberschrieben) {
+      const rrOverride = ueberschreibungRR(entryPrice, slPrice, tpPrice, isBuy);
+      if (!(rrOverride >= OVERRIDE_MIN_RR)) {
+        const grund = `Override ergibt Chance-Risiko ${rrOverride.toFixed(2)} < ${OVERRIDE_MIN_RR} `
+          + `(Einstieg ${entryPrice}, SL ${slPrice ?? "?"}, TP ${tpPrice ?? "?"})`;
+        console.warn(`[orchestrator] 🚫 ${candidate.symbol} ${grund}`);
+        meldeTorEntscheidung(AGENT_ID, {
+          gate: "Override", symbol: candidate.symbol, direction: candidate.gpt.direction,
+          approve: false, reason: grund,
+        });
+        continue;
+      }
+      meldeTorEntscheidung(AGENT_ID, {
+        gate: "Override", symbol: candidate.symbol, direction: candidate.gpt.direction,
+        approve: true, reason: `Chance-Risiko ${rrOverride.toFixed(2)} >= ${OVERRIDE_MIN_RR}`,
+      });
     }
 
     const execResult = await runExecutionAgent({
