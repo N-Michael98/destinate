@@ -262,8 +262,29 @@ export function tagesbilanzText(t: Tagessumme): string {
   zeilen.push(`📋 <b>Zyklus-Tagesbilanz ${htmlSicher(t.datum)}</b>`);
   zeilen.push("");
   zeilen.push(`🔁 Zyklen: ${t.zyklen} (mit Analyse: ${t.scans})`);
-  const ausgaenge = Object.entries(t.ausgaenge).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  for (const [k, n] of ausgaenge) zeilen.push(`   • ${htmlSicher(k)}: ${n}`);
+  // ── DER SELTENSTE AUSGANG IST DER WICHTIGSTE (18.09.) ──────────────────────
+  //
+  // Hier stand `.slice(0, 6)`. In der ersten echten Tagesbilanz (17.09., 259
+  // Zyklen) ergaben die sechs gezeigten Ausgaenge zusammen 258 — EIN Zyklus
+  // endete anders und war nicht zu sehen. Genau so verschwindet ein "Absturz:
+  // …": er ist selten, steht deshalb hinten, und faellt aus der Liste.
+  //
+  // Jetzt: acht Zeilen, ein Absturz IMMER (auch wenn er einmal vorkam), und
+  // was dann noch fehlt, wird als Zahl benannt statt verschwiegen.
+  const alleAusgaenge = Object.entries(t.ausgaenge).sort((a, b) => b[1] - a[1]);
+  const istAbsturz = (k: string) => /absturz|fehler|killswitch/i.test(k);
+  const gezeigt = alleAusgaenge.slice(0, 8);
+  for (const e of alleAusgaenge) {
+    if (istAbsturz(e[0]) && !gezeigt.includes(e)) gezeigt.push(e);
+  }
+  for (const [k, n] of gezeigt) {
+    zeilen.push(`   • ${istAbsturz(k) ? "❗ " : ""}${htmlSicher(k)}: ${n}`);
+  }
+  const rest = alleAusgaenge.filter((e) => !gezeigt.includes(e));
+  if (rest.length > 0) {
+    const restZyklen = rest.reduce((s, e) => s + zahl(e[1]), 0);
+    zeilen.push(`   • (${rest.length} weitere Ausgaenge, ${restZyklen} Zyklen)`);
+  }
   if (t.scans > 0) {
     zeilen.push("");
     zeilen.push(`🧠 GPT: ${t.gpt.WAIT} WAIT · ${t.gpt.BUY} BUY · ${t.gpt.SELL} SELL (${t.maerkte} Marktanalysen)`);

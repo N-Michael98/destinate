@@ -2243,6 +2243,65 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ TAGESBILANZ: EIN ABSTURZ DARF NICHT AUS DER LISTE FALLEN (18.09.) ════
+  //
+  // GEFUNDEN AN DER ERSTEN ECHTEN TAGESBILANZ (17.09.): 259 Zyklen, aber die
+  // sechs gezeigten Ausgaenge ergaben zusammen nur 258. Die Liste war auf
+  // `.slice(0, 6)` gedeckelt — der seltenste Ausgang fiel raus. Und der
+  // seltenste ist der wichtigste: ein "Absturz: …" kommt einmal vor und waere
+  // genau deshalb unsichtbar gewesen.
+  //
+  // GERECHNET mit der echten Funktion, nicht gelesen.
+  {
+    const zb = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts");
+    const tb = zb.exports?.tagesbilanzText;
+    const leer = zb.exports?.leereTagessumme;
+    if (zb.fehler || typeof tb !== "function" || typeof leer !== "function") {
+      funde.push(`Tagesbilanz nicht ausfuehrbar: ${zb.fehler ?? "tagesbilanzText/leereTagessumme fehlt"}`);
+      zusatz++;
+    } else {
+      const summe = leer("2026-09-17");
+      summe.zyklen = 259;
+      summe.ausgaenge = {
+        "Ausserhalb Handelszeit": 96, "Keine Kandidaten nach Filter": 69,
+        "Keine freigegebenen Signale": 46, "Max. Positionen erreicht": 26,
+        "Alle Kandidaten gescheitert": 15, "# Trade eroeffnet": 6,
+        "Orchestrator-KI pausiert": 3, "Broker nicht verbunden": 2,
+        "Killswitch aktiv": 1, "Absturz: Cannot read properties of undefined": 1,
+      };
+      const text = tb(summe);
+      torPruefung("ein Absturz faellt aus der Ausgangs-Liste der Tagesbilanz",
+        text.includes("Absturz: Cannot read properties of undefined"),
+        "er ist selten, steht deshalb hinten — und war genau deshalb unsichtbar");
+      torPruefung("ein Killswitch-Ausgang faellt aus der Liste",
+        text.includes("Killswitch aktiv"));
+      torPruefung("ein Absturz wird in der Tagesbilanz nicht hervorgehoben",
+        /❗ Absturz/.test(text), "zwischen zehn Zeilen liest ihn sonst niemand");
+      // Eigener Datensatz mit UEBERZAEHLIGEN: die erste Fassung dieser
+      // Pruefung liess "keine weitere-Zeile" als gueltig durchgehen — und
+      // genau das war der Sabotage-Fall. Mit zehn Ausgaengen gibt es gar keine
+      // Ueberzaehligen (acht + Absturz + Killswitch), also muessen es mehr sein.
+      const viele = leer("2026-09-17");
+      viele.zyklen = 300;
+      viele.ausgaenge = {
+        A: 96, B: 69, C: 46, D: 26, E: 15, F: 6, G: 5, H: 4, I: 3, J: 2,
+        "Absturz: irgendwas": 1,
+      };
+      const vielText = tb(viele);
+      torPruefung("weggelassene Ausgaenge werden verschwiegen statt gezaehlt",
+        /\(\d+ weitere Ausgaenge, \d+ Zyklen\)/.test(vielText),
+        "die Summe der Zeilen muss zur Zyklenzahl fuehren");
+      torPruefung("bei vielen Ausgaengen faellt der Absturz doch heraus",
+        vielText.includes("Absturz: irgendwas"));
+      // Die Gegenprobe: bei wenigen Ausgaengen keine ueberfluessige Zeile.
+      const klein = leer("2026-09-17");
+      klein.zyklen = 3;
+      klein.ausgaenge = { "Keine Kandidaten nach Filter": 2, "# Trade eroeffnet": 1 };
+      torPruefung("bei wenigen Ausgaengen steht eine leere '(0 weitere)'-Zeile",
+        !/weitere Ausgaenge/.test(tb(klein)));
+    }
+  }
+
   // ══ BUS-VERDRAHTUNG: KEIN ABO OHNE SENDER (17.09.) ═══════════════════════
   //
   // GEFUNDEN BEI DER GENERALKONTROLLE, von Hand: der Diagnose-Agent hoerte auf
