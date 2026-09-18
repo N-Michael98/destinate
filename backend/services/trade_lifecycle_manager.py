@@ -197,10 +197,29 @@ class TradeLifecycleManager:
 
         lvl      = get_level(trade.confidence)
         progress = trade.progress(current_price)
-        max_h    = STYLE_MAX_HOURS.get(trade.trading_style, 24)
+        # ── KEIN ZEIT-EXIT AUF EINEM GERATENEN STIL (18.09.) ──────────────────
+        #
+        # Hier stand `STYLE_MAX_HOURS.get(trade.trading_style, 24)`. Ein
+        # unbekannter Stil bekam damit 24 Stunden — und diese Schicht SCHLIESST
+        # wirklich: `{"action": "CLOSE"}` wird drueben in instrumentation.ts mit
+        # `capitalClosePosition()` ausgefuehrt.
+        #
+        # Genau das verweigert die erste Schicht seit dem 19.08. ausdruecklich
+        # (risk-agent.ts, `meta.stilGeraten`): waere die Position in Wirklichkeit
+        # SWING gedacht (168 h), wuerde sie 144 Stunden zu frueh geschlossen —
+        # "das ist kein Schutz mehr, das ist ein Eingriff auf einer Annahme, und
+        # er kostet echtes Geld". Die zweite Schicht tat trotzdem genau das.
+        #
+        # ERREICHBAR, nicht theoretisch: nach einem Neustart registriert
+        # `instrumentation.ts` offene Positionen ohne Journal-Zeile mit
+        # `stil=UNBEKANNT` nach — am 17.09. um 22:56 waren das fuenf Stueck.
+        #
+        # None = kein Zeit-Exit. Breakeven, Teilgewinn und Trailing laufen
+        # weiter; die koennen eine Position nicht beenden.
+        max_h    = STYLE_MAX_HOURS.get(trade.trading_style)
 
         # 1. Zeit-Exit
-        if trade.age_hours >= max_h:
+        if max_h is not None and trade.age_hours >= max_h:
             await bus.publish(EventType.ZEIT_EXIT, {
                 "trade_id":     trade_id,
                 "symbol":       trade.symbol,

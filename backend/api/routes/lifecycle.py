@@ -21,7 +21,12 @@ class TradeRegisterRequest(BaseModel):
     take_profit:   float = 0
     size:          float = 1
     confidence:    int   = 72
-    trading_style: str   = "DAYTRADING"
+    # STANDARD IST "UNBEKANNT", NICHT "DAYTRADING" (18.09.). Wer den Stil nicht
+    # mitschickt, hat ihn nicht — und ein angenommener Stil entscheidet hier
+    # ueber die Haltedauer und damit ueber das Schliessen einer echten Position
+    # (siehe Begruendung in trade_lifecycle_manager.on_price_update). Unbekannt
+    # heisst jetzt: kein Zeit-Exit, der Rest der Absicherung laeuft weiter.
+    trading_style: str   = "UNBEKANNT"
     broker:        str   = "Capital.com"
     opened_at:     Optional[str] = None
     # Nachtraeglich registrieren, OHNE eine Eroeffnungsmeldung auszuloesen

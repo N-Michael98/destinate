@@ -280,6 +280,58 @@ class TestZeitExit:
         result = await mgr.on_price_update("T001", 1.1010)
         assert result["action"] != "CLOSE"
 
+    # ── KEIN ZEIT-EXIT AUF EINEM GERATENEN STIL (18.09.) ─────────────────────
+    #
+    # `STYLE_MAX_HOURS.get(stil, 24)` gab einem UNBEKANNTEN Stil 24 Stunden,
+    # und diese Schicht schliesst wirklich (instrumentation.ts fuehrt
+    # `capitalClosePosition` aus). Die erste Schicht verweigert genau das seit
+    # dem 19.08. Erreichbar nach jedem Neustart: offene Positionen ohne
+    # Journal-Zeile werden mit `stil=UNBEKANNT` nachregistriert.
+
+    @pytest.mark.asyncio
+    async def test_unbekannter_stil_kein_zeit_exit(self):
+        """Ein geratener Stil darf keine echte Position schliessen."""
+        uralt = datetime.now(timezone.utc) - timedelta(hours=500)
+        mgr = TradeLifecycleManager()
+        t = make_trade(trading_style="UNBEKANNT", opened_at=uralt,
+                       entry=1.1000, stop_loss=1.0970, take_profit=1.1060)
+        mgr._trades["T001"] = t
+        result = await mgr.on_price_update("T001", 1.1010)
+        assert result["action"] != "CLOSE", (
+            "ein unbekannter Handelsstil darf nicht auf 24 h zurueckfallen — "
+            "eine SWING-Position waere 144 h zu frueh geschlossen")
+
+    @pytest.mark.asyncio
+    async def test_bekannter_stil_schliesst_weiterhin(self):
+        """Die Gegenprobe: der Riegel darf den Zeit-Exit nicht abschalten."""
+        alt = datetime.now(timezone.utc) - timedelta(hours=25)
+        mgr = TradeLifecycleManager()
+        t = make_trade(trading_style="DAYTRADING", opened_at=alt)
+        mgr._trades["T001"] = t
+        result = await mgr.on_price_update("T001", 1.1000)
+        assert result["action"] == "CLOSE"
+        assert result["reason"] == "ZEIT_EXIT"
+
+    @pytest.mark.asyncio
+    async def test_leerer_stil_kein_zeit_exit(self):
+        """Auch ein leerer oder unsinniger Stil schliesst nichts."""
+        uralt = datetime.now(timezone.utc) - timedelta(hours=500)
+        for stil in ["", "   ", "INTRADAY", "daytrading-ish"]:
+            mgr = TradeLifecycleManager()
+            t = make_trade(trading_style=stil, opened_at=uralt,
+                           entry=1.1000, stop_loss=1.0970, take_profit=1.1060)
+            mgr._trades["T001"] = t
+            result = await mgr.on_price_update("T001", 1.1010)
+            assert result["action"] != "CLOSE", f"Stil {stil!r} schloss die Position"
+
+    def test_register_standard_ist_unbekannt(self):
+        """Wer den Stil nicht mitschickt, hat ihn nicht — kein DAYTRADING."""
+        from api.routes.lifecycle import TradeRegisterRequest
+        felder = TradeRegisterRequest.model_fields
+        assert felder["trading_style"].default == "UNBEKANNT", (
+            "ein angenommener Stil entscheidet hier ueber das Schliessen "
+            "einer echten Position")
+
 
 # ── Nachreichen nach einem Neustart (18.08.) ─────────────────────────────────
 #
