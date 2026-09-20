@@ -429,7 +429,12 @@ async function postTradeActions(params: {
       broker: brokerLabel,
       dealId: result?.dealId,
     });
-  } catch { /* non-fatal */ }
+  } catch (e) {
+    // Der Trade LIEF — nur die Meldung fehlt. Trotzdem benennen: sonst haelt
+    // man eine ausbleibende Telegram-Nachricht fuer einen ausbleibenden Trade.
+    console.warn(`[orchestrator] ⚠️ ${candidate.symbol}: Trade-Meldung an Telegram `
+      + `fehlgeschlagen (${e instanceof Error ? e.message : String(e)}) — der Trade selbst lief.`);
+  }
 
   // Python lifecycle
   try {
@@ -449,7 +454,15 @@ async function postTradeActions(params: {
       broker:       "Capital.com",
       openedAt:     new Date().toISOString(),
     });
-  } catch { /* non-fatal */ }
+  } catch (e) {
+    // Ohne Registrierung kennt die ZWEITE Absicherungsschicht diese Position
+    // nicht — kein Stop-Nachziehen und kein Teilgewinn von dort. Der RiskAgent
+    // laeuft weiter, aber die Redundanz fehlt, und das war bisher unsichtbar.
+    console.warn(`[orchestrator] ⚠️ ${candidate.symbol}: Python-Lifecycle-Registrierung `
+      + `fehlgeschlagen (${e instanceof Error ? e.message : String(e)}) — die zweite `
+      + `Absicherungsschicht kennt diese Position nicht. Sie wird beim naechsten `
+      + `2-Minuten-Lauf nachgereicht, sofern eine Journal-Zeile mit Stil existiert.`);
+  }
 
   // Journal
   try {
@@ -477,7 +490,25 @@ async function postTradeActions(params: {
       confidence:   candidate.gpt.confidence,
       entryContext,
     });
-  } catch { /* non-fatal */ }
+  } catch (e) {
+    // ── DER TEUERSTE DER DREI (20.09.) ──────────────────────────────────────
+    //
+    // Hier stand `catch { /* non-fatal */ }`. Scheitert dieser Schreibvorgang,
+    // hat die Position FUER IMMER keine Journal-Zeile — und niemand erfaehrt
+    // es. Was daran haengt, steht in `capital-trade-tracker.ts`: ohne Zeile
+    // gibt es keinen Handelsstil, keinen Teilgewinn-Riegel und keinen
+    // Risiko-Zustand.
+    //
+    // ANLASS: am 18.09. liefen zwei Positionen (XAUUSD, GBPJPY) mit
+    // `stil=UNBEKANNT` — die Zeile war rekonstruiert, also fehlte die echte.
+    // Ob unser eigener Schreibvorgang gescheitert war oder die Position von
+    // aussen kam, liess sich NICHT mehr feststellen: es gab keine Spur.
+    // Ab jetzt gibt es eine.
+    console.error(`[orchestrator] ❌ ${candidate.symbol}: JOURNAL-ZEILE NICHT GESCHRIEBEN `
+      + `(${e instanceof Error ? e.message : String(e)}) — die Position laeuft ohne `
+      + `Handelsstil, ohne Teilgewinn-Riegel und ohne Risiko-Zustand. Sie wird spaeter `
+      + `mit stil=UNBEKANNT rekonstruiert, und der Zeit-Exit bleibt fuer sie aus.`);
+  }
 }
 
 // ── Trading Session Check ─────────────────────────────────────────────────────

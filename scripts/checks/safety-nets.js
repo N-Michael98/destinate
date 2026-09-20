@@ -2285,6 +2285,32 @@ module.exports = async function pruefe() {
         "genau eine Meldung je Zyklus, mit der Zahl");
       torPruefung('"Zyklus-Limit" fehlt in der Liste GateName',
         /\| "Zyklus-Limit"/.test(read("frontend/lib/agents/agent-bus.ts")));
+
+      // ── KEIN STILLER AUSFALL NACH EINEM TRADE (20.09.) ──────────────────
+      //
+      // `postTradeActions` hatte DREI leere `catch { /* non-fatal */ }`:
+      // Telegram-Meldung, Python-Registrierung und Journal-Zeile. Der letzte
+      // ist der teuerste — ohne Zeile hat die Position fuer immer keinen
+      // Handelsstil, keinen Teilgewinn-Riegel und keinen Risiko-Zustand, und
+      // sie wird spaeter mit `stil=UNBEKANNT` rekonstruiert. Am 18.09. liefen
+      // genau zwei solche Positionen, und es gab KEINE Spur, warum.
+      const ptaStart = oq.indexOf("async function postTradeActions");
+      const pta = ptaStart >= 0 ? oq.slice(ptaStart, ptaStart + 4500) : "";
+      torPruefung("postTradeActions ist nicht mehr auffindbar — die Pruefung waere blind",
+        pta.length > 1500 && /saveCapitalTradeToJournal/.test(pta), `${pta.length} Zeichen`);
+      if (pta.length > 1500) {
+        const stille = (pta.match(/catch\s*\{\s*\}/g) || []).length
+          + (pta.match(/catch\s*\{\s*\/\*[^*]*\*\/\s*\}/g) || []).length;
+        torPruefung("ein Ausfall nach dem Trade wird wieder stillschweigend verschluckt",
+          stille === 0, `${stille} leere catch-Bloecke in postTradeActions`);
+        torPruefung("ein gescheiterter Journal-Schreibvorgang bleibt unsichtbar",
+          /JOURNAL-ZEILE NICHT GESCHRIEBEN/.test(pta),
+          "ohne Zeile: kein Handelsstil, kein Teilgewinn-Riegel, kein Risiko-Zustand");
+        torPruefung("eine gescheiterte Python-Registrierung bleibt unsichtbar",
+          /Python-Lifecycle-Registrierung `\s*\+ `fehlgeschlagen/.test(pta)
+          || /Python-Lifecycle-Registrierung/.test(pta),
+          "dann fehlt die zweite Absicherungsschicht, ohne dass es jemand merkt");
+      }
     }
   }
 
