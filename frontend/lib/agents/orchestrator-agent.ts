@@ -1073,8 +1073,28 @@ async function zyklusInnen(): Promise<string> {
 
   let tradesThisCycle = 0;
 
-  for (const candidate of candidates) {
-    if (tradesThisCycle >= aiDecision.maxTradesThisCycle) break;
+  // ── WER GAR NICHT MEHR GEPRUEFT WURDE, BEKOMMT AUCH EINEN NAMEN (18.09.) ──
+  //
+  // GEFUNDEN AN DER ERSTEN TAGESBILANZ (17.09.): nach dem Duplikat-Tor blieben
+  // 10 Kandidaten, ausgefuehrt wurden 6. Fuer die vier anderen nannte die
+  // Bilanz KEINEN Grund — und das lag nicht an einem Tor, sondern an den zwei
+  // `break` dieser Schleife: nach einem Trade ist der Zyklus zu Ende, und die
+  // Orchestrator-KI setzt zusaetzlich `maxTradesThisCycle`.
+  //
+  // Jeder `continue` hier drin meldet seit dem 16.09. sein Tor (nachgezaehlt:
+  // sieben Stueck). Die beiden `break` waren die letzten stillen Ausgaenge.
+  // An der Logik aendert sich NICHTS — es wird nur benannt, was ohnehin
+  // geschieht. Sonst sieht eine Bilanz, in der Zahlen nicht aufgehen, aus wie
+  // ein Fehler, und man sucht an der falschen Stelle.
+  let nichtGeprueft = 0;
+  let limitGrund = "";
+
+  for (const [index, candidate] of candidates.entries()) {
+    if (tradesThisCycle >= aiDecision.maxTradesThisCycle) {
+      nichtGeprueft = candidates.length - index;
+      limitGrund = `Orchestrator-KI erlaubt ${aiDecision.maxTradesThisCycle} Trade(s) je Zyklus`;
+      break;
+    }
 
     let style = (candidate.gpt.tradingStyle ?? "DAYTRADING").toUpperCase() as "DAYTRADING" | "SCALPING" | "SWING";
 
@@ -1303,6 +1323,8 @@ async function zyklusInnen(): Promise<string> {
         candidate, execResult, style, balance: session.balance, riskPct, entryContext,
         actualSL: slPrice, actualTP: tpPrice,
       });
+      nichtGeprueft = candidates.length - index - 1;
+      limitGrund = "ein Trade je Zyklus";
       break; // 1 Trade pro Zyklus
     } else {
       // `aiReason` ist die Begründung der FREIGABE, nicht der Fehler (27.08.).
@@ -1319,6 +1341,18 @@ async function zyklusInnen(): Promise<string> {
           payload: { symbol: candidate.symbol, direction: candidate.gpt.direction, grund: brokerGrund } });
       }
     }
+  }
+
+  // Die Kandidaten hinter dem `break` — sie sind weder durchgekommen noch an
+  // einem Tor gescheitert, sie kamen gar nicht mehr dran. Genau EINE Meldung
+  // je Zyklus, mit der Zahl.
+  if (nichtGeprueft > 0) {
+    console.log(`[orchestrator] ⏸️ ${nichtGeprueft} Kandidat(en) nicht mehr geprüft — ${limitGrund}`);
+    meldeTorEntscheidung(AGENT_ID, {
+      gate: "Zyklus-Limit",
+      approve: false,
+      reason: `${nichtGeprueft} Kandidat(en) nicht mehr geprueft — ${limitGrund}`,
+    });
   }
 
   console.log(`[orchestrator] Zyklus beendet — ${tradesThisCycle} Trade(s) ausgeführt`);

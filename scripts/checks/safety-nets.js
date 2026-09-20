@@ -2243,6 +2243,51 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ KEIN STILLER AUSGANG AUS DER KANDIDATEN-SCHLEIFE (18.09.) ═══════════
+  //
+  // GEFUNDEN AN DER ERSTEN TAGESBILANZ: nach dem Duplikat-Tor blieben 10
+  // Kandidaten, ausgefuehrt wurden 6 — fuer vier nannte die Bilanz keinen
+  // Grund. Ursache waren die beiden `break` der Schleife (ein Trade je Zyklus,
+  // `maxTradesThisCycle`): sie beenden die Pruefung, ohne etwas zu melden.
+  // Jeder `continue` darin meldet sein Tor; die `break` taten es nicht.
+  //
+  // Diese Pruefung zaehlt die Ausgaenge im Quelltext und verlangt, dass JEDER
+  // begleitet ist. Kommt morgen ein neuer `continue` dazu, wird sie rot.
+  {
+    const oq = read("frontend/lib/agents/orchestrator-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    // `\r?\n`: die Datei hat CRLF — ein blosses `\n` im Muster trifft nichts
+    // (erster Lauf meldete deshalb "0 Zeichen", die Selbstpruefung hat es
+    // gefangen).
+    const schleife = (oq.match(/for \(const \[index, candidate\] of candidates\.entries\(\)\)[\s\S]*?\r?\n  \}\r?\n/) || [""])[0];
+    torPruefung("die Kandidaten-Schleife ist nicht mehr auffindbar — die Pruefung waere blind",
+      schleife.length > 2000, `${schleife.length} Zeichen`);
+    if (schleife.length > 2000) {
+      // JEDES `continue` braucht eine EIGENE Meldung, nicht bloss genug
+      // Meldungen insgesamt. Die erste Fassung verglich nur die Summen —
+      // die Sabotage "ein continue ohne Tor-Meldung" blieb damit gruen, weil
+      // andere Tore doppelt melden (ja UND nein). Jetzt wird der Text an jedem
+      // `continue` zerlegt: in jedem Abschnitt muss ein Aufruf stehen.
+      const abschnitte = schleife.split("continue;").slice(0, -1);
+      const ohneTor = abschnitte.filter((t) => !/meldeTorEntscheidung\(AGENT_ID, \{/.test(t)).length;
+      torPruefung("ein `continue` in der Kandidaten-Schleife meldet kein Tor",
+        ohneTor === 0, `${ohneTor} von ${abschnitte.length} Ausgaengen ohne eigene Meldung`);
+      // Beide `break` muessen die Zahl der uebersprungenen Kandidaten setzen.
+      torPruefung("ein `break` beendet die Pruefung wieder stillschweigend",
+        /nichtGeprueft = candidates\.length - index;[\s\S]{0,200}?break;/.test(schleife)
+        && /nichtGeprueft = candidates\.length - index - 1;[\s\S]{0,120}?break;/.test(schleife),
+        "dann fehlen die uebersprungenen Kandidaten in der Bilanz");
+      // Den AUFRUF zaehlen, nicht den Namen: eine Sabotage liess
+      // `void ({ gate: "Zyklus-Limit" … })` als toten Ausdruck stehen und
+      // blieb gruen. Dieselbe Falle wie beim Override-Tor am 16.09.
+      torPruefung("die uebersprungenen Kandidaten gehen nicht an die Bilanz",
+        /if \(nichtGeprueft > 0\) \{[\s\S]{0,400}?meldeTorEntscheidung\(AGENT_ID, \{\s*gate: "Zyklus-Limit"/.test(oq),
+        "genau eine Meldung je Zyklus, mit der Zahl");
+      torPruefung('"Zyklus-Limit" fehlt in der Liste GateName',
+        /\| "Zyklus-Limit"/.test(read("frontend/lib/agents/agent-bus.ts")));
+    }
+  }
+
   // ══ TAGESBILANZ: EIN ABSTURZ DARF NICHT AUS DER LISTE FALLEN (18.09.) ════
   //
   // GEFUNDEN AN DER ERSTEN ECHTEN TAGESBILANZ (17.09.): 259 Zyklen, aber die

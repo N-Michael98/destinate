@@ -59,6 +59,9 @@ export type GateName =
   | "Duplikat"
   | "Filterkette"
   | "Override"
+  /** Die Kandidaten danach wurden GAR NICHT mehr geprueft (18.09.) — der
+   *  Zyklus war nach einem Trade oder am Limit der Orchestrator-KI zu Ende. */
+  | "Zyklus-Limit"
   | "Ausfuehrungs-KI"
   | "Broker";
 
