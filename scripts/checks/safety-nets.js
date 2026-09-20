@@ -2338,6 +2338,72 @@ module.exports = async function pruefe() {
         "die Summe der Zeilen muss zur Zyklenzahl fuehren");
       torPruefung("bei vielen Ausgaengen faellt der Absturz doch heraus",
         vielText.includes("Absturz: irgendwas"));
+      // ── DIE RECHNUNG MUSS AUFGEHEN (20.09.) ──────────────────────────────
+      //
+      // GEFUNDEN AN DER TAGESBILANZ vom 18.09.: "Claude gefragt 364",
+      // "Risiko-Freigabe gescheitert 200", "GO 144" — 364-200-144 = 20
+      // Signale waren weder das eine noch das andere. Sie starben an der Stufe
+      // `trichter.slTp` (GPT lieferte Richtung und Confidence, aber keinen
+      // Stop oder kein Ziel) und hatten keine eigene Zahl. Am 17.09. ging die
+      // Rechnung noch auf — die Luecke zeigt sich nur an Tagen, an denen sie
+      // auftritt, und genau darum muss sie benannt sein.
+      const rechnung = leer("2026-09-18");
+      rechnung.zyklen = 1; rechnung.scans = 1;
+      rechnung.claudeGefragt = 364; rechnung.rrAbgelehnt = 200;
+      rechnung.go = 144; rechnung.ohneStopZiel = 20;
+      rechnung.fehlgeschlagen = 2;
+      rechnung.fehlgeschlagenGruende = { "EURUSD: MARKET_CLOSED": 1, "GBPJPY: Stop zu nah": 1 };
+      const rText = tb(rechnung);
+      torPruefung("die Stufe 'ohne Stop/Ziel' fehlt in der Tagesbilanz",
+        /Ohne Stop oder Ziel von GPT[^\n]*: 20/.test(rText),
+        "dann gehen Claude gefragt - gescheitert - GO nicht auf");
+      torPruefung("die Rechnung der Tagesbilanz geht nicht auf",
+        rechnung.claudeGefragt - rechnung.rrAbgelehnt - rechnung.ohneStopZiel === rechnung.go,
+        `${rechnung.claudeGefragt} - ${rechnung.rrAbgelehnt} - ${rechnung.ohneStopZiel} != ${rechnung.go}`);
+      torPruefung("Broker-Fehler werden wieder ohne Grund gemeldet",
+        rText.includes("MARKET_CLOSED") && rText.includes("Stop zu nah"),
+        "zwei gescheiterte Orders ohne Grund sind keine Meldung, sondern eine Frage");
+      // DEN SUMMIERUNGSPFAD SELBST RECHNEN, nicht nur den Text. Die erste
+      // Fassung baute die Tagessumme von Hand — damit blieben zwei Sabotagen
+      // gruen, die das Addieren entfernten. Jetzt laeuft der echte Weg:
+      // Ereignis -> Zyklus-Bilanz -> Tagessumme.
+      const nb = zb.exports?.neueBilanz, bv = zb.exports?.bilanzVerbuchen, ta = zb.exports?.tagessummeAddieren;
+      if (typeof nb !== "function" || typeof bv !== "function" || typeof ta !== "function") {
+        funde.push("neueBilanz/bilanzVerbuchen/tagessummeAddieren nicht exportiert — "
+          + "der Summierungspfad der Bilanz bliebe ungeprueft");
+        zusatz++;
+      } else {
+        const bz = nb(0); bz.ende = 1000; bz.ausgang = "x";
+        bv(bz, { type: "ANALYSIS:SCAN_DONE", payload: { scan: {
+          maerkte: 30, gpt: { WAIT: 1, BUY: 2, SELL: 3 }, vetos: 0, stilVerworfen: 0,
+          unterGrenze: [], go: 5, rrAbgelehnt: 4, ohneStopZiel: 7, claudeGefragt: 16,
+          regelbrueche: {}, dauerMs: {}, kontext: { news: true, mtfSymbole: 30 },
+        } } });
+        bv(bz, { type: "EXECUTION:TRADE_FAILED", payload: { symbol: "EURUSD", grund: "MARKET_CLOSED" } });
+        bv(bz, { type: "EXECUTION:TRADE_FAILED", payload: { symbol: "GBPJPY", grund: "MARKET_CLOSED" } });
+        const s1 = ta(null, bz, "2026-09-20");
+        const s2 = ta(s1, bz, "2026-09-20");
+        torPruefung("die Stufe 'ohne Stop/Ziel' wird nicht in die Tagessumme addiert",
+          s1.ohneStopZiel === 7 && s2.ohneStopZiel === 14, `${s1.ohneStopZiel} / ${s2.ohneStopZiel}`);
+        torPruefung("die Rechnung der Tagessumme geht nicht auf",
+          s1.claudeGefragt - s1.rrAbgelehnt - s1.ohneStopZiel === s1.go,
+          `${s1.claudeGefragt} - ${s1.rrAbgelehnt} - ${s1.ohneStopZiel} != ${s1.go}`);
+        const gr = s2.fehlgeschlagenGruende ?? {};
+        torPruefung("Broker-Fehler-Gruende landen nicht in der Tagessumme",
+          Object.values(gr).reduce((a, b2) => a + b2, 0) === 4 && Object.keys(gr).length === 2,
+          JSON.stringify(gr));
+      }
+
+      // Eine Tagessumme von GESTERN kennt die neuen Felder nicht.
+      const alt = leer("2026-09-18");
+      delete alt.ohneStopZiel; delete alt.fehlgeschlagenGruende;
+      alt.zyklen = 1; alt.scans = 1;
+      let altText = "";
+      try { altText = tb(alt); } catch (e) { altText = `ABSTURZ: ${e.message}`; }
+      torPruefung("eine alte Tagessumme ohne die neuen Felder laesst die Bilanz platzen",
+        !altText.startsWith("ABSTURZ") && !altText.includes("NaN") && !altText.includes("undefined"),
+        altText.slice(0, 120));
+
       // Die Gegenprobe: bei wenigen Ausgaengen keine ueberfluessige Zeile.
       const klein = leer("2026-09-17");
       klein.zyklen = 3;

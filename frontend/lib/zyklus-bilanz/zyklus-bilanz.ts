@@ -28,6 +28,10 @@ export type ScanDaten = {
   unterGrenze: number[];
   go: number;
   rrAbgelehnt: number;
+  /** Richtung UND Confidence waren da, aber GPT lieferte keinen Stop oder kein
+   *  Ziel (20.09.). Diese Signale sind weder GO noch an der Freigabe
+   *  gescheitert — ohne eigene Zahl verschwinden sie aus der Rechnung. */
+  ohneStopZiel: number;
   claudeGefragt: number;
   /** GPT-Antworten, die dem eigenen Prompt widersprechen — Anzahl je Art. */
   regelbrueche: Record<string, number>;
@@ -71,7 +75,10 @@ export type Tagessumme = {
   confMax: number | null;
   go: number;
   rrAbgelehnt: number;
+  ohneStopZiel: number;
   claudeGefragt: number;
+  /** Broker-Fehler nach Grund — die Zahl allein sagt nicht, WARUM (20.09.). */
+  fehlgeschlagenGruende: Record<string, number>;
   /** Wie oft News im Prompt standen, und die Summe der Symbole MIT 1H/1W. */
   newsZyklen: number;
   mtfSumme: number;
@@ -157,6 +164,7 @@ export function bilanzZeile(b: ZyklusBilanz): string {
     if (s.stilVerworfen > 0) teile.push(`Stil ${s.stilVerworfen}`);
     teile.push(`<Grenze ${s.unterGrenze.length}${conf}`);
     teile.push(`Freigabe-Nein ${s.rrAbgelehnt}`);
+    if (zahl(s.ohneStopZiel) > 0) teile.push(`ohne Stop/Ziel ${s.ohneStopZiel}`);
     teile.push(`GO ${s.go}`);
     const brueche = Object.entries(s.regelbrueche).filter(([, n]) => n > 0);
     if (brueche.length > 0) teile.push(`Regelbruch GPT: ${brueche.map(([k, n]) => `${k} ${n}`).join(", ")}`);
@@ -183,7 +191,8 @@ export function leereTagessumme(datum: string): Tagessumme {
     datum, zyklen: 0, ausgaenge: {}, scans: 0, maerkte: 0,
     gpt: { WAIT: 0, BUY: 0, SELL: 0 }, vetos: 0, stilVerworfen: 0,
     unterGrenze: 0, confMin: null, confMax: null, go: 0, rrAbgelehnt: 0,
-    claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
+    ohneStopZiel: 0, claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
+    fehlgeschlagenGruende: {},
     regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
     dauerSummeMs: 0, dauerMaxMs: 0,
   };
@@ -222,6 +231,7 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     }
     t.go += zahl(s.go);
     t.rrAbgelehnt += zahl(s.rrAbgelehnt);
+    t.ohneStopZiel = zahl(t.ohneStopZiel) + zahl(s.ohneStopZiel);
     t.claudeGefragt += zahl(s.claudeGefragt);
     // `zahl(...)` auch auf der Summenseite: eine Tagessumme aus Redis, die
     // noch von gestern (ohne diese Felder) stammt, ergaebe sonst NaN.
@@ -248,6 +258,20 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
   }
   t.trades += b.trades.length;
   t.fehlgeschlagen += b.fehlgeschlagen.length;
+  // Broker-Fehler MIT GRUND (20.09.). Die Tagesbilanz vom 18.09. meldete
+  // "Broker-Fehler: 2" — und sonst nichts. Die Zyklus-Zeile kennt den Grund
+  // ("GBPUSD: MARKET_CLOSED"), die Tagessumme warf ihn weg. Zwei gescheiterte
+  // Orders ohne Grund sind keine Meldung, sondern eine Frage.
+  t.fehlgeschlagenGruende ??= {};
+  for (const f of b.fehlgeschlagen) {
+    const k = grundSchluessel(f);
+    if (t.fehlgeschlagenGruende[k] !== undefined
+      || Object.keys(t.fehlgeschlagenGruende).length < MAX_GRUENDE_JE_TOR) {
+      t.fehlgeschlagenGruende[k] = (t.fehlgeschlagenGruende[k] ?? 0) + 1;
+    } else {
+      t.fehlgeschlagenGruende["(weitere)"] = (t.fehlgeschlagenGruende["(weitere)"] ?? 0) + 1;
+    }
+  }
   return t;
 }
 
@@ -292,6 +316,7 @@ export function tagesbilanzText(t: Tagessumme): string {
     const spanne = t.confMin !== null ? ` (Confidence ${t.confMin}–${t.confMax})` : "";
     zeilen.push(`📉 Unter der Untergrenze: ${t.unterGrenze}${spanne}`);
     zeilen.push(`⚖️ An der Risiko-Freigabe gescheitert (R/R oder Risiko-Score): ${t.rrAbgelehnt}`);
+    zeilen.push(`✂️ Ohne Stop oder Ziel von GPT (weder GO noch gescheitert): ${zahl(t.ohneStopZiel)}`);
     zeilen.push(`✅ GO: ${t.go} · Claude gefragt: ${t.claudeGefragt}`);
     // Womit GPT gearbeitet hat. Ein Tag mit "MTF Ø 0" heisst: jedes Urteil kam
     // allein aus dem Tageschart, obwohl der Prompt 1H/1W vorsieht.
@@ -319,6 +344,10 @@ export function tagesbilanzText(t: Tagessumme): string {
   }
   zeilen.push("");
   zeilen.push(`💼 Trades eröffnet: ${t.trades} · Broker-Fehler: ${t.fehlgeschlagen}`);
+  // Und WARUM sie scheiterten — sonst ist die Zahl nur eine Frage (20.09.).
+  for (const [k, n] of Object.entries(t.fehlgeschlagenGruende ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 5)) {
+    zeilen.push(`   ❗ ${htmlSicher(k)} (${n}×)`);
+  }
   if (t.zyklen > 0) {
     zeilen.push(`⏱️ Zyklusdauer Ø ${Math.round(t.dauerSummeMs / t.zyklen / 1000)} s, max ${Math.round(t.dauerMaxMs / 1000)} s`);
   }

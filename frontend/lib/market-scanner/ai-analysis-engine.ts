@@ -2112,6 +2112,21 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       unterGrenze: claudeUnterGrenzeConf,
       go: trichter.go,
       rrAbgelehnt: abgelehnteRR.length,
+      // ── DIE STUFE, DIE IN DER BILANZ FEHLTE (20.09.) ────────────────────
+      //
+      // GEFUNDEN BEIM NACHRECHNEN DER TAGESBILANZ vom 18.09.:
+      //   Claude gefragt 364 - Risiko-Freigabe gescheitert 200 - GO 144 = 20
+      // Zwanzig Signale waren weder freigegeben noch an der Freigabe
+      // gescheitert. Sie starben an der Stufe DAZWISCHEN: `trichter.slTp`
+      // verlangt `stopLoss > 0 && takeProfit > 0`. GPT lieferte also Richtung
+      // UND Confidence ueber der Untergrenze, aber keinen Stop oder kein Ziel.
+      //
+      // In `abgelehnteRR` landen sie nicht: das setzt ein rechenbares
+      // Chance-Risiko voraus, und ohne Stop gibt es keines. Am 17.09. ging die
+      // Rechnung noch auf (591 - 346 - 245 = 0), am 18.09. nicht mehr — die
+      // Luecke war also nicht immer sichtbar, sondern nur an dem Tag, an dem
+      // sie auftrat. Genau deshalb muss sie eine eigene Zahl haben.
+      ohneStopZiel: Math.max(0, trichter.confidence - trichter.slTp),
       claudeGefragt,
       regelbrueche,
       dauerMs: scanDauer,

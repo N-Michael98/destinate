@@ -573,6 +573,18 @@ module.exports = function pruefe() {
   // `kontext` wurde bis heute gesammelt und NIRGENDS gezeigt.
   const bilanzQuelle = read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts")
     .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  // Die Stufe zwischen Confidence und GO muss GEZAEHLT werden (20.09.) —
+  // sonst gehen "Claude gefragt - gescheitert - GO" nicht auf (18.09.: 20 fehlten).
+  pruefe1("die Stufe 'ohne Stop/Ziel' wird nicht aus dem Trichter gezaehlt",
+    /ohneStopZiel: Math\.max\(0, trichter\.confidence - trichter\.slTp\)/.test(ohneKomm),
+    "sie ist die einzige Stufe zwischen Confidence>=70 und GO");
+  // AN DIE STUFE GEBUNDEN pruefen: `gpt.stopLoss > 0 && gpt.takeProfit > 0`
+  // steht auch an anderer Stelle, deshalb blieb die Sabotage "Bedingung aus
+  // der slTp-Zeile entfernt" zuerst gruen.
+  pruefe1("die Trichter-Stufe SL/TP prueft Stop und Ziel nicht mehr",
+    /gpt\.stopLoss > 0 && gpt\.takeProfit > 0\) trichter\.slTp\+\+;/.test(ohneKomm),
+    "ohne diese Bedingung zaehlt die Stufe dasselbe wie Confidence, und 'ohne Stop/Ziel' waere immer 0");
+
   pruefe1("der gemessene Prompt-Kontext wird nirgends ausgegeben",
     /Kontext: News \$\{k\.news \? "ja" : "nein"\}, MTF/.test(bilanzQuelle)
     && /Multi-Timeframe Ø \$\{mtfSchnitt\}/.test(bilanzQuelle),
