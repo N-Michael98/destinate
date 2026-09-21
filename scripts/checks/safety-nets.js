@@ -2332,6 +2332,13 @@ module.exports = async function pruefe() {
         !/\b(UPDATE|INSERT|DELETE)\b/i.test(rumpf.replace(/(^|[^:])\/\/[^\n]*/g, "$1"))
         && /SELECT id, status, strategy, notes/.test(rumpf),
         "eine Diagnose darf den Zustand, den sie untersucht, nicht veraendern");
+      // Das Fenster muss am ERÖFFNEN haengen, nicht an "jetzt" (21.09.):
+      // sonst verliert eine laenger laufende Position ihre urspruengliche Zeile,
+      // und die Diagnose meldet genau die falsche Antwort.
+      torPruefung("das Fenster der UNBEKANNT-Diagnose zaehlt ab jetzt statt ab Eroeffnung",
+        /"createdAt" >= \$2::timestamptz - INTERVAL '1 hour'/.test(rumpf)
+        && /t\.symbol, t\.openedAt,/.test(rumpf) && !/NOW\(\) - INTERVAL/.test(rumpf),
+        "eine Position, die laenger laeuft als das Fenster, verliert sonst ihre erste Zeile");
       torPruefung("die UNBEKANNT-Diagnose laeuft bei jeder Registrierung statt nur im Fall",
         /if \(t\.tradingStyle === "UNBEKANNT"\) \{/.test(rumpf),
         "sonst eine Datenbankabfrage je Position und Neustart ohne Anlass");

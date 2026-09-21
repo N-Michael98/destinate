@@ -535,10 +535,16 @@ export async function register() {
                           try {
                             const { getPrisma } = await import("./app/lib/prisma");
                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            // Fenster ab dem ERÖFFNEN der Position, nicht ab jetzt
+                            // (21.09.). Erste Fassung: `NOW() - 4 days` — eine
+                            // Position, die laenger lief, haette ihre URSPRUENGLICHE
+                            // Zeile verloren, und die Diagnose haette "nur die
+                            // rekonstruierte" gemeldet: genau die falsche Antwort.
+                            // Eine Stunde Vorlauf fuer Uhrenversatz Broker/Datenbank.
                             const zeilen = await (getPrisma().$queryRawUnsafe as any)(
                               `SELECT id, status, strategy, notes, "createdAt" FROM "Trade" `
-                              + `WHERE market = $1 AND "createdAt" > NOW() - INTERVAL '4 days' ORDER BY id`,
-                              t.symbol,
+                              + `WHERE market = $1 AND "createdAt" >= $2::timestamptz - INTERVAL '1 hour' ORDER BY id`,
+                              t.symbol, t.openedAt,
                             ) as Array<{ id: number; status: string; strategy: string; notes: string | null; createdAt: Date }>;
                             const teile = zeilen.map((z) => {
                               let m: Record<string, unknown> = {};
@@ -551,7 +557,7 @@ export async function register() {
                                 + `${m.exitReason ? ` exit=${String(m.exitReason)}` : ""}`;
                             });
                             console.warn(`[py-lifecycle] 🔎 ${t.symbol} deal=…${t.tradeId.slice(-12)}: `
-                              + `${zeilen.length} Journal-Zeile(n) in 4 Tagen — ${teile.join(" | ") || "KEINE"}`);
+                              + `${zeilen.length} Journal-Zeile(n) seit Eroeffnung — ${teile.join(" | ") || "KEINE"}`);
                           } catch (e) {
                             console.warn(`[py-lifecycle] 🔎 Diagnose fuer ${t.symbol} nicht moeglich: `
                               + `${e instanceof Error ? e.message : String(e)}`);
