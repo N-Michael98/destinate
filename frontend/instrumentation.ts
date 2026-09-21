@@ -517,6 +517,46 @@ export async function register() {
                       if (ok) {
                         console.log(`[py-lifecycle] nachregistriert: ${t.symbol} ${t.direction} `
                           + `deal=${t.tradeId} stil=${t.tradingStyle} eroeffnet=${t.openedAt}`);
+                        // ── WARUM UNBEKANNT? DIE DATENBANK SELBST FRAGEN (21.09.) ──
+                        //
+                        // Am 17. und 18.09. kam JEDE nachregistrierte Position mit
+                        // `stil=UNBEKANNT` — auch alle vier, die unser Orchestrator
+                        // am 18.09. selbst eroeffnet hat (Telegram "Trade
+                        // ausgefuehrt" sekundengenau zur Broker-Zeit). Den Stil
+                        // "UNBEKANNT" schreibt ausschliesslich die Rekonstruktion.
+                        // Es muss also fuer diese Positionen eine ZWEITE Zeile
+                        // geben oder die erste ist nicht mehr offen — welches von
+                        // beiden, laesst sich aus den Logs nicht entscheiden.
+                        //
+                        // Reine Lesung, nur in genau diesem Fall: alle Zeilen des
+                        // Symbols aus den letzten vier Tagen, offen wie
+                        // geschlossen, mit dealId, Stil und Status. Aendert nichts.
+                        if (t.tradingStyle === "UNBEKANNT") {
+                          try {
+                            const { getPrisma } = await import("./app/lib/prisma");
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            const zeilen = await (getPrisma().$queryRawUnsafe as any)(
+                              `SELECT id, status, strategy, notes, "createdAt" FROM "Trade" `
+                              + `WHERE market = $1 AND "createdAt" > NOW() - INTERVAL '4 days' ORDER BY id`,
+                              t.symbol,
+                            ) as Array<{ id: number; status: string; strategy: string; notes: string | null; createdAt: Date }>;
+                            const teile = zeilen.map((z) => {
+                              let m: Record<string, unknown> = {};
+                              try { m = JSON.parse(z.notes ?? "{}") as Record<string, unknown>; } catch { /* unlesbar */ }
+                              const id = String(m.dealId ?? "").trim();
+                              const passt = id === t.tradeId ? "=" : id ? "≠" : "∅";
+                              return `#${z.id} ${z.status} stil=${String(m.tradingStyle ?? "?")} `
+                                + `dealId${passt}${id ? id.slice(-12) : ""}`
+                                + `${m.dealReference ? " ref" : ""}${m.rekonstruiert ? " REKONSTRUIERT" : ""}`
+                                + `${m.exitReason ? ` exit=${String(m.exitReason)}` : ""}`;
+                            });
+                            console.warn(`[py-lifecycle] 🔎 ${t.symbol} deal=…${t.tradeId.slice(-12)}: `
+                              + `${zeilen.length} Journal-Zeile(n) in 4 Tagen — ${teile.join(" | ") || "KEINE"}`);
+                          } catch (e) {
+                            console.warn(`[py-lifecycle] 🔎 Diagnose fuer ${t.symbol} nicht moeglich: `
+                              + `${e instanceof Error ? e.message : String(e)}`);
+                          }
+                        }
                       } else {
                         console.warn(`[py-lifecycle] Nachregistrieren fehlgeschlagen: ${t.symbol} deal=${t.tradeId}`);
                       }

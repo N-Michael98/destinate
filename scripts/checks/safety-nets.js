@@ -2314,6 +2314,30 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DIE UNBEKANNT-DIAGNOSE LIEST NUR (21.09.) ═══════════════════════════
+  //
+  // Sie fragt die Datenbank, warum eine Position mit `stil=UNBEKANNT`
+  // nachregistriert wurde. Eine Diagnose, die dabei SCHREIBT, waere schlimmer
+  // als keine: sie liefe genau dann, wenn der Zustand ohnehin unklar ist.
+  {
+    const iq = read("frontend/instrumentation.ts");
+    const start = iq.indexOf("WARUM UNBEKANNT? DIE DATENBANK SELBST FRAGEN");
+    const block = start >= 0 ? iq.slice(start, start + 3500) : "";
+    torPruefung("die UNBEKANNT-Diagnose ist nicht mehr auffindbar",
+      block.length > 1000, `${block.length} Zeichen`);
+    if (block.length > 1000) {
+      const ende = block.indexOf("} else {");
+      const rumpf = ende > 0 ? block.slice(0, ende) : block;
+      torPruefung("die UNBEKANNT-Diagnose schreibt in die Datenbank",
+        !/\b(UPDATE|INSERT|DELETE)\b/i.test(rumpf.replace(/(^|[^:])\/\/[^\n]*/g, "$1"))
+        && /SELECT id, status, strategy, notes/.test(rumpf),
+        "eine Diagnose darf den Zustand, den sie untersucht, nicht veraendern");
+      torPruefung("die UNBEKANNT-Diagnose laeuft bei jeder Registrierung statt nur im Fall",
+        /if \(t\.tradingStyle === "UNBEKANNT"\) \{/.test(rumpf),
+        "sonst eine Datenbankabfrage je Position und Neustart ohne Anlass");
+    }
+  }
+
   // ══ TAGESBILANZ: EIN ABSTURZ DARF NICHT AUS DER LISTE FALLEN (18.09.) ════
   //
   // GEFUNDEN AN DER ERSTEN ECHTEN TAGESBILANZ (17.09.): 259 Zyklen, aber die
