@@ -90,6 +90,38 @@ class TradeState:
             return abs(self.entry - self.stop_loss)
         return DEFAULT_SL_RANGE.get(self.symbol, 0.005)
 
+    # ── IST DAS URSPRUENGLICHE RISIKO UEBERHAUPT BEKANNT? (21.09.) ───────────
+    #
+    # GEFUNDEN IN DEN LIVE-LOGS vom 17./18.09.:
+    #
+    #   [py-lifecycle] ⚠ SL-Update FEHLGESCHLAGEN: DOTUSD -> 1.0834312
+    #                  — error.invalid.stoploss.maxvalue: 1.0832
+    #   [py-lifecycle] Partial TP: XAUUSD vol=0.05 von 0.1   (Sekunden nach dem
+    #                  Nachregistrieren)
+    #
+    # Nach jedem Neustart dieses Dienstes meldet das Frontend die offenen
+    # Positionen mit dem AKTUELLEN Broker-Stop nach (`pos.stopLevel`). Steht der
+    # schon auf Breakeven, ist `sl_range = |entry - stop|` praktisch NULL. Damit
+    #   * wird `trail_dist` ~0 und der Trailing-Stop landet AUF dem Kurs — der
+    #     Broker lehnt ihn ab, wenn er ueber dem Bid liegt (das Frontend schickt
+    #     den Mittelkurs), und NIMMT ihn AN, wenn er knapp darunter liegt: dann
+    #     ist die Position beim naechsten Tick ausgestoppt;
+    #   * wird `progress = Gewinn / ~0` riesig und der Teilgewinn feuert sofort.
+    #
+    # Das eigentliche Risiko des Trades kennt diese Schicht dann nicht mehr. Sie
+    # tritt zurueck, statt auf einer kollabierten Spanne zu rechnen. Die Grenze
+    # ist dieselbe Toleranz, die `on_price_update` fuer "steht schon auf
+    # Breakeven" benutzt — keine neue Zahl. Der RiskAgent im Frontend (erste
+    # Schicht) sichert weiter ab, mit den Schwellen aus Journal und ATR.
+    @property
+    def risiko_unbekannt(self) -> bool:
+        if self.stop_loss <= 0:
+            return False          # ohne Stop: bisheriges Verhalten, unveraendert
+        tol = get_pip_size(self.symbol) * 2
+        if self.is_buy():
+            return self.stop_loss >= self.entry - tol
+        return self.stop_loss <= self.entry + tol
+
     @property
     def total_range(self) -> float:
         if self.take_profit > 0:
@@ -230,6 +262,19 @@ class TradeLifecycleManager:
             }, source="lifecycle_manager")
             return {"action": "CLOSE", "reason": "ZEIT_EXIT"}
 
+        # Ursprungsrisiko unbekannt -> Teilgewinn und Trailing NICHT aus einer
+        # kollabierten Spanne rechnen (Begruendung bei `risiko_unbekannt`).
+        # NACH dem Zeit-Exit: der haengt am Alter, nicht an der Spanne, und
+        # bleibt deshalb gueltig. Breakeven ist in diesem Zustand schon erfuellt.
+        if trade.risiko_unbekannt:
+            if not getattr(trade, "_risiko_gemeldet", False):
+                trade._risiko_gemeldet = True
+                print(f"[lifecycle] {trade.symbol} {trade.direction}: registrierter Stop "
+                      f"{trade.stop_loss} steht schon auf/ueber Breakeven (Einstieg {trade.entry}) "
+                      f"— das Ursprungsrisiko ist unbekannt. Kein Teilgewinn und kein Trailing "
+                      f"aus dieser Schicht; der RiskAgent sichert weiter ab.")
+            return {"action": None, "grund": "RISIKO_UNBEKANNT"}
+
         # 2. Partial TP (50% bei 50% Progress)
         if not trade.partial_done and progress >= lvl["partial_at"]:
             trade.partial_done = True
@@ -270,11 +315,18 @@ class TradeLifecycleManager:
             new_trail   = (current_price - trail_dist) if trade.is_buy() else (current_price + trail_dist)
             current_trail = trade.trail_sl or trade.current_sl
 
-            should_update = (
+            # Ein Stop auf der FALSCHEN Seite des Kurses ist immer ungueltig —
+            # beim BUY darueber, beim SELL darunter (21.09., zweite Sicherung
+            # neben `risiko_unbekannt`). Der Broker lehnt ihn ab, und genau das
+            # stand am 17.09. alle zwei Minuten im Log.
+            auf_richtiger_seite = (
+                new_trail < current_price if trade.is_buy() else new_trail > current_price
+            )
+            should_update = auf_richtiger_seite and ((
                 trade.is_buy()  and new_trail > current_trail and new_trail >= trade.entry
             ) or (
                 not trade.is_buy() and new_trail < current_trail and new_trail <= trade.entry
-            )
+            ))
 
             if should_update:
                 trade.trail_sl   = new_trail

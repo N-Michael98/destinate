@@ -324,6 +324,90 @@ class TestZeitExit:
             result = await mgr.on_price_update("T001", 1.1010)
             assert result["action"] != "CLOSE", f"Stil {stil!r} schloss die Position"
 
+    # ── URSPRUNGSRISIKO UNBEKANNT (21.09.) — mit den ECHTEN Zahlen aus dem Log ─
+    #
+    #   17.09. 22:51  SL-Update FEHLGESCHLAGEN: DOTUSD -> 1.0834312
+    #                 — error.invalid.stoploss.maxvalue: 1.0832
+    #   18.09. 21:54  Partial TP: XAUUSD vol=0.05 von 0.1  (direkt nach dem
+    #                 Nachregistrieren mit dem Breakeven-Stop als stopLoss)
+
+    @pytest.mark.asyncio
+    async def test_dotusd_kein_trailing_auf_den_kurs(self):
+        """DOTUSD BUY, Stop schon auf Breakeven -> kein Stop auf dem Kurs."""
+        mgr = TradeLifecycleManager()
+        t = make_trade(symbol="DOTUSD", direction="BUY", entry=1.0678,
+                       stop_loss=1.0678, take_profit=1.0900, confidence=80)
+        mgr._trades["T001"] = t
+        result = await mgr.on_price_update("T001", 1.0835)   # Mittelkurs aus dem Log
+        assert result["action"] is None, (
+            f"mit Stop auf Breakeven kennt diese Schicht das Risiko nicht — "
+            f"sie darf nichts tun, bekam aber {result}")
+
+    @pytest.mark.asyncio
+    async def test_xauusd_kein_sofort_teilgewinn(self):
+        """XAUUSD BUY, nachregistriert mit Breakeven-Stop -> kein Teilgewinn."""
+        mgr = TradeLifecycleManager()
+        t = make_trade(symbol="XAUUSD", direction="BUY", entry=4353.67,
+                       stop_loss=4353.67, take_profit=4450.0, size=0.1, confidence=78)
+        mgr._trades["T001"] = t
+        result = await mgr.on_price_update("T001", 4377.48)
+        assert result["action"] != "PARTIAL_CLOSE", "Teilgewinn aus einer kollabierten Spanne"
+        assert result["action"] is None
+
+    @pytest.mark.asyncio
+    async def test_sell_spiegelbild(self):
+        """SELL mit Stop auf/unter Einstieg -> ebenfalls zurueckhalten."""
+        mgr = TradeLifecycleManager()
+        t = make_trade(symbol="EURUSD", direction="SELL", entry=1.1000,
+                       stop_loss=1.0995, take_profit=1.0900, confidence=80)
+        mgr._trades["T001"] = t
+        result = await mgr.on_price_update("T001", 1.0950)
+        assert result["action"] is None
+
+    @pytest.mark.asyncio
+    async def test_echtes_risiko_arbeitet_weiter(self):
+        """Gegenprobe: mit echtem Ursprungs-Stop laufen Teilgewinn/BE/Trailing wie bisher."""
+        mgr = TradeLifecycleManager()
+        t = make_trade(symbol="EURUSD", direction="BUY", entry=1.1000,
+                       stop_loss=1.0970, take_profit=1.1060, confidence=80)
+        mgr._trades["T001"] = t
+        result = await mgr.on_price_update("T001", 1.1040)
+        assert result["action"] in ("PARTIAL_CLOSE", "UPDATE_SL"), (
+            f"der Riegel darf die normale Absicherung nicht abschalten: {result}")
+
+    def test_toleranz_ein_pip_unter_einstieg(self):
+        """Ein BE-Stop 1 Pip UNTER dem Einstieg zaehlt ebenfalls als Breakeven."""
+        t = make_trade(symbol="EURUSD", direction="BUY", entry=1.1000,
+                       stop_loss=1.0999, take_profit=1.1060, confidence=80)
+        assert t.risiko_unbekannt is True, "sonst rechnet die Schicht auf 1 Pip Spanne"
+        t2 = make_trade(symbol="EURUSD", direction="BUY", entry=1.1000,
+                        stop_loss=1.0970, take_profit=1.1060, confidence=80)
+        assert t2.risiko_unbekannt is False, "ein echter Ursprungs-Stop ist bekanntes Risiko"
+
+    @pytest.mark.asyncio
+    async def test_trailing_nie_auf_der_falschen_seite(self, monkeypatch):
+        """Die ZWEITE Sicherung fuer sich: erste abgeschaltet, Spanne 0.
+
+        Mit der jetzigen Formel ist sie unerreichbar, solange `risiko_unbekannt`
+        greift — sie soll aber halten, falls die Formel sich einmal aendert.
+        Die erste Fassung dieses Tests konnte sie deshalb gar nicht ausloesen
+        (die Sabotage "Sicherung entfernt" blieb gruen). Jetzt wird die erste
+        Sicherung gezielt abgeschaltet, und die Spanne ist wirklich 0.
+        """
+        from services import trade_lifecycle_manager as tlm
+        monkeypatch.setattr(tlm.TradeState, "risiko_unbekannt", property(lambda self: False))
+        mgr = TradeLifecycleManager()
+        t = make_trade(symbol="EURUSD", direction="BUY", entry=1.1000,
+                       stop_loss=1.1000, take_profit=1.1060, confidence=80)
+        t.be_set = True
+        t.partial_done = True
+        t.trail_sl = 1.1000
+        t.current_sl = 1.1000
+        mgr._trades["T001"] = t
+        result = await mgr.on_price_update("T001", 1.1050)
+        assert result["action"] != "UPDATE_SL", (
+            f"BUY-Stop auf/ueber dem Kurs vorgeschlagen: {result}")
+
     def test_register_standard_ist_unbekannt(self):
         """Wer den Stil nicht mitschickt, hat ihn nicht — kein DAYTRADING."""
         from api.routes.lifecycle import TradeRegisterRequest
