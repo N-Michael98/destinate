@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit) und `ageInMinutes()` (eine Zukunft ist nicht „frisch") | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -487,6 +487,86 @@ Zukunft liegt.
 Uhren-Versatz (0), darüber heisst sie **unbekannt** (`null`), und der Filter
 sagt hörbar „Kurs-Alter unbekannt — nicht blockiert, aber ungeprüft". Die
 stille 0 war die Lüge, die den Fehler zwei Monate getragen hat.
+
+## Eine Stufe ohne eigene Zahl verschwindet aus der Bilanz (22.09.)
+
+Zum **zweiten Mal** dieselbe Fehlerklasse, zwei Tage nach dem ersten Fund.
+
+Am 22.09. 21:17 antwortete `/api/v1/strategies/analyze/multi` mit **502**.
+`fetchStrategySignals` gab eine leere Map zurück, damit fiel `strategienOk`
+für **alle 30 Märkte**, damit `hasFullData`, damit jedes `goSignal`. GPT hatte
+acht Richtungssignale geliefert; es folgten **exakt acht** 🔒-Zeilen und GO 0.
+Ein einziger Gateway-Fehler kostet den ganzen Zyklus.
+
+Die Bilanzzeile meldete davon nichts:
+
+```
+GPT 22W/5B/3S | Veto 0 | <Grenze 2 (65–68) | Freigabe-Nein 0 | GO 0
+8 − 0 − 2 − 0 − 0 − 0 = SECHS Signale ohne jede Erklärung
+```
+
+Und selbst die zwei „<Grenze" sind irreführend: das Daten-Tor steht im
+Trichter **vor** der Confidence, sie starben also auch am Ausfall. In der
+Tagesbilanz hätte ein solcher Abend gelautet „60 BUY · 36 SELL … GO: 0" — zu
+lesen als „die KI wollte nicht" statt „das Backend war weg".
+
+`ohneStopZiel` hat am 20.09. genau dieses Loch eine Stufe weiter hinten
+geschlossen. Jetzt trägt `ScanDaten` auch `ohneVolleDaten` **samt Grund**
+(`Strategien` / `TA-Lib` / `TA-Lib+Strategien`) — die Zahl allein sagt nicht,
+welcher Dienst ausgefallen ist, und genau das ist die Frage, mit der man ins
+Railway-Log steigt.
+
+**Regel:** Jede Stufe, an der ein Signal sterben kann, braucht eine **eigene
+Zahl** in der Bilanz. Sonst ist ein Datenausfall von einem Urteil nicht zu
+unterscheiden. Gezählt wird im **selben `if`**, das auch die Logzeile schreibt
+— `safety-nets` erzwingt das per Klammerzählung, damit Log und Bilanz nicht
+auseinanderlaufen.
+
+### Wer den Grund nicht mitschreibt, muss ihn später raten
+
+Im Log stand nur `502 Bad Gateway`. Der **Antwortkörper** — in dem Railway
+bzw. FastAPI die Ursache nennt — wurde weggeworfen. Damit war die Ursache aus
+unseren eigenen Logs **nicht zu bestimmen**. `callClaude` macht es seit jeher
+richtig (`await res.text()`), diese Stelle nicht.
+
+Das ist „belegen statt vermuten", angewandt auf die **Messung selbst**. Jetzt
+steht der Körper in der Meldung, dazu die Folge im Klartext („dieser Zyklus
+handelt NICHT"), und ein 5xx oder Netzfehler bekommt **einen** zweiten Versuch
+— nacheinander, im **gemeinsamen** Zeitbudget (60 s), damit der Scan nie in
+den nächsten Zyklus läuft. Ein 400/401/404/**429** wird nicht wiederholt: der
+Fehler kehrt deterministisch zurück, und bei 429 wäre Nachlegen genau falsch.
+
+**Und das wird AUSGEFÜHRT, nicht beschrieben.** `safety-nets` startet einen
+echten HTTP-Server auf 127.0.0.1 und **zählt die Anfragen**: 502→200 ergibt
+zwei, 401 ergibt eine, 200 ergibt eine. Vier Sabotagen, die strukturell völlig
+unauffällig bleiben (zweiter Versuch nie ausgelöst, Regel gerechnet aber
+ignoriert, Schleife statt einem Nachfragen, Rückfall verschwiegen), werden
+**nur** so gefangen.
+
+### Ein Zeichen-Fenster im Prüfer beweist Nähe, nicht Zugehörigkeit
+
+Beim Anbau wurde `prompt-zahlen` rot, obwohl der Code stimmte. Die Prüfung
+lautete `/risikoBrauchbar[\s\S]{0,400}?claude = simulateClaude\(…\)/` — eine
+längere Logzeile sprengte das Fenster.
+
+**Nachgemessen statt aufgezogen:** der richtige Aufruf liegt 761 Zeichen
+entfernt, der **nächste aus einem ganz anderen Zweig** bei 1642. Ein Fenster
+von 1700 wäre grün gewesen — auch mit **gelöschtem** Riegel. Vorgeführt.
+
+Jetzt wird der Block per Klammerzählung ausgeschnitten und nur darin gesucht.
+Dieselbe Falle in der Gegenrichtung: eine Prüfung auf `res.text().catch` fand
+den Aufruf in `callClaude` 1500 Zeilen weiter oben und blieb grün, obwohl er
+an der geprüften Stelle entfernt war — die Fehlerklasse „ein Wort im Kommentar
+ist keine Verwendung" in der Spielart **„eine andere Aufrufstelle"**.
+
+### Und eine Diagnose darf im interessanten Fall nicht schweigen
+
+`⛔ SPX500: Claude hat GEANTWORTET, aber ohne brauchbaren riskScore
+(undefined)` — dazu verwies die Sammelzeile auf „HTTP-Status und Antworttext".
+**Beides gibt es in diesem Zweig nicht:** der Aufruf war HTTP 200, und `raw`
+wurde nie ausgegeben. Ob Claude Prosa lieferte, das Feld vergass oder ablehnte,
+war nicht feststellbar. Jetzt stehen Länge und die ersten 200 Zeichen der
+Antwort in der Zeile, und die Sammelzeile behauptet keinen Fehlschlag mehr.
 
 ## Ohne Kurs wird nicht gehandelt
 

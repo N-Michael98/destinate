@@ -216,35 +216,126 @@ interface StrategyResult {
   } | null;
 }
 
-async function fetchStrategySignals(symbols: string[]): Promise<Map<string, StrategyResult>> {
+/**
+ * Gesamtbudget dieses Abrufs, inklusive eines etwaigen zweiten Versuchs.
+ *
+ * 60s (27.07. erhöht): 23 Symbole x bis zu 7 einzigartige yfinance-Fetches
+ * (nach Dedup-Fix in _load()) über 8 Worker-Threads, plus Backend-seitige
+ * Retries (bis +3s je Call bei transienten yfinance-Hängern) — 25s war zu
+ * knapp, führte zu wiederkehrenden Timeouts trotz Event-Loop- und Cache-Fix.
+ * Backend selbst kann nie unendlich hängen (Circuit-Breaker + max. 3
+ * Retry-Versuche), daher ist ein grosszügigeres Client-Timeout sicher.
+ */
+export const STRATEGIEN_BUDGET_MS = 60000;
+/** Unter dieser Restzeit lohnt kein zweiter Versuch mehr — er liefe ins Leere. */
+export const STRATEGIEN_REST_FUER_WIEDERHOLUNG_MS = 10000;
+/** Ein Gateway-Fehler braucht einen Moment, bevor Nachfragen Sinn ergibt. */
+export const STRATEGIEN_PAUSE_MS = 2000;
+
+/**
+ * Darf dieser Fehlschlag wiederholt werden? (22.09.)
+ *
+ * NUR bei 5xx und bei Netzfehlern (`status === null`). Ein 400 ("Max 30
+ * Symbole") oder ein 401 (fehlender Backend-Schluessel) ist deterministisch —
+ * eine Wiederholung verbrennt dort nur das Zeitbudget des Zyklus und liefert
+ * denselben Fehler. 429 bleibt bewusst DRAUSSEN: das Backend sagt damit "zu
+ * viel", und sofort nachzulegen ist genau das Falsche.
+ */
+export function strategienWiederholbar(status: number | null): boolean {
+  if (status === null) return true;                       // Netzfehler/Timeout
+  return status >= 500 && status <= 599;
+}
+
+/**
+ * EXPORTIERT, damit der Pruefstand sie wirklich AUSFUEHREN kann (22.09.).
+ * Eine Struktur-Pruefung sieht, DASS ein zweiter Versuch im Code steht — nicht,
+ * ob er ausgeloest wird. Genau diese Luecke hat CLAUDE.md wiederholt benannt.
+ * Kein Aufrufer ausserhalb dieser Datei; der Export aendert nichts am Ablauf.
+ */
+export async function fetchStrategySignals(symbols: string[]): Promise<Map<string, StrategyResult>> {
   const result = new Map<string, StrategyResult>();
   const begonnen = Date.now();
   const PYTHON_BASE = process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
   if (!PYTHON_BASE) return result;
-  try {
-    const res = await fetch(`${PYTHON_BASE}/api/v1/strategies/analyze/multi`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
-      body: JSON.stringify({ symbols }),
-      // 60s (27.07. erhöht): 23 Symbole x bis zu 7 einzigartige yfinance-Fetches
-      // (nach Dedup-Fix in _load()) über 8 Worker-Threads, plus Backend-seitige
-      // Retries (bis +3s je Call bei transienten yfinance-Hängern) — 25s war
-      // zu knapp, führte zu wiederkehrenden Timeouts trotz Event-Loop- und
-      // Cache-Fix. Backend selbst kann nie unendlich hängen (Circuit-Breaker +
-      // max. 3 Retry-Versuche), daher ist ein grosszügigeres Client-Timeout sicher.
-      signal: AbortSignal.timeout(60000),
-    });
-    if (!res.ok) {
-      console.warn(`[ai-engine] Strategies Backend Fehler: ${res.status} ${res.statusText}`);
-      return result;
+
+  // ── WARUM DER GRUND BISHER NICHT ZU ERMITTELN WAR (22.09.) ───────────────
+  //
+  // Am 22.09. 21:17 stand im Log nur "Strategies Backend Fehler: 502 Bad
+  // Gateway". Mehr gab es nicht — und deshalb liess sich die Ursache aus
+  // unseren Logs NICHT bestimmen. Der Antwortkoerper, in dem Railway bzw.
+  // FastAPI den Grund nennt, wurde hier weggeworfen. `callClaude` macht es
+  // seit jeher richtig (`await res.text()`), diese Stelle nicht.
+  //
+  // Das ist die Fehlerklasse "belegen statt vermuten", angewandt auf die
+  // Messung selbst: wer den Grund nicht mitschreibt, muss ihn spaeter raten.
+  //
+  // FOLGEN DES AUSFALLS, nachgerechnet am Zyklus vom 22.09. 21:17: eine leere
+  // Map heisst `strategienOk === false` fuer JEDES Symbol, also `hasFullData
+  // === false`, also kein goSignal. GPT lieferte acht Richtungssignale, es
+  // folgten exakt acht 🔒-Zeilen, GO war 0. EIN Gateway-Fehler kostet den
+  // GANZEN Zyklus.
+  //
+  // Deshalb jetzt ein zweiter Versuch — aber nur, wo er etwas bringen kann
+  // (siehe `strategienWiederholbar`), nacheinander statt zusaetzlich parallel
+  // (der erste Versuch ist abgeschlossen, bevor der zweite startet) und im
+  // GEMEINSAMEN Zeitbudget, damit der Scan nicht in den naechsten Zyklus
+  // laeuft.
+  const versuch = async (nummer: number): Promise<{ ok: boolean; status: number | null; grund: string }> => {
+    const restMs = STRATEGIEN_BUDGET_MS - (Date.now() - begonnen);
+    if (restMs <= 0) return { ok: false, status: null, grund: "Zeitbudget erschoepft" };
+    try {
+      const res = await fetch(`${PYTHON_BASE}/api/v1/strategies/analyze/multi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...pythonBackendAuthHeader() },
+        body: JSON.stringify({ symbols }),
+        signal: AbortSignal.timeout(restMs),
+      });
+      if (!res.ok) {
+        // Der Koerper ist die eigentliche Auskunft. `.catch` daneben, weil ein
+        // abgerissener Strom hier nicht den Zyklus kosten darf.
+        const koerper = (await res.text().catch(() => "")).replace(/\s+/g, " ").trim();
+        return {
+          ok: false,
+          status: res.status,
+          grund: `HTTP ${res.status} ${res.statusText}${koerper ? ` — ${koerper.slice(0, 300)}` : " — (leerer Antwortkoerper)"}`,
+        };
+      }
+      const data = await res.json() as { results?: Record<string, StrategyResult> };
+      const received = Object.keys(data.results ?? {}).length;
+      console.log(`[ai-engine] Strategies: ${received}/${symbols.length} Symbole analysiert in ${Date.now() - begonnen}ms (Zeitgrenze ${STRATEGIEN_BUDGET_MS}ms${nummer > 1 ? `, ${nummer}. Versuch` : ""})`);
+      for (const [sym, sr] of Object.entries(data.results ?? {})) result.set(sym, sr);
+      return { ok: true, status: res.status, grund: "" };
+    } catch (e) {
+      return { ok: false, status: null, grund: fehlerText(e) };
     }
-    const data = await res.json() as { results?: Record<string, StrategyResult> };
-    const received = Object.keys(data.results ?? {}).length;
-    console.log(`[ai-engine] Strategies: ${received}/${symbols.length} Symbole analysiert in ${Date.now() - begonnen}ms (Zeitgrenze 60000ms)`);
-    for (const [sym, sr] of Object.entries(data.results ?? {})) {
-      result.set(sym, sr);
-    }
-  } catch (e) { console.warn(`[ai-engine] Strategies fetch fehlgeschlagen nach ${Date.now() - begonnen}ms: ${fehlerText(e)}`); }
+  };
+
+  const erster = await versuch(1);
+  if (erster.ok) return result;
+
+  const verbraucht = Date.now() - begonnen;
+  const rest = STRATEGIEN_BUDGET_MS - verbraucht - STRATEGIEN_PAUSE_MS;
+  const nochmal = strategienWiederholbar(erster.status) && rest >= STRATEGIEN_REST_FUER_WIEDERHOLUNG_MS;
+
+  console.warn(`[ai-engine] ⛔ Strategien-Backend nach ${verbraucht}ms: ${erster.grund} — `
+    + (nochmal
+      ? `zweiter Versuch in ${STRATEGIEN_PAUSE_MS}ms (${rest}ms Restbudget)`
+      : `KEINE Wiederholung (${strategienWiederholbar(erster.status) ? `nur noch ${Math.max(0, rest)}ms Restbudget` : "der Fehler wiederholt sich deterministisch"}) — `
+        + `dieser Zyklus handelt NICHT, weil jedem Symbol der Strategie-Konsens fehlt`));
+
+  if (!nochmal) return result;
+
+  await new Promise((r) => setTimeout(r, STRATEGIEN_PAUSE_MS));
+  const zweiter = await versuch(2);
+  if (zweiter.ok) {
+    // Greift ein Rueckfall, gehoert das ins Log — sonst steht oben "30/30
+    // analysiert" und niemand weiss, dass der erste Versuch gescheitert ist.
+    console.warn(`[ai-engine] ↩️ Strategien-Backend beim zweiten Versuch erreicht — `
+      + `der erste scheiterte an: ${erster.grund}`);
+  } else {
+    console.error(`[ai-engine] ⛔ Strategien-Backend auch beim zweiten Versuch: ${zweiter.grund} — `
+      + `dieser Zyklus handelt NICHT, weil jedem Symbol der Strategie-Konsens fehlt`);
+  }
   return result;
 }
 
@@ -1306,6 +1397,10 @@ each market's own data, never from habit or from these examples' direction:
   const opportunities: ScannerOpportunity[] = [];
   // Zähler für den Signal-Trichter — siehe Erklärung bei der Auswertung unten.
   const trichter = { gesamt: 0, echteAnalyse: 0, volleDaten: 0, richtung: 0, confidence: 0, slTp: 0, go: 0 };
+  // Richtungssignale, die an `hasFullData` starben — und woran genau (22.09.).
+  // Siehe die Begruendung an der Zaehlstelle und in ScanDaten.ohneVolleDaten.
+  let ohneVolleDatenZahl = 0;
+  const ohneVolleDatenGruende: Record<string, number> = {};
   // Wie oft musste der REGELBASIERTE Rückfall einspringen, obwohl ein
   // handelbares Signal vorlag? (27.08.) Das ist kein Randfall, sondern eine
   // andere Entscheidungsregel: der Rückfall prüft den Risiko-Score gar nicht.
@@ -1730,9 +1825,25 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         const risikoBrauchbar =
           typeof rohRisiko === "number" && Number.isFinite(rohRisiko);
         if (!risikoBrauchbar) {
+          // ── DIE DIAGNOSE SCHWIEG IM INTERESSANTEN FALL (22.09.) ──────────
+          //
+          // Hier stand die Zeile ohne den letzten Teil. Am 22.09. 21:18 traf
+          // sie SPX500 und meldete nur "(undefined)". Die Sammelzeile weiter
+          // unten verwies dazu auf "HTTP-Status und Antworttext" — beides gibt
+          // es in diesem Zweig NICHT: der Aufruf war erfolgreich (HTTP 200),
+          // callClaude hat also nichts protokolliert, und `raw` wurde nie
+          // ausgegeben. Damit war nicht feststellbar, ob Claude Prosa statt
+          // JSON lieferte, das Feld vergass oder die Beurteilung ablehnte.
+          //
+          // `raw` ist an dieser Stelle garantiert kein `null` (der Zweig
+          // darueber faengt das ab), aber `String()` steht trotzdem davor:
+          // die Zeile darf unter keinen Umstaenden selbst werfen.
+          const antwort = String(raw ?? "").replace(/\s+/g, " ").trim();
           console.error(`[ai-engine] ⛔ ${market.symbol}: Claude hat GEANTWORTET, `
             + `aber ohne brauchbaren riskScore (${JSON.stringify(rohRisiko)}) — `
-            + `regelbasiertes Ersatzurteil, KEINE echte Risikopruefung`);
+            + `regelbasiertes Ersatzurteil, KEINE echte Risikopruefung. `
+            + `ANTWORT (${antwort.length} Zeichen): `
+            + `${antwort ? JSON.stringify(antwort.slice(0, 200)) : "(leer)"}`);
           ohneClaudeAusfall++;
           claude = simulateClaude(gpt, market);
         } else {
@@ -1815,8 +1926,26 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       return (gesamt - kaputt) / gesamt >= 0.5;
     })();
     const hasFullData = !!ta && strategienOk;
+    // ── DIESE STUFE FEHLTE IN DER BILANZ (22.09.) ──────────────────────────
+    //
+    // Die 🔒-Zeile steht seit dem 06.08. im Log und war die EINZIGE Spur. Am
+    // 22.09. 21:17 gab das Strategien-Backend 502, `strategienOk` fiel fuer
+    // alle 30 Maerkte, und alle acht Richtungssignale starben hier. Die
+    // Bilanzzeile meldete davon nichts: sechs der acht waren weder
+    // freigegeben noch an einer genannten Stufe gescheitert.
+    //
+    // Gezaehlt wird GENAU dieselbe Bedingung, die auch die Zeile schreibt —
+    // ein gemeinsames `if`, damit Log und Zahl nicht auseinanderlaufen
+    // koennen. Reine Beobachtung: trifft keine Entscheidung, `goSignal`
+    // unten bleibt unveraendert.
     if (!hasFullData && isRealAnalysis && gpt.direction !== "WAIT") {
       console.log(`[ai-engine] 🔒 ${market.symbol}: unvollständige Analyse (TA=${!!ta}, Strategien=${strategienOk}${srDaten?.fehlgeschlagen ? ` — ${srDaten.fehlgeschlagen}/${srDaten.total_strategies} gescheitert: ${Object.values(srDaten.fehler_gruende ?? {})[0] ?? "?"}` : ""}) — kein goSignal diesen Zyklus`);
+      ohneVolleDatenZahl++;
+      // WELCHER Dienst gefehlt hat — das ist die Frage, mit der man ins
+      // Railway-Log steigt. "beide" ist ein eigener Fall, nicht zweimal ein
+      // halber: faellt der ganze Dienst aus, fehlen TA-Lib UND Strategien.
+      const grund = !ta && !strategienOk ? "TA-Lib+Strategien" : !ta ? "TA-Lib" : "Strategien";
+      ohneVolleDatenGruende[grund] = (ohneVolleDatenGruende[grund] ?? 0) + 1;
     }
 
     const goSignal = isRealAnalysis
@@ -2080,8 +2209,9 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     console.warn(
       `[ai-engine] ⚠️ ${ohneClaudeAusfall} handelbare(s) Signal(e) ohne Claude bewertet — `
       + `es galt der REGELBASIERTE Rückfall, und der prüft den Risiko-Score nicht. `
-      + `Der Schlüssel IST hinterlegt; die Aufrufe sind fehlgeschlagen — Grund `
-      + `steht in den ⛔-Zeilen oben (HTTP-Status und Antworttext).`
+      + `Der Schlüssel IST hinterlegt; die Aufrufe sind fehlgeschlagen ODER kamen `
+      + `unbrauchbar zurück — welches von beidem, steht in den ⛔-Zeilen oben `
+      + `(dort entweder HTTP-Status oder die Antwort selbst).`
     );
   }
   // Bewusst nicht gefragt — KEIN Ausfall, deshalb `log` statt `warn`. Die Zeile
@@ -2127,6 +2257,15 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       // Luecke war also nicht immer sichtbar, sondern nur an dem Tag, an dem
       // sie auftrat. Genau deshalb muss sie eine eigene Zahl haben.
       ohneStopZiel: Math.max(0, trichter.confidence - trichter.slTp),
+      // ── DIE STUFE DAVOR (22.09.) ────────────────────────────────────────
+      //
+      // NICHT aus dem Trichter abgeleitet: `trichter.volleDaten` zaehlt ALLE
+      // Maerkte, auch die 22 mit WAIT — die Differenz waere also 30 und nicht
+      // 8. Gezaehlt wird stattdessen dort, wo die 🔒-Zeile entsteht, und
+      // zwar mit demselben `if`. Beide Zahlen sind deshalb per Konstruktion
+      // gleich: so viele 🔒-Zeilen im Log, so viel steht hier.
+      ohneVolleDaten: ohneVolleDatenZahl,
+      ohneVolleDatenGrund: ohneVolleDatenGruende,
       claudeGefragt,
       regelbrueche,
       dauerMs: scanDauer,

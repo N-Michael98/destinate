@@ -20,7 +20,7 @@
 // WARUM RECHNEND. Eine Struktur-Prüfung sieht nur, DASS formatiert wird. Ob
 // ein Wert dabei auf null fällt, zeigt erst der Aufruf mit echten
 // Grössenordnungen.
-const { read, ladeTsModul } = require("./_lib");
+const { read, ladeTsModul, objectBlock } = require("./_lib");
 
 const PFAD = "lib/market-scanner/ai-analysis-engine.ts";
 
@@ -250,9 +250,46 @@ module.exports = function pruefe() {
     !/riskScore\s*(=|\?\?)\s*(parsed\.riskScore\s*)?\?\?\s*50/.test(ohneKomm)
     && !/parsed\.riskScore \?\? 50/.test(ohneKomm),
     "`50 < 60` ist wahr — das Tor faellt still weg");
+  // ── VON EINEM FENSTER AUF EINEN KLAMMERZAEHLER (22.09.) ─────────────────
+  //
+  // Hier stand `/risikoBrauchbar[\s\S]{0,400}?claude = simulateClaude\(gpt,
+  // market\)/`. Das hat nie geprueft, dass der Aufruf IN DIESEM ZWEIG steht —
+  // nur, dass irgendwo in den naechsten 400 Zeichen einer vorkommt.
+  //
+  // GEMESSEN am 22.09., nachdem die ⛔-Zeile um den Antworttext ergaenzt
+  // wurde: der richtige Aufruf liegt 761 Zeichen hinter `risikoBrauchbar`,
+  // der NAECHSTE (aus einem ganz anderen Zweig, `else` weiter unten) bei
+  // 1642. Der Pruefer wurde also rot, obwohl der Code korrekt war — und haette
+  // man das Fenster einfach auf 1700 gezogen, waere er bei geloeschtem
+  // Riegel gruen geblieben. Ein Fenster, das passt, ist kein Beweis.
+  //
+  // Jetzt wird der Block `if (!risikoBrauchbar) { … }` per Klammerzaehlung
+  // ausgeschnitten (dieselbe Technik wie beim Bus-Abgleich in safety-nets)
+  // und NUR DARIN gesucht. Das ist unabhaengig von jeder Laenge und kann
+  // durch einen Aufruf ausserhalb des Zweiges nicht mehr erfuellt werden.
+  let risikoZweig = "";
+  try { risikoZweig = objectBlock(ohneKomm, "if (!risikoBrauchbar)"); } catch { /* bleibt leer -> rot */ }
   pruefe1("ein fehlender riskScore fuehrt nicht auf das Ersatzurteil",
-    /risikoBrauchbar[\s\S]{0,400}?claude = simulateClaude\(gpt, market\)/.test(ohneKomm),
+    risikoZweig !== "" && /claude = simulateClaude\(gpt, market\)/.test(risikoZweig),
     "sonst traegt eine Nicht-Beurteilung das Etikett CLAUDE_REAL");
+  // ── DIE DIAGNOSE MUSS IM INTERESSANTEN FALL REDEN (22.09.) ──────────────
+  //
+  // Am 22.09. 21:18 traf dieser Zweig SPX500 und meldete nur "(undefined)".
+  // Die Sammelzeile verwies auf "HTTP-Status und Antworttext" — beides gibt es
+  // hier nicht: der Aufruf war HTTP 200. Die Ursache (Prosa? fehlendes Feld?
+  // Ablehnung?) war aus dem Log NICHT feststellbar.
+  //
+  // Die Antwort selbst gehoert also in die Zeile. Geprueft wird, dass `raw`
+  // dort wirklich ausgegeben wird — ein blosses Wort "ANTWORT" im Text waere
+  // wieder nur eine Behauptung (CLAUDE.md: "ein Wort im Kommentar ist keine
+  // Verwendung").
+  pruefe1("die ⛔-Zeile zeigt die unbrauchbare Claude-Antwort nicht",
+    /String\(raw[\s\S]{0,40}\)/.test(risikoZweig) && /ANTWORT/.test(risikoZweig),
+    "sonst ist im Log nicht feststellbar, WARUM der riskScore fehlte");
+  // Und sie darf nicht selbst werfen: `raw` kann alles sein, was JSON hergibt.
+  pruefe1("die Antwort wird ungekuerzt ins Log geschrieben",
+    /slice\(0, ?\d{1,4}\)/.test(risikoZweig),
+    "eine Prosa-Antwort ueber viele Zeilen wuerde das Log fluten");
   // `null` ist der gefaehrlichste Wert: Number(null) ist 0, und 0 < 60 ist wahr.
   pruefe1("die Pruefung des riskScore laesst null durch",
     /typeof rohRisiko === "number" && Number\.isFinite\(rohRisiko\)/.test(ohneKomm),
@@ -276,8 +313,21 @@ module.exports = function pruefe() {
     "der Code lehnte nicht ab, er gab frei");
 
   pruefe1("die Ausfall-Meldung verweist nicht auf den echten Grund",
-    /Grund `\s*\n?\s*\+ `steht in den ⛔-Zeilen|steht in den ⛔-Zeilen/.test(ausfallBlock),
-    "HTTP-Status und Antworttext stehen dort und sollen nicht neu erfunden werden");
+    /steht in den ⛔-Zeilen/.test(ausfallBlock),
+    "dort steht der Grund und er soll nicht neu erfunden werden");
+  // ── UND SIE DARF NICHTS VERSPRECHEN, WAS ES NICHT GIBT (22.09.) ─────────
+  //
+  // `ohneClaudeAusfall` zaehlt ZWEI verschiedene Faelle: "Claude hat nicht
+  // geantwortet" (dort protokolliert callClaude HTTP-Status und Koerper) und
+  // "Claude hat geantwortet, aber ohne riskScore" (dort war der Aufruf
+  // erfolgreich — es GIBT keinen HTTP-Fehler). Die Sammelzeile behauptete
+  // pauschal "die Aufrufe sind fehlgeschlagen — HTTP-Status und Antworttext",
+  // und im zweiten Fall war beides falsch. Eine Logzeile, die etwas behauptet,
+  // das der Code nicht tut — dieselbe Klasse wie die Abschneide-Meldung oben.
+  pruefe1("die Ausfall-Meldung behauptet wieder pauschal fehlgeschlagene Aufrufe",
+    !/Aufrufe sind fehlgeschlagen —/.test(ausfallBlock)
+    && /unbrauchbar/.test(ausfallBlock),
+    "der zweite Fall ist HTTP 200 mit unbrauchbarer Antwort, kein Fehlschlag");
 
   // ══ DER HANDELSSTIL WIRD GEPRUEFT, NICHT UMGETYPT (15.09.) ═══════════════
   //

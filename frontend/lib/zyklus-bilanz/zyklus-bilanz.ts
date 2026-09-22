@@ -32,6 +32,32 @@ export type ScanDaten = {
    *  Ziel (20.09.). Diese Signale sind weder GO noch an der Freigabe
    *  gescheitert — ohne eigene Zahl verschwinden sie aus der Rechnung. */
   ohneStopZiel: number;
+  /** ── DIE STUFE, DIE VOR ALLEN ANDEREN KOMMT (22.09.) ────────────────────
+   *
+   *  Richtungssignale, die an `hasFullData` starben: TA-Lib oder der
+   *  Strategie-Konsens fehlte fuer DIESES Symbol. Gezaehlt wird genau die
+   *  Bedingung, die auch die 🔒-Zeile ins Log schreibt — die Zahl hier und
+   *  die Zahl der 🔒-Zeilen sind deshalb immer gleich.
+   *
+   *  GEFUNDEN am Zyklus vom 22.09. 21:17: das Strategien-Backend antwortete
+   *  mit 502, `fetchStrategySignals` gab eine leere Map zurueck, und damit
+   *  fiel `strategienOk` fuer ALLE 30 Maerkte. GPT hatte acht
+   *  Richtungssignale geliefert; es folgten acht 🔒-Zeilen und GO 0.
+   *
+   *  Die Bilanzzeile meldete dazu: "GPT 22W/5B/3S | Veto 0 | <Grenze 2 |
+   *  Freigabe-Nein 0 | GO 0". Sechs der acht Signale waren damit weder
+   *  freigegeben noch an irgendeiner genannten Stufe gescheitert — sie
+   *  verschwanden. In der Tagesbilanz stuende an so einem Abend "60 BUY ·
+   *  36 SELL … GO: 0" ohne ein Wort zur Ursache, und man laese es als
+   *  "die KI wollte nicht" statt als "das Backend war weg".
+   *
+   *  Exakt die Fehlerklasse, die `ohneStopZiel` am 20.09. geschlossen hat —
+   *  eine Stufe weiter vorne. */
+  ohneVolleDaten: number;
+  /** Was gefehlt hat, nach Grund ("Strategien", "TA-Lib", "TA-Lib+Strategien").
+   *  Die blosse Anzahl sagt nicht, WELCHER Dienst ausgefallen ist — und genau
+   *  das ist die Frage, mit der man ins Railway-Log steigt. */
+  ohneVolleDatenGrund: Record<string, number>;
   claudeGefragt: number;
   /** GPT-Antworten, die dem eigenen Prompt widersprechen — Anzahl je Art. */
   regelbrueche: Record<string, number>;
@@ -76,6 +102,10 @@ export type Tagessumme = {
   go: number;
   rrAbgelehnt: number;
   ohneStopZiel: number;
+  /** Siehe ScanDaten.ohneVolleDaten (22.09.) — ohne diese Zahl meldet die
+   *  Tagesbilanz einen Backend-Ausfall als "die KI wollte nicht". */
+  ohneVolleDaten: number;
+  ohneVolleDatenGrund: Record<string, number>;
   claudeGefragt: number;
   /** Broker-Fehler nach Grund — die Zahl allein sagt nicht, WARUM (20.09.). */
   fehlgeschlagenGruende: Record<string, number>;
@@ -162,6 +192,16 @@ export function bilanzZeile(b: ZyklusBilanz): string {
     teile.push(`GPT ${s.gpt.WAIT}W/${s.gpt.BUY}B/${s.gpt.SELL}S`);
     teile.push(`Veto ${s.vetos}`);
     if (s.stilVerworfen > 0) teile.push(`Stil ${s.stilVerworfen}`);
+    // Vor `<Grenze`, weil das Daten-Tor im Trichter VOR der Confidence steht:
+    // ein Symbol ohne vollstaendige Daten wird gar nicht erst gefragt.
+    if (zahl(s.ohneVolleDaten) > 0) {
+      const gruende = Object.entries(s.ohneVolleDatenGrund ?? {})
+        .filter(([, n]) => zahl(n) > 0)
+        .sort((a, b) => zahl(b[1]) - zahl(a[1]))
+        .map(([k, n]) => `${k} ${zahl(n)}`)
+        .join(", ");
+      teile.push(`ohne Daten ${zahl(s.ohneVolleDaten)}${gruende ? ` (${gruende})` : ""}`);
+    }
     teile.push(`<Grenze ${s.unterGrenze.length}${conf}`);
     teile.push(`Freigabe-Nein ${s.rrAbgelehnt}`);
     if (zahl(s.ohneStopZiel) > 0) teile.push(`ohne Stop/Ziel ${s.ohneStopZiel}`);
@@ -191,7 +231,8 @@ export function leereTagessumme(datum: string): Tagessumme {
     datum, zyklen: 0, ausgaenge: {}, scans: 0, maerkte: 0,
     gpt: { WAIT: 0, BUY: 0, SELL: 0 }, vetos: 0, stilVerworfen: 0,
     unterGrenze: 0, confMin: null, confMax: null, go: 0, rrAbgelehnt: 0,
-    ohneStopZiel: 0, claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
+    ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
+    claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
     fehlgeschlagenGruende: {},
     regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
     dauerSummeMs: 0, dauerMaxMs: 0,
@@ -232,6 +273,14 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     t.go += zahl(s.go);
     t.rrAbgelehnt += zahl(s.rrAbgelehnt);
     t.ohneStopZiel = zahl(t.ohneStopZiel) + zahl(s.ohneStopZiel);
+    t.ohneVolleDaten = zahl(t.ohneVolleDaten) + zahl(s.ohneVolleDaten);
+    // `t.ohneVolleDatenGrund` kann fehlen, wenn die Tagessumme aus Redis noch
+    // von gestern stammt (ohne dieses Feld) — derselbe Fall, den `zahl()` eine
+    // Zeile tiefer fuer die Zahlen abfaengt.
+    if (!t.ohneVolleDatenGrund) t.ohneVolleDatenGrund = {};
+    for (const [k, n] of Object.entries(s.ohneVolleDatenGrund ?? {})) {
+      t.ohneVolleDatenGrund[k] = zahl(t.ohneVolleDatenGrund[k]) + zahl(n);
+    }
     t.claudeGefragt += zahl(s.claudeGefragt);
     // `zahl(...)` auch auf der Summenseite: eine Tagessumme aus Redis, die
     // noch von gestern (ohne diese Felder) stammt, ergaebe sonst NaN.
@@ -315,6 +364,20 @@ export function tagesbilanzText(t: Tagessumme): string {
     zeilen.push(`🚧 Vetos: ${t.vetos} · Stil verworfen: ${t.stilVerworfen}`);
     const spanne = t.confMin !== null ? ` (Confidence ${t.confMin}–${t.confMax})` : "";
     zeilen.push(`📉 Unter der Untergrenze: ${t.unterGrenze}${spanne}`);
+    // ── DER AUSFALL GEHOERT IN DEN BERICHT (22.09.) ───────────────────────
+    //
+    // Ohne diese Zeile meldet ein Abend, an dem das Python-Backend weg war,
+    // exakt dasselbe wie ein Abend, an dem die KI nichts mochte: viele
+    // Richtungssignale, GO 0. Am 22.09. waren es acht von acht in EINEM
+    // Zyklus. Sie steht auch bei 0 da, weil erst der Vergleich mit gestern
+    // zeigt, ob ein Dienst wackelt.
+    const gruende = Object.entries(t.ohneVolleDatenGrund ?? {})
+      .filter(([, n]) => zahl(n) > 0)
+      .sort((a, b) => zahl(b[1]) - zahl(a[1]))
+      .map(([k, n]) => `${htmlSicher(k)} ${zahl(n)}`)
+      .join(", ");
+    zeilen.push(`🔒 Ohne vollständige Daten (TA-Lib/Strategien fehlten): ${zahl(t.ohneVolleDaten)}`
+      + `${gruende ? ` — ${gruende}` : ""}`);
     zeilen.push(`⚖️ An der Risiko-Freigabe gescheitert (R/R oder Risiko-Score): ${t.rrAbgelehnt}`);
     zeilen.push(`✂️ Ohne Stop oder Ziel von GPT (weder GO noch gescheitert): ${zahl(t.ohneStopZiel)}`);
     zeilen.push(`✅ GO: ${t.go} · Claude gefragt: ${t.claudeGefragt}`);

@@ -9,7 +9,7 @@
 // Quelltext, nicht das Laufzeitverhalten.
 const fs = require("fs");
 const path = require("path");
-const { read, ladeTsModul } = require("./_lib");
+const { read, ladeTsModul, objectBlock } = require("./_lib");
 
 /** Benutzt ein Prüfer die naive Kommentar-Entfernung ohne URL-Schutz?
  *
@@ -2571,6 +2571,7 @@ module.exports = async function pruefe() {
         bv(bz, { type: "ANALYSIS:SCAN_DONE", payload: { scan: {
           maerkte: 30, gpt: { WAIT: 1, BUY: 2, SELL: 3 }, vetos: 0, stilVerworfen: 0,
           unterGrenze: [], go: 5, rrAbgelehnt: 4, ohneStopZiel: 7, claudeGefragt: 16,
+          ohneVolleDaten: 3, ohneVolleDatenGrund: { Strategien: 2, "TA-Lib": 1 },
           regelbrueche: {}, dauerMs: {}, kontext: { news: true, mtfSymbole: 30 },
         } } });
         bv(bz, { type: "EXECUTION:TRADE_FAILED", payload: { symbol: "EURUSD", grund: "MARKET_CLOSED" } });
@@ -2586,17 +2587,273 @@ module.exports = async function pruefe() {
         torPruefung("Broker-Fehler-Gruende landen nicht in der Tagessumme",
           Object.values(gr).reduce((a, b2) => a + b2, 0) === 4 && Object.keys(gr).length === 2,
           JSON.stringify(gr));
+        // ── DIE STUFE VOR ALLEN ANDEREN (22.09.) ──────────────────────────
+        //
+        // Sie muss durch denselben Pfad laufen wie der Rest: Ereignis ->
+        // Zyklus-Bilanz -> Tagessumme. Ein Feld, das nur im Typ steht, aber
+        // nicht addiert wird, meldet nach zwoelf Zyklen immer noch den Wert
+        // des ersten.
+        torPruefung("'ohne volle Daten' wird nicht in die Tagessumme addiert",
+          s1.ohneVolleDaten === 3 && s2.ohneVolleDaten === 6,
+          `${s1.ohneVolleDaten} / ${s2.ohneVolleDaten}`);
+        const vd = s2.ohneVolleDatenGrund ?? {};
+        torPruefung("der GRUND des Datenausfalls landet nicht in der Tagessumme",
+          vd.Strategien === 4 && vd["TA-Lib"] === 2,
+          JSON.stringify(vd));
       }
+      // ── DER ZYKLUS VOM 22.09. 21:17, NACHGERECHNET ───────────────────────
+      //
+      // Echte Zahlen aus dem Railway-Log: das Strategien-Backend gab 502,
+      // `fetchStrategySignals` lieferte eine leere Map, `strategienOk` fiel
+      // fuer alle 30 Maerkte. GPT hatte acht Richtungssignale (5 BUY, 3
+      // SELL), es folgten exakt acht 🔒-Zeilen, GO war 0.
+      //
+      // Die Bilanzzeile meldete davon NICHTS: 8 - 0 Veto - 2 <Grenze - 0
+      // Freigabe-Nein - 0 ohne Stop/Ziel - 0 GO = SECHS Signale ohne jede
+      // Erklaerung. Genau das darf nicht wiederkommen.
+      const bzF = zb.exports?.bilanzZeile;
+      if (typeof bzF !== "function") {
+        funde.push("bilanzZeile nicht exportiert — die Zyklus-Zeile bliebe ungeprueft");
+        zusatz++;
+      } else {
+        const live = {
+          start: 0, ende: 100000, ausgang: "Keine freigegebenen Signale",
+          scan: {
+            maerkte: 30, gpt: { WAIT: 22, BUY: 5, SELL: 3 }, vetos: 0, stilVerworfen: 0,
+            unterGrenze: [65, 68], go: 0, rrAbgelehnt: 0, ohneStopZiel: 0,
+            ohneVolleDaten: 8, ohneVolleDatenGrund: { Strategien: 8 },
+            claudeGefragt: 6, regelbrueche: {}, dauerMs: {},
+            kontext: { news: true, mtfSymbole: 30 },
+          },
+          tore: [], trades: [], fehlgeschlagen: [],
+        };
+        const lz = bzF(live);
+        torPruefung("der Datenausfall fehlt wieder in der Zyklus-Zeile",
+          /ohne Daten 8/.test(lz), lz.slice(0, 200));
+        torPruefung("die Zyklus-Zeile nennt den ausgefallenen Dienst nicht",
+          /ohne Daten 8 \(Strategien 8\)/.test(lz),
+          "ohne ihn weiss niemand, ob TA-Lib oder die Strategien weg waren");
+        // Jetzt geht die Rechnung auf: 8 = 0 Veto + 8 ohne Daten.
+        const s = live.scan;
+        const richtung = s.gpt.BUY + s.gpt.SELL;
+        torPruefung("die Rechnung des Zyklus geht nicht auf",
+          richtung - s.vetos - s.stilVerworfen - s.ohneVolleDaten
+            - s.rrAbgelehnt - s.ohneStopZiel - s.go === 0,
+          `${richtung} Richtungssignale, ${s.ohneVolleDaten} ohne Daten`);
+        // Die Gegenprobe: ohne Ausfall darf die Zeile nicht laenger werden.
+        const sauber = JSON.parse(JSON.stringify(live));
+        sauber.scan.ohneVolleDaten = 0; sauber.scan.ohneVolleDatenGrund = {};
+        torPruefung("die Zeile traegt 'ohne Daten 0' mit, wenn nichts ausgefallen ist",
+          !/ohne Daten/.test(bzF(sauber)), bzF(sauber).slice(0, 160));
+        // Und der Grund darf die Zeile nicht sprengen, wenn er fehlt.
+        const ohneGrund = JSON.parse(JSON.stringify(live));
+        delete ohneGrund.scan.ohneVolleDatenGrund;
+        const og = bzF(ohneGrund);
+        torPruefung("eine Bilanz ohne Grund-Feld laesst die Zyklus-Zeile platzen",
+          /ohne Daten 8/.test(og) && !og.includes("undefined") && !og.includes("NaN"),
+          og.slice(0, 160));
+      }
+      // Und dasselbe im Telegram-Text, den du abends liest.
+      const ausfall = leer("2026-09-22");
+      ausfall.zyklen = 12; ausfall.scans = 12;
+      ausfall.gpt = { WAIT: 264, BUY: 60, SELL: 36 };
+      ausfall.ohneVolleDaten = 96; ausfall.ohneVolleDatenGrund = { Strategien: 96 };
+      const aText = tb(ausfall);
+      torPruefung("die Tagesbilanz verschweigt einen Backend-Ausfall",
+        /Ohne vollständige Daten[^\n]*: 96/.test(aText),
+        "sonst liest sich ein toter Dienst wie 'die KI wollte nicht'");
+      torPruefung("die Tagesbilanz nennt den ausgefallenen Dienst nicht",
+        /Ohne vollständige Daten[^\n]*96 — Strategien 96/.test(aText),
+        aText.split("\n").find((l) => l.includes("vollständige")) ?? "(Zeile fehlt)");
 
       // Eine Tagessumme von GESTERN kennt die neuen Felder nicht.
       const alt = leer("2026-09-18");
       delete alt.ohneStopZiel; delete alt.fehlgeschlagenGruende;
+      delete alt.ohneVolleDaten; delete alt.ohneVolleDatenGrund;
       alt.zyklen = 1; alt.scans = 1;
       let altText = "";
       try { altText = tb(alt); } catch (e) { altText = `ABSTURZ: ${e.message}`; }
       torPruefung("eine alte Tagessumme ohne die neuen Felder laesst die Bilanz platzen",
         !altText.startsWith("ABSTURZ") && !altText.includes("NaN") && !altText.includes("undefined"),
         altText.slice(0, 120));
+
+      // ── ZAHL UND 🔒-ZEILE DUERFEN NICHT AUSEINANDERLAUFEN (22.09.) ──────
+      //
+      // Die Bilanz-Zahl ist nur so viel wert, wie sie mit dem Log
+      // uebereinstimmt. Beide entstehen deshalb im SELBEN `if`. Geprueft wird
+      // das per Klammerzaehlung, nicht per Zeichen-Fenster: ein Fenster
+      // beweist nur Naehe, nicht Zugehoerigkeit (nachgewiesen am selben Tag
+      // in prompt-zahlen.js).
+      {
+        const engineQuell = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+          .replace(/\/\*[\s\S]*?\*\//g, " ")
+          .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+        // Der Fehlschlag wird BENANNT statt verschluckt. Erste Fassung hatte
+        // hier ein nacktes `catch {}` — und weil `objectBlock` oben nicht
+        // importiert war, wurde der ReferenceError zum Befund "der Zaehler
+        // steht nicht im selben Zweig". Der Pruefer war rot, der Code aber
+        // richtig. Ein Pruefer, der aus dem falschen Grund rot wird, schickt
+        // die Suche genauso in die Irre wie einer, der gruen bleibt.
+        let block = "", warum = "";
+        try {
+          block = objectBlock(engineQuell, "if (!hasFullData && isRealAnalysis && gpt.direction !== \"WAIT\")");
+        } catch (e) { warum = ` [Pruefer selbst: ${e.message}]`; }
+        torPruefung("der Zaehler steht nicht im selben Zweig wie die 🔒-Zeile",
+          block !== "" && /ohneVolleDatenZahl\+\+/.test(block) && /🔒/.test(block),
+          `sonst meldet das Log acht und die Bilanz etwas anderes${warum}`);
+        torPruefung("der GRUND wird nicht im selben Zweig bestimmt",
+          block !== "" && /ohneVolleDatenGruende\[grund\]/.test(block),
+          `er muss aus demselben \`ta\`/\`strategienOk\` stammen wie die Zeile${warum}`);
+        // Und er muss wirklich in die Bilanz wandern — ein Zaehler, den
+        // niemand liest, ist keine Messung (CLAUDE.md, 17.09.).
+        torPruefung("der Zaehler erreicht die Zyklus-Bilanz nicht",
+          /ohneVolleDaten: ohneVolleDatenZahl/.test(engineQuell)
+          && /ohneVolleDatenGrund: ohneVolleDatenGruende/.test(engineQuell),
+          "ScanDaten muss ihn tragen, sonst bleibt die Tagesbilanz stumm");
+
+        // ── DER GRUND DES AUSFALLS MUSS GEMESSEN WERDEN (22.09.) ──────────
+        //
+        // Am 22.09. 21:17 stand im Log nur "502 Bad Gateway" — der
+        // Antwortkoerper, in dem Railway bzw. FastAPI den Grund nennt, wurde
+        // weggeworfen. Damit war die Ursache aus unseren Logs NICHT zu
+        // bestimmen. `callClaude` macht es seit jeher richtig.
+        //
+        // NUR IN DIESER FUNKTION SUCHEN. Die erste Fassung prueft die ganze
+        // Datei auf `res.text().catch` — und blieb im Sabotage-Lauf GRUEN,
+        // obwohl der Aufruf hier entfernt war: gefunden wurde der von
+        // `callClaude`, 1500 Zeilen weiter oben. Exakt die Fehlerklasse aus
+        // CLAUDE.md ("ein Wort im Kommentar ist keine Verwendung"), hier in
+        // der Spielart "eine ANDERE Aufrufstelle".
+        let strategienBlock = "", warumS = "";
+        try {
+          strategienBlock = objectBlock(engineQuell, "async function fetchStrategySignals");
+        } catch (e) { warumS = ` [Pruefer selbst: ${e.message}]`; }
+        torPruefung("der Antwortkoerper des Strategien-Backends wird wieder weggeworfen",
+          strategienBlock !== "" && /res\.text\(\)\.catch/.test(strategienBlock)
+          && /leerer Antwortkoerper/.test(strategienBlock),
+          `ohne ihn bleibt jeder kuenftige Ausfall unerklaert${warumS}`);
+        // Und die Folge gehoert in die Meldung: eine leere Map heisst, dass
+        // JEDES Symbol den Strategie-Konsens verliert.
+        torPruefung("die Ausfall-Meldung nennt die Folge nicht",
+          strategienBlock !== "" && /dieser Zyklus handelt NICHT/.test(strategienBlock),
+          `ein 502 kostet alle 30 Maerkte, nicht nur eines${warumS}`);
+      }
+
+      // ── WANN EIN ZWEITER VERSUCH ETWAS BRINGT — GERECHNET (22.09.) ───────
+      //
+      // Die echte Funktion, nicht ihr Text. Ein vertauschter Vergleich
+      // (`< 500`) oder ein hineingerutschtes 4xx waere strukturell
+      // unauffaellig: im ersten Fall wuerde gar nicht mehr wiederholt, im
+      // zweiten liefe der Scan bei jedem 401 doppelt ins Leere und
+      // verbrennte das Zeitbudget des Zyklus.
+      {
+        const eng = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts");
+        const wh = eng.exports?.strategienWiederholbar;
+        if (eng.fehler || typeof wh !== "function") {
+          funde.push(`strategienWiederholbar nicht ausfuehrbar: ${eng.fehler ?? "nicht exportiert"}`);
+          zusatz++;
+        } else {
+          const f = (x) => { try { return wh(x); } catch (e) { return `WIRFT ${e.message}`; } };
+          torPruefung("ein Gateway-Fehler bekommt keinen zweiten Versuch",
+            f(502) === true && f(500) === true && f(503) === true && f(599) === true,
+            `502=${f(502)} 500=${f(500)} 503=${f(503)} 599=${f(599)}`);
+          torPruefung("ein Netzfehler/Timeout bekommt keinen zweiten Versuch",
+            f(null) === true, String(f(null)));
+          torPruefung("ein deterministischer Fehler wird sinnlos wiederholt",
+            f(400) === false && f(401) === false && f(404) === false && f(422) === false,
+            `400=${f(400)} 401=${f(401)} 404=${f(404)} 422=${f(422)}`);
+          // 429 heisst "zu viel" — sofort nachzulegen ist genau das Falsche.
+          torPruefung("auf 'zu viele Anfragen' wird sofort nachgelegt",
+            f(429) === false, String(f(429)));
+          torPruefung("ein Erfolg gilt als wiederholbar",
+            f(200) === false && f(204) === false, `200=${f(200)} 204=${f(204)}`);
+          const budget = eng.exports?.STRATEGIEN_BUDGET_MS;
+          const rest = eng.exports?.STRATEGIEN_REST_FUER_WIEDERHOLUNG_MS;
+          const pause = eng.exports?.STRATEGIEN_PAUSE_MS;
+          torPruefung("das Zeitbudget der Wiederholung ist nicht schluessig",
+            typeof budget === "number" && typeof rest === "number" && typeof pause === "number"
+            && budget > 0 && rest > 0 && pause > 0 && rest + pause < budget,
+            `Budget ${budget}, Restbedarf ${rest}, Pause ${pause}`);
+          // Der Zyklus laeuft alle 5 Minuten. Beide Versuche zusammen duerfen
+          // ihn nicht ueberholen — deshalb EIN gemeinsames Budget statt zwei.
+          torPruefung("zwei Versuche koennen laenger dauern als ein Zyklus",
+            budget + pause < 300000, `${budget} + ${pause} >= 300000 ms`);
+
+          // ── UND JETZT WIRKLICH AUSFUEHREN (22.09.) ───────────────────────
+          //
+          // Alles bisher Gepruefte sagt nur, dass die REGEL stimmt und der
+          // Code danach aussieht. Ob der zweite Versuch auch ausgeloest wird,
+          // sieht man daran nicht — genau die Luecke, die CLAUDE.md meint
+          // ("ein Riegel, der vorhanden, aber subtil falsch umgebaut wurde").
+          //
+          // Deshalb ein echter HTTP-Server auf 127.0.0.1 (Port 0 = freier
+          // Port vom Betriebssystem) und die ECHTE Funktion dagegen. Gezaehlt
+          // werden die ANFRAGEN — das ist der Beweis, kein Regex.
+          //
+          // Kostet rund vier Sekunden (zweimal die Pause von 2s). Das ist der
+          // Preis dafuer, den einzigen Pfad abzusichern, dessen Ausfall einen
+          // ganzen Handelszyklus kostet.
+          const http = require("http");
+          const ANTW = { results: { EURUSD: { symbol: "EURUSD", total_strategies: 16, fehlgeschlagen: 0 } } };
+          const fallLauf = async (plan) => {
+            const treffer = [];
+            const srv = http.createServer((_q, res) => {
+              const e = plan[Math.min(treffer.length, plan.length - 1)];
+              treffer.push(1);
+              if (e.status === 200) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(ANTW)); }
+              else { res.writeHead(e.status, { "Content-Type": "text/plain" }); res.end(e.koerper ?? ""); }
+            });
+            await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+            const alteUrl = process.env.PYTHON_BACKEND_NEW_URL;
+            process.env.PYTHON_BACKEND_NEW_URL = `http://127.0.0.1:${srv.address().port}`;
+            // Eigene Modulkopie MIT Ersatz fuer den Auth-Header: der
+            // Stellvertreter von ladeTsModul wirft beim Aufruf, und dann
+            // stirbt die Funktion VOR dem fetch (gemessen: 0 Anfragen).
+            const eng2 = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts", {
+              "auth-header": { pythonBackendAuthHeader: () => ({ "X-Backend-Key": "pruefstand" }) },
+            });
+            const zeilen = [];
+            const [l, w, f2] = [console.log, console.warn, console.error];
+            console.log = console.warn = console.error = (...a) => zeilen.push(a.join(" "));
+            let karte = new Map();
+            try {
+              karte = await eng2.exports.fetchStrategySignals(["EURUSD"]);
+            } catch (e) { zeilen.push(`WIRFT ${e.message}`); } finally {
+              console.log = l; console.warn = w; console.error = f2;
+              if (alteUrl === undefined) delete process.env.PYTHON_BACKEND_NEW_URL;
+              else process.env.PYTHON_BACKEND_NEW_URL = alteUrl;
+              await new Promise((r) => srv.close(r));
+            }
+            return { anfragen: treffer.length, groesse: karte.size, log: zeilen.join("\n") };
+          };
+
+          const r1 = await fallLauf([{ status: 502, koerper: "Application failed to respond" }, { status: 200 }]);
+          torPruefung("ein 502 wird NICHT wiederholt — der Zyklus bleibt verloren",
+            r1.anfragen === 2 && r1.groesse === 1,
+            `${r1.anfragen} Anfragen, ${r1.groesse} Symbole`);
+          torPruefung("der Antwortkoerper des Backends landet nicht im Log",
+            r1.log.includes("Application failed to respond"),
+            "ohne ihn ist die Ursache eines 502 wieder nicht zu bestimmen");
+          torPruefung("der geglueckte zweite Versuch wird verschwiegen",
+            /beim zweiten Versuch erreicht/.test(r1.log),
+            "sonst steht oben '1/1 analysiert' und niemand weiss vom Ausfall");
+
+          const r2 = await fallLauf([{ status: 502, koerper: "Bad Gateway" }]);
+          torPruefung("nach dem zweiten Fehlschlag wird weiter nachgefragt",
+            r2.anfragen === 2 && r2.groesse === 0,
+            `${r2.anfragen} Anfragen (erwartet genau 2)`);
+
+          const r3 = await fallLauf([{ status: 401, koerper: '{"error":"unauthorized"}' }]);
+          torPruefung("ein 401 wird sinnlos wiederholt",
+            r3.anfragen === 1, `${r3.anfragen} Anfragen (erwartet genau 1)`);
+          torPruefung("der Grund eines 401 fehlt im Log", r3.log.includes("unauthorized"));
+
+          const r4 = await fallLauf([{ status: 200 }]);
+          torPruefung("auch ein Erfolg loest einen zweiten Versuch aus",
+            r4.anfragen === 1 && r4.groesse === 1,
+            `${r4.anfragen} Anfragen, ${r4.groesse} Symbole`);
+        }
+      }
 
       // Die Gegenprobe: bei wenigen Ausgaengen keine ueberfluessige Zeile.
       const klein = leer("2026-09-17");
