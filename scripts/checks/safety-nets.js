@@ -2353,10 +2353,15 @@ module.exports = async function pruefe() {
       // Und die Umrechnung muss an ALLEN fuenf Stellen benutzt werden.
       const cq = read("frontend/lib/capital-com/capital-com-client.ts")
         .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-      const roh = (cq.match(/updateTime: String\(|createdDate: String\(/g) || []).length;
-      const umgerechnet = (cq.match(/updateTime: brokerZeitNachUtc\(|createdDate: brokerZeitNachUtc\(/g) || []).length;
+      const felder = "updateTime|createdDate|openDate|closeDate";
+      const roh = (cq.match(new RegExp(`(${felder}): String\\(`, "g")) || []).length;
+      const umgerechnet = (cq.match(new RegExp(`(${felder}): brokerZeitNachUtc\\(`, "g")) || []).length;
       torPruefung("eine Broker-Zeit geht wieder ununmgerechnet durch",
-        roh === 0 && umgerechnet === 5, `${roh} roh, ${umgerechnet} umgerechnet (erwartet 0 und 5)`);
+        roh === 0 && umgerechnet === 7, `${roh} roh, ${umgerechnet} umgerechnet (erwartet 0 und 7)`);
+      // Und keine erfundene Zeit als Rueckfall — der Klassiker "?? jetzt".
+      torPruefung("eine fehlende Broker-Zeit wird wieder durch 'jetzt' ersetzt",
+        !new RegExp(`(${felder}):[^\\n]*new Date\\(\\)\\.toISOString\\(\\)`).test(cq),
+        "ein Trade von vorgestern saehe aus, als waere er gerade beendet worden");
       torPruefung("die Zeitzonen-Selbstpruefung ist nicht verdrahtet",
         /zeitzonenSelbstpruefung\(markets\.map\(\(m\) => m\.updateTime\)\)/.test(cq)
         && /ZEITZONE STIMMT NICHT/.test(read("frontend/lib/capital-com/capital-com-client.ts")),

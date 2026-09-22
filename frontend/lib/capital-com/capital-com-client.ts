@@ -1220,8 +1220,19 @@ export async function capitalGetClosedPositions(
         closeLevel: Number(details.closeLevel ?? 0),
         profitLoss,
         currency: String(details.currency ?? "CHF"),
-        openDate: String(a.date ?? new Date().toISOString()),
-        closeDate: String(a.date ?? new Date().toISOString()),
+        // ── ZWEI FEHLER IN EINER ZEILE (22.09.) ──────────────────────────
+        //
+        // Hier stand `String(a.date ?? new Date().toISOString())`:
+        //   * `a.date` ist dieselbe Broker-ORTSZEIT wie ueberall, ungerechnet;
+        //   * fehlt sie, wurde "JETZT" erfunden — ein geschlossener Trade von
+        //     vorgestern sah aus, als waere er gerade eben beendet worden.
+        //
+        // Heute liest diese beiden Felder NIEMAND (nachgeprueft: ausserhalb
+        // dieser Datei kein einziger Treffer). Genau deshalb weg damit: wer
+        // sie als Naechstes benutzt, bekaeme sonst still eine um zwei Stunden
+        // verschobene oder frei erfundene Zeit. Leer heisst unbekannt.
+        openDate: brokerZeitNachUtc(a.date),
+        closeDate: brokerZeitNachUtc(a.date),
       });
     }
 
