@@ -25,6 +25,113 @@ declare global {
   // eslint-disable-next-line no-var
   var __zeitstempel_gemessen__: { positionen: boolean; kurse: boolean } | undefined;
 }
+// ── DIE BROKER-ZEIT IST ORTSZEIT — EINMAL HIER UMRECHNEN (22.09.) ────────────
+//
+// GEMESSEN im Betrieb, nicht vermutet:
+//
+//   19:04:11  updateTime="2026-09-22T19:04:06.857"
+//             (als UTC gelesen: 120.0 min gegen jetzt) | updateTimeUTC=FEHLT
+//
+// Der Kurs war FUENF SEKUNDEN alt. Die Zeit traegt keine Zonenangabe, ein
+// UTC-Feld liefert Capital.com nicht. `new Date()` liest sie deshalb als UTC
+// und bekommt zwei Stunden IN DER ZUKUNFT.
+//
+// Was das kostete, jede Stelle nachgelesen:
+//   * Frische-Filter: `ageInMinutes` klemmte die Zukunft auf 0. Das Alter war
+//     damit `max(0, echt - 120)` — die eingestellten 30 Minuten wirkten wie
+//     150. Ein Kurs aus einer Handelspause kam ungeprueft durch.
+//   * Zeit-Exit im RiskAgent (`ageHours` aus `createdDate`): 2 h zu spaet.
+//   * Nachregistrieren bei Python: dieselbe Verschiebung der Haltedauer.
+// Nicht betroffen (geprueft): Preis-Cache und Markt-Gesundheit rechnen mit
+// unserer eigenen Empfangszeit.
+//
+// HIER an der Grenze zum Broker, EINMAL — damit keine der fuenf Verwendungen
+// und kein spaeterer Aufrufer davon wissen muss.
+//
+// WARUM EINE ZEITZONE UND KEINE FESTEN ZWEI STUNDEN: am 25.10. endet die
+// Sommerzeit, dann sind es 60 Minuten. Ein fester Wert waere ab dann falsch —
+// und zwar still. Dass die Zone WIRKLICH Zuerich ist, belegt die Messung nur
+// fuer heute; deshalb prueft `zeitzonenSelbstpruefung()` unten bei jedem Abruf
+// nach, ob umgerechnete Kurse noch in der Zukunft liegen, und meldet es laut.
+const BROKER_ZONE = "Europe/Zurich";
+
+/** Versatz der Zone gegen UTC zu diesem Zeitpunkt, in Millisekunden. */
+function zonenVersatzMs(zeitpunkt: number): number {
+  const teile = new Intl.DateTimeFormat("en-US", {
+    timeZone: BROKER_ZONE, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(zeitpunkt));
+  const p: Record<string, string> = {};
+  for (const t of teile) p[t.type] = t.value;
+  const alsWaereEsUtc = Date.UTC(
+    Number(p.year), Number(p.month) - 1, Number(p.day),
+    Number(p.hour) % 24, Number(p.minute), Number(p.second),
+  );
+  return alsWaereEsUtc - zeitpunkt;
+}
+
+/**
+ * Eine Broker-Zeit in eine echte UTC-Zeit umrechnen.
+ *
+ * Traegt sie schon eine Zone (`Z` oder `+02:00`), wird sie nur normalisiert —
+ * dann hat Capital.com sich geaendert und wir raten nicht dagegen.
+ * Ohne Zone gilt sie als Ortszeit der Zone oben.
+ * Unbrauchbar bleibt unbrauchbar: leerer Text, nicht "jetzt".
+ */
+export function brokerZeitNachUtc(roh: unknown): string {
+  const s = typeof roh === "string" ? roh.trim() : "";
+  if (!s) return "";
+  if (/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+    const t = Date.parse(s);
+    return Number.isFinite(t) ? new Date(t).toISOString() : "";
+  }
+  const naiv = Date.parse(`${s.replace(" ", "T")}Z`);
+  if (!Number.isFinite(naiv)) return "";
+  // MILLISEKUNDEN ERST ABTRENNEN. `Intl` formatiert nur bis zur Sekunde; der
+  // Rest landete sonst IM VERSATZ und verschob das Ergebnis um Bruchteile
+  // einer Sekunde (gemessen: ".857" wurde ".571"). Der Zonenversatz ist immer
+  // ein ganzes Vielfaches von Minuten, das Anhaengen danach also exakt.
+  const ms = ((naiv % 1000) + 1000) % 1000;
+  const glatt = naiv - ms;
+  // Zweistufig: der Versatz gilt fuer den ECHTEN Zeitpunkt, den wir erst
+  // suchen. In der Umstellungsnacht liegt der erste Schritt sonst daneben.
+  const ersterVersuch = zonenVersatzMs(glatt);
+  const versatz = zonenVersatzMs(glatt - ersterVersuch);
+  return new Date(glatt - versatz + ms).toISOString();
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __zeitzone_gemeldet__: number | undefined;
+}
+/**
+ * Liegt ein UMGERECHNETER Kurs noch in der Zukunft, stimmt die Zone nicht mehr
+ * (z. B. weil der Broker auf Winterzeit umstellt und wir nicht, oder weil das
+ * Konto in einer anderen Zone gefuehrt wird). Dann MUSS es auffallen: still
+ * waere der Frische-Filter wieder blind. Hoechstens alle 30 Minuten.
+ */
+function zeitzonenSelbstpruefung(zeiten: string[]): void {
+  try {
+    const jetzt = Date.now();
+    let juengste = -Infinity;
+    for (const z of zeiten) {
+      const t = z ? Date.parse(z) : NaN;
+      if (Number.isFinite(t) && t > juengste) juengste = t;
+    }
+    if (!Number.isFinite(juengste)) return;
+    const vorausMin = (juengste - jetzt) / 60000;
+    if (vorausMin <= 5) return;
+    const zuletzt = global.__zeitzone_gemeldet__ ?? 0;
+    if (jetzt - zuletzt < 30 * 60 * 1000) return;
+    global.__zeitzone_gemeldet__ = jetzt;
+    console.error(`[capital-com] ❌ ZEITZONE STIMMT NICHT: der juengste Kurs liegt nach der `
+      + `Umrechnung ${vorausMin.toFixed(1)} Minuten in der ZUKUNFT. Angenommen wird `
+      + `${BROKER_ZONE}. Solange das so ist, ist die Frische-Pruefung der Kurse `
+      + `unzuverlaessig — pruefe die Zeitzone des Capital.com-Kontos.`);
+  } catch { /* eine Selbstpruefung darf nichts stoeren */ }
+}
+
 export function zeitstempelMessen(art: "positionen" | "kurse", felder: Record<string, unknown>): void {
   try {
     const z = (global.__zeitstempel_gemessen__ ??= { positionen: false, kurse: false });
@@ -268,7 +375,7 @@ export async function capitalGetTopMarkets(
             bid,
             ask: offer,
             spread: Number((offer - bid).toFixed(5)),
-            updateTime: String(snap.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
+            updateTime: brokerZeitNachUtc(snap.updateTime), // Ortszeit -> UTC (22.09.); leer = unbekannt, NICHT als frisch werten (02.08.)
           } as CapitalMarket;
         })
       );
@@ -285,6 +392,11 @@ export async function capitalGetTopMarkets(
       .filter((r): r is PromiseFulfilledResult<CapitalMarket> => r.status === "fulfilled" && r.value !== null)
       .map((r) => r.value)
       .filter((m) => m.bid > 0);
+
+    // Stimmt die angenommene Zeitzone noch? (22.09.) Nach der Umrechnung darf
+    // kein Kurs in der Zukunft liegen. Tut er es doch, ist die Frische-Pruefung
+    // wieder blind — und das muss laut sein, nicht still.
+    zeitzonenSelbstpruefung(markets.map((m) => m.updateTime));
 
     if (drops.length > 0) {
       console.warn(`[capital-markets] ${markets.length}/${entries.length} Märkte mit Kurs. Ohne Kurs: ${drops.join(" | ")}`);
@@ -482,7 +594,7 @@ export async function capitalGetPrices(
             bid,
             ask: offer,
             spread: Number((offer - bid).toFixed(5)),
-            updateTime: String(snapshot.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
+            updateTime: brokerZeitNachUtc(snapshot.updateTime), // Ortszeit -> UTC (22.09.); leer = unbekannt, NICHT als frisch werten (02.08.)
           };
         } catch (e) {
           drops.push(`${symbol}(${epic}): ${e instanceof Error ? e.message : String(e)}`);
@@ -850,7 +962,7 @@ const positions: OpenPosition[] = (data.positions ?? []).map((p) => {
         // aber immer ein lesbares und war damit ausgehebelt.
         // Leerer Text heisst jetzt ehrlich "unbekannt"; die Aufrufer
         // entscheiden, was sie damit tun.
-        createdDate: String(pos.createdDate ?? ""),
+        createdDate: brokerZeitNachUtc(pos.createdDate),   // Ortszeit -> UTC (22.09.)
       };
     });
 
@@ -996,7 +1108,7 @@ export async function capitalGetAvailableMarkets(
           bid,
           ask: offer,
           spread: Number((offer - bid).toFixed(5)),
-          updateTime: String(snap.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
+          updateTime: brokerZeitNachUtc(snap.updateTime), // Ortszeit -> UTC (22.09.); leer = unbekannt, NICHT als frisch werten (02.08.)
         });
       }
     }
@@ -1035,7 +1147,7 @@ export async function capitalSearchMarkets(
         bid,
         ask: offer,
         spread: Number((offer - bid).toFixed(5)),
-        updateTime: String(snap.updateTime ?? ""), // leer = unbekannt, NICHT als frisch werten (02.08.)
+        updateTime: brokerZeitNachUtc(snap.updateTime), // Ortszeit -> UTC (22.09.); leer = unbekannt, NICHT als frisch werten (02.08.)
       };
     });
     return { ok: true, markets };

@@ -217,11 +217,31 @@ Antworte NUR mit JSON:
 
 /** Alter eines ISO-Zeitstempels in Minuten. null wenn nicht auswertbar —
  *  der Aufrufer behandelt das als "unbekannt", NICHT als frisch (02.08.). */
-function ageInMinutes(iso: string): number | null {
+/**
+ * Alter eines Broker-Zeitstempels in Minuten. `null` = unbekannt.
+ *
+ * ── ZUKUNFT IST NICHT "FRISCH" (22.09.) ────────────────────────────────────
+ *
+ * Hier stand `return age >= 0 ? … : 0;` mit dem Kommentar "Zukunft
+ * (Zeitzonen-Drift) = frisch". Genau diese Klemme hat den Fehler versteckt:
+ * Capital.com schickte Ortszeit, wir lasen sie als UTC, jeder Kurs lag zwei
+ * Stunden in der Zukunft — und wurde zu 0 Minuten. Das Alter war damit
+ * `max(0, echt - 120)`, und der Filter mit 30 Minuten wirkte wie 150.
+ *
+ * Die Umrechnung steht jetzt beim Broker-Client (`brokerZeitNachUtc`). Hier
+ * bleibt die Frage: was, wenn trotzdem eine Zukunft ankommt?
+ *   * bis 2 Minuten: echter Uhren-Versatz zwischen zwei Rechnern -> 0.
+ *   * darueber: etwas stimmt nicht. Dann heisst es UNBEKANNT (null), und der
+ *     Filter sagt hoerbar "Kurs-Alter unbekannt — nicht blockiert, aber
+ *     ungeprueft". Eine stille 0 waere wieder die Luege von vorher.
+ */
+export function ageInMinutes(iso: string): number | null {
   const t = Date.parse(iso);
   if (!Number.isFinite(t)) return null;
   const age = (Date.now() - t) / 60000;
-  return age >= 0 ? Number(age.toFixed(1)) : 0; // Zukunft (Zeitzonen-Drift) = frisch
+  if (age >= 0) return Number(age.toFixed(1));
+  if (age >= -2) return 0;
+  return null;
 }
 
 async function fetchMarkets(

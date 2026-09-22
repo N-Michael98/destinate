@@ -2314,6 +2314,74 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DIE BROKER-ZEIT IST ORTSZEIT — UMRECHNUNG GERECHNET (22.09.) ═════════
+  //
+  // GEMESSEN im Betrieb: updateTime="2026-09-22T19:04:06.857" bei einem Kurs,
+  // der fuenf Sekunden alt war, und KEIN UTC-Feld. Als UTC gelesen lag jeder
+  // Kurs zwei Stunden in der Zukunft; `ageInMinutes` klemmte das auf 0, und
+  // die eingestellten 30 Minuten des Frische-Filters wirkten wie 150.
+  //
+  // Diese Umrechnung entscheidet jetzt mit, welcher Kurs geblockt wird und
+  // wann eine Position geschlossen wird. Sie wird deshalb GERECHNET, mit genau
+  // den gemessenen Zeichenketten.
+  {
+    const cm = ladeTsModul("lib/capital-com/capital-com-client.ts");
+    const bz = cm.exports?.brokerZeitNachUtc;
+    if (cm.fehler || typeof bz !== "function") {
+      funde.push(`brokerZeitNachUtc nicht ausfuehrbar: ${cm.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      for (const [name, ein, soll] of [
+        ["die gemessene Kurszeit vom 22.09.", "2026-09-22T19:04:06.857", "2026-09-22T17:04:06.857Z"],
+        ["die gemessene Positionszeit vom 22.09.", "2026-09-22T12:14:41.813", "2026-09-22T10:14:41.813Z"],
+        ["Winterzeit (ab 25.10. nur noch 1 h)", "2026-11-15T12:00:00", "2026-11-15T11:00:00.000Z"],
+        ["eine Zeit MIT Z bleibt unveraendert", "2026-09-22T17:04:06.857Z", "2026-09-22T17:04:06.857Z"],
+        ["eine Zeit mit Versatz wird nicht doppelt gerechnet", "2026-09-22T19:04:06+02:00", "2026-09-22T17:04:06.000Z"],
+        ["Leerzeichen statt T", "2026-09-22 19:04:06", "2026-09-22T17:04:06.000Z"],
+        ["leer bleibt leer (nicht 'jetzt')", "", ""],
+        ["Unsinn bleibt leer", "morgen frueh", ""],
+        ["eine Zahl bleibt leer", 12345, ""],
+      ]) {
+        torPruefung(`brokerZeitNachUtc: ${name}`, bz(ein) === soll, `${JSON.stringify(ein)} -> ${JSON.stringify(bz(ein))}, erwartet ${JSON.stringify(soll)}`);
+      }
+      // Die Millisekunden duerfen NICHT verrutschen: `Intl` formatiert nur bis
+      // zur Sekunde, und der Rest landete zuerst im Versatz (".857" wurde
+      // ".571"). Gefangen vom Test, nicht vom Auge.
+      torPruefung("brokerZeitNachUtc verliert Millisekunden",
+        /\.857Z$/.test(bz("2026-09-22T19:04:06.857")) && /\.001Z$/.test(bz("2026-01-05T12:00:00.001")),
+        `${bz("2026-09-22T19:04:06.857")} / ${bz("2026-01-05T12:00:00.001")}`);
+      // Und die Umrechnung muss an ALLEN fuenf Stellen benutzt werden.
+      const cq = read("frontend/lib/capital-com/capital-com-client.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const roh = (cq.match(/updateTime: String\(|createdDate: String\(/g) || []).length;
+      const umgerechnet = (cq.match(/updateTime: brokerZeitNachUtc\(|createdDate: brokerZeitNachUtc\(/g) || []).length;
+      torPruefung("eine Broker-Zeit geht wieder ununmgerechnet durch",
+        roh === 0 && umgerechnet === 5, `${roh} roh, ${umgerechnet} umgerechnet (erwartet 0 und 5)`);
+      torPruefung("die Zeitzonen-Selbstpruefung ist nicht verdrahtet",
+        /zeitzonenSelbstpruefung\(markets\.map\(\(m\) => m\.updateTime\)\)/.test(cq)
+        && /ZEITZONE STIMMT NICHT/.test(read("frontend/lib/capital-com/capital-com-client.ts")),
+        "ohne sie faellt eine falsche Zone (Winterzeit!) wieder still aus");
+    }
+
+    // Und die Gegenseite: eine Zukunft darf nicht mehr als "frisch" gelten.
+    const om = ladeTsModul("lib/agents/orchestrator-agent.ts", { "broker-config": { MIN_SIGNAL_CONFIDENCE: 70 } });
+    const aim = om.exports?.ageInMinutes;
+    if (om.fehler || typeof aim !== "function") {
+      funde.push(`ageInMinutes nicht ausfuehrbar: ${om.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      const jetzt = Date.now();
+      const iso = (versatzMin) => new Date(jetzt + versatzMin * 60000).toISOString();
+      torPruefung("ein 45 Minuten alter Kurs wird nicht als 45 Minuten alt gemeldet",
+        Math.abs((aim(iso(-45)) ?? -1) - 45) < 0.2, String(aim(iso(-45))));
+      torPruefung("kleiner Uhren-Versatz (1 Min Zukunft) ergibt nicht 0",
+        aim(iso(1)) === 0, String(aim(iso(1))));
+      torPruefung("zwei Stunden Zukunft gelten wieder als frisch statt als UNBEKANNT",
+        aim(iso(120)) === null, `${aim(iso(120))} — genau diese Klemme hat den Fehler versteckt`);
+      torPruefung("unlesbare Zeit ist nicht unbekannt", aim("morgen") === null, String(aim("morgen")));
+    }
+  }
+
   // ══ DIE ZEITSTEMPEL-MESSUNG: RICHTIG GERECHNET, EINMAL, OHNE WIRKUNG ═════
   //
   // (22.09.) `createdDate` liegt nachweislich 2 h daneben. Bevor die Ursache
