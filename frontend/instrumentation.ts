@@ -535,29 +535,34 @@ export async function register() {
                           try {
                             const { getPrisma } = await import("./app/lib/prisma");
                             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            // Fenster ab dem ERÖFFNEN der Position, nicht ab jetzt
-                            // (21.09.). Erste Fassung: `NOW() - 4 days` — eine
-                            // Position, die laenger lief, haette ihre URSPRUENGLICHE
-                            // Zeile verloren, und die Diagnose haette "nur die
-                            // rekonstruierte" gemeldet: genau die falsche Antwort.
-                            // Eine Stunde Vorlauf fuer Uhrenversatz Broker/Datenbank.
+                            // OHNE ZEITFENSTER (22.09.). Zweimal falsch gebaut:
+                            //  * `NOW() - 4 days` (21.09.) verlor bei laengeren
+                            //    Positionen die urspruengliche Zeile;
+                            //  * `openedAt - 1 hour` (21.09. abends) hing an
+                            //    `createdDate` des Brokers — und das liegt nachweislich
+                            //    ZWEI STUNDEN zu spaet (Ortszeit, als UTC gelesen:
+                            //    ETHUSD "eroeffnet 12:14Z" wurde um 12:15 MESZ
+                            //    nachregistriert). Das Fenster schloss damit BEIDE
+                            //    Zeilen aus und meldete "KEINE" — die falsche Antwort.
+                            // Jetzt die letzten Zeilen des Symbols nach id: keine Uhr,
+                            // kein Versatz, und die urspruengliche Zeile ist dabei.
                             const zeilen = await (getPrisma().$queryRawUnsafe as any)(
                               `SELECT id, status, strategy, notes, "createdAt" FROM "Trade" `
-                              + `WHERE market = $1 AND "createdAt" >= $2::timestamptz - INTERVAL '1 hour' ORDER BY id`,
-                              t.symbol, t.openedAt,
+                              + `WHERE market = $1 ORDER BY id DESC LIMIT 8`,
+                              t.symbol,
                             ) as Array<{ id: number; status: string; strategy: string; notes: string | null; createdAt: Date }>;
                             const teile = zeilen.map((z) => {
                               let m: Record<string, unknown> = {};
                               try { m = JSON.parse(z.notes ?? "{}") as Record<string, unknown>; } catch { /* unlesbar */ }
                               const id = String(m.dealId ?? "").trim();
                               const passt = id === t.tradeId ? "=" : id ? "≠" : "∅";
-                              return `#${z.id} ${z.status} stil=${String(m.tradingStyle ?? "?")} `
+                              return `#${z.id} ${z.status} ${new Date(z.createdAt).toISOString().slice(5, 16)}Z stil=${String(m.tradingStyle ?? "?")} `
                                 + `dealId${passt}${id ? id.slice(-12) : ""}`
                                 + `${m.dealReference ? " ref" : ""}${m.rekonstruiert ? " REKONSTRUIERT" : ""}`
                                 + `${m.exitReason ? ` exit=${String(m.exitReason)}` : ""}`;
                             });
                             console.warn(`[py-lifecycle] 🔎 ${t.symbol} deal=…${t.tradeId.slice(-12)}: `
-                              + `${zeilen.length} Journal-Zeile(n) seit Eroeffnung — ${teile.join(" | ") || "KEINE"}`);
+                              + `letzte ${zeilen.length} Journal-Zeile(n) des Symbols — ${teile.join(" | ") || "KEINE"}`);
                           } catch (e) {
                             console.warn(`[py-lifecycle] 🔎 Diagnose fuer ${t.symbol} nicht moeglich: `
                               + `${e instanceof Error ? e.message : String(e)}`);
