@@ -2314,6 +2314,67 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DIE ZEITSTEMPEL-MESSUNG: RICHTIG GERECHNET, EINMAL, OHNE WIRKUNG ═════
+  //
+  // (22.09.) `createdDate` liegt nachweislich 2 h daneben. Bevor die Ursache
+  // behoben wird, misst der Client einmal, welche Felder Capital.com wirklich
+  // liefert. Eine Messung, die falsch rechnet, jeden Aufruf wiederholt oder
+  // bei Unsinn wirft, waere schlimmer als keine.
+  {
+    const altZs = global.__zeitstempel_gemessen__;
+    delete global.__zeitstempel_gemessen__;
+    const logs = [];
+    const altLog = console.log;
+    console.log = (...a) => logs.push(a.join(" "));
+    try {
+      const c1 = ladeTsModul("lib/capital-com/capital-com-client.ts");
+      const c2 = ladeTsModul("lib/capital-com/capital-com-client.ts");
+      const zm1 = c1.exports?.zeitstempelMessen, zm2 = c2.exports?.zeitstempelMessen;
+      if (c1.fehler || typeof zm1 !== "function" || typeof zm2 !== "function") {
+        console.log = altLog;
+        funde.push(`zeitstempelMessen nicht ausfuehrbar: ${c1.fehler ?? "nicht exportiert"}`);
+        zusatz++;
+      } else {
+        // Die echten Zeiten vom 22.09.: Ortszeit ohne Zone, UTC daneben.
+        zm1("positionen", { createdDate: "2026-09-22T12:14:41.813", createdDateUTC: "2026-09-22T10:14:41.813" });
+        zm2("positionen", { createdDate: "2026-09-22T12:14:41.813", createdDateUTC: "2026-09-22T10:14:41.813" });
+        zm1("kurse", { updateTime: "2026-09-22T12:15:00", updateTimeUTC: undefined });
+        // Unsinn NACH einem Zuruecksetzen der Sperre — sonst kehrt die Funktion
+        // vorher zurueck und der Test prueft gar nichts (erste Fassung: die
+        // Sabotage "Fehler durchreichen" blieb gruen). Ein Wert, dessen
+        // Umwandlung in Text WIRFT, ist der echte Ernstfall.
+        const merk = global.__zeitstempel_gemessen__;
+        delete global.__zeitstempel_gemessen__;
+        let geworfen = false;
+        try {
+          zm1("kurse", { updateTime: { toString() { throw new Error("kaputt"); } } });
+        } catch { geworfen = true; }
+        global.__zeitstempel_gemessen__ = merk;
+        console.log = altLog;
+        const pos = logs.filter((l) => l.includes("(positionen,"));
+        const kurse = logs.filter((l) => l.includes("(kurse,"));
+        torPruefung("die Zeitstempel-Messung rechnet den Versatz falsch",
+          pos.length >= 1 && /Versatz createdDate − createdDateUTC = 120\.0 min/.test(pos[0]),
+          pos[0] ? pos[0].slice(0, 160) : "keine Ausgabe");
+        torPruefung("die Zeitstempel-Messung meldet sich je Modulkopie erneut",
+          pos.length === 1 && kurse.length === 1,
+          `${pos.length} Positions-, ${kurse.length} Kurs-Meldungen, erwartet je 1`);
+        torPruefung("ein fehlendes UTC-Feld wird nicht als FEHLT benannt",
+          kurse.length === 1 && /updateTimeUTC=FEHLT/.test(kurse[0]),
+          kurse[0] ? kurse[0].slice(0, 160) : "keine Ausgabe");
+        torPruefung("die Zeitstempel-Messung wirft bei unsinnigen Werten", !geworfen);
+      }
+      const cq = read("frontend/lib/capital-com/capital-com-client.ts");
+      torPruefung("die Zeitstempel-Messung ist nicht an Positionen UND Kursen angeschlossen",
+        /zeitstempelMessen\("positionen", \{ createdDate: pos\.createdDate, createdDateUTC: pos\.createdDateUTC \}\)/.test(cq)
+        && /zeitstempelMessen\("kurse", \{ updateTime: snap\.updateTime, updateTimeUTC: snap\.updateTimeUTC \}\)/.test(cq),
+        "sonst misst sie nur eine der beiden Fragen");
+    } finally {
+      console.log = altLog;
+      if (altZs === undefined) delete global.__zeitstempel_gemessen__; else global.__zeitstempel_gemessen__ = altZs;
+    }
+  }
+
   // ══ DIE UNBEKANNT-DIAGNOSE LIEST NUR (21.09.) ═══════════════════════════
   //
   // Sie fragt die Datenbank, warum eine Position mit `stil=UNBEKANNT`

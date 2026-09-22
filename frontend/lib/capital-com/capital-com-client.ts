@@ -2,6 +2,51 @@
 const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
 const LIVE_BASE = "https://api-capital.backend-capital.com/api/v1";
 
+// ── ZEITSTEMPEL DES BROKERS: MESSEN, NICHT RATEN (22.09.) ─────────────────────
+//
+// BEWIESEN, zweimal unabhaengig: `createdDate` einer Position liegt, so wie wir
+// es lesen, ZWEI STUNDEN zu spaet.
+//   18.09.  Telegram-Blase 17:16 MESZ   Log `eroeffnet=…T17:16:13Z` (= 19:16 MESZ)
+//   22.09.  nachregistriert 12:15:48 MESZ, aber `eroeffnet=…T12:14:41Z` (= 14:14 MESZ)
+// Also Ortszeit ohne Zonenangabe, von `new Date()` als UTC gelesen. Das trifft
+// den Zeit-Exit (2 h zu spaet) und nach jedem Neustart die Haltedauer in Python.
+//
+// NICHT BEWIESEN, und deshalb hier gemessen statt vermutet:
+//   * ob Capital.com daneben ein UTC-Feld liefert (`createdDateUTC`) — dieser
+//     Client liest bisher KEIN einziges UTC-Feld;
+//   * ob die Kurszeit `updateTime` denselben Versatz hat. `ageInMinutes()` im
+//     Orchestrator klemmt Zeitstempel aus der Zukunft auf 0 ("Zeitzonen-Drift =
+//     frisch"). Liegt auch sie 2 h daneben, ist die Frische-Pruefung fuer bis
+//     zu zwei Stunden alte Kurse BLIND — sie saehe jeden davon als frisch.
+//
+// Einmal je Prozess und Art, auf `global` (sonst schreibt jede Modulkopie).
+// Reine Ausgabe: an keinem zurueckgegebenen Wert aendert sich etwas.
+declare global {
+  // eslint-disable-next-line no-var
+  var __zeitstempel_gemessen__: { positionen: boolean; kurse: boolean } | undefined;
+}
+export function zeitstempelMessen(art: "positionen" | "kurse", felder: Record<string, unknown>): void {
+  try {
+    const z = (global.__zeitstempel_gemessen__ ??= { positionen: false, kurse: false });
+    if (z[art]) return;
+    z[art] = true;
+    const jetzt = Date.now();
+    const gelesen: Record<string, number> = {};
+    const teile = Object.entries(felder).map(([k, v]) => {
+      const s = v == null ? "" : String(v);
+      const t = s ? Date.parse(s) : NaN;
+      if (Number.isFinite(t)) gelesen[k] = t;
+      const diff = Number.isFinite(t) ? `${((t - jetzt) / 60000).toFixed(1)} min` : "nicht lesbar";
+      return `${k}=${s ? `"${s}"` : "FEHLT"} (als UTC gelesen: ${diff} gegen jetzt)`;
+    });
+    const namen = Object.keys(gelesen);
+    const versatz = namen.length === 2
+      ? ` | Versatz ${namen[0]} − ${namen[1]} = ${((gelesen[namen[0]] - gelesen[namen[1]]) / 60000).toFixed(1)} min`
+      : "";
+    console.log(`[capital-com] 🕐 Zeitstempel roh (${art}, einmal je Prozess): ${teile.join(" | ")}${versatz}`);
+  } catch { /* eine Messung darf nichts stoeren */ }
+}
+
 export interface SessionResult {
   ok: boolean;
   cst?: string;
@@ -214,6 +259,7 @@ export async function capitalGetTopMarkets(
             drops.push(`${symbol}(${epic}): bid=${bid} status=${String(snap.marketStatus ?? "?")}`);
           }
           const meta = INSTRUMENT_META[symbol] ?? { name: symbol, type: "CURRENCIES" };
+          zeitstempelMessen("kurse", { updateTime: snap.updateTime, updateTimeUTC: snap.updateTimeUTC });
           return {
             epic,
             instrumentName: meta.name,
@@ -783,6 +829,7 @@ const positions: OpenPosition[] = (data.positions ?? []).map((p) => {
       const pos = (p.position ?? {}) as Record<string, unknown>;
       const market = (p.market ?? {}) as Record<string, unknown>;
       const epic = String(market.epic ?? "");
+      zeitstempelMessen("positionen", { createdDate: pos.createdDate, createdDateUTC: pos.createdDateUTC });
       return {
         dealId: String(pos.dealId ?? ""),
         epic,
