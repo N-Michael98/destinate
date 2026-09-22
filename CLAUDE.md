@@ -440,6 +440,54 @@ gegen neu gerechnet: 70 000 identisch, 18 anders (ausnahmslos die entarteten
 Eingaben), **null** Änderungen bei gültigen Daten, **null** Fälle mit
 steigendem Risiko.
 
+## Die Zeit des Brokers ist Ortszeit — und eine Zukunft ist nicht „frisch" (22.09.)
+
+Capital.com schickt seine Zeitstempel **ohne Zonenangabe** und liefert **kein
+UTC-Feld**. Gemessen im Betrieb:
+
+```
+19:04:11  updateTime="2026-09-22T19:04:06.857"  (als UTC gelesen: 120.0 min gegen jetzt)
+          updateTimeUTC=FEHLT
+```
+
+Der Kurs war **fünf Sekunden** alt. `new Date()` las die Zeit als UTC und bekam
+zwei Stunden **in der Zukunft**. Getragen hat den Fehler eine einzige Zeile in
+`ageInMinutes()`:
+
+```ts
+return age >= 0 ? Number(age.toFixed(1)) : 0; // Zukunft (Zeitzonen-Drift) = frisch
+```
+
+Damit war das Kurs-Alter `max(0, echt − 120)`:
+
+| echtes Alter | berechnet | Filter (max 30) |
+|---|---|---|
+| 45 min | 0 | **durch — hätte blocken müssen** |
+| 150 min | 30 | **durch** |
+| 151 min | 31 | geblockt |
+
+**Die eingestellten 30 Minuten wirkten wie 150.** Dazu kam der Zeit-Exit 2 h zu
+spät (SCALPING lief 6 statt 4 Stunden) und dieselbe Verschiebung in der
+Python-Haltedauer nach jedem Neustart. Nicht betroffen: Preis-Cache und
+Markt-Gesundheit, die mit unserer eigenen Empfangszeit rechnen.
+
+**Regel:** Jede Broker-Zeit wird **an der Grenze** umgerechnet
+(`brokerZeitNachUtc()` in `capital-com-client.ts`, sieben Stellen). Kein
+Aufrufer weiter innen darf eine rohe Broker-Zeit sehen. Trägt sie schon eine
+Zone, wird sie nur normalisiert; fehlt sie, bleibt sie **leer** — niemals
+`new Date()`.
+
+**Eine Zeitzone, keine festen zwei Stunden.** Am 25.10. endet die Sommerzeit,
+dann sind es 60 Minuten. Dass die Zone wirklich `Europe/Zurich` ist, belegt die
+Messung nur für einen Tag — deshalb prüft `zeitzonenSelbstpruefung()` bei jedem
+Kursabruf nach und meldet als Fehler, wenn ein umgerechneter Kurs in der
+Zukunft liegt.
+
+**Und eine Zukunft wird nicht mehr versteckt:** bis 2 Minuten gilt sie als
+Uhren-Versatz (0), darüber heisst sie **unbekannt** (`null`), und der Filter
+sagt hörbar „Kurs-Alter unbekannt — nicht blockiert, aber ungeprüft". Die
+stille 0 war die Lüge, die den Fehler zwei Monate getragen hat.
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn
