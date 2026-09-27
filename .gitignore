@@ -20,3 +20,21 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+
+# Zugangsdaten (Fund 27.09.)
+# GEMESSEN mit `git check-ignore`, nicht vermutet: geschuetzt waren nur
+# frontend/.env und analysis-engine/.env — ihre eigenen .gitignore decken das
+# ab. NICHT geschuetzt waren `.env` und `.env.local` im Wurzelverzeichnis und
+# `backend/.env`. Dort haette `git add .` sie aufgenommen.
+#
+# Durchgerutscht ist nie etwas (ganze Historie geprueft: eingecheckt ist nur
+# backend/.env.example), und der Pruefer `secrets` haette den Commit ueber den
+# Pre-Commit-Hook gestoppt. Das war aber die ZWEITE Schicht — die erste fehlte.
+#
+# Ohne Schraegstrich greift ein Muster in JEDEM Verzeichnis, also auch in
+# backend/ und in jedem kuenftigen Dienst. Vorlagen bleiben ausgenommen: sie
+# enthalten nur Schluesselnamen und gehoeren ins Repository.
+.env
+.env.*
+!.env.example
+!.env.*.example

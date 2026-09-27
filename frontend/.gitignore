@@ -38,6 +38,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# Vorlagen bleiben sichtbar (27.09.). `.env*` stammt aus der Next.js-Vorlage
+# und faengt auch `.env.local.example` — und weil diese Datei TIEFER liegt als
+# die Wurzel-.gitignore, schlaegt sie deren Ausnahme. Gemessen mit
+# `git check-ignore -v`. Eine Vorlage enthaelt nur Schluesselnamen und gehoert
+# ins Repository; sie still zu verschlucken waere genau die Sorte Falle, die
+# hier niemand sucht.
+!.env*.example
 
 # vercel
 .vercel
