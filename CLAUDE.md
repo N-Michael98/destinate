@@ -543,6 +543,46 @@ unauffällig bleiben (zweiter Versuch nie ausgelöst, Regel gerechnet aber
 ignoriert, Schleife statt einem Nachfragen, Rückfall verschwiegen), werden
 **nur** so gefangen.
 
+### Die Ursache war ein Neustart des Containers — nicht der Code
+
+Nachgereicht aus dem Log von **`divine-warmth`** (dem Dienst selbst, nicht
+`destinate`). Beide Zeitachsen nebeneinander:
+
+| Uhrzeit | wo | was |
+|---|---|---|
+| 21:17:10 | destinate | Scan startet, `Promise.all` feuert TA / Strategien / MTF |
+| **21:17:19** | **divine-warmth** | **`Starting Container`** |
+| **21:17:20** | **divine-warmth** | `Application startup complete` · `Uvicorn running` |
+| 21:17:40 | destinate | `502 Bad Gateway` nach 27 s Wartezeit |
+
+Die Anfrage lief **genau in das Neustartfenster**. Belegt, nicht vermutet:
+dieser Container protokolliert **keine einzige** `/talib/` oder `/strategies/`
+Anfrage vor **21:22:23** — die TA-Lib- und MTF-Aufrufe desselben Zyklus wurden
+also noch von der **vorherigen** Instanz bedient. Deshalb gingen drei von vier
+Anfragen durch und nur eine nicht.
+
+**Zwei Dinge, die daraus folgen:**
+
+1. **Die Wiederholung hätte genau diesen Zyklus gerettet.** Der 502 kam um
+   21:17:40, der Container war seit 21:17:20 bereit — **20 Sekunden vorher**.
+   Der zweite Versuch (502 + 2 s Pause = 21:17:42, Restbudget 31 s) wäre auf
+   einen gesunden Dienst getroffen.
+2. **Die zwei Sekunden Pause sind gemessen, nicht geraten.** Von
+   `Starting Container` bis `Uvicorn running` vergeht **eine** Sekunde. Ein
+   längeres Warten würde hier nichts verbessern.
+
+**Meine Überlast-Vermutung war falsch.** Ich hatte notiert, dass `Promise.all`
+vier gleichzeitige Anfragen gegen einen uvicorn-Prozess ohne `--workers` feuert
+(bis zu 44 Arbeits-Threads). Das ist zwar ein Code-Fakt, aber **nicht** die
+Ursache: seit dem Neustart bedient derselbe Prozess in **jedem** Zyklus 3×
+`talib` + 1× `strategies` fehlerfrei (21:22, 21:27, 21:32, 21:37, 21:42). Die
+Vermutung stand als Vermutung da und ist damit widerlegt — so gehört es.
+
+**Nicht bestimmbar und damit offen:** *warum* der Container um 21:17:19 neu
+startete. Im Log steht davor **kein** Traceback, kein `Killed`, kein
+OOM-Hinweis — nur der Start selbst. Ein einzelner Neustart, danach 25 Minuten
+stabil.
+
 ### Ein Zeichen-Fenster im Prüfer beweist Nähe, nicht Zugehörigkeit
 
 Beim Anbau wurde `prompt-zahlen` rot, obwohl der Code stimmte. Die Prüfung
