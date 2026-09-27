@@ -357,6 +357,102 @@ jedem zustandsändernden Befehl.
 4. `npm run check` erneut, bei kritischen Änderungen zusätzlich `npm run build`
 5. Rot → zurückrollen und erklären, nicht weiterbauen
 
+## Erst zeigen, dann bauen — und wann nicht (27.09.)
+
+Damit nicht jede Kleinigkeit eine Rückfrage braucht und trotzdem nichts
+Teures ohne Zustimmung passiert, gilt eine **Schwelle**:
+
+**Plan zeigen und auf ein ausdrückliches Ja warten** — immer bei:
+- den acht Dateien mit erhöhtem Risiko (Tabelle unten),
+- allem, was eine Order, eine Grösse, einen Stop oder ein Limit berührt,
+- Änderungen an `.env`-Umgebung, Schlüsseln, Rechten oder Deploy-Konfiguration,
+- einem `git push` (er deployt sofort auf das Live-System),
+- dem Entfernen von Code, der heute läuft.
+
+Der Plan nennt: **welche Datei**, **was genau sich ändert**, **was es NICHT
+tut**, und **wie es geprüft wird**.
+
+**Direkt machen und danach zeigen** — bei Prüfern, Sabotage-Nachweisen,
+Logzeilen, Kommentaren, Dokumentation und allem, was `npm run check` selbst
+absichert. Eine Rückfrage zu einem Kommentar kostet mehr, als sie schützt.
+
+**Immer, ohne Ausnahme:** `npm run check` vor **und** nach der Änderung, eine
+Sache auf einmal, und bei Rot zurückrollen statt weiterbauen.
+
+## Wenn etwas bricht: erst stoppen, dann zurückrollen (27.09.)
+
+Git ist hier **nicht** der schnellste Rückweg. Ein Revert plus Railway-Deploy
+braucht Minuten — in denen das System weiterhandelt. Deshalb diese Reihenfolge.
+
+### Schritt 1 — Blutung stoppen (Sekunden)
+
+Es gibt **zwei** Killswitches, und sie tun **nicht dasselbe**. Nachgelesen im
+Code, nicht vermutet:
+
+| | Dashboard: Security Center | Telegram `/killswitch` bzw. `/ks` |
+|---|---|---|
+| Neue Trades | gestoppt | gestoppt |
+| Broker-Verbindung | getrennt, Reconnect gesperrt | getrennt |
+| **Offene Positionen** | **bleiben offen** — `ordersCancelled: 0, // bewusst 0`, geschützt nur durch die Broker-seitigen SL/TP | **werden geschlossen** (`executeFullShutdown`) |
+| Zugang | Anmeldung am Dashboard (JWT über `proxy.ts`) | nur aus der Chat-ID in `TELEGRAM_CHAT_ID`, danach Admin-Passwort (`KILLSWITCH_PASSWORD`), 60 Sekunden Zeitfenster |
+
+**Welchen wann:**
+- Das Programm entscheidet falsch, die offenen Positionen sind in Ordnung →
+  **Dashboard**. Die Positionen behalten ihre Stops beim Broker.
+- Die offenen Positionen sind selbst das Problem → **Telegram `/killswitch`**.
+  Das ist auch der schnellste Weg ohne Laptop.
+
+`/status` zeigt, ob er aktiv ist. Der Zustand liegt auf
+`global.__killswitch_state__` **und** in Redis (`killswitch:state`, 30 Tage);
+`instrumentation.ts:200` stellt ihn beim Start wieder her — **er überlebt
+einen Deploy**. Ein Redeploy ist also kein Reset.
+
+**Voraussetzung, die im Ernstfall zu spät auffällt:** ist
+`KILLSWITCH_PASSWORD` in Railway nicht gesetzt, antwortet der Bot mit
+„KILLSWITCH_PASSWORD nicht in Railway gesetzt" und tut **nichts**
+(`webhook/route.ts:176`). Dasselbe gilt für `TELEGRAM_CHAT_ID`: ist sie leer,
+passt keine Chat-ID, und jede Nachricht wird abgewiesen. Beides gehört
+**einmal im Ruhezustand geprüft** — ein Killswitch, den man erst im Notfall
+testet, ist keiner.
+
+### Schritt 2 — Ursache feststellen, bevor irgendetwas zurückgeht
+
+Railway-Log des betroffenen Dienstes lesen. `destinate` und `divine-warmth`
+sind getrennte Dienste mit getrennten Logs — am 22.09. stand die Ursache
+eines Fehlers ausschliesslich im Log des **anderen** Dienstes.
+
+### Schritt 3 — Zurückrollen
+
+```bash
+git log --oneline -10          # welcher Commit war der letzte gute?
+git revert <hash>              # erzeugt einen NEUEN Commit
+npm run check                  # muss grün sein
+git push                       # Railway deployt automatisch
+```
+
+**`git revert`, nicht `reset` und nicht `checkout <hash>`.** `main` ist
+gepusht und wird deployt: `reset` bräuchte einen Force-Push und würde die
+Historie umschreiben, `checkout <hash>` ergibt einen abgekoppelten HEAD, in
+dem jede weitere Arbeit verlorengeht. Ein Revert ist ein ganz normaler
+Commit — nachvollziehbar und selbst wieder umkehrbar.
+
+Nur **uncommittete** Änderungen verwirft man mit `git checkout -- <datei>`
+(gezielt) oder `git restore .` — beides ist endgültig, vorher `git status`
+lesen.
+
+### Schritt 4 — Erst entsperren, wenn der Fix live ist
+
+`/reset` (Telegram, mit Passwort) oder der Reset-Knopf im Security Center.
+Vorher prüfen, dass der neue Deploy wirklich läuft — eine Deploy-Kennung ist
+**kein** Commit-Hash (siehe Zeitstempel-Abgleich).
+
+### Was NICHT hilft
+
+`git add .` — es nimmt auch unbekannte neue Dateien auf. Besser `git status`
+lesen und dann `git add -A`. Seit dem 27.09. fängt `.gitignore` jede `.env`
+in jedem Verzeichnis, und der Prüfer `secrets` erzwingt das; davor war genau
+das die Lücke.
+
 ## Dateien mit erhöhtem Risiko
 
 Änderungen hier können Geld kosten. Nicht ohne ausdrückliche Zustimmung anfassen,
