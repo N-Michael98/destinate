@@ -584,6 +584,33 @@ Uhren-Versatz (0), darüber heisst sie **unbekannt** (`null`), und der Filter
 sagt hörbar „Kurs-Alter unbekannt — nicht blockiert, aber ungeprüft". Die
 stille 0 war die Lüge, die den Fehler zwei Monate getragen hat.
 
+### Dieselbe Falle in der ANZEIGE — und warum sie lokal unsichtbar ist (27.09.)
+
+Auf `/status` antwortete der Telegram-Bot mit „27.9.2026, **12:48:11**".
+Telegram zeigte dieselbe Nachricht um **14:48**. Zwei Stunden.
+
+`toLocaleString("de-CH")` **ohne** `timeZone` formatiert in der Zeitzone des
+**Prozesses**. `TZ` ist nirgends gesetzt, auf Railway ist das UTC. Vier
+Stellen in `telegram-sender.ts` gaben die Zone mit, **dreizehn** andere nicht
+— im selben Chat standen damit zwei verschiedene Zeiten für denselben Moment.
+
+**Warum es lokal nicht auffällt:** auf einem Rechner, der ohnehin in Zürich
+steht, liefern beide Formen **dasselbe**. Ein Vergleich im laufenden Prozess
+wäre grün gewesen, egal ob die Zone mitgegeben wird. Der einzige Beleg war
+die Differenz im Screenshot.
+
+Deshalb läuft die Prüfung in `safety-nets` in einem **Kindprozess mit
+`TZ=UTC`** — so wie Railway. Nachgerechnet werden Sommer (14:48 MESZ), Winter
+(13:48 MEZ, die Umstellung am 25.10. greift von selbst) und der Tageswechsel
+(22:30 UTC ist in Zürich schon der nächste Tag). Alle 17 Stellen gehen jetzt
+über `telegramZeit()` / `telegramDatum()`, und ein nacktes `toLocale…` im
+Telegram-Weg wird rot.
+
+Von fünf Sabotagen ist die zweite die lehrreichste: ein **fester Versatz von
+zwei Stunden** statt der Zeitzone. Das sieht richtig aus und stimmt bis zum
+25.10. — genau die Falle, die beim Broker-Fix fünf Tage vorher vermieden
+wurde.
+
 ## Eine Stufe ohne eigene Zahl verschwindet aus der Bilanz (22.09.)
 
 Zum **zweiten Mal** dieselbe Fehlerklasse, zwei Tage nach dem ersten Fund.

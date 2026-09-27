@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { sendTelegram } from "@/lib/telegram-notifications/telegram-sender";
+import { sendTelegram, telegramZeit, telegramDatum } from "@/lib/telegram-notifications/telegram-sender";
 import { triggerKillswitch, resetKillswitch, getKillswitchReport } from "@/lib/killswitch";
 
 const ALLOWED_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
 Jemand hat versucht, den Bot zu bedienen.
 Chat-ID: <code>${chatId}</code>
 Text: <code>${text.slice(0, 50)}</code>
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${telegramZeit()}`
       );
       await reply(chatId, "⛔ Nicht autorisiert. Dieser Vorfall wurde gemeldet.");
       return NextResponse.json({ ok: true });
@@ -186,7 +186,7 @@ Text: <code>${text.slice(0, 50)}</code>
 
 Jemand hat versucht, den Kill Switch mit falschem Passwort auszulösen.
 Eingabe: <code>${text.slice(0, 20)}***</code>
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${telegramZeit()}`
         );
         await reply(chatId, "❌ Falsches Passwort. Kill Switch verweigert. Sicherheitsalert gesendet.");
         return NextResponse.json({ ok: true });
@@ -200,7 +200,7 @@ Eingabe: <code>${text.slice(0, 20)}***</code>
         await unblockIP(ipToUnblock);
         await whitelistIP(ipToUnblock, "Auto-Whitelist nach /unblock");
         await reply(chatId, `✅ IP <code>${ipToUnblock}</code> freigeschaltet + auf Whitelist.\n\n🛡 Watchdog wird diese IP nicht mehr automatisch sperren.`);
-        await sendTelegram(`🔓 <b>IP freigegeben + Whitelist</b>\n\nIP: <code>${ipToUnblock}</code>\nFreigegeben von: ${name}\n🛡 Auf Whitelist — kein Auto-Block mehr\n🕐 ${new Date().toLocaleString("de-CH")}`);
+        await sendTelegram(`🔓 <b>IP freigegeben + Whitelist</b>\n\nIP: <code>${ipToUnblock}</code>\nFreigegeben von: ${name}\n🛡 Auf Whitelist — kein Auto-Block mehr\n🕐 ${telegramZeit()}`);
       } else if (pending.action.startsWith("apply:")) {
         const symbolToApply = pending.action.split(":")[1];
         const { applyOverride } = await import("@/lib/analysis-engine/overrides-store");
@@ -225,19 +225,19 @@ Eingabe: <code>${text.slice(0, 20)}***</code>
         const { blockIP } = await import("@/lib/security-watchdog/ip-blocklist");
         await blockIP(ipToBlock, `Manuell geblockt von Admin via Telegram`, true);
         await reply(chatId, `🚫 IP <code>${ipToBlock}</code> wurde PERMANENT gesperrt.`);
-        await sendTelegram(`🚫 <b>IP manuell gesperrt</b>\n\nIP: <code>${ipToBlock}</code>\nGesperrt von: ${name} (PERMANENT)\n🕐 ${new Date().toLocaleString("de-CH")}`);
+        await sendTelegram(`🚫 <b>IP manuell gesperrt</b>\n\nIP: <code>${ipToBlock}</code>\nGesperrt von: ${name} (PERMANENT)\n🕐 ${telegramZeit()}`);
       } else if (pending.action.startsWith("trust:")) {
         const ipToTrust = pending.action.split(":")[1];
         const { whitelistIP } = await import("@/lib/security-watchdog/ip-blocklist");
         await whitelistIP(ipToTrust, `Manuell vertraut von Admin via Telegram`);
         await reply(chatId, `🛡 IP <code>${ipToTrust}</code> auf Whitelist.\n\nWatchdog wird diese IP nie automatisch sperren.`);
-        await sendTelegram(`🛡 <b>IP auf Whitelist</b>\n\nIP: <code>${ipToTrust}</code>\nHinzugefügt von: ${name}\n🕐 ${new Date().toLocaleString("de-CH")}`);
+        await sendTelegram(`🛡 <b>IP auf Whitelist</b>\n\nIP: <code>${ipToTrust}</code>\nHinzugefügt von: ${name}\n🕐 ${telegramZeit()}`);
       } else if (pending.action.startsWith("untrust:")) {
         const ipToUntrust = pending.action.split(":")[1];
         const { unwhitelistIP } = await import("@/lib/security-watchdog/ip-blocklist");
         await unwhitelistIP(ipToUntrust);
         await reply(chatId, `⚠️ IP <code>${ipToUntrust}</code> von Whitelist entfernt.\n\nWatchdog kann diese IP jetzt wieder automatisch sperren.`);
-        await sendTelegram(`⚠️ <b>IP von Whitelist entfernt</b>\n\nIP: <code>${ipToUntrust}</code>\nEntfernt von: ${name}\n🕐 ${new Date().toLocaleString("de-CH")}`);
+        await sendTelegram(`⚠️ <b>IP von Whitelist entfernt</b>\n\nIP: <code>${ipToUntrust}</code>\nEntfernt von: ${name}\n🕐 ${telegramZeit()}`);
       } else if (pending.action === "reset") {
         // Execute full system restart
         await reply(chatId, "🔄 Passwort korrekt. Starte System neu...");
@@ -252,7 +252,7 @@ ${log.map(l => `• ${l}`).join("\n")}
 
 🟢 System ist ONLINE
 📈 Trading wieder aktiv
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${telegramZeit()}`
         );
       } else {
         // Execute full shutdown
@@ -268,7 +268,7 @@ ${log.map(l => `• ${l}`).join("\n")}
 
 🔴 System ist OFFLINE
 ⛔ Alle Ausführungen blockiert
-🕐 ${new Date().toLocaleString("de-CH")}
+🕐 ${telegramZeit()}
 
 Um das System zu reaktivieren: /reset + Admin-Passwort`
         );
@@ -327,7 +327,7 @@ Gib dein <b>Admin-Passwort</b> ein um das System zu reaktivieren (60 Sekunden):`
 
 Kill Switch: ${ks.triggered ? "AKTIV 🚨" : "Armed ✅"}
 System: ${ks.systemLocked ? "OFFLINE 🔴" : "ONLINE 🟢"}
-🕐 ${new Date().toLocaleString("de-CH")}
+🕐 ${telegramZeit()}
 
 Befehle:
 /killswitch — Vollständiger Shutdown (Passwort erforderlich)
@@ -376,7 +376,7 @@ Befehle:
         await reply(chatId, "✅ Keine IPs geblockt.");
       } else {
         const lines = list.map(e =>
-          `${e.permanent ? "🔴 PERMANENT" : "⏱ 72h"} <code>${e.ip}</code>\n   ${e.reason.slice(0, 60)}\n   Seit: ${new Date(e.blockedAt).toLocaleString("de-CH")}`
+          `${e.permanent ? "🔴 PERMANENT" : "⏱ 72h"} <code>${e.ip}</code>\n   ${e.reason.slice(0, 60)}\n   Seit: ${telegramZeit(new Date(e.blockedAt))}`
         ).join("\n\n");
         await reply(chatId, `🚫 <b>Geblockte IPs (${list.length}):</b>\n\n${lines}`);
       }
@@ -452,7 +452,7 @@ Befehle:
         lines.push("✅ <b>Aktive Overrides:</b>");
         for (const sym of appliedKeys) {
           const o = applied[sym];
-          lines.push(`• ${sym}: ${o.strategy} als ${o.style} (seit ${new Date(o.appliedAt).toLocaleDateString("de-CH")})`);
+          lines.push(`• ${sym}: ${o.strategy} als ${o.style} (seit ${telegramDatum(new Date(o.appliedAt))})`);
         }
         lines.push("Entfernen: /unapply SYMBOL");
       }
@@ -489,7 +489,7 @@ Befehle:
         await reply(chatId, "ℹ️ Keine IPs auf der Whitelist.");
       } else {
         const lines = list.map(e =>
-          `🛡 <code>${e.ip}</code>\n   ${e.reason}\n   Seit: ${new Date(e.addedAt).toLocaleString("de-CH")}`
+          `🛡 <code>${e.ip}</code>\n   ${e.reason}\n   Seit: ${telegramZeit(new Date(e.addedAt))}`
         ).join("\n\n");
         await reply(chatId, `🛡 <b>Whitelist (${list.length} IPs):</b>\n\n${lines}`);
       }

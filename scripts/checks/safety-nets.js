@@ -9,7 +9,8 @@
 // Quelltext, nicht das Laufzeitverhalten.
 const fs = require("fs");
 const path = require("path");
-const { read, ladeTsModul, objectBlock } = require("./_lib");
+const { read, ladeTsModul, objectBlock, ROOT } = require("./_lib");
+const { execFileSync } = require("child_process");
 
 /** Benutzt ein Prüfer die naive Kommentar-Entfernung ohne URL-Schutz?
  *
@@ -2737,6 +2738,75 @@ module.exports = async function pruefe() {
         torPruefung("die Ausfall-Meldung nennt die Folge nicht",
           strategienBlock !== "" && /dieser Zyklus handelt NICHT/.test(strategienBlock),
           `ein 502 kostet alle 30 Maerkte, nicht nur eines${warumS}`);
+      }
+
+      // ── TELEGRAM-ZEITEN, GERECHNET IN EINEM UTC-PROZESS (27.09.) ────────
+      //
+      // ANLASS: auf `/status` antwortete der Bot mit „27.9.2026, 12:48:11" —
+      // Telegram zeigte dieselbe Nachricht um 14:48. Zwei Stunden, genau der
+      // Sommerzeit-Versatz. `toLocaleString("de-CH")` ohne `timeZone`
+      // formatiert in der Zeitzone des PROZESSES, und auf Railway ist das UTC.
+      // Vier Stellen gaben die Zone mit, dreizehn nicht — zwei verschiedene
+      // Zeiten fuer denselben Moment, im selben Chat.
+      //
+      // WARUM EIN KINDPROZESS. Auf einem Rechner, der ohnehin in Zuerich
+      // steht, liefern beide Formen dasselbe. Ein Test im laufenden Prozess
+      // waere also gruen, egal ob die Zone mitgegeben wird — ein Pruefer, der
+      // den echten Fehler gar nicht ausdruecken kann. Deshalb laeuft die
+      // Rechnung mit TZ=UTC in einem eigenen Prozess.
+      {
+        const kind = `
+          const { ladeTsModul } = require(${JSON.stringify(path.join(ROOT, "scripts", "checks", "_lib.js"))});
+          const m = ladeTsModul("lib/telegram-notifications/telegram-sender.ts");
+          const z = m.exports && m.exports.telegramZeit;
+          const d = m.exports && m.exports.telegramDatum;
+          console.log(JSON.stringify({
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            fehler: m.fehler || null,
+            sommer: typeof z === "function" ? z(new Date("2026-09-27T12:48:11Z")) : null,
+            winter: typeof z === "function" ? z(new Date("2026-12-01T12:48:11Z")) : null,
+            datum:  typeof d === "function" ? d(new Date("2026-09-27T22:30:00Z")) : null,
+          }));
+        `;
+        let r = null, warumT = "";
+        try {
+          const aus = execFileSync(process.execPath, ["-e", kind], {
+            env: { ...process.env, TZ: "UTC" }, encoding: "utf8", cwd: ROOT,
+          });
+          r = JSON.parse(aus.trim().split("\n").pop());
+        } catch (e) { warumT = ` [Pruefstand: ${String(e.message).slice(0, 120)}]`; }
+
+        torPruefung("der Zeit-Pruefstand laeuft nicht in UTC — er koennte den Fehler gar nicht sehen",
+          r !== null && r.tz === "UTC", `${r ? r.tz : "kein Ergebnis"}${warumT}`);
+        torPruefung("telegramZeit gibt im Sommer die UTC-Zeit statt der Zuericher aus",
+          r !== null && r.sommer === "27.9.2026, 14:48:11 MESZ",
+          `${r ? r.sommer : "—"} (erwartet 14:48:11 MESZ; 12:48 waere genau der Fehler vom 27.09.)`);
+        torPruefung("die Winterzeit wird nicht mitgezogen",
+          r !== null && r.winter === "1.12.2026, 13:48:11 MEZ",
+          `${r ? r.winter : "—"} (ab 25.10. ist der Versatz 1 h, nicht 2)`);
+        // Ein reines Datum ohne Zone kippt am Abend auf den falschen Tag —
+        // 22:30 UTC ist in Zuerich schon der naechste.
+        torPruefung("ein Tagesdatum kippt am Abend auf den falschen Tag",
+          r !== null && r.datum === "28.9.2026",
+          `${r ? r.datum : "—"} (22:30 UTC ist in Zuerich der 28.)`);
+
+        // Und strukturell: keine nackte Zeit-Formatierung mehr im Telegram-Weg.
+        // Sonst faellt der naechste neue Aufruf wieder in dieselbe Falle.
+        const telegramDateien = [
+          "frontend/app/api/telegram/webhook/route.ts",
+          "frontend/app/api/telegram/test/route.ts",
+          "frontend/lib/telegram-notifications/telegram-sender.ts",
+        ];
+        const nackt = [];
+        for (const f of telegramDateien) {
+          const quell = read(f).replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+          for (const m of quell.matchAll(/\.toLocale(String|DateString|TimeString)\(([^)]*)\)/g)) {
+            if (!/timeZone/.test(m[2])) nackt.push(`${f}: .toLocale${m[1]}(${m[2].slice(0, 40)})`);
+          }
+        }
+        torPruefung("eine Telegram-Zeit wird wieder ohne Zonenangabe formatiert",
+          nackt.length === 0,
+          nackt.length ? `${nackt.length} Stelle(n): ${nackt[0]}` : "alle ueber telegramZeit/telegramDatum");
       }
 
       // ── WANN EIN ZWEITER VERSUCH ETWAS BRINGT — GERECHNET (22.09.) ───────

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { sendTelegram, isTelegramConfigured } from "@/lib/telegram-notifications/telegram-sender";
+import { sendTelegram, isTelegramConfigured, telegramZeit } from "@/lib/telegram-notifications/telegram-sender";
 
 export async function POST() {
   if (!isTelegramConfigured()) {
@@ -11,7 +11,7 @@ export async function POST() {
 
 🤖 AI Trading System läuft
 📊 Capital.com + IC Markets aktiv
-🕐 ${new Date().toLocaleString("de-CH")}
+🕐 ${telegramZeit()}
 
 Ich benachrichtige dich bei:
 • 📈 Trade ausgeführt

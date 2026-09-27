@@ -10,6 +10,41 @@ export function isTelegramConfigured(): boolean {
   return BOT_TOKEN.length > 10 && CHAT_ID.length > 3;
 }
 
+/**
+ * Zeitstempel für JEDE Telegram-Nachricht (27.09.).
+ *
+ * ── DER FEHLER, GEMESSEN AM SCREENSHOT ──────────────────────────────────
+ * Auf `/status` antwortete der Bot mit „27.9.2026, 12:48:11" — Telegram
+ * zeigte dieselbe Nachricht um **14:48**. Zwei Stunden Unterschied, genau
+ * der Sommerzeit-Versatz Zürichs.
+ *
+ * `toLocaleString("de-CH")` OHNE `timeZone` formatiert in der Zeitzone des
+ * PROZESSES. Auf Railway ist das UTC (`TZ` ist nirgends gesetzt). Vier
+ * Stellen in dieser Datei gaben die Zone mit, die zwölf im Webhook und eine
+ * im Test nicht — im selben Chat standen damit zwei verschiedene Zeiten für
+ * denselben Moment.
+ *
+ * ── WARUM ES LOKAL NICHT AUFFÄLLT ───────────────────────────────────────
+ * Auf einem Rechner, der ohnehin in Zürich steht, liefern beide Varianten
+ * dasselbe. Ein lokaler Vergleich hätte „alles in Ordnung" gemeldet. Der
+ * einzige Beleg war die Differenz im Screenshot.
+ *
+ * Die Zone steht deshalb AUSGESCHRIEBEN dabei (MEZ/MESZ, wechselt am 25.10.
+ * von selbst). Eine Zeit ohne Zonenangabe ist genau die Falle, die dieses
+ * Projekt am 22.09. zwei Monate lang getragen hat — dort beim Broker, hier
+ * in der Anzeige.
+ */
+export const BERICHT_ZONE = "Europe/Zurich";
+
+export function telegramZeit(d: Date = new Date()): string {
+  return d.toLocaleString("de-CH", { timeZone: BERICHT_ZONE, timeZoneName: "short" });
+}
+
+/** Nur das Datum — für Tages-Zusammenfassungen. */
+export function telegramDatum(d: Date = new Date()): string {
+  return d.toLocaleDateString("de-CH", { timeZone: BERICHT_ZONE });
+}
+
 export async function sendTelegram(text: string): Promise<boolean> {
   if (!isTelegramConfigured()) return false;
   try {
@@ -52,7 +87,7 @@ ${dir} <b>${params.symbol}</b>
 ✅ TP: ${params.takeProfit}
 ⚖️ R:R = 1:${rr}
 🤖 Confidence: ${params.confidence}%
-🕐 ${new Date().toLocaleString("de-CH", { timeZone: "Europe/Zurich" })}`
+🕐 ${telegramZeit()}`
   );
 }
 
@@ -74,7 +109,7 @@ export async function notifyTradeClosed(params: {
 📉 ${params.symbol} ${dir}
 🏦 Broker: ${params.broker}
 💰 P&L: <b>${plSign}${params.profitLoss.toFixed(2)} ${params.currency}</b>
-🕐 ${new Date().toLocaleString("de-CH", { timeZone: "Europe/Zurich" })}`
+🕐 ${telegramZeit()}`
   );
 }
 
@@ -90,7 +125,7 @@ export async function notifyBreakeven(params: {
 ${params.symbol} ${params.direction}
 🏦 Broker: ${params.broker}
 📍 SL → Entry: ${params.entry}
-🕐 ${new Date().toLocaleString("de-CH", { timeZone: "Europe/Zurich" })}`
+🕐 ${telegramZeit()}`
   );
 }
 
@@ -112,6 +147,6 @@ export async function notifyDailySummary(params: {
 ✅ Wins: ${params.wins} | ❌ Losses: ${params.losses}
 🎯 Win Rate: ${params.winRate.toFixed(0)}%
 💰 Gesamt P&L: <b>${plSign}${params.totalPnL.toFixed(2)} ${params.currency}</b>
-🕐 ${new Date().toLocaleDateString("de-CH", { timeZone: "Europe/Zurich" })}`
+🕐 ${telegramDatum()}`
   );
 }
