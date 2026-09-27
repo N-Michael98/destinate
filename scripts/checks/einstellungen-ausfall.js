@@ -57,7 +57,7 @@ module.exports = async function pruefe() {
 
   const modul = ladeTsModul("lib/settings/settings-store.ts", {
     prisma: { getPrisma: () => dbStub },
-    "telegram-sender": { sendTelegram: async () => { telegramMeldungen++; } },
+    "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async () => { telegramMeldungen++; } },
   });
   if (modul.fehler) {
     return { titel: "Einstellungen bei DB-Ausfall", funde: [modul.fehler] };
@@ -145,7 +145,7 @@ module.exports = async function pruefe() {
     const leer = { ...dbStub, $queryRaw: () => Promise.resolve([]) };
     const m2 = ladeTsModul("lib/settings/settings-store.ts", {
       prisma: { getPrisma: () => leer },
-      "telegram-sender": { sendTelegram: async () => { telegramMeldungen++; } },
+      "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async () => { telegramMeldungen++; } },
     });
     if (!m2.fehler) {
       const e = await m2.exports.getSettings();
@@ -193,7 +193,7 @@ module.exports = async function pruefe() {
     };
     const m3 = ladeTsModul("lib/settings/settings-store.ts", {
       prisma: { getPrisma: () => wStub },
-      "telegram-sender": { sendTelegram: async () => {} },
+      "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async () => {} },
     });
     if (m3.fehler) {
       funde.push(`Schreibpfad nicht ladbar: ${m3.fehler}`);
@@ -294,7 +294,7 @@ module.exports = async function pruefe() {
     };
     const mAI = ladeTsModul("lib/ai-config/ai-config-store.ts", {
       prisma: { getPrisma: () => aiStub },
-      "telegram-sender": { sendTelegram: async () => {} },
+      "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async () => {} },
     });
     if (mAI.fehler) {
       funde.push(`ai-config-store nicht ladbar: ${mAI.fehler}`);

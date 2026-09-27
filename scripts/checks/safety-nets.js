@@ -9,7 +9,7 @@
 // Quelltext, nicht das Laufzeitverhalten.
 const fs = require("fs");
 const path = require("path");
-const { read, ladeTsModul, objectBlock, ROOT } = require("./_lib");
+const { read, ladeTsModul, objectBlock, ROOT, sourceFiles } = require("./_lib");
 const { execFileSync } = require("child_process");
 
 /** Benutzt ein Prüfer die naive Kommentar-Entfernung ohne URL-Schutz?
@@ -1100,7 +1100,7 @@ module.exports = async function pruefe() {
           cacheGet: async (k) => (k in speicher2 ? speicher2[k] : null),
           cacheSet: async (k, v) => { speicher2[k] = v; return true; },
         },
-        "telegram-sender": { sendTelegram: async (t) => { gesendet.push(t); } },
+        "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async (t) => { gesendet.push(t); } },
       });
       const d1 = bauDD();
       if (d1.fehler || typeof d1.exports.checkTotalDrawdownLimit !== "function") {
@@ -1867,7 +1867,7 @@ module.exports = async function pruefe() {
         cacheGet: async (k) => (speicher.has(k) ? JSON.parse(speicher.get(k)) : null),
         cacheSet: async (k, v) => { speicher.set(k, JSON.stringify(v)); },
       },
-      "telegram-sender": { sendTelegram: async (t) => { gesendet.push(t); return true; } },
+      "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async (t) => { gesendet.push(t); return true; } },
     });
     try {
       if (bilanzModul.fehler) {
@@ -2186,6 +2186,8 @@ module.exports = async function pruefe() {
         "agent-bus": busModul.exports,
         "telegram-notifications/telegram-sender": {
           sendTelegram: async (m) => { alarme.push(String(m)); return true; },
+          telegramZeit: () => "27.9.2026, 14:48:11 MESZ",
+          telegramDatum: () => "27.9.2026",
         },
       };
       const d1 = ladeTsModul("lib/agents/diagnostics-agent.ts", ersatz);
@@ -2790,23 +2792,41 @@ module.exports = async function pruefe() {
           r !== null && r.datum === "28.9.2026",
           `${r ? r.datum : "—"} (22:30 UTC ist in Zuerich der 28.)`);
 
-        // Und strukturell: keine nackte Zeit-Formatierung mehr im Telegram-Weg.
-        // Sonst faellt der naechste neue Aufruf wieder in dieselbe Falle.
-        const telegramDateien = [
-          "frontend/app/api/telegram/webhook/route.ts",
-          "frontend/app/api/telegram/test/route.ts",
-          "frontend/lib/telegram-notifications/telegram-sender.ts",
-        ];
+        // ── UND ZWAR IN JEDEM MODUL, DAS TELEGRAM SCHICKT ─────────────────
+        //
+        // Die erste Fassung hielt eine feste Liste aus DREI Dateien — und
+        // uebersah damit, dass 19 Module Telegram senden und sechs davon
+        // Zeiten formatieren. Gefunden wurden so nur 17 von 25 Stellen; acht
+        // blieben in claude-watchdog.ts, trade-filters.ts und der
+        // security-center-Route stehen.
+        //
+        // Das ist DIESELBE Lehre wie bei der .gitignore-Deckung am selben
+        // Tag: eine feste Pfadliste veraltet in dem Moment, in dem jemand ein
+        // neues Modul anlegt. Gesucht wird deshalb dynamisch nach dem, was
+        // die Datei TUT — schickt sie Telegram?
+        //
+        // AUSGENOMMEN sind Dateien mit `"use client"`: die laufen im Browser
+        // des Betrachters, und dort ist die Zone des Betrachters genau die
+        // richtige. `SettingsDashboard.tsx` waere sonst faelschlich rot.
+        const sendet = /sendTelegram|sendTelegramMessage|api\.telegram\.org|notifyTrade|notifyBreakeven|notifyDailySummary/;
         const nackt = [];
-        for (const f of telegramDateien) {
-          const quell = read(f).replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+        let geprueft = 0;
+        for (const f of sourceFiles([".ts", ".tsx"])) {
+          if (!f.startsWith("frontend/")) continue;
+          const roh = read(f);
+          if (!sendet.test(roh)) continue;
+          if (/^\s*["']use client["']/m.test(roh.slice(0, 200))) continue;   // Browser
+          geprueft++;
+          const quell = roh.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
           for (const m of quell.matchAll(/\.toLocale(String|DateString|TimeString)\(([^)]*)\)/g)) {
             if (!/timeZone/.test(m[2])) nackt.push(`${f}: .toLocale${m[1]}(${m[2].slice(0, 40)})`);
           }
         }
-        torPruefung("eine Telegram-Zeit wird wieder ohne Zonenangabe formatiert",
+        torPruefung("es wird gar kein Telegram-Modul geprueft — der Riegel greift ins Leere",
+          geprueft >= 10, `${geprueft} Module mit Telegram-Versand gefunden`);
+        torPruefung("eine Telegram-Zeit wird ohne Zonenangabe formatiert",
           nackt.length === 0,
-          nackt.length ? `${nackt.length} Stelle(n): ${nackt[0]}` : "alle ueber telegramZeit/telegramDatum");
+          nackt.length ? `${nackt.length} Stelle(n), z.B. ${nackt[0]}` : `${geprueft} Module geprueft, alle mit Zone`);
       }
 
       // ── WANN EIN ZWEITER VERSUCH ETWAS BRINGT — GERECHNET (22.09.) ───────

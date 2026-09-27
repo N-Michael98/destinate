@@ -7,6 +7,7 @@ import {
   sendTelegramMessage,
 } from "../../../../lib/telegram-notifications";
 import type { TelegramChannel, TelegramMessagePriority } from "../../../../lib/telegram-notifications";
+import { telegramZeit } from "../../../../lib/telegram-notifications/telegram-sender";
 
 export async function GET() {
   const report = getTelegramReport();
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     const priority: TelegramMessagePriority = body.priority ?? "NORMAL";
     const result = await sendTelegramMessage(
       channel,
-      `✅ Test message from AI Trading System Security Center.\nChannel: ${channel}\nTime: ${new Date().toLocaleString()}`,
+      `✅ Test message from AI Trading System Security Center.\nChannel: ${channel}\nTime: ${telegramZeit()}`,
       priority,
       "Security Center Test"
     );

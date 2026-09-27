@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 455 · Kanten: 1000
+Dateien mit internen Abhängigkeiten: 455 · Kanten: 1001
 
 
 ## analysis-engine/api
@@ -502,6 +502,7 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 1000
   - → `frontend/lib/security-center/index.ts`
 - `frontend/app/api/security-center/telegram/route.ts`
   - → `frontend/lib/telegram-notifications/index.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/app/api/security/log-event/route.ts`
   - → `frontend/lib/security-watchdog/security-event-logger.ts`
 - `frontend/app/api/settings/route.ts`
@@ -1514,10 +1515,10 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 1000
 - `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 21 Dateien
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
+- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 16 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 15 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 15 Dateien
-- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 12 Dateien

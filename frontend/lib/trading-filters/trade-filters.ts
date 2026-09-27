@@ -195,7 +195,12 @@ export async function checkWeeklyLossLimit(
       if (!stored.alerted) {
         await cacheSet(key, { balance: stored.balance, alerted: true }, 8 * 24 * 60 * 60);
         try {
-          const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+          // `telegramZeit` statt `new Date().toLocaleString("de-CH")` (27.09.):
+          // ohne `timeZone` formatiert Node in der Zone des PROZESSES, und auf
+          // Railway ist das UTC. Diese Meldung sagt "keine neuen Trades bis
+          // Montag" — dann muss die Uhrzeit darunter stimmen. Derselbe
+          // bestehende Import, kein neuer Pfad in der System-Karte.
+          const { sendTelegram, telegramZeit } = await import("../telegram-notifications/telegram-sender");
           await sendTelegram(
 `🛑 <b>WOCHEN-DRAWDOWN-SCHUTZ AKTIV</b>
 
@@ -205,7 +210,7 @@ Aktuelle Balance: ${currentBalance.toFixed(2)}
 
 ⛔ Keine neuen Trades bis Montag.
 ✅ Offene Positionen werden weiter verwaltet (BE/Trail/TP).
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${telegramZeit()}`
           );
         } catch { /* non-fatal */ }
       }
@@ -304,7 +309,8 @@ export async function checkTotalDrawdownLimit(
       if (!stored?.alerted) {
         await cacheSet(KEY, { peak, alerted: true }, TTL);
         try {
-          const { sendTelegram } = await import("../telegram-notifications/telegram-sender");
+          // Siehe die Begruendung beim Wochen-Drawdown oben (27.09.).
+          const { sendTelegram, telegramZeit } = await import("../telegram-notifications/telegram-sender");
           const noetigerStand = peak * (1 - maxTotalDrawdownPct / 100);
           await sendTelegram(
 `🛑 <b>GESAMT-DRAWDOWN-SCHUTZ AKTIV — ALLE neuen Trades gesperrt</b>
@@ -324,7 +330,7 @@ Zwei Auswege:
 • Kontostand über ${noetigerStand.toFixed(2)} bringen
 • "Max Total Drawdown (%)" in den Einstellungen über ${ddPct.toFixed(1)}% setzen
 
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${telegramZeit()}`
           );
         } catch { /* non-fatal */ }
       }

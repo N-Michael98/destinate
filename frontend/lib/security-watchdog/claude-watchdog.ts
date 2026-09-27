@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { leseSicherheitsereignisse, entferneAnalysierte } from "./security-event-logger";
 import { blockIP } from "./ip-blocklist";
 import { triggerKillswitch } from "@/lib/killswitch";
-import { sendTelegram } from "@/lib/telegram-notifications/telegram-sender";
+import { sendTelegram, telegramZeit } from "@/lib/telegram-notifications/telegram-sender";
 import { meldeAIGateAusfall } from "@/lib/ai-gate/ai-gate-alert";
 import { cacheGet, cacheSet, cacheDel } from "@/lib/cache/redis-cache";
 
@@ -234,7 +234,7 @@ Respond ONLY with the JSON object, nothing else.`;
 ${result.summary}
 🔵 IP <code>${attackIP}</code> ist auf der Whitelist — kein Auto-Block.
 Events analyzed: ${result.eventCount}
-🕐 ${new Date().toLocaleString("de-CH")}
+🕐 ${telegramZeit()}
 
 <i>Falls dies ein echter Angriff ist: /untrust ${attackIP} dann /block ${attackIP}</i>`
         );
@@ -278,7 +278,7 @@ Events analyzed: ${result.eventCount}
 ✅ <b>Trading läuft weiter.</b>
 <i>Sieht der nächste Zyklus (in ~3 min) wieder so aus, löst der Killswitch aus.
 Einzelne Scanner-Wellen stoppen den Handel damit nicht mehr.</i>
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${telegramZeit()}`
           );
         } else {
           await koordiniertVergessen();
@@ -294,7 +294,7 @@ Events analyzed: ${result.eventCount}
 
 ✅ <b>Trading läuft normal weiter</b> — Angreifer ist ausgesperrt.
 <i>Killswitch nur bei Eskalation (Block umgangen, oder ≥5 IPs in zwei Zyklen in Folge).</i>
-🕐 ${new Date().toLocaleString("de-CH")}`
+🕐 ${telegramZeit()}`
           );
         }
       }
@@ -318,7 +318,7 @@ Events analyzed: ${result.eventCount}
 ${result.summary}
 ${topIP ? `🔍 Haupt-IP: <code>${topIP[0]}</code> (${topIP[1]} Events)${topIP[1] >= 5 ? " — <b>AUTO-GEBLOCKT 72h</b>" : ""}` : ""}
 Events in window: ${result.eventCount}
-🕐 ${new Date().toLocaleString("de-CH")}
+🕐 ${telegramZeit()}
 
 <i>Watching closely. If escalates, auto-killswitch will trigger.</i>`
       );
@@ -368,7 +368,7 @@ Events analyzed: ${result.eventCount}
 • Trading execution blocked
 • System locked down
 
-🕐 ${new Date().toLocaleString("de-CH")}
+🕐 ${telegramZeit()}
 
 To restart after investigation: /reset (Passwort erforderlich)`
   ).catch(() => {}); // never let telegram failure prevent killswitch
