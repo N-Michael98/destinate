@@ -440,6 +440,47 @@ Nur **uncommittete** Änderungen verwirft man mit `git checkout -- <datei>`
 (gezielt) oder `git restore .` — beides ist endgültig, vorher `git status`
 lesen.
 
+### Am 27.09. live geprüft — und dabei zwei falsche Texte gefunden
+
+Der Notaus wurde einmal im Ruhezustand ausgelöst und zurückgesetzt
+(19:12:10 → 19:12:45). **Er funktioniert**, `KILLSWITCH_PASSWORD` ist gesetzt,
+und `/reset` reicht. Drei Belege aus dem Log:
+
+```
+19:12:41  [position-monitor] 🔴 Killswitch aktiv — Zyklus übersprungen
+19:12:44  [killswitch]       🟢 ZURÜCKGESETZT — Trading wieder freigegeben
+19:14:45  [position-monitor] 2min Zyklus gestartet
+```
+
+Dabei fielen zwei `details`-Texte auf, die etwas behaupteten, das der Code
+nicht tut — beide korrigiert und jetzt durch `safety-nets` an das Verhalten
+gebunden:
+
+- **„Trading-Loops … gestoppt" war falsch.** Es gibt im ganzen Programm
+  **kein** `clearInterval`. Die Schleifen laufen durch und fragen bei jedem
+  Durchlauf `isKillswitchActive()` ab — die erste Logzeile oben ist der
+  Beweis. Der Unterschied ist nicht kosmetisch: wer „gestoppt" liest,
+  zweifelt im Ernstfall, ob `/reset` genügt. Es genügt, **gerade weil** nichts
+  gestoppt wurde.
+- **„Credentials bleiben gespeichert" gilt nur für Capital.com.** Bei IC
+  Markets **ist** der Redis-Token der Zugang, und `clearICMarketsSession()`
+  löscht ihn. Es gibt keine zweiten Zugangsdaten — deshalb meldet `/reset`
+  dort „Token nicht in Redis — bitte manuell verbinden".
+
+**Und der Keep-Alive holt ihn NICHT zurück.** Nachgeprüft, nicht vermutet:
+`global.__icmarkets_session__` wird an genau drei Stellen gesetzt —
+`setICMarketsSession()`, `clearICMarketsSession()` (auf `null`) und
+`restoreICMarketsSessionFromRedis()` (nur beim Serverstart, und Redis ist
+leer). `keepAliveICMarkets()` ruft `autoReconnectICMarkets()` **nur, wenn
+`icGetAccount()` fehlschlägt** — und die MCP-Schicht meldet sich bei HTTP 404
+selbst neu an, sodass der Aufruf gelingt. Damit greift die Wiederherstellung
+nie, und die Zeile `[IC Markets] keep-alive ✅` erscheint trotzdem, während
+die Anwendung IC als getrennt führt.
+
+**Heute ohne Handelsfolge:** `icMarketsExecutionEnabled` steht auf `false`
+(`settings-store.ts:19`, im Snapshot gesichert), und `/api/icmarkets/execute`
+ruft nur ein Knopf im Dashboard. **Offen bleibt der Widerspruch im Log.**
+
 ### Schritt 4 — Erst entsperren, wenn der Fix live ist
 
 `/reset` (Telegram, mit Passwort) oder der Reset-Knopf im Security Center.

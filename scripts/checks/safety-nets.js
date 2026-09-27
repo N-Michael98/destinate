@@ -2829,6 +2829,60 @@ module.exports = async function pruefe() {
           nackt.length ? `${nackt.length} Stelle(n), z.B. ${nackt[0]}` : `${geprueft} Module geprueft, alle mit Zone`);
       }
 
+      // ── DIE KILLSWITCH-TEXTE AN DAS VERHALTEN BINDEN (27.09.) ───────────
+      //
+      // ANLASS: der Live-Test vom 27.09. 19:12. Zwei `details`-Texte
+      // behaupteten etwas, das der Code nicht tut:
+      //
+      //  STAGE 3 sagte "Trading-Loops … gestoppt". Es gibt im ganzen
+      //  Programm KEIN `clearInterval`. Die Schleifen laufen durch und
+      //  fragen `isKillswitchActive()` ab — belegt im Log: "[position-
+      //  monitor] 🔴 Killswitch aktiv — Zyklus uebersprungen". Wer
+      //  "gestoppt" liest, zweifelt im Ernstfall, ob /reset genuegt.
+      //
+      //  STAGE 1 sagte "Credentials bleiben gespeichert, damit /reset wieder
+      //  verbinden kann" — fuer IC Markets falsch: dort ist der Redis-Token
+      //  der Zugang, und er wird geloescht. Genau deshalb meldete /reset
+      //  "Token nicht in Redis — bitte manuell verbinden".
+      //
+      // KOMMENTARE WERDEN VORHER ENTFERNT. Die Begruendungen im Quelltext
+      // enthalten die gesuchten Woerter woertlich — ein Pruefer, der seine
+      // eigene Erklaerung findet, prueft nichts (CLAUDE.md, sechsmal).
+      {
+        const ohne = (s) => s.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+        const ks = ohne(read("frontend/lib/killswitch/killswitch-engine.ts"));
+        const instr = ohne(read("frontend/instrumentation.ts"));
+        const icSess = ohne(read("frontend/lib/icmarkets/icmarkets-session.ts"));
+
+        // Das VERHALTEN: keine Schleife wird abgeraeumt, und das Tor sitzt drin.
+        const clears = (instr.match(/clearInterval\s*\(/g) || []).length;
+        const tore = (instr.match(/isKillswitchActive\(\)/g) || []).length;
+        torPruefung("eine Trading-Schleife wird jetzt doch abgeraeumt — der Text 'laufen WEITER' stimmt dann nicht mehr",
+          clears === 0, `${clears}x clearInterval in instrumentation.ts`);
+        torPruefung("die Schleifen fragen den Killswitch nicht mehr ab",
+          tore >= 3, `${tore} Abfragen von isKillswitchActive() (erwartet mindestens 3)`);
+
+        // Und der TEXT muss dazu passen.
+        torPruefung("STAGE 3 behauptet wieder, die Loops seien gestoppt",
+          !/Trading-Loops[^"]*gestoppt/.test(ks) && /laufen WEITER/.test(ks),
+          "sie laufen und werden blockiert — /reset genuegt, kein Redeploy");
+        torPruefung("STAGE 3 sagt nicht mehr, dass /reset genuegt",
+          /\/reset genuegt/.test(ks) || /\/reset genügt/.test(ks),
+          "genau diese Frage stellt sich im Ernstfall");
+
+        // STAGE 1: der Unterschied zwischen den Brokern muss dastehen —
+        // und er muss zum Code passen (IC loescht seinen Token wirklich).
+        torPruefung("STAGE 1 verspricht wieder pauschal gespeicherte Credentials",
+          !/Credentials bleiben gespeichert/.test(ks),
+          "fuer IC Markets gibt es keine — der Redis-Token IST der Zugang");
+        torPruefung("STAGE 1 nennt den Unterschied zwischen den Brokern nicht",
+          /IC Markets NICHT/.test(ks) && /manuelle Verbindung/.test(ks),
+          "Capital.com meldet sich neu an, IC Markets kann es nicht");
+        torPruefung("der Text behauptet einen geloeschten IC-Token, den der Code gar nicht loescht",
+          /clearICMarketsSession[\s\S]{0,200}clearFromRedis\(\)/.test(icSess),
+          "sonst stimmt die Begruendung in STAGE 1 nicht mehr");
+      }
+
       // ── WANN EIN ZWEITER VERSUCH ETWAS BRINGT — GERECHNET (22.09.) ───────
       //
       // Die echte Funktion, nicht ihr Text. Ein vertauschter Vergleich

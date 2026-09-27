@@ -144,7 +144,28 @@ export function triggerKillswitch(
     status: "COMPLETED",
     startedAt: t,
     completedAt: t,
-    details: "Capital.com- und IC-Markets-Session getrennt (Credentials bleiben gespeichert, damit /reset wieder verbinden kann).",
+    // ── DER TEXT STIMMTE NUR FUER EINEN DER BEIDEN BROKER (27.09.) ────────
+    //
+    // Hier stand: "Credentials bleiben gespeichert, damit /reset wieder
+    // verbinden kann." Fuer Capital.com ist das richtig — es meldet sich mit
+    // den hinterlegten Zugangsdaten neu an (im Live-Log 19:12:45:
+    // "[capital-com] reconnected ✅").
+    //
+    // Fuer IC Markets ist es FALSCH. Dort IST der Redis-Token der Zugang, und
+    // `clearICMarketsSession()` loescht ihn (`clearFromRedis()`). Es gibt
+    // keine zweiten Zugangsdaten, mit denen sich etwas neu anmelden koennte.
+    // Genau deshalb meldete `/reset` im Test: "IC Markets: Token nicht in
+    // Redis — bitte manuell verbinden".
+    //
+    // NACHGEPRUEFT, nicht vermutet: `global.__icmarkets_session__` wird an
+    // genau drei Stellen gesetzt — `setICMarketsSession()` (Connect bzw.
+    // `autoReconnectICMarkets()`), `clearICMarketsSession()` (auf null) und
+    // `restoreICMarketsSessionFromRedis()` (nur beim Serverstart, und Redis
+    // ist leer). Der 2-Minuten-Keep-Alive holt sie NICHT zurueck: er ruft
+    // `autoReconnectICMarkets()` ausschliesslich, wenn `icGetAccount()`
+    // FEHLSCHLAEGT — und die MCP-Schicht meldet sich bei HTTP 404 selbst neu
+    // an, sodass der Aufruf gelingt (Live-Log 19:14:45).
+    details: "Broker-Sessions getrennt. Capital.com meldet sich bei /reset mit den gespeicherten Zugangsdaten neu an. IC Markets NICHT: dort ist der Redis-Token der Zugang, er wurde geloescht — dort ist eine manuelle Verbindung noetig.",
   };
 
   const stage2: KillswitchStageResult = {
@@ -160,7 +181,21 @@ export function triggerKillswitch(
     status: "COMPLETED",
     startedAt: t,
     completedAt: t,
-    details: "Trading-Loops (Orchestrator 5min, Positions-Monitor 2min) gestoppt. Offene Positionen bleiben bewusst offen und sind weiter durch die Broker-seitigen SL/TP geschützt.",
+    // ── "GESTOPPT" WAR FALSCH — SIE LAUFEN WEITER (27.09.) ────────────────
+    //
+    // Hier stand "Trading-Loops … gestoppt". Kein `clearInterval` im ganzen
+    // Programm: die Schleifen laufen durch und fragen bei JEDEM Durchlauf
+    // `isKillswitchActive()` ab (instrumentation.ts:327, :746, :822).
+    //
+    // Belegt im Live-Log des Tests: 19:12:41 "[position-monitor] 🔴
+    // Killswitch aktiv — Zyklus uebersprungen" und "[learning] 🔴 …
+    // uebersprungen" — die Schleifen liefen also und wurden blockiert.
+    //
+    // Der Unterschied ist nicht kosmetisch: wer "gestoppt" liest, zweifelt,
+    // ob `/reset` genuegt oder ein Redeploy noetig ist. Es genuegt — gerade
+    // WEIL nichts gestoppt wurde. Im Test lief der Positions-Monitor um
+    // 19:14:45 wieder normal an, ohne Deploy.
+    details: "Trading-Loops laufen WEITER, werden aber bei jedem Durchlauf blockiert (isKillswitchActive) — /reset genuegt, kein Redeploy noetig. Offene Positionen bleiben bewusst offen und sind weiter durch die Broker-seitigen SL/TP geschützt.",
   };
 
   setState({
