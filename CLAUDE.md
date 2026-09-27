@@ -574,8 +574,11 @@ Anfragen durch und nur eine nicht.
 **Meine Überlast-Vermutung war falsch.** Ich hatte notiert, dass `Promise.all`
 vier gleichzeitige Anfragen gegen einen uvicorn-Prozess ohne `--workers` feuert
 (bis zu 44 Arbeits-Threads). Das ist zwar ein Code-Fakt, aber **nicht** die
-Ursache: seit dem Neustart bedient derselbe Prozess in **jedem** Zyklus 3×
-`talib` + 1× `strategies` fehlerfrei (21:22, 21:27, 21:32, 21:37, 21:42). Die
+Ursache: seit dem Neustart bedient derselbe Prozess dieselbe Last fehlerfrei.
+Belegt mit `200 OK` für `/strategies/analyze/multi` in **vier** Zyklen —
+21:22:45, 21:27:46, 21:37:44, 21:42:44 — und mit 3× `talib` in **fünf**
+(zusätzlich 21:32:21; die Strategien-Zeile des 21:32-Zyklus liegt ausserhalb
+des vorliegenden Log-Ausschnitts und wird deshalb **nicht** mitgezählt). Die
 Vermutung stand als Vermutung da und ist damit widerlegt — so gehört es.
 
 **Nicht bestimmbar und damit offen:** *warum* der Container um 21:17:19 neu
