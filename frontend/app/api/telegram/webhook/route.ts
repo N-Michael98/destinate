@@ -254,7 +254,44 @@ ${log.map(l => `• ${l}`).join("\n")}
 📈 Trading wieder aktiv
 🕐 ${telegramZeit()}`
         );
-      } else {
+      } else if (pending.action === "peakreset") {
+        // ── HOECHSTSTAND ZURUECKSETZEN (29.09.) ─────────────────────────────
+        //
+        // Der Gesamt-Drawdown misst vom hoechsten je gesehenen Kontostand, und
+        // der liegt ein JAHR in Redis. Bis heute gab es aus einer Sperre genau
+        // zwei Auswege: Kontostand ueber den Hoechststand heben oder die Grenze
+        // hochziehen. Nach einem Demokonto-Reset — oder nach einem
+        // Hoechststand, der gar nicht echt war — ist das eine Sackgasse.
+        //
+        // Der Befehl SENKT den Schutz. Deshalb steht er hinter demselben
+        // Admin-Passwort wie der Killswitch, und der alte Wert wird genannt:
+        // ein stiller Reset waere schlimmer als gar keiner.
+        const { peakZuruecksetzen } = await import("@/lib/trading-filters/trade-filters");
+        const { getCapitalSession } = await import("@/lib/capital-com/capital-com-session");
+        const ergebnis = await peakZuruecksetzen();
+        if (!ergebnis.ok) {
+          await reply(chatId, `❌ Zuruecksetzen fehlgeschlagen: ${ergebnis.fehler ?? "unbekannt"}`);
+          return NextResponse.json({ ok: true });
+        }
+        const stand = getCapitalSession()?.balance;
+        const standText = Number.isFinite(stand) ? (stand as number).toFixed(2) : "unbekannt (Broker nicht verbunden)";
+        await reply(chatId, "♻️ Passwort korrekt. Höchststand wird zurückgesetzt...");
+        await sendTelegram(
+`♻️ <b>DRAWDOWN-HÖCHSTSTAND ZURÜCKGESETZT</b>
+
+Zurückgesetzt von: ${name} (Admin via Telegram)
+
+Bisheriger Höchststand: <b>${ergebnis.alt === null ? "war nicht gesetzt" : ergebnis.alt.toFixed(2)}</b>
+Aktueller Kontostand: <b>${standText}</b>
+
+Der nächste Handelszyklus setzt den Höchststand auf den aktuellen
+Kontostand. Ab dann misst der Gesamt-Drawdown wieder von dort.
+
+⚠️ Das SENKT den Schutz: ein Verlust, der vorher gesperrt hätte, tut es
+jetzt nicht mehr. Die Grenze selbst ist unverändert.
+🕐 ${telegramZeit()}`
+        );
+      } else if (pending.action === "killswitch") {
         // Execute full shutdown
         await reply(chatId, "🔒 Passwort korrekt. Führe vollständigen Shutdown durch...");
         const log = await executeFullShutdown(name);
@@ -272,6 +309,20 @@ ${log.map(l => `• ${l}`).join("\n")}
 
 Um das System zu reaktivieren: /reset + Admin-Passwort`
         );
+      } else {
+        // ── KEIN STILLER AUFFANG MEHR (29.09.) ──────────────────────────────
+        //
+        // Hier stand `} else {` mit dem Shutdown darin — jede NICHT erkannte
+        // Aktion loeste also nach korrektem Passwort einen vollstaendigen
+        // Shutdown aus, inklusive Schliessen aller Positionen. Wer eine neue
+        // Aktion einbaut und den Zweig vergisst, haette damit unbemerkt den
+        // Notaus verdrahtet.
+        //
+        // Jetzt ist "killswitch" ein eigener, benannter Zweig, und ein
+        // unbekannter Name tut NICHTS — sagt das aber, statt zu schweigen.
+        console.error(`[telegram-webhook] Unbekannte Bestaetigungs-Aktion: ${pending.action}`);
+        await reply(chatId, `⚠️ Unbekannter Vorgang "<code>${pending.action}</code>" — es wurde NICHTS ausgeführt. `
+          + `Bitte den Befehl erneut senden.`);
       }
       return NextResponse.json({ ok: true });
     }
@@ -319,6 +370,39 @@ Gib dein <b>Admin-Passwort</b> ein um das System zu reaktivieren (60 Sekunden):`
       return NextResponse.json({ ok: true });
     }
 
+    if (textLower === "/peakreset") {
+      const { PEAK_SCHLUESSEL } = await import("@/lib/trading-filters/trade-filters");
+      const { cacheGet } = await import("@/lib/cache/redis-cache");
+      const { getCapitalSession } = await import("@/lib/capital-com/capital-com-session");
+      const jetzt = await cacheGet<{ peak: number }>(PEAK_SCHLUESSEL).catch(() => null);
+      const stand = getCapitalSession()?.balance;
+
+      if (!jetzt || !Number.isFinite(jetzt.peak)) {
+        await reply(chatId, "ℹ️ Es ist gar kein Höchststand gespeichert — nichts zurückzusetzen. "
+          + "Der nächste Handelszyklus setzt ihn auf den aktuellen Kontostand.");
+        return NextResponse.json({ ok: true });
+      }
+
+      pendingConfirm.set(chatId, { action: "peakreset", expiresAt: Date.now() + 60_000 });
+      await reply(chatId,
+`♻️ <b>Drawdown-Höchststand zurücksetzen — Admin-Bestätigung erforderlich</b>
+
+Gespeicherter Höchststand: <b>${jetzt.peak.toFixed(2)}</b>
+Aktueller Kontostand: <b>${Number.isFinite(stand) ? (stand as number).toFixed(2) : "unbekannt"}</b>
+
+Dies wird:
+• den gespeicherten Höchststand löschen
+• den nächsten Zyklus ihn auf den aktuellen Kontostand setzen lassen
+• eine bestehende Gesamt-Drawdown-Sperre damit aufheben
+
+⚠️ Das SENKT den Schutz. Die Einstellung „Max Total Drawdown" bleibt
+unverändert — nur der Bezugspunkt wird neu gesetzt.
+
+⏱ Gib jetzt dein <b>Admin-Passwort</b> ein (60 Sekunden):`
+      );
+      return NextResponse.json({ ok: true });
+    }
+
     if (textLower === "/status") {
       const ks = getKillswitchReport();
       const statusEmoji = ks.triggered ? "🔴" : "🟢";
@@ -347,6 +431,7 @@ Befehle:
 /ks — Kurzform für /killswitch
 /reset — System reaktivieren (Passwort nötig)
 /status — Aktueller System Status
+/peakreset — Drawdown-Höchststand zurücksetzen (Passwort nötig)
 
 <b>IP-Verwaltung:</b>
 /blocked — Alle gesperrten IPs anzeigen

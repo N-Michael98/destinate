@@ -1192,6 +1192,75 @@ module.exports = async function pruefe() {
           torPruefung("der naechste Einbruch sperrt STUMM",
             ges3.length === 2, `${ges3.length} Meldungen — erwartet 2`);
 
+          // ── /peakreset — DER WEG AUS DER SACKGASSE (29.09.) ─────────────
+          //
+          // Der Gesamt-Drawdown misst vom hoechsten je gesehenen Kontostand,
+          // und der liegt ein JAHR in Redis. Bis zum 29.09. gab es aus einer
+          // Sperre genau zwei Auswege: Kontostand ueber den Hoechststand
+          // heben oder die Grenze hochziehen. Nach einem Demokonto-Reset —
+          // oder nach einem Hoechststand, der gar nicht echt war — war das
+          // eine Sackgasse.
+          //
+          // Geprueft wird die KETTE, nicht der Text: Sperre -> Reset ->
+          // naechster Zyklus nimmt den aktuellen Kontostand -> Sperre weg,
+          // Schutz sofort wieder aktiv vom neuen Bezugspunkt.
+          const sp4 = {};
+          const ges4 = [];
+          const d4 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-cache": {
+              cacheGet: async (k) => (k in sp4 ? sp4[k] : null),
+              cacheSet: async (k, v) => { sp4[k] = JSON.parse(JSON.stringify(v)); return true; },
+              cacheDel: async (k) => { delete sp4[k]; return true; },
+            },
+            "telegram-sender": {
+              telegramZeit: () => "29.9.2026, 12:00:00 MESZ", telegramDatum: () => "29.9.2026",
+              sendTelegram: async (t) => { ges4.push(String(t)); },
+            },
+          });
+          const pr = d4.exports.peakZuruecksetzen;
+          const SCHL = d4.exports.PEAK_SCHLUESSEL;
+          if (typeof pr !== "function" || typeof SCHL !== "string") {
+            torPruefung("peakZuruecksetzen/PEAK_SCHLUESSEL nicht exportiert", false,
+              `${typeof pr} / ${typeof SCHL} — ohne sie gibt es keinen Weg aus einer Sperre`);
+          } else {
+            const f4 = d4.exports.checkTotalDrawdownLimit;
+            await f4(10000, 15);
+            const vorher = await f4(1536.53, 15);
+            torPruefung("der Pruefstand ist gar nicht gesperrt — Reset waere nicht pruefbar",
+              vorher.allowed === false, JSON.stringify(vorher));
+            const r4 = await pr();
+            torPruefung("der Reset gelingt nicht", r4.ok === true, JSON.stringify(r4));
+            torPruefung("der Reset verschweigt den alten Hoechststand",
+              r4.alt === 10000, `${r4.alt} — ohne ihn waere der Reset still`);
+            torPruefung("der Hoechststand liegt noch im Speicher",
+              sp4[SCHL] === undefined, JSON.stringify(sp4[SCHL] ?? null));
+            const nachher = await f4(1536.53, 15);
+            torPruefung("die Sperre besteht nach dem Reset weiter",
+              nachher.allowed === true, JSON.stringify(nachher));
+            torPruefung("der neue Hoechststand ist nicht der aktuelle Kontostand",
+              sp4[SCHL]?.peak === 1536.53, JSON.stringify(sp4[SCHL]));
+            const wieder = await f4(1200, 15);
+            torPruefung("der Schutz greift nach dem Reset nicht mehr",
+              wieder.allowed === false && /21\.9/.test(wieder.reason), JSON.stringify(wieder));
+            // Ein Reset ohne gespeicherten Wert darf nicht werfen und nichts erfinden.
+            await pr();
+            const leer4 = await pr();
+            torPruefung("ein Reset ohne gespeicherten Wert wirft oder erfindet eine Zahl",
+              leer4.ok === true && leer4.alt === null, JSON.stringify(leer4));
+          }
+          // Bei Redis-Ausfall darf der Reset nicht so tun, als haette er geklappt.
+          const d5 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-cache": {
+              cacheGet: async () => { throw new Error("Redis weg"); },
+              cacheDel: async () => { throw new Error("Redis weg"); },
+            },
+          });
+          if (typeof d5.exports.peakZuruecksetzen === "function") {
+            const k5 = await d5.exports.peakZuruecksetzen();
+            torPruefung("ein Reset bei Redis-Ausfall meldet Erfolg",
+              k5.ok === false && typeof k5.fehler === "string", JSON.stringify(k5));
+          }
+
           // Redis weg -> nicht blockieren.
           const d2 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
             "redis-cache": {
@@ -1260,6 +1329,46 @@ module.exports = async function pruefe() {
       torPruefung("der frische Kontostand aus dem Redis-Ping wird nur geloggt",
         /cached\.balance = frisch!\.balance/.test(sessQ),
         "sonst rechnet der erste Zyklus nach einem Neustart auf einem alten Stand");
+
+      // ── /peakreset: Schluessel EINMAL, Passwort PFLICHT (29.09.) ─────────
+      const filtQ = ohneK(read("frontend/lib/trading-filters/trade-filters.ts"));
+      const hookQ = ohneK(read("frontend/app/api/telegram/webhook/route.ts"));
+
+      // Der Schluesselname darf genau einmal als Zeichenkette vorkommen.
+      // Zwei Stellen waeren die naechste stille Abweichung bei einer
+      // Umbenennung — dieselbe Fehlerklasse wie bei den Epic-Tabellen.
+      const alleQuellen = sourceFiles([".ts", ".tsx"])
+        .filter((f) => f.startsWith("frontend/"))
+        .map((f) => ohneK(read(f)));
+      const literale = alleQuellen.reduce(
+        (n, q) => n + (q.match(/["']peak_balance["']/g) || []).length, 0);
+      torPruefung("der Schluessel 'peak_balance' steht an mehr als einer Stelle",
+        literale === 1, `${literale} Vorkommen — erwartet genau 1 (PEAK_SCHLUESSEL)`);
+      torPruefung("checkTotalDrawdownLimit nutzt den gemeinsamen Schluessel nicht",
+        /const KEY = PEAK_SCHLUESSEL/.test(filtQ));
+
+      // Der Befehl SENKT den Schutz — er muss hinter dem Admin-Passwort
+      // stehen, nie direkt ausfuehren.
+      torPruefung("/peakreset fuehrt ohne Passwort-Bestaetigung aus",
+        /pendingConfirm\.set\(chatId, \{ action: "peakreset"/.test(hookQ)
+        && /pending\.action === "peakreset"/.test(hookQ),
+        "sonst genuegt eine Nachricht, um den Drawdown-Schutz zurueckzusetzen");
+      torPruefung("/peakreset warnt nicht davor, dass es den Schutz senkt",
+        /SENKT den Schutz/.test(hookQ));
+
+      // ── KEIN STILLER AUFFANG MEHR IN DER BESTAETIGUNGS-KETTE ────────────
+      //
+      // Der letzte Zweig war `} else {` mit dem vollstaendigen Shutdown
+      // darin. Jede NICHT erkannte Aktion loeste damit nach korrektem
+      // Passwort einen Killswitch aus — inklusive Schliessen aller
+      // Positionen. Wer eine neue Aktion einbaut und den Zweig vergisst,
+      // haette unbemerkt den Notaus verdrahtet.
+      torPruefung("der Killswitch haengt wieder am Auffang-Zweig",
+        /pending\.action === "killswitch"/.test(hookQ),
+        "eine unbekannte Aktion darf NIE einen Shutdown ausloesen");
+      torPruefung("eine unbekannte Bestaetigungs-Aktion tut still nichts",
+        /Unbekannte Bestaetigungs-Aktion/.test(hookQ),
+        "sie darf nichts tun — aber das auch sagen");
     }
 
     // Und die modul-scoped Variable darf nicht zurueckkehren.

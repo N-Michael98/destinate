@@ -255,6 +255,53 @@ export function checkLiquidity(
 // week_start_balance beim Wochenlimit.
 // Erster Lauf setzt den Peak auf den aktuellen Stand — dadurch kann ein
 // Altbestand niemals rückwirkend alles blockieren.
+/**
+ * Der Schluessel des gespeicherten Hoechststands — EINE Stelle (29.09.).
+ *
+ * Er stand als lokale Konstante in `checkTotalDrawdownLimit`. Seit es einen
+ * zweiten Zugriff gibt (`peakZuruecksetzen()` fuer den Telegram-Befehl), muss
+ * der Name genau einmal existieren: zwei Zeichenketten "peak_balance" an zwei
+ * Stellen waeren die naechste stille Abweichung, sobald eine davon umbenannt
+ * wird. Genau diese Fehlerklasse hat dieses Projekt wiederholt getroffen.
+ */
+export const PEAK_SCHLUESSEL = "peak_balance";
+/** Haltbarkeit des Hoechststands in Redis. */
+export const PEAK_TTL_SEK = 365 * 24 * 60 * 60; // 1 Jahr
+
+/**
+ * Setzt den gespeicherten Hoechststand zurueck (29.09.).
+ *
+ * WARUM ES DAS BRAUCHT. Der Gesamt-Drawdown misst vom hoechsten je gesehenen
+ * Kontostand, und der Wert liegt ein JAHR in Redis. Bis heute gab es genau
+ * zwei Auswege aus einer Sperre: den Kontostand ueber den Hoechststand heben
+ * oder die Grenze hochziehen. Fuer ein Demokonto, das zurueckgesetzt wird —
+ * oder nach einem Hoechststand, der gar nicht echt war (siehe der erfundene
+ * Kontostand vom 28.09.) — ist das eine Sackgasse.
+ *
+ * WAS DANACH PASSIERT: der Schluessel ist weg, `peak` ist damit 0, und der
+ * naechste Zyklus setzt den Hoechststand auf den AKTUELLEN Kontostand. Ab da
+ * misst die Grenze wieder von dort. Das ist derselbe Weg, den der erste Lauf
+ * ueberhaupt geht — kein Sonderfall.
+ *
+ * WAS ES NICHT TUT: es aendert keine Einstellung, keine Grenze und keine
+ * Position. Es senkt den Schutz aber DEUTLICH — deshalb gehoert der Aufruf
+ * hinter das Admin-Passwort, und der alte Wert wird zurueckgegeben, damit der
+ * Aufrufer ihn melden kann. Ein stiller Reset waere schlimmer als gar keiner.
+ */
+export async function peakZuruecksetzen(): Promise<{ ok: boolean; alt: number | null; fehler?: string }> {
+  try {
+    const { cacheGet, cacheDel } = await import("../cache/redis-cache");
+    const vorher = await cacheGet<{ peak: number }>(PEAK_SCHLUESSEL);
+    const alt = Number.isFinite(vorher?.peak) ? (vorher as { peak: number }).peak : null;
+    await cacheDel(PEAK_SCHLUESSEL);
+    console.warn(`[filter] ♻️ Hoechststand zurueckgesetzt (vorher ${alt === null ? "nicht gesetzt" : alt.toFixed(2)}) `
+      + `— der naechste Zyklus setzt ihn auf den aktuellen Kontostand.`);
+    return { ok: true, alt };
+  } catch (e) {
+    return { ok: false, alt: null, fehler: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function checkTotalDrawdownLimit(
   currentBalance: number,
   maxTotalDrawdownPct: number
@@ -264,8 +311,8 @@ export async function checkTotalDrawdownLimit(
   }
   try {
     const { cacheGet, cacheSet } = await import("../cache/redis-cache");
-    const KEY = "peak_balance";
-    const TTL = 365 * 24 * 60 * 60; // 1 Jahr
+    const KEY = PEAK_SCHLUESSEL;
+    const TTL = PEAK_TTL_SEK;
     // `alerted` wie beim Wochenlimit: die Meldung soll einmal je Hoechststand
     // kommen, nicht alle fuenf Minuten. Ein neuer Peak ueberschreibt den
     // Schluessel unten OHNE das Feld — damit meldet der naechste Einbruch

@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 455 · Kanten: 1001
+Dateien mit internen Abhängigkeiten: 455 · Kanten: 1003
 
 
 ## analysis-engine/api
@@ -557,6 +557,7 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 1001
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/app/api/telegram/webhook/route.ts`
   - → `frontend/lib/analysis-engine/overrides-store.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
@@ -565,6 +566,7 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 1001
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/settings/settings-store.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+  - → `frontend/lib/trading-filters/trade-filters.ts`
 - `frontend/app/api/trade-approval-engine/route.ts`
   - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
 - `frontend/app/api/trade-outcome-feedback-engine/route.ts`
@@ -1515,8 +1517,8 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 1001
 - `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 21 Dateien
 - `frontend/app/lib/prisma.ts` — von 21 Dateien
+- `frontend/lib/cache/redis-cache.ts` — von 16 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 16 Dateien
-- `frontend/lib/cache/redis-cache.ts` — von 15 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien

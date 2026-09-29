@@ -481,6 +481,42 @@ die Anwendung IC als getrennt führt.
 (`settings-store.ts:19`, im Snapshot gesichert), und `/api/icmarkets/execute`
 ruft nur ein Knopf im Dashboard. **Offen bleibt der Widerspruch im Log.**
 
+### Der Gesamt-Drawdown war eine Sackgasse — jetzt gibt es `/peakreset` (29.09.)
+
+Er misst vom **höchsten je gesehenen** Kontostand, und der liegt ein **Jahr**
+in Redis. Bis heute gab es aus einer Sperre genau zwei Auswege: den Kontostand
+über den Höchststand heben oder die Grenze hochziehen. Nach einem
+Demokonto-Reset — oder nach einem Höchststand, der **gar nicht echt war** —
+ist das keiner.
+
+```
+/peakreset          → nennt den gespeicherten Höchststand und den Kontostand
+<Admin-Passwort>    → löscht ihn (60-Sekunden-Fenster, wie /killswitch)
+```
+
+Der nächste Zyklus setzt den Höchststand dann auf den **aktuellen**
+Kontostand — derselbe Weg, den der allererste Lauf ohnehin geht, kein
+Sonderfall. **Die Einstellung „Max Total Drawdown" bleibt unverändert**, nur
+der Bezugspunkt wird neu gesetzt.
+
+Der Befehl **senkt den Schutz**, deshalb: dasselbe Admin-Passwort wie der
+Killswitch, der alte Wert steht in der Bestätigung, und der Vollzug geht als
+eigene Meldung in den Kanal. Ein stiller Reset wäre schlimmer als gar keiner.
+
+`safety-nets` führt die Kette **aus**: Sperre → Reset → nächster Zyklus nimmt
+den aktuellen Stand → Sperre weg → Schutz greift sofort wieder vom neuen
+Bezugspunkt. Dazu: der Schlüssel `peak_balance` darf **genau einmal** im
+Programm als Zeichenkette vorkommen (`PEAK_SCHLUESSEL`), und ein
+Redis-Ausfall darf nicht als Erfolg durchgehen.
+
+**Und ein Auffang-Zweig ist dabei verschwunden.** Die Passwort-Bestätigung im
+Telegram-Webhook endete mit `} else {` — und darin stand der **vollständige
+Shutdown**. Jede nicht erkannte Aktion löste damit nach korrektem Passwort
+einen Killswitch aus, inklusive Schliessen aller Positionen. Wer eine neue
+Aktion einbaut und den Zweig vergisst, hätte unbemerkt den Notaus verdrahtet.
+Jetzt ist `killswitch` ein eigener, benannter Zweig; ein unbekannter Name tut
+**nichts** — sagt das aber, statt zu schweigen.
+
 ### Schritt 4 — Erst entsperren, wenn der Fix live ist
 
 `/reset` (Telegram, mit Passwort) oder der Reset-Knopf im Security Center.
