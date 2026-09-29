@@ -239,8 +239,15 @@ export async function connectCapital(
   //   * Der naechste Zyklus mit dem ECHTEN Stand meldet dann
   //     "-84.63% vom Hoechststand 10000" und sperrt jeden weiteren Trade.
   //
-  // Genau diese Meldung kam am 28.09. Ob sie DAHER kam, ist nicht bewiesen —
-  // der Weg ist es. Deshalb: keine Sitzung ohne Kontostand.
+  // WIE DIE SPERRE VOM 28.09. WIRKLICH ENTSTAND — nachgereicht (29.09.):
+  // NICHT so. Der Hoechststand von 10000 war ECHT. Der Nutzer hatte das
+  // Demokonto vor langer Zeit von 10000 auf 2000 HERUNTERGESETZT, um zu
+  // sehen, wie das Programm mit kleinen Summen handelt. Kein Geld verloren —
+  // eine Auszahlung, die die Grenze als Verlust las.
+  //
+  // Der hier beschriebene Weg bleibt trotzdem ein Loch, und er ist
+  // nachgerechnet erreichbar. Er war nur nicht die Ursache jenes Tages.
+  // Deshalb: keine Sitzung ohne Kontostand.
   //
   // Die eben erzeugte Broker-Sitzung wird dabei wieder abgeraeumt, sonst
   // bliebe sie bei Capital.com offen stehen.

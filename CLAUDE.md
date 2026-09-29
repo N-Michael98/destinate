@@ -481,6 +481,39 @@ die Anwendung IC als getrennt führt.
 (`settings-store.ts:19`, im Snapshot gesichert), und `/api/icmarkets/execute`
 ruft nur ein Knopf im Dashboard. **Offen bleibt der Widerspruch im Log.**
 
+### Eine Drawdown-Grenze kann „verloren" nicht von „abgehoben" unterscheiden (29.09.)
+
+Am 28.09. meldete der Bot **„-84.63 % (Limit -15 %), Höchststand 10000.00,
+Aktueller Stand 1536.53"** und sperrte jeden neuen Trade.
+
+**Die Ursache war kein Verlust und kein Fehler im Handel.** Der Nutzer hatte
+das Capital.com-**Demokonto** vor längerer Zeit selbst von 10000 auf 2000
+gesenkt, um zu sehen, wie das Programm mit kleinen Summen handelt. Der
+Höchststand von 10000 war **echt** — er stammte aus der Zeit davor.
+
+Eine Grenze, die vom höchsten je gesehenen Kontostand misst, liest eine
+**Auszahlung** als Verlust. Sie kann die beiden nicht trennen, weil sie nur
+einen Kontostand sieht und keine Buchung.
+
+**Warum ausgerechnet diese Grenze zur Sackgasse wurde**, die anderen zwei
+aber nicht — nachgesehen, nicht vermutet:
+
+| Grenze | Schlüssel | heilt sich selbst? |
+|---|---|---|
+| Tagesverlust | `day_start_balance:<Datum>`, 48 h TTL | **ja, jeden Tag neu** |
+| Wochenverlust | `week_start_balance:<ISO-Woche>`, 8 Tage | **ja, jeden Montag** |
+| **Gesamt-Drawdown** | `peak_balance`, **1 Jahr**, ein fester Schlüssel | **nie** |
+
+Die ersten beiden setzen ihren Bezugspunkt von selbst neu. Der dritte nicht —
+deshalb war er der einzige, der nach einer manuellen Kontoänderung dauerhaft
+sperrte. Genau dafür gibt es jetzt `/peakreset`.
+
+**Der Fund hatte trotzdem sein Gutes:** die Suche nach der Ursache hat drei
+echte Löcher aufgedeckt, die mit diesem Tag nichts zu tun hatten (siehe
+`7bc3d95`) — eine Anmeldung ohne Kontostand, zwei erfundene `10000` und eine
+Sperre, die beim nächsten Mal stumm geblieben wäre. Der Verdacht war falsch,
+die Funde sind es nicht.
+
 ### Der Gesamt-Drawdown war eine Sackgasse — jetzt gibt es `/peakreset` (29.09.)
 
 Er misst vom **höchsten je gesehenen** Kontostand, und der liegt ein **Jahr**

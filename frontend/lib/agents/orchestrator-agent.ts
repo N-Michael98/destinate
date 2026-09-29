@@ -1070,7 +1070,10 @@ async function zyklusInnen(): Promise<string> {
   //   * `checkTotalDrawdownLimit` — 10000 gilt als neuer Hoechststand und
   //     wird ein Jahr lang nach Redis geschrieben. Der naechste Zyklus mit
   //     dem echten Stand meldet dann "-84.63% vom Hoechststand 10000" und
-  //     sperrt JEDEN weiteren Trade. Genau diese Meldung kam am 28.09.
+  //     sperrt JEDEN weiteren Trade. So eine Meldung kam am 28.09. — sie
+  //     hatte dort allerdings eine ANDERE Ursache (der Hoechststand war echt,
+  //     der Nutzer hatte das Demokonto selbst von 10000 auf 2000 gesenkt).
+  //     Der Weg hier ist trotzdem erreichbar, nachgerechnet am 29.09.
   //   * `checkDailyLossLimit` und `checkWeeklyLossLimit` — dieselbe Zahl.
   //   * `accountBalance: currentBalance` weiter unten — die POSITIONSGROESSE.
   //     Bei einem echten Stand von 1536 waeren das rund 6,5-fach zu grosse
