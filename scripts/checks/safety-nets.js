@@ -1462,6 +1462,66 @@ module.exports = async function pruefe() {
         }
       }
 
+      // ── JEDER BEFEHL MUSS IN DER HILFE STEHEN (29.09.) ──────────────────
+      //
+      // Es gab ZWEI Befehlslisten: eine kurze in `/status`, eine lange in
+      // `/help`. Beim Einbau von `/peakreset` wurde nur `/help` nachgezogen —
+      // der neue Befehl war ueber `/status` nicht auffindbar. Aufgefallen ist
+      // das erst beim Gegenlesen eines Screenshots.
+      //
+      // Exakt die Fehlerklasse aus dem Dashboard (Menueeintrag ohne
+      // Render-Zeile, 26.08.): zwei Listen, die deckungsgleich sein muessen,
+      // und eine wird vergessen. `SYSTEM_BEFEHLE` ist jetzt die eine Liste.
+      //
+      // Geprueft wird DYNAMISCH: welche Befehle behandelt der Webhook
+      // ueberhaupt? Eine feste Aufzaehlung im Pruefer waere genau dieselbe
+      // Falle eine Ebene hoeher.
+      {
+        const roh = read("frontend/app/api/telegram/webhook/route.ts");
+        const quell = roh.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+        // Alle behandelten Befehle: `textLower === "/x"` und `.startsWith("/x "`.
+        const behandelt = new Set();
+        for (const m of quell.matchAll(/textLower === "(\/[a-zä-ü]+)"/g)) behandelt.add(m[1]);
+        for (const m of quell.matchAll(/textLower\.startsWith\("(\/[a-zä-ü]+) "\)/g)) behandelt.add(m[1]);
+
+        // Der Hilfetext: alles zwischen `textLower === "/help"` und dem
+        // Ende seiner Antwort. Dazu die gemeinsame Liste.
+        const hilfeAb = quell.indexOf('textLower === "/help"');
+        const hilfeText = hilfeAb >= 0 ? quell.slice(hilfeAb, hilfeAb + 2000) : "";
+        const listeAb = quell.indexOf("const SYSTEM_BEFEHLE");
+        const listeText = listeAb >= 0 ? quell.slice(listeAb, listeAb + 800) : "";
+        const dokumentiert = `${hilfeText}\n${listeText}`;
+
+        torPruefung("der Pruefstand findet gar keine Befehle — er greift ins Leere",
+          behandelt.size >= 10, `${behandelt.size} Befehle gefunden`);
+        const fehlend = [...behandelt].filter((b) => !dokumentiert.includes(b));
+        torPruefung("ein Befehl fehlt in der Hilfe",
+          fehlend.length === 0,
+          fehlend.length ? `nicht dokumentiert: ${fehlend.join(", ")}` : `${behandelt.size} Befehle, alle dokumentiert`);
+
+        // Und die EINE Liste muss von beiden Ausgaben benutzt werden.
+        //
+        // BEGRENZT AM NAECHSTEN BEFEHL, nicht an einer Zeichenzahl. Die erste
+        // Fassung nahm 700 Zeichen ab `textLower === "/status"` — und das
+        // reichte bis in den `/help`-Block hinein, der `${SYSTEM_BEFEHLE}`
+        // ebenfalls enthaelt. Die Sabotage "/status bekommt wieder eine eigene
+        // Liste" blieb dadurch GRUEN. Dasselbe Zeichen-Fenster-Problem wie am
+        // selben Tag in prompt-zahlen: ein Fenster beweist Naehe, nicht
+        // Zugehoerigkeit.
+        const statusAb = quell.indexOf('textLower === "/status"');
+        const statusBis = statusAb >= 0 ? quell.indexOf('textLower === "/help"', statusAb) : -1;
+        const statusText = statusAb >= 0
+          ? quell.slice(statusAb, statusBis > statusAb ? statusBis : statusAb + 700)
+          : "";
+        torPruefung("/status hat wieder eine eigene Befehlsliste",
+          /\$\{SYSTEM_BEFEHLE\}/.test(statusText),
+          "zwei Listen driften auseinander — genau so fehlte /peakreset");
+        torPruefung("/help hat wieder eine eigene Befehlsliste",
+          /\$\{SYSTEM_BEFEHLE\}/.test(hilfeText),
+          "die Systembefehle gehoeren aus SYSTEM_BEFEHLE");
+      }
+
       // ── KEIN STILLER AUFFANG MEHR IN DER BESTAETIGUNGS-KETTE ────────────
       //
       // Der letzte Zweig war `} else {` mit dem vollstaendigen Shutdown

@@ -18,6 +18,31 @@ interface TelegramUpdate {
 // Pending password confirmations: chatId → { action, expiresAt }
 const pendingConfirm = new Map<number, { action: string; expiresAt: number }>();
 
+/**
+ * Die System-Befehle — EINE Liste (29.09.).
+ *
+ * Es gab ZWEI: eine kurze in `/status` und eine lange in `/help`. Beim Einbau
+ * von `/peakreset` wurde nur die in `/help` nachgezogen — der neue Befehl war
+ * damit ueber `/status` nicht auffindbar. Aufgefallen ist das erst beim
+ * Gegenlesen eines Screenshots.
+ *
+ * Das ist exakt die Fehlerklasse, die dieses Projekt im Dashboard schon
+ * einmal getroffen hat (Menueeintrag ohne Render-Zeile, 26.08.): zwei Listen,
+ * die deckungsgleich sein muessen, und eine wird vergessen. Die Antwort ist
+ * nicht "an beiden Stellen eintragen", sondern EINE Liste.
+ *
+ * `safety-nets` haelt zusaetzlich fest, dass JEDER behandelte Befehl in der
+ * Hilfe steht — dynamisch aus dem Quelltext gelesen, nicht aus einer festen
+ * Aufzaehlung.
+ */
+const SYSTEM_BEFEHLE = [
+  "/killswitch — Vollständiger Shutdown (Passwort erforderlich)",
+  "/reset — System reaktivieren (Passwort erforderlich)",
+  "/peakreset — Drawdown-Höchststand zurücksetzen (Passwort erforderlich)",
+  "/status — System Status",
+  "/help — Alle Befehle",
+].join("\n");
+
 async function reply(chatId: number, text: string): Promise<void> {
   await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: "POST",
@@ -451,10 +476,7 @@ System: ${ks.systemLocked ? "OFFLINE 🔴" : "ONLINE 🟢"}
 🕐 ${telegramZeit()}
 
 Befehle:
-/killswitch — Vollständiger Shutdown (Passwort erforderlich)
-/reset — System reaktivieren (Passwort erforderlich)
-/status — System Status
-/help — Alle Befehle`
+${SYSTEM_BEFEHLE}`
       );
       return NextResponse.json({ ok: true });
     }
@@ -464,11 +486,8 @@ Befehle:
 `🤖 <b>Destinate Trading Bot</b>
 
 <b>System-Befehle:</b>
-/killswitch — Vollständiger Shutdown (Passwort nötig)
+${SYSTEM_BEFEHLE}
 /ks — Kurzform für /killswitch
-/reset — System reaktivieren (Passwort nötig)
-/status — Aktueller System Status
-/peakreset — Drawdown-Höchststand zurücksetzen (Passwort nötig)
 
 <b>IP-Verwaltung:</b>
 /blocked — Alle gesperrten IPs anzeigen
@@ -479,7 +498,7 @@ Befehle:
 /untrust [ip] — IP von Whitelist entfernen
 
 <b>Analysis Engine (Lern-System):</b>
-/vorschlaege — Verbesserungs-Vorschläge anzeigen
+/vorschlaege — Verbesserungs-Vorschläge anzeigen (auch /vorschläge)
 /apply [symbol] — Vorschlag anwenden (Passwort nötig)
 /unapply [symbol] — Override entfernen (Passwort nötig)
 
