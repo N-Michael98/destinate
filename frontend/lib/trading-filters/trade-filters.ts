@@ -336,6 +336,31 @@ Zwei Auswege:
       }
       return { allowed: false, reason: `Gesamt-Drawdown-Limit: -${ddPct.toFixed(1)}% (Max: -${maxTotalDrawdownPct}%)` };
     }
+    // ── DIE DROSSEL MUSS SICH AUCH WIEDER LOESEN (29.09.) ──────────────────
+    //
+    // `alerted` wurde bisher NUR geloescht, wenn ein NEUER Hoechststand
+    // entstand (`currentBalance > peak` weiter oben). Endete eine Sperre
+    // anders — etwa weil der Kontostand wieder auf GENAU den Hoechststand
+    // gebracht wurde —, blieb die Drossel gesetzt.
+    //
+    // GERECHNET am 29.09. mit dieser Funktion: Hoechststand 10000, Konto
+    // zurueck auf 10000.00. `10000 > 10000` ist FALSCH, also bleibt
+    // `alerted: true`. Der naechste Einbruch sperrte damit STUMM — keine
+    // Telegram-Meldung, nur eine Zeile in der Serverkonsole.
+    //
+    // Das ist exakt die Fehlerklasse, gegen die dieser Riegel am 09.09.
+    // geschrieben wurde ("Der Riegel hielt tagelang jeden Trade auf — und
+    // niemand erfuhr es").
+    //
+    // Richtig ist: einmal je SPERR-EPISODE melden. Faellt der Drawdown wieder
+    // unter die Grenze, ist die Episode vorbei und die naechste darf sich
+    // wieder melden. Der Hoechststand bleibt dabei unveraendert — nur das
+    // Melde-Kennzeichen faellt weg.
+    if (stored?.alerted) {
+      await cacheSet(KEY, { peak }, TTL);
+      console.log(`[filter] ✅ Gesamt-Drawdown wieder unter der Grenze `
+        + `(-${ddPct.toFixed(1)}% < ${maxTotalDrawdownPct}%) — naechste Sperre meldet sich wieder.`);
+    }
     return { allowed: true, reason: "" };
   } catch {
     return { allowed: true, reason: "" }; // Redis weg → nicht blockieren (wie Wochenlimit)

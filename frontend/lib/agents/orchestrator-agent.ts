@@ -1055,8 +1055,34 @@ async function zyklusInnen(): Promise<string> {
   const { risikoUmfang, ueberwachtesKapital, lueckeMeldung } =
     await import("../risk-scope/risk-scope");
   const { isICMarketsConnected } = await import("../icmarkets/icmarkets-session");
+  // ── ZWEI ERFUNDENE 10000 (29.09.) ────────────────────────────────────────
+  //
+  // Hier stand:
+  //     capitalBalance: session.balance > 0 ? session.balance : 10000,
+  //     const currentBalance = ueberwachtesKapital(umfang) || 10000;
+  //
+  // Zweimal wurde aus "unbekannt" eine Messung — an der Stelle, die ueber
+  // Geld entscheidet. `risk-scope.ts` ist ausdruecklich dafuer gebaut, einen
+  // Kontostand <= 0 zu VERWERFEN und "KEIN Konto" zu melden; der Aufrufer hat
+  // das unerreichbar gemacht, weil er vorher 10000 einsetzte.
+  //
+  // WAS DARAN HAENGT, alles am selben `currentBalance`:
+  //   * `checkTotalDrawdownLimit` — 10000 gilt als neuer Hoechststand und
+  //     wird ein Jahr lang nach Redis geschrieben. Der naechste Zyklus mit
+  //     dem echten Stand meldet dann "-84.63% vom Hoechststand 10000" und
+  //     sperrt JEDEN weiteren Trade. Genau diese Meldung kam am 28.09.
+  //   * `checkDailyLossLimit` und `checkWeeklyLossLimit` — dieselbe Zahl.
+  //   * `accountBalance: currentBalance` weiter unten — die POSITIONSGROESSE.
+  //     Bei einem echten Stand von 1536 waeren das rund 6,5-fach zu grosse
+  //     Positionen gewesen.
+  //
+  // Nachgerechnet am 29.09. mit den echten Funktionen: EIN Zyklus ohne
+  // Kontostand genuegt, um den Hoechststand auf 10000 zu setzen.
+  //
+  // Jetzt gilt: kein Kontostand -> kein Zyklus. Das ist die strengere
+  // Richtung — es entsteht kein Trade, statt einem falsch dimensionierten.
   const umfang = risikoUmfang({
-    capitalBalance: session.balance > 0 ? session.balance : 10000,
+    capitalBalance: session.balance,
     capitalAvailable: session.accounts?.[0]?.available ?? null,
     // Nur wahr, wenn IC WIRKLICH Orders bekommt: Sitzung UND Freigabe.
     icFuehrtAus: settings.botSettings.icMarketsExecutionEnabled === true
@@ -1064,7 +1090,13 @@ async function zyklusInnen(): Promise<string> {
   });
   const luecke = lueckeMeldung(umfang);
   if (luecke) console.warn(luecke);
-  const currentBalance = ueberwachtesKapital(umfang) || 10000;
+  const currentBalance = ueberwachtesKapital(umfang);
+  if (!Number.isFinite(currentBalance) || currentBalance <= 0) {
+    console.error(`[orchestrator] ⛔ Kein ueberwachter Kontostand (Capital meldet `
+      + `${JSON.stringify(session.balance)}) — Zyklus uebersprungen. Ohne Kontostand `
+      + `rechnet KEINE Verlustgrenze richtig, und die Positionsgroesse waere geraten.`);
+    return "Kein Kontostand";
+  }
   // "Pause on Loss" war ein Regler ohne Wirkung (Generalkontroll-Fund 30.07.).
   // Jetzt aktiv, aber bewusst nur VERSCHÄRFEND: ist er eingeschaltet, gilt der
   // strengere der beiden Werte. Damit kann die Einstellung den bestehenden,

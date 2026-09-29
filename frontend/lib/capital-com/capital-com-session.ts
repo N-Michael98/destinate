@@ -219,7 +219,51 @@ export async function connectCapital(
   if (!session.ok) return { ok: false, error: session.error };
 
   const accountsResult = await capitalGetAccounts(apiKey, session.cst!, session.securityToken!);
-  const primaryAccount = accountsResult.accounts?.[0];
+
+  // ── EIN AUSFALL DARF SICH NICHT ALS VERBINDUNG AUSGEBEN (29.09.) ─────────
+  //
+  // Hier wurde das Ergebnis von `capitalGetAccounts` NICHT geprueft. Schlug
+  // die Kontoabfrage fehl (HTTP-Fehler, Zeitgrenze, Netz), war
+  // `accountsResult.accounts` undefiniert — und die Sitzung wurde trotzdem
+  // gespeichert, mit `balance: 0`, `accounts: []` und `return { ok: true }`.
+  //
+  // WAS DARAUS FOLGT, nachgerechnet am 29.09. mit den echten Funktionen:
+  //   * `isCapitalConnected()` prueft nur `!== null` und meldet "verbunden".
+  //   * Der Orchestrator bricht nur bei NICHT verbunden ab (Zeile 740), laeuft
+  //     hier also weiter — mit Kontostand 0.
+  //   * Dort stand bis heute `session.balance > 0 ? session.balance : 10000`.
+  //     Aus "unbekannt" wurden 10000 ERFUNDENE Einheiten.
+  //   * `checkTotalDrawdownLimit(10000, …)` sieht einen neuen Hoechststand und
+  //     schreibt 10000 nach Redis — mit einem Jahr Haltbarkeit und ohne jeden
+  //     Weg, ihn zurueckzusetzen.
+  //   * Der naechste Zyklus mit dem ECHTEN Stand meldet dann
+  //     "-84.63% vom Hoechststand 10000" und sperrt jeden weiteren Trade.
+  //
+  // Genau diese Meldung kam am 28.09. Ob sie DAHER kam, ist nicht bewiesen —
+  // der Weg ist es. Deshalb: keine Sitzung ohne Kontostand.
+  //
+  // Die eben erzeugte Broker-Sitzung wird dabei wieder abgeraeumt, sonst
+  // bliebe sie bei Capital.com offen stehen.
+  if (!accountsResult.ok || !accountsResult.accounts || accountsResult.accounts.length === 0) {
+    const grund = accountsResult.error ?? "Kontoabfrage lieferte keine Konten";
+    console.error(`[capital-com] ⛔ Anmeldung erfolgreich, aber KEIN Kontostand (${grund}) — `
+      + `Sitzung wird NICHT gespeichert. Ohne Kontostand rechnet keine Verlustgrenze richtig.`);
+    await capitalDeleteSession(apiKey, session.cst!, session.securityToken!).catch(() => {});
+    return { ok: false, error: `Kontoabfrage fehlgeschlagen: ${grund}` };
+  }
+
+  const primaryAccount = accountsResult.accounts[0];
+
+  // Und der Wert selbst muss eine ZAHL sein. `?? 0` stand hier und machte aus
+  // einem fehlenden Feld eine Null — dieselbe Luege eine Ebene tiefer. Eine
+  // echte Null (Konto leergelaufen) ist dagegen eine Messung und bleibt
+  // erlaubt; deshalb `Number.isFinite` statt `> 0`.
+  if (!Number.isFinite(primaryAccount?.balance)) {
+    console.error(`[capital-com] ⛔ Konto ${primaryAccount?.accountId ?? "?"} liefert keinen lesbaren `
+      + `Kontostand (${JSON.stringify(primaryAccount?.balance)}) — Sitzung wird NICHT gespeichert.`);
+    await capitalDeleteSession(apiKey, session.cst!, session.securityToken!).catch(() => {});
+    return { ok: false, error: "Kontostand nicht lesbar" };
+  }
 
   global.__capital_session__ = {
     apiKey,
@@ -229,9 +273,9 @@ export async function connectCapital(
     accountId: session.accountId ?? "",
     accountType: session.accountType ?? "",
     connectedAt: new Date().toISOString(),
-    accounts: accountsResult.accounts ?? [],
-    balance: primaryAccount?.balance ?? 0,
-    currency: primaryAccount?.currency ?? "USD",
+    accounts: accountsResult.accounts,
+    balance: primaryAccount.balance,
+    currency: primaryAccount.currency ?? "USD",
   };
 
   // Persist session to Redis — survives Cold Start restarts
@@ -316,11 +360,32 @@ export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: str
       // Validate immediately — ping Capital.com to confirm tokens are still valid
       const ping = await capitalGetAccounts(cached.apiKey, cached.cst, cached.securityToken);
       if (ping.ok) {
+        // ── DER PING WURDE NUR GELOGGT, NICHT UEBERNOMMEN (29.09.) ────────
+        //
+        // Hier stand `console.log(… ping.accounts?.[0]?.balance)` — der
+        // frische Kontostand ging in die Logzeile und sonst nirgendwohin.
+        // Die Sitzung behielt den Stand von der letzten Speicherung.
+        //
+        // Das zaehlt, weil die Verlust- und Drawdown-Grenzen genau diesen
+        // Wert rechnen. Nach einem Neustart lief der erste Zyklus damit auf
+        // einem alten Kontostand — und ein alter Stand, der einmal 0 war,
+        // kam so immer wieder zurueck.
+        //
+        // `Number.isFinite`: liefert der Ping keinen lesbaren Wert, bleibt
+        // der gespeicherte stehen — ein unbekannter Wert darf einen bekannten
+        // nicht ueberschreiben.
+        const frisch = ping.accounts?.[0];
+        if (Number.isFinite(frisch?.balance)) {
+          cached.balance = frisch!.balance;
+          cached.currency = frisch!.currency ?? cached.currency;
+        }
+        if (ping.accounts && ping.accounts.length > 0) cached.accounts = ping.accounts;
+        global.__capital_session__ = cached;
         // Refresh TTL in Redis
         await saveSessionToRedis(cached);
         global.__capital_last_error__ = null;
         global.__capital_last_attempt__ = 0;
-        console.log(`[capital-com] Redis session valid ✅ balance=${ping.accounts?.[0]?.balance}`);
+        console.log(`[capital-com] Redis session valid ✅ balance=${cached.balance}`);
         return { ok: true };
       } else {
         // Tokens expired — clear Redis, fall through to fresh login

@@ -1144,6 +1144,54 @@ module.exports = async function pruefe() {
             e3.allowed === false, JSON.stringify(e3));
           torPruefung("nach einem neuen Hoechststand meldet er nicht erneut",
             gesendet.length === 2, `${gesendet.length} Meldungen`);
+          // ── DER FALL VOM 28.09. UND DIE STUMME SPERRE (29.09.) ──────────
+          //
+          // Gemeldet wurde: "-84.63% (Limit: -15%), Hoechststand 10000.00,
+          // Aktueller Stand 1536.53". Der Nutzer setzte das Demokonto danach
+          // auf GENAU 10000.00 zurueck.
+          //
+          // Und genau da lag der Fehler: `alerted` wurde nur geloescht, wenn
+          // ein NEUER Hoechststand entstand. `10000 > 10000` ist falsch —
+          // also blieb die Drossel gesetzt, und die NAECHSTE Sperre waere
+          // stumm gewesen. Exakt die Fehlerklasse, gegen die dieser Riegel
+          // am 09.09. geschrieben wurde.
+          //
+          // Eigener Speicher, damit der Fall oben nicht hineinwirkt.
+          const sp3 = { peak_balance: { peak: 10000 } };
+          const ges3 = [];
+          const d3 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-cache": {
+              cacheGet: async (k) => (k in sp3 ? sp3[k] : null),
+              cacheSet: async (k, v) => { sp3[k] = JSON.parse(JSON.stringify(v)); return true; },
+            },
+            "telegram-sender": {
+              telegramZeit: () => "28.9.2026, 20:18:37 MESZ", telegramDatum: () => "28.9.2026",
+              sendTelegram: async (t) => { ges3.push(String(t)); },
+            },
+          });
+          const f3 = d3.exports.checkTotalDrawdownLimit;
+          const s1 = await f3(1536.53, 15);
+          torPruefung("der Fall vom 28.09. sperrt nicht",
+            s1.allowed === false && /84\.6/.test(s1.reason), JSON.stringify(s1));
+          torPruefung("der Fall vom 28.09. meldet sich nicht",
+            ges3.length === 1 && ges3[0].includes("10000.00") && ges3[0].includes("1536.53"),
+            `${ges3.length} Meldung(en)`);
+          // Konto zurueck auf GENAU den Hoechststand.
+          const s2 = await f3(10000, 30);
+          torPruefung("nach dem Zuruecksetzen auf den Hoechststand bleibt gesperrt",
+            s2.allowed === true, JSON.stringify(s2));
+          torPruefung("die Melde-Drossel bleibt haengen, wenn die Sperre endet",
+            sp3.peak_balance.alerted === undefined,
+            `alerted=${sp3.peak_balance.alerted} — bleibt sie true, sperrt der naechste Einbruch STUMM`);
+          torPruefung("der Hoechststand wird beim Loesen der Drossel verfaelscht",
+            sp3.peak_balance.peak === 10000, String(sp3.peak_balance.peak));
+          // Und jetzt der naechste Einbruch — er MUSS sich melden.
+          const s3 = await f3(6000, 30);
+          torPruefung("der naechste Einbruch sperrt nicht",
+            s3.allowed === false && /40\.0/.test(s3.reason), JSON.stringify(s3));
+          torPruefung("der naechste Einbruch sperrt STUMM",
+            ges3.length === 2, `${ges3.length} Meldungen — erwartet 2`);
+
           // Redis weg -> nicht blockieren.
           const d2 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
             "redis-cache": {
@@ -1158,6 +1206,60 @@ module.exports = async function pruefe() {
           console.log = stillesLog2;
         }
       }
+    }
+
+    // ── KEIN ERFUNDENER KONTOSTAND (29.09.) ────────────────────────────────
+    //
+    // Zwei Stellen machten aus "unbekannt" eine Messung, an der Stelle, die
+    // ueber Geld entscheidet:
+    //
+    //   orchestrator-agent.ts  capitalBalance: session.balance > 0 ? … : 10000
+    //   orchestrator-agent.ts  ueberwachtesKapital(umfang) || 10000
+    //
+    // `risk-scope.ts` ist ausdruecklich dafuer gebaut, einen Kontostand <= 0
+    // zu verwerfen und "KEIN Konto" zu melden — der Aufrufer hat das
+    // unerreichbar gemacht. Daran haengen der Gesamt-Drawdown (der
+    // Hoechststand wird ein JAHR lang gespeichert), die Tages- und
+    // Wochengrenze und die POSITIONSGROESSE.
+    //
+    // Davor sitzt der Broker: `connectCapital` speicherte eine Sitzung auch
+    // dann, wenn die Kontoabfrage fehlschlug — mit `balance: 0` und
+    // `return { ok: true }`. Erst beides zusammen ergab den Phantom-
+    // Hoechststand von 10000 vom 28.09.
+    //
+    // Kommentare vorher weg: die Begruendungen im Quelltext zitieren die
+    // alten Zeilen woertlich.
+    {
+      const ohneK = (s) => s.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const orchQ = ohneK(read("frontend/lib/agents/orchestrator-agent.ts"));
+      const sessQ = ohneK(read("frontend/lib/capital-com/capital-com-session.ts"));
+
+      torPruefung("der Orchestrator erfindet wieder einen Kontostand von 10000",
+        !/ueberwachtesKapital\([^)]*\)\s*\|\|/.test(orchQ)
+        && !/capitalBalance:\s*session\.balance\s*>\s*0\s*\?/.test(orchQ),
+        "aus 'unbekannt' darf keine Messung werden — der Hoechststand haelt ein Jahr");
+      torPruefung("ein Zyklus ohne Kontostand laeuft weiter",
+        /Kein ueberwachter Kontostand/.test(orchQ) && /return "Kein Kontostand"/.test(orchQ),
+        "ohne Kontostand rechnet keine Verlustgrenze richtig");
+
+      // Und beim Broker: die Kontoabfrage MUSS geprueft werden, BEVOR die
+      // Sitzung gespeichert wird. Reihenfolge per Index, nicht per Naehe.
+      const iAbfrage = sessQ.indexOf("const accountsResult = await capitalGetAccounts");
+      const iPruef = sessQ.indexOf("if (!accountsResult.ok");
+      const iSpeichern = sessQ.indexOf("global.__capital_session__ = {");
+      torPruefung("die Kontoabfrage wird nicht geprueft, bevor die Sitzung gespeichert wird",
+        iAbfrage >= 0 && iPruef > iAbfrage && iSpeichern > iPruef,
+        `Abfrage@${iAbfrage} Pruefung@${iPruef} Speichern@${iSpeichern}`);
+      torPruefung("ein fehlender Kontostand wird wieder zu 0 gemacht",
+        !/balance:\s*primaryAccount\?\.balance\s*\?\?\s*0/.test(sessQ),
+        "`?? 0` macht aus einem fehlenden Feld eine Null");
+      torPruefung("eine Anmeldung ohne Kontostand meldet trotzdem Erfolg",
+        /Anmeldung erfolgreich, aber KEIN Kontostand/.test(sessQ)
+        && /return \{ ok: false, error: `Kontoabfrage fehlgeschlagen/.test(sessQ),
+        "sonst gilt eine Sitzung mit Kontostand 0 als verbunden");
+      torPruefung("der frische Kontostand aus dem Redis-Ping wird nur geloggt",
+        /cached\.balance = frisch!\.balance/.test(sessQ),
+        "sonst rechnet der erste Zyklus nach einem Neustart auf einem alten Stand");
     }
 
     // Und die modul-scoped Variable darf nicht zurueckkehren.
