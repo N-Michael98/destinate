@@ -1356,6 +1356,112 @@ module.exports = async function pruefe() {
       torPruefung("/peakreset warnt nicht davor, dass es den Schutz senkt",
         /SENKT den Schutz/.test(hookQ));
 
+      // ── DER WEBHOOK WIRD AUSGEFUEHRT, NICHT GELESEN (29.09.) ────────────
+      //
+      // Zwei Funde im Bestaetigungs-Pfad, beide aelter als /peakreset:
+      //
+      //  A) Die Fehlmeldung gab die Eingabe aus:
+      //     `Eingabe: <code>${text.slice(0, 20)}***</code>`. Ein Tippfehler im
+      //     LETZTEN Zeichen schickte damit bis zu zwanzig RICHTIGE Zeichen des
+      //     Admin-Passworts im Klartext in den Chat — und ein Telegram-Verlauf
+      //     laesst sich nicht zurueckholen.
+      //
+      //  B) Die Pruefung steht VOR der Befehlsauswertung. Wer innerhalb der 60
+      //     Sekunden `/status` schickte, dessen Befehl galt als Passwortversuch:
+      //     falscher Alarm, und ueber (A) stand der Befehl im Alarmtext.
+      //
+      // Beides ist mit einem Regex nicht ehrlich pruefbar — es haengt an der
+      // REIHENFOLGE der Zweige. Deshalb laeuft hier die echte `POST`-Funktion
+      // mit echten Nachrichten. `fetch` ist ersetzt, es geht nichts nach
+      // aussen; Umgebungsvariablen werden gesichert und zurueckgestellt.
+      {
+        const chat = "123456789";
+        const pw = "MeinSehrGeheimesPasswort";
+        const altEnv = {
+          TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+          TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+          KILLSWITCH_PASSWORD: process.env.KILLSWITCH_PASSWORD,
+        };
+        const altFetch = global.fetch;
+        const antworten = [];
+        const alarme = [];
+        try {
+          process.env.TELEGRAM_CHAT_ID = chat;
+          process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
+          process.env.KILLSWITCH_PASSWORD = pw;
+          global.fetch = async (_u, init) => {
+            antworten.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+            return { ok: true, json: async () => ({ ok: true }) };
+          };
+          const wh = ladeTsModul("app/api/telegram/webhook/route.ts", {
+            "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
+            "telegram-notifications/telegram-sender": {
+              sendTelegram: async (t) => { alarme.push(String(t)); return true; },
+              telegramZeit: () => "29.9.2026, 22:20:06 MESZ", telegramDatum: () => "29.9.2026",
+            },
+            "lib/killswitch": {
+              getKillswitchReport: () => ({ triggered: false, armed: true, systemLocked: false, stages: [], summary: "ok" }),
+              triggerKillswitch: () => ({ triggered: true }), resetKillswitch: () => ({ triggered: false }),
+            },
+            "trading-filters/trade-filters": {
+              PEAK_SCHLUESSEL: "peak_balance",
+              peakZuruecksetzen: async () => ({ ok: true, alt: 10000 }),
+            },
+            "cache/redis-cache": { cacheGet: async () => ({ peak: 10000 }), cacheSet: async () => true, cacheDel: async () => true },
+            "capital-com/capital-com-session": { getCapitalSession: () => ({ balance: 9982.56 }) },
+          });
+          if (wh.fehler || typeof wh.exports.POST !== "function") {
+            torPruefung("der Telegram-Webhook ist nicht ausfuehrbar", false,
+              wh.fehler ?? "POST wird nicht exportiert");
+          } else {
+            const schicke = (text) => wh.exports.POST({
+              json: async () => ({ message: { chat: { id: Number(chat) }, from: { first_name: "Pruefstand" }, text } }),
+            });
+
+            await schicke("/peakreset");
+            torPruefung("/peakreset fragt nicht nach dem Passwort",
+              (antworten.at(-1) ?? "").includes("Admin-Passwort"), (antworten.at(-1) ?? "").slice(0, 60));
+
+            // B: ein Befehl darf die Bestaetigung abbrechen, nicht ausloesen.
+            const vorAlarme = alarme.length;
+            await schicke("/status");
+            const letzte = antworten.slice(-2);
+            torPruefung("ein Befehl innerhalb der Bestaetigung gilt als Passwort",
+              letzte.some((a) => a.includes("abgebrochen")), letzte[0]?.slice(0, 70) ?? "");
+            torPruefung("ein Befehl innerhalb der Bestaetigung loest einen Fehlalarm aus",
+              alarme.length === vorAlarme, `${alarme.length - vorAlarme} neue Alarme`);
+            torPruefung("der abgebrochene Befehl wird gar nicht ausgefuehrt",
+              letzte.some((a) => /System Status/i.test(a)), letzte.at(-1)?.slice(0, 50) ?? "");
+
+            // A: ein falsches Passwort darf nirgends stehen.
+            await schicke("/peakreset");
+            const tippfehler = pw.slice(0, -1) + "X";
+            await schicke(tippfehler);
+            const alarm = alarme.at(-1) ?? "";
+            torPruefung("ein falsches Passwort loest keinen Alarm aus",
+              /Falsches Admin-Passwort/.test(alarm), alarm.slice(0, 60));
+            torPruefung("der Alarm plaudert die Eingabe aus",
+              !alarm.includes(tippfehler.slice(0, 10)),
+              "ein Tippfehler im letzten Zeichen gaebe sonst das halbe Passwort preis");
+            torPruefung("der Alarm nennt die Laenge nicht",
+              alarm.includes(`${tippfehler.length} Zeichen`), `${tippfehler.length} Zeichen erwartet`);
+
+            // Und das richtige Passwort muss weiter funktionieren.
+            await schicke("/peakreset");
+            await schicke(pw);
+            torPruefung("das RICHTIGE Passwort wird nicht mehr angenommen",
+              alarme.some((a) => /ZURÜCKGESETZT/.test(a))
+              || /zurückgesetzt/i.test(antworten.at(-1) ?? ""),
+              (antworten.at(-1) ?? "").slice(0, 60));
+          }
+        } finally {
+          global.fetch = altFetch;
+          for (const [k, v] of Object.entries(altEnv)) {
+            if (v === undefined) delete process.env[k]; else process.env[k] = v;
+          }
+        }
+      }
+
       // ── KEIN STILLER AUFFANG MEHR IN DER BESTAETIGUNGS-KETTE ────────────
       //
       // Der letzte Zweig war `} else {` mit dem vollstaendigen Shutdown

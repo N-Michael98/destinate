@@ -542,6 +542,34 @@ Bezugspunkt. Dazu: der Schlüssel `peak_balance` darf **genau einmal** im
 Programm als Zeichenkette vorkommen (`PEAK_SCHLUESSEL`), und ein
 Redis-Ausfall darf nicht als Erfolg durchgehen.
 
+### Ein Admin-Passwort gehört nirgends echot (29.09.)
+
+Die Fehlmeldung bei falschem Passwort lautete:
+
+```ts
+Eingabe: <code>${text.slice(0, 20)}***</code>
+```
+
+Ein Tippfehler im **letzten** Zeichen des richtigen Passworts schickte damit
+bis zu zwanzig **richtige** Zeichen im Klartext in den Chat. Es ist der eigene
+Kanal — aber ein Telegram-Verlauf liegt auf jedem angemeldeten Gerät und auf
+Telegrams Servern, und er lässt sich nicht zurückholen. Jetzt nennt der Alarm
+nur noch **Länge** und **Art** („sah aus wie ein Befehl" / „Freitext").
+
+**Und ein Befehl ist kein Passwort.** Die Bestätigungs-Prüfung steht **vor**
+der Befehlsauswertung: wer innerhalb der 60 Sekunden `/status` schickte, dessen
+Befehl galt als Passwortversuch — falscher Alarm, und über die Zeile oben stand
+der Befehl dann im Alarmtext. Eine Nachricht mit `/` bricht die Bestätigung
+jetzt ab und läuft als normaler Befehl weiter. **Preis:** das Admin-Passwort
+darf nicht mit `/` beginnen; die Abbruch-Meldung sagt das.
+
+**Beides ist mit einem Regex nicht ehrlich prüfbar** — es hängt an der
+Reihenfolge der Zweige. `safety-nets` führt deshalb die echte `POST`-Funktion
+mit echten Nachrichten aus (`fetch` ersetzt, Umgebungsvariablen gesichert und
+zurückgestellt). Von fünf Sabotagen ist die vierte die feinste: der
+Abbruch-Zweig bleibt stehen, kehrt aber zurück statt durchzufallen — der
+Befehl verpufft dann. Strukturell unauffällig, nur im Lauf sichtbar.
+
 **Und ein Auffang-Zweig ist dabei verschwunden.** Die Passwort-Bestätigung im
 Telegram-Webhook endete mit `} else {` — und darin stand der **vollständige
 Shutdown**. Jede nicht erkannte Aktion löste damit nach korrektem Passwort

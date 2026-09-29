@@ -164,7 +164,31 @@ Text: <code>${text.slice(0, 50)}</code>
 
     // ── Password confirmation flow ─────────────────────────────────────────────
     const pending = pendingConfirm.get(chatId);
-    if (pending) {
+
+    // ── EIN BEFEHL IST KEIN PASSWORT (29.09.) ───────────────────────────────
+    //
+    // Diese Pruefung steht VOR der Befehlsauswertung. Wer also innerhalb der
+    // 60 Sekunden nach `/killswitch`, `/reset`, `/peakreset` oder `/block`
+    // irgendetwas schickt — auch `/status` oder `/help` —, dessen Nachricht
+    // galt als PASSWORTVERSUCH: falsches Passwort, Sicherheitsalarm, und der
+    // eigene Befehl stand (bis zum Fix darueber) im Alarmtext.
+    //
+    // Eine Nachricht, die mit `/` beginnt, bricht die Bestaetigung jetzt ab
+    // und laeuft als ganz normaler Befehl weiter. Kein Alarm, kein Verlust:
+    // der abgebrochene Befehl laesst sich jederzeit neu senden.
+    //
+    // PREIS, und er steht deshalb in der Meldung: das Admin-Passwort darf
+    // nicht mit `/` beginnen. Das ist die deutlich kleinere Einschraenkung —
+    // die Alternative waere, weiter jeden Tippfehler zu einem Alarm zu
+    // machen und jeden Befehl in einen Passwortversuch zu verwandeln.
+    if (pending && text.startsWith("/")) {
+      pendingConfirm.delete(chatId);
+      await reply(chatId,
+        `↩️ Bestätigung für "<code>${pending.action}</code>" abgebrochen — `
+        + `du hast einen Befehl geschickt, kein Passwort. Es wurde NICHTS ausgeführt.\n\n`
+        + `<i>Hinweis: das Admin-Passwort darf nicht mit / beginnen.</i>`);
+      // KEIN return: die Nachricht wird unten als normaler Befehl behandelt.
+    } else if (pending) {
       // Clean up expired
       if (Date.now() > pending.expiresAt) {
         pendingConfirm.delete(chatId);
@@ -181,11 +205,24 @@ Text: <code>${text.slice(0, 50)}</code>
 
       if (text !== KILLSWITCH_PASSWORD) {
         pendingConfirm.delete(chatId);
+        // ── DIE FEHLMELDUNG GAB DAS PASSWORT AUS (29.09.) ─────────────────
+        //
+        // Hier stand `Eingabe: <code>${text.slice(0, 20)}***</code>`.
+        //
+        // Ein Tippfehler im LETZTEN Zeichen des richtigen Passworts schickte
+        // damit bis zu zwanzig RICHTIGE Zeichen im Klartext in den Chat. Es
+        // ist der eigene Kanal — aber ein Admin-Passwort gehoert nirgends
+        // echot: ein Telegram-Verlauf liegt auf jedem angemeldeten Geraet und
+        // auf Telegrams Servern, und er laesst sich nicht zurueckholen.
+        //
+        // Der Alarm behaelt seinen Zweck. Zur Einordnung genuegt, WAS es war
+        // (Laenge, und ob es wie ein Befehl aussah) — der Inhalt nicht.
+        const art = text.startsWith("/") ? "sah aus wie ein Befehl" : "Freitext";
         await sendTelegram(
 `🚨 <b>Falsches Admin-Passwort!</b>
 
 Jemand hat versucht, den Kill Switch mit falschem Passwort auszulösen.
-Eingabe: <code>${text.slice(0, 20)}***</code>
+Eingabe: ${text.length} Zeichen, ${art} — der Inhalt wird bewusst NICHT ausgegeben.
 🕐 ${telegramZeit()}`
         );
         await reply(chatId, "❌ Falsches Passwort. Kill Switch verweigert. Sicherheitsalert gesendet.");
