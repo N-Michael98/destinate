@@ -677,13 +677,84 @@ export async function ergaenzeDealIdsAusPositionen(
  * KONSERVATIV MIT ABSICHT. Angelegt wird nur bei EINDEUTIGER Lage:
  *  - die Position hat eine dealId, und
  *  - keine offene Zeile trägt diese dealId schon, und
- *  - es gibt KEINE offene Zeile OHNE dealId.
+ *  - es gibt KEINE offene Zeile OHNE dealId, und
+ *  - es gibt KEINE offene Zeile mit einer VERWAISTEN dealId (30.09.).
  *
- * Die letzte Bedingung ist die wichtigste: eine Zeile ohne dealId KÖNNTE genau
+ * Die letzten beiden sind die wichtigsten: eine solche Zeile KÖNNTE genau
  * diese Position sein (dafür gibt es den dealId-Nachtrag). Eine zweite
  * anzulegen ergäbe einen Doppeleintrag im Journal und eine doppelt gezählte
  * Position — schlimmer als die Lücke. In dem Fall wird gemeldet statt geraten.
+ *
+ * ── DIE LÜCKE WAR DIE VIERTE BEDINGUNG (30.09.) ─────────────────────────────
+ *
+ * Geprüft wurde nur "Zeile OHNE dealId". Eine Zeile mit einer dealId, die bei
+ * KEINER offenen Position vorkommt, rutschte durch — und genau das stand im
+ * Log. Viermal, bei jedem XRPUSD-Trade seit dem 24.09.:
+ *
+ *   #778 CLOSED 09-29T15:17Z stil=DAYTRADING  dealId≠…  ref  exit=KEIN_PNL
+ *   #779 OPEN   09-29T15:18Z stil=UNBEKANNT   dealId=…  REKONSTRUIERT
+ *
+ * Eine Minute Abstand, also genau EIN Sync-Zyklus. Die echte Zeile lief danach
+ * in die P&L-Abstimmung, fand nichts (ihre dealId gehört zu keiner Position)
+ * und wurde nach fünf Versuchen als `KEIN_PNL` mit P&L 0 geschlossen. Das
+ * echte Ergebnis trug die rekonstruierte Zeile — mit `stil=UNBEKANNT`, also
+ * OHNE Zeit-Exit.
+ *
+ * Was das kostet: der Zeit-Exit ist für die real laufende Position ausgesetzt,
+ * und `echteGeschlosseneTrades()` liest die Notizen nicht — beide Zeilen gehen
+ * in die Lernstatistik, jeder Trade bekommt einen erfundenen Nulltrade dazu.
+ *
+ * Eine verwaiste dealId ist IMMER verdächtig: entweder gehört die Zeile zu
+ * dieser Position (dann wäre eine zweite falsch), oder ihre Position wurde
+ * gerade geschlossen (dann verbucht der Tracker sie im selben Durchlauf weiter
+ * unten, und der nächste Zyklus legt sie an). Beide Male ist Warten richtig.
  */
+/**
+ * Ist die Lage eindeutig genug, um überhaupt zu rekonstruieren? (30.09.)
+ *
+ * ALS FUNKTION, nicht als Ausdruck in der Schleife: ein Prüfer kann sie
+ * AUSFÜHREN. Eine Struktur-Prüfung sähe einem umgedrehten Vergleich oder
+ * einem vergessenen `verwaist` nichts an — und genau diese Bedingung
+ * entscheidet, ob ein Trade eine oder zwei Journal-Zeilen bekommt.
+ *
+ * Unlesbare Notizen zählen als `ohneDealId`: eine Zeile, die sich nicht lesen
+ * lässt, KANN diese Position sein. Das war schon vorher so und bleibt.
+ */
+export function rekonstruktionsLage(
+  offeneNotizen: ReadonlyArray<string | null | undefined>,
+  offenePositionsIds: ReadonlyArray<string | null | undefined>,
+): {
+  erlaubt: boolean; bekannt: Set<string>;
+  ohneDealId: number; verwaist: number; verwaisteIds: string[];
+} {
+  const offen = new Set(
+    (offenePositionsIds ?? []).map((d) => String(d ?? "").trim()).filter(Boolean)
+  );
+  const bekannt = new Set<string>();
+  const verwaisteIds: string[] = [];
+  let ohneDealId = 0;
+  let verwaist = 0;
+
+  for (const roh of offeneNotizen ?? []) {
+    let m: Record<string, unknown>;
+    try { m = JSON.parse(roh ?? "{}") as Record<string, unknown>; } catch { ohneDealId++; continue; }
+    if (!m || typeof m !== "object") { ohneDealId++; continue; }
+    const d = String(m.dealId ?? "").trim();
+    if (!d) { ohneDealId++; continue; }
+    bekannt.add(d);
+    // Eine dealId, die bei KEINER offenen Position vorkommt: entweder gehoert
+    // die Zeile zu einer Position, die wir gerade rekonstruieren wollen (dann
+    // waere eine zweite falsch), oder ihre Position ist geschlossen (dann
+    // verbucht der Tracker sie im selben Durchlauf). Beides heisst: warten.
+    if (!offen.has(d)) { verwaist++; verwaisteIds.push(d); }
+  }
+
+  return {
+    erlaubt: ohneDealId === 0 && verwaist === 0,
+    bekannt, ohneDealId, verwaist, verwaisteIds,
+  };
+}
+
 export async function ergaenzeFehlendeJournalZeilen(
   positionen: Array<{
     dealId?: string | null; symbol?: string | null; direction?: string | null;
@@ -691,8 +762,14 @@ export async function ergaenzeFehlendeJournalZeilen(
     stopLevel?: number | null; profitLevel?: number | null;
   }>,
   kontostand: number,
-): Promise<{ angelegt: number; vorhanden: number; mehrdeutig: number }> {
-  const bilanz = { angelegt: 0, vorhanden: 0, mehrdeutig: 0 };
+): Promise<{
+  angelegt: number; vorhanden: number; mehrdeutig: number;
+  verwaist: number; verwaisteIds: string[];
+}> {
+  const bilanz = {
+    angelegt: 0, vorhanden: 0, mehrdeutig: 0,
+    verwaist: 0, verwaisteIds: [] as string[],
+  };
   try {
     if (!positionen.length) return bilanz;
     const db = getPrisma();
@@ -700,21 +777,20 @@ export async function ergaenzeFehlendeJournalZeilen(
       notes: string | null;
     }>>)(`SELECT "notes" FROM "Trade" WHERE status = 'OPEN'`);
 
-    const bekannteDealIds = new Set<string>();
-    let ohneDealId = 0;
-    for (const z of rows ?? []) {
-      let m: Record<string, unknown>;
-      try { m = JSON.parse(z.notes ?? "{}") as Record<string, unknown>; } catch { ohneDealId++; continue; }
-      const d = String(m.dealId ?? "").trim();
-      if (d) bekannteDealIds.add(d); else ohneDealId++;
-    }
+    const lage = rekonstruktionsLage(
+      (rows ?? []).map((z) => z.notes),
+      positionen.map((p) => p.dealId),
+    );
+    bilanz.verwaist = lage.verwaist;
+    bilanz.verwaisteIds = lage.verwaisteIds;
 
     for (const p of positionen) {
       const dealId = String(p.dealId ?? "").trim();
       if (!dealId) continue;
-      if (bekannteDealIds.has(dealId)) { bilanz.vorhanden++; continue; }
-      if (ohneDealId > 0) {
-        // Eine unaufgeloeste Zeile koennte genau diese Position sein.
+      if (lage.bekannt.has(dealId)) { bilanz.vorhanden++; continue; }
+      if (!lage.erlaubt) {
+        // Eine unaufgeloeste ODER verwaiste Zeile koennte genau diese
+        // Position sein — siehe der Block ueber dieser Funktion.
         bilanz.mehrdeutig++;
         continue;
       }
@@ -825,10 +901,27 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // eine zweite Zeile für dieselbe Position an.
     const fehlendeZeilen = await ergaenzeFehlendeJournalZeilen(
       posResult.positions ?? [], session.balance > 0 ? session.balance : 0);
-    if (fehlendeZeilen.angelegt > 0 || fehlendeZeilen.mehrdeutig > 0) {
+    if (fehlendeZeilen.angelegt > 0 || fehlendeZeilen.mehrdeutig > 0
+      || fehlendeZeilen.verwaist > 0) {
       console.log(`[trade-tracker] Fehlende Journal-Zeilen: ${fehlendeZeilen.angelegt} rekonstruiert, `
-        + `${fehlendeZeilen.mehrdeutig} nicht eindeutig (offene Zeile ohne dealId — `
-        + `es wird NICHT geraten), ${fehlendeZeilen.vorhanden} waren vorhanden`);
+        + `${fehlendeZeilen.mehrdeutig} nicht eindeutig (offene Zeile ohne dealId oder mit `
+        + `verwaister dealId — es wird NICHT geraten), ${fehlendeZeilen.vorhanden} waren vorhanden`);
+    }
+    // ── DIE VERWAISTE ID GEHOERT NAMENTLICH INS LOG (30.09.) ──────────────
+    //
+    // Der Riegel oben verhindert den Doppeleintrag — aber er beantwortet
+    // nicht, WARUM eine Journal-Zeile auf eine Position zeigt, die es nicht
+    // gibt. Ohne diese Zeile bliebe genau die Frage offen, wegen der es den
+    // Riegel gibt: "wer den Grund nicht mitschreibt, muss ihn spaeter raten".
+    //
+    // Die offenen Positions-IDs stehen daneben, damit sich im Log direkt
+    // vergleichen laesst, ob sich die IDs nur am Anfang unterscheiden.
+    if (fehlendeZeilen.verwaist > 0) {
+      console.warn(`[trade-tracker] ⚠️ ${fehlendeZeilen.verwaist} offene Journal-Zeile(n) `
+        + `zeigen auf eine Position, die der Broker NICHT fuehrt: `
+        + `${fehlendeZeilen.verwaisteIds.join(", ")} — offen sind: `
+        + `${(posResult.positions ?? []).map((p) => p.dealId).filter(Boolean).join(", ") || "KEINE"}. `
+        + `Solange das so ist, wird NICHT rekonstruiert (kein Doppeleintrag).`);
     }
 
     // Fetch recent transactions for P&L (last 24h) — more reliable than activity endpoint

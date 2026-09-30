@@ -917,6 +917,68 @@ unten auf 500 geklemmt (nie weniger Platz als bisher).
   **balanciertes** Paar, an dem eine fehlende Erkennung gar nicht auffällt.
   Die Sabotage blieb grün. Jetzt eine **einzelne** Klammer: `"RSI 82]"`.
 
+## Eine verwaiste dealId ergab ZWEI Journal-Zeilen pro Trade (30.09.)
+
+Die 🔎-Diagnose vom 21.09. hat endlich eine offene Position erwischt — und
+zeigte **viermal dasselbe Muster**, bei jedem XRPUSD-Trade seit dem 24.09.:
+
+```
+#778 CLOSED 09-29T15:17Z stil=DAYTRADING  dealId≠…  ref  exit=KEIN_PNL
+#779 OPEN   09-29T15:18Z stil=UNBEKANNT   dealId=…  REKONSTRUIERT
+```
+
+Eine Minute Abstand — genau **ein** Sync-Zyklus. Die echte Zeile lief danach in
+die P&L-Abstimmung, fand nichts (ihre dealId gehört zu keiner Position) und
+wurde nach fünf Versuchen als `KEIN_PNL` mit P&L 0 geschlossen. Das **echte**
+Ergebnis trug die rekonstruierte Zeile — mit `stil=UNBEKANNT`, also **ohne
+Zeit-Exit**.
+
+**Zwingend, nicht gedeutet:** `ergaenzeFehlendeJournalZeilen` legt nur an, wenn
+KEINE offene Zeile ohne dealId existiert. Eine Zeile ohne dealId hätte
+blockiert. Also trug die echte Zeile eine dealId — **eine andere als die der
+offenen Position**.
+
+Geprüft wurde nur „Zeile OHNE dealId". Eine Zeile mit einer dealId, die bei
+**keiner** offenen Position vorkommt, rutschte durch. Die Absicht stand schon
+im Kommentar („schlimmer als die Lücke"), die Bedingung war eine Stelle zu eng.
+
+**Was das kostet:** der Zeit-Exit ist für die real laufende Position ausgesetzt,
+und `echteGeschlosseneTrades()` liest die Notizen **nicht** — beide Zeilen gehen
+in die Lernstatistik, jeder Trade bekommt einen erfundenen Nulltrade dazu. Ohne
+Handelsfolge heute, weil `getLearningAdjustmentFactor()` in keiner Schleife
+läuft. `ETIKETTEN_OHNE_ERGEBNIS` verlässt seine Datei nie und filtert nirgends.
+
+Jetzt entscheidet `rekonstruktionsLage()` — eine **ausführbare** Funktion, kein
+Ausdruck in der Schleife: eine verwaiste dealId blockiert die Rekonstruktion
+genauso wie eine fehlende, und sie wird **namentlich** ins Log geschrieben,
+samt der Liste der wirklich offenen IDs. Ohne diese Zeile bliebe genau die
+Frage offen, wegen der es den Riegel gibt.
+
+**Was das NICHT tut:** die Ursache der abweichenden dealId ist damit **nicht**
+behoben. Verdacht, im Code gelesen und ausdrücklich als Verdacht notiert:
+`capitalPlaceOrder` und `capitalConfirmDeal` nehmen beide das **Top-Level**
+`dealId` aus `/confirms`, `capitalGetPositions` liest `position.dealId`, und
+`affectedDeals` kommt im ganzen Programm **nicht vor** (nachgezählt). Der
+Beleg muss aus dem Log kommen — dafür nennt die 🔎-Zeile jetzt die **vollen**
+IDs und die Herkunft (`via=CONFIRMS` / `via=POSITIONSLISTE` / `via=POSITION`).
+
+**Der eigene Anteil daran:** die 🔎-Zeile zeigte `id.slice(-12)`. Zwei IDs, die
+sich am **Anfang** unterscheiden, sahen damit identisch aus — die Diagnose
+konnte die Frage, für die sie gebaut wurde, nicht beantworten. Fehlerklasse
+„eine Diagnose darf im interessanten Fall nicht schweigen", diesmal in der
+Messung selbst.
+
+**Und der Prüfer war blind.** `lifecycle-rueckkehr` ruft diese Funktion seit dem
+18.08. **echt** auf — fünf Fälle, alle grün, auch mit dem Fehler. Ein Prüfer,
+der den Fehler nicht kennt, beweist nichts über ihn. Jetzt Fall 6 plus acht
+Rechnungen auf `rekonstruktionsLage()`; von sieben Sabotagen wurden zuerst
+**sechs** gefangen. Die siebte entwischte — und das war **mein Testfall**, nicht
+der Prüfer: er deckte das `.trim()` der Positions-Seite nur zufällig ab
+(dieselbe Falle wie `[RSI 82]`). Dazu eine Sabotage, die **nicht** rot werden
+kann: `.filter(Boolean)` auf den Positions-IDs ist nachweislich unerreichbar,
+weil `offen.has(d)` nur für ein `d` läuft, das `if (!d)` schon passiert hat.
+Das als „entwischt" zu zählen wäre ein Messfehler gewesen, kein Befund.
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn

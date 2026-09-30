@@ -556,12 +556,42 @@ export async function register() {
                               try { m = JSON.parse(z.notes ?? "{}") as Record<string, unknown>; } catch { /* unlesbar */ }
                               const id = String(m.dealId ?? "").trim();
                               const passt = id === t.tradeId ? "=" : id ? "≠" : "∅";
+                              // ── BEI ABWEICHUNG DIE VOLLE ID (30.09.) ───────────
+                              //
+                              // Hier stand `id.slice(-12)` fuer JEDEN Fall. Zwei IDs,
+                              // die sich am ANFANG unterscheiden, sehen damit
+                              // identisch aus — und genau das ist die Frage, die
+                              // diese Zeile beantworten soll.
+                              //
+                              // Am 30.09. war sie deshalb nicht auswertbar: vier
+                              // Paare aus echter und rekonstruierter Zeile, `≠`
+                              // daneben, und trotzdem in beiden dieselben zwoelf
+                              // Zeichen. Die Diagnose schwieg im interessanten Fall
+                              // — dieselbe Fehlerklasse, die sie aufdecken soll.
+                              //
+                              // Bei `=` bleibt die Kurzform: die ID steht im Kopf.
+                              const idText = !id ? "" : passt === "=" ? id.slice(-12) : id;
+                              // WOHER die ID stammt, ist die eigentliche Frage.
+                              // Genau VIER Stellen schreiben sie (nachgezaehlt):
+                              // `versucheJournalZeile` und `ergaenzeFehlendeDealIds`
+                              // nehmen beide das Top-Level `dealId` aus /confirms,
+                              // `ergaenzeDealIdsAusPositionen` vermerkt POSITIONSLISTE,
+                              // und die Rekonstruktion nimmt die Positions-ID direkt
+                              // (erkennbar an `rekonstruiert`). Ohne Vermerk und ohne
+                              // `rekonstruiert` kann sie also nur aus /confirms kommen
+                              // — das ist abgeleitet, nicht geraten.
+                              const quelle = m.dealIdQuelle ? String(m.dealIdQuelle)
+                                : m.rekonstruiert ? "POSITION"
+                                : id ? "CONFIRMS" : "";
                               return `#${z.id} ${z.status} ${new Date(z.createdAt).toISOString().slice(5, 16)}Z stil=${String(m.tradingStyle ?? "?")} `
-                                + `dealId${passt}${id ? id.slice(-12) : ""}`
-                                + `${m.dealReference ? " ref" : ""}${m.rekonstruiert ? " REKONSTRUIERT" : ""}`
+                                + `dealId${passt}${idText}${quelle ? ` via=${quelle}` : ""}`
+                                + `${m.dealReference ? ` ref=${String(m.dealReference)}` : ""}`
+                                + `${m.rekonstruiert ? " REKONSTRUIERT" : ""}`
                                 + `${m.exitReason ? ` exit=${String(m.exitReason)}` : ""}`;
                             });
-                            console.warn(`[py-lifecycle] 🔎 ${t.symbol} deal=…${t.tradeId.slice(-12)}: `
+                            // VOLLE gesuchte ID (30.09.): gegen eine gekuerzte laesst
+                            // sich eine abweichende Zeilen-ID nicht vergleichen.
+                            console.warn(`[py-lifecycle] 🔎 ${t.symbol} deal=${t.tradeId}: `
                               + `letzte ${zeilen.length} Journal-Zeile(n) des Symbols — ${teile.join(" | ") || "KEINE"}`);
                           } catch (e) {
                             console.warn(`[py-lifecycle] 🔎 Diagnose fuer ${t.symbol} nicht moeglich: `

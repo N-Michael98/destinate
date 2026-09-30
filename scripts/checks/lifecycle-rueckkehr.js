@@ -1158,6 +1158,72 @@ module.exports = async function pruefe() {
           [{ dealId: "", symbol: "EURUSD", direction: "BUY" }], 10000);
         pruefe1("eine Position OHNE dealId wird trotzdem angelegt",
           r5.angelegt === 0, JSON.stringify(r5));
+
+        // ── Fall 6: DER FEHLER VOM 30.09. — VERWAISTE dealId ────────────
+        //
+        // Eine offene Zeile traegt eine dealId, die bei KEINER offenen
+        // Position vorkommt. Bis heute rutschte sie durch: geprueft wurde
+        // nur "Zeile OHNE dealId". Im Log stand das viermal — auf jede
+        // echte Zeile folgte einen Sync-Zyklus spaeter eine zweite mit
+        // `stil=UNBEKANNT`, und die echte starb als KEIN_PNL.
+        //
+        // Diese fuenf Faelle liefen alle GRUEN, bevor es den Riegel gab.
+        // Genau deshalb steht Fall 6 hier: ein Pruefer, der den Fehler
+        // nicht kennt, beweist nichts ueber ihn.
+        const f = baueTracker([{ notes: JSON.stringify({ dealId: "DEAL-ALT", dealReference: "o_77" }) }]);
+        const r6 = await f.modul.exports.ergaenzeFehlendeJournalZeilen(POS, 10000);
+        pruefe1("eine verwaiste dealId laesst die Rekonstruktion durch — Doppeleintrag",
+          r6.angelegt === 0 && r6.mehrdeutig === 1 && r6.verwaist === 1,
+          JSON.stringify(r6));
+        pruefe1("die verwaiste dealId wird nicht namentlich gemeldet",
+          Array.isArray(r6.verwaisteIds) && r6.verwaisteIds.includes("DEAL-ALT"),
+          `verwaisteIds=${JSON.stringify(r6.verwaisteIds)} — sonst ist die Ursache spaeter nicht bestimmbar`);
+
+        // ── Und die Lage-Funktion selbst, GERECHNET ─────────────────────
+        //
+        // Sie entscheidet, ob ein Trade eine oder zwei Journal-Zeilen
+        // bekommt. Ein umgedrehter Vergleich oder ein vergessenes
+        // `verwaist` bliebe strukturell unauffaellig.
+        const lage = f.modul.exports.rekonstruktionsLage;
+        if (typeof lage !== "function") {
+          pruefe1("rekonstruktionsLage wird nicht exportiert — nicht pruefbar", false);
+        } else {
+          const n = (o) => JSON.stringify(o);
+          const l1 = lage([n({ dealId: "A" })], ["A"]);
+          pruefe1("eine passende dealId gilt als verwaist",
+            l1.erlaubt === true && l1.verwaist === 0 && l1.bekannt.has("A"), n(l1));
+          const l2 = lage([n({ dealId: "A" })], ["B"]);
+          pruefe1("eine verwaiste dealId wird nicht erkannt",
+            l2.erlaubt === false && l2.verwaist === 1 && l2.ohneDealId === 0, n(l2));
+          const l3 = lage([n({ dealReference: "o_1" })], ["A"]);
+          pruefe1("eine Zeile ohne dealId wird nicht mehr erkannt",
+            l3.erlaubt === false && l3.ohneDealId === 1 && l3.verwaist === 0, n(l3));
+          const l4 = lage(["kein json", null, undefined], ["A"]);
+          pruefe1("unlesbare oder fehlende Notizen gelten als eindeutig",
+            l4.erlaubt === false && l4.ohneDealId === 3, n(l4));
+          const l5 = lage([], []);
+          pruefe1("die leere Lage gilt nicht als eindeutig",
+            l5.erlaubt === true && l5.verwaist === 0 && l5.ohneDealId === 0, n(l5));
+          // Eine Position, die ihre dealId verloren hat, darf den Riegel
+          // nicht aufweichen.
+          const l6 = lage([n({ dealId: "A" })], ["", "  ", null]);
+          pruefe1("eine leere Positions-ID schaltet den Riegel aus",
+            l6.erlaubt === false && l6.verwaist === 1, n(l6));
+          // ── BEIDE SEITEN MUESSEN GETRIMMT WERDEN ───────────────────────
+          //
+          // l7 prueft die ZEILEN-Seite, l8 die POSITIONS-Seite. Im
+          // Sabotage-Lauf vom 30.09. entwischte genau die Positions-Seite:
+          // l6 allein deckt sie NICHT ab, weil ein leerer Eintrag in der
+          // Menge nie treffen kann — `d` hat die Pruefung `if (!d)` bereits
+          // passiert. Ein Testfall, der nur zufaellig dasselbe Ergebnis
+          // liefert, beweist nichts. Dieselbe Falle wie `[RSI 82]`.
+          const l7 = lage([n({ dealId: " A " })], ["A"]);
+          pruefe1("Leerzeichen in der ZEILEN-dealId machen sie faelschlich verwaist",
+            l7.erlaubt === true && l7.verwaist === 0, n(l7));
+          const l8 = lage([n({ dealId: "A" })], [" A "]);
+          pruefe1("Leerzeichen in der POSITIONS-dealId machen die Zeile faelschlich verwaist",
+            l8.erlaubt === true && l8.verwaist === 0, n(l8));
+        }
       }
     } finally {
       console.warn = stillesWarn; console.log = stillesLog;
