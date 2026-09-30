@@ -552,13 +552,65 @@ export const OHNE_POSITION_ZYKLEN_MAX = 3;
  *
  * Non-fatal in jedem Zweig.
  */
+/**
+ * Gehört diese offene Journal-Zeile in die Zuordnung aus der Positionsliste?
+ * (30.09.)
+ *
+ * ── WARUM ES DIESE FUNKTION GIBT ────────────────────────────────────────────
+ *
+ * Hier stand `if (m.dealId) continue;` — jede Zeile, die schon IRGENDEINE
+ * dealId trug, galt als aufgelöst. Eine Zeile mit einer FALSCHEN dealId wurde
+ * damit nie korrigiert: sie lief in die P&L-Abstimmung, fand nichts, und starb
+ * nach fünf Versuchen als `KEIN_PNL`. Die laufende Position bekam stattdessen
+ * eine rekonstruierte Zeile mit `stil=UNBEKANNT` — also OHNE Zeit-Exit.
+ *
+ * Der Riegel vom selben Tag (`rekonstruktionsLage`) verhindert nur, dass beide
+ * GLEICHZEITIG offen stehen. Nachgerechnet: er verzögert den Doppeleintrag,
+ * er verhindert ihn nicht. Erst die Korrektur hier beendet ihn.
+ *
+ * ── DIE STRENGERE BEDINGUNG FÜR VERWAISTE, UND WARUM ────────────────────────
+ *
+ * Eine verwaiste Zeile braucht einen brauchbaren Einstiegskurs. Grund:
+ * `zuordnungAusPositionen` überspringt den Kursvergleich, wenn einer der
+ * beiden Kurse fehlt (`!(ku && pk && ku !== pk)`) — dann entscheiden nur
+ * Symbol und Richtung. Für eine Zeile OHNE dealId ist das richtig, sie ist
+ * jung und es gibt nichts Besseres. Für eine verwaiste wäre es gefährlich:
+ * sie kann ALT sein, und auf demselben Symbol kann inzwischen eine NEUE
+ * Position laufen. Ohne Kursvergleich würde die alte Zeile der neuen Position
+ * zugeschlagen — ein falscher Stil auf einer laufenden Position, also genau
+ * das, was hier repariert werden soll, nur umgekehrt.
+ *
+ * Als Funktion, damit ein Prüfer sie AUSFÜHREN kann: die Entscheidung hängt an
+ * drei ineinandergreifenden Bedingungen, und ein umgedrehter Vergleich bliebe
+ * strukturell unauffällig.
+ */
+export function zeileBrauchtZuordnung(
+  notizen: Record<string, unknown> | null | undefined,
+  entry: number | null | undefined,
+  offenePositionsIds: ReadonlySet<string>,
+): { ja: boolean; grund: "ohne-dealId" | "verwaist" | null } {
+  const m = notizen && typeof notizen === "object" ? notizen : {};
+  // Ohne Order-Referenz gibt es nichts zu verknuepfen — unveraendert.
+  if (!String(m.dealReference ?? "").trim()) return { ja: false, grund: null };
+  const id = String(m.dealId ?? "").trim();
+  if (!id) return { ja: true, grund: "ohne-dealId" };
+  // Passt sie zu einer offenen Position, ist sie aufgeloest.
+  if (offenePositionsIds.has(id)) return { ja: false, grund: null };
+  const k = Number(entry);
+  if (!Number.isFinite(k) || k <= 0) return { ja: false, grund: null };
+  return { ja: true, grund: "verwaist" };
+}
+
 export async function ergaenzeDealIdsAusPositionen(
   positionen: ReadonlyArray<{
     dealId?: string | null; symbol?: string | null; epic?: string | null;
     direction?: string | null; openLevel?: number | null;
   }>,
-): Promise<{ ergaenzt: number; unklar: number; beobachtet: number; benannt: number }> {
-  const bilanz = { ergaenzt: 0, unklar: 0, beobachtet: 0, benannt: 0 };
+): Promise<{
+  ergaenzt: number; unklar: number; beobachtet: number;
+  benannt: number; korrigiert: number;
+}> {
+  const bilanz = { ergaenzt: 0, unklar: 0, beobachtet: 0, benannt: 0, korrigiert: 0 };
   try {
     const db = getPrisma();
     const rows = await (db.$queryRawUnsafe as (q: string) => Promise<Array<{
@@ -569,14 +621,22 @@ export async function ergaenzeDealIdsAusPositionen(
       + `WHERE status = 'OPEN' AND notes LIKE '%dealReference%'`
     );
 
+    const offeneIds = new Set(
+      (positionen ?? []).map((p) => String(p?.dealId ?? "").trim()).filter(Boolean)
+    );
     const meta = new Map<number, Record<string, unknown>>();
     const markt = new Map<number, string>();
+    // Welche Zeilen kommen mit einer FALSCHEN dealId herein? Sie brauchen
+    // weiter unten eine Sonderbehandlung: als NIE_BESTAETIGT geschlossen
+    // werden duerfen sie nicht — sie WAREN bestaetigt.
+    const verwaiste = new Set<number>();
     const offen: Array<{ id: number; market: string | null; direction: string | null; entry: number | null }> = [];
     for (const z of rows ?? []) {
       let m: Record<string, unknown>;
       try { m = JSON.parse(z.notes) as Record<string, unknown>; } catch { continue; }
-      if (m.dealId) continue;                                   // schon aufgeloest
-      if (!String(m.dealReference ?? "").trim()) continue;       // nichts zu verknuepfen
+      const urteil = zeileBrauchtZuordnung(m, z.entry, offeneIds);
+      if (!urteil.ja) continue;
+      if (urteil.grund === "verwaist") verwaiste.add(z.id);
       meta.set(z.id, m);
       markt.set(z.id, String(z.market ?? "?"));
       offen.push({ id: z.id, market: z.market, direction: z.direction, entry: z.entry });
@@ -590,13 +650,26 @@ export async function ergaenzeDealIdsAusPositionen(
     for (const { id, dealId } of zu.eindeutig) {
       const m = meta.get(id);
       if (!m) continue;
+      const alt = String(m.dealId ?? "").trim();
       const neu: Record<string, unknown> = { ...m, dealId, dealIdQuelle: "POSITIONSLISTE" };
       delete neu.ohnePositionZyklen;
+      // Die falsche ID wird NICHT still ueberschrieben (30.09.). Sie ist der
+      // einzige Beleg dafuer, woher sie kam — und die Frage, warum sie
+      // abweicht, ist noch offen. Dieselbe Regel wie `exitReasonVorher`.
+      if (alt && alt !== dealId) neu.dealIdVorher = alt;
       await db.$executeRawUnsafe(
         `UPDATE "Trade" SET "notes" = $1 WHERE "id" = $2`, JSON.stringify(neu), id);
-      bilanz.ergaenzt++;
-      console.log(`[trade-tracker] ✅ dealId aus Positionsliste: Zeile ${id} `
-        + `(${markt.get(id)}) -> ${dealId}`);
+      if (alt && alt !== dealId) {
+        bilanz.korrigiert++;
+        console.warn(`[trade-tracker] 🔧 dealId KORRIGIERT: Zeile ${id} (${markt.get(id)}) `
+          + `trug ${alt}, der Broker fuehrt ${dealId} — die Zeile behaelt damit ihren `
+          + `echten Handelsstil, statt als KEIN_PNL zu sterben und durch eine `
+          + `rekonstruierte mit stil=UNBEKANNT ersetzt zu werden`);
+      } else {
+        bilanz.ergaenzt++;
+        console.log(`[trade-tracker] ✅ dealId aus Positionsliste: Zeile ${id} `
+          + `(${markt.get(id)}) -> ${dealId}`);
+      }
     }
 
     // Eine Zeile, die wieder Anschluss hat, darf ihren Phantom-Zaehler nicht
@@ -613,6 +686,18 @@ export async function ergaenzeDealIdsAusPositionen(
     for (const id of zu.ohnePosition) {
       const m = meta.get(id);
       if (!m) continue;
+      // ── EINE VERWAISTE ZEILE IST KEIN PHANTOM (30.09.) ─────────────────
+      //
+      // Dieser Zweig schliesst eine Zeile als NIE_BESTAETIGT — "es hat den
+      // Trade nie gegeben". Fuer eine Zeile ohne dealId stimmt das. Fuer eine
+      // VERWAISTE waere es falsch: sie TRUG eine dealId, war also bestaetigt,
+      // und ihre Position ist nur nicht mehr offen. Sie gehoert in die
+      // P&L-Abstimmung (die sie als KEIN_PNL schliesst), nicht hierher.
+      //
+      // Ohne diese Zeile haette die Lockerung oben einen echten Trade als
+      // "hat es nie gegeben" in die Statistik geschrieben — schlimmer als
+      // der Fehler, der hier behoben wird.
+      if (verwaiste.has(id)) { bilanz.beobachtet++; continue; }
       // Solange der /confirms-Weg noch laeuft, wird NICHT benannt: eine frisch
       // aufgegebene Order kann noch als Position auftauchen.
       const versuche = Number(m.dealIdVersuche ?? 0);
@@ -886,8 +971,9 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // NICHT wie eine verschwundene Position aus.
     const ausListe = await ergaenzeDealIdsAusPositionen(posResult.positions ?? []);
     if (ausListe.ergaenzt > 0 || ausListe.unklar > 0
-      || ausListe.beobachtet > 0 || ausListe.benannt > 0) {
+      || ausListe.beobachtet > 0 || ausListe.benannt > 0 || ausListe.korrigiert > 0) {
       console.log(`[trade-tracker] Zuordnung aus Positionsliste: ${ausListe.ergaenzt} ergänzt, `
+        + `${ausListe.korrigiert} korrigiert (falsche dealId), `
         + `${ausListe.unklar} unklar, ${ausListe.beobachtet} beobachtet, `
         + `${ausListe.benannt} als NIE_BESTAETIGT geschlossen`);
     }

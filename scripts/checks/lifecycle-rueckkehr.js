@@ -826,6 +826,87 @@ module.exports = async function pruefe() {
       "sonst schluege er beim naechsten Aussetzer sofort durch");
     pruefe1("eine unklare Zeile wird geschlossen statt in Ruhe gelassen",
       !/zu\.unklar[\s\S]{0,400}?status.{0,4}=.{0,4}.CLOSED/.test(rumpf));
+
+    // ── EINE FALSCHE dealId WIRD KORRIGIERT, NICHT STILL ERSETZT (30.09.) ──
+    pruefe1("die falsche dealId wird still ueberschrieben",
+      /neu\.dealIdVorher = alt/.test(rumpf),
+      "sie ist der einzige Beleg dafuer, woher sie kam");
+    pruefe1("eine VERWAISTE Zeile kann als NIE_BESTAETIGT geschlossen werden",
+      /verwaiste\.has\(id\)[\s\S]{0,80}?continue/.test(rumpf),
+      "sie TRUG eine dealId, war also bestaetigt — das waere ein erfundenes Phantom");
+    pruefe1("die Korrektur bekommt keine eigene Zahl in der Bilanz",
+      /bilanz\.korrigiert\+\+/.test(rumpf) && /korrigiert \(falsche dealId\)/.test(trackerC),
+      "sonst ist eine Korrektur von einer Ergaenzung nicht zu unterscheiden");
+
+    // ── DIE VERDRAHTUNG, NICHT NUR DIE FUNKTION ─────────────────────────
+    //
+    // Die Rechnungen weiter unten pruefen `zeileBrauchtZuordnung` ISOLIERT.
+    // Wuerde die Aufrufstelle das Urteil nachtraeglich einschraenken
+    // (`if (!urteil.ja || urteil.grund === "verwaist") continue`), blieben
+    // sie alle gruen und der Fix waere lautlos aus. Dieselbe Fehlerklasse
+    // wie "ein Wort im Kommentar ist keine Verwendung", eine Ebene hoeher:
+    // eine geprueft richtige Funktion, die niemand ehrlich fragt.
+    pruefe1("die Zuordnung fragt zeileBrauchtZuordnung nicht",
+      /zeileBrauchtZuordnung\(m, z\.entry, offeneIds\)/.test(rumpf),
+      "sonst entscheidet wieder ein Ausdruck in der Schleife");
+    pruefe1("das Urteil wird an der Aufrufstelle nachtraeglich eingeschraenkt",
+      /if \(!urteil\.ja\) continue;/.test(rumpf)
+      && !/urteil\.grund\s*===\s*"verwaist"\s*\)\s*continue/.test(rumpf),
+      "`urteil.ja` muss die EINZIGE Bedingung sein");
+    pruefe1("verwaiste Zeilen werden nicht gemerkt — der Phantom-Schutz haengt daran",
+      /verwaiste\.add\(z\.id\)/.test(rumpf));
+    pruefe1("die offenen Positions-IDs werden nicht getrimmt/gefiltert",
+      /map\(\(p\) => String\(p\?\.dealId \?\? ""\)\.trim\(\)\)\.filter\(Boolean\)/.test(rumpf),
+      "eine Position ohne ID wuerde sonst als leere Kennung mitzaehlen");
+  }
+
+  // ── zeileBrauchtZuordnung() WIRKLICH RECHNEN (30.09.) ──────────────────
+  //
+  // Sie entscheidet, ob eine Zeile mit FALSCHER dealId korrigiert wird —
+  // und damit, ob eine laufende Position ihren echten Handelsstil behaelt
+  // oder mit `stil=UNBEKANNT` ohne Zeit-Exit weiterlaeuft. Drei Bedingungen
+  // greifen ineinander; ein umgedrehter Vergleich bliebe strukturell
+  // voellig unauffaellig.
+  {
+    const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+    const f = tr.exports?.zeileBrauchtZuordnung;
+    if (tr.fehler || typeof f !== "function") {
+      pruefe1("zeileBrauchtZuordnung ist nicht ausfuehrbar",
+        false, tr.fehler ?? "nicht exportiert");
+    } else {
+      const OFFEN = new Set(["POS-NEU"]);
+      const ref = { dealReference: "o_77" };
+      const p = (name, ein, entry, erwartetJa, erwarteterGrund) => {
+        const r = f(ein, entry, OFFEN);
+        pruefe1(name, r.ja === erwartetJa && r.grund === erwarteterGrund,
+          `ja=${r.ja} grund=${r.grund}`);
+      };
+
+      p("ohne Order-Referenz wird trotzdem zugeordnet", { dealId: "X" }, 1.1, false, null);
+      p("eine Zeile ohne dealId faellt aus der Zuordnung",
+        { ...ref }, 1.1, true, "ohne-dealId");
+      p("eine AUFGELOESTE Zeile wird noch einmal zugeordnet",
+        { ...ref, dealId: "POS-NEU" }, 1.1, false, null);
+      // Der neue Fall.
+      p("eine VERWAISTE dealId wird nicht mehr korrigiert",
+        { ...ref, dealId: "POS-ALT" }, 1.1, true, "verwaist");
+      // Und der Schutz davor: ohne Einstiegskurs faellt der Kursvergleich in
+      // zuordnungAusPositionen weg, dann entscheiden nur Symbol+Richtung —
+      // eine ALTE Zeile koennte einer NEUEN Position zugeschlagen werden.
+      for (const [name, k] of [["0", 0], ["null", null], ["undefined", undefined],
+        ["NaN", NaN], ["negativ", -1.1], ["Text", "abc"]]) {
+        p(`eine verwaiste Zeile mit Einstiegskurs ${name} wird zugeordnet — `
+          + `sie koennte einer NEUEN Position zugeschlagen werden`,
+          { ...ref, dealId: "POS-ALT" }, k, false, null);
+      }
+      // Eine Zeile OHNE dealId braucht den Kurs NICHT — sie ist jung, und es
+      // gibt nichts Besseres. Das war schon vor dem 30.09. so und bleibt.
+      p("eine Zeile ohne dealId verliert ihre Zuordnung ohne Einstiegskurs",
+        { ...ref }, 0, true, "ohne-dealId");
+      p("unbrauchbare Notizen werfen statt abzulehnen", null, 1.1, false, null);
+      p("Leerzeichen um die dealId machen sie faelschlich verwaist",
+        { ...ref, dealId: " POS-NEU " }, 1.1, false, null);
+    }
   }
   pruefe1("die Bilanz der Zuordnung wird nicht ausgegeben",
     /Zuordnung aus Positionsliste/.test(trackerC));
@@ -1223,6 +1304,132 @@ module.exports = async function pruefe() {
           const l8 = lage([n({ dealId: "A" })], [" A "]);
           pruefe1("Leerzeichen in der POSITIONS-dealId machen die Zeile faelschlich verwaist",
             l8.erlaubt === true && l8.verwaist === 0, n(l8));
+        }
+
+        // ── DIE KORREKTUR ALS GANZE KETTE, AUSGEFUEHRT (30.09.) ─────────
+        //
+        // Mit der ECHTEN `zuordnungAusPositionen` aus dem risk-agent, nicht
+        // mit einem Stellvertreter: nur so faellt auf, wenn die Zuordnung
+        // und die Korrektur auseinanderlaufen.
+        //
+        // WARUM AUSGEFUEHRT UND NICHT GESUCHT: im Sabotage-Lauf vom 30.09.
+        // entwischten genau zwei Sabotagen, und beide auf dieselbe Weise —
+        // `if (alt && alt !== dealId) neu.dealIdVorher = alt;` wurde zu
+        // `if (false) …`. Der TEXT stand noch da, der Regex fand ihn, der
+        // Pruefer blieb gruen. Ein Regex prueft den Wortlaut, nicht das
+        // Verhalten.
+        {
+          const ra = ladeTsModul("lib/agents/risk-agent.ts");
+          const geschrieben = [];
+          const ZEILEN = [{
+            id: 42, market: "XRPUSD", direction: "BUY", entry: 0.5,
+            notes: JSON.stringify({
+              dealId: "CONFIRM-ALT", dealReference: "o_77",
+              tradingStyle: "DAYTRADING", confidence: 78,
+            }),
+          }];
+          const POSNEU = [{
+            dealId: "POSITION-NEU", symbol: "XRPUSD", epic: "XRPUSD",
+            direction: "BUY", openLevel: 0.5,
+          }];
+          const tr3 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+            prisma: {
+              getPrisma: () => ({
+                $queryRawUnsafe: async (q) => (/FROM "Trade"/.test(q) ? ZEILEN : []),
+                $executeRawUnsafe: async (q, ...a) => { geschrieben.push(a); return 1; },
+              }),
+            },
+            "risk-agent": ra.fehler ? undefined : ra.exports,
+          });
+          const fn = tr3.exports?.ergaenzeDealIdsAusPositionen;
+          if (ra.fehler || tr3.fehler || typeof fn !== "function") {
+            pruefe1("die Korrektur-Kette ist nicht ausfuehrbar",
+              false, ra.fehler ?? tr3.fehler ?? "nicht exportiert");
+          } else {
+            const r = await fn(POSNEU);
+            pruefe1("eine Zeile mit falscher dealId wird nicht korrigiert",
+              r.korrigiert === 1, JSON.stringify(r));
+            pruefe1("die Korrektur wird faelschlich als Ergaenzung gezaehlt",
+              r.ergaenzt === 0, JSON.stringify(r));
+            let neu = {};
+            try { neu = JSON.parse(String(geschrieben[0]?.[0] ?? "{}")); } catch { /* unlesbar */ }
+            pruefe1("die echte Positions-ID wird nicht geschrieben",
+              neu.dealId === "POSITION-NEU", JSON.stringify(neu));
+            pruefe1("die alte, falsche dealId verschwindet still",
+              neu.dealIdVorher === "CONFIRM-ALT",
+              `dealIdVorher=${JSON.stringify(neu.dealIdVorher)} — sie ist der einzige Beleg, woher sie kam`);
+            pruefe1("der echte Handelsstil geht bei der Korrektur verloren",
+              neu.tradingStyle === "DAYTRADING" && neu.confidence === 78,
+              `${JSON.stringify(neu.tradingStyle)}/${JSON.stringify(neu.confidence)} — genau dafuer gibt es die Korrektur`);
+            pruefe1("die Herkunft wird nicht vermerkt",
+              neu.dealIdQuelle === "POSITIONSLISTE", JSON.stringify(neu.dealIdQuelle));
+
+            // Und die Gegenprobe: passt der Einstiegskurs NICHT, darf nichts
+            // passieren — sonst wuerde eine ALTE Zeile einer NEUEN Position
+            // zugeschlagen und truege deren Stil.
+            const geschrieben2 = [];
+            const tr4 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+              prisma: {
+                getPrisma: () => ({
+                  $queryRawUnsafe: async (q) => (/FROM "Trade"/.test(q) ? ZEILEN : []),
+                  $executeRawUnsafe: async (q, ...a) => { geschrieben2.push(a); return 1; },
+                }),
+              },
+              "risk-agent": ra.exports,
+            });
+            const r2 = await tr4.exports.ergaenzeDealIdsAusPositionen([
+              { ...POSNEU[0], openLevel: 0.9 },
+            ]);
+            pruefe1("eine Zeile wird einer Position mit ANDEREM Einstiegskurs zugeschlagen",
+              r2.korrigiert === 0, JSON.stringify(r2));
+            pruefe1("und dabei wird trotzdem geschrieben",
+              !geschrieben2.some((a) => String(a?.[0] ?? "").includes("POSITION-NEU")),
+              JSON.stringify(geschrieben2).slice(0, 120));
+
+            // ── EINE VERWAISTE ZEILE IST KEIN PHANTOM — AUSGEFUEHRT ─────
+            //
+            // Der Schutz sitzt im `ohnePosition`-Zweig, und den erreichen
+            // die Faelle oben gar nicht (sie haben einen Treffer). Im
+            // Sabotage-Lauf blieb `if (false) verwaiste.add(...)` deshalb
+            // gruen: der Schutz wurde nie ausgeloest, also fiel sein
+            // Fehlen nicht auf. Ein Pruefstand, der einen Zweig nie
+            // betritt, beweist nichts ueber ihn.
+            //
+            // Hier: dieselbe verwaiste Zeile, aber auf dem Symbol ist beim
+            // Broker NICHTS offen, und beide Fristen sind abgelaufen. Ohne
+            // den Schutz wuerde sie als NIE_BESTAETIGT ("hat es nie
+            // gegeben") mit P&L 0 in die Statistik geschrieben — ein
+            // echter Trade, als Phantom verbucht.
+            const geschrieben3 = [];
+            const ZEILEN3 = [{
+              id: 43, market: "XRPUSD", direction: "BUY", entry: 0.5,
+              notes: JSON.stringify({
+                dealId: "CONFIRM-ALT", dealReference: "o_77",
+                tradingStyle: "DAYTRADING",
+                dealIdVersuche: 5, ohnePositionZyklen: 2,
+              }),
+            }];
+            const tr5 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+              prisma: {
+                getPrisma: () => ({
+                  $queryRawUnsafe: async (q) => (/FROM "Trade"/.test(q) ? ZEILEN3 : []),
+                  $executeRawUnsafe: async (q, ...a) => { geschrieben3.push(a); return 1; },
+                }),
+              },
+              "risk-agent": ra.exports,
+            });
+            // Eine Position auf einem GANZ ANDEREN Symbol: damit ist auf
+            // XRPUSD nichts offen -> die Zeile landet in `ohnePosition`.
+            const r3 = await tr5.exports.ergaenzeDealIdsAusPositionen([
+              { dealId: "POS-ANDERE", symbol: "EURUSD", epic: "EURUSD", direction: "BUY", openLevel: 1.1 },
+            ]);
+            pruefe1("eine verwaiste Zeile wird als NIE_BESTAETIGT verbucht — "
+              + "ein echter Trade als Phantom",
+              r3.benannt === 0 && r3.beobachtet === 1, JSON.stringify(r3));
+            pruefe1("und sie wird dabei geschlossen",
+              !geschrieben3.some((a) => String(a?.[0] ?? "").includes("NIE_BESTAETIGT")),
+              JSON.stringify(geschrieben3).slice(0, 160));
+          }
         }
       }
     } finally {

@@ -979,6 +979,45 @@ kann: `.filter(Boolean)` auf den Positions-IDs ist nachweislich unerreichbar,
 weil `offen.has(d)` nur für ein `d` läuft, das `if (!d)` schon passiert hat.
 Das als „entwischt" zu zählen wäre ein Messfehler gewesen, kein Befund.
 
+### Der Riegel allein war ein Halbfix — die Zeile muss VERHEIRATET werden
+
+Nachgerechnet gegen die echte Funktion, am selben Tag: der Riegel verhindert
+nur, dass beide Zeilen **gleichzeitig** offen stehen. Die P&L-Abstimmung
+(`LIKE '%dealId%'`) sammelt die verwaiste Zeile ein und schliesst sie nach fünf
+Versuchen als `KEIN_PNL`. Danach ist keine Zeile mehr verwaist, `erlaubt` wird
+wieder wahr — **und es wird doch rekonstruiert**. Am Ende standen weiterhin zwei
+Zeilen, und der Stil der laufenden Position blieb `UNBEKANNT`.
+
+`ergaenzeDealIdsAusPositionen` übersprang `if (m.dealId) continue` — also jede
+Zeile mit einer dealId, auch einer falschen. Jetzt entscheidet
+`zeileBrauchtZuordnung()`: eine **verwaiste** dealId kommt in die Zuordnung,
+`zuordnungAusPositionen()` korrigiert sie bei eindeutiger Lage, und die Zeile
+behält ihren **echten** Stil — der Zeit-Exit rechnet wieder mit 4/24/168 Stunden
+statt gar nicht.
+
+**Zwei Risiken, beide abgesichert statt in Kauf genommen:**
+- Eine **verwaiste** Zeile braucht einen brauchbaren Einstiegskurs.
+  `zuordnungAusPositionen` überspringt den Kursvergleich, wenn einer der Kurse
+  fehlt — für eine junge Zeile ohne dealId richtig, für eine ALTE gefährlich:
+  auf demselben Symbol kann eine NEUE Position laufen, und die alte Zeile trüge
+  ihr einen falschen Stil ein. Genau der Fehler, nur umgekehrt.
+- Eine verwaiste Zeile darf **nicht** als `NIE_BESTAETIGT` sterben. Sie TRUG
+  eine dealId, war also bestätigt; das Etikett heisst „hat es nie gegeben" und
+  hätte einen echten Trade als Phantom in die Statistik geschrieben.
+
+Die alte ID bleibt als `dealIdVorher` stehen — sie ist der einzige Beleg dafür,
+woher sie kam, und die Frage ist noch offen. Dieselbe Regel wie
+`exitReasonVorher`.
+
+**Von zwölf Sabotagen entwischten zuerst zwei — beide auf dieselbe Weise:**
+`if (alt && alt !== dealId) neu.dealIdVorher = alt;` wurde zu `if (false) …`.
+Der **Wortlaut** stand noch da, der Regex fand ihn, der Prüfer blieb grün. Ein
+Regex prüft den Wortlaut, nicht das Verhalten. Jetzt läuft die ganze Kette
+**ausgeführt**, mit der echten `zuordnungAusPositionen` statt einem
+Stellvertreter. Die zweite hielt sich noch eine Runde länger: der Phantom-Schutz
+sitzt im `ohnePosition`-Zweig, und den betrat der Prüfstand gar nicht — ein
+Zweig, der nie betreten wird, ist so ungeprüft wie einer, der fehlt. **12/12.**
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn
