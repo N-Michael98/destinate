@@ -351,6 +351,136 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ── /trading-journal: "Coming Soon" fuer Laufendes (30.09.) ──────────────
+  //
+  // Die Seite hielt DREIZEHN feste Aussagen, und jede widersprach dem System:
+  // "Broker Integration LOCKED / V6.0" (Capital.com IST der Live-Broker),
+  // GPT und Claude "Coming Soon" (machen Scan und Meta-Analyse), "Auto
+  // Execution / Final Stage" (laeuft), sechs Verbindungen alle "Coming Soon",
+  // und drei "Next Bot Steps", die gebaute Dinge als Plan auswiesen —
+  // `lib/paper-trading/` hat NEUN Module.
+  //
+  // Dieselbe Fehlerklasse wie "Live Prep / Status: Prepared" (26.08.), nur
+  // umgekehrt: etwas als "kommt noch" zeigen, das laengst laeuft. Wer im
+  // Ernstfall hier nachsieht, liest "Broker nicht verbunden" und entscheidet
+  // danach ueber den Killswitch.
+  //
+  // RECHNEND, nicht gesucht: eine Struktur-Pruefung saehe einem umgedrehten
+  // Dreiwert-Vergleich nichts an — und genau der entscheidet, ob eine
+  // fehlgeschlagene Abfrage "Unbekannt" heisst oder "nicht verbunden".
+  {
+    const mod = ladeTsModul("lib/bot-readiness/integrationen.ts");
+    const stand = mod.exports?.integrationsStand;
+    const offen = mod.exports?.offeneSchritte;
+    if (mod.fehler || typeof stand !== "function" || typeof offen !== "function") {
+      funde.push("integrationsStand/offeneSchritte nicht ausfuehrbar: "
+        + `${mod.fehler ?? "nicht exportiert"} — die Integrations-Anzeige ist `
+        + "wieder ungeprueft");
+      geprueft2++;
+    } else {
+      const v = (r, name) => r.verbindungen.find((x) => x.name === name);
+      const c = (r, label) => r.checkliste.find((x) => x.label === label);
+
+      // Nichts abrufbar: ALLES unbekannt — nicht "nicht verbunden".
+      const leer = stand({ capitalVerbunden: null, icVerbunden: null, icAusfuehrung: null });
+      pruefe1("ein nicht abrufbarer Broker-Status gilt als 'nicht verbunden'",
+        v(leer, "Capital.com").status === "Unbekannt",
+        `${v(leer, "Capital.com").status} — eine stille Null ist genau die Luege vom 22.09.`);
+      pruefe1("eine nicht abrufbare IC-Einstellung gilt als 'abgeschaltet'",
+        v(leer, "IC Markets").status === "Unbekannt", v(leer, "IC Markets").status);
+      pruefe1("Auto Execution meldet READY, obwohl der Broker-Status fehlt",
+        c(leer, "Auto Execution").status === "BUILDING",
+        c(leer, "Auto Execution").status);
+
+      // Broker verbunden.
+      const an = stand({ capitalVerbunden: true, icVerbunden: true, icAusfuehrung: true });
+      pruefe1("ein verbundener Capital.com gilt nicht als aktiv",
+        v(an, "Capital.com").status === "Ready", v(an, "Capital.com").status);
+      pruefe1("Auto Execution bleibt BUILDING, obwohl der Broker verbunden ist",
+        c(an, "Auto Execution").status === "READY", c(an, "Auto Execution").status);
+      pruefe1("IC mit freigegebener Ausfuehrung gilt nicht als aktiv",
+        v(an, "IC Markets").status === "Ready", v(an, "IC Markets").status);
+
+      // Broker getrennt.
+      const aus = stand({ capitalVerbunden: false, icVerbunden: false, icAusfuehrung: false });
+      pruefe1("ein getrennter Capital.com gilt als aktiv",
+        v(aus, "Capital.com").status === "Locked", v(aus, "Capital.com").status);
+      pruefe1("Auto Execution meldet READY ohne Broker-Sitzung",
+        c(aus, "Auto Execution").status === "BUILDING", c(aus, "Auto Execution").status);
+
+      // DER WICHTIGSTE FALL: verbunden, aber Ausfuehrung AUS. Das ist NICHT
+      // "Ready" — dort wird nicht gehandelt (`icMarketsExecutionEnabled`
+      // steht seit 15.09. auf false).
+      const icOhne = stand({ capitalVerbunden: true, icVerbunden: true, icAusfuehrung: false });
+      pruefe1("IC gilt als aktiv, obwohl die Ausfuehrung abgeschaltet ist",
+        v(icOhne, "IC Markets").status === "Locked",
+        `${v(icOhne, "IC Markets").status} — dort wird nicht gehandelt`);
+      pruefe1("und der Grund dafuer wird nicht genannt",
+        /abgeschaltet/.test(v(icOhne, "IC Markets").hinweis),
+        v(icOhne, "IC Markets").hinweis);
+
+      // Nicht-boolesche Eingaben duerfen nicht als `true` durchgehen.
+      for (const [name, wert] of [["1", 1], ['"true"', "true"], ["undefined", undefined],
+        ["{}", {}], ['""', ""]]) {
+        const r = stand({ capitalVerbunden: wert, icVerbunden: null, icAusfuehrung: null });
+        pruefe1(`ein Broker-Status von ${name} wird als echter Wert genommen`,
+          v(r, "Capital.com").status === "Unbekannt", v(r, "Capital.com").status);
+      }
+
+      // KEIN "Coming Soon" fuer etwas, das laeuft — der Kern des Fundes.
+      for (const name of ["Capital.com", "OpenAI GPT", "Claude"]) {
+        pruefe1(`${name} steht wieder als "Coming Soon" in der Anzeige`,
+          v(an, name).status !== "Coming Soon", v(an, name).status);
+      }
+      pruefe1("GPT wird nicht als aktiv gefuehrt, obwohl es den Scan macht",
+        v(leer, "OpenAI GPT").status === "Ready");
+      pruefe1("Claude wird nicht als aktiv gefuehrt, obwohl es die Meta-Analyse macht",
+        v(leer, "Claude").status === "Ready");
+      // MetaTrader 5 gibt es wirklich nicht — gesucht in lib, app/api und
+      // backend/services, null Treffer.
+      pruefe1("MetaTrader 5 wird als gebaut ausgegeben",
+        v(leer, "MetaTrader 5").status === "Coming Soon");
+      // TradingView ist KEINE Kursquelle (market-health.ts, 26.08.).
+      pruefe1("TradingView wird wieder als Kursquelle gefuehrt",
+        v(leer, "TradingView").status === "Locked"
+        && /Chart-Widget/.test(v(leer, "TradingView").hinweis),
+        v(leer, "TradingView").hinweis);
+      // Jede Zeile braucht einen Grund: "Locked" allein sagt nicht, ob es
+      // fehlt, aus ist oder nur nicht abrufbar war.
+      pruefe1("eine Verbindung ohne Begruendung",
+        leer.verbindungen.every((x) => typeof x.hinweis === "string" && x.hinweis.length > 3),
+        JSON.stringify(leer.verbindungen.map((x) => x.hinweis)).slice(0, 120));
+
+      // Die offenen Schritte: nur Belegtes.
+      const schritte = offen();
+      const titel = schritte.map((s) => s.titel).join(" | ");
+      pruefe1("die offenen Schritte nennen wieder Gebautes als Plan",
+        !/Paper Trading|Broker Integration Layer|Signal Review/i.test(
+          schritte.map((s) => `${s.titel} ${s.text}`).join(" ")),
+        titel);
+      pruefe1("die offenen Schritte nennen IC Markets nicht mehr",
+        /IC Markets/.test(titel), titel);
+      pruefe1("die offenen Schritte nennen den Lernpfad nicht mehr",
+        /Lernpfad/.test(titel), titel);
+    }
+
+    // Und strukturell: die Seite darf die Literale nicht zurueckholen.
+    const tj = ohneKommentare(read("frontend/app/trading-journal/page.tsx"));
+    pruefe1("/trading-journal baut die Integrationen wieder fest ein",
+      /\.\.\.stand\.checkliste/.test(tj) && /connections: stand\.verbindungen/.test(tj),
+      "die Ableitung muss aus integrationsStand() kommen");
+    pruefe1("/trading-journal holt den Broker-Status nicht mehr echt",
+      /fetch\("\/api\/broker-status"\)/.test(tj)
+      && /fetch\("\/api\/settings"\)/.test(tj),
+      "sonst sind die Werte wieder geraten");
+    pruefe1("/trading-journal startet mit 'nicht verbunden' statt 'unbekannt'",
+      /capitalVerbunden: null, icVerbunden: null, icAusfuehrung: null/.test(tj),
+      "ein false als Startwert waere eine Messung, die es nicht gibt");
+    pruefe1('die Ueberschrift "Future Connections" ist zurueck',
+      !/Future Connections/.test(tj),
+      "vier der sechs laufen — das ist keine Zukunft");
+  }
+
   return {
     titel: `Menü ↔ Ansichten (${menue.length} Einträge, ${gerendert.size} gerendert, `
       + `${geprueft2} Kennzahl-Prüfungen)`,

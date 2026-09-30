@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  integrationsStand,
+  offeneSchritte,
+  type IntegrationsEingabe,
+  type VerbindungsStatus,
+} from "@/lib/bot-readiness/integrationen";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import {
@@ -344,7 +350,8 @@ type BotReadinessResult = {
   }[];
   connections: {
     name: string;
-    status: "Ready" | "Coming Soon" | "Locked";
+    status: VerbindungsStatus;
+    hinweis: string;
   }[];
 };
 
@@ -357,7 +364,9 @@ function getBotReadinessResult(input: {
   journalIntelligenceScore: number;
   performanceScore: number;
   signalConfidence: number;
+  integrationen: IntegrationsEingabe;
 }) {
+  const stand = integrationsStand(input.integrationen);
   let score = 0;
 
   if (input.closedTrades >= 25) score += 10;
@@ -425,35 +434,21 @@ function getBotReadinessResult(input: {
         status: "READY",
         value: "V5.6 active",
       },
-      {
-        label: "Broker Integration",
-        status: "LOCKED",
-        value: "V6.0",
-      },
-      {
-        label: "GPT / OpenAI Integration",
-        status: "LOCKED",
-        value: "Coming Soon",
-      },
-      {
-        label: "Claude Integration",
-        status: "LOCKED",
-        value: "Coming Soon",
-      },
-      {
-        label: "Auto Execution",
-        status: "LOCKED",
-        value: "Final Stage",
-      },
+      // ── ABGELEITET STATT BEHAUPTET (30.09.) ──────────────────────────
+      //
+      // Hier standen vier feste Zeilen — "Broker Integration LOCKED / V6.0",
+      // GPT und Claude "Coming Soon", "Auto Execution / Final Stage" — und
+      // darunter sechs Verbindungen, alle "Coming Soon". Jede einzelne
+      // widersprach dem laufenden System: Capital.com IST der Live-Broker,
+      // GPT macht den Scan, Claude die Meta-Analyse, die Ausfuehrung laeuft.
+      //
+      // Die Ableitung liegt in `integrationsStand()` — als Funktion, damit
+      // ein Pruefer sie AUSFUEHREN kann. Genau daran ist die alte Fassung
+      // gescheitert: dreizehn Literale, die kein Pruefer je gegen die
+      // Wirklichkeit gehalten hat.
+      ...stand.checkliste,
     ],
-    connections: [
-      { name: "OpenAI GPT", status: "Coming Soon" },
-      { name: "Claude", status: "Coming Soon" },
-      { name: "Capital.com", status: "Coming Soon" },
-      { name: "IC Markets", status: "Coming Soon" },
-      { name: "MetaTrader 5", status: "Coming Soon" },
-      { name: "TradingView", status: "Coming Soon" },
-    ],
+    connections: stand.verbindungen,
   } satisfies BotReadinessResult;
 }
 
@@ -1473,6 +1468,11 @@ function buildMarketPerformance(data: Trade[]) {
 export default function TradingJournal() {
   const [journalTrades, setJournalTrades] = useState<Trade[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  // Startwert UNBEKANNT (null), nicht "nicht verbunden" (false) — siehe der
+  // Abruf weiter unten und `integrationsStand()`.
+  const [integrationen, setIntegrationen] = useState<IntegrationsEingabe>({
+    capitalVerbunden: null, icVerbunden: null, icAusfuehrung: null,
+  });
   const [selectedMarket, setSelectedMarket] = useState("All");
   const [activeSection, setActiveSection] = useState("overview");
   const [signalStrategy, setSignalStrategy] = useState("Liquidity Sweep");
@@ -1563,6 +1563,54 @@ export default function TradingJournal() {
 
   useEffect(() => {
     loadTrades();
+  }, []);
+
+  // ── Integrations-Zustand: ECHT holen, nichts annehmen (30.09.) ──────────
+  //
+  // Startwert ist ueberall `null` = UNBEKANNT, nicht `false`. Schlaegt eine
+  // Abfrage fehl, bleibt es dabei, und die Anzeige sagt "Unbekannt" statt
+  // "nicht verbunden". Eine stille Null waere genau die Luege, die dieses
+  // Projekt am 22.09. zwei Monate lang getragen hat.
+  //
+  // `/api/broker-status` liest NUR die vorhandenen Sitzungen und ruft den
+  // Broker nicht an — der Abruf kostet also keine Rate-Limit-Anfrage.
+  useEffect(() => {
+    let abgebrochen = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/broker-status");
+        const data = await res.json() as {
+          ok?: boolean;
+          zeilen?: Array<{ broker?: string; verbunden?: boolean }>;
+        };
+        if (abgebrochen || !res.ok || data?.ok !== true) return;
+        const finde = (b: string) => {
+          const z = data.zeilen?.find((x) => x.broker === b);
+          return typeof z?.verbunden === "boolean" ? z.verbunden : null;
+        };
+        setIntegrationen((v) => ({
+          ...v,
+          capitalVerbunden: finde("CAPITAL_COM"),
+          icVerbunden: finde("IC_MARKETS"),
+        }));
+      } catch { /* bleibt "Unbekannt" — nicht "nicht verbunden" */ }
+    })();
+    (async () => {
+      try {
+        const res = await fetch("/api/settings");
+        const data = await res.json() as {
+          ok?: boolean;
+          settings?: { icMarketsExecutionEnabled?: unknown };
+        };
+        if (abgebrochen || !res.ok || data?.ok !== true) return;
+        const roh = data.settings?.icMarketsExecutionEnabled;
+        setIntegrationen((v) => ({
+          ...v,
+          icAusfuehrung: typeof roh === "boolean" ? roh : null,
+        }));
+      } catch { /* bleibt "Unbekannt" */ }
+    })();
+    return () => { abgebrochen = true; };
   }, []);
 
   useEffect(() => {
@@ -2100,6 +2148,7 @@ export default function TradingJournal() {
     journalIntelligenceScore,
     performanceScore,
     signalConfidence: signalEngineResult.confidenceScore,
+    integrationen,
   });
 
   function scrollToSection(
@@ -3517,7 +3566,8 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-blue-900">
-                <h2 className="text-xl font-bold mb-4">🔌 Future Connections</h2>
+                {/* "Future Connections" war falsch: vier der sechs laufen. */}
+                <h2 className="text-xl font-bold mb-4">🔌 Integrationen</h2>
                 <div className="grid grid-cols-2 gap-4">
                   {botReadinessResult.connections.map((connection) => (
                     <div
@@ -3526,10 +3576,17 @@ export default function TradingJournal() {
                     >
                       <h3 className="font-bold text-blue-400">{connection.name}</h3>
                       <p className="text-gray-400 mt-2">
-                        {connection.status === "Coming Soon"
-                          ? "🔒 Coming Soon"
-                          : connection.status}
+                        {connection.status === "Ready"
+                          ? "✅ Aktiv"
+                          : connection.status === "Coming Soon"
+                            ? "🔒 Nicht gebaut"
+                            : connection.status === "Unbekannt"
+                              ? "❔ Unbekannt"
+                              : "⏸️ Nicht aktiv"}
                       </p>
+                      {/* Der Grund gehoert dazu: "Locked" allein sagt nicht,
+                          ob es fehlt, aus ist oder nur nicht abrufbar war. */}
+                      <p className="text-gray-500 text-sm mt-1">{connection.hinweis}</p>
                     </div>
                   ))}
                 </div>
@@ -3537,20 +3594,24 @@ export default function TradingJournal() {
             </div>
 
             <div className="bg-gray-900 p-6 rounded-2xl border border-purple-800">
-              <h2 className="text-xl font-bold mb-4">🧭 Next Bot Steps</h2>
+              {/* ── WAS WIRKLICH NOCH OFFEN IST (30.09.) ──────────────────
+                  Hier standen "V6.0 Broker Integration Layer vorbereiten",
+                  "V6.1 OpenAI/Claude Signal Review anbinden" und "V6.2 Paper
+                  Trading Execution Engine bauen" — alle drei beschreiben
+                  Dinge, die es gibt. Nachgezaehlt: `lib/paper-trading/` hat
+                  NEUN Module. Die Liste kommt jetzt aus `offeneSchritte()`,
+                  und jeder Punkt dort ist belegt. */}
+              <h2 className="text-xl font-bold mb-4">🧭 Noch offen</h2>
               <div className="grid grid-cols-3 gap-4">
-                <div className="bg-black border border-gray-800 rounded-xl p-5">
-                  <h3 className="font-bold text-cyan-400">V6.0</h3>
-                  <p className="text-gray-300 mt-2">Broker Integration Layer vorbereiten.</p>
-                </div>
-                <div className="bg-black border border-gray-800 rounded-xl p-5">
-                  <h3 className="font-bold text-green-400">V6.1</h3>
-                  <p className="text-gray-300 mt-2">OpenAI/Claude Signal Review anbinden.</p>
-                </div>
-                <div className="bg-black border border-gray-800 rounded-xl p-5">
-                  <h3 className="font-bold text-orange-400">V6.2</h3>
-                  <p className="text-gray-300 mt-2">Paper Trading Execution Engine bauen.</p>
-                </div>
+                {offeneSchritte().map((schritt) => (
+                  <div
+                    key={schritt.titel}
+                    className="bg-black border border-gray-800 rounded-xl p-5"
+                  >
+                    <h3 className="font-bold text-cyan-400">{schritt.titel}</h3>
+                    <p className="text-gray-300 mt-2">{schritt.text}</p>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

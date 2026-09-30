@@ -1018,6 +1018,60 @@ Stellvertreter. Die zweite hielt sich noch eine Runde länger: der Phantom-Schut
 sitzt im `ohnePosition`-Zweig, und den betrat der Prüfstand gar nicht — ein
 Zweig, der nie betreten wird, ist so ungeprüft wie einer, der fehlt. **12/12.**
 
+## Eine Anzeige, die „kommt noch" sagt, obwohl es läuft (30.09.)
+
+`app/trading-journal/page.tsx` hielt **dreizehn** fest verdrahtete Aussagen, und
+jede einzelne widersprach dem laufenden System:
+
+| angezeigt | tatsächlich |
+|---|---|
+| Broker Integration — LOCKED, „V6.0" | Capital.com ist der **Live-Broker** |
+| GPT / OpenAI — LOCKED, „Coming Soon" | macht den Marktscan |
+| Claude — LOCKED, „Coming Soon" | Meta-Analyse + Risiko-Agent |
+| Auto Execution — LOCKED, „Final Stage" | läuft |
+| sechs „Future Connections" — alle „Coming Soon" | vier davon laufen |
+| „V6.0 Broker Integration Layer vorbereiten" | gibt es |
+| „V6.1 OpenAI/Claude Signal Review anbinden" | gibt es |
+| „V6.2 Paper Trading Execution Engine bauen" | gibt es — **neun** Module |
+
+Die Seite ist im Dashboard verlinkt (Menüeintrag **und** Render-Zeile), also
+keine tote Ecke. Dieselbe Fehlerklasse wie „Live Prep / Status: Prepared"
+(26.08.) und wie `market-health.ts` („TradingView verbunden, 20 ms") — nur in
+die andere Richtung: etwas als **„kommt noch"** anzeigen, das längst läuft.
+
+**Nicht kosmetisch:** wer im Ernstfall hier nachsieht, liest „Broker nicht
+verbunden, Auto Execution noch nicht aktiv" — und entscheidet danach über den
+Killswitch.
+
+Jetzt leitet `integrationsStand()` (`lib/bot-readiness/integrationen.ts`) ab,
+aus `/api/broker-status` (echte Sitzungen über `brokerZustand()`) und
+`/api/settings`. **Alle drei Eingaben sind dreiwertig**: `null` heisst
+*unbekannt*, nicht *nicht verbunden*. Eine stille Null wäre genau die Lüge vom
+22.09., eine Schicht höher. Der Startwert der Seite ist deshalb überall `null`.
+
+**Verbunden ist nicht dasselbe wie aktiv:** IC Markets meldet „Locked —
+Ausführung in den Einstellungen abgeschaltet", auch wenn die Sitzung steht. Dort
+wird nicht gehandelt (`icMarketsExecutionEnabled: false`), und „Ready" wäre die
+nächste Behauptung.
+
+**Und jede Zeile nennt ihren Grund.** „Locked" allein sagt nicht, ob etwas
+fehlt, abgeschaltet ist oder nur nicht abrufbar war — drei Lagen, drei
+Konsequenzen.
+
+Die drei offenen Schritte sind **belegt, nicht ausgedacht**: MetaTrader 5 kommt
+im ganzen Programm nicht vor (gesucht in `lib`, `app/api`, `backend/services`),
+die IC-Ausführung steht auf `false`, und `getLearningAdjustmentFactor()` wird
+nur von `strategy-evolution/evolution-engine.ts:56` gelesen — das läuft in
+keiner Schleife. Die Fundstelle in `instrumentation.ts:835` ist ein
+**Kommentar**: „ein Wort im Kommentar ist keine Verwendung".
+
+`menue-ansichten` **rechnet** das jetzt (38 → 68 Prüfungen) und hält die Seite
+zusätzlich strukturell fest: kehren die Literale zurück, verschwindet ein
+`fetch`, oder steht der Startwert wieder auf `false`, wird er rot. **16 von 16
+Sabotagen gefangen**, darunter der gefährlichste Rückbau — `dreiwertig()` auf
+`v === true` zu verkürzen, womit jede fehlgeschlagene Abfrage wieder „nicht
+verbunden" hiesse.
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn

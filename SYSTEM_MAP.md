@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 455 · Kanten: 1003
+Dateien mit internen Abhängigkeiten: 456 · Kanten: 1004
 
 
 ## analysis-engine/api
@@ -623,6 +623,8 @@ Dateien mit internen Abhängigkeiten: 455 · Kanten: 1003
   - → `frontend/components/SystemHealthCheck.tsx`
   - → `frontend/components/TechnicalIndicatorsPanel.tsx`
   - → `frontend/components/UnifiedMissionControlDashboard.tsx`
+- `frontend/app/trading-journal/page.tsx`
+  - → `frontend/lib/bot-readiness/integrationen.ts`
 
 ## frontend/components
 
