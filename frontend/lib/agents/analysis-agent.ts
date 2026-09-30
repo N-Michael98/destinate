@@ -53,6 +53,149 @@ export function schluessel(symbol: unknown): string {
   return String(symbol ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
+/** Das Ergebnis des Lesens einer Meta-Antwort. `ok:false` ist ein AUSFALL. */
+export type MetaLesung =
+  | { ok: true; eintraege: Array<Record<string, unknown>> }
+  | { ok: false; grund: string };
+
+/**
+ * Liest das JSON-Array aus einer Modellantwort (30.09.).
+ *
+ * ── WAS HIER STAND, UND WAS ES ANRICHTETE ────────────────────────────────
+ *
+ *     const json = text.match(/\[[\s\S]*\]/)?.[0];
+ *     if (json) { JSON.parse(json) … }
+ *
+ * Der Ausdruck ist GIERIG: er greift vom ERSTEN `[` bis zum LETZTEN `]` im
+ * ganzen Text. Zwei Fehlerbilder, beide am 30.09. nachgerechnet:
+ *
+ *  1. Schreibt das Modell nach dem Array noch Prosa mit einer Klammer
+ *     ("… [siehe oben]"), landet sie im Ausschnitt. `JSON.parse` liest das
+ *     Array, findet danach Text und wirft
+ *     "Unexpected non-whitespace character after JSON at position 633".
+ *     GENAU diese Meldung kam am 30.09. um 12:09. Folge: der `catch` greift,
+ *     der Rueckfall gibt JEDEN Kandidaten frei — das Tor steht ganz offen.
+ *
+ *  2. Ist die Antwort ABGESCHNITTEN (kein schliessendes `]`), findet der
+ *     Ausdruck GAR NICHTS. Dann wirft auch nichts, der `catch` greift NICHT,
+ *     `decisions` bleibt leer — und jeder Kandidat faellt unten in
+ *     `if (!meta || !meta.approve)` und gilt als "Meta-AI hat abgelehnt".
+ *     Eine STILLE Totalablehnung, die wie ein Urteil aussieht. Das ist die
+ *     gefaehrlichere Richtung, weil sie niemand bemerkt.
+ *
+ * ── WIE ES JETZT GEHT ────────────────────────────────────────────────────
+ *
+ * Klammerzaehlung statt Regex, und zwar MIT Zeichenketten-Bewusstsein: eine
+ * `]` innerhalb von `"concern":"stark [ueberdehnt]"` darf das Array nicht
+ * schliessen. Genommen wird das ERSTE vollstaendige Array auf oberster
+ * Ebene; alles davor und danach (Markdown-Zaun, Prosa) ist damit egal.
+ *
+ * Und ein nicht lesbarer Text ist ein AUSFALL mit Grund — kein stilles
+ * Nichts. Der Aufrufer behandelt ihn wie eine ausgebliebene Antwort.
+ *
+ * Reine Funktion, keine Aussenwelt: damit im Pruefstand rechenbar.
+ */
+export function metaAntwortLesen(roh: unknown): MetaLesung {
+  const text = String(roh ?? "").trim();
+  if (!text) return { ok: false, grund: "leere Antwort" };
+
+  // ── DAS ERSTE ARRAY REICHT NICHT (30.09., im eigenen Pruefstand gefunden)
+  //
+  // Erste Fassung nahm das ERSTE vollstaendige Klammerpaar. An
+  // "Hier das Ergebnis [Meta-Analyse]:\n```json\n[…]" ist das die Klammer in
+  // der VORREDE — sie ist sauber balanciert und laesst sich nur nicht als
+  // JSON lesen. Gesammelt werden deshalb ALLE Paare auf oberster Ebene, und
+  // genommen wird das erste, das sich wirklich als Urteilsliste lesen laesst.
+  const spannen: Array<[number, number]> = [];
+  let inText = false;
+  let maskiert = false;
+  let tiefe = 0;
+  let start = -1;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inText) {
+      if (maskiert) maskiert = false;
+      else if (c === "\\") maskiert = true;
+      else if (c === '"') inText = false;
+      continue;
+    }
+    if (c === '"') { inText = true; continue; }
+    if (c === "[") { if (tiefe === 0) start = i; tiefe++; }
+    else if (c === "]" && tiefe > 0) {
+      tiefe--;
+      if (tiefe === 0 && start >= 0) { spannen.push([start, i + 1]); start = -1; }
+    }
+  }
+  // Eine offene Klammer am Ende heisst: die Antwort bricht mittendrin ab.
+  const abgeschnitten = tiefe > 0;
+
+  if (spannen.length === 0) {
+    return {
+      ok: false,
+      grund: abgeschnitten
+        ? `Array nicht geschlossen — Antwort vermutlich abgeschnitten (${text.length} Zeichen)`
+        : "kein JSON-Array in der Antwort",
+    };
+  }
+
+  let letzterGrund = "kein lesbares Urteils-Array";
+  for (const [a, b] of spannen) {
+    let wert: unknown;
+    try {
+      wert = JSON.parse(text.slice(a, b));
+    } catch (e) {
+      letzterGrund = `JSON nicht lesbar: ${e instanceof Error ? e.message : String(e)}`;
+      continue;
+    }
+    if (!Array.isArray(wert)) { letzterGrund = "JSON ist kein Array"; continue; }
+    // Ein LEERES Array ist kein Urteil. Bis heute waere es durchgegangen und
+    // haette `decisions` leer gelassen — also wieder die stille Ablehnung.
+    if (wert.length === 0) { letzterGrund = "Array ist leer — kein Urteil"; continue; }
+    // `[1,2,3]` aus einem Fliesstext ist ebenfalls keine Urteilsliste.
+    if (!wert.every((x) => x !== null && typeof x === "object" && !Array.isArray(x))) {
+      letzterGrund = "Array enthaelt keine Urteils-Objekte";
+      continue;
+    }
+    return { ok: true, eintraege: wert as Array<Record<string, unknown>> };
+  }
+
+  return {
+    ok: false,
+    grund: abgeschnitten
+      ? `Array nicht geschlossen — Antwort vermutlich abgeschnitten (${text.length} Zeichen)`
+      : letzterGrund,
+  };
+}
+
+/**
+ * Wieviel Ausgabe darf die Meta-Antwort haben? (30.09.)
+ *
+ * Hier stand fest `max_tokens: 500`. `goSignals` ist NICHT begrenzt — bei
+ * dreissig Maerkten koennen dreissig Kandidaten ankommen.
+ *
+ * GEMESSEN am 30.09.: ein Eintrag der geforderten Form ist rund 91 Zeichen,
+ * JSON mit kurzem englischem Text liegt bei etwa 3,7 Zeichen je Token. Das
+ * sind ~25 Token je Eintrag, bei dreissig also ~735 — ueber der Grenze. Eine
+ * abgeschnittene Antwort ist dann genau Fall 2 oben: stille Totalablehnung,
+ * also NULL Trades in diesem Zyklus.
+ *
+ * Gerechnet wird mit 60 Token je Eintrag, dem Doppelten des Gemessenen, weil
+ * ein laengerer `concern`-Text erlaubt ist. Nach unten auf 500 geklemmt (nie
+ * weniger Platz als bisher), nach oben auf 4000.
+ *
+ * `max_tokens` ist eine OBERGRENZE, keine Vorgabe: ein hoeherer Wert kostet
+ * nichts, solange das Modell ihn nicht ausschoepft.
+ *
+ * Dieselbe Fehlerklasse wie `tokenBudget()` am 06.09. — dort war es der
+ * GPT-Scan, hier die Gegenpruefung.
+ */
+export function metaTokenBudget(anzahlKandidaten: number): number {
+  const n = Number.isFinite(anzahlKandidaten) && anzahlKandidaten > 0
+    ? Math.floor(anzahlKandidaten) : 0;
+  return Math.min(4000, Math.max(500, 100 + 60 * n));
+}
+
 async function runMetaAnalysis(candidates: ScannerOpportunity[]): Promise<Map<string, MetaAnalysisDecision>> {
   const decisions = new Map<string, MetaAnalysisDecision>();
   if (!candidates.length) return decisions;
@@ -93,7 +236,8 @@ async function runMetaAnalysis(candidates: ScannerOpportunity[]): Promise<Map<st
     //  - `riskApproved`: jeder Kandidat hier IST freigegeben (goSignal).
     const msg = await ai.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
+      // Abgeleitet statt fest (30.09.) — siehe metaTokenBudget().
+      max_tokens: metaTokenBudget(candidates.length),
       messages: [{
         role: "user",
         content: `Meta-Analyse von ${candidates.length} Handelssignalen.
@@ -119,11 +263,24 @@ Antworte NUR mit JSON Array, ein Eintrag je Symbol:
       }]
     });
 
-    const text = (msg.content[0] as { type: string; text: string }).text.trim();
-    const json = text.match(/\[[\s\S]*\]/)?.[0];
-    if (json) {
-      const geparst: unknown = JSON.parse(json);
-      const results = (Array.isArray(geparst) ? geparst : []) as Array<Record<string, unknown>>;
+    const text = (msg.content[0] as { type: string; text: string } | undefined)?.text ?? "";
+    const lesung = metaAntwortLesen(text);
+    // ── EINE UNLESBARE ANTWORT IST EIN AUSFALL (30.09.) ───────────────────
+    //
+    // Bis heute wurde `if (json)` einfach uebersprungen, wenn nichts passte.
+    // Kein Wurf, kein Rueckfall, keine Meldung — `decisions` blieb leer und
+    // JEDER Kandidat galt unten als "Meta-AI hat abgelehnt". Eine stille
+    // Totalablehnung, die wie ein Urteil aussieht.
+    //
+    // Jetzt geht sie denselben Weg wie eine ausgebliebene Antwort: Rueckfall
+    // UND Meldung. `throw` statt eigener Zweig, damit es genau EINEN
+    // Ausfallpfad gibt — zwei Pfade waeren die naechste Stelle, an der einer
+    // vergessen wird.
+    if (!lesung.ok) {
+      throw new Error(`Meta-Antwort nicht lesbar: ${lesung.grund}`);
+    }
+    {
+      const results = lesung.eintraege;
       for (const r of results) {
         // Geprueft statt uebernommen (16.09.) — siehe pruefeMetaUrteil().
         decisions.set(schluessel(r?.symbol), pruefeMetaUrteil(r));

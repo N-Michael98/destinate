@@ -3260,6 +3260,117 @@ module.exports = async function pruefe() {
           "sonst stimmt die Begruendung in STAGE 1 nicht mehr");
       }
 
+      // ── DIE META-ANTWORT WIRD GELESEN, NICHT GERATEN (30.09.) ───────────
+      //
+      // ANLASS: Telegram 30.09. 12:09 — "KI-Sicherheitstor Meta-KI nicht
+      // erreichbar", Fehler "Unexpected non-whitespace character after JSON at
+      // position 653". Die Stelle war
+      //     const json = text.match(/\[[\s\S]*\]/)?.[0];
+      // — GIERIG, also vom ersten `[` bis zum LETZTEN `]`. Zwei Fehlerbilder:
+      //
+      //  1. Prosa mit Klammer NACH dem Array wird mitgenommen -> JSON.parse
+      //     wirft -> Rueckfall gibt JEDEN Kandidaten frei (Tor ganz offen).
+      //  2. Abgeschnittene Antwort ohne `]` -> der Ausdruck findet NICHTS ->
+      //     es wirft auch nichts -> `decisions` bleibt leer -> jeder Kandidat
+      //     gilt als "Meta-AI hat abgelehnt". STILLE Totalablehnung.
+      //
+      // Beides haengt am Lesen des Textes, nicht an der Struktur. Deshalb
+      // rechnend: die echte Funktion an echten Modell-Marotten.
+      {
+        const aa = ladeTsModul("lib/agents/analysis-agent.ts");
+        const lies = aa.exports?.metaAntwortLesen;
+        const budget = aa.exports?.metaTokenBudget;
+        if (aa.fehler || typeof lies !== "function" || typeof budget !== "function") {
+          funde.push(`metaAntwortLesen/metaTokenBudget nicht ausfuehrbar: ${aa.fehler ?? "nicht exportiert"}`);
+          zusatz++;
+        } else {
+          const eintrag = (s, c = "ok") =>
+            `{"symbol":"${s}","approve":true,"adjustedConfidence":75,"concern":"${c}","priority":"HIGH"}`;
+          const array = (n) => "[" + Array.from({ length: n }, (_, i) => eintrag(`SYM${i}`)).join(",") + "]";
+          const l = (t) => { try { return lies(t); } catch (e) { return { ok: false, grund: `WIRFT ${e.message}` }; } };
+
+          const rein = l(array(3));
+          torPruefung("ein sauberes Urteils-Array wird nicht gelesen",
+            rein.ok === true && rein.eintraege.length === 3, JSON.stringify(rein).slice(0, 80));
+
+          // Der Fehler vom 30.09.: Prosa mit Klammer NACH dem Array.
+          const danach = l(array(7) + "\n\nHinweis: alle Signale erfuellen die Regeln [siehe oben].");
+          torPruefung("Prosa nach dem Array laesst das Lesen wieder scheitern",
+            danach.ok === true && danach.eintraege.length === 7,
+            danach.ok ? "" : danach.grund);
+
+          // Eine Klammer in der VORREDE darf nicht als Array gelten.
+          const davor = l("Hier das Ergebnis [Meta-Analyse]:\n```json\n" + array(4) + "\n```\nFertig.");
+          torPruefung("eine Klammer in der Vorrede wird faelschlich als Array genommen",
+            davor.ok === true && davor.eintraege.length === 4,
+            davor.ok ? "" : davor.grund);
+
+          // Eine `]` INNERHALB einer Zeichenkette darf das Array nicht schliessen.
+          //
+          // EINZELNE Klammer, mit Absicht: ein Paar wie "[RSI 82]" ist in sich
+          // balanciert, da faellt eine fehlende Zeichenketten-Erkennung gar
+          // nicht auf. Im Sabotage-Lauf blieb genau dieser erste Testfall
+          // gruen — der Testfall war zu schwach, nicht der Pruefer.
+          const imText = l("[" + eintrag("EURUSD", "stark ueberdehnt RSI 82]") + "]");
+          torPruefung("eine ] im Text schliesst das Array vorzeitig",
+            imText.ok === true && imText.eintraege.length === 1
+            && imText.eintraege[0].symbol === "EURUSD",
+            imText.ok ? String(imText.eintraege[0].concern) : imText.grund);
+
+          // Der gefaehrliche Fall: abgeschnitten MUSS ein benannter Ausfall sein.
+          const abg = l(array(9).slice(0, -40));
+          torPruefung("eine abgeschnittene Antwort gilt wieder als stilles Nichts",
+            abg.ok === false && /abgeschnitten/.test(abg.grund),
+            abg.ok ? "faelschlich ok — das ist die stille Totalablehnung" : abg.grund);
+
+          // Ein LEERES Array ist kein Urteil — sonst wieder stille Ablehnung.
+          const leer = l("[]");
+          torPruefung("ein leeres Array gilt als Urteil",
+            leer.ok === false && /leer/.test(leer.grund), JSON.stringify(leer).slice(0, 60));
+
+          // Nichts darf werfen, und jeder Ausfall braucht einen Grund.
+          for (const [name, ein] of [
+            ["leer", ""], ["undefined", undefined], ["null", null],
+            ["reine Prosa", "Ich kann das nicht beurteilen."],
+            ["Objekt statt Array", '{"symbol":"X"}'],
+            ["kaputtes JSON", '[{"symbol":]'],
+            ["Zahlen statt Urteile", "Werte [1,2,3] beachten"],
+          ]) {
+            const r = l(ein);
+            torPruefung(`metaAntwortLesen scheitert unsauber bei: ${name}`,
+              r && r.ok === false && typeof r.grund === "string" && r.grund.length > 0
+              && !/^WIRFT/.test(r.grund),
+              r?.grund ?? JSON.stringify(r));
+          }
+
+          // Das Budget — der Grund fuer abgeschnittene Antworten.
+          torPruefung("das Meta-Budget faellt unter den alten festen Wert 500",
+            [0, 1, 5, 10, 20, 30, 50].every((n) => budget(n) >= 500),
+            [0, 5, 30].map((n) => `${n}->${budget(n)}`).join(" "));
+          torPruefung("30 Kandidaten bekommen nicht mehr als die gemessenen 735 Token",
+            budget(30) >= 735, `${budget(30)} Token`);
+          torPruefung("das Budget ist nach oben nicht geklemmt",
+            budget(1000) <= 4000, `${budget(1000)}`);
+          torPruefung("unsinnige Eingaben ergeben NaN statt der Untergrenze",
+            budget(NaN) === 500 && budget(-5) === 500, `${budget(NaN)} / ${budget(-5)}`);
+
+          // Und strukturell: der gierige Ausdruck darf nicht zurueckkehren,
+          // und eine unlesbare Antwort MUSS auf den Ausfallpfad.
+          const aaQ = read("frontend/lib/agents/analysis-agent.ts")
+            .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+          torPruefung("der gierige Regex-Ausdruck ist zurueck",
+            !/text\.match\(\/\\\[\[\\s\\S\]\*\\\]\//.test(aaQ)
+            && !/match\(\/\\\[\[\\s\\S\]\*\\\]\/\)/.test(aaQ),
+            "vom ersten [ bis zum LETZTEN ] — genau der Fehler vom 30.09.");
+          torPruefung("eine unlesbare Meta-Antwort geht nicht mehr auf den Ausfallpfad",
+            /if \(!lesung\.ok\)[\s\S]{0,120}throw new Error/.test(aaQ),
+            "sonst bleibt `decisions` leer und alles gilt als abgelehnt");
+          torPruefung("max_tokens ist wieder fest verdrahtet",
+            /max_tokens: metaTokenBudget\(candidates\.length\)/.test(aaQ),
+            "500 reichen fuer dreissig Kandidaten nicht");
+        }
+      }
+
       // ── WANN EIN ZWEITER VERSUCH ETWAS BRINGT — GERECHNET (22.09.) ───────
       //
       // Die echte Funktion, nicht ihr Text. Ein vertauschter Vergleich

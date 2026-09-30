@@ -872,6 +872,51 @@ wurde nie ausgegeben. Ob Claude Prosa lieferte, das Feld vergass oder ablehnte,
 war nicht feststellbar. Jetzt stehen Länge und die ersten 200 Zeichen der
 Antwort in der Zeile, und die Sammelzeile behauptet keinen Fehlschlag mehr.
 
+## Ein Regex, der eine Modellantwort liest, ist eine Zeitbombe (30.09.)
+
+Telegram 30.09. 12:09: **„KI-Sicherheitstor Meta-KI nicht erreichbar —
+Rückfall aktiv"**, Fehler `Unexpected non-whitespace character after JSON at
+position 653`. Die Stelle war eine Zeile:
+
+```ts
+const json = text.match(/\[[\s\S]*\]/)?.[0];
+if (json) { JSON.parse(json) … }
+```
+
+Der Ausdruck ist **gierig**: vom **ersten** `[` bis zum **letzten** `]` im
+ganzen Text. Daraus folgen **zwei** Fehlerbilder, beide nachgerechnet:
+
+| Antwort des Modells | alte Zeile | Folge |
+|---|---|---|
+| Array **+ Prosa mit Klammer** („… [siehe oben]") | zieht die Prosa mit hinein, `JSON.parse` wirft | `catch` → **jeder Kandidat freigegeben**, Tor ganz offen (laut gemeldet) |
+| **abgeschnitten**, kein `]` | findet **gar nichts**, wirft **nicht** | `decisions` bleibt leer → jeder Kandidat fällt in `if (!meta \|\| !meta.approve)` → **„Meta-AI hat abgelehnt"**. **Stille Totalablehnung** |
+
+Die zweite ist die gefährlichere: sie sieht aus wie ein Urteil, meldet sich
+nicht, und kostet **alle** Trades des Zyklus.
+
+**Und sie war scharf.** `goSignals` ist nicht begrenzt — bei dreissig Märkten
+kommen dreissig Kandidaten an. `max_tokens` stand fest auf **500**. Gemessen:
+ein Eintrag ist ~91 Zeichen ≈ 25 Token, dreissig also **~735** — über der
+Grenze. Exakt dieselbe Falle wie `tokenBudget()` am 06.09.: *„Die Watchlist
+hat inzwischen DREISSIG Märkte, und der Wert wurde nie mitgezogen."*
+
+**Jetzt:** `metaAntwortLesen()` zählt Klammern **mit Zeichenketten-Bewusstsein**
+(eine `]` in `"concern":"RSI 82]"` schliesst nichts), sammelt **alle** Paare
+auf oberster Ebene und nimmt das **erste, das sich wirklich als Urteilsliste
+lesen lässt**. Ein leeres Array, Zahlen aus einem Fliesstext und ein Objekt
+statt eines Arrays sind **keine** Urteile. Jede unlesbare Antwort ist ein
+**Ausfall mit Grund** und geht denselben Weg wie eine ausgebliebene —
+Rückfall **und** Meldung. `max_tokens` kommt aus `metaTokenBudget()`, nach
+unten auf 500 geklemmt (nie weniger Platz als bisher).
+
+**Zwei eigene Fehler dabei, beide gehören zur Methode:**
+- Die erste Fassung nahm das **erste** balancierte Paar — und scheiterte an
+  einer Klammer in der **Vorrede** („Hier das Ergebnis [Meta-Analyse]:").
+  Vom eigenen Durchstich gefangen.
+- Der erste Testfall für die Zeichenketten-Erkennung benutzte `[RSI 82]` — ein
+  **balanciertes** Paar, an dem eine fehlende Erkennung gar nicht auffällt.
+  Die Sabotage blieb grün. Jetzt eine **einzelne** Klammer: `"RSI 82]"`.
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn
