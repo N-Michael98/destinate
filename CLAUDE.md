@@ -1112,6 +1112,39 @@ Messfehler. Dazu ein echter Messfehler, der behoben ist: der Prüfer suchte
 `icMarketsExecutionEnabled` als **Teilzeichenkette** und fand sie noch in
 `icMarketsExecutionEnabledXX`. Jetzt mit Doppelpunkt.
 
+#### Wie weit reicht diese Fehlerklasse? Gemessen (20.10.)
+
+Die Frage, die der Fund aufwirft: wenn ich den Feldnamen **zweimal** falsch
+lese, wo noch? Fünfzehn Komponenten rufen eigene Routen ab.
+
+**Automatisch ist es nicht entscheidbar**, und das ist der eigentliche Befund.
+Ein Abgleich-Skript fand **null** prüfbare Paare: die meisten Routen geben
+`NextResponse.json(variable)` oder `{...objekt}` zurück (Feldmenge statisch
+nicht bestimmbar), und die meisten Komponenten rufen mehrere Routen ab
+(Zuordnung Variable ↔ Route nicht eindeutig). Zwölf Fälle, alle benannt.
+
+**Null geprüft ist kein sauberes Ergebnis, sondern ein kaputtes Werkzeug.** Das
+Skript bekam deshalb eine **Selbstprüfung**: es setzt den Fehler vom 30.09.
+künstlich wieder ein und muss ihn finden. Er wurde nicht gefunden — also war
+das leere Ergebnis wertlos, und das Skript sagt das selbst, statt Sauberkeit zu
+suggerieren. Dieselbe Regel wie „ein Prüfer, der nie rot wird".
+
+**Verschärfend:** `grep` über die Lesestellen zeigt, dass fast alle Komponenten
+ihre Antwort als `any` lesen (`const d = await r.json()`), nur **eine** mit Typ.
+Bei `any` sagt `tsc` zu **jedem** Feldnamen nichts — der Fehler vom 30.09. hatte
+wenigstens noch eine Typdeklaration, die ihn hätte fangen können.
+
+Von Hand geprüft und **sauber** sind die Pfade, an denen es wehtäte:
+
+| Pfad | gelesen | geliefert |
+|---|---|---|
+| `/api/capital-com/execute` | `ok`, `dealId`, `error` | das `ExecutionResult` ✅ |
+| `/api/icmarkets/execute` | `positionId` | existiert, Rückfall `dealId`/`id` ✅ |
+| `/api/security-center` ×4 (inkl. **Killswitch**) | `.report` | `{ ok: true, report }` ✅ |
+
+**Offen und ausdrücklich nicht geprüft:** die übrigen Anzeige-Pfade. Sie
+berühren weder Order noch Notaus, aber die Lücke ist benannt statt behauptet.
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn
