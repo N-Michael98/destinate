@@ -1065,12 +1065,52 @@ nur von `strategy-evolution/evolution-engine.ts:56` gelesen — das läuft in
 keiner Schleife. Die Fundstelle in `instrumentation.ts:835` ist ein
 **Kommentar**: „ein Wort im Kommentar ist keine Verwendung".
 
-`menue-ansichten` **rechnet** das jetzt (38 → 68 Prüfungen) und hält die Seite
+`menue-ansichten` **rechnet** das jetzt (38 → 76 Prüfungen) und hält die Seite
 zusätzlich strukturell fest: kehren die Literale zurück, verschwindet ein
 `fetch`, oder steht der Startwert wieder auf `false`, wird er rot. **16 von 16
 Sabotagen gefangen**, darunter der gefährlichste Rückbau — `dreiwertig()` auf
 `v === true` zu verkürzen, womit jede fehlgeschlagene Abfrage wieder „nicht
 verbunden" hiesse.
+
+### Eine geprüfte Funktion, die nie echte Werte bekommt (30.09.)
+
+Und genau danach passierte der Fehler, vor dem das alles schützen sollte —
+**zweimal in derselben Datei**, beim Einbau:
+
+```ts
+data.zeilen?.find(…)                       // brokerZustand() gibt `broker`
+data.settings?.icMarketsExecutionEnabled   // liegt unter `botSettings`
+```
+
+Beide Ausdrücke sind **immer `undefined`**. Die Anzeige hätte dauerhaft
+„Unbekannt" gezeigt — und das sah aus wie ein ehrliches Ergebnis, weil
+„Unbekannt" ja ein vorgesehener Zustand ist. Der Fix tarnte seinen eigenen
+Ausfall.
+
+**Was NICHTS davon gemerkt hat:** `tsc` nicht (die Felder sind optional
+deklariert, `?.` auf einem unbekannten Feld ist gültiges TypeScript), der Build
+nicht, und auch die **sechzehn Sabotagen** nicht. Die Funktion
+`integrationsStand()` war vollständig und korrekt geprüft — sie bekam nur nie
+echte Werte. Das ist die Fehlerklasse „ein Wort im Kommentar ist keine
+Verwendung", angewandt auf die **Verdrahtung**: eine Prüfung, die eine Funktion
+rechnet, beweist nichts über ihre Aufrufstelle.
+
+**Regel:** Wer ein Feld aus einer fremden Antwort liest, holt den Namen an der
+**Quelle** — nicht aus dem Gedächtnis. `menue-ansichten` führt dafür jetzt
+`brokerZustand(null, null)` aus, sucht **selbst**, welches Feld die Liste trägt,
+und hält die Seite an genau diesen Namen; den Pfad in den Einstellungen schneidet
+er per Klammerzählung aus `DEFAULT_SETTINGS` aus. Benennt die Quelle um, wird er
+rot — **die Gegenprobe ist mitgeprüft**, sonst hinge er an einem festen Namen und
+bewiese nichts.
+
+Von sechs Sabotagen: **fünf gefangen**, beide echten Fehler darunter. Die sechste
+— `broker` in der **Typdeklaration** zu `brokerId` — kann `menue-ansichten`
+nicht sehen, weil sie das Laufzeitverhalten nicht ändert. Ausgeführt und belegt:
+`npx tsc --noEmit` meldet dafür **zwei** Fehler (TS2561, Zeile 117 und 135).
+Richtiges Werkzeug, kein Loch — sie als „entwischt" zu zählen wäre ein
+Messfehler. Dazu ein echter Messfehler, der behoben ist: der Prüfer suchte
+`icMarketsExecutionEnabled` als **Teilzeichenkette** und fand sie noch in
+`icMarketsExecutionEnabledXX`. Jetzt mit Doppelpunkt.
 
 ## Ohne Kurs wird nicht gehandelt
 

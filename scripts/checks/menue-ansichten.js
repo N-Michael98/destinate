@@ -17,7 +17,7 @@
 //
 // Die Gegenrichtung wird mitgeprüft: eine gerenderte Ansicht ohne Menüeintrag
 // ist Code, den niemand erreichen kann.
-const { read, ladeTsModul } = require("./_lib");
+const { read, ladeTsModul, objectBlock } = require("./_lib");
 
 /** Entfernt NUR Kommentare, lässt Zeichenketten stehen — hier werden Texte in
  *  JSX und SQL geprüft, die schärfere Variante würde sie mitlöschen. */
@@ -479,6 +479,75 @@ module.exports = async function pruefe() {
     pruefe1('die Ueberschrift "Future Connections" ist zurueck',
       !/Future Connections/.test(tj),
       "vier der sechs laufen — das ist keine Zukunft");
+
+    // ── DIE FELDNAMEN GEGEN DIE ECHTEN QUELLEN (30.09.) ──────────────────
+    //
+    // ZWEI ECHTE FEHLER, beide am Tag des Einbaus gefunden — und beide waren
+    // von allem anderen UNSICHTBAR:
+    //
+    //   1. Die Seite las `data.zeilen`. `brokerZustand()` gibt das Feld aber
+    //      `broker` zurück (broker-status.ts:153). Ergebnis: immer
+    //      `undefined`, beide Broker dauerhaft "Unbekannt".
+    //   2. Sie las `settings.icMarketsExecutionEnabled`. Das Feld liegt unter
+    //      `settings.botSettings`. Ergebnis: dieselbe stille Dauer-Anzeige.
+    //
+    // Weder tsc noch build noch die 16 Sabotagen fingen das: die FUNKTION
+    // `integrationsStand()` war korrekt und vollstaendig geprueft — nur
+    // bekam sie nie echte Werte. Dieselbe Fehlerklasse wie "ein Wort im
+    // Kommentar ist keine Verwendung", auf die VERDRAHTUNG angewandt.
+    //
+    // Deshalb hier: die Namen werden an der QUELLE geholt, nicht behauptet.
+    {
+      const bs2 = ladeTsModul("lib/broker-status/broker-status.ts");
+      const bz2 = bs2.exports?.brokerZustand;
+      if (bs2.fehler || typeof bz2 !== "function") {
+        funde.push("brokerZustand nicht ausfuehrbar — die Feldnamen der "
+          + "Integrations-Anzeige bleiben ungeprueft");
+        geprueft2++;
+      } else {
+        const probe = bz2(null, null);
+        const felder = Object.keys(probe);
+        // Welches Feld traegt die Broker-Liste WIRKLICH?
+        const listenFeld = felder.find((k) => Array.isArray(probe[k]));
+        pruefe1("brokerZustand liefert gar keine Broker-Liste",
+          typeof listenFeld === "string", felder.join(", "));
+        if (listenFeld) {
+          pruefe1(`/trading-journal liest ein anderes Feld als "${listenFeld}"`,
+            new RegExp(`data\\.${listenFeld}\\?\\.find`).test(tj),
+            `brokerZustand() gibt "${listenFeld}" zurueck — die Seite muss genau das lesen`);
+        }
+        // Und die Kennung der Zeilen: die Seite sucht nach CAPITAL_COM.
+        const erste = Array.isArray(probe[listenFeld]) ? probe[listenFeld][0] : null;
+        pruefe1("die Broker-Zeilen tragen keine Kennung namens 'broker'",
+          erste && typeof erste.broker === "string",
+          JSON.stringify(erste && Object.keys(erste)).slice(0, 100));
+        const kennungen = (probe[listenFeld] ?? []).map((z) => z.broker);
+        for (const k of ["CAPITAL_COM", "IC_MARKETS"]) {
+          pruefe1(`/trading-journal sucht nach "${k}", das brokerZustand nicht liefert`,
+            !new RegExp(`finde\\("${k}"\\)`).test(tj) || kennungen.includes(k),
+            kennungen.join(", "));
+        }
+      }
+
+      // Der Pfad in den Einstellungen — per Klammerzaehlung, nicht geraten.
+      const store = read("frontend/lib/settings/settings-store.ts");
+      const botBlock = objectBlock(store, "botSettings:");
+      pruefe1("der botSettings-Block der Standardwerte ist nicht auffindbar",
+        typeof botBlock === "string" && botBlock.length > 50,
+        "ohne ihn laesst sich der Pfad nicht belegen");
+      if (botBlock) {
+        // MIT DOPPELPUNKT, nicht als Teilzeichenkette: im Sabotage-Lauf vom
+        // 30.09. blieb `icMarketsExecutionEnabledXX` gruen, weil der alte
+        // Ausdruck den Namen als Praefix darin wiederfand. Ein Teilstring-
+        // Treffer beweist nichts ueber den Feldnamen.
+        pruefe1("icMarketsExecutionEnabled liegt nicht mehr unter botSettings",
+          /\bicMarketsExecutionEnabled\s*:/.test(botBlock),
+          "dann liest /trading-journal den falschen Pfad");
+        pruefe1("/trading-journal liest icMarketsExecutionEnabled am falschen Pfad",
+          /settings\?\.botSettings\?\.icMarketsExecutionEnabled/.test(tj),
+          "es liegt unter botSettings, nicht auf oberster Ebene");
+      }
+    }
   }
 
   return {

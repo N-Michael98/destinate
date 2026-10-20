@@ -1579,13 +1579,17 @@ export default function TradingJournal() {
     (async () => {
       try {
         const res = await fetch("/api/broker-status");
+        // Das Feld heisst `broker`, NICHT `zeilen` (brokerZustand():153).
+        // Erste Fassung las `data.zeilen` — immer undefined, und die Anzeige
+        // haette dauerhaft "Unbekannt" gezeigt, ohne dass etwas rot wurde.
+        // Der Pruefer haelt den Namen jetzt an die echte Funktion.
         const data = await res.json() as {
           ok?: boolean;
-          zeilen?: Array<{ broker?: string; verbunden?: boolean }>;
+          broker?: Array<{ broker?: string; verbunden?: boolean }>;
         };
         if (abgebrochen || !res.ok || data?.ok !== true) return;
         const finde = (b: string) => {
-          const z = data.zeilen?.find((x) => x.broker === b);
+          const z = data.broker?.find((x) => x.broker === b);
           return typeof z?.verbunden === "boolean" ? z.verbunden : null;
         };
         setIntegrationen((v) => ({
@@ -1598,12 +1602,15 @@ export default function TradingJournal() {
     (async () => {
       try {
         const res = await fetch("/api/settings");
+        // Das Feld liegt unter `botSettings`, nicht auf oberster Ebene
+        // (settings-store.ts, DEFAULT_SETTINGS.botSettings). Erste Fassung
+        // las es eine Ebene zu hoch — immer undefined, dauerhaft "Unbekannt".
         const data = await res.json() as {
           ok?: boolean;
-          settings?: { icMarketsExecutionEnabled?: unknown };
+          settings?: { botSettings?: { icMarketsExecutionEnabled?: unknown } };
         };
         if (abgebrochen || !res.ok || data?.ok !== true) return;
-        const roh = data.settings?.icMarketsExecutionEnabled;
+        const roh = data.settings?.botSettings?.icMarketsExecutionEnabled;
         setIntegrationen((v) => ({
           ...v,
           icAusfuehrung: typeof roh === "boolean" ? roh : null,
