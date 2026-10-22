@@ -1112,38 +1112,64 @@ Messfehler. Dazu ein echter Messfehler, der behoben ist: der Prüfer suchte
 `icMarketsExecutionEnabled` als **Teilzeichenkette** und fand sie noch in
 `icMarketsExecutionEnabledXX`. Jetzt mit Doppelpunkt.
 
-#### Wie weit reicht diese Fehlerklasse? Gemessen (20.10.)
+#### Wie weit reicht diese Fehlerklasse? Vollständig gemessen (22.10.)
 
 Die Frage, die der Fund aufwirft: wenn ich den Feldnamen **zweimal** falsch
 lese, wo noch? Fünfzehn Komponenten rufen eigene Routen ab.
 
-**Automatisch ist es nicht entscheidbar**, und das ist der eigentliche Befund.
-Ein Abgleich-Skript fand **null** prüfbare Paare: die meisten Routen geben
-`NextResponse.json(variable)` oder `{...objekt}` zurück (Feldmenge statisch
-nicht bestimmbar), und die meisten Komponenten rufen mehrere Routen ab
-(Zuordnung Variable ↔ Route nicht eindeutig). Zwölf Fälle, alle benannt.
+**Ergebnis: 23 Variable↔Route-Paare automatisch geprüft, NULL Fehler** — und
+die restlichen neun einzeln von Hand, ebenfalls ohne Befund. Die Lücke ist
+damit nicht „benannt", sondern **geschlossen**.
 
-**Null geprüft ist kein sauberes Ergebnis, sondern ein kaputtes Werkzeug.** Das
-Skript bekam deshalb eine **Selbstprüfung**: es setzt den Fehler vom 30.09.
-künstlich wieder ein und muss ihn finden. Er wurde nicht gefunden — also war
-das leere Ergebnis wertlos, und das Skript sagt das selbst, statt Sauberkeit zu
-suggerieren. Dieselbe Regel wie „ein Prüfer, der nie rot wird".
+Hier stand bis heute „automatisch nicht entscheidbar". Das war **Aufgeben, nicht
+Gründlichkeit**: beide Muster, an denen das Werkzeug scheiterte, sind auflösbar.
+Bei `const [a, b] = await Promise.all([fetch(R1)…, fetch(R2)…])` ist die
+**Reihenfolge** die Zuordnung; bei `NextResponse.json(variable)` steht das
+Literal im selben Rumpf. Dazu musste es dem **React-State** folgen
+(`setZustand(daten)` → gelesen wird `zustand?.broker`, nie `daten.broker`).
 
-**Verschärfend:** `grep` über die Lesestellen zeigt, dass fast alle Komponenten
-ihre Antwort als `any` lesen (`const d = await r.json()`), nur **eine** mit Typ.
-Bei `any` sagt `tsc` zu **jedem** Feldnamen nichts — der Fehler vom 30.09. hatte
-wenigstens noch eine Typdeklaration, die ihn hätte fangen können.
+**Fünf eigene Messfehler auf dem Weg, alle gefangen** — die gehören zur Methode:
 
-Von Hand geprüft und **sauber** sind die Pfade, an denen es wehtäte:
+| Messfehler | Folge | wer fing ihn |
+|---|---|---|
+| falsches Lesemuster gesucht | 0 Paare | Selbstprüfung |
+| Schlüssel-Erkennung zählte **Werte** mit (`{ok: true}` → „ok", „true") | **28 Falschmeldungen** | Selbstprüfung |
+| `(await res.json())` in Klammern + State nicht verfolgt | Selbstprüfung rot | Selbstprüfung |
+| kein Variablen-**Geltungsbereich** (`d` mehrfach je Datei) | **15 Falschmeldungen** | Handprüfung |
+| Bereich endete am *eigenen* statt am nächsten Abruf | 0 Paare | Selbstprüfung |
 
-| Pfad | gelesen | geliefert |
+Der zweite ist exakt der Fehler, der weiter oben schon steht („die
+Schlüssel-Erkennung zählte auch WERTE") — **dieselbe Falle, neues Werkzeug.**
+
+**Die Selbstprüfung ist der ganze Grund, warum das Ergebnis etwas wert ist.**
+Sie setzt einen Feldnamen künstlich falsch und verlangt, dass er gefunden wird;
+ohne sie hätte ich dreimal „alles sauber" gemeldet. Null geprüft ist kein
+sauberes Ergebnis, sondern ein kaputtes Werkzeug.
+
+**Ehrlich zum Geltungsbereich:** der Fehler vom 30.09. selbst liegt
+**ausserhalb**. `/api/broker-status` antwortet mit `json({ ok: true, ...zustand })`
+— die Felder kommen aus einer **Funktion**, statisch nicht auflösbar. Genau
+dafür gibt es den spezifischen Riegel in `menue-ansichten`, der
+`brokerZustand()` **ausführt**. Eine Selbstprüfung an einem Fall ausserhalb des
+Geltungsbereichs wäre unehrlich — sie bliebe ewig rot und bewiese nichts.
+
+Die neun nicht automatisch entscheidbaren, **einzeln abgearbeitet**:
+
+| Pfad | gelesen | Befund |
 |---|---|---|
 | `/api/capital-com/execute` | `ok`, `dealId`, `error` | das `ExecutionResult` ✅ |
 | `/api/icmarkets/execute` | `positionId` | existiert, Rückfall `dealId`/`id` ✅ |
-| `/api/security-center` ×4 (inkl. **Killswitch**) | `.report` | `{ ok: true, report }` ✅ |
+| `/api/capital-com/positions` | `d.positions` | `{ok, positions, connected, error}` ✅ |
+| `/api/execution-queue-position-sync` | `d.report` | `{ok, report}` ✅ |
+| `/api/mission-control/audit` | `auditReport.checks` | `json(report)`, `report.checks` ✅ |
+| `/api/broker-status`, `/api/execution-status` | — | durch `menue-ansichten` **rechnend** gesichert ✅ |
+| `/api/python/backtest/*` ×2 | — | Proxy über `[...path]`; die Antwort bestimmt FastAPI, und die Komponente liest keine Felder ✅ |
 
-**Offen und ausdrücklich nicht geprüft:** die übrigen Anzeige-Pfade. Sie
-berühren weder Order noch Notaus, aber die Lücke ist benannt statt behauptet.
+**Verschärfend und weiterhin wahr:** fast alle Komponenten lesen ihre Antwort
+als `any` (`const d = await r.json()`), nur **eine** mit Typ. Bei `any` sagt
+`tsc` zu **jedem** Feldnamen nichts — der Fehler vom 30.09. hatte wenigstens
+noch eine Typdeklaration, die ihn hätte fangen können. Die Messung ersetzt das
+nicht, sie stellt nur fest, dass heute keiner falsch steht.
 
 ## Ohne Kurs wird nicht gehandelt
 
