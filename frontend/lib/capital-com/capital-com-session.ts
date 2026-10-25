@@ -426,11 +426,78 @@ export async function autoReconnectCapital(): Promise<{ ok: boolean; error?: str
 
 // Keep-alive: ping Capital.com with GET /accounts every 2min to prevent session expiry
 // Called from instrumentation heartbeat
+/**
+ * Meldet das ERGEBNIS eines Keep-Alive-Reconnects — gedrosselt (25.10.)
+ *
+ * ── DER ANLASS ──────────────────────────────────────────────────────────────
+ *
+ * In `keepAliveCapital` stand:
+ *
+ *   await autoReconnectCapital().catch(() => {});
+ *   return;
+ *
+ * `autoReconnectCapital()` gibt `{ ok, error }` zurück — und der Wert wurde
+ * **weggeworfen**. Ein Reconnect, der alle zwei Minuten scheitert, war damit
+ * von einem erfolgreichen **nicht zu unterscheiden**: beide schweigen.
+ *
+ * Das ist WÖRTLICH derselbe Fehler, der bei IC Markets am 08.09. behoben
+ * wurde. Der Kommentar steht dort immer noch: „Ein Wiederholungsversuch,
+ * dessen Ausgang niemand sieht, ist von einem Fehlschlag nicht zu
+ * unterscheiden." Bei Capital.com war er schlimmer — dort wurde nicht einmal
+ * der Versuch gemeldet.
+ *
+ * ── WARUM DAS ZUSAMMENHÄNGT ────────────────────────────────────────────────
+ *
+ * Ohne Sitzung steigt `syncCapitalPositionsToJournal` aus (seit `17e1d6e`
+ * hörbar), der Orchestrator handelt nicht, und die Anzeige meldet „keine
+ * Sitzung". Alle drei Folgen sind sichtbar — nur die URSACHE war stumm.
+ *
+ * Gedrosselt wie der Journal-Sync: jeder WECHSEL wird gemeldet, ein
+ * Dauerzustand alle 30 Minuten erneut. Bei einem Takt von zwei Minuten wären
+ * es sonst 720 Zeilen am Tag. Eigener Zustand auf `global`, eigene Funktion —
+ * die Schwester heisst `syncAussetzerMelden()` und drosselt getrennt, damit
+ * sich zwei verschiedene Lagen nicht gegenseitig verdecken.
+ */
+export const RECONNECT_MELDE_ABSTAND_MS = 30 * 60 * 1000;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __capital_reconnect_lage__: { ok: boolean; seit: number; gemeldet: number } | undefined;
+}
+
+export function reconnectMelden(
+  ok: boolean,
+  grund: string,
+  jetzt: number = Date.now(),
+): string | null {
+  const vorher = global.__capital_reconnect_lage__;
+  const gewechselt = !vorher || vorher.ok !== ok;
+  if (gewechselt) {
+    global.__capital_reconnect_lage__ = { ok, seit: jetzt, gemeldet: jetzt };
+  } else if (jetzt - vorher.gemeldet >= RECONNECT_MELDE_ABSTAND_MS) {
+    global.__capital_reconnect_lage__ = { ...vorher, gemeldet: jetzt };
+  } else {
+    return null;
+  }
+  if (ok) {
+    // Ein gesunder Dauerzustand braucht keine Wiederholung.
+    return gewechselt ? "[capital-com] ✅ Keep-Alive-Reconnect erfolgreich" : null;
+  }
+  const dauer = gewechselt ? 0 : Math.round((jetzt - vorher!.seit) / 60000);
+  return "[capital-com] ⚠️ Keep-Alive-Reconnect fehlgeschlagen: "
+    + `${grund || "ohne Grund"}${dauer > 0 ? ` — seit ${dauer} Min` : ""}. `
+    + "Ohne Sitzung werden keine Journal-Zeilen abgeglichen und nicht gehandelt.";
+}
+
 export async function keepAliveCapital(): Promise<void> {
   if (isKillswitchActive()) return; // Killswitch aktiv — keine Verbindung halten/aufbauen
   const session = global.__capital_session__;
   if (!session) {
-    await autoReconnectCapital().catch(() => {});
+    const wieder = await autoReconnectCapital().catch((e) => ({
+      ok: false, error: e instanceof Error ? e.message : String(e),
+    }));
+    const meldung = reconnectMelden(wieder.ok, wieder.error ?? "");
+    if (meldung) console[wieder.ok ? "log" : "warn"](meldung);
     return;
   }
   try {
@@ -442,7 +509,22 @@ export async function keepAliveCapital(): Promise<void> {
       global.__capital_session__ = null;
       global.__capital_last_error__ = null;
       global.__capital_last_attempt__ = 0;
-      await autoReconnectCapital().catch(() => {});
+      // ── AUCH HIER GEHOERT DAS ERGEBNIS INS LOG (25.10.) ──────────────
+      //
+      // Die Zeile darueber meldet "reconnecting…" — und bis heute stand NIE
+      // im Log, ob es geklappt hat. Das ist woertlich der Fehler, der bei IC
+      // Markets am 08.09. behoben wurde: "im Betriebslog stand stundenlang
+      // alle zwei Minuten 'attempting reconnect' und NIE, ob es geklappt
+      // hat." Bei Capital.com blieb er stehen.
+      //
+      // Beim Anbau der ersten Stelle (Z. 496) habe ich diese hier uebersehen
+      // — der Pruefer hat sie gefangen, weil er das MUSTER sucht und nicht
+      // eine einzelne Zeile.
+      const wieder2 = await autoReconnectCapital().catch((e) => ({
+        ok: false, error: e instanceof Error ? e.message : String(e),
+      }));
+      const meldung2 = reconnectMelden(wieder2.ok, wieder2.error ?? "");
+      if (meldung2) console[wieder2.ok ? "log" : "warn"](meldung2);
     } else {
       // Update balance from ping and refresh Redis TTL
       const primary = result.accounts?.[0];

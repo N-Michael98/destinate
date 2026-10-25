@@ -949,6 +949,126 @@ module.exports = async function pruefe() {
       /syncAussetzerMelden\("laeuft"/.test(rumpf2));
   }
 
+  // ── DER KEEP-ALIVE-RECONNECT WARF SEIN ERGEBNIS WEG (25.10.) ───────────
+  //
+  // In `keepAliveCapital` stand `await autoReconnectCapital().catch(() => {})`
+  // — die Funktion gibt `{ ok, error }` zurueck, und der Wert landete im
+  // Nichts. Ein Reconnect, der alle zwei Minuten scheitert, war damit von
+  // einem erfolgreichen nicht zu unterscheiden.
+  //
+  // WOERTLICH derselbe Fehler wie bei IC Markets am 08.09. — der Kommentar
+  // steht dort noch: "Ein Wiederholungsversuch, dessen Ausgang niemand sieht,
+  // ist von einem Fehlschlag nicht zu unterscheiden."
+  {
+    const ses = ladeTsModul("lib/capital-com/capital-com-session.ts");
+    const f = ses.exports?.reconnectMelden;
+    const ABSTAND = ses.exports?.RECONNECT_MELDE_ABSTAND_MS;
+    if (ses.fehler || typeof f !== "function") {
+      pruefe1("reconnectMelden ist nicht ausfuehrbar",
+        false, ses.fehler ?? "nicht exportiert");
+    } else {
+      const alt = global.__capital_reconnect_lage__;
+      try {
+        pruefe1("der Reconnect-Meldeabstand ist keine halbe Stunde",
+          ABSTAND === 30 * 60 * 1000, String(ABSTAND));
+
+        delete global.__capital_reconnect_lage__;
+        const m1 = f(false, "HTTP 401", 1_000_000);
+        pruefe1("der erste fehlgeschlagene Reconnect wird verschwiegen",
+          typeof m1 === "string" && /HTTP 401/.test(m1), String(m1));
+        pruefe1("die Meldung sagt nicht, was dadurch ausfaellt",
+          typeof m1 === "string" && /nicht gehandelt/.test(m1), String(m1));
+
+        const m2 = f(false, "HTTP 401", 1_000_000 + 120_000);
+        pruefe1("derselbe Fehlschlag wird alle zwei Minuten gemeldet — Rauschen",
+          m2 === null, String(m2));
+
+        const m3 = f(false, "HTTP 401", 1_000_000 + ABSTAND);
+        pruefe1("ein dauerhaft scheiternder Reconnect verstummt nach der ersten Meldung",
+          typeof m3 === "string" && /seit 30 Min/.test(m3), String(m3));
+
+        const m4 = f(true, "", 1_000_000 + ABSTAND + 60_000);
+        pruefe1("die Rueckkehr (Reconnect gelingt) wird nicht gemeldet",
+          typeof m4 === "string" && /erfolgreich/.test(m4), String(m4));
+        const m5 = f(true, "", 1_000_000 + ABSTAND * 3);
+        pruefe1("ein gesunder Dauerzustand erzeugt Rauschen", m5 === null, String(m5));
+
+        delete global.__capital_reconnect_lage__;
+        const m6 = f(false, "", 2_000_000);
+        pruefe1("ein Fehlschlag ohne Grund laesst die Stelle leer",
+          typeof m6 === "string" && /ohne Grund/.test(m6), String(m6));
+
+        // BEIDE DROSSELN MUESSEN GETRENNT ZAEHLEN: sonst verdeckt die eine
+        // Lage die andere, und genau das waere wieder ein stummer Ausfall.
+        const tr2 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+        const sync = tr2.exports?.syncAussetzerMelden;
+        if (typeof sync === "function") {
+          const altSync = global.__journal_sync_lage__;
+          try {
+            // ZU SCHWACH WAERE: beide melden beim ersten Aufruf. Das tun sie
+            // auch bei GETEILTEM Zustand, weil die Lage dann jeweils als
+            // "gewechselt" gilt. Der Sabotage-Lauf vom 25.10. ist genau daran
+            // vorbeigelaufen.
+            //
+            // Der Test, der traegt: nach dem Fremdaufruf muss die eigene
+            // Drossel noch greifen. Teilen sie sich den Zustand, hat der
+            // Fremdaufruf ihn ueberschrieben — und die Meldung kaeme erneut.
+            delete global.__capital_reconnect_lage__;
+            delete global.__journal_sync_lage__;
+            const a1 = f(false, "X", 3_000_000);
+            const b1 = sync("keine-sitzung", "", 3_000_000);
+            const a2 = f(false, "X", 3_060_000);   // 1 Min spaeter: gedrosselt
+            const b2 = sync("keine-sitzung", "", 3_060_000);
+            pruefe1("die beiden Drosseln teilen sich einen Zustand und "
+              + "verdecken einander",
+              typeof a1 === "string" && typeof b1 === "string"
+              && a2 === null && b2 === null,
+              `a1=${typeof a1} b1=${typeof b1} a2=${String(a2)} b2=${String(b2)}`);
+          } finally {
+            if (altSync === undefined) delete global.__journal_sync_lage__;
+            else global.__journal_sync_lage__ = altSync;
+          }
+        }
+      } finally {
+        if (alt === undefined) delete global.__capital_reconnect_lage__;
+        else global.__capital_reconnect_lage__ = alt;
+      }
+    }
+
+    // Und die Verdrahtung: das Ergebnis darf nicht wieder verworfen werden.
+    const sesQ = read("frontend/lib/capital-com/capital-com-session.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    pruefe1("das Ergebnis des Keep-Alive-Reconnects wird wieder verworfen",
+      !/await autoReconnectCapital\(\)\.catch\(\(\) => \{\}\)/.test(sesQ),
+      "autoReconnectCapital() gibt { ok, error } zurueck — der Wert gehoert ins Log");
+    pruefe1("der Keep-Alive fragt reconnectMelden nicht",
+      /const meldung = reconnectMelden\(wieder\.ok, wieder\.error \?\? ""\)/.test(sesQ));
+    pruefe1("die Meldung wird berechnet, aber nicht ausgegeben",
+      /if \(meldung\) console\[wieder\.ok \? "log" : "warn"\]\(meldung\)/.test(sesQ));
+    // ── EIN AUSFALL DARF SICH NICHT ALS ERGEBNIS AUSGEBEN ──────────────
+    //
+    // Im Sabotage-Lauf vom 25.10. entwischte genau eine: der catch-Rueckfall
+    // zu `({ ok: true })`. Die Verdrahtung blieb unveraendert, `wieder.ok`
+    // wurde weiter gelesen — nur haette ein geworfener Netzfehler ab da als
+    // GELUNGENER Reconnect gegolten und still geschwiegen. Dieselbe
+    // Fehlerklasse wie `riskScore ?? 50`, eine Ebene tiefer.
+    //
+    // Es gibt ZWEI catch-Rueckfaelle (beide Reconnect-Stellen), und BEIDE
+    // muessen `ok: false` liefern.
+    {
+      const faelle = [...sesQ.matchAll(/autoReconnectCapital\(\)\s*\.catch\(\([^)]*\)\s*=>\s*\(\{([\s\S]{0,120}?)\}\)\)/g)]
+        .map((m) => m[1]);
+      pruefe1("es gibt nicht mehr zwei Reconnect-Rueckfaelle",
+        faelle.length === 2, `${faelle.length} gefunden`);
+      pruefe1("ein catch-Rueckfall gibt den Ausfall als Erfolg aus",
+        faelle.length > 0 && faelle.every((f) => /ok:\s*false/.test(f)),
+        faelle.map((f) => f.replace(/\s+/g, " ").slice(0, 45)).join(" | "));
+      pruefe1("ein catch-Rueckfall verschweigt den Grund",
+        faelle.every((f) => /error:/.test(f)),
+        "sonst steht spaeter 'ohne Grund' statt der Ursache");
+    }
+  }
+
   // ── zeileBrauchtZuordnung() WIRKLICH RECHNEN (30.09.) ──────────────────
   //
   // Sie entscheidet, ob eine Zeile mit FALSCHER dealId korrigiert wird —

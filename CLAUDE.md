@@ -1220,6 +1220,57 @@ Gegenprobe ausgeführt: den Aufruf hinter den Sitzungs-Riegel **verschoben** —
 die korrigierte Prüfung wird rot, die alte hätte das nicht zuverlässig
 gefangen.
 
+### Dieselbe Klasse, zweimal nebenan: der Keep-Alive warf sein Ergebnis weg
+
+Die Fehlerklasse an **einer** Stelle zu beheben, beantwortet nicht, wo sie noch
+steckt. Systematisch gesucht über alle acht Einstiegsfunktionen der
+`setInterval`-Schleifen: **ein echter Fund**, und er ist die Ursachenkette zum
+Befund oben.
+
+```ts
+if (!session) {
+  await autoReconnectCapital().catch(() => {});   // Ergebnis WEGGEWORFEN
+  return;                                          // keine Meldung
+}
+```
+
+`autoReconnectCapital()` gibt `{ ok, error }` zurück. Ein Reconnect, der alle
+zwei Minuten scheitert, war von einem erfolgreichen **nicht zu unterscheiden**.
+Und das erklärt die stille Kette: ohne Sitzung steigt der Journal-Sync aus, der
+Orchestrator handelt nicht, die Anzeige meldet „keine Sitzung" — **alle drei
+Folgen sichtbar, nur die Ursache stumm.**
+
+Es ist **wörtlich** derselbe Fehler, der bei IC Markets am 08.09. behoben wurde;
+der Kommentar steht dort bis heute: *„Ein Wiederholungsversuch, dessen Ausgang
+niemand sieht, ist von einem Fehlschlag nicht zu unterscheiden."* Bei
+Capital.com war er schlimmer — dort wurde nicht einmal der Versuch gemeldet.
+
+**Und es waren zwei Stellen.** Beim Anbau der ersten habe ich die zweite
+übersehen — die, bei der `"reconnecting…"` im Log steht und seit jeher **nie**,
+ob es geklappt hat. **Der Prüfer hat sie gefangen**, weil er das *Muster* sucht
+und nicht eine einzelne Zeile. Genau dafür ist er da.
+
+`reconnectMelden()` drosselt wie der Journal-Sync, aber mit **eigenem** Zustand
+(`global.__capital_reconnect_lage__`): teilten sich beide einen, verdeckte die
+eine Lage die andere — wieder ein stummer Ausfall.
+
+**Drei eigene Messfehler, alle benannt:**
+- Das Suchwerkzeug meldete **5** Verdachtsfälle, **4 davon falsch**: ein
+  4-Zeilen-Fenster übersah Meldeblöcke, die 5 Zeilen davor standen, und zählte
+  einen `.filter()`-Callback sowie die Ergebnis-Rückgabe am Ende als frühen
+  Rücksprung. Jeder einzeln von Hand geprüft, bevor einer „Befund" hiess.
+- Die Prüfung „beide Drosseln getrennt" war **zu schwach**: sie verlangte nur,
+  dass beide beim ersten Aufruf melden — das tun sie auch bei geteiltem
+  Zustand. Jetzt wird geprüft, dass nach dem Fremdaufruf die **eigene Drossel
+  noch greift**.
+- Im Sabotage-Lauf entwischte der catch-Rückfall `({ ok: true })`: die
+  Verdrahtung blieb unverändert, nur hätte ein geworfener Netzfehler ab da als
+  **gelungener** Reconnect gegolten. „Ein Ausfall darf sich nicht als Ergebnis
+  ausgeben", eine Ebene tiefer. Jetzt müssen **beide** catch-Rückfälle
+  `ok: false` **und** einen Grund liefern.
+
+**10 von 10 Sabotagen**, 258 → **273 Prüfungen**.
+
 ### Der Build hängt an Google Fonts
 
 Beim Kontrolllauf schlug `npm run build` einmal fehl: *„Error while requesting
