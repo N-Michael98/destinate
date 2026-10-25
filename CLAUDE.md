@@ -1171,6 +1171,68 @@ als `any` (`const d = await r.json()`), nur **eine** mit Typ. Bei `any` sagt
 noch eine Typdeklaration, die ihn hätte fangen können. Die Messung ersetzt das
 nicht, sie stellt nur fest, dass heute keiner falsch steht.
 
+## Ein stiller Aussetzer ist von einem gesunden Lauf nicht zu unterscheiden (25.10.)
+
+Anlass: die Suche nach `dealId` im Railway-Log ergab **null Treffer**. Daraus
+liess sich die Frage, auf die es ankam — *greift die dealId-Korrektur?* —
+**nicht** beantworten, und zwar aus einem Grund im Code:
+
+```ts
+if (!isCapitalConnected()) return;      // keine Meldung
+if (!posResult.ok) return;              // keine Meldung, Grund verworfen
+```
+
+`syncCapitalPositionsToJournal` hatte **zwei stille Rücksprünge**. Ein Sync,
+der bei jedem Lauf sofort aussteigt, schreibt damit genau so viel wie ein
+gesunder: nichts. Bei der zweiten Stelle ist es wörtlich „wer den Grund nicht
+mitschreibt, muss ihn später raten" — `capitalGetPositions` liefert
+`{ ok: false, error: "HTTP 401" }`, und der Grund landete im Nichts.
+
+`syncAussetzerMelden()` entscheidet das jetzt als **ausführbare** Funktion:
+jeder **Wechsel** der Lage wird gemeldet (auch die Rückkehr zu „läuft"), ein
+**Dauerzustand** alle 30 Minuten erneut. Ohne die Wiederholung verschwände
+genau der interessante Fall nach der ersten Meldung für immer — die Lehre aus
+dem dealId-Nachtrag vom 02.09. Ein gesunder Dauerzustand schweigt, sonst wären
+es 720 Zeilen am Tag.
+
+Der Zustand liegt auf `global.__journal_sync_lage__`, nicht modul-scoped.
+
+**10 von 10 Sabotagen**, darunter die Drossel in beide Richtungen (nie melden /
+immer melden) und der verworfene Grund.
+
+### Und eine Prüfung, die nie beweisen konnte, was sie behauptet
+
+Beim Anbau wurde `lifecycle-rueckkehr` rot — an einer **bestehenden** Stelle:
+
+```js
+indexOf("await schreibeAusstehendeZeilen()") < indexOf("if (!isCapitalConnected()) return;")
+```
+
+Zwei Fehler auf einmal. Der Anker hing am **Wortlaut** (der Rücksprung wurde
+zu einem Block, um zu melden). Und schwerer: **`indexOf(...) < -1` kann nie
+wahr werden.** Fehlte der Wortlaut, war die Prüfung *immer* rot — unabhängig
+von der Reihenfolge, die sie prüfen sollte. Sie bewies also nie das, was sie
+behauptete, sondern nur, dass eine Zeichenfolge noch dastand.
+
+Jetzt werden **beide Positionen auf Existenz** geprüft und dann die
+Reihenfolge, und der Befund nennt sie (`schreibe@22435 sitzung@22233`).
+Gegenprobe ausgeführt: den Aufruf hinter den Sitzungs-Riegel **verschoben** —
+die korrigierte Prüfung wird rot, die alte hätte das nicht zuverlässig
+gefangen.
+
+### Der Build hängt an Google Fonts
+
+Beim Kontrolllauf schlug `npm run build` einmal fehl: *„Error while requesting
+resource", 2 Warnungen, Build error occurred.* Zwei Wiederholungen liefen
+sauber durch (Exit 0, null Warnungen) — **transient, kein Codefehler**.
+
+Die Ursache ist trotzdem benannt: `app/layout.tsx:2` lädt `Geist` und
+`Geist_Mono` über `next/font/google`. **Der Build holt sie zur Bauzeit von
+Google.** Ist der Dienst nicht erreichbar, schlägt der Build fehl — auf Railway
+genauso. Nicht geändert (selbst gehostete Fonts wären eine eigene
+Entscheidung), aber wer einen Deploy ohne erkennbaren Grund scheitern sieht,
+sucht sonst an der falschen Stelle.
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn

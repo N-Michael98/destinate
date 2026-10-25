@@ -860,6 +860,95 @@ module.exports = async function pruefe() {
       "eine Position ohne ID wuerde sonst als leere Kennung mitzaehlen");
   }
 
+  // ── EIN STILLER AUSSETZER IST KEIN GESUNDER LAUF (25.10.) ──────────────
+  //
+  // `syncCapitalPositionsToJournal` hatte ZWEI stille Ruecksprünge:
+  // `if (!isCapitalConnected()) return;` und `if (!posResult.ok) return;`.
+  // Beide ohne Meldung — ein Sync, der bei JEDEM Lauf sofort aussteigt, war
+  // damit von einem gesunden nicht zu unterscheiden. Aufgefallen bei der
+  // Suche nach `dealId` im Railway-Log: null Treffer, und genau diese Frage
+  // war daraus nicht zu beantworten.
+  //
+  // RECHNEND: eine Drossel ist mit einem Regex nicht ehrlich prueffbar — sie
+  // haengt an Zustand und Zeit, nicht am Wortlaut.
+  {
+    const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+    const f = tr.exports?.syncAussetzerMelden;
+    const ABSTAND = tr.exports?.SYNC_MELDE_ABSTAND_MS;
+    if (tr.fehler || typeof f !== "function") {
+      pruefe1("syncAussetzerMelden ist nicht ausfuehrbar",
+        false, tr.fehler ?? "nicht exportiert");
+    } else {
+      const alt = global.__journal_sync_lage__;
+      try {
+        pruefe1("der Meldeabstand ist keine halbe Stunde",
+          ABSTAND === 30 * 60 * 1000, String(ABSTAND));
+
+        // Erster Aussetzer MUSS gemeldet werden.
+        delete global.__journal_sync_lage__;
+        const m1 = f("keine-sitzung", "", 1_000_000);
+        pruefe1("der erste Aussetzer wird verschwiegen",
+          typeof m1 === "string" && /keine Capital\.com-Sitzung/.test(m1), String(m1));
+        pruefe1("die Meldung sagt nicht, was dadurch ausfaellt",
+          typeof m1 === "string" && /dealIds nachgetragen/.test(m1), String(m1));
+
+        // Unveraendert und innerhalb der Drossel -> SCHWEIGEN (kein Rauschen).
+        const m2 = f("keine-sitzung", "", 1_000_000 + 60_000);
+        pruefe1("dieselbe Lage wird alle zwei Minuten erneut gemeldet — Rauschen",
+          m2 === null, String(m2));
+
+        // Dauerzustand nach 30 Minuten -> ERNEUT melden, sonst verschwindet
+        // genau der interessante Fall nach der ersten Meldung fuer immer.
+        const m3 = f("keine-sitzung", "", 1_000_000 + ABSTAND);
+        pruefe1("ein Dauerzustand verstummt nach der ersten Meldung",
+          typeof m3 === "string" && /seit 30 Min/.test(m3), String(m3));
+
+        // Der GRUND der Positionsabfrage gehoert in die Meldung.
+        delete global.__journal_sync_lage__;
+        const m4 = f("positionen-fehlgeschlagen", "HTTP 401", 2_000_000);
+        pruefe1("der Grund der fehlgeschlagenen Positionsabfrage wird verworfen",
+          typeof m4 === "string" && /HTTP 401/.test(m4), String(m4));
+        // Ohne Grund darf sie nicht leer dastehen.
+        delete global.__journal_sync_lage__;
+        const m5 = f("positionen-fehlgeschlagen", "", 2_000_000);
+        pruefe1("eine Fehlmeldung ohne Grund laesst die Klammer leer",
+          typeof m5 === "string" && /ohne Grund/.test(m5), String(m5));
+
+        // Ein LAGEWECHSEL wird immer gemeldet, auch die Rueckkehr.
+        const m6 = f("laeuft", "", 2_100_000);
+        pruefe1("die Rueckkehr zu 'laeuft' wird nicht gemeldet",
+          typeof m6 === "string" && /laeuft wieder/.test(m6), String(m6));
+        // Aber ein gesunder DAUERzustand schweigt — sonst 720 Zeilen am Tag.
+        const m7 = f("laeuft", "", 2_100_000 + ABSTAND * 2);
+        pruefe1("ein gesunder Dauerzustand erzeugt Rauschen",
+          m7 === null, String(m7));
+
+        // Und der Wechsel von einem Aussetzer zum anderen ist einer.
+        delete global.__journal_sync_lage__;
+        f("keine-sitzung", "", 3_000_000);
+        const m8 = f("positionen-fehlgeschlagen", "HTTP 500", 3_000_060);
+        pruefe1("ein Wechsel zwischen zwei Aussetzern faellt unter die Drossel",
+          typeof m8 === "string" && /HTTP 500/.test(m8), String(m8));
+      } finally {
+        if (alt === undefined) delete global.__journal_sync_lage__;
+        else global.__journal_sync_lage__ = alt;
+      }
+    }
+
+    // Und die Verdrahtung: beide Ruecksprünge muessen fragen.
+    const rumpf2 = funktionsRumpf(trackerC, "syncCapitalPositionsToJournal");
+    pruefe1("der Ruecksprung ohne Sitzung meldet wieder nichts",
+      /isCapitalConnected\(\)\) \{[\s\S]{0,200}?syncAussetzerMelden\("keine-sitzung"/.test(rumpf2),
+      "sonst ist ein Dauerausfall von einem gesunden Lauf nicht zu unterscheiden");
+    pruefe1("der Ruecksprung bei fehlgeschlagener Positionsabfrage meldet nichts",
+      /posResult\.ok\) \{[\s\S]{0,250}?syncAussetzerMelden\("positionen-fehlgeschlagen"/.test(rumpf2),
+      "und der Grund steht in posResult.error");
+    pruefe1("der Grund aus posResult.error wird nicht weitergegeben",
+      /syncAussetzerMelden\("positionen-fehlgeschlagen", posResult\.error/.test(rumpf2));
+    pruefe1("die Rueckkehr zu 'laeuft' wird nirgends gemeldet",
+      /syncAussetzerMelden\("laeuft"/.test(rumpf2));
+  }
+
   // ── zeileBrauchtZuordnung() WIRKLICH RECHNEN (30.09.) ──────────────────
   //
   // Sie entscheidet, ob eine Zeile mit FALSCHER dealId korrigiert wird —
@@ -1137,10 +1226,25 @@ module.exports = async function pruefe() {
   pruefe1("die Doppelprüfung fragt die Datenbank gar nicht",
     /SELECT 1 FROM "Trade" WHERE notes LIKE \$1 LIMIT 1/.test(trRoh));
   // Das Schreiben braucht nur die Datenbank — nicht den Broker.
-  pruefe1("das Nachtragen hängt an der Broker-Verbindung",
-    trC2.indexOf("await schreibeAusstehendeZeilen()")
-      < trC2.indexOf("if (!isCapitalConnected()) return;"),
-    "bei getrennter Sitzung blieben gemerkte Zeilen sonst liegen");
+  //
+  // KORRIGIERT 25.10.: hier stand
+  //   indexOf("await schreibeAusstehendeZeilen()")
+  //     < indexOf("if (!isCapitalConnected()) return;")
+  // Zwei Fehler auf einmal:
+  //  * Der Anker hing am WORTLAUT. Wurde der Ruecksprung zu einem Block
+  //    (um den Aussetzer zu melden), war er nicht mehr auffindbar.
+  //  * `indexOf(...) < -1` kann NIE wahr werden. Fehlte der Wortlaut, war
+  //    die Pruefung IMMER rot — unabhaengig von der Reihenfolge, die sie
+  //    eigentlich prueft. Sie bewies also nicht, was sie behauptete.
+  // Jetzt: beide Positionen auf Existenz pruefen, dann die Reihenfolge.
+  {
+    const iSchreibe = trC2.indexOf("await schreibeAusstehendeZeilen()");
+    const iSitzung = trC2.indexOf("isCapitalConnected()");
+    pruefe1("das Nachtragen hängt an der Broker-Verbindung",
+      iSchreibe >= 0 && iSitzung >= 0 && iSchreibe < iSitzung,
+      `schreibe@${iSchreibe} sitzung@${iSitzung} — bei getrennter Sitzung `
+      + "blieben gemerkte Zeilen sonst liegen");
+  }
 
   pruefe1("der Verlust einer Journal-Zeile wird nicht gemeldet",
     /Journal-Zeile konnte nicht geschrieben werden/.test(ohneKommentare(trRoh)),

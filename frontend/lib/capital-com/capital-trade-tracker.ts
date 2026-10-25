@@ -909,6 +909,78 @@ export async function ergaenzeFehlendeJournalZeilen(
   return bilanz;
 }
 
+/**
+ * Soll ein Aussetzer des Journal-Syncs gemeldet werden? (25.10.)
+ *
+ * ── DER ANLASS ──────────────────────────────────────────────────────────────
+ *
+ * `syncCapitalPositionsToJournal` hatte ZWEI stille Rücksprünge:
+ *
+ *   if (!isCapitalConnected()) return;      // keine Meldung
+ *   if (!posResult.ok) return;              // keine Meldung, Grund verworfen
+ *
+ * Damit war ein Sync, der bei JEDEM Lauf sofort aussteigt, von einem gesunden
+ * Lauf **nicht zu unterscheiden**: beide schreiben nichts. Aufgefallen bei der
+ * Suche nach `dealId` im Railway-Log — null Treffer, und genau diese Frage war
+ * daraus nicht zu beantworten.
+ *
+ * Dieselbe Fehlerklasse wie „eine Stufe ohne eigene Zahl verschwindet aus der
+ * Bilanz" (22.09.) und „wer den Grund nicht mitschreibt, muss ihn später
+ * raten". Bei `posResult` ist es wörtlich dasselbe: `capitalGetPositions` gibt
+ * `{ ok: false, error: "HTTP 401" }` zurück, und der Grund landete im Nichts.
+ *
+ * ── WARUM NICHT EINFACH IMMER LOGGEN ────────────────────────────────────────
+ *
+ * Der Sync läuft alle zwei Minuten. Eine Zeile je Lauf wären 720 am Tag, und
+ * das Log wäre unbrauchbar. Deshalb:
+ *   * jeder WECHSEL der Lage wird gemeldet (auch die Rückkehr zu „läuft"),
+ *   * ein DAUERZUSTAND alle 30 Minuten erneut — sonst verschwindet genau der
+ *     interessante Fall nach der ersten Meldung für immer (die Lehre aus dem
+ *     dealId-Nachtrag vom 02.09.).
+ *
+ * Der Zustand liegt auf `global`, nicht modul-scoped: das ist in diesem Projekt
+ * die Regel für geteilten Zustand, und der Sync läuft aus `instrumentation.ts`,
+ * während die Lage auch von einer Route gelesen werden könnte.
+ *
+ * Als Funktion, damit ein Prüfer sie AUSFÜHREN kann — eine Drossel ist mit
+ * einem Regex nicht ehrlich prüfbar.
+ */
+export const SYNC_MELDE_ABSTAND_MS = 30 * 60 * 1000;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __journal_sync_lage__: { lage: string; seit: number; gemeldet: number } | undefined;
+}
+
+export function syncAussetzerMelden(
+  lage: "laeuft" | "keine-sitzung" | "positionen-fehlgeschlagen",
+  grund: string,
+  jetzt: number = Date.now(),
+): string | null {
+  const vorher = global.__journal_sync_lage__;
+  const gewechselt = !vorher || vorher.lage !== lage;
+  if (gewechselt) {
+    global.__journal_sync_lage__ = { lage, seit: jetzt, gemeldet: jetzt };
+  } else if (jetzt - vorher.gemeldet >= SYNC_MELDE_ABSTAND_MS) {
+    global.__journal_sync_lage__ = { ...vorher, gemeldet: jetzt };
+  } else {
+    return null;   // unveraendert und noch nicht wieder faellig
+  }
+
+  const dauer = gewechselt ? 0 : Math.round((jetzt - vorher!.seit) / 60000);
+  if (lage === "laeuft") {
+    return gewechselt
+      ? "[trade-tracker] ✅ Journal-Sync laeuft wieder"
+      : null;   // ein gesunder Dauerzustand braucht keine Wiederholung
+  }
+  const was = lage === "keine-sitzung"
+    ? "keine Capital.com-Sitzung"
+    : `Positionsabfrage fehlgeschlagen (${grund || "ohne Grund"})`;
+  return `[trade-tracker] ⚠️ Journal-Sync uebersprungen: ${was}`
+    + `${dauer > 0 ? ` — seit ${dauer} Min` : ""}. Solange das so ist, werden `
+    + "weder dealIds nachgetragen noch fehlende Journal-Zeilen erkannt.";
+}
+
 export async function syncCapitalPositionsToJournal(): Promise<void> {
   try {
     const { getCapitalSession, isCapitalConnected } = await import("./capital-com-session");
@@ -922,7 +994,11 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // System unbekannt ist — jeder Schritt danach setzt sie voraus.
     await schreibeAusstehendeZeilen();
 
-    if (!isCapitalConnected()) return;
+    if (!isCapitalConnected()) {
+      const meldung = syncAussetzerMelden("keine-sitzung", "");
+      if (meldung) console.warn(meldung);
+      return;
+    }
     const session = getCapitalSession()!;
 
     // DANN fehlende Positions-IDs nachtragen (19.08.). Muss vor dem Abgleich
@@ -954,7 +1030,18 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     }
 
     const posResult = await capitalGetPositions(session.apiKey, session.cst, session.securityToken);
-    if (!posResult.ok) return;
+    if (!posResult.ok) {
+      // Der Grund stand hier bisher in `posResult.error` und wurde verworfen.
+      const meldung = syncAussetzerMelden("positionen-fehlgeschlagen", posResult.error ?? "");
+      if (meldung) console.warn(meldung);
+      return;
+    }
+    // Ab hier laeuft der Sync wirklich durch — ein Wechsel zurueck zu "laeuft"
+    // wird gemeldet, damit im Log steht, wann es wieder ging.
+    {
+      const meldung = syncAussetzerMelden("laeuft", "");
+      if (meldung) console.log(meldung);
+    }
 
     const openDealIds = new Set(
       (posResult.positions ?? []).map((p) => p.dealId ?? "").filter(Boolean)
