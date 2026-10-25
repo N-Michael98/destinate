@@ -3268,6 +3268,68 @@ module.exports = async function pruefe() {
             "die Rueckkehr des Kanals gehoert gemeldet");
         }
 
+        // ── DREI NEUE GETEILTE ZUSTAENDE — ZWEI INSTANZEN (25.10.) ────────
+        //
+        // CLAUDE.md: "Wer einen neuen geteilten Zustand baut, prueft ihn
+        // genauso — eine Struktur-Pruefung sieht diesen Fehler nicht."
+        //
+        // Am 25.10. kamen DREI dazu (Journal-Sync, Keep-Alive, Alarmkanal),
+        // und beim Bauen wurde diese Regel dreimal uebergangen: dass sie
+        // `global.` benutzen, steht im Quelltext — ob der Zustand zwischen
+        // zwei MODULKOPIEN wirklich geteilt wird, sieht man dort NICHT.
+        //
+        // Warum es hier zaehlt: die Schleifen laufen aus `instrumentation.ts`,
+        // die Routen in `app/api` sehen eine ANDERE Kopie. Waere der Zustand
+        // modul-scoped, drosselte jede Kopie fuer sich — statt einer Zeile
+        // alle 30 Minuten kaemen zwei, und bei einem Dauerausfall waere das
+        // Log wieder zugemuellt. Genau diese Luecke hat am 28.07. den
+        // Killswitch ausgehebelt und am 26.08. den Preis-Cache.
+        {
+          const FAELLE = [
+            ["lib/capital-com/capital-trade-tracker.ts", "syncAussetzerMelden",
+             "__journal_sync_lage__", (f, t) => f("keine-sitzung", "", t)],
+            ["lib/capital-com/capital-com-session.ts", "reconnectMelden",
+             "__capital_reconnect_lage__", (f, t) => f(false, "HTTP 401", t)],
+            ["lib/telegram-notifications/telegram-sender.ts", "telegramFehlerMelden",
+             "__telegram_lage__", (f, t) => f("nicht-konfiguriert", "", t)],
+          ];
+          for (const [modul, fn, schluessel, ruf] of FAELLE) {
+            const alt = global[schluessel];
+            try {
+              delete global[schluessel];
+              const A = ladeTsModul(modul);
+              const B = ladeTsModul(modul);
+              const fA = A.exports?.[fn];
+              const fB = B.exports?.[fn];
+              if (A.fehler || B.fehler || typeof fA !== "function" || typeof fB !== "function") {
+                funde.push(`${fn} nicht zweimal ladbar: ${A.fehler ?? B.fehler ?? "nicht exportiert"}`);
+                zusatz++;
+                continue;
+              }
+              torPruefung(`${fn}: die zwei Modulkopien sind identisch — der Test prueft nichts`,
+                fA !== fB);
+              const T = 5e6;
+              const erste = ruf(fA, T);
+              torPruefung(`${fn}: Kopie A meldet den ersten Aussetzer nicht`,
+                typeof erste === "string", String(erste).slice(0, 60));
+              // DER KERN: Kopie B darf eine Minute spaeter NICHT erneut melden.
+              const zweite = ruf(fB, T + 60_000);
+              torPruefung(`${fn}: der Zustand ist NICHT zwischen Modulkopien geteilt `
+                + `(global.${schluessel}) — jede Kopie drosselt fuer sich`,
+                zweite === null, String(zweite).slice(0, 70));
+              // Gegenprobe: nach der Drosselzeit meldet auch B wieder.
+              const dritte = ruf(fB, T + 30 * 60 * 1000);
+              torPruefung(`${fn}: nach der Drosselzeit schweigt auch Kopie B`,
+                typeof dritte === "string", String(dritte).slice(0, 60));
+              torPruefung(`${fn}: der Zustand steht nicht auf globalThis`,
+                global[schluessel] !== undefined);
+            } finally {
+              if (alt === undefined) delete global[schluessel];
+              else global[schluessel] = alt;
+            }
+          }
+        }
+
         // ── UND ZWAR IN JEDEM MODUL, DAS TELEGRAM SCHICKT ─────────────────
         //
         // Die erste Fassung hielt eine feste Liste aus DREI Dateien — und

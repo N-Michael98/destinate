@@ -83,6 +83,23 @@ schreibt über die eine Instanz und liest über die andere. Wer einen neuen
 geteilten Zustand baut, prüft ihn genauso — eine Struktur-Prüfung sieht diesen
 Fehler nicht.
 
+**Am 25.10. wurde genau diese Regel dreimal übergangen — von mir.** An einem
+Tag kamen drei neue geteilte Zustände dazu (`__journal_sync_lage__`,
+`__capital_reconnect_lage__`, `__telegram_lage__`), und keiner wurde so
+geprüft. Dass sie `global.` benutzen, steht im Quelltext — **ob der Zustand
+zwischen zwei Modulkopien wirklich geteilt wird, sieht man dort nicht.**
+
+Die Folge wäre nicht theoretisch: die Schleifen laufen aus
+`instrumentation.ts`, die Routen in `app/api` sehen eine **andere** Kopie. Wäre
+der Zustand modul-scoped, drosselte jede Kopie für sich — statt einer Zeile
+alle 30 Minuten kämen zwei, und bei einem Dauerausfall wäre das Log wieder
+zugemüllt.
+
+`safety-nets` hält das jetzt für alle drei (458 → **473** Prüfungen): zwei
+Modulkopien, melden über A, prüfen über B, plus die Gegenprobe nach der
+Drosselzeit. **3 von 3 Sabotagen** — jede ersetzt `global.` durch eine
+Modulvariable, also wörtlich den Fehler vom 28.07.
+
 ### Und die SPERRE gehört mit auf `global` (17.09.)
 
 Der Zustand kann richtig auf `global` liegen und der Fehler trotzdem bleiben —
