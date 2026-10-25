@@ -1271,6 +1271,52 @@ eine Lage die andere — wieder ein stummer Ausfall.
 
 **10 von 10 Sabotagen**, 258 → **273 Prüfungen**.
 
+### Ein Alarmsystem, dessen Ausfall selbst nicht alarmiert (25.10.)
+
+Dieselbe Frage eine Ebene höher: wenn ein weggeworfener Rückgabewert einen
+Dauerausfall versteckt — **wo noch?** Gemessen: 51 Stellen mit
+`.catch(() => {})`. Die meisten sind absichtlich (Aufräumen beim Abmelden). Eine
+nicht.
+
+`sendTelegram` gibt `Promise<boolean>` zurück — und dieser Wert wurde an
+**keiner einzigen** der elf Aufrufstellen ausgewertet (nachgezählt). Dazu hatte
+die Funktion **drei stille Ausgänge**:
+
+```ts
+if (!isTelegramConfigured()) return false;   // Token/Chat-ID fehlt
+return data.ok;                              // Telegram sagt nein
+} catch { return false; }                    // Netzfehler
+```
+
+Keiner davon schrieb eine Zeile. Daran hängen **zehn Module**: der
+Sicherheits-Watchdog, das KI-Tor-Alarmsystem, der Diagnose-Agent, Risiko- und
+Orchestrator-Agent, die Tagesbilanz.
+
+**Das ganze Alarmsystem konnte lautlos tot sein.** Fehlt `TELEGRAM_BOT_TOKEN`
+in Railway, kehrt jeder Alarm sofort und wortlos zurück — und man erfährt vom
+Problem erst, wenn man es ohnehin schon sieht. Genau der Zustand, der seit dem
+27.09. als offener Punkt notiert war („TELEGRAM_CHAT_ID im Ruhezustand
+prüfen") — nur dass er sich **nie von selbst** gemeldet hätte.
+
+Und der Grund wurde weggeworfen: Telegram antwortet mit
+`{ ok: false, error_code: 400, description: "chat not found" }` — die
+`description` sagt genau, was los ist. Dieselbe Fehlerklasse wie der
+verschluckte 502-Antwortkörper vom 22.09.
+
+Jetzt meldet jeder der drei Ausgänge **ins Konsolen-Log** — nicht nach
+Telegram, der Kanal ist ja der defekte. Gedrosselt wie die beiden Schwestern,
+mit **eigenem** Zustand (`global.__telegram_lage__`), damit sich die drei Lagen
+nicht gegenseitig verdecken. Die Meldung nennt die Folge: *„Solange das so ist,
+kommt KEIN Alarm an: weder Killswitch noch Zyklus-Absturz, KI-Tor-Ausfall oder
+Tagesbilanz."*
+
+**11 von 11 Sabotagen**, 441 → **458 Prüfungen**. Die eine, die zuerst
+entwischte, war wieder ein **Prüfer-Mangel**: er suchte, ob `console.error(m)`
+*irgendwo* steht — die Sabotage machte nur **einen** der drei Ausgänge stumm,
+die anderen zwei liessen den Ausdruck weiter zutreffen. Jetzt wird **gezählt**
+(genau drei), nicht gefunden. Dasselbe Muster wie „ein Wort im Kommentar ist
+keine Verwendung": ein Treffer beweist nichts über die anderen Stellen.
+
 ### Der Build hängt an Google Fonts
 
 Beim Kontrolllauf schlug `npm run build` einmal fehl: *„Error while requesting

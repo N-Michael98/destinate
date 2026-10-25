@@ -3169,6 +3169,105 @@ module.exports = async function pruefe() {
           r !== null && r.datum === "28.9.2026",
           `${r ? r.datum : "—"} (22:30 UTC ist in Zuerich der 28.)`);
 
+        // ── EIN ALARMSYSTEM, DESSEN AUSFALL SELBST NICHT ALARMIERT (25.10.) ─
+        //
+        // `sendTelegram` gibt `Promise<boolean>` zurueck — und der Wert wurde
+        // an KEINER der elf Aufrufstellen ausgewertet (nachgezaehlt). Dazu
+        // hatte die Funktion DREI stille Ausgaenge: nicht konfiguriert,
+        // Telegram lehnt ab, Netzfehler. Keiner schrieb eine Zeile.
+        //
+        // Daran haengen ZEHN Module — Watchdog, KI-Tor-Alarm, Diagnose-Agent,
+        // Risiko- und Orchestrator-Agent, Tagesbilanz. Fehlt
+        // TELEGRAM_BOT_TOKEN in Railway, kehrt jeder Alarm wortlos zurueck.
+        //
+        // RECHNEND: eine Drossel haengt an Zustand und Zeit, nicht am Wortlaut.
+        {
+          const ts = ladeTsModul("lib/telegram-notifications/telegram-sender.ts");
+          const f = ts.exports?.telegramFehlerMelden;
+          const ABSTAND = ts.exports?.TELEGRAM_MELDE_ABSTAND_MS;
+          if (ts.fehler || typeof f !== "function") {
+            funde.push(`telegramFehlerMelden nicht ausfuehrbar: ${ts.fehler ?? "nicht exportiert"}`);
+            zusatz++;
+          } else {
+            const alt = global.__telegram_lage__;
+            try {
+              torPruefung("der Telegram-Meldeabstand ist keine halbe Stunde",
+                ABSTAND === 30 * 60 * 1000, String(ABSTAND));
+
+              delete global.__telegram_lage__;
+              const m1 = f("nicht-konfiguriert", "", 1e6);
+              torPruefung("ein fehlender Telegram-Token wird verschwiegen",
+                typeof m1 === "string" && /TELEGRAM_BOT_TOKEN/.test(m1), String(m1));
+              torPruefung("die Meldung sagt nicht, dass KEIN Alarm mehr ankommt",
+                typeof m1 === "string" && /Killswitch/.test(m1), String(m1));
+
+              const m2 = f("nicht-konfiguriert", "", 1e6 + 60_000);
+              torPruefung("jeder Alarmversuch erzeugt eine eigene Zeile — Rauschen",
+                m2 === null, String(m2));
+              const m3 = f("nicht-konfiguriert", "", 1e6 + ABSTAND);
+              torPruefung("ein dauerhaft toter Kanal verstummt nach der ersten Meldung",
+                typeof m3 === "string" && /seit 30 Min/.test(m3), String(m3));
+
+              // Der GRUND von Telegram gehoert in die Zeile.
+              delete global.__telegram_lage__;
+              const m4 = f("abgelehnt", "400 chat not found", 2e6);
+              torPruefung("Telegrams eigener Fehlergrund wird verworfen",
+                typeof m4 === "string" && /chat not found/.test(m4), String(m4));
+              delete global.__telegram_lage__;
+              const m5 = f("netzfehler", "ETIMEDOUT", 2e6);
+              torPruefung("ein Netzfehler wird nicht als solcher benannt",
+                typeof m5 === "string" && /Netzfehler/.test(m5) && /ETIMEDOUT/.test(m5), String(m5));
+              delete global.__telegram_lage__;
+              const m6 = f("abgelehnt", "", 2e6);
+              torPruefung("eine Ablehnung ohne Grund laesst die Stelle leer",
+                typeof m6 === "string" && /ohne Grund/.test(m6), String(m6));
+
+              // Rueckkehr melden, gesunder Dauerzustand schweigen.
+              const m7 = f("ok", "", 2e6 + 1000);
+              torPruefung("die Rueckkehr des Kanals wird nicht gemeldet",
+                typeof m7 === "string" && /geht wieder/.test(m7), String(m7));
+              const m8 = f("ok", "", 2e6 + ABSTAND * 3);
+              torPruefung("ein gesunder Kanal erzeugt Rauschen", m8 === null, String(m8));
+            } finally {
+              if (alt === undefined) delete global.__telegram_lage__;
+              else global.__telegram_lage__ = alt;
+            }
+          }
+
+          // Und die Verdrahtung: alle drei Ausgaenge muessen fragen.
+          const tsQ = read("frontend/lib/telegram-notifications/telegram-sender.ts")
+            .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+          torPruefung("der Ausgang 'nicht konfiguriert' schweigt wieder",
+            /isTelegramConfigured\(\)\) \{[\s\S]{0,200}?telegramFehlerMelden\("nicht-konfiguriert"/.test(tsQ),
+            "ohne Token kommt KEIN Alarm an — und niemand erfaehrt es");
+          torPruefung("eine Ablehnung durch Telegram schweigt wieder",
+            /telegramFehlerMelden\("abgelehnt"/.test(tsQ));
+          torPruefung("ein Netzfehler schweigt wieder",
+            /telegramFehlerMelden\("netzfehler"/.test(tsQ));
+          torPruefung("Telegrams description wird nicht mehr gelesen",
+            /data\.description/.test(tsQ),
+            "dort steht der Grund, z.B. 'chat not found'");
+          torPruefung("der Erfolgsfall meldet die Rueckkehr nicht",
+            /telegramFehlerMelden\("ok"/.test(tsQ));
+          // Die Meldung MUSS in die Konsole — der Telegram-Kanal ist ja der
+          // defekte. Ein Alarm ueber den kaputten Kanal waere sinnlos.
+          //
+          // GEZAEHLT, nicht gefunden (25.10.): die erste Fassung prueffte nur,
+          // ob `console.error(m)` IRGENDWO steht. Im Sabotage-Lauf wurde
+          // genau EINER der drei Ausgaenge stumm gemacht — die anderen zwei
+          // liessen den Ausdruck weiter zutreffen, und der Pruefer blieb
+          // gruen. Dasselbe Muster wie "ein Wort im Kommentar ist keine
+          // Verwendung": ein Treffer beweist nichts ueber die anderen Stellen.
+          const fehlerAusgaben = (tsQ.match(/console\.error\(m\)/g) ?? []).length;
+          torPruefung("nicht mehr alle drei Fehler-Ausgaenge melden ins Log",
+            fehlerAusgaben === 3,
+            `${fehlerAusgaben} von 3 (nicht-konfiguriert, abgelehnt, netzfehler) — `
+            + "die Meldung gehoert ins Railway-Log, nicht nach Telegram");
+          torPruefung("der Erfolgsfall schreibt keine Zeile ins Log",
+            (tsQ.match(/console\.log\(m\)/g) ?? []).length === 1,
+            "die Rueckkehr des Kanals gehoert gemeldet");
+        }
+
         // ── UND ZWAR IN JEDEM MODUL, DAS TELEGRAM SCHICKT ─────────────────
         //
         // Die erste Fassung hielt eine feste Liste aus DREI Dateien — und
