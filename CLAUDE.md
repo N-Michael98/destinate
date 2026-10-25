@@ -1317,6 +1317,41 @@ die anderen zwei liessen den Ausdruck weiter zutreffen. Jetzt wird **gezählt**
 (genau drei), nicht gefunden. Dasselbe Muster wie „ein Wort im Kommentar ist
 keine Verwendung": ein Treffer beweist nichts über die anderen Stellen.
 
+#### Und wo noch? Vollständig gemessen (25.10.)
+
+`sendTelegram` habe ich gefunden, weil ich **gezielt** danach gesucht habe. Die
+systematische Frage lautet: welche Funktion gibt sonst noch ein Ergebnis
+zurück, das **nirgends** gelesen wird?
+
+**Ergebnis: von 25 Funktionen mit aussagekräftigem Rückgabetyp** (`boolean`
+oder ein Objekt mit `ok`) **wird jede einzelne ausgewertet.** `sendTelegram`
+war der einzige Fall — und er ist behoben.
+
+**Drei eigene Messfehler, bis das Ergebnis etwas wert war:**
+
+| Messfehler | Folge |
+|---|---|
+| der Typ-Regex schloss `{` aus | übersah **jede** `Promise<{ok: …}>`-Funktion — die halbe Frage |
+| nur `frontend/lib` gescannt | `instrumentation.ts` und `app/` fehlten → **2 Falschmeldungen** |
+| nur der `?`-Zweig eines Ternärs | **1 Falschmeldung** (`capitalGetAvailableMarkets`) |
+
+Der erste fiel sofort auf, weil die **Selbstprüfung** die Referenzfunktion gar
+nicht fand. Die anderen zwei bei der Handprüfung jedes einzelnen Verdachts.
+
+**Und die Selbstprüfung musste selbst umgebaut werden:** sie sabotierte zuerst
+eine echte Funktion in *einer* Datei — `autoReconnectCapital` wird aber an
+**vier** Stellen ausgewertet, zwei davon in `app/api`. Die Sabotage traf zwei,
+der Rest hielt die Erkennung zurecht grün, und die Prüfung schlug fälschlich
+an. Ein Werkzeug prüft man an Fällen, die man **vollständig kontrolliert** —
+jetzt an zehn synthetischen Quelltexten (`const x = await f()`, `if (await
+f())`, `return await f()`, Destructuring, `.then((r) => …)`, beide
+Ternär-Zweige, und die Gegenprobe, dass ein ignorierter Aufruf **nicht** als
+gelesen gilt).
+
+Ehrlich benannte Grenze: `.then(() => …)` **ohne** Parameter gilt als
+„ignoriert" — das ist gewollt, denn dort wird der Wert ja wirklich nicht
+gelesen.
+
 ### Der Build hängt an Google Fonts
 
 Beim Kontrolllauf schlug `npm run build` einmal fehl: *„Error while requesting
