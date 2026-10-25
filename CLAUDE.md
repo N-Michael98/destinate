@@ -496,7 +496,21 @@ die Anwendung IC als getrennt führt.
 
 **Heute ohne Handelsfolge:** `icMarketsExecutionEnabled` steht auf `false`
 (`settings-store.ts:19`, im Snapshot gesichert), und `/api/icmarkets/execute`
-ruft nur ein Knopf im Dashboard. **Offen bleibt der Widerspruch im Log.**
+ruft nur ein Knopf im Dashboard.
+
+**Der Widerspruch im Log ist am 25.10. behoben.** Die Ursache war eine Klammer:
+die `✅`-Zeile stand **ausserhalb** von `if (global.__icmarkets_session__)`.
+Ist die Sitzung `null`, wird nichts aktualisiert — und trotzdem stand alle zwei
+Minuten `keep-alive ✅` im Log, während die Anwendung IC als **getrennt** führt.
+Dieselbe Fehlerklasse wie die zwei falschen Killswitch-Texte: eine Meldung, die
+etwas behauptet, das der Code nicht tut.
+
+Jetzt steht die Erfolgsmeldung **im** Zweig, und der andere Fall sagt, was Sache
+ist: *„Konto erreichbar, aber KEINE Sitzung in der Anwendung"* — denn
+`icGetAccount()` gelingt auch ohne unsere Sitzung (die MCP-Schicht meldet sich
+bei 404 selbst neu an), die Abfrage sagt also **nichts** darüber, ob die
+Anwendung verbunden ist. Dazu verschluckt das `catch` seine Fehler nicht mehr
+still. **3 von 3 Sabotagen**, 473 → **477** Prüfungen.
 
 ### Eine Drawdown-Grenze kann „verloren" nicht von „abgehoben" unterscheiden (29.09.)
 

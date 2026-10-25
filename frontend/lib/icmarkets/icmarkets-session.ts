@@ -149,12 +149,33 @@ export async function keepAliveICMarkets(): Promise<void> {
       );
       return;
     }
-    // Update balance in session
+    // ── DIE ✅-ZEILE LOG EINEN ZUSTAND, DEN ES NICHT GIBT (25.10.) ──────
+    //
+    // Hier stand die Erfolgsmeldung AUSSERHALB der Bedingung. Ist
+    // `global.__icmarkets_session__` null — etwa nach `/killswitch`, der den
+    // Redis-Token loescht —, wird nichts aktualisiert, und trotzdem stand
+    // alle zwei Minuten `keep-alive ✅` im Log, waehrend die Anwendung IC als
+    // GETRENNT fuehrt. Genau dieser Widerspruch ist am 27.09. aufgefallen und
+    // stand seither als offener Punkt in CLAUDE.md.
+    //
+    // Die MCP-Schicht meldet sich bei HTTP 404 selbst neu an, deshalb gelingt
+    // `icGetAccount()` auch ohne unsere Sitzung — die Abfrage sagt also nichts
+    // darueber, ob die Anwendung verbunden IST.
     if (global.__icmarkets_session__) {
       global.__icmarkets_session__.balance = account.balance ?? global.__icmarkets_session__.balance;
       global.__icmarkets_session__.equity = account.equity ?? global.__icmarkets_session__.equity;
       await saveToRedis(global.__icmarkets_session__);
+      console.log(`[IC Markets] keep-alive ✅ balance=${account.balance}`);
+    } else {
+      console.warn("[IC Markets] keep-alive: Konto erreichbar, aber KEINE Sitzung "
+        + "in der Anwendung — die MCP-Schicht meldet sich bei 404 selbst neu an, "
+        + "unsere Sitzung bleibt leer. IC gilt als getrennt (nach /killswitch "
+        + "erwartet: der Redis-Token ist geloescht, /reset stellt ihn nicht her).");
     }
-    console.log(`[IC Markets] keep-alive ✅ balance=${account.balance}`);
-  } catch { /* non-fatal */ }
+  } catch (e) {
+    // Auch hier kein stilles Verschlucken (25.10.) — dieselbe Klasse wie der
+    // Journal-Sync und der Capital-Reconnect.
+    console.warn("[IC Markets] keep-alive fehlgeschlagen:",
+      e instanceof Error ? e.message : String(e));
+  }
 }

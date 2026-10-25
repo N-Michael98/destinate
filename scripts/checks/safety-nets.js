@@ -3330,6 +3330,41 @@ module.exports = async function pruefe() {
           }
         }
 
+        // ── DIE ✅-ZEILE DARF KEINEN ZUSTAND BEHAUPTEN (25.10.) ───────────
+        //
+        // `keepAliveICMarkets` meldete `keep-alive ✅` AUSSERHALB der
+        // Bedingung `if (global.__icmarkets_session__)`. Ist die Sitzung null
+        // — etwa nach /killswitch, der den Redis-Token loescht —, wird nichts
+        // aktualisiert, und trotzdem stand alle zwei Minuten ✅ im Log,
+        // waehrend die Anwendung IC als GETRENNT fuehrt. Seit dem 27.09. als
+        // offener Punkt notiert.
+        //
+        // Dieselbe Fehlerklasse wie die zwei falschen Killswitch-Texte: eine
+        // Meldung, die etwas behauptet, das der Code nicht tut.
+        {
+          const icQ = read("frontend/lib/icmarkets/icmarkets-session.ts")
+            .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+          const rumpfIC = objectBlock(icQ, "export async function keepAliveICMarkets");
+          torPruefung("keepAliveICMarkets ist nicht auffindbar",
+            typeof rumpfIC === "string" && rumpfIC.length > 100);
+          if (rumpfIC) {
+            // Die ✅-Zeile MUSS innerhalb des Sitzungs-Zweigs stehen.
+            const iBedingung = rumpfIC.indexOf("if (global.__icmarkets_session__)");
+            const iErfolg = rumpfIC.indexOf("keep-alive ✅");
+            const iSonst = rumpfIC.indexOf("} else {", iBedingung);
+            torPruefung("die keep-alive-✅-Zeile steht ausserhalb des Sitzungs-Zweigs — "
+              + "sie behauptet eine Verbindung, die es nicht gibt",
+              iBedingung >= 0 && iErfolg > iBedingung && iSonst > iErfolg,
+              `bedingung@${iBedingung} erfolg@${iErfolg} else@${iSonst}`);
+            torPruefung("der Fall ohne Sitzung wird verschwiegen",
+              /KEINE Sitzung/.test(rumpfIC),
+              "sonst ist 'erreichbar' von 'verbunden' nicht zu unterscheiden");
+            torPruefung("der keep-alive verschluckt seine Fehler wieder still",
+              !/\} catch \{\s*\}/.test(rumpfIC) && /keep-alive fehlgeschlagen/.test(rumpfIC),
+              "dieselbe Klasse wie Journal-Sync und Capital-Reconnect");
+          }
+        }
+
         // ── UND ZWAR IN JEDEM MODUL, DAS TELEGRAM SCHICKT ─────────────────
         //
         // Die erste Fassung hielt eine feste Liste aus DREI Dateien — und
