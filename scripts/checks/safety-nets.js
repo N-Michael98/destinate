@@ -3365,6 +3365,138 @@ module.exports = async function pruefe() {
           }
         }
 
+        // ── DER ERWARTUNGSWERT — GERECHNET (26.10.) ───────────────────────
+        //
+        // Die Zahl, die sagt, ob das System einen Edge hat. Sie entscheidet
+        // spaeter ueber Stop und Ziel, also wird sie AUSGEFUEHRT geprueft:
+        // ein vertauschtes Vorzeichen oder ein vergessener Ausschluss waere
+        // strukturell voellig unauffaellig.
+        //
+        // Besonders wichtig: die Zeilen mit `KEIN_PNL`/`NIE_BESTAETIGT`
+        // muessen DRAUSSEN bleiben. Seit dem 30.09. ist belegt, dass ein
+        // Trade zwei Journal-Zeilen erzeugen konnte — eine davon mit P&L 0.
+        // Rechnet man die mit, ist jede Trefferquote verduennt.
+        {
+          // Die ECHTE Etiketten-Liste durchreichen, keine Kopie: sonst
+          // pruefte der Test gegen seine eigene Annahme, und eine Aenderung
+          // an `ETIKETTEN_OHNE_ERGEBNIS` bliebe hier gruen.
+          const trEtik = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+          const ew = trEtik.fehler ? trEtik : ladeTsModul("lib/expectancy/erwartungswert.ts", {
+            "capital-trade-tracker": trEtik.exports,
+          });
+          const f = ew.exports?.erwartungswert;
+          const txt = ew.exports?.erwartungswertText;
+          const MIN = ew.exports?.MIN_TRADES;
+          if (ew.fehler || typeof f !== "function" || typeof txt !== "function") {
+            funde.push(`erwartungswert nicht ausfuehrbar: ${ew.fehler ?? "nicht exportiert"}`);
+            zusatz++;
+          } else {
+            const z = (pnl, extra = {}) => ({ profitLoss: pnl, notes: JSON.stringify(extra) });
+            const viele = (n, pnl, extra = {}) => Array.from({ length: n }, () => z(pnl, extra));
+
+            torPruefung("die Mindestzahl fuer eine belastbare Rechnung ist unter 30",
+              MIN >= 30, String(MIN));
+
+            // Zu wenig Trades -> KEIN erfundener Wert.
+            const wenig = f(viele(10, 5));
+            torPruefung("bei zu wenigen Trades wird trotzdem ein Erwartungswert ausgegeben",
+              wenig.belastbar === false && wenig.erwartungswert === null,
+              JSON.stringify({ b: wenig.belastbar, ew: wenig.erwartungswert }));
+            torPruefung("und der Grund dafuer fehlt",
+              /unter 30|Ausreisser/.test(String(wenig.grund)), String(wenig.grund));
+
+            // DER KERN: KEIN_PNL darf nicht mitgerechnet werden.
+            const mitEtiketten = f([
+              ...viele(30, 10),
+              ...viele(20, 0, { exitReason: "KEIN_PNL" }),
+              ...viele(5, 0, { exitReason: "NIE_BESTAETIGT" }),
+            ]);
+            torPruefung("Zeilen mit KEIN_PNL/NIE_BESTAETIGT werden mitgerechnet — "
+              + "jede Trefferquote waere verduennt",
+              mitEtiketten.gewertet === 30 && mitEtiketten.ohneErgebnis === 25,
+              `gewertet=${mitEtiketten.gewertet} ohneErgebnis=${mitEtiketten.ohneErgebnis}`);
+            torPruefung("eine reine Gewinnserie ergibt keine 100 % Trefferquote",
+              mitEtiketten.trefferquote === 100, String(mitEtiketten.trefferquote));
+
+            // Die Rechnung selbst — nachgerechnet von Hand.
+            // 21 Gewinne a 40, 9 Verluste a -120:
+            //   Treffer 70 %, EW = 0,7*40 - 0,3*120 = 28 - 36 = -8
+            const negativ = f([...viele(21, 40), ...viele(9, -120)]);
+            torPruefung("der Erwartungswert wird falsch gerechnet (erwartet -8)",
+              negativ.erwartungswert === -8,
+              `${negativ.erwartungswert} bei ${negativ.trefferquote}% / `
+              + `${negativ.avgGewinn} / ${negativ.avgVerlust}`);
+            torPruefung("eine hohe Trefferquote mit negativem EW wird als Edge ausgegeben",
+              negativ.trefferquote === 70 && negativ.erwartungswert < 0,
+              "70 % Treffer und trotzdem kein Edge — genau der Fall, um den es geht");
+            torPruefung("das R/R wird falsch gerechnet (erwartet 0.33)",
+              negativ.rr === 0.33, String(negativ.rr));
+            // Breakeven-Quote: 120/(40+120) = 75 %
+            torPruefung("die noetige Trefferquote wird falsch gerechnet (erwartet 75)",
+              negativ.breakevenQuote === 75, String(negativ.breakevenQuote));
+
+            // Ein positiver Fall: 12 a 100, 18 a -40
+            //   Treffer 40 %, EW = 0,4*100 - 0,6*40 = 40 - 24 = +16
+            const positiv = f([...viele(12, 100), ...viele(18, -40)]);
+            torPruefung("ein positiver Erwartungswert wird nicht erkannt (erwartet +16)",
+              positiv.erwartungswert === 16 && positiv.trefferquote === 40,
+              `${positiv.erwartungswert} bei ${positiv.trefferquote}%`);
+
+            // Spread-Verluste sind echte Verluste, kein Breakeven (09.08.).
+            const spread = f([...viele(20, 5), ...viele(10, -0.5)]);
+            torPruefung("ein Spread-Verlust gilt faelschlich als Breakeven",
+              spread.losses === 10 && spread.breakeven === 0,
+              `L=${spread.losses} BE=${spread.breakeven}`);
+
+            // Unlesbare Notizen werden GEMELDET, nicht still mitgerechnet.
+            const kaputt = f([...viele(30, 10), { profitLoss: 5, notes: "kein json" },
+              { profitLoss: null, notes: "{}" }]);
+            torPruefung("unlesbare Zeilen werden still mitgerechnet",
+              kaputt.unlesbar === 2 && kaputt.gewertet === 30,
+              `unlesbar=${kaputt.unlesbar} gewertet=${kaputt.gewertet}`);
+
+            // Rekonstruierte Zeilen zaehlen mit, sind aber SICHTBAR.
+            const rek = f([...viele(20, 10), ...viele(10, 10, { rekonstruiert: true })]);
+            torPruefung("rekonstruierte Zeilen sind in der Ausgabe nicht erkennbar",
+              rek.rekonstruiert === 10 && rek.gewertet === 30,
+              `rek=${rek.rekonstruiert}`);
+
+            // Leere Eingabe darf nicht werfen.
+            for (const [name, ein] of [["null", null], ["undefined", undefined], ["leer", []]]) {
+              let r = null;
+              try { r = f(ein); } catch (e) { r = { fehler: e.message }; }
+              torPruefung(`erwartungswert wirft bei: ${name}`,
+                r && r.belastbar === false && !r.fehler, JSON.stringify(r).slice(0, 60));
+            }
+
+            // Der Text muss die Datenqualitaet NENNEN und darf keine Zahl
+            // erfinden, wenn sie nicht belastbar ist.
+            const tWenig = txt(wenig);
+            torPruefung("der Text behauptet einen Erwartungswert, obwohl er nicht belastbar ist",
+              !/Erwartungswert: [+-]?\d/.test(tWenig) && /nicht belastbar/.test(tWenig),
+              tWenig.slice(0, 80));
+            const tNeg = txt(negativ);
+            torPruefung("der Text nennt den negativen Erwartungswert nicht deutlich",
+              /kein Edge/.test(tNeg) && /-8/.test(tNeg), tNeg.slice(0, 80));
+            const tEtik = txt(mitEtiketten);
+            torPruefung("der Text verschweigt die Zeilen ohne Ergebnis",
+              /ohne Ergebnis/.test(tEtik), tEtik.slice(0, 100));
+          }
+
+          // Und die Verdrahtung im Webhook.
+          const whQ = read("frontend/app/api/telegram/webhook/route.ts")
+            .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+          torPruefung("/edge ist im Webhook nicht verdrahtet",
+            /textLower === "\/edge"/.test(whQ));
+          torPruefung("/edge fehlt in der Befehlsliste — /help zeigt ihn nicht",
+            /\/edge — Erwartungswert/.test(whQ));
+          torPruefung("/edge liest offene Trades mit — ihr P&L ist ein Zwischenstand",
+            /status: \{ not: "OPEN" \}/.test(whQ));
+          torPruefung("/edge meldet seinen eigenen Fehlschlag nicht",
+            /\/edge fehlgeschlagen/.test(whQ),
+            "sonst steht man vor einem stummen Befehl");
+        }
+
         // ── UND ZWAR IN JEDEM MODUL, DAS TELEGRAM SCHICKT ─────────────────
         //
         // Die erste Fassung hielt eine feste Liste aus DREI Dateien — und

@@ -1396,6 +1396,52 @@ genauso. Nicht geändert (selbst gehostete Fonts wären eine eigene
 Entscheidung), aber wer einen Deploy ohne erkennbaren Grund scheitern sieht,
 sucht sonst an der falschen Stelle.
 
+## Die Zahl, die sagt, ob es einen Edge gibt — `/edge` (26.10.)
+
+„Viele grüne Trades, und das Konto sinkt trotzdem." Das ist kein Rätsel,
+sondern eine Rechnung:
+
+```
+EW = (Trefferquote × Ø Gewinn) − (Fehlerquote × Ø Verlust)
+```
+
+70 % Treffer, Ø 40 Gewinn, Ø 120 Verlust → `0,7·40 − 0,3·120 = −8` **pro
+Trade**. Eine hohe Trefferquote ist wertlos, wenn die Verluste zu gross sind.
+
+**Diese Zahl wurde im ganzen Programm nirgends gerechnet** (gesucht in
+`frontend/lib`, kein Treffer). Jetzt gibt es sie als Telegram-Befehl —
+**reine Lesung**, keine Order, kein Stop, keine Einstellung.
+
+**Die Datenqualität steht MIT im Ergebnis, und das ist der Punkt.** Seit dem
+30.09. ist belegt, dass ein Trade **zwei** Journal-Zeilen erzeugen konnte: die
+echte starb als `KEIN_PNL` mit P&L 0 / BREAKEVEN, die rekonstruierte trug das
+echte Ergebnis. `echteGeschlosseneTrades()` liest die Notizen **nicht** —
+beide Zeilen gehen bis heute in jede Statistik.
+
+Ein Erwartungswert darauf wäre **wertlos**: Trefferquote verdünnt, Ø Gewinn
+verdünnt, Trade-Zahl verdoppelt — und er würde zu falschen Schlüssen über Stop
+und Ziel führen. `/edge` weist deshalb **beide** Zahlen aus: wie viele Zeilen
+ein Etikett ohne Ergebnis tragen, wie viele rekonstruiert sind, und was nach
+dem Bereinigen übrig bleibt. `ETIKETTEN_OHNE_ERGEBNIS` bekommt damit seinen
+ersten Leser ausserhalb der eigenen Datei.
+
+**Und ein Ausfall gibt sich nicht als Ergebnis aus:** unter `MIN_TRADES = 30`
+wird **kein** Erwartungswert ausgegeben, sondern der Grund. Zehn Trades, wie
+anderswo üblich, sind zu wenig — dort verschiebt ein einziger Ausreisser die
+Trefferquote um zehn Punkte.
+
+`safety-nets` **rechnet** das (477 → **500** Prüfungen): der Fall mit 70 %
+Treffer und −8 Erwartungswert wird von Hand nachgerechnet, ebenso ein
+positiver (40 % Treffer, +16), das R/R, die nötige Trefferquote und der
+Ausschluss der Etiketten. Die echte `ETIKETTEN_OHNE_ERGEBNIS`-Liste wird
+durchgereicht, nicht kopiert — sonst prüfte der Test gegen seine eigene
+Annahme.
+
+**12 von 12 Sabotagen**, darunter das gedrehte Vorzeichen, der Kehrwert beim
+R/R und ein `/edge`, das auch offene Trades mitliest (ihr P&L ist ein
+Zwischenstand). Die zwölfte fing ein **bestehender** Prüfer: *„ein Befehl fehlt
+in der Hilfe"* — der Riegel vom 29.09. greift automatisch mit.
+
 ## Ohne Kurs wird nicht gehandelt
 
 Die Filterkette prüfte, ob der Kurs **frisch** ist — aber nicht, ob es ihn

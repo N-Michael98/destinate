@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 456 · Kanten: 1004
+Dateien mit internen Abhängigkeiten: 457 · Kanten: 1007
 
 
 ## analysis-engine/api
@@ -556,10 +556,12 @@ Dateien mit internen Abhängigkeiten: 456 · Kanten: 1004
 - `frontend/app/api/telegram/test/route.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/app/api/telegram/webhook/route.ts`
+  - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/analysis-engine/overrides-store.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/expectancy/erwartungswert.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/killswitch/index.ts`
@@ -1040,6 +1042,8 @@ Dateien mit internen Abhängigkeiten: 456 · Kanten: 1004
 - `frontend/lib/execution-queue-position-sync/index.ts`
   - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-engine.ts`
   - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-types.ts`
+- `frontend/lib/expectancy/erwartungswert.ts`
+  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
 - `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
   - → `frontend/lib/gpt-analyst-engine/bias-detector.ts`
   - → `frontend/lib/gpt-analyst-engine/entry-planner.ts`
@@ -1517,8 +1521,8 @@ Dateien mit internen Abhängigkeiten: 456 · Kanten: 1004
 ## Am häufigsten benutzt (Änderung hier trifft am meisten)
 
 - `frontend/lib/smart-broker-selection/index.ts` — von 25 Dateien
+- `frontend/app/lib/prisma.ts` — von 22 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 21 Dateien
-- `frontend/app/lib/prisma.ts` — von 21 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 16 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 16 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien

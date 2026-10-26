@@ -40,6 +40,7 @@ const SYSTEM_BEFEHLE = [
   "/reset — System reaktivieren (Passwort erforderlich)",
   "/peakreset — Drawdown-Höchststand zurücksetzen (Passwort erforderlich)",
   "/status — System Status",
+  "/edge — Erwartungswert: hat das System einen Edge?",
   "/help — Alle Befehle",
 ].join("\n");
 
@@ -478,6 +479,35 @@ System: ${ks.systemLocked ? "OFFLINE 🔴" : "ONLINE 🟢"}
 Befehle:
 ${SYSTEM_BEFEHLE}`
       );
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── /edge — hat das System einen Edge? (26.10.) ──────────────────────
+    //
+    // REINE LESUNG: keine Order, kein Stop, keine Einstellung. Steht bewusst
+    // NACH der Passwort-Bestaetigung weiter oben, damit die Reihenfolge der
+    // Zweige vom 29.09. unberuehrt bleibt ("ein Befehl ist kein Passwort").
+    //
+    // Die Datenqualitaet steht MIT im Ergebnis: seit dem 30.09. ist belegt,
+    // dass ein Trade zwei Journal-Zeilen erzeugen konnte — eine davon mit
+    // P&L 0 als BREAKEVEN. Ein Erwartungswert, der die nicht ausweist, waere
+    // irrefuehrend.
+    if (textLower === "/edge") {
+      try {
+        const { getPrisma } = await import("@/app/lib/prisma");
+        const { erwartungswert, erwartungswertText } =
+          await import("@/lib/expectancy/erwartungswert");
+        const zeilen = await getPrisma().trade.findMany({
+          where: { status: { not: "OPEN" } },
+          select: { profitLoss: true, notes: true },
+        });
+        await reply(chatId, erwartungswertText(erwartungswert(zeilen)));
+      } catch (e) {
+        // Der Grund gehoert in die Antwort — sonst steht man vor einem
+        // stummen Befehl und raet ("wer den Grund nicht mitschreibt …").
+        await reply(chatId,
+          `❌ <b>/edge fehlgeschlagen</b>\n\n${e instanceof Error ? e.message : String(e)}`);
+      }
       return NextResponse.json({ ok: true });
     }
 
