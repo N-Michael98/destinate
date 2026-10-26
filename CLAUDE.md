@@ -1399,48 +1399,93 @@ sucht sonst an der falschen Stelle.
 ## Die Zahl, die sagt, ob es einen Edge gibt — `/edge` (26.10.)
 
 „Viele grüne Trades, und das Konto sinkt trotzdem." Das ist kein Rätsel,
-sondern eine Rechnung:
+sondern eine Rechnung — und zwar die denkbar einfachste:
 
 ```
-EW = (Trefferquote × Ø Gewinn) − (Fehlerquote × Ø Verlust)
+EW = Summe aller P&L ÷ Anzahl der Trades
 ```
-
-70 % Treffer, Ø 40 Gewinn, Ø 120 Verlust → `0,7·40 − 0,3·120 = −8` **pro
-Trade**. Eine hohe Trefferquote ist wertlos, wenn die Verluste zu gross sind.
 
 **Diese Zahl wurde im ganzen Programm nirgends gerechnet** (gesucht in
 `frontend/lib`, kein Treffer). Jetzt gibt es sie als Telegram-Befehl —
 **reine Lesung**, keine Order, kein Stop, keine Einstellung.
 
-**Die Datenqualität steht MIT im Ergebnis, und das ist der Punkt.** Seit dem
-30.09. ist belegt, dass ein Trade **zwei** Journal-Zeilen erzeugen konnte: die
-echte starb als `KEIN_PNL` mit P&L 0 / BREAKEVEN, die rekonstruierte trug das
-echte Ergebnis. `echteGeschlosseneTrades()` liest die Notizen **nicht** —
-beide Zeilen gehen bis heute in jede Statistik.
+### Der erste Live-Lauf hat die eigene Formel widerlegt
 
-Ein Erwartungswert darauf wäre **wertlos**: Trefferquote verdünnt, Ø Gewinn
-verdünnt, Trade-Zahl verdoppelt — und er würde zu falschen Schlüssen über Stop
-und Ziel führen. `/edge` weist deshalb **beide** Zahlen aus: wie viele Zeilen
-ein Etikett ohne Ergebnis tragen, wie viele rekonstruiert sind, und was nach
-dem Bereinigen übrig bleibt. `ETIKETTEN_OHNE_ERGEBNIS` bekommt damit seinen
-ersten Leser ausserhalb der eigenen Datei.
+Hier stand bis zum selben Abend die Zerlegung
+`Trefferquote × ØGewinn − (1 − Trefferquote) × ØVerlust`. Sie stimmt **nur,
+wenn es keine Breakeven-Trades gibt**. `1 − Trefferquote` sind sonst
+*Verlierer **und** Breakeven zusammen* — und damit bekommt jeder Breakeven
+einen vollen Ø Verlust aufgebürdet, obwohl er nichts verloren hat.
+
+Der erste echte Lauf zeigte es sofort. In **einer** Antwort standen:
+
+```
+Summe P&L: −1822.39   ·   Erwartungswert: −11.9   ·   gewertet: 814
+```
+
+**−11.9 × 814 = −9686.60.** Die Antwort widersprach sich selbst um den
+**Faktor 5.32**, weil 517 der 814 Zeilen Breakeven waren.
+
+**Warum kein Prüfer das sah:** von den fünf gerechneten Testfällen hatte
+**keiner** einen Breakeven (21W/9L, 12W/18L, 20W/10L). Genau dann ist
+`1 − Trefferquote` zufällig gleich der echten Verlustquote, und die falsche
+Formel liefert das richtige Ergebnis. **Ein Prüfer, der den Fehler nicht
+kennt, beweist nichts über ihn** — dieselbe Lehre wie am 30.09. bei
+`lifecycle-rueckkehr`, diesmal am eigenen Neubau, einen Tag alt.
+
+Deshalb ist der EW jetzt **Summe ÷ Anzahl**. In dieser Form **kann** er der
+ausgewiesenen Summe nicht mehr widersprechen — und die Antwort führt die
+**Summenprobe selbst mit**, denn genau sie hätte den Widerspruch sofort
+gezeigt.
+
+Zwei weitere Fehler derselben Fassung: die nötige Trefferquote (57 %) gilt für
+die **entschiedenen** Trades, wurde aber gegen die Quote über **alle**
+verglichen („44.6 Punkte" statt echter 23.0) — zwei Nenner in einer Zeile. Und
+„davon rekonstruiert: 33" stand unter „ohne Ergebnis: 31" und las sich als
+Teilmenge; gezählt werden aber die Zeilen, die den Ausschluss **passiert**
+haben. Beides sind Zahlen, die nebeneinander nicht zusammenpassen können.
+
+### Eine 0 kann „Breakeven" heissen oder „nie geschrieben"
+
+`profitLoss` ist im Schema `Float @default(0)`. Eine Zeile, deren P&L **nie
+geschrieben wurde**, steht auf exakt 0 und ist von einem echten Breakeven **an
+der Zahl allein nicht zu unterscheiden**.
+
+Deshalb weist `/edge` die Breakeven **nach `result`/`exitReason`
+aufgeschlüsselt** aus und nennt den Erwartungswert zusätzlich **ohne** sie. Wer
+beide Zahlen sieht, weiss, wie viel an der Frage hängt; wer nur eine sieht, rät.
+
+Statisch gemessen: von **sechs** Stellen, die einen Trade auf `CLOSED` setzen,
+setzt **genau eine** kein `profitLoss` — `icmarkets-trade-manager.ts:197`
+(`result='CLOSED_TIME'`). Heute ohne Handelsfolge, weil
+`icMarketsExecutionEnabled` auf `false` steht. Die beiden `BREAKEVEN`-Stellen
+in `capital-trade-tracker.ts` (718, 1215) schreiben **immer**
+`NIE_BESTAETIGT`/`KEIN_PNL` und fallen schon raus.
+
+**Die Datenqualität steht MIT im Ergebnis.** Seit dem 30.09. ist belegt, dass
+ein Trade **zwei** Journal-Zeilen erzeugen konnte; `echteGeschlosseneTrades()`
+liest die Notizen **nicht**, beide Zeilen gehen bis heute in jede Statistik.
+`ETIKETTEN_OHNE_ERGEBNIS` bekommt hier seinen ersten Leser ausserhalb der
+eigenen Datei.
 
 **Und ein Ausfall gibt sich nicht als Ergebnis aus:** unter `MIN_TRADES = 30`
 wird **kein** Erwartungswert ausgegeben, sondern der Grund. Zehn Trades, wie
 anderswo üblich, sind zu wenig — dort verschiebt ein einziger Ausreisser die
 Trefferquote um zehn Punkte.
 
-`safety-nets` **rechnet** das (477 → **500** Prüfungen): der Fall mit 70 %
-Treffer und −8 Erwartungswert wird von Hand nachgerechnet, ebenso ein
-positiver (40 % Treffer, +16), das R/R, die nötige Trefferquote und der
-Ausschluss der Etiketten. Die echte `ETIKETTEN_OHNE_ERGEBNIS`-Liste wird
-durchgereicht, nicht kopiert — sonst prüfte der Test gegen seine eigene
-Annahme.
+### Absicherung
 
-**12 von 12 Sabotagen**, darunter das gedrehte Vorzeichen, der Kehrwert beim
-R/R und ein `/edge`, das auch offene Trades mitliest (ihr P&L ist ein
-Zwischenstand). Die zwölfte fing ein **bestehender** Prüfer: *„ein Befehl fehlt
-in der Hilfe"* — der Riegel vom 29.09. greift automatisch mit.
+`safety-nets` **rechnet** das (477 → **517** Prüfungen), und zwar mit der
+**echten Live-Lage** vom 26.10. als Testfall: 845 Zeilen, 814 gewertet,
+101W/196L/**517BE**, Ergebnis −2.24. Dazu die **Verdrahtung**: die Route muss
+`result` mitschicken, sonst wäre die Herkunft dauerhaft `—/—` und sähe dabei
+wie ein ehrliches Ergebnis aus — Fehlerklasse 30.09., eine geprüfte Funktion,
+die nie echte Werte bekommt. Der `/edge`-Block wird dafür per Klammerzählung
+ausgeschnitten; ein `result: true` irgendwo sonst in der Datei beweist nichts.
+
+**25 von 25 Sabotagen.** Die erste stellt die alte Formel wieder her und wird
+rot — das ist der eigentliche Nachweis, denn genau diese Fassung war einen Tag
+lang grün.
 
 ## Ohne Kurs wird nicht gehandelt
 

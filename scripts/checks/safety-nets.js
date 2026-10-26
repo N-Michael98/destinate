@@ -3448,6 +3448,117 @@ module.exports = async function pruefe() {
               spread.losses === 10 && spread.breakeven === 0,
               `L=${spread.losses} BE=${spread.breakeven}`);
 
+            // ── BREAKEVEN: der Fall, den KEIN Testfall oben hatte (26.10.) ──
+            //
+            // Alle Faelle darueber haben W+L = n, also NULL Breakeven. Genau
+            // dann ist `1 - Trefferquote` zufaellig gleich der echten
+            // Verlustquote — und die FALSCHE Formel liefert das richtige
+            // Ergebnis. So blieb der Fehler fuer einen rechnenden Pruefer
+            // unsichtbar, bis der erste Live-Lauf ihn zeigte.
+            //
+            // Hier kippt er das VORZEICHEN: 10x +100, 10x -50, 30x 0.
+            //   richtig: Summe 500 / 50 Trades      = +10  -> Edge
+            //   falsch : 0,2*100 - 0,8*50 = 20 - 40 = -20  -> kein Edge
+            const zr = (pnl, result, extra = {}) =>
+              ({ profitLoss: pnl, notes: JSON.stringify(extra), result });
+            const vieleR = (n, pnl, result, extra = {}) =>
+              Array.from({ length: n }, () => zr(pnl, result, extra));
+
+            const mitBe = f([
+              ...viele(10, 100), ...viele(10, -50),
+              ...vieleR(30, 0, "BREAKEVEN"),
+            ]);
+            torPruefung("ein Breakeven-Trade bekommt einen vollen Ø Verlust "
+              + "aufgebuerdet (erwartet +10, die alte Formel ergab -20)",
+              mitBe.erwartungswert === 10,
+              `${mitBe.erwartungswert} bei ${mitBe.wins}W/${mitBe.losses}L/`
+              + `${mitBe.breakeven}BE`);
+            torPruefung("der Erwartungswert deckt sich nicht mit der Summe, "
+              + "die dieselbe Antwort ausweist",
+              Math.abs(mitBe.erwartungswert * mitBe.gewertet - mitBe.summePnl) <= 0.5,
+              `EW*n=${(mitBe.erwartungswert * mitBe.gewertet).toFixed(2)} `
+              + `Summe=${mitBe.summePnl}`);
+            torPruefung("ein profitables System wird als 'kein Edge' gemeldet",
+              mitBe.erwartungswert > 0, String(mitBe.erwartungswert));
+            torPruefung("die echte Verlustquote fehlt (sie ist NICHT 1-Treffer)",
+              mitBe.verlustquote === 20 && mitBe.trefferquote === 20,
+              `v=${mitBe.verlustquote} t=${mitBe.trefferquote}`);
+            torPruefung("die Trefferquote der ENTSCHIEDENEN fehlt — ohne sie "
+              + "wird gegen die noetige Quote mit falschem Nenner verglichen",
+              mitBe.trefferquoteEntschieden === 50 && mitBe.entschieden === 20,
+              `${mitBe.trefferquoteEntschieden} % von ${mitBe.entschieden}`);
+            torPruefung("der Erwartungswert ohne die Breakeven fehlt",
+              mitBe.erwartungswertEntschieden === 25,
+              String(mitBe.erwartungswertEntschieden));
+            torPruefung("der Breakeven-Anteil wird nicht ausgewiesen",
+              mitBe.breakevenAnteil === 60, String(mitBe.breakevenAnteil));
+
+            // Die ECHTE Datenlage vom 26.10., 20:59 — nachgerechnet.
+            // 101 Gewinne a 11.47, 196 Verluste a -15.21, 517 Breakeven.
+            // Die Live-Antwort meldete -11.9 bei einer Summe von -1822.39.
+            // Die 33 rekonstruierten sind ein TEIL der 101 Gewinner, keine
+            // zusaetzlichen Zeilen — sonst waere es nicht die echte Lage.
+            const live = f([
+              ...viele(68, 11.47), ...viele(33, 11.47, { rekonstruiert: true }),
+              ...viele(196, -15.21),
+              ...vieleR(400, 0, "BREAKEVEN"), ...vieleR(117, 0, "OPEN"),
+              ...viele(31, 0, { exitReason: "KEIN_PNL" }),
+            ]);
+            torPruefung("die nachgebaute Live-Lage trifft die Antwort vom "
+              + "26.10. nicht mehr (845 Zeilen, 814 gewertet, 33 rekonstruiert)",
+              live.gesamt === 845 && live.gewertet === 814
+              && live.ohneErgebnis === 31 && live.rekonstruiert === 33
+              && live.wins === 101 && live.losses === 196 && live.breakeven === 517,
+              `${live.gesamt}/${live.gewertet}/${live.wins}W${live.losses}L`
+              + `${live.breakeven}BE`);
+            torPruefung("die Live-Datenlage vom 26.10. ergibt wieder den "
+              + "Faktor-5-Fehler (erwartet -2.24, gemeldet wurde -11.9)",
+              live.erwartungswert === -2.24,
+              `${live.erwartungswert} bei ${live.gewertet} gewerteten`);
+            torPruefung("die Summenprobe steht nicht in der Antwort — genau "
+              + "sie haette den Widerspruch am 26.10. sofort gezeigt",
+              /Summenprobe/.test(txt(live)), txt(live).slice(0, 60));
+            torPruefung("die Herkunft der Breakeven-Zeilen fehlt — ein nie "
+              + "geschriebener P&L sieht wegen @default(0) aus wie Breakeven",
+              live.breakevenHerkunft[0]?.etikett === "BREAKEVEN/—"
+              && live.breakevenHerkunft[0]?.anzahl === 400
+              && live.breakevenHerkunft[1]?.anzahl === 117,
+              JSON.stringify(live.breakevenHerkunft.slice(0, 2)));
+            const tLive = txt(live);
+            torPruefung("ein hoher Breakeven-Anteil wird nicht laut gemeldet",
+              /% der gewerteten Zeilen sind Breakeven/.test(tLive)
+              && /Herkunft/.test(tLive), tLive.slice(-200));
+            // „davon rekonstruiert" stand unter „ohne Ergebnis" und las sich
+            // als Teilmenge — am 26.10. ergab das „33 von 31".
+            const iGew = tLive.indexOf("Gewertet:");
+            const iRek = tLive.indexOf("davon rekonstruiert");
+            torPruefung("'davon rekonstruiert' steht wieder unter 'ohne "
+              + "Ergebnis' und liest sich als Teilmenge ('33 von 31')",
+              iGew >= 0 && iRek >= 0 && iRek > iGew, `gewertet@${iGew} rek@${iRek}`);
+
+            // Fehlt `result`, wird nichts erfunden.
+            const ohneResult = f([...viele(20, 10), ...viele(10, 0)]);
+            torPruefung("eine fehlende result-Spalte wird geraten statt als "
+              + "'—' ausgewiesen",
+              ohneResult.breakevenHerkunft[0]?.etikett === "—/—"
+              && ohneResult.breakevenHerkunft[0]?.anzahl === 10,
+              JSON.stringify(ohneResult.breakevenHerkunft));
+
+            // Mehr Etiketten als HERKUNFT_MAX -> der Rest wird gebuendelt,
+            // nicht verschwiegen.
+            const MAXH = ew.exports?.HERKUNFT_MAX;
+            const vieleEtiketten = f([...viele(30, 10),
+              ...Array.from({ length: MAXH + 3 }, (_, i) => zr(0, `R${i}`))]);
+            const summeHerkunft = vieleEtiketten.breakevenHerkunft
+              .reduce((a, h) => a + h.anzahl, 0);
+            torPruefung("bei vielen Breakeven-Etiketten geht ein Teil der "
+              + "Zeilen aus der Herkunft verloren",
+              summeHerkunft === MAXH + 3
+              && /weitere \(3 Etiketten\)/.test(
+                vieleEtiketten.breakevenHerkunft.at(-1)?.etikett ?? ""),
+              `${summeHerkunft} von ${MAXH + 3}, `
+              + `letztes=${vieleEtiketten.breakevenHerkunft.at(-1)?.etikett}`);
+
             // Unlesbare Notizen werden GEMELDET, nicht still mitgerechnet.
             const kaputt = f([...viele(30, 10), { profitLoss: 5, notes: "kein json" },
               { profitLoss: null, notes: "{}" }]);
@@ -3495,6 +3606,30 @@ module.exports = async function pruefe() {
           torPruefung("/edge meldet seinen eigenen Fehlschlag nicht",
             /\/edge fehlgeschlagen/.test(whQ),
             "sonst steht man vor einem stummen Befehl");
+
+          // DIE VERDRAHTUNG, nicht nur die Funktion (Fehlerklasse 30.09.).
+          //
+          // `erwartungswert()` liest die Spalte `result`, um einen echten
+          // Breakeven von einer Zeile zu trennen, deren P&L NIE geschrieben
+          // wurde (`Float @default(0)`). Dass die Funktion das kann, belegen
+          // die Rechnungen oben ("BREAKEVEN/—" mit 400). Dass sie die Werte
+          // auch BEKOMMT, belegt nur diese Prüfung — am 30.09. war genau das
+          // der Fehler: eine vollstaendig geprueefte Funktion, die dauerhaft
+          // `undefined` bekam und deshalb ehrlich aussehend "Unbekannt" sagte.
+          //
+          // Der Block wird per Klammerzaehlung ausgeschnitten: ein
+          // `result: true` irgendwo sonst in der 1500-Zeilen-Datei beweist
+          // fuer /edge nichts ("eine andere Aufrufstelle").
+          let edgeBlock = "";
+          try { edgeBlock = objectBlock(whQ, 'textLower === "/edge"'); }
+          catch { edgeBlock = ""; }
+          torPruefung("der /edge-Block ist nicht ausschneidbar — die "
+            + "Verdrahtung bliebe ungeprueft", edgeBlock.length > 0);
+          torPruefung("/edge schickt die result-Spalte nicht mit — die "
+            + "Breakeven-Herkunft waere dauerhaft '—/—' und saehe dabei "
+            + "wie ein ehrliches Ergebnis aus",
+            /\bresult:\s*true\b/.test(edgeBlock),
+            edgeBlock.replace(/\s+/g, " ").slice(0, 140));
         }
 
         // ── UND ZWAR IN JEDEM MODUL, DAS TELEGRAM SCHICKT ─────────────────

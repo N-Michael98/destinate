@@ -499,7 +499,11 @@ ${SYSTEM_BEFEHLE}`
           await import("@/lib/expectancy/erwartungswert");
         const zeilen = await getPrisma().trade.findMany({
           where: { status: { not: "OPEN" } },
-          select: { profitLoss: true, notes: true },
+          // `result` gehoert dazu: eine Zeile, deren `profitLoss` NIE
+          // geschrieben wurde, steht wegen `Float @default(0)` auf exakt 0
+          // und ist von einem echten Breakeven an der Zahl allein nicht zu
+          // unterscheiden. Am Etikett schon.
+          select: { profitLoss: true, notes: true, result: true },
         });
         await reply(chatId, erwartungswertText(erwartungswert(zeilen)));
       } catch (e) {
