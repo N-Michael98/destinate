@@ -113,9 +113,38 @@ export type EwHerkunft = {
   bis: string | null;
 };
 
+/**
+ * Ein Zeitfenster, auf das die Rechnung begrenzt wird.
+ *
+ * WOZU. Der Lauf vom 26.10. zerfiel sichtbar in ZWEI Systeme: bis Mitte
+ * August Zeilen ohne Ausstiegsgrund mit Ø Gewinn 21.43 und R/R 1.11, danach
+ * welche mit Grund und Ø Gewinn 3.13 bei R/R 0.43. Beide in einer Zahl
+ * ergeben ein R/R von 0.75, das **keines von beiden** beschreibt — und daraus
+ * abgeleitete Hebel zeigen in die falsche Richtung: über alles gerechnet
+ * fehlen 23 Punkte Trefferquote, im aktuellen Regime liegt sie längst bei
+ * 45 % und es fehlt ausschliesslich am R/R.
+ *
+ * Das ist die Fehlerklasse „eine Stufe ohne eigene Zahl verschwindet aus der
+ * Bilanz", eine Ebene höher: **zwei Regime in einer Zahl**.
+ *
+ * `jetzt` ist injizierbar, damit ein Prüfer das Fenster rechnen kann, ohne
+ * vom Kalender abzuhängen.
+ */
+export type EwFenster = { tage: number; jetzt?: Date };
+
 export type EwErgebnis = {
   /** Alle geschlossenen Zeilen, die aus der Datenbank kamen. */
   gesamt: number;
+  /** Das angewandte Fenster in Tagen, `null` = alles gerechnet. */
+  fensterTage: number | null;
+  /** Zeilen, die vor dem Fenster liegen — gezählt, nicht still verworfen. */
+  ausserhalbFenster: number;
+  /**
+   * Zeilen, die sich ohne Datum **nicht einordnen** lassen. Sie werden bei
+   * gesetztem Fenster ausgeschlossen und hier ausgewiesen — stillschweigend
+   * mitzurechnen wäre dieselbe Lüge wie ein erfundenes Datum.
+   */
+  ohneDatumImFenster: number;
   /** Zeilen mit `NIE_BESTAETIGT` / `KEIN_PNL` — kein Ergebnis, nur ein Etikett. */
   ohneErgebnis: number;
   /** Zeilen, die aus einer Broker-Position rekonstruiert wurden (GEWERTETE). */
@@ -264,10 +293,23 @@ export function herkunftListe(zeilen: ReadonlyArray<GewerteteZeile>): EwHerkunft
   return aus;
 }
 
-export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefined): EwErgebnis {
+export function erwartungswert(
+  zeilen: ReadonlyArray<TradeZeile> | null | undefined,
+  fenster?: EwFenster | null,
+): EwErgebnis {
   const alle = Array.isArray(zeilen) ? zeilen : [];
+  // Ein unbrauchbares Fenster (0, negativ, NaN) fällt auf „alles" zurück —
+  // und `fensterTage: null` **sagt das auch**, die Antwort behauptet dann
+  // kein Fenster. Still ein Fenster vortäuschen wäre der Fehler; ehrlich
+  // zurückfallen ist keiner. Die Route weist eine solche Eingabe ohnehin
+  // vorher mit einer Meldung ab, statt sie hier ankommen zu lassen.
+  const tage = fenster && Number.isFinite(fenster.tage) && fenster.tage > 0
+    ? Math.floor(fenster.tage) : null;
+  const grenze = tage === null ? null
+    : tag(new Date((fenster?.jetzt ?? new Date()).getTime() - tage * 86400000));
   const leer: EwErgebnis = {
-    gesamt: alle.length, ohneErgebnis: 0, rekonstruiert: 0, unlesbar: 0, gewertet: 0,
+    gesamt: alle.length, fensterTage: tage, ausserhalbFenster: 0, ohneDatumImFenster: 0,
+    ohneErgebnis: 0, rekonstruiert: 0, unlesbar: 0, gewertet: 0,
     wins: 0, losses: 0, breakeven: 0, entschieden: 0,
     trefferquote: null, verlustquote: null, trefferquoteEntschieden: null,
     breakevenAnteil: null,
@@ -279,9 +321,18 @@ export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefi
   };
 
   let ohneErgebnis = 0, rekonstruiert = 0, unlesbar = 0;
+  let ausserhalbFenster = 0, ohneDatumImFenster = 0;
   const gewertet: Array<{ pnl: number; herkunft: string; datum: string | null }> = [];
 
   for (const z of alle) {
+    // Das Fenster greift VOR allem anderen: eine Zeile ausserhalb soll weder
+    // als „ohne Ergebnis" noch als „unlesbar" gezaehlt werden, sonst stuenden
+    // in der Antwort Zahlen, die sich auf verschiedene Mengen beziehen.
+    if (grenze !== null) {
+      const d = tag(z?.updatedAt);
+      if (d === null) { ohneDatumImFenster++; continue; }
+      if (d < grenze) { ausserhalbFenster++; continue; }
+    }
     const m = notizen(z?.notes ?? null);
     if (m === null) {
       // Ohne lesbare Notizen lässt sich das Etikett nicht prüfen. Die Zeile
@@ -333,7 +384,7 @@ export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefi
   const entschieden = wins.length + losses.length;
   const basis: EwErgebnis = {
     ...leer,
-    ohneErgebnis, rekonstruiert, unlesbar,
+    ohneErgebnis, rekonstruiert, unlesbar, ausserhalbFenster, ohneDatumImFenster,
     gewertet: gewertet.length,
     wins: wins.length, losses: losses.length, breakeven: beZeilen.length, entschieden,
     summePnl, breakevenHerkunft, gewinnHerkunft, verlustHerkunft, zuletztEntschieden,
@@ -394,7 +445,16 @@ export function erwartungswertText(e: EwErgebnis): string {
     const s = h.schnitt === null ? "" : ` · Ø ${h.schnitt}`;
     return `  ${h.etikett}: <b>${h.anzahl}</b>${s}  (${sp})`;
   };
+  z.push(e.fensterTage === null
+    ? "Zeitraum: <b>alles</b>  (<code>/edge 60</code> = nur letzte 60 Tage)"
+    : `Zeitraum: <b>letzte ${e.fensterTage} Tage</b>  (<code>/edge</code> = alles)`);
   z.push(`Geschlossene Zeilen: <b>${e.gesamt}</b>`);
+  if (e.ausserhalbFenster > 0) z.push(`  vor dem Fenster: ${e.ausserhalbFenster}`);
+  // Ohne Datum laesst sich eine Zeile nicht einordnen. Sie wird gemeldet,
+  // nicht stillschweigend mitgerechnet — und auch nicht still verworfen.
+  if (e.ohneDatumImFenster > 0) {
+    z.push(`  ohne Datum, nicht einordenbar: ${e.ohneDatumImFenster}`);
+  }
   if (e.ohneErgebnis > 0) z.push(`  ohne Ergebnis (KEIN_PNL/NIE_BESTAETIGT): ${e.ohneErgebnis}`);
   if (e.unlesbar > 0) z.push(`  unlesbar/ohne P&L: ${e.unlesbar}`);
   z.push(`Gewertet: <b>${e.gewertet}</b>  (${e.wins} Gewinn / ${e.losses} Verlust `

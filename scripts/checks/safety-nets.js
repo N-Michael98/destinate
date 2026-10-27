@@ -1543,6 +1543,153 @@ module.exports = async function pruefe() {
         }
       }
 
+      // ── /edge DURCH DIE ECHTE ROUTE (27.10.) ───────────────────────────
+      //
+      // Die Verdrahtung war bisher nur STRUKTURELL geprueft (Regex auf den
+      // ausgeschnittenen Block). Eine entwischte Sabotage hat gezeigt, dass
+      // das zu wenig ist: die Ablehnung einer unbrauchbaren Tagesangabe liess
+      // sich ersatzlos entfernen, ohne dass ein Pruefer rot wurde — `/edge
+      // abc` haette dann still ALLES gerechnet und sich als Fenster ausgegeben.
+      //
+      // Jetzt laeuft der ECHTE POST gegen eine ersetzte Datenbank: Befehl →
+      // Tagesangabe → Abfrage → Fenster → Text. Dabei wird auch geprueft,
+      // WOMIT `findMany` wirklich gerufen wurde — das beweist die Spalten zur
+      // Laufzeit, nicht nur ihren Wortlaut im Quelltext.
+      {
+        const chat = "424242";
+        const altEnv2 = {
+          TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+          TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+        };
+        const altFetch2 = global.fetch;
+        const antw = [];
+        const abfragen = [];
+        try {
+          process.env.TELEGRAM_CHAT_ID = chat;
+          process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
+          global.fetch = async (_u, init) => {
+            antw.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+            return { ok: true, status: 200, text: async () => '{"ok":true}' };
+          };
+          const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+          const ewE = trE.fehler ? trE : ladeTsModul("lib/expectancy/erwartungswert.ts",
+            { "capital-trade-tracker": trE.exports });
+          // 40 Zeilen von gestern, 40 aus dem Juni — das Fenster MUSS trennen.
+          const heute = new Date();
+          const vorTagen = (n) => new Date(heute.getTime() - n * 86400000).toISOString();
+          const zeilenDb = [
+            ...Array.from({ length: 40 }, () => ({
+              profitLoss: 12, notes: '{"exitReason":"ZIEL"}',
+              result: "WIN", updatedAt: vorTagen(3) })),
+            ...Array.from({ length: 40 }, () => ({
+              profitLoss: -8, notes: '{"exitReason":"STOP"}',
+              result: "LOSS", updatedAt: vorTagen(200) })),
+          ];
+          const whE = ewE.fehler ? ewE : ladeTsModul("app/api/telegram/webhook/route.ts", {
+            "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
+            "telegram-notifications/telegram-sender": {
+              sendTelegram: async () => true,
+              telegramZeit: () => "27.10.2026, 12:00:00 MEZ", telegramDatum: () => "27.10.2026",
+            },
+            "lib/killswitch": {
+              getKillswitchReport: () => ({ triggered: false, armed: true, systemLocked: false, stages: [], summary: "ok" }),
+            },
+            "app/lib/prisma": {
+              getPrisma: () => ({ trade: { findMany: async (a) => { abfragen.push(a); return zeilenDb; } } }),
+            },
+            "expectancy/erwartungswert": ewE.exports,
+          });
+          if (whE.fehler || typeof whE.exports?.POST !== "function") {
+            torPruefung("/edge ist nicht end-to-end ausfuehrbar", false,
+              whE.fehler ?? "POST fehlt");
+          } else {
+            const edge = (text) => whE.exports.POST({
+              json: async () => ({ message: { chat: { id: Number(chat) }, from: { first_name: "P" }, text } }),
+            });
+
+            await edge("/edge 60");
+            const mitF = antw.at(-1) ?? "";
+            torPruefung("/edge 60 rechnet kein Fenster — die Tagesangabe "
+              + "verpufft auf dem Weg zur Rechnung",
+              /Zeitraum: <b>letzte 60 Tage<\/b>/.test(mitF)
+              && /Gewertet: <b>40<\/b>/.test(mitF) && /vor dem Fenster: 40/.test(mitF),
+              mitF.replace(/\n/g, " ").slice(0, 160));
+            torPruefung("im Fenster bleibt der Altbestand in der Rechnung",
+              /101|0 Verlust|40 Gewinn/.test(mitF) && !/40 Verlust/.test(mitF),
+              mitF.replace(/\n/g, " ").slice(0, 160));
+
+            // Die Spalten zur LAUFZEIT, nicht nur im Quelltext.
+            const sel = abfragen.at(-1)?.select ?? {};
+            torPruefung("/edge fragt die noetigen Spalten nicht ab "
+              + "(profitLoss/notes/result/updatedAt)",
+              sel.profitLoss === true && sel.notes === true
+              && sel.result === true && sel.updatedAt === true,
+              JSON.stringify(abfragen.at(-1) ?? null));
+            torPruefung("/edge liest offene Trades mit (zur Laufzeit geprueft)",
+              abfragen.at(-1)?.where?.status?.not === "OPEN",
+              JSON.stringify(abfragen.at(-1)?.where ?? null));
+
+            await edge("/edge");
+            torPruefung("/edge ohne Angabe rechnet nicht mehr alles",
+              /Zeitraum: <b>alles<\/b>/.test(antw.at(-1) ?? "")
+              && /Gewertet: <b>80<\/b>/.test(antw.at(-1) ?? ""),
+              (antw.at(-1) ?? "").replace(/\n/g, " ").slice(0, 140));
+
+            // DER KERN dieser Runde: eine unbrauchbare Angabe darf NICHT
+            // still zu "alles" werden — sonst sieht die Antwort nach Fenster
+            // aus und ist keines.
+            // Die DREI letzten sind die eigentlich gefaehrlichen und fehlten
+            // zuerst: `Number()` ist zwar streng, aber nicht ueberall —
+            // Number("1e5")=100000, Number("0x10")=16, Number("6e2")=600.
+            // Ohne sie laesst sich `/^\d+$/` auf `/^\d/` verkuerzen, ohne dass
+            // ein Testfall das merkt. Vorgefuehrt: mit abc/0/-5/1e allein
+            // blieb genau diese Sabotage gruen.
+            for (const schlecht of ["/edge abc", "/edge 0", "/edge -5", "/edge 1e",
+              "/edge 1e5", "/edge 0x10", "/edge 6e2"]) {
+              const vorher = abfragen.length;
+              await edge(schlecht);
+              const a = antw.at(-1) ?? "";
+              torPruefung(`'${schlecht}' wird still zu einer Gesamtrechnung, `
+                + "statt abgelehnt zu werden",
+                /keine Anzahl Tage/.test(a) && !/Gewertet:/.test(a),
+                a.replace(/\n/g, " ").slice(0, 110));
+              torPruefung(`'${schlecht}' fragt trotzdem die Datenbank ab`,
+                abfragen.length === vorher,
+                `${abfragen.length - vorher} Abfragen nach der Ablehnung`);
+            }
+
+            // DIE EINGABE DARF NICHT IN DEN CHAT ZURUECK (Regel 29.09.).
+            //
+            // Ein Telegram-Verlauf liegt auf jedem angemeldeten Geraet und auf
+            // Telegrams Servern und laesst sich nicht zurueckholen. Wer sich
+            // vertippt und `/edge <etwas Vertrauliches>` schickt, haette es
+            // sonst dauerhaft dort stehen. Die Meldung braucht das Argument
+            // nicht — Laenge und die richtige Form erklaeren alles.
+            const geheim = "geheim123xyz";          // 12 Zeichen
+            await edge(`/edge ${geheim}`);
+            const aGeheim = antw.at(-1) ?? "";
+            torPruefung("die Ablehnung schickt die Eingabe in den Chat zurueck "
+              + "— ein Telegram-Verlauf laesst sich nicht zurueckholen",
+              !aGeheim.includes(geheim) && !aGeheim.includes("geheim"),
+              aGeheim.replace(/\n/g, " ").slice(0, 120));
+            torPruefung("die Ablehnung sagt gar nichts ueber die Eingabe — "
+              + "dann weiss man nicht, ob sie ueberhaupt ankam",
+              /12 Zeichen/.test(aGeheim) && /keine Anzahl Tage/.test(aGeheim),
+              aGeheim.replace(/\n/g, " ").slice(0, 120));
+            // Gegenprobe: ein TEIL der Eingabe darf auch nicht durchrutschen.
+            await edge("/edge abcdefghijklmnopqrstuvwxyz");
+            torPruefung("ein gekuerztes Echo der Eingabe rutscht durch",
+              !/abcdefghij/.test(antw.at(-1) ?? ""),
+              (antw.at(-1) ?? "").replace(/\n/g, " ").slice(0, 120));
+          }
+        } finally {
+          global.fetch = altFetch2;
+          for (const [k, v] of Object.entries(altEnv2)) {
+            if (v === undefined) delete process.env[k]; else process.env[k] = v;
+          }
+        }
+      }
+
       // ── JEDER BEFEHL MUSS IN DER HILFE STEHEN (29.09.) ──────────────────
       //
       // Es gab ZWEI Befehlslisten: eine kurze in `/status`, eine lange in
@@ -3763,6 +3910,88 @@ module.exports = async function pruefe() {
                 String(hl([{ pnl: 10, herkunft: "X", datum: null },
                   { pnl: -4, herkunft: "X", datum: null }])[0]?.schnitt));
             }
+
+            // ── DAS ZEITFENSTER (27.10.) ──────────────────────────────────
+            //
+            // Der Lauf vom 26.10. zerfiel in ZWEI Systeme: bis Mitte August
+            // Zeilen ohne Ausstiegsgrund (Oe Gewinn 21.43, R/R 1.11), danach
+            // welche mit Grund (Oe Gewinn 3.13, R/R 0.43). Zusammengerechnet
+            // ergibt das R/R 0.75 — eine Zahl, die KEINES der beiden Systeme
+            // beschreibt, und die daraus abgeleiteten Hebel zeigen falsch.
+            //
+            // `jetzt` wird injiziert, damit die Rechnung nicht vom Kalender
+            // abhaengt: ein Pruefer, der morgen anders rechnet, beweist nichts.
+            const JETZT = new Date("2026-10-27T12:00:00Z");
+            const fensterFaelle = [
+              ...Array.from({ length: 30 }, () =>
+                zd(10, "NEU", "2026-10-20T10:00:00Z", { exitReason: "ZIEL" })),
+              ...Array.from({ length: 40 }, () =>
+                zd(-5, "ALT", "2026-06-20T10:00:00Z", { exitReason: "STOP" })),
+              ...Array.from({ length: 5 }, () => zd(99, "OHNE", null)),
+            ];
+            const mitFenster = f(fensterFaelle, { tage: 30, jetzt: JETZT });
+            const ohneFenster = f(fensterFaelle);
+
+            torPruefung("das Zeitfenster filtert nicht — alte und neue Zeilen "
+              + "landen weiter in derselben Zahl",
+              mitFenster.gewertet === 30 && mitFenster.wins === 30
+              && mitFenster.losses === 0,
+              `gewertet=${mitFenster.gewertet} W=${mitFenster.wins} L=${mitFenster.losses}`);
+            torPruefung("die Zeilen VOR dem Fenster verschwinden still — sie "
+              + "gehoeren gezaehlt, nicht verworfen",
+              mitFenster.ausserhalbFenster === 40, String(mitFenster.ausserhalbFenster));
+            // Ohne Datum laesst sich eine Zeile nicht einordnen. Sie darf
+            // weder mitgerechnet noch stillschweigend verworfen werden.
+            torPruefung("Zeilen OHNE Datum werden im Fenster mitgerechnet oder "
+              + "still verworfen",
+              mitFenster.ohneDatumImFenster === 5
+              && !mitFenster.erwartungswert?.toString().includes("99"),
+              `ohneDatum=${mitFenster.ohneDatumImFenster} ew=${mitFenster.erwartungswert}`);
+            torPruefung("das Fenster wird im Ergebnis nicht ausgewiesen",
+              mitFenster.fensterTage === 30 && ohneFenster.fensterTage === null,
+              `${mitFenster.fensterTage} / ${ohneFenster.fensterTage}`);
+            torPruefung("OHNE Fenster wird trotzdem gefiltert",
+              ohneFenster.gewertet === 75 && ohneFenster.ausserhalbFenster === 0
+              && ohneFenster.ohneDatumImFenster === 0,
+              `gewertet=${ohneFenster.gewertet}`);
+            // DER KERN: die beiden Rechnungen muessen sich UNTERSCHEIDEN,
+            // sonst beweist das Fenster nichts.
+            torPruefung("Fenster und Gesamtlauf liefern dasselbe — dann greift "
+              + "das Fenster gar nicht",
+              mitFenster.erwartungswert !== ohneFenster.erwartungswert
+              && mitFenster.trefferquote !== ohneFenster.trefferquote,
+              `${mitFenster.erwartungswert} vs ${ohneFenster.erwartungswert}`);
+            const tFenster = txt(mitFenster);
+            torPruefung("der Zeitraum steht nicht in der Antwort — man wuesste "
+              + "nicht, worauf sich die Zahlen beziehen",
+              /Zeitraum: <b>letzte 30 Tage<\/b>/.test(tFenster), tFenster.slice(0, 120));
+            torPruefung("die ausgeschlossenen Zeilen stehen nicht in der Antwort",
+              /vor dem Fenster: 40/.test(tFenster)
+              && /ohne Datum, nicht einordenbar: 5/.test(tFenster),
+              tFenster.slice(0, 260));
+            torPruefung("ohne Fenster fehlt der Hinweis auf den Zeitraum",
+              /Zeitraum: <b>alles<\/b>/.test(txt(ohneFenster)),
+              txt(ohneFenster).slice(0, 100));
+            // Ein unbrauchbares Fenster faellt auf "alles" zurueck — und SAGT
+            // das. Still ein Fenster vortaeuschen waere der Fehler.
+            for (const schlecht of [{ tage: 0 }, { tage: -5 }, { tage: NaN }]) {
+              const r = f(fensterFaelle, schlecht);
+              torPruefung(`ein unbrauchbares Fenster (${schlecht.tage}) taeuscht `
+                + "ein Fenster vor, statt ehrlich auf alles zurueckzufallen",
+                r.fensterTage === null && r.gewertet === 75,
+                `fensterTage=${r.fensterTage} gewertet=${r.gewertet}`);
+            }
+
+            // Und die Verdrahtung: nimmt die Route die Tage ueberhaupt an?
+            // Eine geprueefte Funktion, die nie ein Fenster bekommt, waere
+            // die Fehlerklasse vom 30.09.
+            const whFenster = read("frontend/app/api/telegram/webhook/route.ts")
+              .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+            torPruefung("/edge nimmt keine Tagesangabe entgegen",
+              /textLower\.startsWith\("\/edge "\)/.test(whFenster));
+            torPruefung("/edge reicht das Fenster nicht an die Rechnung weiter",
+              /erwartungswert\(zeilen,\s*tage === null \? null : \{ tage \}\)/.test(whFenster),
+              "sonst waere die Angabe wirkungslos");
 
             // Fehlt `result`, wird nichts erfunden.
             const ohneResult = f([...viele(20, 10), ...viele(10, 0)]);

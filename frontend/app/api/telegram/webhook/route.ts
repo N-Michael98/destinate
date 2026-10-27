@@ -40,7 +40,7 @@ const SYSTEM_BEFEHLE = [
   "/reset — System reaktivieren (Passwort erforderlich)",
   "/peakreset — Drawdown-Höchststand zurücksetzen (Passwort erforderlich)",
   "/status — System Status",
-  "/edge — Erwartungswert: hat das System einen Edge?",
+  "/edge — Erwartungswert: hat das System einen Edge? (/edge 60 = letzte 60 Tage)",
   "/help — Alle Befehle",
 ].join("\n");
 
@@ -537,8 +537,42 @@ ${SYSTEM_BEFEHLE}`
     // dass ein Trade zwei Journal-Zeilen erzeugen konnte — eine davon mit
     // P&L 0 als BREAKEVEN. Ein Erwartungswert, der die nicht ausweist, waere
     // irrefuehrend.
-    if (textLower === "/edge") {
+    if (textLower === "/edge" || textLower.startsWith("/edge ")) {
       try {
+        // `/edge 60` rechnet NUR die letzten 60 Tage.
+        //
+        // Grund, gemessen am 26.10.: die Historie zerfaellt in ZWEI Systeme.
+        // Bis Mitte August Zeilen ohne Ausstiegsgrund mit Oe Gewinn 21.43 und
+        // R/R 1.11, danach welche mit Grund und Oe Gewinn 3.13 bei R/R 0.43.
+        // Zusammengerechnet ergibt das ein R/R von 0.75, das KEINES von beiden
+        // beschreibt — und die daraus abgeleiteten Hebel zeigen falsch.
+        const arg = textLower.slice("/edge".length).trim();
+        // NUR Ziffern. `Number.parseInt("1e", 10)` ergibt **1** — es liest die
+        // fuehrenden Ziffern und wirft den Rest weg. `/edge 1e` waere damit
+        // still zu einem 1-Tage-Fenster geworden und `/edge 60xyz` zu 60:
+        // eine Eingabe geraten, die so nie gemeint war. Gefunden vom
+        // End-to-End-Pruefstand, nicht von Hand.
+        // Ohne Angabe ist es ausdruecklich `null` (= alles) und nicht `NaN`,
+        // das die Rechnung erst wieder auffangen muesste. Ein Ergebnis, das
+        // nur stimmt, weil es jemand weiter innen repariert, ist Zufall.
+        const tage = arg === "" ? null : (/^\d+$/.test(arg) ? Number(arg) : NaN);
+        if (arg !== "" && (!Number.isFinite(tage) || (tage as number) <= 0)) {
+          // Eine unbrauchbare Angabe darf nicht stillschweigend zu "alles"
+          // werden: die Antwort saehe dann nach Fenster aus und waere keines.
+          //
+          // DIE EINGABE WIRD NICHT ZURUECKGESCHICKT. Regel vom 29.09. („ein
+          // Admin-Passwort gehoert nirgends echot"), hier an anderer Stelle:
+          // ein Telegram-Verlauf liegt auf jedem angemeldeten Geraet und auf
+          // Telegrams Servern und laesst sich nicht zurueckholen. Wer sich
+          // vertippt und `/edge <etwas Vertrauliches>` schickt, haette es
+          // sonst dauerhaft im Chat. Die Meldung braucht das Argument auch
+          // gar nicht — Laenge und die richtige Form erklaeren alles.
+          await reply(chatId,
+            `⚠️ <b>/edge</b> — das ist keine Anzahl Tage (${arg.length} Zeichen).`
+            + "\n\n<code>/edge</code> rechnet alles, <code>/edge 60</code> nur "
+            + "die letzten 60 Tage.");
+          return NextResponse.json({ ok: true });
+        }
         const { getPrisma } = await import("@/app/lib/prisma");
         const { erwartungswert, erwartungswertText } =
           await import("@/lib/expectancy/erwartungswert");
@@ -552,7 +586,8 @@ ${SYSTEM_BEFEHLE}`
           // wird ein Etikett HEUTE noch erzeugt, oder ist es Altbestand?
           select: { profitLoss: true, notes: true, result: true, updatedAt: true },
         });
-        await reply(chatId, erwartungswertText(erwartungswert(zeilen)));
+        await reply(chatId, erwartungswertText(
+          erwartungswert(zeilen, tage === null ? null : { tage })));
       } catch (e) {
         // Der Grund gehoert in die Antwort — sonst steht man vor einem
         // stummen Befehl und raet ("wer den Grund nicht mitschreibt …").

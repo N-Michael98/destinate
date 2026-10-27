@@ -1523,9 +1523,119 @@ Breakeven, Gewinner und Verlierer gehen durch **dieselbe** Funktion
 (`herkunftListe()`). Drei Kopien wären drei Stellen, an denen sie
 auseinanderlaufen.
 
+### GEMESSEN: kein einziger Trade erreicht sein Ziel (26.10.)
+
+`ausstiegsgrund()` vergibt `ZIEL`, wenn der Schlusskurs **≥ 95 %** des Weges
+vom Stop zum Ziel geschafft hat (`capital-trade-tracker.ts:323`). Das Etikett
+existiert also — und kommt in **129 Trades mit echtem Ausstiegsgrund kein
+einziges Mal** vor.
+
+| wie Gewinner enden | Anzahl | Ø P&L |
+|---|---|---|
+| `WIN/DAZWISCHEN` — Zwischenausstieg | 40 (73 %) | **3.31** |
+| `WIN/STOP` — nachgezogener Stop im Plus | 15 (27 %) | **2.66** |
+| `WIN/ZIEL` | **0** | — |
+
+Der Einstieg verlangt R/R ≥ 1.5. **Kein Trade kommt dort je an.** Damit ist
+die Kette oben nicht mehr erklärt, sondern **gemessen**.
+
+**Ehrlich eingeordnet:** für die Zeit *vor* dem 17.08. beweist das nichts —
+dort wurde gar kein Ausstiegsgrund geschrieben. Die Aussage gilt für die 129
+etikettierten Trades.
+
+**Und der Altbestand-Fehler ist tot, mit Daten belegt:** alle vier „ohne
+Grund"-Etiketten enden im August (`WIN/—` 13.08., `BREAKEVEN/—` 14.08.,
+`LOSS/—` 17.08., `CLOSED/—` nur am 17.06.), während der letzte Trade mit
+Ergebnis der **22.10.** ist. Der Code-Kommentar sagte „bis 17.08." — jetzt
+sagen es die Daten. Genau dafür wurde die Zeitspanne gebaut.
+
+### Zwei Regime in einer Zahl — deshalb `/edge 60` (27.10.)
+
+Die Historie zerfällt sichtbar in zwei Systeme:
+
+| | ALT (bis 17.08.) | **NEU (ab 17.08.)** |
+|---|---|---|
+| W / L / BE | 46 / 129 / 510 | **55 / 67 / 7** |
+| Trefferquote (entschieden) | 26.3 % | **45.1 %** |
+| Ø Gewinn | 21.43 | **3.13** |
+| Ø Verlust | 19.36 | **7.21** |
+| R/R | 1.107 | **0.434** |
+| nötiges R/R | 2.80 | **1.22** |
+
+Die Trefferquote hat sich fast **verdoppelt**, der Ø Gewinn ist auf ein
+**Siebtel** gefallen. Das Geld geht nicht an schlechten Einstiegen verloren,
+sondern an den Ausstiegen.
+
+Zusammengerechnet ergibt das ein R/R von **0.75** — ein Wert, der **keines der
+beiden Systeme beschreibt**. Und die daraus abgeleiteten Hebel zeigen falsch:
+über alles gerechnet „fehlen 23 Punkte Trefferquote", im laufenden Regime
+liegt sie längst bei 47 % und es fehlt ausschliesslich am R/R (0.42 statt
+nötiger 1.13).
+
+Das ist die Fehlerklasse „eine Stufe ohne eigene Zahl verschwindet aus der
+Bilanz", eine Ebene höher: **zwei Regime in einer Zahl.**
+
+`/edge 60` rechnet deshalb nur die letzten 60 Tage. Zeilen davor werden
+**gezählt und ausgewiesen**, nicht still verworfen; Zeilen **ohne Datum** sind
+nicht einordenbar und werden separat genannt statt heimlich mitgerechnet. Ein
+unbrauchbares Argument fällt ehrlich auf „alles" zurück — und `fensterTage:
+null` **sagt das auch**, statt ein Fenster vorzutäuschen.
+
+#### `parseInt` liest, was es kriegen kann
+
+Der End-to-End-Prüfstand fand beim ersten Lauf einen echten Fehler in genau
+dieser Eingabe: `Number.parseInt("1e", 10)` ergibt **1**. `/edge 1e` wurde
+damit still zu einem Ein-Tage-Fenster, `/edge 60xyz` zu 60 — eine Eingabe
+**geraten**, die so nie gemeint war. Jetzt gilt `/^\d+$/`: nur Ziffern, sonst
+eine Meldung.
+
+**Und der erste Fix war noch nicht streng genug.** Die Sabotage „`/^\d+$/` auf
+`/^\d/` verkürzen" blieb grün — weil `Number()` ohnehin streng ist und meine
+Testfälle (`abc`, `0`, `-5`, `1e`) den Unterschied gar nicht ausdrücken
+konnten. Ausgeführt gemessen, wo er liegt:
+
+| Eingabe | streng `/^\d+$/` | lasch `/^\d/` |
+|---|---|---|
+| `1e5` | abgelehnt | **100000 Tage** |
+| `0x10` | abgelehnt | **16 Tage** |
+| `6e2` | abgelehnt | **600 Tage** |
+
+Genau diese drei fehlten im Prüfstand und stehen jetzt drin. Zum dritten Mal
+an einem Tag dieselbe Lehre: **ein Testfall, der den Fehler nicht ausdrücken
+kann, beweist nichts** — `[RSI 82]`, die gleichen Datumswerte, und nun das.
+
+Dazu ein eigener Fehler beim Beheben: ohne Argument war `tage` danach `NaN`
+statt `null` und wurde erst von der Rechnung aufgefangen. Das Ergebnis stimmte
+— aus Zufall. **Ein Ergebnis, das nur stimmt, weil es jemand weiter innen
+repariert, ist keins.** Jetzt ausdrücklich `null`.
+
+#### Und die Ablehnung echote die Eingabe
+
+Beim Gegenlesen des eigenen Codes aufgefallen. Die Meldung lautete:
+
+```ts
+`⚠️ <b>/edge ${arg.slice(0, 20)}</b> — das ist keine Anzahl Tage.`
+```
+
+Das ist die Regel vom **29.09.** („ein Admin-Passwort gehört nirgends echot"),
+nur an einer anderen Stelle: ein Telegram-Verlauf liegt auf jedem angemeldeten
+Gerät und auf Telegrams Servern und **lässt sich nicht zurückholen**. Wer sich
+vertippt und `/edge <etwas Vertrauliches>` schickt, hat es dort dauerhaft
+stehen.
+
+Und die Meldung **braucht das Argument gar nicht**: Länge plus die richtige
+Form erklären alles, was zu erklären ist. Ein Echo, das nichts erklärt, aber
+etwas preisgeben kann, ist reiner Verlust. Jetzt steht dort nur noch
+`(12 Zeichen)`.
+
+Der Prüfstand schickt dafür `/edge geheim123xyz` durch die echte `POST`-Funktion
+und verlangt, dass die Antwort **weder die Eingabe noch ein Stück davon**
+enthält — die Gegenprobe mit einer 26 Zeichen langen Eingabe fängt auch ein
+gekürztes Echo.
+
 ### Absicherung
 
-`safety-nets` **rechnet** das (477 → **544** Prüfungen), unter anderem mit der
+`safety-nets` **rechnet** das (477 → **580** Prüfungen), unter anderem mit der
 **echten Live-Lage** vom 26.10. als Testfall: 845 Zeilen, 814 gewertet,
 101W/196L/**517BE**, Ergebnis −2.24. Dazu die **Verdrahtung**: die Route muss
 `result` **und** `updatedAt` mitschicken, sonst wäre die Herkunft dauerhaft
@@ -1534,7 +1644,7 @@ Fehlerklasse 30.09., eine geprüfte Funktion, die nie echte Werte bekommt. Der
 `/edge`-Block wird per Klammerzählung ausgeschnitten; ein `result: true`
 irgendwo sonst in der Datei beweist nichts.
 
-**53 von 53 Sabotagen.** Die erste stellt die alte Formel wieder her und wird
+**76 von 76 Sabotagen.** Die erste stellt die alte Formel wieder her und wird
 rot — das ist der eigentliche Nachweis, denn genau diese Fassung war einen Tag
 lang grün.
 
