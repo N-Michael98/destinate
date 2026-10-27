@@ -92,9 +92,26 @@ export type TradeZeile = {
    * fehlt sie, steht in der Herkunft „—" statt einer erfundenen Angabe.
    */
   result?: string | null;
+  /**
+   * Wann die Zeile zuletzt geschrieben wurde. Optional, gleiche Regel: fehlt
+   * sie, steht dort `null` und nicht ein erfundenes Datum.
+   */
+  updatedAt?: Date | string | number | null;
 };
 
-export type EwHerkunft = { etikett: string; anzahl: number };
+export type EwHerkunft = {
+  etikett: string;
+  anzahl: number;
+  /**
+   * Ø P&L dieses Etiketts. Die entscheidende Spalte bei den GEWINNERN: ein
+   * Ausstieg, der im Schnitt einen Bruchteil dessen bringt, was das Ziel
+   * gebracht hätte, erklärt ein realisiertes R/R unter dem geplanten.
+   */
+  schnitt: number | null;
+  /** Aelteste und neueste Zeile dieses Etiketts (`YYYY-MM-DD`), falls bekannt. */
+  von: string | null;
+  bis: string | null;
+};
 
 export type EwErgebnis = {
   /** Alle geschlossenen Zeilen, die aus der Datenbank kamen. */
@@ -141,6 +158,21 @@ export type EwErgebnis = {
   summePnl: number;
   /** Woher die Breakeven-Zeilen kommen: `result/exitReason` → Anzahl. */
   breakevenHerkunft: EwHerkunft[];
+  /**
+   * Woran die GEWINNER enden. Der Einstieg verlangt R/R ≥ 1.5
+   * (`ai-analysis-engine.ts:911`) — endet der Grossteil der Gewinner an einem
+   * Teilgewinn, einem Breakeven-Stop oder einem Trailing statt am Ziel, ist
+   * das die Erklärung für ein realisiertes R/R unter dem geplanten.
+   */
+  gewinnHerkunft: EwHerkunft[];
+  /** Dasselbe für die Verlierer — der Gegenpol, sonst fehlt der Vergleich. */
+  verlustHerkunft: EwHerkunft[];
+  /**
+   * Neueste ENTSCHIEDENE Zeile (`YYYY-MM-DD`). Der Vergleichsmassstab: läuft
+   * ein Breakeven-Etikett bis an dieses Datum heran, wird es **heute noch**
+   * erzeugt; endet es Wochen davor, ist es Altbestand.
+   */
+  zuletztEntschieden: string | null;
 
   belastbar: boolean;
   grund: string;
@@ -161,6 +193,77 @@ function etikett(v: unknown): string {
   return String(v ?? "").trim().toUpperCase();
 }
 
+/**
+ * `YYYY-MM-DD` aus einem Zeitstempel — oder `null`.
+ *
+ * Ein unlesbares Datum wird **nicht** zu „heute". Das ist dieselbe Regel wie
+ * beim Kurs-Alter am 22.09.: eine stille Ersatzzahl macht aus „unbekannt" eine
+ * Messung, und hier hinge daran die Frage, ob ein Fehler noch aktiv ist.
+ */
+export function tag(v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  const d = v instanceof Date ? v : new Date(v as string | number);
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+/** Eine Zeile, nachdem sie den Ausschluss passiert hat. */
+export type GewerteteZeile = { pnl: number; herkunft: string; datum: string | null };
+
+/**
+ * Gruppiert gewertete Zeilen nach ihrem Etikett (`result/exitReason`) und
+ * liefert je Etikett: Anzahl, Ø P&L und die Zeitspanne.
+ *
+ * ALS EIGENE, EXPORTIERTE FUNKTION, damit ein Prüfer sie **ausführen** kann —
+ * und damit Breakeven, Gewinner und Verlierer nachweislich **denselben** Weg
+ * gehen. Drei Kopien derselben Gruppierung wären drei Stellen, an denen sie
+ * auseinanderlaufen kann.
+ *
+ * Die Zeitspanne beantwortet die Frage, wegen der es die Aufschlüsselung
+ * gibt: *wird dieses Etikett heute noch erzeugt?* Ein fehlendes Datum lässt
+ * die Spanne unberührt — es wird **nicht** zu „heute" (Regel vom 22.09.).
+ *
+ * Mehr als `HERKUNFT_MAX` Etiketten werden gebündelt, nicht verschwiegen.
+ */
+export function herkunftListe(zeilen: ReadonlyArray<GewerteteZeile>): EwHerkunft[] {
+  type Lage = { anzahl: number; summe: number; von: string | null; bis: string | null };
+  const leer: Lage = { anzahl: 0, summe: 0, von: null, bis: null };
+  const aelter = (a: string | null, b: string | null) =>
+    b === null ? a : (a === null || b < a ? b : a);
+  const juenger = (a: string | null, b: string | null) =>
+    b === null ? a : (a === null || b > a ? b : a);
+
+  const zaehler = new Map<string, Lage>();
+  for (const g of zeilen) {
+    const l = zaehler.get(g.herkunft) ?? leer;
+    zaehler.set(g.herkunft, {
+      anzahl: l.anzahl + 1,
+      summe: l.summe + g.pnl,
+      von: aelter(l.von, g.datum),
+      bis: juenger(l.bis, g.datum),
+    });
+  }
+  const sortiert = [...zaehler.entries()]
+    .sort((a, b) => b[1].anzahl - a[1].anzahl || a[0].localeCompare(b[0]));
+  const bau = (etikett: string, l: Lage): EwHerkunft => ({
+    etikett, anzahl: l.anzahl,
+    schnitt: l.anzahl > 0 ? Number((l.summe / l.anzahl).toFixed(2)) : null,
+    von: l.von, bis: l.bis,
+  });
+
+  const aus = sortiert.slice(0, HERKUNFT_MAX).map(([e, l]) => bau(e, l));
+  const rest = sortiert.slice(HERKUNFT_MAX);
+  if (rest.length > 0) {
+    aus.push(bau(`weitere (${rest.length} Etiketten)`, rest.reduce<Lage>((a, [, l]) => ({
+      anzahl: a.anzahl + l.anzahl,
+      summe: a.summe + l.summe,
+      von: aelter(a.von, l.von),
+      bis: juenger(a.bis, l.bis),
+    }), leer)));
+  }
+  return aus;
+}
+
 export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefined): EwErgebnis {
   const alle = Array.isArray(zeilen) ? zeilen : [];
   const leer: EwErgebnis = {
@@ -170,12 +273,13 @@ export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefi
     breakevenAnteil: null,
     avgGewinn: null, avgVerlust: null, rr: null, breakevenQuote: null,
     erwartungswert: null, erwartungswertEntschieden: null, summePnl: 0,
-    breakevenHerkunft: [],
+    breakevenHerkunft: [], gewinnHerkunft: [], verlustHerkunft: [],
+    zuletztEntschieden: null,
     belastbar: false, grund: "",
   };
 
   let ohneErgebnis = 0, rekonstruiert = 0, unlesbar = 0;
-  const gewertet: Array<{ pnl: number; herkunft: string }> = [];
+  const gewertet: Array<{ pnl: number; herkunft: string; datum: string | null }> = [];
 
   for (const z of alle) {
     const m = notizen(z?.notes ?? null);
@@ -192,32 +296,39 @@ export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefi
     const pnl = typeof z?.profitLoss === "number" && Number.isFinite(z.profitLoss)
       ? z.profitLoss : null;
     if (pnl === null) { unlesbar++; continue; }
-    gewertet.push({ pnl, herkunft: `${etikett(z?.result) || "—"}/${grund || "—"}` });
+    gewertet.push({
+      pnl,
+      herkunft: `${etikett(z?.result) || "—"}/${grund || "—"}`,
+      datum: tag(z?.updatedAt),
+    });
   }
 
   const werte = gewertet.map((g) => g.pnl);
   // Die ungerundete Summe trägt die Rechnung; gerundet wird erst zur Ausgabe.
   const roh = werte.reduce((a, b) => a + b, 0);
   const summePnl = Number(roh.toFixed(2));
-  const wins = werte.filter((p) => p > BREAKEVEN_GRENZE);
-  const losses = werte.filter((p) => p < -BREAKEVEN_GRENZE);
+  const winZeilen = gewertet.filter((g) => g.pnl > BREAKEVEN_GRENZE);
+  const lossZeilen = gewertet.filter((g) => g.pnl < -BREAKEVEN_GRENZE);
   const beZeilen = gewertet.filter((g) => Math.abs(g.pnl) <= BREAKEVEN_GRENZE);
+  const wins = winZeilen.map((g) => g.pnl);
+  const losses = lossZeilen.map((g) => g.pnl);
 
-  // Woher die Breakeven stammen. Ein echter Breakeven und eine Zeile, deren
-  // P&L nie geschrieben wurde, sind an der ZAHL nicht zu unterscheiden —
-  // am Etikett schon.
-  const zaehler = new Map<string, number>();
-  for (const g of beZeilen) zaehler.set(g.herkunft, (zaehler.get(g.herkunft) ?? 0) + 1);
-  const sortiert = [...zaehler.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const breakevenHerkunft: EwHerkunft[] = sortiert.slice(0, HERKUNFT_MAX)
-    .map(([e, anzahl]) => ({ etikett: e, anzahl }));
-  const restEtiketten = sortiert.slice(HERKUNFT_MAX);
-  if (restEtiketten.length > 0) {
-    breakevenHerkunft.push({
-      etikett: `weitere (${restEtiketten.length} Etiketten)`,
-      anzahl: restEtiketten.reduce((a, [, n]) => a + n, 0),
-    });
-  }
+  // Dreimal DIESELBE Gruppierung — aus einer Funktion, nicht dreimal gebaut.
+  //
+  // Breakeven: ein echter Breakeven und eine Zeile, deren P&L nie geschrieben
+  // wurde, sind an der ZAHL nicht zu unterscheiden — am Etikett schon.
+  //
+  // Gewinner/Verlierer: der Einstieg verlangt R/R ≥ 1.5. Woran die Gewinner
+  // tatsächlich enden — und mit welchem Ø — ist die Frage, ohne die sich über
+  // die Ausstiegsschwellen nicht entscheiden lässt.
+  const breakevenHerkunft = herkunftListe(beZeilen);
+  const gewinnHerkunft = herkunftListe(winZeilen);
+  const verlustHerkunft = herkunftListe(lossZeilen);
+
+  // Der Massstab: bis wann liefen die Trades MIT echtem Ergebnis?
+  const zuletztEntschieden = gewertet
+    .filter((g) => Math.abs(g.pnl) > BREAKEVEN_GRENZE && g.datum !== null)
+    .reduce<string | null>((a, g) => (a === null || (g.datum as string) > a ? g.datum : a), null);
 
   const entschieden = wins.length + losses.length;
   const basis: EwErgebnis = {
@@ -225,7 +336,7 @@ export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefi
     ohneErgebnis, rekonstruiert, unlesbar,
     gewertet: gewertet.length,
     wins: wins.length, losses: losses.length, breakeven: beZeilen.length, entschieden,
-    summePnl, breakevenHerkunft,
+    summePnl, breakevenHerkunft, gewinnHerkunft, verlustHerkunft, zuletztEntschieden,
   };
 
   if (gewertet.length < MIN_TRADES) {
@@ -275,6 +386,14 @@ export function erwartungswert(zeilen: ReadonlyArray<TradeZeile> | null | undefi
  */
 export function erwartungswertText(e: EwErgebnis): string {
   const z: string[] = ["📊 <b>Erwartungswert</b>", ""];
+  // EINE Zeilenform für alle drei Aufschlüsselungen. Drei Kopien wären drei
+  // Stellen, an denen eine davon still ihre Spanne oder ihren Ø verliert.
+  const herkunftZeile = (h: EwHerkunft): string => {
+    const sp = h.von === null || h.bis === null ? "ohne Datum"
+      : h.von === h.bis ? h.von : `${h.von} … ${h.bis}`;
+    const s = h.schnitt === null ? "" : ` · Ø ${h.schnitt}`;
+    return `  ${h.etikett}: <b>${h.anzahl}</b>${s}  (${sp})`;
+  };
   z.push(`Geschlossene Zeilen: <b>${e.gesamt}</b>`);
   if (e.ohneErgebnis > 0) z.push(`  ohne Ergebnis (KEIN_PNL/NIE_BESTAETIGT): ${e.ohneErgebnis}`);
   if (e.unlesbar > 0) z.push(`  unlesbar/ohne P&L: ${e.unlesbar}`);
@@ -320,6 +439,26 @@ export function erwartungswertText(e: EwErgebnis): string {
     z.push(`Dafuer noetige Trefferquote: <b>${e.breakevenQuote} %</b> (der entschiedenen)`);
   }
 
+  // WORAN DIE TRADES ENDEN.
+  //
+  // Der Einstieg verlangt R/R ≥ 1.5 (`ai-analysis-engine.ts:911`). Liegt das
+  // REALISIERTE R/R darunter, muss der Unterschied beim Ausstieg entstehen —
+  // und diese Aufschlüsselung sagt, bei welchem. Der Ø je Etikett ist dabei
+  // die eigentliche Spalte: ein Ausstieg, der im Schnitt einen Bruchteil des
+  // Ziels bringt, erklärt die Lücke, ein Etikett ohne Ø erklärt nichts.
+  if (e.gewinnHerkunft.length > 0 || e.verlustHerkunft.length > 0) {
+    z.push("");
+    z.push("<b>Woran die Trades enden</b> (result/exitReason · Ø P&L):");
+    if (e.gewinnHerkunft.length > 0) {
+      z.push(`Gewinner (${e.wins}):`);
+      for (const h of e.gewinnHerkunft) z.push(herkunftZeile(h));
+    }
+    if (e.verlustHerkunft.length > 0) {
+      z.push(`Verlierer (${e.losses}):`);
+      for (const h of e.verlustHerkunft) z.push(herkunftZeile(h));
+    }
+  }
+
   // Die Breakeven-Herkunft. Bei einem hohen Anteil ist sie die wichtigste
   // Zeile der ganzen Antwort: eine Zeile, deren P&L nie geschrieben wurde,
   // steht wegen `Float @default(0)` auf exakt 0 und sieht aus wie ein
@@ -327,8 +466,13 @@ export function erwartungswertText(e: EwErgebnis): string {
   if (e.breakeven > 0 && (e.breakevenAnteil ?? 0) >= BE_ANTEIL_WARNUNG) {
     z.push("");
     z.push(`⚠️ <b>${e.breakevenAnteil} % der gewerteten Zeilen sind Breakeven.</b>`);
-    z.push("Herkunft (result/exitReason):");
-    for (const h of e.breakevenHerkunft) z.push(`  ${h.etikett}: ${h.anzahl}`);
+    z.push("Herkunft (result/exitReason) — mit Zeitspanne:");
+    for (const h of e.breakevenHerkunft) z.push(herkunftZeile(h));
+    if (e.zuletztEntschieden !== null) {
+      z.push(`Zum Vergleich — letzter Trade MIT Ergebnis: <b>${e.zuletztEntschieden}</b>.`);
+      z.push("Endet ein Etikett lange davor, ist es Altbestand. Reicht es bis");
+      z.push("dorthin, wird es HEUTE noch erzeugt.");
+    }
     z.push("Ist darunter ein Etikett ohne echten Schlusskurs, wurde dort nie ein");
     z.push("P&L geschrieben — dann ist der Wert oben zu GUT, nicht zu schlecht.");
   }

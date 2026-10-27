@@ -44,12 +44,57 @@ const SYSTEM_BEFEHLE = [
   "/help — Alle Befehle",
 ].join("\n");
 
+/**
+ * Antwort an Telegram — MIT Auswertung (26.10.).
+ *
+ * Bis heute stand hier nur `.catch(() => {})`: kein Status, kein
+ * Antwortkörper. Telegram lehnt einen Versand mit **HTTP 200** und
+ * `{ok:false, description:"…"}` ab — eine zu lange Nachricht, ein kaputtes
+ * HTML-Tag, eine Drosselung. Der Befehl verpuffte dann **spurlos**, und im
+ * Log stand nichts.
+ *
+ * Das ist dieselbe Fehlerklasse, die am 25.10. für `sendTelegram` behoben
+ * wurde (`d47b772`) — aber `reply` ist die **eigene** Funktion des Webhooks
+ * und war nie erfasst. Durch sie geht **jede** Antwort: `/status`,
+ * `/killswitch`, `/reset`, `/peakreset`, `/edge`.
+ *
+ * Gemeldet wird ins **Konsolen-Log**, nicht nach Telegram: der Kanal ist ja
+ * gerade der defekte. Und der GRUND steht in `description` — ihn
+ * wegzuwerfen hiesse, ihn später raten zu müssen.
+ *
+ * Die Rückgabe bleibt bewusst `void`. Ein `boolean`, den keiner der
+ * Aufrufer liest, wäre genau der Fehler vom 25.10. in neuer Verpackung —
+ * die Logzeile IST die Auswertung.
+ */
 async function reply(chatId: number, text: string): Promise<void> {
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
-  }).catch(() => {});
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+    const roh = await res.text().catch(() => "");
+    let grund = "";
+    if (!roh) {
+      grund = `HTTP ${res.status} — leere Antwort`;
+    } else {
+      try {
+        const d = JSON.parse(roh) as { ok?: boolean; description?: string; error_code?: number };
+        if (d.ok !== true) {
+          grund = `${d.error_code ?? res.status} ${d.description ?? "ok=false"}`.trim();
+        }
+      } catch {
+        grund = `HTTP ${res.status} — Antwort unlesbar: ${roh.slice(0, 200)}`;
+      }
+    }
+    if (grund) {
+      console.error(`[telegram-webhook] ❌ Antwort NICHT zugestellt `
+        + `(${text.length} Zeichen): ${grund} — der Befehl verpufft sonst spurlos.`);
+    }
+  } catch (e) {
+    console.error(`[telegram-webhook] ❌ Antwort NICHT zugestellt `
+      + `(${text.length} Zeichen): ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 async function executeFullShutdown(name: string): Promise<string[]> {
@@ -503,7 +548,9 @@ ${SYSTEM_BEFEHLE}`
           // geschrieben wurde, steht wegen `Float @default(0)` auf exakt 0
           // und ist von einem echten Breakeven an der Zahl allein nicht zu
           // unterscheiden. Am Etikett schon.
-          select: { profitLoss: true, notes: true, result: true },
+          // `updatedAt` beantwortet die Frage, wegen der es die Herkunft gibt:
+          // wird ein Etikett HEUTE noch erzeugt, oder ist es Altbestand?
+          select: { profitLoss: true, notes: true, result: true, updatedAt: true },
         });
         await reply(chatId, erwartungswertText(erwartungswert(zeilen)));
       } catch (e) {

@@ -1473,19 +1473,157 @@ wird **kein** Erwartungswert ausgegeben, sondern der Grund. Zehn Trades, wie
 anderswo üblich, sind zu wenig — dort verschiebt ein einziger Ausreisser die
 Trefferquote um zehn Punkte.
 
+### Die Anzahl allein sagt nicht, ob der Fehler noch lebt
+
+Der erste aufgeschlüsselte Lauf ergab: **510 der 517 Breakeven (98.6 %) haben
+gar keinen `exitReason`** — `BREAKEVEN/—` (441) und `CLOSED/—` (69). Nur 7
+tragen einen echten Grund.
+
+Im Code steht, woher das kommt (`capital-trade-tracker.ts:292–302`):
+`sync-journal` schrieb *„status CLOSED und result 'CLOSED' ohne P&L und ohne
+Grund"* — **bis zum 17.08.**, nachgewiesen am Wochen-Report vom 16.08.
+
+**Ein Kommentar ist aber kein Beleg dafür, wann diese Zeilen entstanden
+sind.** Deshalb trägt jede Herkunftszeile jetzt ihre **Zeitspanne**, und
+daneben steht der Massstab: das Datum des **letzten Trades mit Ergebnis**.
+Endet ein Etikett lange davor, ist es Altbestand; reicht es bis dorthin, wird
+es heute noch erzeugt. Ohne diesen Vergleich ist beides nicht zu
+unterscheiden.
+
+**Ein fehlendes Datum wird dabei NICHT zu „heute"** (`tag()` gibt `null`).
+Dieselbe Regel wie beim Kurs-Alter am 22.09.: eine stille Ersatzzahl macht aus
+„unbekannt" eine Messung — und hier hinge daran die Frage, ob ein Fehler noch
+aktiv ist.
+
+### Woran die Gewinner enden — die Frage vor jeder Schwellen-Änderung
+
+Der Einstieg verlangt **R/R ≥ 1.5** (`ai-analysis-engine.ts:911`). Gemessen
+wurde am 26.10. ein **realisiertes R/R von 0.75** — Ø Gewinn 11.47 gegen Ø
+Verlust 15.21. Faktor 2.
+
+Die Kette dazu steht vollständig im Code, jeder Schritt belegt:
+
+| | Beleg |
+|---|---|
+| Stop ist 1.5 × ATR, schwankt um **Faktor 17.6** je Markt | `risk-agent.ts:297–305` |
+| Teilgewinn feuert bei **festem Kursprozent** (DAYTRADING 1.0 %) | `risk-agent.ts:98`, `:626` |
+| „In **29 von 30** Märkten greift die Absicherung, bevor der Trade seinen eigenen Einsatz verdient hat — auf UKOIL bei **0,12 R**" | gemessen 10.08., `risk-agent.ts:307` |
+| Der Gegenschalter `exitThresholdsRelativeToStop` ist **AUS** | `settings-store.ts:51` **und** im Snapshot |
+
+Die R-Werte (`partialAtR: 1.5`) sind konfiguriert und werden **nicht benutzt**.
+
+**Das ist eine Erklärung, keine Messung.** Deshalb schlüsselt `/edge` jetzt
+auch die **Gewinner und Verlierer** nach `result/exitReason` auf — **mit Ø
+P&L je Etikett**. Die Anzahl allein sagt nicht, wie viel ein Ausstieg kostet.
+Erst wenn dort steht, dass der Grossteil der Gewinner an einem Teilgewinn
+statt am Ziel endet und dabei einen Bruchteil bringt, ist die Kette
+geschlossen — vorher wird an den Schwellen nichts geändert.
+
+Breakeven, Gewinner und Verlierer gehen durch **dieselbe** Funktion
+(`herkunftListe()`). Drei Kopien wären drei Stellen, an denen sie
+auseinanderlaufen.
+
 ### Absicherung
 
-`safety-nets` **rechnet** das (477 → **517** Prüfungen), und zwar mit der
+`safety-nets` **rechnet** das (477 → **544** Prüfungen), unter anderem mit der
 **echten Live-Lage** vom 26.10. als Testfall: 845 Zeilen, 814 gewertet,
 101W/196L/**517BE**, Ergebnis −2.24. Dazu die **Verdrahtung**: die Route muss
-`result` mitschicken, sonst wäre die Herkunft dauerhaft `—/—` und sähe dabei
-wie ein ehrliches Ergebnis aus — Fehlerklasse 30.09., eine geprüfte Funktion,
-die nie echte Werte bekommt. Der `/edge`-Block wird dafür per Klammerzählung
-ausgeschnitten; ein `result: true` irgendwo sonst in der Datei beweist nichts.
+`result` **und** `updatedAt` mitschicken, sonst wäre die Herkunft dauerhaft
+`—/—` bzw. „ohne Datum" und sähe dabei wie ein ehrliches Ergebnis aus —
+Fehlerklasse 30.09., eine geprüfte Funktion, die nie echte Werte bekommt. Der
+`/edge`-Block wird per Klammerzählung ausgeschnitten; ein `result: true`
+irgendwo sonst in der Datei beweist nichts.
 
-**25 von 25 Sabotagen.** Die erste stellt die alte Formel wieder her und wird
+**53 von 53 Sabotagen.** Die erste stellt die alte Formel wieder her und wird
 rot — das ist der eigentliche Nachweis, denn genau diese Fassung war einen Tag
 lang grün.
+
+#### Drei Sabotagen entwischten zuerst — an zu braven Testdaten
+
+Nicht der Prüfer war zu schwach, sondern **seine Daten konnten den Fehler gar
+nicht ausdrücken** — dieselbe Falle wie `[RSI 82]` am 30.09.:
+
+- alle Gewinner hatten **dasselbe** Datum → „älteste statt neueste" fiel nicht auf;
+- keine Breakeven-Zeile war **neuer** als der neueste Gewinner → „Massstab
+  nimmt Breakeven mit" fiel nicht auf;
+- kein Etikett hatte **unsortierte** Daten mit einer **Lücke mittendrin** →
+  „der letzte gewinnt" traf zufällig das Richtige, und ein `null` löschte die
+  Spanne unbemerkt.
+
+Nach der Nachbesserung: alle drei rot. Die Testdaten sind seitdem **absichtlich
+unbequem**, und der Grund steht im Prüfer.
+
+**Die vierte war kein Prüferloch, sondern eine wirkungslose Sabotage.** Die
+`v instanceof Date`-Abzweigung lässt sich nicht sabotieren: ausgeführt und
+belegt, `new Date(v)`, `new Date(Number(v))`, `new Date(String(v))` und
+`new Date(v.getTime())` liefern **alle vier** dasselbe Ergebnis — JS nimmt ein
+`Date` in jeder Form an. Sie als „entwischt" zu zählen wäre ein Messfehler
+gewesen, kein Befund. Ersetzt durch eine wirksame: `String(v).slice(0,10)`
+ergibt `"Wed Sep 16"`.
+
+### Und die Länge wurde gemessen, nicht geschätzt
+
+Mit drei Aufschlüsselungen stellte sich die Frage, ob die Antwort Telegrams
+Grenze von **4096 Zeichen** reisst. Gemessen: die echte Lage ergibt **1664**
+Zeichen, ein bewusst konstruierter Härtefall mit überlangen Etiketten **2900**.
+
+**Also wurde kein Stückeln gebaut.** Meine eigene Erwartung („der Härtefall
+passt nicht mehr") wurde von der Messung widerlegt, und eine Mechanik zu
+bauen, die nachweislich nie greift, wäre Arbeit auf Verdacht.
+
+### `reply()` im Webhook war stumm — jeder Befehl, nicht nur /edge
+
+Dabei fiel der eigentliche Fund auf. In `webhook/route.ts` stand:
+
+```ts
+await fetch(…).catch(() => {});   // kein Status, kein Antwortkoerper
+```
+
+Telegram lehnt einen Versand mit **HTTP 200** und `{ok:false, description}`
+ab — zu lange Nachricht, kaputtes HTML, Drosselung. Der Befehl verpuffte dann
+**spurlos**, und im Log stand nichts. Betroffen ist **jede** Antwort des Bots:
+`/status`, `/killswitch`, `/reset`, `/peakreset`, `/edge`.
+
+Das ist exakt die Fehlerklasse, die am 25.10. für `sendTelegram` behoben wurde
+(`d47b772`) — **aber `reply` ist die eigene Funktion des Webhooks und war nie
+erfasst.** Ein Fix an einer Stelle beantwortet nicht, wo die Klasse sonst noch
+steckt.
+
+Jetzt wird Status **und** Körper ausgewertet, der Grund steht in der Meldung,
+und sie geht ins **Konsolen-Log** — nicht nach Telegram, der Kanal ist ja der
+defekte. **Die Rückgabe bleibt `void`**, mit Absicht: ein `boolean`, den keiner
+der Aufrufer liest, wäre genau der Fehler vom 25.10. in neuer Verpackung.
+
+Geprüft wird **ausgeführt**: die echte `POST`-Funktion gegen einen `fetch`, der
+Ablehnung, unlesbare Antwort, leere Antwort und Netzfehler spielt, mit
+gezählten Konsolenausgaben — dazu die **Gegenprobe**, dass ein *gelungener*
+Versand **nicht** meldet. Ohne sie wäre eine Prüfung grün, die bei jeder
+Antwort Alarm schlägt.
+
+**Noch offen:** `sendTelegram` wertet die Antwort seit dem 25.10. aus, **kennt
+aber keine Längengrenze**. Eine Tagesbilanz über 4096 Zeichen käme nicht an —
+immerhin mit Logzeile. Nicht geändert, weil nicht gemessen.
+
+### Nebenbei belegt: der Prisma-Client ist programmweit `any`
+
+`app/lib/prisma.ts` holt den Client per `require("@prisma/client")`. Ein
+`require` in TypeScript ergibt `any`, `InstanceType<typeof any>` ist `any` —
+**jede** Datenbankabfrage im Programm ist untypisiert.
+
+Ausgeführt belegt, zwei Stufen: `select: { resultXX: true }` ergibt
+`npx tsc --noEmit` **exit 0**, und sogar
+`getPrisma().gibtEsNichtModell.findMany(…)` ergibt **exit 0**. Nicht einmal
+ein nicht existierendes **Modell** fällt auf. Die generierten Typen sind in
+Ordnung (`TradeSelect` kennt `result?: boolean`) — sie werden nur nirgends
+angewendet.
+
+**Folge:** ein Tippfehler in einem `where`, `select` oder `data` ist still.
+Auf `/edge` ist die `safety-nets`-Verdrahtungsprüfung deshalb der **einzige**
+Schutz, nicht `tsc`.
+
+**Nicht geändert:** `require` → `import` würde auf einen Schlag jede
+Prisma-Abfrage typisieren und möglicherweise viele bestehende Fehler sichtbar
+machen. Das ist eine eigene, bewusste Entscheidung.
 
 ## Ohne Kurs wird nicht gehandelt
 

@@ -1389,9 +1389,18 @@ module.exports = async function pruefe() {
           process.env.TELEGRAM_CHAT_ID = chat;
           process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
           process.env.KILLSWITCH_PASSWORD = pw;
+          // Der falsche fetch muss sich wie der ECHTE verhalten: Telegram
+          // antwortet mit einem JSON-Koerper, den `reply()` seit dem 26.10.
+          // ueber `res.text()` liest. Ein Stellvertreter ohne `text()` wuerde
+          // den Pruefstand gegen etwas laufen lassen, das es nicht gibt.
+          const okAntwort = () => ({
+            ok: true, status: 200,
+            text: async () => JSON.stringify({ ok: true, result: {} }),
+            json: async () => ({ ok: true }),
+          });
           global.fetch = async (_u, init) => {
             antworten.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
-            return { ok: true, json: async () => ({ ok: true }) };
+            return okAntwort();
           };
           const wh = ladeTsModul("app/api/telegram/webhook/route.ts", {
             "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
@@ -1453,6 +1462,78 @@ module.exports = async function pruefe() {
               alarme.some((a) => /ZURÜCKGESETZT/.test(a))
               || /zurückgesetzt/i.test(antworten.at(-1) ?? ""),
               (antworten.at(-1) ?? "").slice(0, 60));
+
+            // ── reply() DARF EINEN FEHLSCHLAG NICHT VERSCHLUCKEN (26.10.) ──
+            //
+            // Bis heute stand dort `.catch(() => {})` und sonst nichts.
+            // Telegram lehnt mit HTTP 200 und `{ok:false, description}` ab —
+            // der Befehl verpuffte spurlos. Dieselbe Fehlerklasse wie bei
+            // `sendTelegram` am 25.10., nur in der eigenen Funktion des
+            // Webhooks, durch die JEDE Antwort geht.
+            //
+            // Geprueft wird AUSGEFUEHRT: der echte POST gegen einen fetch,
+            // der die Ablehnung spielt, und die Konsolenausgabe wird gezaehlt.
+            // Ein Regex auf den Quelltext koennte nicht zeigen, ob die Meldung
+            // im richtigen Zweig steht.
+            const altErr = console.error;
+            const meldungen = [];
+            const faelle = [
+              ["abgelehnt (ok:false)", async () => ({
+                ok: true, status: 200,
+                text: async () => JSON.stringify({
+                  ok: false, error_code: 400, description: "message is too long" }),
+              })],
+              ["unlesbare Antwort", async () => ({
+                ok: true, status: 200, text: async () => "<html>kaputt</html>" })],
+              ["leere Antwort", async () => ({
+                ok: false, status: 502, text: async () => "" })],
+              ["Netzfehler", async () => { throw new Error("ECONNRESET"); }],
+            ];
+            for (const [name, antwort] of faelle) {
+              meldungen.length = 0;
+              console.error = (...a) => { meldungen.push(a.join(" ")); };
+              try {
+                global.fetch = async (_u, init) => {
+                  if (init) JSON.parse(String(init.body ?? "{}"));
+                  return antwort();
+                };
+                await schicke("/status");
+              } finally { console.error = altErr; }
+              torPruefung(`reply() verschluckt einen Fehlschlag: ${name} — `
+                + "der Befehl verpufft dann spurlos",
+                meldungen.some((m) => /NICHT zugestellt/.test(m)),
+                `${meldungen.length} Meldungen: ${meldungen.join(" | ").slice(0, 90)}`);
+            }
+            // Der GRUND muss drinstehen, nicht nur "fehlgeschlagen".
+            meldungen.length = 0;
+            console.error = (...a) => { meldungen.push(a.join(" ")); };
+            try {
+              global.fetch = async () => ({
+                ok: true, status: 200,
+                text: async () => JSON.stringify({
+                  ok: false, error_code: 429, description: "Too Many Requests: retry after 30" }),
+              });
+              await schicke("/status");
+            } finally { console.error = altErr; }
+            torPruefung("die Meldung nennt den GRUND nicht — sonst muss man ihn "
+              + "spaeter raten",
+              meldungen.some((m) => /Too Many Requests/.test(m) && /429/.test(m)),
+              meldungen.join(" | ").slice(0, 120));
+
+            // GEGENPROBE: ein GELUNGENER Versand darf NICHT melden. Ohne sie
+            // waere eine Pruefung gruen, die bei jeder Antwort Alarm schlaegt.
+            meldungen.length = 0;
+            console.error = (...a) => { meldungen.push(a.join(" ")); };
+            try {
+              global.fetch = async (_u, init) => {
+                antworten.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+                return okAntwort();
+              };
+              await schicke("/status");
+            } finally { console.error = altErr; }
+            torPruefung("ein GELUNGENER Versand meldet einen Fehlschlag",
+              !meldungen.some((m) => /NICHT zugestellt/.test(m)),
+              meldungen.join(" | ").slice(0, 120));
           }
         } finally {
           global.fetch = altFetch;
@@ -3536,6 +3617,153 @@ module.exports = async function pruefe() {
               + "Ergebnis' und liest sich als Teilmenge ('33 von 31')",
               iGew >= 0 && iRek >= 0 && iRek > iGew, `gewertet@${iGew} rek@${iRek}`);
 
+            // ── Die ZEITSPANNE je Etikett (26.10., 2. Runde) ──────────────
+            //
+            // Die Anzahl allein beantwortet die Frage nicht, wegen der es die
+            // Aufschluesselung gibt: *wird das heute noch erzeugt?* Der echte
+            // Lauf zeigte 441 BREAKEVEN/— und 69 CLOSED/— — beide Etiketten
+            // schrieb `sync-journal` laut Kommentar nur BIS zum 17.08. Ein
+            // Kommentar ist aber kein Beleg; das Datum ist einer.
+            const zd = (pnl, result, updatedAt, extra = {}) =>
+              ({ profitLoss: pnl, notes: JSON.stringify(extra), result, updatedAt });
+            // DIE TESTDATEN SIND ABSICHTLICH UNBEQUEM (26.10., nachgebessert).
+            //
+            // Die erste Fassung war zu brav, und DREI Sabotagen rutschten
+            // durch, OHNE dass der Pruefer etwas davon merkte — dieselbe Falle
+            // wie `[RSI 82]` am 30.09.: ein Testfall, der den Fehler gar nicht
+            // ausdruecken KANN. Was jetzt anders ist:
+            //
+            //  - die Gewinner haben VERSCHIEDENE Daten (07-01 / 09-01 / 10-20),
+            //    sonst sind aelteste und neueste gleich und ein gedrehter
+            //    Vergleich faellt nicht auf;
+            //  - ein Breakeven ist NEUER (10-25) als der neueste Gewinner,
+            //    sonst merkt niemand, wenn der Massstab Breakeven mitnimmt;
+            //  - ein Etikett hat UNSORTIERTE Daten UND eine Zeile ohne Datum
+            //    mittendrin, sonst traegt "der letzte gewinnt" zufaellig das
+            //    richtige Ergebnis und ein null loescht die Spanne unbemerkt.
+            const mitDatum = f([
+              ...Array.from({ length: 28 }, () => zd(10, "WIN", "2026-09-01T10:00:00Z")),
+              zd(10, "WIN", "2026-10-20T10:00:00Z"),   // neuester entschiedener
+              zd(10, "WIN", "2026-07-01T10:00:00Z"),   // aeltester entschiedener
+              zd(0, "ALT", "2026-08-05T10:00:00Z"),
+              zd(0, "ALT", "2026-08-01T10:00:00Z"),
+              zd(0, "ALT", "2026-08-03T10:00:00Z"),
+              zd(0, "ALT", null),                      // Luecke MITTENDRIN
+              zd(0, "ALT", "2026-08-02T10:00:00Z"),
+              // NEUER als jeder Gewinner — der Massstab darf ihn NICHT nehmen
+              ...Array.from({ length: 3 }, () => zd(0, "NEU", "2026-10-25T10:00:00Z")),
+              zd(0, "OHNE", null),
+            ]);
+            const hol = (name) => mitDatum.breakevenHerkunft.find((h) => h.etikett === name);
+            torPruefung("der Massstab fehlt: bis wann liefen Trades MIT Ergebnis "
+              + "(2026-10-20; 10-25 waere ein Breakeven, 07-01 der aelteste)",
+              mitDatum.zuletztEntschieden === "2026-10-20",
+              String(mitDatum.zuletztEntschieden));
+            torPruefung("ein Etikett nennt seine Zeitspanne nicht — damit ist "
+              + "Altbestand von einem laufenden Fehler nicht zu unterscheiden",
+              hol("ALT/—")?.von === "2026-08-01" && hol("ALT/—")?.bis === "2026-08-05",
+              JSON.stringify(hol("ALT/—")));
+            torPruefung("eine Spanne aus einem einzigen Tag wird falsch gebildet",
+              hol("NEU/—")?.von === "2026-10-25" && hol("NEU/—")?.bis === "2026-10-25"
+              && hol("NEU/—")?.anzahl === 3,
+              JSON.stringify(hol("NEU/—")));
+            // DER KERN dieser Runde: ein fehlendes Datum wird NICHT zu "heute".
+            // Dieselbe Regel wie beim Kurs-Alter am 22.09. — eine stille
+            // Ersatzzahl macht aus "unbekannt" eine Messung, und hier haengt
+            // daran die Frage, ob ein Fehler noch aktiv ist.
+            torPruefung("eine Zeile OHNE Datum bekommt ein erfundenes",
+              hol("OHNE/—")?.von === null && hol("OHNE/—")?.bis === null,
+              JSON.stringify(hol("OHNE/—")));
+            const tagF = ew.exports?.tag;
+            torPruefung("tag() ist nicht pruefbar exportiert", typeof tagF === "function");
+            if (typeof tagF === "function") {
+              torPruefung("tag() macht aus einem unlesbaren Datum kein gueltiges",
+                tagF("nicht-ein-datum") === null && tagF("") === null
+                && tagF(null) === null && tagF(undefined) === null,
+                `${tagF("nicht-ein-datum")} / ${tagF("")}`);
+              torPruefung("tag() verarbeitet kein echtes Date-Objekt — Prisma "
+                + "liefert genau das",
+                tagF(new Date("2026-09-15T23:30:00Z")) === "2026-09-15",
+                String(tagF(new Date("2026-09-15T23:30:00Z"))));
+            }
+            const tDatum = txt(mitDatum);
+            torPruefung("die Zeitspanne steht nicht in der Antwort",
+              /2026-08-01 … 2026-08-05/.test(tDatum), tDatum.slice(-260));
+            torPruefung("eine Zeile ohne Datum wird in der Antwort nicht als "
+              + "'ohne Datum' kenntlich gemacht",
+              /ohne Datum/.test(tDatum), tDatum.slice(-260));
+            torPruefung("der Vergleichsmassstab fehlt in der Antwort",
+              /letzter Trade MIT Ergebnis: <b>2026-10-20<\/b>/.test(tDatum),
+              tDatum.slice(-260));
+
+            // ── WORAN DIE TRADES ENDEN (26.10., 3. Runde) ─────────────────
+            //
+            // Der Einstieg verlangt R/R >= 1.5 (ai-analysis-engine.ts:911),
+            // der echte Lauf meldete ein REALISIERTES R/R von 0.75. Die
+            // Luecke muss beim Ausstieg entstehen — diese Aufschluesselung
+            // sagt, bei welchem. Der Oe je Etikett ist die eigentliche
+            // Spalte: ein Ausstieg, der im Schnitt einen Bruchteil des Ziels
+            // bringt, erklaert die Luecke; eine blosse Anzahl erklaert nichts.
+            const ende = f([
+              ...Array.from({ length: 10 }, () =>
+                zd(30, "WIN", "2026-10-01T10:00:00Z", { exitReason: "ZIEL" })),
+              ...Array.from({ length: 20 }, () =>
+                zd(6, "WIN", "2026-10-02T10:00:00Z", { exitReason: "PARTIAL_TP" })),
+              ...Array.from({ length: 15 }, () =>
+                zd(-20, "LOSS", "2026-10-03T10:00:00Z", { exitReason: "STOP" })),
+            ]);
+            torPruefung("die Gewinner werden nicht nach Ausstiegsgrund "
+              + "aufgeschluesselt — dann bleibt offen, woran sie enden",
+              ende.gewinnHerkunft[0]?.etikett === "WIN/PARTIAL_TP"
+              && ende.gewinnHerkunft[0]?.anzahl === 20
+              && ende.gewinnHerkunft[1]?.etikett === "WIN/ZIEL",
+              JSON.stringify(ende.gewinnHerkunft));
+            torPruefung("der Oe P&L je Etikett fehlt — die Anzahl allein sagt "
+              + "nicht, wie viel ein Ausstieg kostet",
+              ende.gewinnHerkunft[0]?.schnitt === 6
+              && ende.gewinnHerkunft[1]?.schnitt === 30,
+              JSON.stringify(ende.gewinnHerkunft.map((h) => h.schnitt)));
+            torPruefung("die Verlierer werden nicht aufgeschluesselt — ohne "
+              + "sie fehlt der Vergleich",
+              ende.verlustHerkunft[0]?.etikett === "LOSS/STOP"
+              && ende.verlustHerkunft[0]?.anzahl === 15
+              && ende.verlustHerkunft[0]?.schnitt === -20,
+              JSON.stringify(ende.verlustHerkunft));
+            torPruefung("Gewinner und Verlierer landen im selben Topf",
+              ende.gewinnHerkunft.every((h) => (h.schnitt ?? 0) > 0)
+              && ende.verlustHerkunft.every((h) => (h.schnitt ?? 0) < 0)
+              && ende.wins === 30 && ende.losses === 15,
+              `W=${ende.wins} L=${ende.losses}`);
+            const tEnde = txt(ende);
+            torPruefung("die Aufschluesselung steht nicht in der Antwort",
+              /Woran die Trades enden/.test(tEnde) && /Gewinner \(30\)/.test(tEnde)
+              && /Verlierer \(15\)/.test(tEnde), tEnde.slice(-320));
+            torPruefung("der Oe steht nicht in der Antwort",
+              /Ø 6\b/.test(tEnde) && /Ø 30\b/.test(tEnde), tEnde.slice(-320));
+
+            // Die Gruppierung selbst — direkt aufgerufen. EIN Weg fuer
+            // Breakeven, Gewinner und Verlierer; drei Kopien waeren drei
+            // Stellen, an denen sie auseinanderlaufen koennen.
+            const hl = ew.exports?.herkunftListe;
+            const maxH = ew.exports?.HERKUNFT_MAX;
+            torPruefung("herkunftListe ist nicht pruefbar exportiert",
+              typeof hl === "function");
+            if (typeof hl === "function") {
+              torPruefung("herkunftListe wirft bei leerer Eingabe",
+                Array.isArray(hl([])) && hl([]).length === 0);
+              const v2 = hl(Array.from({ length: maxH + 4 }, (_, i) =>
+                ({ pnl: i + 1, herkunft: `E${i}`, datum: null })));
+              torPruefung("beim Buendeln gehen Zeilen verloren",
+                v2.reduce((a, h) => a + h.anzahl, 0) === maxH + 4
+                && v2.length === maxH + 1,
+                `${v2.reduce((a, h) => a + h.anzahl, 0)} Zeilen in ${v2.length} Eintraegen`);
+              torPruefung("der Oe wird bei gemischten Vorzeichen falsch gemittelt",
+                hl([{ pnl: 10, herkunft: "X", datum: null },
+                  { pnl: -4, herkunft: "X", datum: null }])[0]?.schnitt === 3,
+                String(hl([{ pnl: 10, herkunft: "X", datum: null },
+                  { pnl: -4, herkunft: "X", datum: null }])[0]?.schnitt));
+            }
+
             // Fehlt `result`, wird nichts erfunden.
             const ohneResult = f([...viele(20, 10), ...viele(10, 0)]);
             torPruefung("eine fehlende result-Spalte wird geraten statt als "
@@ -3630,6 +3858,11 @@ module.exports = async function pruefe() {
             + "wie ein ehrliches Ergebnis aus",
             /\bresult:\s*true\b/.test(edgeBlock),
             edgeBlock.replace(/\s+/g, " ").slice(0, 140));
+          torPruefung("/edge schickt updatedAt nicht mit — dann steht bei "
+            + "JEDEM Etikett 'ohne Datum', und die Frage 'wird das heute noch "
+            + "erzeugt?' bleibt offen",
+            /\bupdatedAt:\s*true\b/.test(edgeBlock),
+            edgeBlock.replace(/\s+/g, " ").slice(0, 160));
         }
 
         // ── UND ZWAR IN JEDEM MODUL, DAS TELEGRAM SCHICKT ─────────────────
