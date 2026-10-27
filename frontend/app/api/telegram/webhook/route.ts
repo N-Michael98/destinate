@@ -2,6 +2,12 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { sendTelegram, telegramZeit, telegramDatum } from "@/lib/telegram-notifications/telegram-sender";
 import { triggerKillswitch, resetKillswitch, getKillswitchReport } from "@/lib/killswitch";
+// STATISCH, nicht dynamisch: das Modul ist winzig, rein und ohne
+// Nebenwirkungen. Ein `await import()` haette hier nur eine zusaetzliche
+// LAUFZEIT-Fehlerquelle geschaffen — ausgerechnet in `/status`, dem Befehl,
+// den man benutzt, wenn ohnehin etwas kaputt ist. Statisch schlaegt ein
+// Problem beim BAUEN auf, nicht im Ernstfall.
+import { laufzeitStand, laufzeitZeilen } from "@/lib/laufzeit/laufzeit-stand";
 
 const ALLOWED_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
@@ -514,12 +520,27 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
     if (textLower === "/status") {
       const ks = getKillswitchReport();
       const statusEmoji = ks.triggered ? "🔴" : "🟢";
+      // WELCHER STAND LÄUFT? (27.10.)
+      //
+      // Am 27.10. wurde ein Fix um 22:59:36 gepusht und um 23:01 ausprobiert.
+      // Railway war noch am Bauen, der Bot antwortete "Unbekannter Befehl" —
+      // und es gab keine Moeglichkeit, das festzustellen ausser Raten.
+      // Im Ernstfall ist das die Frage VOR dem /reset: ist der Fix oben?
+      //
+      // Die Zeit wird mit `telegramZeit()` formatiert, nicht in der Funktion
+      // — ein nacktes toLocaleString im Telegram-Weg war der Fehler vom 27.09.
+      const stand = laufzeitStand(process.env, process.uptime(), Date.now());
+      const zeilen = laufzeitZeilen(stand,
+        stand.startMs === null ? null : telegramZeit(new Date(stand.startMs)));
       await reply(chatId,
 `${statusEmoji} <b>System Status</b>
 
 Kill Switch: ${ks.triggered ? "AKTIV 🚨" : "Armed ✅"}
 System: ${ks.systemLocked ? "OFFLINE 🔴" : "ONLINE 🟢"}
 🕐 ${telegramZeit()}
+
+🧩 <b>Laufender Stand</b>
+${zeilen.join("\n")}
 
 Befehle:
 ${SYSTEM_BEFEHLE}`

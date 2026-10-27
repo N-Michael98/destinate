@@ -1412,6 +1412,10 @@ module.exports = async function pruefe() {
               getKillswitchReport: () => ({ triggered: false, armed: true, systemLocked: false, stages: [], summary: "ok" }),
               triggerKillswitch: () => ({ triggered: true }), resetKillswitch: () => ({ triggered: false }),
             },
+            // Seit dem 27.10. nennt /status den laufenden Stand. Ohne diesen
+            // Ersatz liefe der Pruefstand gegen den Stellvertreter und meldete
+            // einen Fehler, den es im Betrieb nicht gibt.
+            "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
             "trading-filters/trade-filters": {
               PEAK_SCHLUESSEL: "peak_balance",
               peakZuruecksetzen: async () => ({ ok: true, alt: 10000 }),
@@ -1560,6 +1564,8 @@ module.exports = async function pruefe() {
         const altEnv2 = {
           TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
           TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+          RAILWAY_GIT_COMMIT_SHA: process.env.RAILWAY_GIT_COMMIT_SHA,
+          RAILWAY_GIT_BRANCH: process.env.RAILWAY_GIT_BRANCH,
         };
         const altFetch2 = global.fetch;
         const antw = [];
@@ -1567,6 +1573,8 @@ module.exports = async function pruefe() {
         try {
           process.env.TELEGRAM_CHAT_ID = chat;
           process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
+          process.env.RAILWAY_GIT_COMMIT_SHA = "a02fc4a9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6";
+          process.env.RAILWAY_GIT_BRANCH = "main";
           global.fetch = async (_u, init) => {
             antw.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
             return { ok: true, status: 200, text: async () => '{"ok":true}' };
@@ -1574,6 +1582,90 @@ module.exports = async function pruefe() {
           const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
           const ewE = trE.fehler ? trE : ladeTsModul("lib/expectancy/erwartungswert.ts",
             { "capital-trade-tracker": trE.exports });
+          const lzE = ladeTsModul("lib/laufzeit/laufzeit-stand.ts");
+
+          // ── WELCHER STAND LÄUFT? (27.10.) ───────────────────────────────
+          //
+          // Anlass: ein Fix wurde 22:59:36 gepusht und 23:01 ausprobiert.
+          // Railway war noch am Bauen, der Bot sagte "Unbekannter Befehl",
+          // und es gab keine Moeglichkeit das festzustellen ausser Raten.
+          const lz = lzE.exports?.laufzeitStand;
+          const dauer = lzE.exports?.dauerText;
+          const zeilenFn = lzE.exports?.laufzeitZeilen;
+          if (lzE.fehler || typeof lz !== "function") {
+            torPruefung("laufzeitStand ist nicht ausfuehrbar", false,
+              lzE.fehler ?? "nicht exportiert");
+          } else {
+            const JETZT = 1_800_000_000_000;
+            const HASH = "a02fc4a9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6";
+
+            torPruefung("dauerText rechnet falsch",
+              dauer(45) === "45 s" && dauer(420) === "7 min"
+              && dauer(7980) === "2 h 13 min" && dauer(172800) === "2 d",
+              [45, 420, 7980, 172800].map(dauer).join(" | "));
+            torPruefung("eine unbekannte Laufzeit wird zu einer Zahl erfunden",
+              dauer(-1) === "unbekannt" && dauer(NaN) === "unbekannt",
+              `${dauer(-1)} / ${dauer(NaN)}`);
+
+            const ok = lz({ RAILWAY_GIT_COMMIT_SHA: HASH, RAILWAY_GIT_BRANCH: "main" },
+              420, JETZT);
+            torPruefung("der Commit wird nicht aus der Umgebung gelesen",
+              ok.commit === "a02fc4a" && ok.quelle === "RAILWAY_GIT_COMMIT_SHA"
+              && ok.branch === "main", JSON.stringify(ok));
+            torPruefung("der Startzeitpunkt wird falsch gerechnet",
+              ok.startMs === JETZT - 420_000, String(ok.startMs));
+
+            // Fehlt die Variable, heisst das UNBEKANNT mit Grund — nicht
+            // "keine Aenderung" und schon gar keine erfundene Kennung.
+            const fehlt = lz({}, 60, JETZT);
+            torPruefung("eine fehlende Commit-Variable wird verschwiegen",
+              fehlt.commit === null && fehlt.quelle === null
+              && /keine der Variablen/.test(fehlt.grund)
+              && /RAILWAY_GIT_COMMIT_SHA/.test(fehlt.grund),
+              JSON.stringify(fehlt));
+
+            // CLAUDE.md, 27.09.: "eine Deploy-Kennung ist KEIN Commit-Hash".
+            //
+            // Der Wert ist BEWUSST hexadezimal: mit "abc-123-def" wuerde ihn
+            // schon die Hash-Pruefung abweisen, und der Testfall koennte den
+            // Fehler gar nicht ausdruecken — die Sabotage „Deployment-ID in
+            // die Quellenliste" blieb damit gruen. Vorgefuehrt.
+            const deployId = lz({ RAILWAY_DEPLOYMENT_ID: "abc1234def5678" }, 60, JETZT);
+            torPruefung("eine Deployment-ID wird als Commit ausgegeben — "
+              + "genau der Fehler, vor dem CLAUDE.md warnt",
+              deployId.commit === null, JSON.stringify(deployId));
+
+            // Ein unbrauchbarer Wert: gemeldet, aber NICHT in den Chat
+            // zurueckgeschickt (Regel vom 29.09.).
+            const krumm = lz({ RAILWAY_GIT_COMMIT_SHA: "nicht-ein-hash-sondern-text" },
+              60, JETZT);
+            torPruefung("ein unbrauchbarer Wert wird als Commit durchgereicht",
+              krumm.commit === null && /27 Zeichen/.test(krumm.grund),
+              JSON.stringify(krumm));
+            torPruefung("der unbrauchbare WERT landet in der Meldung",
+              !krumm.grund.includes("nicht-ein-hash"), krumm.grund);
+
+            // Die ERSTE gesetzte Variable entscheidet — sonst verdeckt die
+            // zweite einen Tippfehler in der ersten, und man sucht falsch.
+            const beide = lz({ RAILWAY_GIT_COMMIT_SHA: "kaputt!", GIT_COMMIT_SHA: HASH },
+              60, JETZT);
+            torPruefung("eine zweite Variable verdeckt den Fehler in der ersten",
+              beide.commit === null && beide.quelle === "RAILWAY_GIT_COMMIT_SHA",
+              JSON.stringify(beide));
+
+            const zOk = zeilenFn(ok, "27.10.2026, 23:05:12 MEZ");
+            torPruefung("die Zeilen nennen Commit und Startzeit nicht",
+              zOk.join(" ").includes("a02fc4a") && /7 min/.test(zOk.join(" "))
+              && /23:05:12/.test(zOk.join(" ")), JSON.stringify(zOk));
+            // Der GRUND muss mit, nicht nur das Wort "unbekannt" — sonst
+            // weiss niemand, ob die Variable fehlt, falsch ist oder der
+            // Dienst sie gar nicht setzt. Eine Pruefung auf /unbekannt/
+            // allein blieb bei entferntem Grund gruen.
+            const zFehlt = zeilenFn(fehlt, null).join(" ");
+            torPruefung("ohne Commit fehlt der GRUND in der Anzeige",
+              /unbekannt/.test(zFehlt) && /keine der Variablen/.test(zFehlt)
+              && /RAILWAY_GIT_COMMIT_SHA/.test(zFehlt), zFehlt);
+          }
           // 40 Zeilen von gestern, 40 aus dem Juni — das Fenster MUSS trennen.
           const heute = new Date();
           const vorTagen = (n) => new Date(heute.getTime() - n * 86400000).toISOString();
@@ -1589,7 +1681,12 @@ module.exports = async function pruefe() {
             "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
             "telegram-notifications/telegram-sender": {
               sendTelegram: async () => true,
-              telegramZeit: () => "27.10.2026, 12:00:00 MEZ", telegramDatum: () => "27.10.2026",
+              // Der Stellvertreter gibt das ARGUMENT zurueck, nicht eine feste
+              // Zeichenkette: nur so laesst sich pruefen, dass die Startzeit
+              // wirklich DURCH den Formatierer geht (und nicht z. B. als
+              // toISOString danebenlaeuft) und WELCHER Zeitpunkt ankommt.
+              telegramZeit: (d) => (d === undefined ? "JETZT" : `ZEIT:${d.getTime()}`),
+              telegramDatum: () => "27.10.2026",
             },
             "lib/killswitch": {
               getKillswitchReport: () => ({ triggered: false, armed: true, systemLocked: false, stages: [], summary: "ok" }),
@@ -1598,6 +1695,7 @@ module.exports = async function pruefe() {
               getPrisma: () => ({ trade: { findMany: async (a) => { abfragen.push(a); return zeilenDb; } } }),
             },
             "expectancy/erwartungswert": ewE.exports,
+            "laufzeit/laufzeit-stand": lzE.exports,
           });
           if (whE.fehler || typeof whE.exports?.POST !== "function") {
             torPruefung("/edge ist nicht end-to-end ausfuehrbar", false,
@@ -1665,6 +1763,49 @@ module.exports = async function pruefe() {
             // vertippt und `/edge <etwas Vertrauliches>` schickt, haette es
             // sonst dauerhaft dort stehen. Die Meldung braucht das Argument
             // nicht — Laenge und die richtige Form erklaeren alles.
+            // /status muss den laufenden Stand nennen — END-TO-END durch die
+            // echte POST-Funktion, mit der echten Umgebungsvariablen.
+            await edge("/status");
+            const aStatus = antw.at(-1) ?? "";
+            torPruefung("/status nennt den laufenden Commit nicht — dann ist "
+              + "'ist mein Fix schon oben?' nur zu erraten",
+              /Laufender Stand/.test(aStatus) && /a02fc4a/.test(aStatus)
+              && /\(main\)/.test(aStatus), aStatus.replace(/\n/g, " ").slice(0, 200));
+            torPruefung("/status nennt die Laufzeit nicht",
+              /Läuft seit:/.test(aStatus), aStatus.replace(/\n/g, " ").slice(0, 200));
+            // Die Startzeit muss DURCH telegramZeit() gehen — ein nacktes
+            // toISOString() waere die Falle vom 27.09. (Zeitzone des
+            // Prozesses), und der Pruefer auf `.toLocale…` sieht sie nicht.
+            torPruefung("die Startzeit geht nicht durch telegramZeit() — eine "
+              + "andere Formatierung traegt die Zeitzone des Prozesses",
+              /Start ZEIT:\d+/.test(aStatus), aStatus.replace(/\n/g, " ").slice(0, 200));
+            // Und sie muss aus `process.uptime()` kommen. Die ECHTE Uptime
+            // taugt dafuer NICHT als Massstab: der Pruefer-Prozess laeuft an
+            // dieser Stelle erst 0.04 s (gemessen), eine Pruefung auf "mehr
+            // als eine halbe Sekunde" haengt also an der Wanduhr statt am
+            // Verhalten. Deshalb wird die Uptime hier GESETZT und das
+            // Ergebnis dagegen gerechnet.
+            const altUptime = process.uptime;
+            let mitUptime = "";
+            try {
+              process.uptime = () => 3600;          // genau eine Stunde
+              await edge("/status");
+              mitUptime = antw.at(-1) ?? "";
+            } finally { process.uptime = altUptime; }
+            torPruefung("die Laufzeit kommt nicht aus process.uptime() "
+              + "(3600 s muessen '1 h' ergeben)",
+              /Läuft seit: <b>1 h<\/b>/.test(mitUptime),
+              mitUptime.replace(/\n/g, " ").slice(0, 200));
+            const startTs = Number((mitUptime.match(/Start ZEIT:(\d+)/) ?? [])[1] ?? 0);
+            torPruefung("der Startzeitpunkt wird nicht aus der Uptime gerechnet",
+              startTs > 0 && Math.abs((Date.now() - 3_600_000) - startTs) < 5_000,
+              `Abweichung ${(((Date.now() - 3_600_000) - startTs) / 1000).toFixed(1)} s`);
+            // Der VOLLE Hash gehoert nicht in den Chat — sieben Zeichen
+            // identifizieren den Commit eindeutig genug.
+            torPruefung("der volle Commit-Hash wird in den Chat geschrieben",
+              !aStatus.includes("a02fc4a9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6"),
+              aStatus.replace(/\n/g, " ").slice(0, 200));
+
             const geheim = "geheim123xyz";          // 12 Zeichen
             await edge(`/edge ${geheim}`);
             const aGeheim = antw.at(-1) ?? "";

@@ -1635,7 +1635,7 @@ gekürztes Echo.
 
 ### Absicherung
 
-`safety-nets` **rechnet** das (477 → **580** Prüfungen), unter anderem mit der
+`safety-nets` **rechnet** das (477 → **597** Prüfungen), unter anderem mit der
 **echten Live-Lage** vom 26.10. als Testfall: 845 Zeilen, 814 gewertet,
 101W/196L/**517BE**, Ergebnis −2.24. Dazu die **Verdrahtung**: die Route muss
 `result` **und** `updatedAt` mitschicken, sonst wäre die Herkunft dauerhaft
@@ -1734,6 +1734,68 @@ Schutz, nicht `tsc`.
 **Nicht geändert:** `require` → `import` würde auf einen Schlag jede
 Prisma-Abfrage typisieren und möglicherweise viele bestehende Fehler sichtbar
 machen. Das ist eine eigene, bewusste Entscheidung.
+
+## Welcher Stand läuft gerade? `/status` sagt es (27.10.)
+
+`/edge 60` wurde um **22:59:36** gepusht und um **23:01** ausprobiert.
+Railway war noch am Bauen, der Bot antwortete „Unbekannter Befehl" — und es
+gab **keine Möglichkeit, das festzustellen ausser Raten**.
+
+Dass es der alte Stand war, liess sich hinterher **beweisen**: die
+Fehlermeldung zeigt den Text `"/edge 60"`, und auf dem neuen Stand ist
+`"/edge 60".startsWith("/edge ")` wahr — der Zweig greift, der Auffangzweig ist
+gar nicht erreichbar. Im Commit davor kommt `startsWith("/edge ")` **null mal**
+vor. Nur: diesen Beweis kann man nicht führen, während man im Chat steht.
+
+`CLAUDE.md` benennt die Lücke seit dem 27.09.: *„Vorher prüfen, dass der neue
+Deploy wirklich läuft — eine Deploy-Kennung ist **kein** Commit-Hash."* Im
+Ernstfall ist das die Frage **vor** dem `/reset`.
+
+`/status` nennt jetzt den laufenden Commit, den Branch und die Laufzeit:
+
+```
+🧩 Laufender Stand
+Commit: a02fc4a (main)
+Läuft seit: 7 min (Start 27.10.2026, 23:05:12 MEZ)
+```
+
+**Nur eine Variable, die auch einen Commit enthält.** `RAILWAY_DEPLOYMENT_ID`
+steht bewusst **nicht** in `COMMIT_QUELLEN` — sie als Commit auszugeben wäre
+genau die Lüge aus der Regel oben, nur bequemer. Und was nicht wie ein
+Commit-Hash aussieht (`/^[0-9a-f]{7,40}$/`), wird **nicht** als einer
+ausgegeben: dann heisst es „unbekannt" **mit Grund**.
+
+**Der unbrauchbare Wert selbst geht nicht in den Chat** — nur seine Länge.
+Dieselbe Regel wie bei der `/edge`-Ablehnung: was in den Chat geht, kommt
+nicht zurück.
+
+**Die erste gesetzte Variable entscheidet**, auch wenn ihr Wert unbrauchbar
+ist. Sonst verdeckte eine zweite stillschweigend einen Tippfehler in der
+ersten, und man suchte an der falschen Stelle.
+
+**Statischer Import, kein `await import()`.** Das Modul ist winzig, rein und
+ohne Nebenwirkungen; ein dynamischer Import hätte nur eine **Laufzeit**-Fehler\-
+quelle geschaffen — ausgerechnet in `/status`, dem Befehl, den man benutzt,
+wenn ohnehin etwas kaputt ist. Statisch schlägt ein Problem beim **Bauen** auf.
+
+Die Zeit formatiert der Aufrufer mit `telegramZeit()`, nicht das Modul — ein
+nacktes `toLocaleString` im Telegram-Weg war der Fehler vom 27.09.
+
+**14 von 14 Sabotagen**, und fünf davon fielen zuerst durch — **vier wegen zu
+schwacher Prüfungen von mir**, eine wegen eines CRLF-Ankers:
+
+| entwischt | warum |
+|---|---|
+| Deployment-ID als Commit | mein Testwert `abc-123-def` ist **nicht hex** und wurde schon von der Hash-Prüfung abgewiesen — der Fall konnte den Fehler gar nicht ausdrücken |
+| Grund fehlt in der Anzeige | ich prüfte nur auf das Wort „unbekannt", das auch ohne Grund dasteht |
+| Startzeit ohne Zeitzone | nichts prüfte, **dass** sie durch `telegramZeit()` geht; `toISOString()` ist kein `.toLocale…` und entging dem bestehenden Riegel |
+| `process.uptime()` → feste 0 | nichts prüfte den Wert |
+
+Behoben, indem der Prüfstand den **Formatierer** durch einen Stellvertreter
+ersetzt, der sein Argument zurückgibt (`ZEIT:<ms>`), und die **Uptime selbst
+setzt** (3600 s ⇒ „1 h"). Die echte Uptime taugte als Massstab nicht: gemessen
+läuft der Prüfer-Prozess an dieser Stelle erst **0.04 s** — eine Prüfung „mehr
+als eine halbe Sekunde" hinge an der Wanduhr statt am Verhalten.
 
 ## Ohne Kurs wird nicht gehandelt
 
