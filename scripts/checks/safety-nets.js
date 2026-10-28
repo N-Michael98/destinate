@@ -2076,6 +2076,144 @@ module.exports = async function pruefe() {
     torPruefung("eine der beiden erlaubten Routen platziert keine Orders mehr",
       ERLAUBT.every((r) => platzierer.includes(r)),
       `gefunden: ${platzierer.join(", ")}`);
+
+    // ── OHNE STOP KEINE ORDER (28.10.) ─────────────────────────────────────
+    //
+    // Gefunden am 28.10.: `LiveExecutionMonitor.tsx` (Dashboard-Ansicht
+    // "live-execution") schickt beim GO-Knopf weder stopLossPrice noch
+    // takeProfitPrice. Die Route reicht das durch, und capital-com-client
+    // laesst `stopLevel` dann weg — die Order ginge OHNE Stop zum Broker,
+    // waehrend die Groesse ueber DEFAULT_STOP_BY_STYLE fuer einen Stop
+    // gerechnet wird, den es nicht gibt.
+    //
+    // Der automatische Pfad ist nachweislich NICHT betroffen: goSignal
+    // verlangt stopLoss > 0 UND takeProfit > 0, und `approved` entsteht
+    // ausschliesslich aus goSignals.
+    {
+      // Die ECHTE EPIC_MAP durchreichen, keine Kopie: `capital-com-execution`
+      // laeuft auf Modulebene ueber `Object.entries(EPIC_MAP)` (Zeile 160) —
+      // mit einem leeren Ersatz wirft das Modul beim Laden. Und eine
+      // nachgebaute Karte pruefte gegen die eigene Annahme.
+      const klient = ladeTsModul("lib/capital-com/capital-com-client.ts");
+      const ex = klient.fehler ? klient
+        : ladeTsModul("lib/capital-com/capital-com-execution.ts", {
+          "killswitch": { isKillswitchActive: () => false },
+          "capital-com-session": { getCapitalSession: () => null },
+          "capital-com-client": klient.exports,
+        });
+      const riegel = ex.exports?.ordersRiegel;
+      if (ex.fehler || typeof riegel !== "function") {
+        torPruefung("ordersRiegel ist nicht ausfuehrbar — ohne ihn kann eine "
+          + "Order ohne Stop herausgehen", false, ex.fehler ?? "nicht exportiert");
+      } else {
+        torPruefung("ein gueltiges Paar aus Stop und Ziel wird abgelehnt",
+          riegel(1.2345, 1.2500) === "", riegel(1.2345, 1.2500));
+        // Jede Form von "kein Stop" muss greifen.
+        for (const [wert, name] of [[undefined, "undefined"], [null, "null"],
+          [0, "0"], [-1, "negativ"], ["1.23", "Text"], [NaN, "NaN"],
+          [Infinity, "Infinity"]]) {
+          torPruefung(`eine Order ohne brauchbaren Stop (${name}) wird nicht `
+            + "geblockt", riegel(wert, 1.25) !== "", `Grund: "${riegel(wert, 1.25)}"`);
+        }
+        // Und dasselbe fuer das Ziel — ohne Ziel rechnet `ausstiegsgrund()`
+        // auf einer Spanne, die es nicht gibt.
+        for (const [wert, name] of [[undefined, "undefined"], [0, "0"], [NaN, "NaN"]]) {
+          torPruefung(`eine Order ohne brauchbares Ziel (${name}) wird nicht geblockt`,
+            riegel(1.2345, wert) !== "", `Grund: "${riegel(1.2345, wert)}"`);
+        }
+        // Der GRUND muss drinstehen — sonst raet man spaeter.
+        torPruefung("der Grund nennt nicht, WELCHER Wert fehlt",
+          /Stop-Kurs/.test(riegel(undefined, 1.25))
+          && /Ziel-Kurs/.test(riegel(1.2345, undefined)),
+          `${riegel(undefined, 1.25)} / ${riegel(1.2345, undefined)}`);
+        // Und WAS mit ihm ist. Ausgefuehrt belegt (28.10.): `Number.isFinite`
+        // allein blockt undefined, null, Text, NaN und Infinity — die zwei
+        // Zweige davor sind fuer das BLOCKIEREN redundant und dienen
+        // ausschliesslich der Meldung. Also wird die Meldung geprueft, sonst
+        // waeren die Zweige unbewiesen und ihre Entfernung bliebe gruen.
+        for (const [wert, muster, name] of [
+          [undefined, /fehlt/, "fehlt"],
+          [null, /fehlt/, "fehlt (null)"],
+          ["1.23", /keine Zahl \(string\)/, "keine Zahl"],
+          [NaN, /nicht endlich/, "nicht endlich"],
+          [0, /ist 0/, "ist 0"],
+        ]) {
+          torPruefung(`die Meldung sagt nicht, WAS mit dem Stop ist (${name})`,
+            muster.test(riegel(wert, 1.25)), `"${riegel(wert, 1.25)}"`);
+        }
+        // NaN ist die Falle: `NaN <= 0` ist FALSE (Lehre checkPriceAvailable).
+        torPruefung("ein NaN-Stop rutscht durch — `NaN <= 0` ist FALSE",
+          riegel(NaN, 1.25) !== "", `Grund: "${riegel(NaN, 1.25)}"`);
+      }
+
+      // VERDRAHTUNG: der Riegel muss VOR der Orderplatzierung stehen. Beide
+      // Positionen werden auf Existenz geprueft und DANN verglichen — ein
+      // `indexOf(...) < -1` kann nie wahr werden (Lehre vom 25.10.).
+      const exQuell = read("frontend/lib/capital-com/capital-com-execution.ts");
+      const iRiegel = exQuell.indexOf("const riegel = ordersRiegel(");
+      const iOrder = exQuell.indexOf("await capitalPlaceOrder(");
+      torPruefung("ordersRiegel wird in executeCapitalDemoOrder gar nicht gerufen",
+        iRiegel >= 0, `gefunden@${iRiegel}`);
+      torPruefung("capitalPlaceOrder ist nicht mehr auffindbar — die "
+        + "Reihenfolge waere ungeprueft", iOrder >= 0, `gefunden@${iOrder}`);
+      torPruefung("der Stop-Riegel steht NACH der Orderplatzierung",
+        iRiegel >= 0 && iOrder >= 0 && iRiegel < iOrder,
+        `riegel@${iRiegel} order@${iOrder}`);
+
+      // ── UND DAS VERHALTEN, NICHT DER WORTLAUT ──────────────────────────
+      //
+      // Die Pruefungen oben fangen `if (riegel) {` → `if (false) {` NICHT:
+      // der Riegel wird dann gerechnet und das Ergebnis WEGGEWORFEN, der
+      // Wortlaut steht weiter da. Genau die Fehlerklasse vom 30.09.
+      // ("ein Regex prueft den Wortlaut, nicht das Verhalten").
+      //
+      // Deshalb laeuft hier die ECHTE Funktion gegen einen gezaehlten
+      // `capitalPlaceOrder`. Ohne Stop darf er NULL mal gerufen werden.
+      {
+        let platziert = 0;
+        const ex2 = klient.fehler ? klient
+          : ladeTsModul("lib/capital-com/capital-com-execution.ts", {
+            "killswitch": { isKillswitchActive: () => false },
+            "capital-com-session": {
+              getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s" }),
+            },
+            "capital-com-client": {
+              ...klient.exports,
+              capitalPlaceOrder: async () => { platziert++; return { ok: true, dealId: "D1" }; },
+            },
+          });
+        const f = ex2.exports?.executeCapitalDemoOrder;
+        if (ex2.fehler || typeof f !== "function") {
+          torPruefung("executeCapitalDemoOrder ist nicht ausfuehrbar", false,
+            ex2.fehler ?? "nicht exportiert");
+        } else {
+          const basis = { symbol: "EURUSD", direction: "BUY", riskPercent: 1,
+            accountBalance: 2000, currentPrice: 1.0850, tradingStyle: "DAYTRADING" };
+
+          platziert = 0;
+          const ohneStop = await f({ ...basis, takeProfitPrice: 1.0950 });
+          torPruefung("eine Order OHNE Stop wird trotzdem platziert",
+            platziert === 0 && ohneStop?.ok === false
+            && /STOP_FEHLT/.test(String(ohneStop?.error)),
+            `platziert=${platziert} ok=${ohneStop?.ok} error=${ohneStop?.error}`);
+
+          platziert = 0;
+          const ohneZiel = await f({ ...basis, stopLossPrice: 1.0800 });
+          torPruefung("eine Order OHNE Ziel wird trotzdem platziert",
+            platziert === 0 && ohneZiel?.ok === false,
+            `platziert=${platziert} error=${ohneZiel?.error}`);
+
+          // GEGENPROBE: mit Stop UND Ziel muss die Order durchgehen — sonst
+          // waere der Riegel zu streng und wuerde den echten Handel blocken.
+          platziert = 0;
+          const vollstaendig = await f({ ...basis, stopLossPrice: 1.0800, takeProfitPrice: 1.0950 });
+          torPruefung("eine vollstaendige Order wird vom Riegel geblockt — "
+            + "der echte Handel stuende still",
+            platziert === 1 && vollstaendig?.ok === true,
+            `platziert=${platziert} ok=${vollstaendig?.ok} error=${vollstaendig?.error}`);
+        }
+      }
+    }
     // Und der stillgelegte Pfad bleibt still — doppelt gesichert, weil genau
     // er der Anlass war.
     torPruefung("der stillgelegte /api/auto-execute platziert wieder Orders",

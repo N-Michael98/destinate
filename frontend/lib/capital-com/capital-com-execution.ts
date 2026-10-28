@@ -204,6 +204,69 @@ function calcPositionSize(
   return Number(rounded.toFixed(2));
 }
 
+/**
+ * OHNE STOP UND ZIEL KEINE ORDER (28.10.)
+ *
+ * ── DER FUND ────────────────────────────────────────────────────────────────
+ *
+ * `LiveExecutionMonitor.tsx` (Dashboard-Ansicht „live-execution",
+ * `app/page.tsx:3675`) schickt beim GO-Knopf **weder** `stopLossPrice` **noch**
+ * `takeProfitPrice`. Die Route reicht das unverändert durch
+ * (`execute/route.ts:23-24`, kein Standardwert), und
+ * `capital-com-client.ts:760` lässt `stopLevel` dann einfach weg:
+ *
+ *   if (order.stopLevel != null) body.stopLevel = order.stopLevel;
+ *
+ * Die Order ginge also **ohne Stop beim Broker** heraus. Und das Schlimmere:
+ * die Grösse wird trotzdem gerechnet — über `DEFAULT_STOP_BY_STYLE`, also
+ * **für einen Stop, den es nicht gibt**. Das Risiko wäre auf 1 R bemessen und
+ * der Verlust nach oben offen.
+ *
+ * Die Journal-Zeile bekäme dazu `stopLoss: 0` (`execute/route.ts:48`).
+ *
+ * ── WARUM DAS NIEMANDEN AM HANDEL HINDERT ───────────────────────────────────
+ *
+ * Nachgeprüft, nicht angenommen — der automatische Pfad führt IMMER beides
+ * mit, und zwar zwingend:
+ *
+ *   `goSignal` verlangt `gpt.stopLoss > 0 && gpt.takeProfit > 0`
+ *       (`ai-analysis-engine.ts:1956-1957`)
+ *   → `goSignals = opportunities.filter(o => o.goSignal …)`
+ *       (`analysis-agent.ts:440`)
+ *   → `approved` entsteht ausschliesslich aus `goSignals` (Schleife 449)
+ *   → der Orchestrator filtert `approved` weiter und reicht `slPrice`/`tpPrice`
+ *       durch (`orchestrator-agent.ts:1305-1306`, `1351-1352`)
+ *
+ * `MarketScannerPanel.tsx:163-164` schickt beides ebenfalls mit. Der Riegel
+ * blockiert damit **genau einen** Weg: den Knopf, der es vergisst — und dessen
+ * `QueueItem` gar kein Stop-Feld besitzt, ihn also nicht liefern KANN.
+ *
+ * ── WARUM HIER UND NICHT IN DER KOMPONENTE ──────────────────────────────────
+ *
+ * Dieselbe Begründung wie beim Notaus darüber und bei `checkPriceAvailable`
+ * am 24.08.: eine Zusicherung gehört an die Stelle, an der sie gilt. Diese
+ * Funktion ist der Punkt, an dem Geld bewegt wird; sie wird von der Route,
+ * vom ExecutionAgent und über den Orchestrator gerufen. Ein Riegel HIER deckt
+ * alle drei, und er hält auch, wenn morgen ein vierter Aufrufer dazukommt.
+ *
+ * `Number.isFinite` steht mit Absicht da: `NaN <= 0` ist **false**, ein
+ * NaN-Kurs käme sonst durch — genau die Falle aus `checkPriceAvailable`.
+ *
+ * Als eigene Funktion, damit ein Prüfer sie AUSFÜHREN kann.
+ *
+ * @returns den GRUND als Text; leer heisst „in Ordnung".
+ */
+export function ordersRiegel(stopLossPrice: unknown, takeProfitPrice: unknown): string {
+  const pruefe = (wert: unknown, name: string): string => {
+    if (wert === undefined || wert === null) return `${name} fehlt`;
+    if (typeof wert !== "number") return `${name} ist keine Zahl (${typeof wert})`;
+    if (!Number.isFinite(wert)) return `${name} ist nicht endlich`;
+    if (wert <= 0) return `${name} ist ${wert}`;
+    return "";
+  };
+  return pruefe(stopLossPrice, "Stop-Kurs") || pruefe(takeProfitPrice, "Ziel-Kurs");
+}
+
 export async function executeCapitalDemoOrder(
   req: ExecutionRequest
 ): Promise<ExecutionResult> {
@@ -240,6 +303,23 @@ export async function executeCapitalDemoOrder(
   if (isKillswitchActive()) {
     console.warn(`[capital-execution] 🔴 Killswitch aktiv — Order ${req.symbol} ${req.direction} NICHT ausgeführt`);
     return { ok: false, broker: "CAPITAL_COM", mode: "DEMO", symbol: req.symbol, direction: req.direction, size: 0, epic: "", error: "Killswitch aktiv — keine neuen Orders (/reset zum Entsperren)", executedAt: new Date().toISOString() };
+  }
+
+  // ── OHNE STOP UND ZIEL KEINE ORDER (28.10.) ───────────────────────────────
+  //
+  // Begruendung und der vollstaendige Nachweis, dass der automatische Pfad
+  // davon nicht betroffen ist: siehe `ordersRiegel()` oben.
+  //
+  // Steht VOR dem Sitzungs-Riegel: der Grund liegt in der Anfrage selbst und
+  // haengt nicht daran, ob der Broker gerade erreichbar ist — so bekommt der
+  // Aufrufer den richtigen Grund und nicht "not connected".
+  const riegel = ordersRiegel(req.stopLossPrice, req.takeProfitPrice);
+  if (riegel) {
+    console.error(`[capital-execution] ⛔ ${req.symbol} ${req.direction}: ${riegel} `
+      + "— Order NICHT platziert. Ohne Stop beim Broker waere die Position "
+      + "ungeschuetzt, und die Groesse ist fuer einen Stop gerechnet, den es "
+      + "dann nicht gibt.");
+    return { ok: false, broker: "CAPITAL_COM", mode: "DEMO", symbol: req.symbol, direction: req.direction, size: 0, epic: "", error: `STOP_FEHLT: ${riegel}`, executedAt: new Date().toISOString() };
   }
 
   const session = getCapitalSession();

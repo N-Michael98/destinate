@@ -1699,7 +1699,7 @@ auseinanderlaufen.
 
 ### Absicherung
 
-`safety-nets` **rechnet** das (477 → **606** Prüfungen), unter anderem mit der
+`safety-nets` **rechnet** das (477 → **630** Prüfungen), unter anderem mit der
 **echten Live-Lage** vom 26.10. als Testfall: 845 Zeilen, 814 gewertet,
 101W/196L/**517BE**, Ergebnis −2.24. Dazu die **Verdrahtung**: die Route muss
 `result` **und** `updatedAt` mitschicken, sonst wäre die Herkunft dauerhaft
@@ -1860,6 +1860,93 @@ ersetzt, der sein Argument zurückgibt (`ZEIT:<ms>`), und die **Uptime selbst
 setzt** (3600 s ⇒ „1 h"). Die echte Uptime taugte als Massstab nicht: gemessen
 läuft der Prüfer-Prozess an dieser Stelle erst **0.04 s** — eine Prüfung „mehr
 als eine halbe Sekunde" hinge an der Wanduhr statt am Verhalten.
+
+## Ohne Stop keine Order (28.10.)
+
+Gefunden beim Nachgehen der Frage, ob offene Positionen geschützt sind, wenn
+Railway die Dienste anhält.
+
+`LiveExecutionMonitor.tsx` — die Dashboard-Ansicht **„live-execution"**
+(`app/page.tsx:3675`, also kein toter Winkel) — schickt beim GO-Knopf
+**weder** `stopLossPrice` **noch** `takeProfitPrice`:
+
+```ts
+body: JSON.stringify({ symbol, direction, riskPercent, accountBalance,
+                       confidence, strategy, tradingStyle: "DAYTRADING" })
+```
+
+Die Route reicht das unverändert durch (`execute/route.ts:23-24`, kein
+Standardwert), und `capital-com-client.ts:760` lässt das Feld dann weg:
+
+```ts
+if (order.stopLevel != null) body.stopLevel = order.stopLevel;
+```
+
+**Die Order wäre ohne Stop beim Broker herausgegangen.** Und das Schlimmere:
+die Grösse wird trotzdem gerechnet — über `DEFAULT_STOP_BY_STYLE`, also **für
+einen Stop, den es nicht gibt**. Das Risiko wäre auf 1 R bemessen und der
+Verlust nach oben offen. Die Journal-Zeile bekäme dazu `stopLoss: 0`
+(`execute/route.ts:48`).
+
+**Der Knopf KANN den Stop nicht liefern:** `QueueItem` hat gar kein
+Stop-Feld.
+
+### Der automatische Handel war nie betroffen — nachgeprüft, nicht vermutet
+
+```
+goSignal verlangt gpt.stopLoss > 0 && gpt.takeProfit > 0   (ai-analysis-engine.ts:1956-1957)
+  → goSignals = opportunities.filter(o => o.goSignal …)     (analysis-agent.ts:440)
+  → `approved` entsteht ausschliesslich aus goSignals        (Schleife 449)
+  → Orchestrator reicht slPrice/tpPrice durch                (orchestrator-agent.ts:1305, 1351)
+```
+
+`MarketScannerPanel.tsx:163-164` schickt beides ebenfalls mit. Der Riegel
+blockiert damit **genau einen** Weg: den Knopf, der es vergisst.
+
+### Warum der Riegel in der Ausführung sitzt, nicht in der Komponente
+
+Dieselbe Begründung wie beim Notaus und bei `checkPriceAvailable` (24.08.):
+eine Zusicherung gehört an die Stelle, an der sie gilt.
+`executeCapitalDemoOrder` ist der Punkt, an dem Geld bewegt wird — gerufen von
+der Route, vom ExecutionAgent und über den Orchestrator aus
+`instrumentation.ts`. Ein Riegel **dort** deckt alle drei und hält auch, wenn
+morgen ein vierter Aufrufer dazukommt.
+
+`Number.isFinite` steht mit Absicht da: `NaN <= 0` ist **false**.
+
+### Und der Wortlaut beweist hier nichts
+
+Von zehn Sabotagen entwischte zuerst **eine** — und zwar die gefährlichste:
+
+```ts
+if (riegel) { … }   →   if (false) { … }
+```
+
+Der Riegel wird dann **gerechnet und weggeworfen**, der Wortlaut steht weiter
+da, und die Reihenfolge-Prüfung (`ordersRiegel` vor `capitalPlaceOrder`)
+bleibt grün. Wörtlich die Fehlerklasse vom 30.09.: *„ein Regex prüft den
+Wortlaut, nicht das Verhalten."*
+
+Jetzt läuft die **echte** `executeCapitalDemoOrder` gegen einen **gezählten**
+`capitalPlaceOrder`: ohne Stop darf er **null** mal gerufen werden, mit Stop
+und Ziel **genau einmal**. Die Gegenprobe gehört dazu — ein zu strenger Riegel
+stellte den echten Handel still, und das wäre schlimmer als der Fund.
+**10 von 10.**
+
+### Zwei Zweige, die nur die Meldung verbessern — und wie das auffiel
+
+Zwei weitere Sabotagen blieben zuerst grün: `undefined/null` und
+`typeof !== number` aus `pruefe()` zu entfernen. Ausgeführt gemessen:
+`Number.isFinite` fängt `undefined`, `null`, Text, `NaN` und `Infinity`
+**allein** — die zwei Zweige blockieren nichts Zusätzliches, sie machen nur
+die **Meldung** brauchbar („fehlt" statt „nicht endlich").
+
+Sie als „entwischt" zu zählen wäre ein Messfehler gewesen. Richtig ist, ihren
+Zweck zu prüfen: der Prüfer hält jetzt den Meldungstext je Fall fest.
+
+**Und vier Anker griffen gar nicht** — beides eigene Messfehler: die Datei ist
+rein **CRLF** (ein `\n`-Anker kann dort nicht greifen), und `return pruefe(…)`
+hat **zwei** Leerzeichen Einzug, nicht vier.
 
 ## Ohne Kurs wird nicht gehandelt
 
