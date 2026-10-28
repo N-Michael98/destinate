@@ -1633,9 +1633,73 @@ und verlangt, dass die Antwort **weder die Eingabe noch ein Stück davon**
 enthält — die Gegenprobe mit einer 26 Zeichen langen Eingabe fängt auch ein
 gekürztes Echo.
 
+### Wie WEIT kam der Trade? (27.10.)
+
+Der erste `/edge 60` über das laufende System ergab:
+
+| | |
+|---|---|
+| gewertet | 128 (55 W / 66 L / 7 BE) |
+| Trefferquote (entschieden) | **45.5 %** |
+| Ø Gewinn / Ø Verlust | 3.13 / 7.24 |
+| R/R | **0.43** · nötig wären **1.20** |
+| `WIN/ZIEL` | **0 von 121** |
+| weder Stop noch Ziel | **69 von 121 = 57 %** |
+
+Ein voller Stop kostet **8.92**, ein Gewinner bringt **3.13** — **35 %** davon.
+Ein Ziel bei geplantem R/R 1.5 brächte 13.38; erreicht werden **23 %**.
+
+**Die Trefferquote ist nicht das Problem.** 45.5 % sind brauchbar; die
+Rechnung „24.3 Punkte heben" ist formal richtig und praktisch sinnlos, weil
+69.8 % niemand erreicht. Der Hebel ist das R/R, und zwar allein.
+
+**Was das Etikett nicht hergibt:** `DAZWISCHEN` sagt nur „weder Stop noch
+Ziel" — ob bei 10 % oder bei 90 %, steht nicht drin. Genau daran hängt aber
+die Entscheidung über `exitThresholdsRelativeToStop`.
+
+Die Zahl dafür lag längst in den Daten: `ausstiegsgrund()` liefert
+**`exitPosition`** (0 = am Stop, 1 = am Ziel), und sie wird gespeichert
+(`capital-trade-tracker.ts:1251`). `/edge` weist sie jetzt je Etikett aus:
+
+```
+WIN/DAZWISCHEN: 40 · Ø 3.31 · Weg 34 % (40/40)  (2026-09-09 … 2026-10-22)
+```
+
+**Drei Regeln dabei**, alle aus früheren Funden:
+
+- **Fehlt die Angabe, wird sie nicht 0.** Eine 0 hiesse „am Stop
+  ausgestiegen" — eine Behauptung statt einer Messung. Dann steht dort
+  „Weg unbekannt", und bei Teilabdeckung die Zahl der Zeilen mit Angabe
+  (`20/30`).
+- **Nicht geklemmt.** Ein Weg über 100 % oder unter 0 % ist echter Schlupf
+  beim Schliessen und gehört sichtbar. Eine Klemme würde ihn verstecken.
+- **Nur endliche Zahlen zählen.** Ein `"halb"` in den Notizen verfälscht den
+  Schnitt nicht, sondern fehlt in `wegBekannt`.
+
+safety-nets 597 → **606**, **12 von 12 Sabotagen**.
+
+**Zwei fielen zuerst durch — wieder die Testdaten, nicht der Prüfer:** alle
+`exitPosition`-Werte lagen zwischen 0 und 1, also änderte eine Klemme auf
+0..100 % nichts; und der Bündel-Testfall trug gar keinen Weg, also fiel nicht
+auf, dass die Bündelung ihn verlor. Behoben mit einem Schlupf-Fall (1.08 und
+−0.04) und einem Bündel mit Weg. **Vierte Wiederholung derselben Lehre an
+zwei Tagen.**
+
+### Und der Prüfer sah den Typfehler nicht — `tsc` schon
+
+Beim Anbau blieb die Deklaration des Arrays auf einem **Inline-Typ** ohne das
+neue Feld stehen. `safety-nets` war **grün**: `ladeTsModul` transpiliert, ohne
+zu typprüfen. `npx tsc --noEmit` meldete zwei Fehler (TS2345), `npm run build`
+ebenfalls.
+
+Das ist kein Loch, sondern die Arbeitsteilung, wie sie gedacht ist — aber es
+ist der Grund, warum **beide** laufen müssen. Jetzt steht dort `GewerteteZeile[]`
+statt einer zweiten Beschreibung desselben Typs; damit kann es nicht mehr
+auseinanderlaufen.
+
 ### Absicherung
 
-`safety-nets` **rechnet** das (477 → **597** Prüfungen), unter anderem mit der
+`safety-nets` **rechnet** das (477 → **606** Prüfungen), unter anderem mit der
 **echten Live-Lage** vom 26.10. als Testfall: 845 Zeilen, 814 gewertet,
 101W/196L/**517BE**, Ergebnis −2.24. Dazu die **Verdrahtung**: die Route muss
 `result` **und** `updatedAt` mitschicken, sonst wäre die Herkunft dauerhaft

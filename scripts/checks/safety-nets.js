@@ -3992,13 +3992,19 @@ module.exports = async function pruefe() {
             // sagt, bei welchem. Der Oe je Etikett ist die eigentliche
             // Spalte: ein Ausstieg, der im Schnitt einen Bruchteil des Ziels
             // bringt, erklaert die Luecke; eine blosse Anzahl erklaert nichts.
+            // `exitPosition` steht mit in den Notizen: 0 = am Stop, 1 = am
+            // Ziel. Die Zahl beantwortet, was das Etikett nicht hergibt —
+            // DAZWISCHEN sagt nicht, ob bei 10 % oder bei 90 %.
             const ende = f([
               ...Array.from({ length: 10 }, () =>
-                zd(30, "WIN", "2026-10-01T10:00:00Z", { exitReason: "ZIEL" })),
+                zd(30, "WIN", "2026-10-01T10:00:00Z",
+                  { exitReason: "ZIEL", exitPosition: 0.98 })),
               ...Array.from({ length: 20 }, () =>
-                zd(6, "WIN", "2026-10-02T10:00:00Z", { exitReason: "PARTIAL_TP" })),
+                zd(6, "WIN", "2026-10-02T10:00:00Z",
+                  { exitReason: "PARTIAL_TP", exitPosition: 0.30 })),
               ...Array.from({ length: 15 }, () =>
-                zd(-20, "LOSS", "2026-10-03T10:00:00Z", { exitReason: "STOP" })),
+                zd(-20, "LOSS", "2026-10-03T10:00:00Z",
+                  { exitReason: "STOP", exitPosition: 0.02 })),
             ]);
             torPruefung("die Gewinner werden nicht nach Ausstiegsgrund "
               + "aufgeschluesselt — dann bleibt offen, woran sie enden",
@@ -4029,6 +4035,74 @@ module.exports = async function pruefe() {
             torPruefung("der Oe steht nicht in der Antwort",
               /Ø 6\b/.test(tEnde) && /Ø 30\b/.test(tEnde), tEnde.slice(-320));
 
+            // ── WIE WEIT kamen die Trades? (27.10.) ───────────────────────
+            //
+            // Der Live-Lauf vom 27.10. zeigte: 0 von 121 Trades erreichen ihr
+            // Ziel, 57 % sterben in der Mitte. Das Etikett DAZWISCHEN sagt
+            // aber nicht, ob bei 10 % oder bei 90 % — und genau daran haengt
+            // die Entscheidung ueber die Ausstiegsschwellen.
+            torPruefung("der Weg zum Ziel wird nicht ausgewiesen (0 % = Stop, "
+              + "100 % = Ziel)",
+              ende.gewinnHerkunft[0]?.weg === 30 && ende.gewinnHerkunft[1]?.weg === 98
+              && ende.verlustHerkunft[0]?.weg === 2,
+              JSON.stringify([...ende.gewinnHerkunft, ...ende.verlustHerkunft]
+                .map((h) => [h.etikett, h.weg])));
+            torPruefung("die Zahl der Zeilen MIT Angabe fehlt",
+              ende.gewinnHerkunft[0]?.wegBekannt === 20, String(ende.gewinnHerkunft[0]?.wegBekannt));
+            torPruefung("der Weg steht nicht in der Antwort",
+              /Weg <b>30 %<\/b>/.test(tEnde) && /0 % = am Stop, 100 % = am Ziel/.test(tEnde),
+              tEnde.slice(-360));
+
+            // FEHLT die Angabe, wird sie NICHT zu 0 — eine 0 hiesse „am Stop
+            // ausgestiegen" und waere eine Behauptung statt einer Messung.
+            const ohneWeg = f([
+              ...Array.from({ length: 20 }, () =>
+                zd(5, "WIN", "2026-10-01T10:00:00Z", { exitReason: "X" })),
+              ...Array.from({ length: 10 }, () =>
+                zd(-5, "LOSS", "2026-10-01T10:00:00Z", { exitReason: "Y", exitPosition: 0.5 })),
+            ]);
+            torPruefung("eine fehlende exitPosition wird als 0 % gerechnet — "
+              + "das hiesse 'am Stop ausgestiegen'",
+              ohneWeg.gewinnHerkunft[0]?.weg === null
+              && ohneWeg.gewinnHerkunft[0]?.wegBekannt === 0,
+              JSON.stringify(ohneWeg.gewinnHerkunft[0]));
+            torPruefung("ohne Angabe behauptet die Antwort einen Weg",
+              /Weg unbekannt/.test(txt(ohneWeg)), txt(ohneWeg).slice(-300));
+            // GEGENPROBE: eine unbrauchbare Angabe zaehlt nicht mit.
+            const krummWeg = f([
+              ...Array.from({ length: 20 }, () =>
+                zd(5, "WIN", "2026-10-01T10:00:00Z", { exitReason: "X", exitPosition: 0.4 })),
+              ...Array.from({ length: 10 }, () =>
+                zd(5, "WIN", "2026-10-01T10:00:00Z", { exitReason: "X", exitPosition: "halb" })),
+            ]);
+            torPruefung("eine unbrauchbare exitPosition verfaelscht den Schnitt",
+              krummWeg.gewinnHerkunft[0]?.weg === 40
+              && krummWeg.gewinnHerkunft[0]?.wegBekannt === 20
+              && krummWeg.gewinnHerkunft[0]?.anzahl === 30,
+              JSON.stringify(krummWeg.gewinnHerkunft[0]));
+            torPruefung("die Teilangabe (20/30) steht nicht in der Antwort",
+              /\(20\/30\)/.test(txt(krummWeg)), txt(krummWeg).slice(-300));
+
+            // SCHLUPF: beim Schliessen kann der Kurs ueber das Ziel oder
+            // unter den Stop hinausgehen — dann liegt der Weg ausserhalb
+            // 0..100 %. Das gehoert SICHTBAR; eine Klemme wuerde es
+            // verstecken. Ohne einen solchen Wert kann der Testfall den
+            // Fehler gar nicht ausdruecken — die Sabotage „auf 0..100
+            // klemmen" blieb damit gruen. Vorgefuehrt.
+            const schlupf = f([
+              ...Array.from({ length: 20 }, () =>
+                zd(5, "WIN", "2026-10-01T10:00:00Z",
+                  { exitReason: "ZIEL", exitPosition: 1.08 })),
+              ...Array.from({ length: 10 }, () =>
+                zd(-5, "LOSS", "2026-10-01T10:00:00Z",
+                  { exitReason: "STOP", exitPosition: -0.04 })),
+            ]);
+            torPruefung("ein Weg ausserhalb 0..100 % (Schlupf) wird geklemmt "
+              + "und damit versteckt",
+              schlupf.gewinnHerkunft[0]?.weg === 108
+              && schlupf.verlustHerkunft[0]?.weg === -4,
+              `${schlupf.gewinnHerkunft[0]?.weg} / ${schlupf.verlustHerkunft[0]?.weg}`);
+
             // Die Gruppierung selbst — direkt aufgerufen. EIN Weg fuer
             // Breakeven, Gewinner und Verlierer; drei Kopien waeren drei
             // Stellen, an denen sie auseinanderlaufen koennen.
@@ -4039,12 +4113,18 @@ module.exports = async function pruefe() {
             if (typeof hl === "function") {
               torPruefung("herkunftListe wirft bei leerer Eingabe",
                 Array.isArray(hl([])) && hl([]).length === 0);
+              // Mit `weg`: ohne ihn kann der Fall nicht zeigen, ob die
+              // Buendelung den Weg mitnimmt — die Sabotage „wegSumme beim
+              // Buendeln auf 0" blieb damit gruen. Vorgefuehrt.
               const v2 = hl(Array.from({ length: maxH + 4 }, (_, i) =>
-                ({ pnl: i + 1, herkunft: `E${i}`, datum: null })));
+                ({ pnl: i + 1, herkunft: `E${i}`, datum: null, weg: 0.5 })));
               torPruefung("beim Buendeln gehen Zeilen verloren",
                 v2.reduce((a, h) => a + h.anzahl, 0) === maxH + 4
                 && v2.length === maxH + 1,
                 `${v2.reduce((a, h) => a + h.anzahl, 0)} Zeilen in ${v2.length} Eintraegen`);
+              torPruefung("beim Buendeln geht der Weg verloren",
+                v2.at(-1)?.weg === 50 && v2.at(-1)?.wegBekannt === 4,
+                JSON.stringify(v2.at(-1)));
               torPruefung("der Oe wird bei gemischten Vorzeichen falsch gemittelt",
                 hl([{ pnl: 10, herkunft: "X", datum: null },
                   { pnl: -4, herkunft: "X", datum: null }])[0]?.schnitt === 3,

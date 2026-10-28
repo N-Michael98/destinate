@@ -108,6 +108,20 @@ export type EwHerkunft = {
    * gebracht hätte, erklärt ein realisiertes R/R unter dem geplanten.
    */
   schnitt: number | null;
+  /**
+   * Wie weit die Trades dieses Etiketts im Schnitt auf dem Weg zum Ziel
+   * kamen, in Prozent: **0 = am Stop, 100 = am Ziel** (`exitPosition` aus
+   * `ausstiegsgrund()`, in den Notizen gespeichert).
+   *
+   * Das ist die Zahl, die ein Etikett allein nicht hergibt: `DAZWISCHEN`
+   * sagt nur „weder Stop noch Ziel" — ob bei 10 % oder bei 90 %, steht hier.
+   *
+   * `null`, wenn für dieses Etikett **keine** Zeile die Angabe trägt. Nicht
+   * gerundet weggelassen, nicht auf 0 gesetzt: unbekannt heisst unbekannt.
+   */
+  weg: number | null;
+  /** Wie viele Zeilen dieses Etiketts eine `exitPosition` hatten. */
+  wegBekannt: number;
   /** Aelteste und neueste Zeile dieses Etiketts (`YYYY-MM-DD`), falls bekannt. */
   von: string | null;
   bis: string | null;
@@ -237,7 +251,13 @@ export function tag(v: unknown): string | null {
 }
 
 /** Eine Zeile, nachdem sie den Ausschluss passiert hat. */
-export type GewerteteZeile = { pnl: number; herkunft: string; datum: string | null };
+export type GewerteteZeile = {
+  pnl: number;
+  herkunft: string;
+  datum: string | null;
+  /** `exitPosition`: 0 = am Stop, 1 = am Ziel. `null` = nicht gespeichert. */
+  weg: number | null;
+};
 
 /**
  * Gruppiert gewertete Zeilen nach ihrem Etikett (`result/exitReason`) und
@@ -255,8 +275,13 @@ export type GewerteteZeile = { pnl: number; herkunft: string; datum: string | nu
  * Mehr als `HERKUNFT_MAX` Etiketten werden gebündelt, nicht verschwiegen.
  */
 export function herkunftListe(zeilen: ReadonlyArray<GewerteteZeile>): EwHerkunft[] {
-  type Lage = { anzahl: number; summe: number; von: string | null; bis: string | null };
-  const leer: Lage = { anzahl: 0, summe: 0, von: null, bis: null };
+  type Lage = {
+    anzahl: number; summe: number; von: string | null; bis: string | null;
+    wegSumme: number; wegBekannt: number;
+  };
+  const leer: Lage = {
+    anzahl: 0, summe: 0, von: null, bis: null, wegSumme: 0, wegBekannt: 0,
+  };
   const aelter = (a: string | null, b: string | null) =>
     b === null ? a : (a === null || b < a ? b : a);
   const juenger = (a: string | null, b: string | null) =>
@@ -270,6 +295,11 @@ export function herkunftListe(zeilen: ReadonlyArray<GewerteteZeile>): EwHerkunft
       summe: l.summe + g.pnl,
       von: aelter(l.von, g.datum),
       bis: juenger(l.bis, g.datum),
+      // Nur die Zeilen MIT Angabe gehen in den Schnitt, und es wird
+      // mitgezählt wie viele das sind. Fehlende als 0 mitzurechnen hiesse
+      // „am Stop ausgestiegen" — eine Behauptung statt einer Messung.
+      wegSumme: l.wegSumme + (g.weg ?? 0),
+      wegBekannt: l.wegBekannt + (g.weg === null ? 0 : 1),
     });
   }
   const sortiert = [...zaehler.entries()]
@@ -277,6 +307,12 @@ export function herkunftListe(zeilen: ReadonlyArray<GewerteteZeile>): EwHerkunft
   const bau = (etikett: string, l: Lage): EwHerkunft => ({
     etikett, anzahl: l.anzahl,
     schnitt: l.anzahl > 0 ? Number((l.summe / l.anzahl).toFixed(2)) : null,
+    // NICHT geklemmt: ein Wert über 100 % oder unter 0 % ist echter Schlupf
+    // beim Schliessen und gehört sichtbar. Eine Klemme würde ihn verstecken,
+    // und genau das wäre die Lüge.
+    weg: l.wegBekannt > 0
+      ? Number((l.wegSumme / l.wegBekannt * 100).toFixed(1)) : null,
+    wegBekannt: l.wegBekannt,
     von: l.von, bis: l.bis,
   });
 
@@ -288,6 +324,8 @@ export function herkunftListe(zeilen: ReadonlyArray<GewerteteZeile>): EwHerkunft
       summe: a.summe + l.summe,
       von: aelter(a.von, l.von),
       bis: juenger(a.bis, l.bis),
+      wegSumme: a.wegSumme + l.wegSumme,
+      wegBekannt: a.wegBekannt + l.wegBekannt,
     }), leer)));
   }
   return aus;
@@ -322,7 +360,12 @@ export function erwartungswert(
 
   let ohneErgebnis = 0, rekonstruiert = 0, unlesbar = 0;
   let ausserhalbFenster = 0, ohneDatumImFenster = 0;
-  const gewertet: Array<{ pnl: number; herkunft: string; datum: string | null }> = [];
+  // DER Typ, nicht eine zweite Beschreibung davon: ein Inline-Typ hier war
+  // am 27.10. nach dem Anbau von `weg` nicht mehr deckungsgleich, und
+  // `safety-nets` sah es nicht — `ladeTsModul` transpiliert, ohne zu
+  // typpruefen. Gefangen hat es `tsc`. Mit `GewerteteZeile` kann es nicht
+  // mehr auseinanderlaufen.
+  const gewertet: GewerteteZeile[] = [];
 
   for (const z of alle) {
     // Das Fenster greift VOR allem anderen: eine Zeile ausserhalb soll weder
@@ -347,10 +390,16 @@ export function erwartungswert(
     const pnl = typeof z?.profitLoss === "number" && Number.isFinite(z.profitLoss)
       ? z.profitLoss : null;
     if (pnl === null) { unlesbar++; continue; }
+    // `exitPosition` steht in den Notizen (capital-trade-tracker.ts:1251).
+    // Nur eine endliche Zahl zählt — fehlt sie oder ist sie unbrauchbar,
+    // bleibt sie `null` und wird NICHT als 0 gerechnet. Eine 0 hiesse „am
+    // Stop ausgestiegen" und wäre eine Behauptung, keine Messung.
+    const roherWeg = (m as { exitPosition?: unknown }).exitPosition;
     gewertet.push({
       pnl,
       herkunft: `${etikett(z?.result) || "—"}/${grund || "—"}`,
       datum: tag(z?.updatedAt),
+      weg: typeof roherWeg === "number" && Number.isFinite(roherWeg) ? roherWeg : null,
     });
   }
 
@@ -443,7 +492,13 @@ export function erwartungswertText(e: EwErgebnis): string {
     const sp = h.von === null || h.bis === null ? "ohne Datum"
       : h.von === h.bis ? h.von : `${h.von} … ${h.bis}`;
     const s = h.schnitt === null ? "" : ` · Ø ${h.schnitt}`;
-    return `  ${h.etikett}: <b>${h.anzahl}</b>${s}  (${sp})`;
+    // „Weg" sagt, wie weit die Trades kamen: 0 % = am Stop, 100 % = am Ziel.
+    // Ohne Angabe steht dort nichts Erfundenes, sondern die Zahl der Zeilen,
+    // die sie nicht tragen.
+    const w = h.weg === null
+      ? (h.anzahl > 0 ? " · Weg unbekannt" : "")
+      : ` · Weg <b>${h.weg} %</b>${h.wegBekannt < h.anzahl ? ` (${h.wegBekannt}/${h.anzahl})` : ""}`;
+    return `  ${h.etikett}: <b>${h.anzahl}</b>${s}${w}  (${sp})`;
   };
   z.push(e.fensterTage === null
     ? "Zeitraum: <b>alles</b>  (<code>/edge 60</code> = nur letzte 60 Tage)"
@@ -508,7 +563,8 @@ export function erwartungswertText(e: EwErgebnis): string {
   // Ziels bringt, erklärt die Lücke, ein Etikett ohne Ø erklärt nichts.
   if (e.gewinnHerkunft.length > 0 || e.verlustHerkunft.length > 0) {
     z.push("");
-    z.push("<b>Woran die Trades enden</b> (result/exitReason · Ø P&L):");
+    z.push("<b>Woran die Trades enden</b> (result/exitReason · Ø P&L · Weg):");
+    z.push("<i>Weg: 0 % = am Stop, 100 % = am Ziel</i>");
     if (e.gewinnHerkunft.length > 0) {
       z.push(`Gewinner (${e.wins}):`);
       for (const h of e.gewinnHerkunft) z.push(herkunftZeile(h));
