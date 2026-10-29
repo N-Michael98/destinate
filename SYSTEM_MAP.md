@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 458 · Kanten: 1009
+Dateien mit internen Abhängigkeiten: 458 · Kanten: 1012
 
 
 ## analysis-engine/api
@@ -557,11 +557,13 @@ Dateien mit internen Abhängigkeiten: 458 · Kanten: 1009
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 - `frontend/app/api/telegram/webhook/route.ts`
   - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/agents/orchestrator-agent.ts`
   - → `frontend/lib/analysis-engine/overrides-store.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/expectancy/erwartungswert.ts`
+  - → `frontend/lib/handels-lage/handels-lage.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/killswitch/index.ts`
@@ -570,6 +572,7 @@ Dateien mit internen Abhängigkeiten: 458 · Kanten: 1009
   - → `frontend/lib/settings/settings-store.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
   - → `frontend/lib/trading-filters/trade-filters.ts`
+  - → `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
 - `frontend/app/api/trade-approval-engine/route.ts`
   - → `frontend/lib/portfolio-brain/trade-approval-engine.ts`
 - `frontend/app/api/trade-outcome-feedback-engine/route.ts`

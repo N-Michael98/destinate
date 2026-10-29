@@ -8,6 +8,10 @@ import { triggerKillswitch, resetKillswitch, getKillswitchReport } from "@/lib/k
 // den man benutzt, wenn ohnehin etwas kaputt ist. Statisch schlaegt ein
 // Problem beim BAUEN auf, nicht im Ernstfall.
 import { laufzeitStand, laufzeitZeilen } from "@/lib/laufzeit/laufzeit-stand";
+// STATISCH, wie `laufzeit-stand`: winzig, rein, ohne Nebenwirkungen. Ein
+// dynamischer Import waere eine Laufzeit-Fehlerquelle ausgerechnet in dem
+// Befehl, den man benutzt, wenn ohnehin etwas kaputt ist (27.10.).
+import { handelsLage } from "@/lib/handels-lage/handels-lage";
 
 const ALLOWED_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
@@ -532,15 +536,116 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
       const stand = laufzeitStand(process.env, process.uptime(), Date.now());
       const zeilen = laufzeitZeilen(stand,
         stand.startMs === null ? null : telegramZeit(new Date(stand.startMs)));
+
+      // ── WARUM KEIN TRADE? (29.10.) ────────────────────────────────────
+      //
+      // `System: ONLINE` misst NUR den Killswitch. Vom 23. bis 29.10. wurde
+      // keine Position eroeffnet, und `/status` sagte durchgehend ONLINE —
+      // die Diagnose schwieg im interessanten Fall (Klasse 30.09.).
+      //
+      // JEDE Angabe einzeln abgesichert: faellt eine Quelle aus, heisst sie
+      // UNBEKANNT und die Antwort kommt trotzdem. Dieser Befehl wird
+      // gelesen, WEIL etwas kaputt ist — er darf an keiner Quelle scheitern
+      // und an keiner haengenbleiben (deshalb die Zeitgrenze).
+      const sicher = async <T>(f: () => Promise<T>): Promise<T | null> => {
+        try {
+          return await Promise.race([
+            f(),
+            new Promise<null>((r) => setTimeout(() => r(null), 5000)),
+          ]);
+        } catch { return null; }
+      };
+
+      // NEBENEINANDER, nicht nacheinander: sieben Quellen mal fuenf
+      // Sekunden Obergrenze waeren 35 s bis zur Antwort. Keine haengt von
+      // einer anderen ab, also ist die Obergrenze so fuenf Sekunden.
+      const [einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, tagesZaehler] =
+        await Promise.all([
+      sicher(async () => {
+        const { getSettings } = await import("@/lib/settings/settings-store");
+        return await getSettings();
+      }),
+      sicher(async () => {
+        const m = await import("@/lib/capital-com/capital-com-session");
+        return { verbunden: m.isCapitalConnected(), sess: m.getCapitalSession() };
+      }),
+      sicher(async () => {
+        const m = await import("@/lib/capital-com/capital-com-session");
+        const sx = m.getCapitalSession();
+        if (!sx) return null;
+        const { capitalGetPositions } = await import("@/lib/capital-com/capital-com-client");
+        const r = await capitalGetPositions(sx.apiKey, sx.cst, sx.securityToken);
+        return r?.ok && Array.isArray(r.positions) ? r.positions.length : null;
+      }),
+      sicher(async () => {
+        const { PEAK_SCHLUESSEL } = await import("@/lib/trading-filters/trade-filters");
+        const { cacheGet } = await import("@/lib/cache/redis-cache");
+        const v = await cacheGet<{ peak: number }>(PEAK_SCHLUESSEL);
+        return typeof v?.peak === "number" ? v.peak : null;
+      }),
+      sicher(async () => {
+        const { TAGESSUMME_SCHLUESSEL, handelstag } =
+          await import("@/lib/zyklus-bilanz/zyklus-bilanz");
+        const { cacheGet } = await import("@/lib/cache/redis-cache");
+        return await cacheGet<{ zyklen?: number; ausgaenge?: Record<string, number> }>(
+          TAGESSUMME_SCHLUESSEL(handelstag()));
+      }),
+      sicher(async () => {
+        const { isWithinTradingSession } = await import("@/lib/agents/orchestrator-agent");
+        return isWithinTradingSession();
+      }),
+      // EIN LESEPFAD LEGT GEMEINSAMEN ZUSTAND NICHT AN (Regel vom 07.09.).
+      // Besitzer von `__daily_trades__` ist der Orchestrator. Passt das
+      // Datum nicht, wird hier NICHT geschrieben, sondern dieselbe Quelle
+      // gelesen, die der Besitzer liest: Redis `daily_trades:<UTC-Datum>`.
+      sicher(async () => {
+        const heuteKey = new Date().toISOString().slice(0, 10);
+        const dt = global.__daily_trades__;
+        if (dt && dt.date === heuteKey && typeof dt.count === "number") return dt.count;
+        const { cacheGet } = await import("@/lib/cache/redis-cache");
+        const v = await cacheGet<{ count: number }>(`daily_trades:${heuteKey}`);
+        return typeof v?.count === "number" ? v.count : null;
+      }),
+        ]);
+
+      // EIN AUSFALL DARF `/status` NICHT UMBRINGEN — und sich auch nicht
+      // als Ergebnis ausgeben. Aufgefallen im Pruefstand: ein geworfener
+      // Aufruf liess den ganzen Befehl sterben, statt zu antworten.
+      // Deshalb Rueckfall MIT Grund statt stumm.
+      let lageZeilen: string[];
+      try {
+        lageZeilen = handelsLage({
+          brokerVerbunden: sitzung ? sitzung.verbunden : null,
+          modus: einst?.botSettings?.mode ?? null,
+          offenePositionen: offeneZahl,
+          maxGleichzeitig: einst?.botSettings?.maxConcurrentPositions ?? null,
+          tagesZaehler,
+          tagesLimit: einst?.botSettings?.maxTradesPerDay ?? null,
+          tagesLimitAktiv: einst?.botSettings?.tradeLimitEnabled ?? null,
+          kontostand: typeof sitzung?.sess?.balance === "number" ? sitzung.sess.balance : null,
+          hoechststand: hoechst,
+          maxDrawdownProzent: einst?.riskSettings?.maxTotalDrawdownPct ?? null,
+          inHandelszeit: inZeit,
+          zyklenHeute: typeof tagessumme?.zyklen === "number" ? tagessumme.zyklen : null,
+          ausgaenge: tagessumme?.ausgaenge ?? null,
+        }).zeilen;
+      } catch (e) {
+        lageZeilen = ["❔ Lage nicht berechenbar — "
+          + (e instanceof Error ? e.message : String(e))];
+      }
+
       await reply(chatId,
 `${statusEmoji} <b>System Status</b>
 
 Kill Switch: ${ks.triggered ? "AKTIV 🚨" : "Armed ✅"}
-System: ${ks.systemLocked ? "OFFLINE 🔴" : "ONLINE 🟢"}
+System: ${ks.systemLocked ? "OFFLINE 🔴" : "ONLINE 🟢"} <i>(nur der Killswitch)</i>
 🕐 ${telegramZeit()}
 
 🧩 <b>Laufender Stand</b>
 ${zeilen.join("\n")}
+
+🔎 <b>Warum kein Trade?</b>
+${lageZeilen.join("\n")}
 
 Befehle:
 ${SYSTEM_BEFEHLE}`

@@ -1861,6 +1861,111 @@ setzt** (3600 s ⇒ „1 h"). Die echte Uptime taugte als Massstab nicht: gemess
 läuft der Prüfer-Prozess an dieser Stelle erst **0.04 s** — eine Prüfung „mehr
 als eine halbe Sekunde" hinge an der Wanduhr statt am Verhalten.
 
+## Warum kein Trade? `/status` sagt es jetzt auch (29.10.)
+
+Vom **23. bis 29.10. wurde keine einzige Position eröffnet.** `/edge 60`
+bestätigt es unabhängig: der letzte Trade mit Ergebnis ist der **22.10.**
+
+`/status` antwortete in diesen sieben Tagen durchgehend `System: ONLINE 🟢`
+— und diese Zeile misst **ausschliesslich** `ks.systemLocked`, also den
+Killswitch. Über Broker-Sitzung, Modus, offene Positionen, Tageslimit,
+Drawdown-Sperre oder den Scan sagt sie **nichts**. Fehlerklasse „eine
+Diagnose darf im interessanten Fall nicht schweigen" — angewandt auf genau
+die Frage, die man im Ernstfall **vor** dem `/reset` stellt.
+
+**Zwei Tore sind ausgeschlossen, nicht vermutet:**
+
+- der Killswitch — `Armed ✅` ist der Zweig `ks.triggered === false`
+  (`webhook/route.ts:538`);
+- die Handelszeit — `isWithinTradingSession()` **ausgeführt**, an allen
+  Werktagen vom 21. bis 29.10. offen.
+
+### Drei Ausgänge, die stumm sind
+
+Der Zyklus endet an diesen drei Stellen mit **einer Logzeile** und **ohne**
+Telegram-Meldung (`orchestrator-agent.ts`):
+
+```ts
+if (!isCapitalConnected())                 return "Capital nicht verbunden";  // :737
+if (settings.botSettings.mode !== "AUTO")  return "Modus nicht AUTO";         // :743
+if (openCount >= maxConcurrent)            return "Max. Positionen erreicht"; // :811
+```
+
+Sieben Tage Schweigen sehen bei allen dreien **identisch** aus — und
+identisch zu „die KI wollte nicht". Besonders der zweite verdient
+Aufmerksamkeit: `DEFAULT_SETTINGS` steht auf `mode: "MANUAL"`
+(`settings-store.ts:6`). Ein Ausfall des Datenbank-Lesepfads genügt also —
+niemand muss etwas umgestellt haben.
+
+### Die Lage wird GERECHNET, nicht formuliert
+
+`handelsLage()` (`lib/handels-lage/`) ist eine **reine** Funktion ohne
+Importe: Broker, Modus, Positionen gegen Limit, Tageslimit,
+Gesamt-Drawdown, Handelszeit, Zyklen heute und die **Ausgänge nach
+Häufigkeit**. Eine Ternär-Kette im Antworttext wäre strukturell prüfbar,
+aber nicht rechnerisch — genau daran scheiterte die Broker-Lage einen Tag
+vorher.
+
+**Dreiwertig, ohne Ausnahme.** Jede Eingabe darf `null` sein und heisst
+dann **unbekannt** — nie „in Ordnung" und nie „blockiert". Hier wäre die
+stille Null besonders teuer: die Antwort wird gelesen, **weil** etwas
+kaputt ist, fehlende Werte sind also der Normalfall. Ein Höchststand von 0
+ergibt deshalb keine Division, sondern „nicht berechenbar".
+
+**Die Zahl, die alles beantwortet, lag längst in Redis:** `zyklus:tag:<UTC-
+Datum>` zählt jeden Zyklus-Ausgang — sie ging bisher nur einmal am Tag um
+22:05 UTC als Tagesbilanz raus.
+
+**Ein Lesepfad schreibt gemeinsamen Zustand nicht** (07.09.). Besitzer von
+`__daily_trades__` ist der Orchestrator. Passt das Datum nicht, schreibt
+`/status` **nichts**, sondern liest dieselbe Quelle wie der Besitzer:
+Redis `daily_trades:<Datum>`. Genau so hat am 07.09. ein Statusbericht das
+Tageslimit zurückgesetzt.
+
+### Zwei eigene Fehler — beide vom Prüfstand gefunden
+
+- **`/status` starb, statt zu antworten.** `handelsLage` ist ein
+  **statischer** Import, und `ladeTsModul` ersetzt jeden Import durch einen
+  Stellvertreter, der beim Aufruf **wirft**. Das ist kein Prüfstands-
+  Artefakt: es heisst, dass ein Fehler in dieser einen Zeile den ganzen
+  Befehl umbringen konnte — ausgerechnet den, den man benutzt, wenn etwas
+  kaputt ist. Jetzt Rückfall **mit Grund** („Lage nicht berechenbar — …")
+  statt stumm zu sterben, und der Prüfstand bekommt das echte Modul.
+- **Sieben Quellen nacheinander** = im schlimmsten Fall 7 × 5 s = **35
+  Sekunden** bis zur Antwort. Keine hängt von einer anderen ab, also
+  `Promise.all` — Obergrenze fünf Sekunden. Der Prüfer hält beides fest.
+
+### Absicherung
+
+`safety-nets` **rechnet** `handelsLage()` durch (650 → **686**): alles
+unbekannt darf **nichts** behaupten, jeder der drei stillen Ausgänge wird
+einzeln gefangen, der Drawdown wird gerechnet (2000 → 1700 = −15 % gegen
+Grenze 10), ein `NaN` gilt nicht als Zahl, und der **gesunde** Fall muss
+grün bleiben — sonst wäre der Riegel nur „immer rot" (Lehre vom 15.09.).
+
+Dazu die **Verdrahtung an der Quelle**: `mode`, `maxConcurrentPositions`,
+`maxTradesPerDay` und `tradeLimitEnabled` werden per Klammerzähler aus
+`DEFAULT_SETTINGS.botSettings` geschnitten, `maxTotalDrawdownPct` aus
+`riskSettings`, und die Redis-Schlüssel müssen über `PEAK_SCHLUESSEL` bzw.
+`TAGESSUMME_SCHLUESSEL(handelstag())` kommen statt als Zeichenkette.
+
+**21 von 23 Sabotagen** im ersten Lauf. Die Gegenprobe fing beide
+Ausreisser — und deckte dabei ein **drittes** Loch auf:
+
+| entwischt | warum |
+|---|---|
+| Sortierung der Ausgänge entfernt | **meine Testdaten** standen schon in der richtigen Reihenfolge — `Object.entries` behält sie, also kam ohne Sortierung dasselbe heraus. Jetzt absichtlich verkehrt eingetragen |
+| Urteil ohne Trichter-Hinweis | die Sabotage war **wirkungslos** (nur das erste Textstück ersetzt) **und** die Prüfung zu schwach: sie suchte im ganzen Text statt in der Urteilszeile |
+| Parallelität entfernt (`Promise.allSettled`) | die Prüfung suchte `await Promise.all([` **irgendwo in der Datei** — und fand ein **zweites, unbeteiligtes** Vorkommen in einem ganz anderen Befehl (Zeile 815). Jetzt an die Zuweisung selbst gebunden |
+
+Die ersten beiden sind zum wiederholten Mal dieselbe Lehre: **ein Testfall,
+der den Fehler nicht ausdrücken kann, beweist nichts.** Der Grund steht
+jetzt im Prüfer.
+
+Das dritte ist wörtlich die Lehre vom 25.10.: **ein Treffer beweist
+nichts über die andere Stelle.** Dort war die Antwort, zu **zählen**
+statt zu finden; hier, den Ausdruck an die Zuweisung zu binden.
+
 ## Ohne Stop keine Order (28.10.)
 
 Gefunden beim Nachgehen der Frage, ob offene Positionen geschützt sind, wenn

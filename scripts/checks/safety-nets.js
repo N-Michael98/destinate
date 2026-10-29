@@ -1416,6 +1416,13 @@ module.exports = async function pruefe() {
             // Ersatz liefe der Pruefstand gegen den Stellvertreter und meldete
             // einen Fehler, den es im Betrieb nicht gibt.
             "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+            // Seit dem 29.10. nennt /status, WARUM nicht gehandelt wird.
+            // Ohne diesen Ersatz liefe der Aufruf gegen den Stellvertreter,
+            // der beim Aufruf wirft — der Pruefstand meldete dann einen
+            // Fehler, den es im Betrieb nicht gibt. (Die Datenquellen
+            // DUERFEN weiter werfen: sie liegen in `sicher()` und ergeben
+            // dort "unbekannt" — genau der Fall, den die Funktion abdeckt.)
+            "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts").exports,
             "trading-filters/trade-filters": {
               PEAK_SCHLUESSEL: "peak_balance",
               peakZuruecksetzen: async () => ({ ok: true, alt: 10000 }),
@@ -1696,6 +1703,7 @@ module.exports = async function pruefe() {
             },
             "expectancy/erwartungswert": ewE.exports,
             "laufzeit/laufzeit-stand": lzE.exports,
+            "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts").exports,
           });
           if (whE.fehler || typeof whE.exports?.POST !== "function") {
             torPruefung("/edge ist nicht end-to-end ausfuehrbar", false,
@@ -2356,6 +2364,218 @@ module.exports = async function pruefe() {
           + "die Funktion zu benutzen — zwei Stellen laufen auseinander",
           !/report\.capitalComActive ===/.test(P)
           && !/!report\.capitalComActive/.test(P), pPfad);
+      }
+
+      // ── WARUM KEIN TRADE? (29.10.) ─────────────────────────────────────
+      //
+      // Vom 23. bis 29.10. wurde keine Position eroeffnet, und `/status`
+      // antwortete durchgehend `System: ONLINE` — die Zeile misst nur den
+      // Killswitch. Drei Ausgaenge des Zyklus beenden ihn mit EINER
+      // Logzeile und OHNE Telegram-Meldung; sieben Tage Schweigen sehen bei
+      // allen dreien gleich aus.
+      //
+      // `handelsLage()` wird deshalb GERECHNET, nicht gelesen: eine
+      // Ternaer-Kette im Antworttext waere strukturell pruefbar, aber nicht
+      // rechnerisch — genau daran scheiterte die Broker-Lage am 28.10.
+      {
+        const hl = ladeTsModul("lib/handels-lage/handels-lage.ts");
+        const handelsLage = hl.exports?.handelsLage;
+        if (hl.fehler || typeof handelsLage !== "function") {
+          torPruefung("handelsLage() ist nicht ausfuehrbar", false,
+            hl.fehler ?? "nicht exportiert");
+        } else {
+          const LEER = {
+            brokerVerbunden: null, modus: null, offenePositionen: null,
+            maxGleichzeitig: null, tagesZaehler: null, tagesLimit: null,
+            tagesLimitAktiv: null, kontostand: null, hoechststand: null,
+            maxDrawdownProzent: null, inHandelszeit: null, zyklenHeute: null,
+            ausgaenge: null,
+          };
+          const mit = (o) => handelsLage({ ...LEER, ...o });
+          const txt = (r) => r.zeilen.join("\n");
+
+          // 1. ALLES UNBEKANNT darf NICHTS behaupten — weder "blockiert"
+          //    noch "in Ordnung". Das ist der haeufigste Fall, wenn es
+          //    wirklich brennt.
+          const nichts = mit({});
+          torPruefung("bei lauter unbekannten Werten wird ein Blocker "
+            + "behauptet — eine fehlende Angabe ist kein Befund",
+            nichts.blocker.length === 0, JSON.stringify(nichts.blocker));
+          torPruefung("bei lauter unbekannten Werten meldet nichts "
+            + "\"unbekannt\" — dann sieht ein Totalausfall wie ein gesundes "
+            + "System aus",
+            nichts.unbekannt.length >= 6 && /unbekannt/i.test(txt(nichts)),
+            JSON.stringify(nichts.unbekannt));
+          torPruefung("bei unbekannten Werten wird trotzdem \"verbunden\" "
+            + "oder \"AUTO\" behauptet",
+            !/✅ Broker/.test(txt(nichts)) && !/✅ Modus/.test(txt(nichts)),
+            txt(nichts).slice(0, 120));
+
+          // 2. Die drei stillen Ausgaenge des Zyklus — je einzeln.
+          const ohneBroker = mit({ brokerVerbunden: false });
+          torPruefung("eine fehlende Broker-Sitzung wird nicht als Blocker "
+            + "gemeldet — genau dieser Ausgang ist im Log stumm",
+            ohneBroker.blocker.some((b) => /Broker-Sitzung/.test(b)),
+            JSON.stringify(ohneBroker.blocker));
+          const manuell = mit({ modus: "MANUAL" });
+          torPruefung("Modus MANUAL wird nicht als Blocker gemeldet — "
+            + "DEFAULT_SETTINGS steht auf MANUAL, ein DB-Ausfall genuegt",
+            manuell.blocker.some((b) => /MANUAL/.test(b) && /AUTO/.test(b)),
+            JSON.stringify(manuell.blocker));
+          const voll = mit({ offenePositionen: 3, maxGleichzeitig: 3 });
+          torPruefung("ein erreichtes Positions-Limit wird nicht gemeldet",
+            voll.blocker.some((b) => /3 von 3/.test(b)),
+            JSON.stringify(voll.blocker));
+          const platz = mit({ offenePositionen: 1, maxGleichzeitig: 3 });
+          torPruefung("1 von 3 Positionen gilt faelschlich als Limit",
+            platz.blocker.length === 0, JSON.stringify(platz.blocker));
+
+          // 3. Tageslimit — inklusive der Gegenprobe "Limit ausgeschaltet".
+          const tagVoll = mit({ tagesZaehler: 5, tagesLimit: 5, tagesLimitAktiv: true });
+          torPruefung("ein erreichtes Tageslimit wird nicht gemeldet",
+            tagVoll.blocker.some((b) => /Tageslimit/.test(b)),
+            JSON.stringify(tagVoll.blocker));
+          const tagAus = mit({ tagesZaehler: 9, tagesLimit: 5, tagesLimitAktiv: false });
+          torPruefung("ein AUSGESCHALTETES Tageslimit blockt angeblich",
+            tagAus.blocker.length === 0, JSON.stringify(tagAus.blocker));
+
+          // 4. Gesamt-Drawdown — die Sperre, die sich nicht selbst heilt.
+          const ddRot = mit({ hoechststand: 2000, kontostand: 1700, maxDrawdownProzent: 10 });
+          torPruefung("ein ueberschrittener Gesamt-Drawdown wird nicht "
+            + "gemeldet — sein Telegram-Alarm feuert nur EINMAL je Hoechststand",
+            ddRot.blocker.some((b) => /Drawdown/.test(b) && /15\.00/.test(b)),
+            JSON.stringify(ddRot.blocker));
+          torPruefung("der Ausweg /peakreset wird nicht genannt",
+            /peakreset/.test(JSON.stringify(ddRot.blocker)),
+            JSON.stringify(ddRot.blocker));
+          const ddGruen = mit({ hoechststand: 2000, kontostand: 1900, maxDrawdownProzent: 10 });
+          torPruefung("ein eingehaltener Drawdown blockt angeblich",
+            ddGruen.blocker.length === 0, JSON.stringify(ddGruen.blocker));
+          // Ein Hoechststand von 0 ist keine Messung, sondern unbekannt —
+          // sonst waere jede Division eine erfundene Zahl.
+          const ddNull = mit({ hoechststand: 0, kontostand: 500, maxDrawdownProzent: 10 });
+          torPruefung("ein Hoechststand von 0 wird gerechnet statt als "
+            + "unbekannt gemeldet",
+            ddNull.blocker.length === 0 && ddNull.unbekannt.includes("Gesamt-Drawdown"),
+            JSON.stringify(ddNull));
+          const ddNaN = mit({ hoechststand: Number.NaN, kontostand: 500, maxDrawdownProzent: 10 });
+          torPruefung("ein NaN-Hoechststand gilt als Zahl",
+            ddNaN.unbekannt.includes("Gesamt-Drawdown"), JSON.stringify(ddNaN.unbekannt));
+
+          // 5. Laufen ueberhaupt Zyklen?
+          const keineZyklen = mit({ zyklenHeute: 0 });
+          torPruefung("0 Zyklen heute wird nicht als Blocker gemeldet — "
+            + "eine tote Schleife sieht sonst aus wie ein ruhiger Tag",
+            keineZyklen.blocker.some((b) => /KEIN einziger Zyklus/.test(b)),
+            JSON.stringify(keineZyklen.blocker));
+
+          // 6. Die Ausgaenge, nach Haeufigkeit — die Zahl, die alles sagt.
+          // ABSICHTLICH VERKEHRT EINGETRAGEN. Die erste Fassung listete den
+          // haeufigsten Ausgang schon an erster Stelle — `Object.entries`
+          // behaelt die Reihenfolge, also kam ohne Sortierung dasselbe
+          // heraus und die Sabotage "Sortierung entfernt" blieb gruen.
+          // Ein Testfall, der den Fehler nicht ausdruecken kann, beweist
+          // nichts (30.09., und seitdem mehrfach).
+          const mitAusgang = mit({
+            zyklenHeute: 288,
+            ausgaenge: { "Modus nicht AUTO": 88, "Capital nicht verbunden": 200, "Leer": 0 },
+          });
+          const tA = txt(mitAusgang);
+          torPruefung("die Ausgaenge stehen nicht in der Antwort",
+            /Capital nicht verbunden: 200/.test(tA), tA.slice(0, 160));
+          torPruefung("die Ausgaenge sind nicht nach Haeufigkeit sortiert — "
+            + "der haeufigste ist der gesuchte",
+            tA.indexOf("Capital nicht verbunden") < tA.indexOf("Modus nicht AUTO"), "");
+          torPruefung("ein Ausgang mit Anzahl 0 wird mitgezaehlt",
+            !/Leer/.test(tA), tA.slice(0, 160));
+
+          // 7. Der gesunde Fall — ohne ihn beweist nichts, dass der Riegel
+          //    nicht einfach immer rot ist (Lehre vom 15.09.).
+          const gesund = mit({
+            brokerVerbunden: true, modus: "AUTO", offenePositionen: 1,
+            maxGleichzeitig: 3, tagesZaehler: 0, tagesLimit: 5,
+            tagesLimitAktiv: true, kontostand: 1950, hoechststand: 2000,
+            maxDrawdownProzent: 10, inHandelszeit: true, zyklenHeute: 288,
+            ausgaenge: { "Analyse ohne GO": 288 },
+          });
+          torPruefung("ein gesundes System meldet trotzdem einen Blocker",
+            gesund.blocker.length === 0 && gesund.unbekannt.length === 0,
+            JSON.stringify({ b: gesund.blocker, u: gesund.unbekannt }));
+          // NUR DIE URTEILSZEILE. Die erste Fassung suchte im GANZEN Text —
+          // ein ersetztes Urteil blieb damit gruen, solange die Woerter
+          // irgendwo anders noch standen. "Ein Zeichen-Fenster beweist
+          // Naehe, nicht Zugehoerigkeit" (22.09.), hier in der Spielart
+          // "irgendwo in derselben Antwort".
+          const urteil = gesund.zeilen[gesund.zeilen.length - 1] ?? "";
+          torPruefung("das Urteil beim gesunden System verweist nicht auf "
+            + "den Trichter — dort stirbt das Signal dann naemlich",
+            /Trichter/.test(urteil) && /Tagesbilanz/.test(urteil), urteil);
+          torPruefung("das Urteil behauptet \"alles in Ordnung\", statt zu "
+            + "sagen, dass nur KEIN TOR blockt — das ist nicht dasselbe",
+            /Kein Tor blockt/.test(urteil), urteil);
+        }
+
+        // ── UND DIE VERDRAHTUNG (Klasse 30.09.) ─────────────────────────
+        //
+        // Eine gerechnete Funktion beweist nichts ueber ihre Aufrufstelle.
+        // Jeder Feldname wird hier an der QUELLE geholt, nicht aus dem
+        // Gedaechtnis: aus `DEFAULT_SETTINGS` per Klammerzaehler und aus den
+        // Exporten der jeweiligen Module.
+        const wPfad = "frontend/app/api/telegram/webhook/route.ts";
+        const W = read(wPfad);
+        torPruefung("/status ruft handelsLage() nicht auf",
+          /lageZeilen = handelsLage\(\{/.test(W), wPfad);
+        torPruefung("der Block steht nicht in der Antwort von /status",
+          /Warum kein Trade\?/.test(W) && /\$\{lageZeilen\.join/.test(W), wPfad);
+        {
+          const st = read("frontend/lib/settings/settings-store.ts");
+          let bot = "", risk = "";
+          try { bot = objectBlock(st, "botSettings:"); } catch { bot = ""; }
+          try { risk = objectBlock(st, "riskSettings:"); } catch { risk = ""; }
+          torPruefung("die Einstellungs-Bloecke sind nicht auffindbar — "
+            + "ohne sie beweist jede Feldnamen-Pruefung darunter nichts",
+            bot.length > 50 && risk.length > 20, `bot=${bot.length} risk=${risk.length}`);
+          for (const feld of ["mode", "maxConcurrentPositions", "maxTradesPerDay",
+            "tradeLimitEnabled"]) {
+            torPruefung(`\`${feld}\` steht nicht in botSettings — /status liest `
+              + "dann einen Namen, den es nicht gibt (Fehler vom 30.09.)",
+              new RegExp(`\\b${feld}\\s*:`).test(bot)
+              && new RegExp(`botSettings\\?\\.${feld}\\b`).test(W), feld);
+          }
+          torPruefung("`maxTotalDrawdownPct` steht nicht in riskSettings",
+            /\bmaxTotalDrawdownPct\s*:/.test(risk)
+            && /riskSettings\?\.maxTotalDrawdownPct\b/.test(W), "riskSettings");
+        }
+        // Die Schluessel kommen aus ihren Modulen, nicht als Zeichenkette.
+        torPruefung("der Hoechststand wird nicht ueber PEAK_SCHLUESSEL gelesen",
+          /PEAK_SCHLUESSEL/.test(W) && !/"peak_balance"/.test(W), wPfad);
+        torPruefung("die Tagessumme wird nicht ueber TAGESSUMME_SCHLUESSEL "
+          + "und handelstag() gelesen",
+          /TAGESSUMME_SCHLUESSEL\(handelstag\(\)\)/.test(W), wPfad);
+        // EIN LESEPFAD SCHREIBT GEMEINSAMEN ZUSTAND NICHT (07.09.).
+        torPruefung("/status LEGT `__daily_trades__` an oder schreibt hinein "
+          + "— genau so verlor der Orchestrator am 07.09. sein Tageslimit",
+          !/global\.__daily_trades__\s*=/.test(W)
+          && !/global\.__daily_trades__\s*\?\?=/.test(W), wPfad);
+        torPruefung("bei fremdem Datum wird NICHT dieselbe Quelle gelesen "
+          + "wie der Besitzer (Redis daily_trades:<Datum>)",
+          /daily_trades:\$\{heuteKey\}/.test(W), wPfad);
+        // Der Befehl wird gelesen, WENN etwas kaputt ist — er darf an
+        // keiner Quelle haengenbleiben.
+        // AN DIE ZUWEISUNG GEBUNDEN, nicht an die Datei. Die erste Fassung
+        // suchte `await Promise.all([` irgendwo — und fand ein zweites,
+        // unbeteiligtes Vorkommen in einem anderen Befehl. Die Sabotage an
+        // der Faktensammlung blieb damit gruen: "ein Treffer beweist nichts
+        // ueber die andere Stelle" (25.10.).
+        torPruefung("die Faktensammlung laeuft NACHEINANDER — sieben "
+          + "Quellen mal fuenf Sekunden waeren 35 s bis zur Antwort",
+          /\[einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, tagesZaehler\]\s*=\s*await Promise\.all\(\[/.test(W), wPfad);
+        torPruefung("die Faktensammlung hat keine Zeitgrenze — /status "
+          + "haengt dann an einem toten Broker",
+          /setTimeout\(\(\) => r\(null\), \d+\)/.test(W), wPfad);
+        torPruefung("die ONLINE-Zeile sagt nicht mehr, dass sie NUR den "
+          + "Killswitch misst",
+          /nur der Killswitch/.test(W), wPfad);
       }
 
       // ── UND DAS VERHALTEN, NICHT DER WORTLAUT ──────────────────────────
