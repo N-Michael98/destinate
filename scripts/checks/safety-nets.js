@@ -2389,7 +2389,7 @@ module.exports = async function pruefe() {
             maxGleichzeitig: null, tagesZaehler: null, tagesLimit: null,
             tagesLimitAktiv: null, kontostand: null, hoechststand: null,
             maxDrawdownProzent: null, inHandelszeit: null, zyklenHeute: null,
-            ausgaenge: null,
+            ausgaenge: null, trichter: null,
           };
           const mit = (o) => handelsLage({ ...LEER, ...o });
           const txt = (r) => r.zeilen.join("\n");
@@ -2513,6 +2513,76 @@ module.exports = async function pruefe() {
           torPruefung("das Urteil behauptet \"alles in Ordnung\", statt zu "
             + "sagen, dass nur KEIN TOR blockt — das ist nicht dasselbe",
             /Kein Tor blockt/.test(urteil), urteil);
+          // ── DER TRICHTER (29.10.) ──────────────────────────────────
+          //
+          // Das Urteil verwies auf die Zyklus-Tagesbilanz, statt zu
+          // antworten — dabei liegen dieselben Zahlen in derselben
+          // Tagessumme. "Jede Stufe braucht eine eigene Zahl" (22.09.),
+          // hier eine Ebene weiter vorn: ein Verweis ist keine Zahl.
+          const TRICHTER = {
+            scans: 162, maerkte: 4860, richtungen: 36, vetos: 2,
+            stilVerworfen: 1, ohneVolleDaten: 5,
+            ohneVolleDatenGrund: { "Strategien": 5 },
+            unterGrenze: 20, confMin: 65, confMax: 68,
+            rrAbgelehnt: 7, ohneStopZiel: 1, go: 0,
+          };
+          const tr = mit({ brokerVerbunden: true, modus: "AUTO",
+            offenePositionen: 0, maxGleichzeitig: 6, tagesZaehler: 0,
+            tagesLimit: 21, tagesLimitAktiv: true, kontostand: 1870.57,
+            hoechststand: 1990.36, maxDrawdownProzent: 10,
+            inHandelszeit: true, zyklenHeute: 258, ausgaenge: { "x": 1 },
+            trichter: TRICHTER });
+          const tTr = txt(tr);
+          torPruefung("der Trichter fehlt in der Antwort — das Urteil "
+            + "verwiese dann wieder auf eine andere Nachricht",
+            /Trichter heute/.test(tTr), tTr.slice(-200));
+          for (const [name, zahlText] of [["Richtungssignale", "36"],
+            ["KI-Veto", "2"], ["unter der Confidence-Grenze", "20"],
+            ["an der Risiko-Freigabe gescheitert", "7"],
+            ["ohne Stop/Ziel von GPT", "1"], ["GO", "0"]]) {
+            // OHNE REGEX. Die Stufennamen enthalten `/` und `(`; ein
+            // Escapen im Ersetzungstext hat diese Stelle schon einmal
+            // zerlegt, weil `$&` in `String.replace` fuer den gefundenen
+            // Text steht. Eine Zeilensuche braucht das alles nicht.
+            const zeile = tTr.split("\n").find((l) => l.includes(name)) ?? "";
+            torPruefung(`die Trichter-Stufe "${name}" fehlt oder traegt `
+              + "nicht ihre eigene Zahl",
+              zeile !== "" && zeile.includes(zahlText), `${name} -> ${zeile}`);
+          }
+          torPruefung("der GRUND des Datenausfalls fehlt — die Zahl allein "
+            + "sagt nicht, WELCHER Dienst weg war (22.09.)",
+            /Strategien 5/.test(tTr), tTr.slice(0, 200));
+          torPruefung("die Confidence-Spanne fehlt",
+            /\(65–68\)/.test(tTr), tTr.slice(0, 200));
+          // DAS URTEIL muss die groesste Stufe NENNEN, nicht verweisen.
+          const urteilTr = tr.zeilen[tr.zeilen.length - 1] ?? "";
+          torPruefung("das Urteil nennt die groesste Trichter-Stufe nicht — "
+            + "ein Verweis auf eine andere Nachricht ist keine Antwort",
+            /Grösste Stufe/.test(urteilTr)
+            && /unter der Confidence-Grenze/.test(urteilTr), urteilTr);
+          // Gegenprobe: mit GO > 0 liegt es NICHT an der Signalkette.
+          const trGo = mit({ brokerVerbunden: true, modus: "AUTO",
+            offenePositionen: 0, maxGleichzeitig: 6, tagesZaehler: 0,
+            tagesLimit: 21, tagesLimitAktiv: true, kontostand: 1870.57,
+            hoechststand: 1990.36, maxDrawdownProzent: 10,
+            inHandelszeit: true, zyklenHeute: 258, ausgaenge: { "x": 1 },
+            trichter: { ...TRICHTER, go: 3 } });
+          const urteilGo = trGo.zeilen[trGo.zeilen.length - 1] ?? "";
+          torPruefung("bei GO > 0 behauptet das Urteil weiter, das Signal "
+            + "sterbe im Trichter — dann liegt es an der Ausfuehrung",
+            /Ausführung/.test(urteilGo) && !/Grösste Stufe/.test(urteilGo),
+            urteilGo);
+          // Eine unbekannte Stufe wird NICHT zu 0.
+          const trLuecke = mit({ trichter: { ...TRICHTER, rrAbgelehnt: null } });
+          torPruefung("eine unbekannte Trichter-Stufe wird als 0 gezeigt — "
+            + "aus \"nicht gemessen\" wird damit eine Messung",
+            /an der Risiko-Freigabe gescheitert: unbekannt/.test(txt(trLuecke)),
+            txt(trLuecke).slice(0, 240));
+          // Ohne Analyse gibt es keinen Trichter — und das wird gesagt.
+          const trOhne = mit({ trichter: { ...TRICHTER, scans: 0 } });
+          torPruefung("bei 0 Analysen wird ein Trichter vorgetaeuscht",
+            /kein einziger Zyklus kam bis zur Analyse/.test(txt(trOhne)),
+            txt(trOhne).slice(0, 200));
         }
 
         // ── UND DIE VERDRAHTUNG (Klasse 30.09.) ─────────────────────────
@@ -2567,6 +2637,30 @@ module.exports = async function pruefe() {
         // unbeteiligtes Vorkommen in einem anderen Befehl. Die Sabotage an
         // der Faktensammlung blieb damit gruen: "ein Treffer beweist nichts
         // ueber die andere Stelle" (25.10.).
+        // DIE TRICHTER-FELDER HEISSEN WIE IN `Tagessumme` — an der QUELLE
+        // geholt, nicht aus dem Gedaechtnis (Fehler vom 30.09.).
+        {
+          const zb = read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts");
+          let typ = "";
+          try { typ = objectBlock(zb, "export type Tagessumme ="); } catch { typ = ""; }
+          torPruefung("der Typ `Tagessumme` ist nicht auffindbar — ohne ihn "
+            + "beweist jede Feldnamen-Pruefung darunter nichts",
+            typ.length > 100, `${typ.length} Zeichen`);
+          for (const feld of ["scans", "maerkte", "gpt", "vetos", "stilVerworfen",
+            "ohneVolleDaten", "ohneVolleDatenGrund", "unterGrenze", "confMin",
+            "confMax", "rrAbgelehnt", "ohneStopZiel", "go"]) {
+            torPruefung(`\`${feld}\` steht nicht in \`Tagessumme\` — /status `
+              + "liest dann einen Namen, den es nicht gibt",
+              new RegExp(`\\b${feld}\\s*:`).test(typ)
+              && new RegExp(`tagessumme\\.${feld}\\b`).test(W), feld);
+          }
+          // BUY UND SELL. Nur BUY zu zaehlen haette die Richtungssignale
+          // halbiert — und die groesste Trichter-Stufe damit verschoben.
+          torPruefung("die Richtungssignale zaehlen nicht BUY UND SELL",
+            W.includes("tagessumme.gpt.BUY + tagessumme.gpt.SELL"), wPfad);
+          torPruefung("der Trichter wird gar nicht uebergeben",
+            /trichter: tagessumme/.test(W), wPfad);
+        }
         torPruefung("die Faktensammlung laeuft NACHEINANDER — sieben "
           + "Quellen mal fuenf Sekunden waeren 35 s bis zur Antwort",
           /\[einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, tagesZaehler\]\s*=\s*await Promise\.all\(\[/.test(W), wPfad);

@@ -1937,7 +1937,7 @@ Tageslimit zurückgesetzt.
 
 ### Absicherung
 
-`safety-nets` **rechnet** `handelsLage()` durch (650 → **686**): alles
+`safety-nets` **rechnet** `handelsLage()` durch (650 → **715**): alles
 unbekannt darf **nichts** behaupten, jeder der drei stillen Ausgänge wird
 einzeln gefangen, der Drawdown wird gerechnet (2000 → 1700 = −15 % gegen
 Grenze 10), ein `NaN` gilt nicht als Zahl, und der **gesunde** Fall muss
@@ -1965,6 +1965,73 @@ jetzt im Prüfer.
 Das dritte ist wörtlich die Lehre vom 25.10.: **ein Treffer beweist
 nichts über die andere Stelle.** Dort war die Antwort, zu **zählen**
 statt zu finden; hier, den Ausdruck an die Zuweisung zu binden.
+
+### Der erste Lauf hat geantwortet — und meinen Verdacht widerlegt
+
+Live auf `a6bcd96`:
+
+```
+✅ Broker: Capital.com verbunden      ✅ Modus: AUTO
+✅ Positionen: 0/6                    ✅ Tageslimit: 0/21
+✅ Gesamt-Drawdown: -6.02 % (Grenze -10 %, Höchststand 1990.36, Stand 1870.57)
+✅ Handelszeit: offen                 ✅ Zyklen heute: 258
+📤 Ausgänge heute:
+   • Keine freigegebenen Signale: 100
+   • Ausserhalb Handelszeit: 96
+   • Keine Kandidaten nach Filter: 62
+```
+
+**Mein Verdacht „Modus steht auf MANUAL" war falsch** — er steht auf AUTO.
+Die Vermutung stand als Vermutung da und ist damit widerlegt; so gehört es.
+
+**Kein einziges Tor blockt.** 162 von 258 Zyklen sterben im **Trichter**:
+100-mal kam der Scan ohne freigegebenes Signal zurück, 62-mal liess die
+Filterkette keinen Kandidaten übrig. Die 96 „Ausserhalb Handelszeit" sind
+die Nacht im selben UTC-Tag und völlig normal.
+
+### Ein Verweis ist keine Antwort
+
+Das Urteil lautete: „die Zyklus-Tagesbilanz (22:05 UTC) sagt an welcher
+Stufe." **Dabei liegen dieselben Zahlen in derselben Tagessumme**, die der
+Block ohnehin schon liest — er zeigte nur `zyklen` und `ausgaenge` davon.
+Das ist „jede Stufe braucht eine eigene Zahl" (22.09.) eine Ebene weiter
+vorn: ein Verweis auf eine andere Nachricht ist keine Zahl.
+
+Jetzt steht der Trichter **in derselben Antwort** — Richtungssignale,
+KI-Veto, Stil verworfen, ohne vollständige Daten **samt Grund**, unter der
+Confidence-Grenze **mit Spanne**, an der Risiko-Freigabe gescheitert, ohne
+Stop/Ziel, GO. Und das Urteil **nennt die grösste Stufe**, statt zu
+verweisen.
+
+**Drei Regeln dabei, alle aus früheren Funden:**
+
+- eine Stufe ohne Zahl heisst **unbekannt**, nicht 0 — sonst wird aus
+  „nicht gemessen" eine Messung (22.09.);
+- bei `GO > 0` sagt das Urteil **„dann liegt es an der Ausführung"** statt
+  weiter auf den Trichter zu zeigen;
+- ohne Analyse (`scans === 0`) wird **kein** Trichter vorgetäuscht.
+
+Die Feldnamen hängen an der **Quelle**: `safety-nets` schneidet den Typ
+`Tagessumme` per Klammerzähler aus `zyklus-bilanz.ts` und hält jeden der
+dreizehn Namen dagegen — und dass `richtungen` wirklich **BUY + SELL**
+summiert, nicht nur BUY.
+
+#### Ein erzeugter Patch hat sich selbst zerlegt — `$&`
+
+Beim Einbau wurde der Prüfer unladbar (`SyntaxError`). Die Ursache ist
+keine Tippfehler-Geschichte, sondern eine Regel:
+**`$` ist im Ersetzungstext von `String.replace` ein Sonderzeichen.**
+Mein Ersatz enthielt `"\\$&"` — als Regex-Escape gedacht —, und JS setzte
+dort den **ganzen gefundenen Anker** ein.
+
+Behoben, und zwar zweifach: Einsetzen über eine **Funktion** als Ersatz
+(dort bedeutet `$` nichts), und an der Stelle selbst **gar kein Regex** —
+eine Zeilensuche mit `includes` braucht kein Escaping. Dieselbe Familie wie
+die verschluckten Backslashes: Werkzeuge, die den Text noch einmal
+interpretieren, bevor er ankommt. **Nach jedem erzeugten Codeblock `node -c
+<datei>`** — sonst fällt der Fehler erst im Prüferlauf auf, mit einer
+irreführenden Fundstelle.
+
 
 ## Ohne Stop keine Order (28.10.)
 

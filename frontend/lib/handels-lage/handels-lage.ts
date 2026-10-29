@@ -67,6 +67,37 @@ export interface HandelsLageEingaben {
   zyklenHeute: number | null;
   /** Ausgaenge heute mit Anzahl (aus derselben Tagessumme). */
   ausgaenge: Record<string, number> | null;
+  /** Die Stufen des Trichters — aus derselben Tagessumme. */
+  trichter: TrichterZahlen | null;
+}
+
+/**
+ * JEDE STUFE BRAUCHT EINE EIGENE ZAHL (Regel vom 22.09.).
+ *
+ * Sonst ist ein Datenausfall von einem Urteil nicht zu unterscheiden: ein
+ * Abend mit totem Python-Backend meldet dasselbe wie ein Abend, an dem die
+ * KI nichts mochte. Die Felder entsprechen `Tagessumme`
+ * (`lib/zyklus-bilanz/zyklus-bilanz.ts`) — sie werden dort gezaehlt, hier
+ * nur gelesen.
+ *
+ * `null` heisst auch hier UNBEKANNT, nicht 0.
+ */
+export interface TrichterZahlen {
+  /** Zyklen MIT Analyse. Ohne Scan gibt es keinen Trichter. */
+  scans: number | null;
+  maerkte: number | null;
+  /** BUY + SELL: die Signale, die ueberhaupt eine Richtung hatten. */
+  richtungen: number | null;
+  vetos: number | null;
+  stilVerworfen: number | null;
+  ohneVolleDaten: number | null;
+  ohneVolleDatenGrund: Record<string, number> | null;
+  unterGrenze: number | null;
+  confMin: number | null;
+  confMax: number | null;
+  rrAbgelehnt: number | null;
+  ohneStopZiel: number | null;
+  go: number | null;
 }
 
 export interface HandelsLage {
@@ -219,7 +250,58 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     }
   }
 
-  // ── 9. Das Urteil — und es behauptet nicht mehr, als es weiss ────────────
+  // ── 9. Der Trichter — wo das Signal stirbt, wenn kein Tor blockt ─────────
+  //
+  // Vorher verwies das Urteil auf die Zyklus-Tagesbilanz (22:05 UTC). Ein
+  // Verweis ist keine Antwort: dieselben Zahlen liegen in derselben
+  // Tagessumme, die oben schon gelesen wird.
+  let groessteStufe: { name: string; n: number } | null = null;
+  const t = e.trichter;
+  const scans = zahl(t?.scans ?? null);
+  if (t && scans !== null && scans > 0) {
+    const stufen: Array<[string, number | null]> = [
+      ["KI-Veto", zahl(t.vetos)],
+      ["Stil verworfen", zahl(t.stilVerworfen)],
+      ["ohne vollständige Daten", zahl(t.ohneVolleDaten)],
+      ["unter der Confidence-Grenze", zahl(t.unterGrenze)],
+      ["an der Risiko-Freigabe gescheitert", zahl(t.rrAbgelehnt)],
+      ["ohne Stop/Ziel von GPT", zahl(t.ohneStopZiel)],
+    ];
+    zeilen.push("");
+    const richt = zahl(t.richtungen);
+    const maerkte = zahl(t.maerkte);
+    zeilen.push(`🔻 <b>Trichter heute</b> (${scans} Analysen`
+      + `${maerkte === null ? "" : `, ${maerkte} Marktanalysen`}):`);
+    zeilen.push(`   • Richtungssignale (BUY/SELL): `
+      + `${richt === null ? "unbekannt" : richt}`);
+    for (const [name, n] of stufen) {
+      if (n === null) { zeilen.push(`   • ${name}: unbekannt`); continue; }
+      // Der Grund gehoert dazu: die Zahl allein sagt nicht, WELCHER Dienst
+      // ausgefallen ist — genau die Frage, mit der man ins Log steigt.
+      let zusatz = "";
+      if (name.startsWith("ohne vollständige") && t.ohneVolleDatenGrund) {
+        const g = Object.entries(t.ohneVolleDatenGrund)
+          .filter(([, v]) => zahl(v) !== null && (zahl(v) as number) > 0)
+          .map(([k, v]) => `${k} ${v}`).join(", ");
+        if (g) zusatz = ` — ${g}`;
+      }
+      if (name.startsWith("unter der Confidence")) {
+        const cMin = zahl(t.confMin); const cMax = zahl(t.confMax);
+        if (cMin !== null && cMax !== null) zusatz = ` (${cMin}–${cMax})`;
+      }
+      zeilen.push(`   • ${name}: ${n}${zusatz}`);
+      if (n > 0 && (groessteStufe === null || n > groessteStufe.n)) {
+        groessteStufe = { name, n };
+      }
+    }
+    const go = zahl(t.go);
+    zeilen.push(`   • <b>GO: ${go === null ? "unbekannt" : go}</b>`);
+  } else if (t && scans === 0) {
+    zeilen.push("");
+    zeilen.push("🔻 Trichter heute: kein einziger Zyklus kam bis zur Analyse");
+  }
+
+  // ── 10. Das Urteil — und es behauptet nicht mehr, als es weiss ───────────
   zeilen.push("");
   if (blocker.length > 0) {
     zeilen.push(`🛑 <b>Blockiert von ${blocker.length}:</b>`);
@@ -227,6 +309,14 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   } else if (unbekannt.length > 0) {
     zeilen.push("🟡 <b>Kein Tor blockt nachweislich</b> — aber "
       + `${unbekannt.length} Angabe(n) nicht feststellbar: ${unbekannt.join(", ")}`);
+  } else if (zahl(t?.go ?? null) !== null && (zahl(t?.go ?? null) as number) > 0) {
+    zeilen.push(`🟢 <b>Kein Tor blockt</b>, und ${zahl(t?.go ?? null)} Signal(e) `
+      + "wurden freigegeben. Bleiben die Trades trotzdem aus, liegt es an der "
+      + "Ausführung, nicht an der Signalkette.");
+  } else if (groessteStufe !== null) {
+    const g: { name: string; n: number } = groessteStufe;
+    zeilen.push("🟢 <b>Kein Tor blockt</b> — die Signale sterben im Trichter. "
+      + `Grösste Stufe heute: <b>${g.name}</b> (${g.n}).`);
   } else {
     zeilen.push("🟢 <b>Kein Tor blockt.</b> Bleiben die Trades trotzdem aus, "
       + "stirbt das Signal im Trichter — die Zyklus-Tagesbilanz (22:05 UTC) "

@@ -587,8 +587,17 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         const { TAGESSUMME_SCHLUESSEL, handelstag } =
           await import("@/lib/zyklus-bilanz/zyklus-bilanz");
         const { cacheGet } = await import("@/lib/cache/redis-cache");
-        return await cacheGet<{ zyklen?: number; ausgaenge?: Record<string, number> }>(
-          TAGESSUMME_SCHLUESSEL(handelstag()));
+        // Die Felder heissen wie in `Tagessumme` (zyklus-bilanz.ts) — dort
+        // werden sie gezaehlt, hier nur gelesen.
+        return await cacheGet<{
+          zyklen?: number; ausgaenge?: Record<string, number>;
+          scans?: number; maerkte?: number;
+          gpt?: { WAIT?: number; BUY?: number; SELL?: number };
+          vetos?: number; stilVerworfen?: number;
+          ohneVolleDaten?: number; ohneVolleDatenGrund?: Record<string, number>;
+          unterGrenze?: number; confMin?: number | null; confMax?: number | null;
+          rrAbgelehnt?: number; ohneStopZiel?: number; go?: number;
+        }>(TAGESSUMME_SCHLUESSEL(handelstag()));
       }),
       sicher(async () => {
         const { isWithinTradingSession } = await import("@/lib/agents/orchestrator-agent");
@@ -628,6 +637,27 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
           inHandelszeit: inZeit,
           zyklenHeute: typeof tagessumme?.zyklen === "number" ? tagessumme.zyklen : null,
           ausgaenge: tagessumme?.ausgaenge ?? null,
+          // Der Trichter kommt aus DERSELBEN Tagessumme. Fehlt sie, ist
+          // er `null` — unbekannt, nicht "alles null".
+          trichter: tagessumme
+            ? {
+              scans: tagessumme.scans ?? null,
+              maerkte: tagessumme.maerkte ?? null,
+              richtungen: typeof tagessumme.gpt?.BUY === "number"
+                && typeof tagessumme.gpt?.SELL === "number"
+                ? tagessumme.gpt.BUY + tagessumme.gpt.SELL : null,
+              vetos: tagessumme.vetos ?? null,
+              stilVerworfen: tagessumme.stilVerworfen ?? null,
+              ohneVolleDaten: tagessumme.ohneVolleDaten ?? null,
+              ohneVolleDatenGrund: tagessumme.ohneVolleDatenGrund ?? null,
+              unterGrenze: tagessumme.unterGrenze ?? null,
+              confMin: tagessumme.confMin ?? null,
+              confMax: tagessumme.confMax ?? null,
+              rrAbgelehnt: tagessumme.rrAbgelehnt ?? null,
+              ohneStopZiel: tagessumme.ohneStopZiel ?? null,
+              go: tagessumme.go ?? null,
+            }
+            : null,
         }).zeilen;
       } catch (e) {
         lageZeilen = ["❔ Lage nicht berechenbar — "
