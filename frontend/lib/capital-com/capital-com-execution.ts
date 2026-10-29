@@ -210,8 +210,13 @@ function calcPositionSize(
  * ── DER FUND ────────────────────────────────────────────────────────────────
  *
  * `LiveExecutionMonitor.tsx` (Dashboard-Ansicht „live-execution",
- * `app/page.tsx:3675`) schickt beim GO-Knopf **weder** `stopLossPrice` **noch**
- * `takeProfitPrice`. Die Route reicht das unverändert durch
+ * `app/page.tsx:3675`) schickte beim GO-Knopf **weder** `stopLossPrice`
+ * **noch** `takeProfitPrice`. DIESER KNOPF IST SEIT DEM 28.10. ENTFERNT — er
+ * war nachgemessen nie klickbar (die Liste las `queue.queue`, die Route
+ * liefert `items`), siehe CLAUDE.md „Der GO-Knopf war nie klickbar". Der
+ * Riegel bleibt: er gilt für JEDEN Aufrufer, auch einen künftigen.
+ *
+ * Die Route reichte das unverändert durch
  * (`execute/route.ts:23-24`, kein Standardwert), und
  * `capital-com-client.ts:760` lässt `stopLevel` dann einfach weg:
  *
@@ -238,8 +243,9 @@ function calcPositionSize(
  *       durch (`orchestrator-agent.ts:1305-1306`, `1351-1352`)
  *
  * `MarketScannerPanel.tsx:163-164` schickt beides ebenfalls mit. Der Riegel
- * blockiert damit **genau einen** Weg: den Knopf, der es vergisst — und dessen
- * `QueueItem` gar kein Stop-Feld besitzt, ihn also nicht liefern KANN.
+ * blockierte damit **genau einen** Weg: den Knopf, der es vergass — und dessen
+ * `QueueItem` gar kein Stop-Feld besass, ihn also nicht liefern KONNTE. Dieser
+ * Weg ist entfernt; der Riegel sichert die Stelle, nicht den Knopf.
  *
  * ── WARUM HIER UND NICHT IN DER KOMPONENTE ──────────────────────────────────
  *

@@ -2160,6 +2160,204 @@ module.exports = async function pruefe() {
         iRiegel >= 0 && iOrder >= 0 && iRiegel < iOrder,
         `riegel@${iRiegel} order@${iOrder}`);
 
+      // ── WER ORDERS AUSLOEST, MUSS EINEN STOP MITSCHICKEN (28.10.) ──────
+      //
+      // Anlass: `LiveExecutionMonitor.tsx` rief `/api/capital-com/execute`
+      // auf und schickte WEDER stopLossPrice NOCH takeProfitPrice. Der
+      // Laufzeit-Riegel faengt das zwar, aber dann scheitert der Knopf
+      // sichtbar statt gar nicht erst zu existieren — besser ist, dass eine
+      // solche Stelle gar nicht entsteht.
+      //
+      // EHRLICH ZUR REICHWEITE: geprueft wird auf DATEI-Ebene — kommt
+      // `stopLossPrice` in der Datei ueberhaupt vor, die eine Order-Route
+      // ruft? Das ist grob und beweist nicht, dass der Wert auch IN diesem
+      // Aufruf landet. Genau dafuer gibt es `ordersRiegel()`, der zur
+      // Laufzeit greift. Hier geht es um den Fall, den wir hatten: eine
+      // Komponente, die den Stop NIRGENDS erwaehnt.
+      //
+      // Kommentarbereinigt, sonst zaehlte eine Erwaehnung im Kommentar als
+      // Verwendung (die Fehlerklasse, die 2026 sechsmal zuschlug).
+      {
+        const ORDER_ROUTEN = ["/api/capital-com/execute", "/api/icmarkets/execute"];
+        const ohneK = (s) => s
+          .replace(/\/\*[\s\S]*?\*\//g, " ")
+          .split("\n").map((z) => z.replace(/(^|[^:])\/\/.*$/, "$1")).join("\n");
+        const ausloeser = [];
+        for (const f of sourceFiles([".ts", ".tsx"])) {
+          if (!f.startsWith("frontend/")) continue;
+          if (f.includes("app/api/")) continue;          // die Routen selbst
+          const q = ohneK(read(f));
+          if (!ORDER_ROUTEN.some((r) => q.includes(`"${r}"`))) continue;
+          ausloeser.push({ f, hatStop: /\bstopLossPrice\b/.test(q) });
+        }
+        // Selbstpruefung: findet die Suche ueberhaupt etwas? MarketScannerPanel
+        // loest nachweislich Orders aus — ohne diesen Treffer waere ein
+        // "alles sauber" wertlos.
+        torPruefung("die Suche nach Order-Ausloesern findet nichts — "
+          + "'keine Befunde' waere dann bedeutungslos",
+          ausloeser.some((a) => a.f.includes("MarketScannerPanel")),
+          `gefunden: ${ausloeser.map((a) => a.f).join(", ") || "keine"}`);
+        const ohneStop = ausloeser.filter((a) => !a.hatStop);
+        torPruefung("eine Komponente loest Orders aus, ohne einen Stop zu "
+          + "kennen — genau der Fund vom 28.10.",
+          ohneStop.length === 0, ohneStop.map((a) => a.f).join(", "));
+      }
+
+      // ── EIN FELD OHNE EMPFAENGER IST EIN FEHLER (28.10.) ───────────────
+      //
+      // `/api/execution-queue-position-sync` holt den Capital-Reconnect
+      // bewusst OHNE `await` (die Antwort soll nicht blockieren) und schickt
+      // deshalb `capitalComActive` und `reconnectError` mit. Beide Felder
+      // hatten bis heute KEINEN Leser — dieselbe Klasse wie ein Abo am Bus
+      // ohne Sender (17.09.): die Zeile sieht nach Information aus und geht
+      // ins Leere.
+      //
+      // Geprueft werden BEIDE Richtungen. Faellt das Feld aus der Route,
+      // hoert die Anzeige auf zu lesen, oder wird sie auf ZWEI Werte
+      // verkuerzt (`!report.capitalComActive`, womit eine fehlende Antwort
+      // wieder "nicht verbunden" hiesse — der Fehler vom 30.09.), wird das
+      // rot.
+      {
+        const ohneK2 = (q) => q
+          .replace(/\/\*[\s\S]*?\*\//g, " ")
+          .split("\n").map((zl) => zl.replace(/(^|[^:])\/\/.*$/, "$1")).join("\n");
+        // SELBSTPRUEFUNG an Faellen, die hier vollstaendig kontrolliert sind
+        // — nicht am Dateiinhalt, sonst haengt sie an einer Kommentar-
+        // Formulierung. Beide Richtungen: ein Treffer MUSS kommen, ein
+        // Kommentar-Treffer darf NICHT kommen.
+        torPruefung("die Kommentar-Bereinigung findet eine echte Verwendung nicht",
+          ohneK2("const x = report.capitalComActive;").includes("report.capitalComActive"),
+          "must-hit fehlgeschlagen");
+        torPruefung("die Kommentar-Bereinigung zaehlt ein Wort im KOMMENTAR "
+          + "als Verwendung — dann beweist 'wird gelesen' nichts",
+          !ohneK2("/* report.capitalComActive */").includes("report.capitalComActive")
+          && !ohneK2("// report.reconnectError").includes("report.reconnectError"),
+          "must-not-hit fehlgeschlagen");
+        const rPfad = "frontend/app/api/execution-queue-position-sync/route.ts";
+        const pPfad = "frontend/components/ExecutionQueuePositionSyncPanel.tsx";
+        const R = ohneK2(read(rPfad));
+        const P = ohneK2(read(pPfad));
+
+        // NUR DER ANTWORT-RUMPF ZAEHLT. Die erste Fassung suchte den
+        // Feldnamen in der ganzen Datei — und fand die ZEILE
+        // `const capitalComActive = isCapitalConnected();`. Die Sabotage
+        // "Feld nicht mehr mitschicken" blieb damit gruen, weil der Name
+        // woanders weiterlebte: "ein Wort an einer anderen Stelle ist keine
+        // Verwendung". Jetzt per Klammerzaehler ausgeschnitten.
+        //
+        // NICHT `objectBlock` aus `_lib`: das zaehlt nur `{}` ohne
+        // Zeichenketten-Bewusstsein (eine `}` in einem Text schliesst dort
+        // den Block — die Falle vom 30.09. bei `metaAntwortLesen`) und wirft
+        // statt `null` zu liefern. Hier wird ab der Marke selbst gezaehlt,
+        // damit auch `json(...)` ohne direktes `{` greift.
+        const rumpfAb = (src, marke) => {
+          const p = src.indexOf(marke);
+          if (p < 0) return null;
+          let tiefe = 0;
+          for (let i = p + marke.length - 1; i < src.length; i++) {
+            const c = src[i];
+            if (c === "(" || c === "{" || c === "[") tiefe++;
+            else if (c === ")" || c === "}" || c === "]") {
+              tiefe--;
+              if (tiefe === 0) return src.slice(p, i + 1);
+            } else if (c === '"' || c === "'" || c === "`") {
+              const q = c; i++;
+              while (i < src.length && src[i] !== q) { if (src[i] === "\\") i++; i++; }
+            }
+          }
+          return null;
+        };
+        // Selbstpruefung des Ausschneiders, an kontrollierten Faellen:
+        // der Name im Rumpf MUSS drin sein, der Name davor NICHT.
+        {
+          const probe = rumpfAb('const a = 1;\nreturn J({ ok: true, b: a });', "J(");
+          torPruefung("der Klammerzaehler schneidet den Antwort-Rumpf falsch aus",
+            probe !== null && /\bb\b/.test(probe) && !/const a/.test(probe),
+            `ausgeschnitten: ${String(probe).slice(0, 60)}`);
+        }
+        const antwort = rumpfAb(R, "NextResponse.json(");
+        torPruefung("der Antwort-Rumpf der Sync-Route ist nicht auffindbar — "
+          + "ohne ihn beweist jede Feld-Pruefung darunter nichts",
+          antwort !== null && antwort.length > 20, rPfad);
+        const inAntwort = antwort ?? "";
+
+        for (const feld of ["capitalComActive", "reconnectError"]) {
+          torPruefung(`die Route schickt \`${feld}\` nicht mehr mit — die `
+            + "Anzeige zeigte dann dauerhaft 'unbekannt' und saehe dabei wie "
+            + "ein ehrliches Ergebnis aus",
+            new RegExp(`\\b${feld}\\b`).test(inAntwort), rPfad);
+          // MIT WORTGRENZE. `includes` waere eine Teilzeichenkette: eine
+          // Umbenennung auf `capitalComActiveXX` enthaelt den alten Namen
+          // und waere gruen geblieben — genau der Messfehler vom 30.09.
+          torPruefung(`niemand LIEST \`${feld}\` — ein Feld ohne Empfaenger `
+            + "geht ins Leere (Klasse 17.09.)",
+            new RegExp(`report\\.${feld}\\b`).test(P), pPfad);
+        }
+
+        // ── UND DIE DREIWERTIGKEIT WIRD GERECHNET, NICHT GELESEN ───────
+        //
+        // Als Ternaer-Kette im JSX stand `=== false` ZWEIMAL da (Farbe und
+        // Text). Eine Sabotage am Text-Zweig liess den Wortlaut im
+        // Farb-Zweig stehen — strukturell unauffaellig, und die Anzeige
+        // behauptete bei fehlender Antwort wieder "nicht verbunden".
+        // Deshalb liegt die Entscheidung jetzt in `brokerLage()` und wird
+        // hier mit allen drei Eingaben AUSGEFUEHRT.
+        const bl = ladeTsModul("lib/broker-lage/broker-lage.ts");
+        const brokerLage = bl.exports?.brokerLage;
+        if (bl.fehler || typeof brokerLage !== "function") {
+          torPruefung("brokerLage() ist nicht ausfuehrbar", false,
+            bl.fehler ?? "nicht exportiert");
+        } else {
+          const an = brokerLage(true, null);
+          const aus = brokerLage(false, "HTTP 401");
+          const ausOhneGrund = brokerLage(false, null);
+          const unbekannt = brokerLage(undefined, null);
+          const unbekanntNull = brokerLage(null, null);
+          torPruefung("brokerLage(true) meldet nicht 'verbunden'",
+            an.art === "verbunden" && /verbunden/.test(an.text)
+            && !/nicht verbunden/.test(an.text), JSON.stringify(an));
+          torPruefung("brokerLage(false) meldet nicht 'nicht verbunden'",
+            aus.art === "getrennt" && /nicht verbunden/.test(aus.text),
+            JSON.stringify(aus));
+          torPruefung("brokerLage(false) verschweigt den GRUND — "
+            + "\"wer den Grund nicht mitschreibt, muss ihn spaeter raten\"",
+            aus.text.includes("HTTP 401"), JSON.stringify(aus));
+          torPruefung("ein FEHLENDER Grund wird nicht benannt — eine leere "
+            + "Stelle sieht aus wie ein Grund",
+            /nicht gemeldet/.test(ausOhneGrund.text), JSON.stringify(ausOhneGrund));
+          // DER KERN: undefined/null darf NICHT wie false aussehen.
+          torPruefung("brokerLage(undefined) ist nicht UNBEKANNT — eine "
+            + "fehlende Antwort hiesse damit 'nicht verbunden' (30.09.)",
+            unbekannt.art === "unbekannt" && /unbekannt/.test(unbekannt.text)
+            && unbekannt.art !== aus.art && unbekannt.text !== aus.text,
+            JSON.stringify(unbekannt));
+          torPruefung("brokerLage(null) ist nicht UNBEKANNT",
+            unbekanntNull.art === "unbekannt", JSON.stringify(unbekanntNull));
+          // Und die Gegenprobe: ein wahrheitswertiger Vergleich statt
+          // `=== true` machte aus jedem Wert ein "verbunden".
+          torPruefung("brokerLage() prueft nicht strikt auf `true` — ein "
+            + "wahrheitswertiger Vergleich macht aus allem 'verbunden'",
+            brokerLage("ja", null).art === "unbekannt"
+            && brokerLage(1, null).art === "unbekannt",
+            `"ja" => ${brokerLage("ja", null).art}, 1 => ${brokerLage(1, null).art}`);
+          // Alle drei Texte muessen sich unterscheiden — sonst ist die
+          // Dreiwertigkeit nur im Typ, nicht in der Anzeige.
+          torPruefung("zwei der drei Lagen zeigen denselben Text",
+            new Set([an.text, aus.text, unbekannt.text]).size === 3,
+            `${an.text} | ${aus.text} | ${unbekannt.text}`);
+        }
+        // Die Anzeige muss die Funktion auch BENUTZEN — eine gepruefte
+        // Funktion ohne Aufrufstelle beweist nichts (Fehlerklasse 30.09.).
+        torPruefung("die Anzeige ruft brokerLage() nicht auf — eine "
+          + "gepruefte Funktion ohne Aufrufstelle beweist nichts",
+          /brokerLage\(report\.capitalComActive, report\.reconnectError\)/.test(P),
+          pPfad);
+        torPruefung("die Anzeige vergleicht das Feld wieder selbst, statt "
+          + "die Funktion zu benutzen — zwei Stellen laufen auseinander",
+          !/report\.capitalComActive ===/.test(P)
+          && !/!report\.capitalComActive/.test(P), pPfad);
+      }
+
       // ── UND DAS VERHALTEN, NICHT DER WORTLAUT ──────────────────────────
       //
       // Die Pruefungen oben fangen `if (riegel) {` → `if (false) {` NICHT:

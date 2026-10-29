@@ -1699,7 +1699,7 @@ auseinanderlaufen.
 
 ### Absicherung
 
-`safety-nets` **rechnet** das (477 → **630** Prüfungen), unter anderem mit der
+`safety-nets` **rechnet** das (477 → **650** Prüfungen), unter anderem mit der
 **echten Live-Lage** vom 26.10. als Testfall: 845 Zeilen, 814 gewertet,
 101W/196L/**517BE**, Ergebnis −2.24. Dazu die **Verdrahtung**: die Route muss
 `result` **und** `updatedAt` mitschicken, sonst wäre die Herkunft dauerhaft
@@ -1947,6 +1947,178 @@ Zweck zu prüfen: der Prüfer hält jetzt den Meldungstext je Fall fest.
 **Und vier Anker griffen gar nicht** — beides eigene Messfehler: die Datei ist
 rein **CRLF** (ein `\n`-Anker kann dort nicht greifen), und `return pruefe(…)`
 hat **zwei** Leerzeichen Einzug, nicht vier.
+
+### Der GO-Knopf war nie klickbar — die Ansicht ist entkernt (28.10.)
+
+Beim Absichern des Riegels zeigte sich, dass der gefährliche Weg **gar nicht
+erreichbar war**. Drei Befunde, alle gemessen:
+
+**1. Die Liste war immer leer.** `LiveExecutionMonitor.tsx` las
+`queue.queue` und `queue.queuedTrades`;
+`/api/execution-queue-position-sync` liefert aber `items` und `totalItems`:
+
+```tsx
+{!queue?.queue?.length ? ( …leer… ) : queue.queue.map(…)}
+```
+
+`queue.queue` war **immer `undefined`** → der Leer-Zweig lief immer → kein
+Eintrag, kein Knopf. Dieselbe Feldnamen-Fehlerklasse wie am 30.09., eine
+Ebene tiefer: die Messung vom 22.10. prüfte `d.report`, **nicht die Felder
+darin**.
+
+Das erklärt die `/edge`-Daten lückenlos: kein `UNBEKANNT`-Etikett, weil nie
+ein Trade von dort kam.
+
+**2. Es war die falsche Route.** Die erwarteten Namen (`queue`,
+`queuedTrades`, `rank`, `adaptiveConfidence`, `riskPerTradePercent`) gehören
+zu `/api/execution-queue-engine` — und die ruft **niemand** auf.
+
+**3. „Korrigieren" wäre falsch gewesen.** Beide Queue-Module erklären sich
+selbst als nicht-live (`liveTradingEnabled: false` bzw.
+`liveExecutionBlocked: true`, Modus `SIMULATION | READ_ONLY | PAPER_MODE`)
+und tragen **keinen Stop**. Die Route zu korrigieren hätte eine
+Simulations-Queue an den echten Broker gehängt.
+
+Entfernt wurden deshalb: die Queue-Anzeige, der GO-Knopf, das Execution-Log
+und der Schalter **„Auto-Execute GO Signale"** — letzterer wurde
+ausschliesslich für seine **eigene Darstellung** gelesen. Ein grünes „AN",
+das nichts tut, ist dieselbe Klasse wie die falschen Killswitch-Texte
+(27.09.) und die IC-keep-alive-Zeile (25.10.).
+
+Auch das Eingabefeld für den Kontostand ist weg: es speiste nur die
+Ordergrösse des entfernten Knopfs. Jetzt steht dort der **echte** Wert vom
+Broker als Anzeige — und „unbekannt", wenn keine Sitzung steht.
+
+**Geblieben** ist, was nachweislich funktioniert: die offenen Positionen aus
+`/api/capital-com/positions` (`d.positions`, am 22.10. einzeln geprüft) und
+der Schliessen-Knopf.
+
+**Die Zusicherung unten ist nachgeprüft, nicht behauptet:** `useLiveApi` hat
+den Standardwert `false` und **kein Aufrufer** übergibt ihn; alle übrigen
+Endpunkte sind fest auf `DEMO_BASE` (`capital-com-client.ts`).
+
+#### Und ein allgemeiner Riegel statt einer Einzelfallnotiz
+
+`safety-nets` hält jetzt fest: **jede Datei, die eine Order-Route ruft, muss
+`stopLossPrice` kennen** — kommentarbereinigt, mit Selbstprüfung gegen
+`MarketScannerPanel` als bekanntem Auslöser. **4 von 4 Sabotagen**, darunter
+der Fund vom 28.10. exakt nachgebaut.
+
+**Ehrlich zur Reichweite:** die Prüfung arbeitet auf **Datei**-Ebene und
+beweist nicht, dass der Wert auch *in diesem Aufruf* landet. Dafür gibt es
+`ordersRiegel()`, der zur Laufzeit greift. Hier geht es um den Fall, den wir
+hatten: eine Komponente, die den Stop **nirgends** erwähnt.
+
+**Eine eigene Sabotage war dabei wirkungslos** und blieb zu Recht grün: ich
+zerstörte nur **eine** der beiden Order-Routen in `MarketScannerPanel` — die
+Datei ruft sie in **einem** `Promise.all` zusammen auf und galt weiter als
+Auslöser.
+
+#### Dabei korrigiert: eine eigene Falschmeldung
+
+Mein Suchwerkzeug meldete zwei API-Routen, die das Ergebnis von
+`autoReconnectCapital()` wegwerfen. **Eine davon war keine:**
+`/api/capital-com` liest `getLastReconnectError()` und gibt `reconnectError`
+in der Antwort zurück (Zeile 20, 47, 59) — der Grund geht dort **nicht**
+verloren, er wird nur über den gespeicherten Zustand gelesen. Das Werkzeug
+mass die Aufrufstelle, nicht den Informationsfluss.
+
+Echt war nur `/api/execution-queue-position-sync`: dort fehlte der Grund in
+der Antwort. Jetzt steht er drin, genau wie bei der Schwesterroute.
+
+**Und die Route ist weiterhin in Gebrauch** —
+`ExecutionQueuePositionSyncPanel.tsx:111` ruft sie auf (eingebunden über
+`ForwardTestingCenter.tsx:289`). Im Kommentar der entkernten Datei stand
+kurzzeitig das Gegenteil, weil die Suche nur diese eine Datei im Blick hatte.
+
+#### Und der Grund hing dort im Leeren — ein Feld ohne Empfänger (28.10.)
+
+Beim Gegenlesen des eigenen Fixes: die Route schickte `capitalComActive`
+**schon vorher** mit, und `ExecutionQueuePositionSyncPanel` liest **keines
+von beiden**. Nachgezählt, nicht vermutet — `reconnectError` hat genau
+**einen** Leser im ganzen Programm, und der sitzt an der *anderen* Route
+(`SettingsDashboard.tsx:254`).
+
+Ein Feld ohne Empfänger ist dieselbe Klasse wie ein **Abo am Bus ohne
+Sender** (17.09.): es sieht nach Information aus und geht ins Leere. Ein
+drittes stummes Feld zu pushen wäre genau der Fehler, den dieser Tag
+behebt — deshalb hat die Ansicht jetzt eine Broker-Zeile.
+
+**Dreiwertig, und das ist der Punkt:** `undefined` heisst **unbekannt** und
+sagt das auch („die Antwort trägt kein Feld `capitalComActive`"), nicht
+„nicht verbunden". Eine stille Null wäre der Fehler vom 30.09., eine Ebene
+höher. Weil dieser Zustand **getypt** ist (nicht `any`), fängt `tsc` hier
+zusätzlich einen Tippfehler im Feldnamen — an den `any`-Stellen tut er das
+nicht.
+
+##### Die Entscheidung gehört in eine Funktion, nicht ins JSX
+
+Zuerst stand die Lage als Ternär-Kette direkt in der Komponente. **Der
+Sabotage-Lauf hat das widerlegt: 6 von 8** — und beide Ausreisser waren
+echte Prüferlöcher, keine schwachen Sabotagen:
+
+| entwischt | warum | behoben durch |
+|---|---|---|
+| Feld fällt aus der **Antwort** | die Suche fand die **Variablendeklaration** `const capitalComActive = isCapitalConnected()` — „ein Wort an einer anderen Stelle ist keine Verwendung" | Klammerzähler schneidet den Rumpf von `NextResponse.json(` aus |
+| der **unbekannt**-Zweig verschwindet | der Ausdruck `=== false` stand **zweimal** da (Farbe **und** Text); eine Sabotage am Text liess den Wortlaut im Farb-Zweig stehen | `brokerLage()` als eigene Datei, vom Prüfer **ausgeführt** |
+
+Die zweite ist die lehrreichere: eine Struktur-Prüfung auf *Vorhandensein*
+kann zwei Vorkommen desselben Ausdrucks nicht auseinanderhalten. Die
+Anzeige hätte bei fehlender Antwort wieder „nicht verbunden" behauptet,
+während der Prüfer grün blieb. Jetzt wird `brokerLage()` mit `true`,
+`false` und `undefined` **gerechnet**, und alle drei Texte müssen
+verschieden sein.
+
+`safety-nets` hält beide Richtungen (632 → **650**): die Route muss senden,
+die Anzeige muss lesen **und** die Funktion rufen, und die Dreiwertigkeit
+darf nicht auf `!report.capitalComActive` verkürzt werden.
+
+**14 von 14 Sabotagen** in der zweiten Runde — beide Ausreisser als eigene
+Fälle, dazu die Teilzeichenketten-Falle vom 30.09.:
+`report.capitalComActiveXX` **enthält** den alten Namen, mit `includes()`
+wäre die Umbenennung grün geblieben. **Mein erster Entwurf hatte genau
+das.** Jetzt mit Wortgrenze.
+
+**Drei der vierzehn sabotieren die Werkzeuge des Prüfers selbst** — die
+Kommentar-Bereinigung in beide Richtungen (streift nichts ab / frisst
+alles) und den Klammerzähler. Die Selbstprüfung läuft dafür an **selbst
+gebauten** Zeichenketten, nicht am Dateiinhalt: am Dateiinhalt hinge sie
+an einer Formulierung.
+
+**Nicht `objectBlock` aus `_lib`:** das zählt nur `{}` ohne
+Zeichenketten-Bewusstsein — eine `}` in einem Text schliesst dort den
+Block, genau die Falle vom 30.09. bei `metaAntwortLesen` — und es wirft
+statt `null` zu liefern.
+
+#### Zwei Funde in der entkernten Datei selbst (28.10.)
+
+Beim dritten Gegenlesen — die Ansicht zeigt jetzt den echten Kontostand
+und die offenen Positionen, und beides war einen Schritt zu ungenau:
+
+- **`balance > 0`** machte aus einem **echten** Stand von 0 ein
+  „unbekannt". Die Quelle ist `balance: session?.balance ?? null`
+  (`app/api/capital-com/route.ts`) — `null` heisst *nicht abrufbar*, eine
+  Zahl ist *gemessen*. Die Regel vom 22.09. gilt auch in dieser Richtung:
+  aus einer Messung darf kein „unbekannt" werden. Jetzt `Number.isFinite`.
+- **`new Date(pos.createdDate).toLocaleTimeString()`** schrieb wörtlich
+  **„Invalid Date"** in die Zeile, wenn die Zeit leer ist — und leer ist
+  sie mit **Absicht**: `brokerZeitNachUtc()` gibt bei fehlender
+  Zonenangabe nichts zurück statt zu raten
+  (`capital-com-client.ts:965`). Jetzt eine Funktion `zeit()`, die „—"
+  ergibt; die vier Fälle (leer, `undefined`, Unsinn, echte Zeit) sind beim
+  Einbau **gerechnet** worden, nicht behauptet.
+
+**Und die systematische Frage dazu, gemessen:** 30 Stellen im Frontend
+schreiben `new Date(<Variable>).toLocale…` (542 Dateien gescannt,
+kommentarbereinigt, Selbstprüfung in beide Richtungen). Genau **eine**
+davon las eine **Broker**-Zeit, die konstruktionsgemäss leer sein kann —
+die hier behobene. Die anderen 29 lesen Zeitstempel, die **unser eigener**
+Code schreibt (`updatedAt`, `checkedAt`, `generatedAt`, `scannedAt`).
+
+**Ehrlich zur Grenze:** ob bei diesen 29 das Feld im Einzelfall **fehlen**
+kann, ist **nicht gemessen** — `new Date(undefined)` ergäbe dort dasselbe
+„Invalid Date". Das ist eine eigene Messung und war nicht Teil dieses
+Commits.
 
 ## Ohne Kurs wird nicht gehandelt
 

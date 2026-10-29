@@ -1,33 +1,66 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 
-interface QueueItem {
-  id: string;
-  rank: number;
-  symbol: string;
-  strategy: string;
-  direction: string;
-  adaptiveConfidence: number;
-  priorityScore: number;
-  riskPerTradePercent: number;
-  maxRiskAmount: number;
-  brokerTarget: string;
-  executionMode: string;
-  reason: string;
-}
+/**
+ * Offene Capital.com-Positionen ansehen und schliessen (28.10. entkernt).
+ *
+ * ── WAS HIER BIS ZUM 28.10. STAND UND WARUM ES WEG IST ──────────────────────
+ *
+ * Diese Ansicht hatte eine „Execution Queue" mit einem GO-Knopf, der echte
+ * Capital.com-Orders platzierte. Drei Befunde, alle nachgemessen:
+ *
+ *  1. DER KNOPF WAR NIE KLICKBAR. Gelesen wurde `queue.queue` und
+ *     `queue.queuedTrades`; `/api/execution-queue-position-sync` liefert aber
+ *     `items` und `totalItems`. `queue?.queue?.length` war also IMMER
+ *     `undefined` → der Leer-Zweig lief immer → kein einziger Eintrag, kein
+ *     Knopf. Dieselbe Feldnamen-Fehlerklasse wie am 30.09., diesmal eine
+ *     Ebene tiefer: die Messung vom 22.10. prüfte `d.report`, nicht die
+ *     Felder DARIN.
+ *
+ *  2. ES WAR DIE FALSCHE ROUTE. Die erwarteten Namen (`queue`,
+ *     `queuedTrades`, `rank`, `adaptiveConfidence`, `riskPerTradePercent`)
+ *     gehören zu `/api/execution-queue-engine` — und die ruft **niemand** auf.
+ *
+ *  3. „KORRIGIEREN" WÄRE FALSCH GEWESEN. Beide Queue-Module erklären sich
+ *     selbst als nicht-live (`liveTradingEnabled: false` bzw.
+ *     `liveExecutionBlocked: true`, Modus `SIMULATION | READ_ONLY |
+ *     PAPER_MODE`) und tragen **keinen Stop**. Die Route zu korrigieren hätte
+ *     eine Simulations-Queue an den echten Broker gehängt — ohne Stop.
+ *
+ * Dazu lag ein Schalter „Auto-Execute GO Signale" hier, der ausschliesslich
+ * sich selbst einfärbte: `autoExec` wurde nirgends gelesen ausser für seine
+ * eigene Darstellung. Ein grünes „AN", das nichts tut — dieselbe Klasse wie
+ * die falschen Killswitch-Texte (27.09.) und die IC-keep-alive-Zeile (25.10.).
+ *
+ * Für manuelles Ausführen gibt es `MarketScannerPanel` — das schickt Stop und
+ * Ziel mit. Und seit dem 28.10. hält `ordersRiegel()` in
+ * `capital-com-execution.ts` ohnehin jede Order ohne Stop auf.
+ *
+ * ÜBRIG BLEIBT, was nachweislich funktioniert: die offenen Positionen aus
+ * `/api/capital-com/positions` (`d.positions`, am 22.10. einzeln geprüft) und
+ * der Schliessen-Knopf.
+ *
+ * NACHGEPRÜFT, nicht angenommen: `/api/execution-queue-position-sync` bleibt
+ * in Gebrauch — `ExecutionQueuePositionSyncPanel.tsx:111` ruft sie weiter auf
+ * (eingebunden über `ForwardTestingCenter.tsx:289`, Tab „position-sync") und
+ * liest `d.report` korrekt. Hier stand kurzzeitig das Gegenteil; die Suche
+ * hatte nur diese Datei im Blick.
+ */
 
-interface QueueReport {
-  version: string;
-  queuedTrades: number;
-  blockedTrades: number;
-  brokerMode: string;
-  executionMode: string;
-  capitalComActive: boolean;
-  icMarketsActive: boolean;
-  bestQueueItem: QueueItem | null;
-  queue: QueueItem[];
-  recommendation: string;
-  updatedAt: string;
+/**
+ * Eine LEERE Broker-Zeit ergibt "Invalid Date" (28.10.).
+ *
+ * `brokerZeitNachUtc()` gibt bei fehlender Zonenangabe bewusst eine LEERE
+ * Zeichenkette zurueck statt `new Date()` zu raten (Regel vom 22.09.,
+ * `capital-com-client.ts:965`). `new Date("")` ist dann Invalid Date, und
+ * `toLocaleTimeString()` schreibt das woertlich in die Zeile.
+ *
+ * Unbekannt bleibt unbekannt — aber als "—", nicht als Fehlertext.
+ */
+function zeit(wert: string | null | undefined): string {
+  if (typeof wert !== "string" || wert.trim() === "") return "—";
+  const d = new Date(wert);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleTimeString();
 }
 
 interface OpenPosition {
@@ -41,45 +74,28 @@ interface OpenPosition {
   createdDate: string;
 }
 
-interface ExecutionLog {
-  id: string;
-  ts: string;
-  symbol: string;
-  direction: string;
-  size: number;
-  broker: string;
-  dealId?: string;
-  ok: boolean;
-  error?: string;
-}
-
 export default function LiveExecutionMonitor() {
-  const [queue, setQueue] = useState<QueueReport | null>(null);
   const [positions, setPositions] = useState<OpenPosition[]>([]);
-  const [execLogs, setExecLogs] = useState<ExecutionLog[]>([]);
-  const [executing, setExecuting] = useState<string | null>(null);
-  const [autoExec, setAutoExecRaw] = useState(false);
-  const [accountBalance, setAccountBalanceRaw] = useState(10000);
   const [refreshing, setRefreshing] = useState(false);
   const [capitalConnected, setCapitalConnected] = useState(false);
+  // Nur Anzeige: der Wert kommt vom Broker. Das frühere Eingabefeld speiste
+  // ausschliesslich die Ordergrösse des entfernten GO-Knopfs — ein Feld, das
+  // nichts mehr beeinflusst, wäre dieselbe Lüge wie der Schalter oben.
+  const [accountBalance, setAccountBalance] = useState<number | null>(null);
 
-  // Persist toggle + balance across page reloads
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("liveExec_autoExec");
-      if (saved !== null) setAutoExecRaw(saved === "true");
-      const bal = localStorage.getItem("liveExec_accountBalance");
-      if (bal !== null) setAccountBalanceRaw(Number(bal));
-    } catch { /* localStorage unavailable */ }
-  }, []);
-
-  // Fetch real Capital.com status and balance — poll every 20s
+  // Echten Capital.com-Status und Kontostand holen — alle 20 s
   const fetchCapitalStatus = useCallback(() => {
     fetch("/api/capital-com").then(r => r.json()).then(d => {
       setCapitalConnected(!!d.connected);
-      if (d.connected && d.balance != null && d.balance > 0) {
-        setAccountBalanceRaw(d.balance);
-      }
+      // KEIN `> 0`. Die Quelle ist `balance: session?.balance ?? null`
+      // (`app/api/capital-com/route.ts`), also ist `null` = nicht abrufbar
+      // und eine Zahl = gemessen. Ein echter Stand von 0 als "unbekannt"
+      // auszugeben waere die Regel vom 22.09. in der falschen Richtung:
+      // aus einer Messung wird dann "unbekannt".
+      setAccountBalance(
+        d.connected && typeof d.balance === "number" && Number.isFinite(d.balance)
+          ? d.balance : null,
+      );
     }).catch(() => {});
   }, []);
 
@@ -88,26 +104,6 @@ export default function LiveExecutionMonitor() {
     const iv = setInterval(fetchCapitalStatus, 20000);
     return () => clearInterval(iv);
   }, [fetchCapitalStatus]);
-
-  const setAutoExec = (val: boolean | ((p: boolean) => boolean)) => {
-    setAutoExecRaw((prev) => {
-      const next = typeof val === "function" ? val(prev) : val;
-      try { localStorage.setItem("liveExec_autoExec", String(next)); } catch { /* ignore */ }
-      return next;
-    });
-  };
-
-  const setAccountBalance = (val: number) => {
-    setAccountBalanceRaw(val);
-    try { localStorage.setItem("liveExec_accountBalance", String(val)); } catch { /* ignore */ }
-  };
-
-  const loadQueue = useCallback(async () => {
-    const r = await fetch("/api/execution-queue-position-sync").catch(() => null);
-    if (!r?.ok) return;
-    const d = await r.json().catch(() => null);
-    if (d) setQueue(d.report ?? d);
-  }, []);
 
   const loadPositions = useCallback(async () => {
     const r = await fetch("/api/capital-com/positions").catch(() => null);
@@ -118,9 +114,9 @@ export default function LiveExecutionMonitor() {
 
   const loadAll = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadQueue(), loadPositions()]);
+    await loadPositions();
     setRefreshing(false);
-  }, [loadQueue, loadPositions]);
+  }, [loadPositions]);
 
   useEffect(() => {
     loadAll();
@@ -128,50 +124,12 @@ export default function LiveExecutionMonitor() {
     return () => clearInterval(interval);
   }, [loadAll]);
 
-  const executeOrder = async (item: QueueItem) => {
-    if (executing) return;
-    setExecuting(item.id);
-
-    const r = await fetch("/api/capital-com/execute", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbol: item.symbol,
-        direction: item.direction as "BUY" | "SELL",
-        riskPercent: item.riskPerTradePercent,
-        accountBalance,
-        confidence: item.adaptiveConfidence,
-        strategy: item.strategy,
-        tradingStyle: "DAYTRADING",
-      }),
-    }).catch(() => null);
-
-    const d = r ? await r.json().catch(() => ({ ok: false, error: "Parse error" })) : { ok: false, error: "Network error" };
-
-    const log: ExecutionLog = {
-      id: `log-${Date.now()}`,
-      ts: new Date().toLocaleTimeString(),
-      symbol: item.symbol,
-      direction: item.direction,
-      size: d.size ?? 0,
-      broker: "Capital.com DEMO",
-      dealId: d.dealId,
-      ok: d.ok,
-      error: d.error,
-    };
-    setExecLogs((prev) => [log, ...prev].slice(0, 20));
-    setExecuting(null);
-    await loadPositions();
-  };
-
   const closePosition = async (dealId: string) => {
     const r = await fetch(`/api/capital-com/positions?dealId=${dealId}`, { method: "DELETE" }).catch(() => null);
     const d = r ? await r.json().catch(() => null) : null;
     if (d?.ok) await loadPositions();
   };
 
-  // Use direct Capital.com status (fast, <1ms endpoint) — queue fallback for compatibility
-  const capitalActive = capitalConnected || (queue?.capitalComActive ?? false);
   const totalPnL = positions.reduce((sum, p) => sum + p.profitLoss, 0);
 
   return (
@@ -180,19 +138,18 @@ export default function LiveExecutionMonitor() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>⚡ Live Execution Monitor</span>
-            <span style={{ background: "rgba(99,102,241,0.18)", border: "1px solid rgba(99,102,241,0.4)", borderRadius: "6px", padding: "2px 10px", fontSize: "11px", color: "#a5b4fc" }}>V17.4.0</span>
+            <span style={{ fontSize: "20px", fontWeight: 700, color: "#f1f5f9" }}>⚡ Offene Positionen</span>
             <span style={{
               padding: "2px 10px", borderRadius: "4px", fontSize: "11px", fontWeight: 700,
-              background: capitalActive ? "rgba(16,201,109,0.15)" : "rgba(100,116,139,0.15)",
-              color: capitalActive ? "#10c96d" : "#64748b",
-              border: `1px solid ${capitalActive ? "rgba(16,201,109,0.3)" : "rgba(100,116,139,0.2)"}`,
+              background: capitalConnected ? "rgba(16,201,109,0.15)" : "rgba(100,116,139,0.15)",
+              color: capitalConnected ? "#10c96d" : "#64748b",
+              border: `1px solid ${capitalConnected ? "rgba(16,201,109,0.3)" : "rgba(100,116,139,0.2)"}`,
             }}>
-              {capitalActive ? "● Capital.com DEMO" : "○ Paper Mode"}
+              {capitalConnected ? "● Capital.com DEMO verbunden" : "○ nicht verbunden"}
             </span>
           </div>
           <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
-            GO-Signale werden direkt auf Capital.com DEMO ausgeführt · Kein Live-Trading
+            Ansehen und Schliessen · Eröffnet wird hier nicht — das macht der Handelszyklus
           </div>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -203,150 +160,74 @@ export default function LiveExecutionMonitor() {
         </div>
       </div>
 
-      {/* Account Balance Input */}
+      {/* Kontostand — reine Anzeige, Wert vom Broker */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "20px", alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <label style={{ fontSize: "11px", color: "#64748b" }}>Account Balance (USD):</label>
-          <input
-            type="number"
-            value={accountBalance}
-            onChange={(e) => setAccountBalance(Number(e.target.value))}
-            style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px", padding: "6px 10px", color: "#f1f5f9", fontSize: "12px", fontFamily: "monospace", width: "120px", outline: "none" }}
-          />
+        <div style={{ fontSize: "11px", color: "#64748b" }}>
+          Kontostand:{" "}
+          <span style={{ color: accountBalance === null ? "#64748b" : "#f1f5f9", fontWeight: 700 }}>
+            {accountBalance === null ? "unbekannt" : accountBalance.toFixed(2)}
+          </span>
+          {accountBalance === null && (
+            <span style={{ color: "#475569" }}> — nicht abrufbar, solange keine Sitzung steht</span>
+          )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <label style={{ fontSize: "11px", color: "#64748b" }}>Auto-Execute GO Signale:</label>
-          <button
-            onClick={() => setAutoExec((p) => !p)}
-            style={{
-              width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
-              background: autoExec ? "#10c96d" : "rgba(255,255,255,0.1)", position: "relative", transition: "background 0.15s",
-            }}
-          >
-            <div style={{ width: "18px", height: "18px", borderRadius: "50%", background: "#fff", position: "absolute", top: "3px", left: autoExec ? "23px" : "3px", transition: "left 0.15s" }} />
-          </button>
-          <span style={{ fontSize: "11px", color: autoExec ? "#10c96d" : "#64748b" }}>{autoExec ? "AN" : "AUS"}</span>
-        </div>
-        {!capitalActive && (
+        {!capitalConnected && (
           <div style={{ padding: "6px 12px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "6px", fontSize: "10px", color: "#fbbf24" }}>
             ⚠ Capital.com nicht verbunden — Settings → Broker Connections
           </div>
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-        {/* Execution Queue */}
-        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "10px", border: "1px solid rgba(99,102,241,0.2)", padding: "16px" }}>
-          <div style={{ fontSize: "12px", fontWeight: 700, color: "#a5b4fc", marginBottom: "12px" }}>
-            📋 Execution Queue {queue && <span style={{ color: "#64748b", fontWeight: 400 }}>({queue.queuedTrades} trades)</span>}
+      {/* Offene Positionen */}
+      <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "10px", border: "1px solid rgba(16,201,109,0.2)", padding: "16px", marginBottom: "20px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 700, color: "#10c96d" }}>
+            📈 Offene Positionen ({positions.length})
           </div>
-          {!queue?.queue?.length ? (
-            <div style={{ fontSize: "11px", color: "#475569", padding: "20px 0", textAlign: "center" }}>Keine GO-Signale in der Queue</div>
-          ) : (
-            queue.queue.map((item) => (
-              <div key={item.id} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "12px", marginBottom: "8px", border: `1px solid ${item.direction === "BUY" ? "rgba(16,201,109,0.2)" : "rgba(248,113,113,0.2)"}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <span style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>#{item.rank} {item.symbol}</span>
-                    <span style={{ padding: "1px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700,
-                      background: item.direction === "BUY" ? "rgba(16,201,109,0.15)" : "rgba(248,113,113,0.15)",
-                      color: item.direction === "BUY" ? "#10c96d" : "#f87171",
-                      border: `1px solid ${item.direction === "BUY" ? "rgba(16,201,109,0.3)" : "rgba(248,113,113,0.2)"}` }}>
-                      {item.direction}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: "10px", color: "#64748b" }}>P:{item.priorityScore} C:{(item.adaptiveConfidence ?? 0).toFixed(0)}%</span>
-                </div>
-                <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "8px" }}>{item.strategy} · Risk {item.riskPerTradePercent}%</div>
-                {capitalActive && (
-                  <button
-                    onClick={() => executeOrder(item)}
-                    disabled={executing === item.id || !capitalActive}
-                    style={{
-                      width: "100%", padding: "7px", borderRadius: "6px", border: "1px solid rgba(16,201,109,0.4)",
-                      cursor: "pointer", background: "rgba(16,201,109,0.15)", color: "#10c96d",
-                      fontSize: "11px", fontFamily: "monospace", fontWeight: 700,
-                      opacity: executing === item.id ? 0.6 : 1,
-                    }}
-                  >
-                    {executing === item.id ? "Ausführe..." : "▶ GO — Jetzt ausführen"}
-                  </button>
-                )}
-              </div>
-            ))
+          {positions.length > 0 && (
+            <div style={{ fontSize: "13px", fontWeight: 700, color: totalPnL >= 0 ? "#10c96d" : "#f87171" }}>
+              P&L: {(totalPnL ?? 0) >= 0 ? "+" : ""}{(totalPnL ?? 0).toFixed(2)}
+            </div>
           )}
         </div>
-
-        {/* Open Positions */}
-        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "10px", border: "1px solid rgba(16,201,109,0.2)", padding: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#10c96d" }}>
-              📈 Offene Positionen ({positions.length})
-            </div>
-            {positions.length > 0 && (
-              <div style={{ fontSize: "13px", fontWeight: 700, color: totalPnL >= 0 ? "#10c96d" : "#f87171" }}>
-                P&L: {(totalPnL ?? 0) >= 0 ? "+" : ""}{(totalPnL ?? 0).toFixed(2)}
-              </div>
-            )}
+        {!positions.length ? (
+          <div style={{ fontSize: "11px", color: "#475569", padding: "20px 0", textAlign: "center" }}>
+            {capitalConnected ? "Keine offenen Positionen" : "Capital.com nicht verbunden"}
           </div>
-          {!positions.length ? (
-            <div style={{ fontSize: "11px", color: "#475569", padding: "20px 0", textAlign: "center" }}>
-              {capitalActive ? "Keine offenen Positionen" : "Capital.com nicht verbunden"}
-            </div>
-          ) : (
-            positions.map((pos) => (
-              <div key={pos.dealId} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "12px", marginBottom: "8px", border: `1px solid ${pos.profitLoss >= 0 ? "rgba(16,201,109,0.2)" : "rgba(248,113,113,0.2)"}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <span style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>{pos.symbol}</span>
-                    <span style={{ padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 700,
-                      background: pos.direction === "BUY" ? "rgba(16,201,109,0.15)" : "rgba(248,113,113,0.15)",
-                      color: pos.direction === "BUY" ? "#10c96d" : "#f87171" }}>
-                      {pos.direction}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: (pos.profitLoss ?? 0) >= 0 ? "#10c96d" : "#f87171" }}>
-                    {(pos.profitLoss ?? 0) >= 0 ? "+" : ""}{(pos.profitLoss ?? 0).toFixed(2)}
+        ) : (
+          positions.map((pos) => (
+            <div key={pos.dealId} style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "12px", marginBottom: "8px", border: `1px solid ${pos.profitLoss >= 0 ? "rgba(16,201,109,0.2)" : "rgba(248,113,113,0.2)"}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>{pos.symbol}</span>
+                  <span style={{ padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 700,
+                    background: pos.direction === "BUY" ? "rgba(16,201,109,0.15)" : "rgba(248,113,113,0.15)",
+                    color: pos.direction === "BUY" ? "#10c96d" : "#f87171" }}>
+                    {pos.direction}
                   </span>
                 </div>
-                <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "8px" }}>
-                  Size: {pos.size} · Entry: {pos.openLevel} · {new Date(pos.createdDate).toLocaleTimeString()}
-                </div>
-                <button
-                  onClick={() => closePosition(pos.dealId)}
-                  style={{ padding: "5px 12px", borderRadius: "5px", border: "1px solid rgba(248,113,113,0.3)", cursor: "pointer", background: "rgba(248,113,113,0.1)", color: "#f87171", fontSize: "10px", fontFamily: "monospace" }}>
-                  ✕ Schliessen
-                </button>
+                <span style={{ fontSize: "14px", fontWeight: 700, color: (pos.profitLoss ?? 0) >= 0 ? "#10c96d" : "#f87171" }}>
+                  {(pos.profitLoss ?? 0) >= 0 ? "+" : ""}{(pos.profitLoss ?? 0).toFixed(2)}
+                </span>
               </div>
-            ))
-          )}
-        </div>
+              <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "8px" }}>
+                Size: {pos.size} · Entry: {pos.openLevel} · {zeit(pos.createdDate)}
+              </div>
+              <button
+                onClick={() => closePosition(pos.dealId)}
+                style={{ padding: "5px 12px", borderRadius: "5px", border: "1px solid rgba(248,113,113,0.3)", cursor: "pointer", background: "rgba(248,113,113,0.1)", color: "#f87171", fontSize: "10px", fontFamily: "monospace" }}>
+                ✕ Schliessen
+              </button>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* Execution Log */}
-      {execLogs.length > 0 && (
-        <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.08)", padding: "16px" }}>
-          <div style={{ fontSize: "12px", fontWeight: 700, color: "#94a3b8", marginBottom: "10px" }}>📜 Execution Log</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            {execLogs.map((log) => (
-              <div key={log.id} style={{ display: "flex", gap: "12px", fontSize: "11px", padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-                <span style={{ color: "#475569", minWidth: "60px" }}>{log.ts}</span>
-                <span style={{ color: log.ok ? "#10c96d" : "#f87171", minWidth: "14px" }}>{log.ok ? "✓" : "✗"}</span>
-                <span style={{ color: "#f1f5f9", fontWeight: 700, minWidth: "70px" }}>{log.symbol}</span>
-                <span style={{ color: log.direction === "BUY" ? "#10c96d" : "#f87171", minWidth: "40px" }}>{log.direction}</span>
-                <span style={{ color: "#94a3b8", minWidth: "80px" }}>size: {log.size}</span>
-                <span style={{ color: "#64748b", minWidth: "130px" }}>{log.broker}</span>
-                {log.dealId && <span style={{ color: "#475569" }}>ID: {log.dealId}</span>}
-                {log.error && <span style={{ color: "#f87171" }}>{log.error}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Safety notice */}
-      <div style={{ marginTop: "16px", padding: "10px 14px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: "8px", fontSize: "10px", color: "#78716c" }}>
-        🔒 <strong>Safety Locks aktiv:</strong> liveTradingEnabled = false · Alle Orders gehen auf Capital.com DEMO-Account · Kein echtes Geld · orderExecutionEnabled = false für LIVE
+      {/* Zusicherung — nachgeprueft, nicht behauptet: `useLiveApi` hat den
+          Standardwert false und KEIN Aufrufer uebergibt ihn; alle uebrigen
+          Endpunkte sind fest auf DEMO_BASE (capital-com-client.ts). */}
+      <div style={{ padding: "10px 14px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: "8px", fontSize: "10px", color: "#78716c" }}>
+        🔒 <strong>Capital.com DEMO:</strong> jede Anfrage geht an die DEMO-API · kein echtes Geld · diese Ansicht eröffnet keine Positionen
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { brokerLage } from "@/lib/broker-lage/broker-lage";
 
 interface SyncedBrokerAllocation {
   brokerId: string;
@@ -52,6 +53,14 @@ interface ExecutionQueuePositionSyncReport {
     positionSyncMode: string;
   };
   updatedAt: string;
+  // AUS DER ROUTE, nicht aus dem Report-Modul (28.10.). Beide Felder
+  // kommen von `/api/execution-queue-position-sync` dazu und hatten bis
+  // heute KEINEN Leser. `?` ist Absicht: fehlt das Feld, heisst das
+  // UNBEKANNT — nicht `false`. Genau diese stille Null war der Fehler vom
+  // 30.09. Weil dieser Zustand getypt ist (nicht `any`), faengt `tsc` hier
+  // einen Tippfehler im Feldnamen — anders als an den `any`-Stellen.
+  capitalComActive?: boolean;
+  reconnectError?: string | null;
 }
 
 function cls(...args: (string | false | undefined)[]) {
@@ -115,6 +124,12 @@ export default function ExecutionQueuePositionSyncPanel() {
       .finally(() => setLoading(false));
   }, []);
 
+  // DIE ENTSCHEIDUNG LIEGT IN DER FUNKTION, nicht im JSX (28.10.).
+  // Als Ternaer-Kette stand `=== false` zweimal da (Farbe + Text); eine
+  // Sabotage am Text-Zweig blieb strukturell unauffaellig. `brokerLage()`
+  // wird von `safety-nets` mit true/false/undefined AUSGEFUEHRT.
+  const lage = report ? brokerLage(report.capitalComActive, report.reconnectError) : null;
+
   return (
     <section className="rounded-3xl border border-slate-800 bg-slate-950/80 p-6 shadow-2xl shadow-violet-950/20">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -131,6 +146,28 @@ export default function ExecutionQueuePositionSyncPanel() {
           </span>
         )}
       </div>
+
+      {/* BROKER-LAGE (28.10.).
+          Die Route holt den Reconnect bewusst ohne `await`; sein Ergebnis
+          liegt auf `global.__capital_last_error__` und kommt als
+          `reconnectError` mit. Ohne diese Anzeige waere es ein Feld ohne
+          Empfaenger — dieselbe Klasse wie ein Abo ohne Sender (17.09.).
+          Text UND Farbe kommen aus `lage.art`; es gibt keinen zweiten
+          Vergleich, der auseinanderlaufen koennte. */}
+      {lage && (
+        <div
+          className={cls(
+            "mb-6 rounded-2xl border p-4 text-sm",
+            lage.art === "verbunden"
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+              : lage.art === "getrennt"
+                ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-300"
+                : "border-slate-600/40 bg-slate-800/40 text-slate-400",
+          )}
+        >
+          {lage.text}
+        </div>
+      )}
 
       {loading && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-sm text-slate-400">

@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 457 · Kanten: 1008
+Dateien mit internen Abhängigkeiten: 458 · Kanten: 1009
 
 
 ## analysis-engine/api
@@ -633,6 +633,8 @@ Dateien mit internen Abhängigkeiten: 457 · Kanten: 1008
 
 - `frontend/components/EvolutionCenterPanel.tsx`
   - → `frontend/components/charts/index.ts`
+- `frontend/components/ExecutionQueuePositionSyncPanel.tsx`
+  - → `frontend/lib/broker-lage/broker-lage.ts`
 - `frontend/components/ForwardTestingCenter.tsx`
   - → `frontend/components/ExecutionPositionTicketSyncPanel.tsx`
   - → `frontend/components/ExecutionQueuePositionSyncPanel.tsx`
