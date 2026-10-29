@@ -2033,6 +2033,111 @@ interpretieren, bevor er ankommt. **Nach jedem erzeugten Codeblock `node -c
 irreführenden Fundstelle.
 
 
+## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
+
+`/edge` sagt, **dass** kein Edge da ist. `/status` sagt seit heute,
+**wo** die Signale sterben. Offen blieb die Frage davor: **welche
+Einstellung würde überhaupt etwas ändern?**
+
+`/hebel` gruppiert dieselben echten Trades nach den Grössen, an denen man
+drehen kann — **geplantes R/R**, **Handelsstil**, **Richtung**, **Markt**,
+**Strategie** — und nennt je Gruppe den Erwartungswert, die Trefferquote
+und das realisierte R/R. Reine Rechnung: keine Order, kein Stop, keine
+Einstellung.
+
+### Es rechnet nicht selbst
+
+Jede Gruppe geht durch **`erwartungswert()`** — dieselbe Funktion,
+dieselben Ausschlüsse (`KEIN_PNL`/`NIE_BESTAETIGT`, unlesbare Notizen,
+Fenster, Zeilen ohne Datum). Eine zweite Formel wäre eine **zweite
+Wahrheit**: `/edge` und `/hebel` könnten sich dann widersprechen, und
+niemand wüsste, welcher recht hat. Genau so hat sich der erste
+`/edge`-Lauf am 26.10. um den **Faktor 5.32** selbst widerlegt.
+
+Der Prüfer hält das als wichtigste Zusicherung fest: dieselben Zeilen
+durch `/edge` und durch `/hebel` müssen **dieselbe Zahl** ergeben.
+
+### Drei Regeln, die im Bericht stehen — nicht nur im Code
+
+- **Unter `MIN_TRADES` (30) kein Erwartungswert**, sondern der Grund.
+- **Ein Befund braucht zwei belastbare Gruppen.** „EW 99 bei 4 Trades" ist
+  Rauschen, kein Hebel — und genau so entstehen Empfehlungen, die Geld
+  kosten.
+- **Ein Unterschied ist keine Zusage.** Wer eine Schwelle verschiebt,
+  ändert auch die **Menge** der Trades; die übrigbleibenden sind dann
+  nicht mehr dieselben wie die gemessenen. Das steht so in der Antwort.
+
+**Und was NICHT geht, steht auch drin:** eine Empfehlung zur
+**Confidence-Schwelle** ist aus den echten Trades **nicht** berechenbar —
+die `Trade`-Tabelle hat keine Confidence-Spalte (im Schema nachgesehen,
+nicht vermutet). Eine erfundene Empfehlung wäre schlimmer als keine.
+
+**Eine 0 ist kein R/R.** `riskReward` hat im Schema `@default(0)`; eine 0
+heisst „nie geschrieben" und kommt in ein eigenes Band, statt als
+schlechtestes R/R mitgerechnet zu werden — dieselbe Regel wie bei
+`profitLoss` am 26.10.
+
+### `NaN` landete im BESTEN Band
+
+Vom eigenen Prüfstand gefangen, nicht von Hand:
+
+```ts
+if (v === null || v <= 0) return "ohne Angabe";   // NaN <= 0  ist FALSE
+if (v < 1.5) return "< 1.5";                      // NaN < 1.5 ist FALSE
+…
+return "≥ 3.0";                                   // ← hier landet NaN
+```
+
+Ein `NaN` fiel durch **alle** Vergleiche und damit ins beste Band. Das ist
+wörtlich die Falle aus `checkPriceAvailable` (24.08.) und `ordersRiegel`
+(28.10.) — zum dritten Mal dieselbe, diesmal in einer neuen Funktion.
+Behoben mit `Number.isFinite`. Der heutige Aufrufer hätte nie ein `NaN`
+hereingereicht; die Funktion ist exportiert und muss **für sich** stimmen.
+
+### Absicherung
+
+`safety-nets` **rechnet** das (715 → **754**): `rrBand` an elf Werten,
+die Gleichheit mit `/edge`, das durchgereichte Fenster **samt**
+Gegenprobe ohne Fenster, der `MIN_TRADES`-Riegel, der Befund mit null,
+einer und zwei belastbaren Gruppen — und dass der Text seine eigenen
+Grenzen nennt.
+
+**13 von 16 Sabotagen** im ersten Lauf, danach **3 von 3**:
+
+| entwischt | Diagnose |
+|---|---|
+| Trefferquote mit falschem Nenner | **meine Testdaten hatten keinen Breakeven** — dann sind `trefferquote` und `trefferquoteEntschieden` zufällig gleich. Jetzt zehn Breakeven drin, **plus eine Selbstprüfung**, die rot wird, wenn die Daten die Eigenschaft verlieren |
+| Confidence-Hinweis entfernt | mein Sabotage-Anker schrieb „waere", die Datei sagt „wäre" — Fehler im Nachweis, nicht im Prüfer |
+| `MIN_TRADES` ignoriert | **wirkungslose Sabotage, ausgeführt belegt**: `erwartungswert()` gibt unter 30 Zeilen **selbst schon** `null` (5 Zeilen → `null`, 40 Zeilen → `0.9`). Die äussere Klemme ist redundant; sie als „entwischt" zu zählen wäre ein Messfehler |
+
+Zum wiederholten Mal dieselbe Lehre — **ein Testfall, der den Fehler nicht
+ausdrücken kann, beweist nichts.** Neu ist diesmal die Konsequenz: die
+Testdaten tragen jetzt eine **eigene Prüfung**, die anschlägt, wenn sie
+ihre unbequeme Eigenschaft verlieren.
+
+Dazu die Gegenprobe, dass der Prüfstand nicht einfach immer rot ist: eine
+nachweislich **wirkungslose** Sabotage (ein eingefügter Kommentar) muss
+grün bleiben — die Lehre vom 15.09.
+
+### Was NICHT gebaut wurde — und warum
+
+Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist
+damit ausdrücklich **nicht** gebaut. Gemessen am 29.10.: es gibt bereits
+**fünfzehn** Module mit genau diesem Zweck —
+`adaptive-broker-weighting`, `autonomous-trading-evolution`,
+`evolution-governance`, `strategy-evolution`,
+`strategy-weight-auto-rebalancing` und zehn weitere —, und **0 von 15
+hängen an einer Schleife**. Sie hängen aneinander und an API-Routen; mit
+`system-map --impact` gegengeprüft, kein Pfad führt zu
+`instrumentation.ts`.
+
+Ein „Automat" wäre hier also **Verdrahten, nicht Bauen** — und gehört erst
+gegangen, wenn gemessen ist, dass die Verstellung den Erwartungswert
+**hebt**. Auf einem negativen EW (−2.39 je Trade, Stand 29.10.) verstellt
+sich ein Auto-Tuner **schneller in den Verlust**: er lockert die Tore, bis
+wieder Trades durchkommen, und aus „keine Trades" werden „schlechte
+Trades".
+
 ## Ohne Stop keine Order (28.10.)
 
 Gefunden beim Nachgehen der Frage, ob offene Positionen geschützt sind, wenn

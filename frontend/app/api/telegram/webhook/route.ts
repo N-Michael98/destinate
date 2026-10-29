@@ -51,6 +51,7 @@ const SYSTEM_BEFEHLE = [
   "/peakreset — Drawdown-Höchststand zurücksetzen (Passwort erforderlich)",
   "/status — System Status",
   "/edge — Erwartungswert: hat das System einen Edge? (/edge 60 = letzte 60 Tage)",
+  "/hebel — was würde etwas ändern? EW je Gruppe (/hebel 60 = letzte 60 Tage)",
   "/help — Alle Befehle",
 ].join("\n");
 
@@ -749,6 +750,48 @@ ${SYSTEM_BEFEHLE}`
         // stummen Befehl und raet ("wer den Grund nicht mitschreibt …").
         await reply(chatId,
           `❌ <b>/edge fehlgeschlagen</b>\n\n${e instanceof Error ? e.message : String(e)}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── /hebel — welche Einstellung wuerde etwas aendern? (29.10.) ───────
+    //
+    // REINE RECHNUNG: keine Order, kein Stop, keine Einstellung. Steht
+    // bewusst NACH der Passwort-Bestaetigung weiter oben, damit die
+    // Reihenfolge der Zweige vom 29.09. unberuehrt bleibt.
+    //
+    // Die Argumentpruefung ist WOERTLICH die von /edge: `parseInt` liest,
+    // was es kriegen kann (`"1e"` ergibt 1), und die Eingabe wird NICHT
+    // zurueckgeschickt — ein Telegram-Verlauf laesst sich nicht
+    // zurueckholen (29.09.).
+    if (textLower === "/hebel" || textLower.startsWith("/hebel ")) {
+      try {
+        const arg = textLower.slice("/hebel".length).trim();
+        const tage = arg === "" ? null : (/^\d+$/.test(arg) ? Number(arg) : NaN);
+        if (arg !== "" && (!Number.isFinite(tage) || (tage as number) <= 0)) {
+          await reply(chatId,
+            `⚠️ <b>/hebel</b> — das ist keine Anzahl Tage (${arg.length} Zeichen).`
+            + "\n\n<code>/hebel</code> rechnet alles, <code>/hebel 60</code> nur "
+            + "die letzten 60 Tage.");
+          return NextResponse.json({ ok: true });
+        }
+        const { getPrisma } = await import("@/app/lib/prisma");
+        const { hebelBericht, hebelText } = await import("@/lib/hebel/hebel");
+        // Dieselben vier Spalten wie /edge (sonst waeren die Ausschluesse
+        // andere) PLUS die Groessen, an denen sich drehen laesst.
+        const zeilen = await getPrisma().trade.findMany({
+          where: { status: { not: "OPEN" } },
+          select: {
+            profitLoss: true, notes: true, result: true, updatedAt: true,
+            riskReward: true, market: true, direction: true, strategy: true,
+          },
+        });
+        await reply(chatId, hebelText(
+          hebelBericht(zeilen, tage === null ? null : { tage }),
+          tage === null ? null : (tage as number)));
+      } catch (e) {
+        await reply(chatId,
+          `❌ <b>/hebel fehlgeschlagen</b>\n\n${e instanceof Error ? e.message : String(e)}`);
       }
       return NextResponse.json({ ok: true });
     }

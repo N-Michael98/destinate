@@ -2366,6 +2366,185 @@ module.exports = async function pruefe() {
           && !/!report\.capitalComActive/.test(P), pPfad);
       }
 
+      // ── /hebel — WAS WUERDE ETWAS AENDERN? (29.10.) ────────────────────
+      //
+      // `/edge` sagt, DASS kein Edge da ist. `/hebel` gruppiert dieselben
+      // Trades nach den Groessen, an denen man drehen kann.
+      //
+      // DIE WICHTIGSTE ZUSICHERUNG: je Gruppe muss DIESELBE Zahl
+      // herauskommen wie bei `/edge`. Eine zweite Formel waere eine zweite
+      // Wahrheit — und am 26.10. hat sich genau so eine Antwort um den
+      // Faktor 5.32 selbst widersprochen.
+      {
+        const hb = ladeTsModul("lib/hebel/hebel.ts", {
+          "expectancy/erwartungswert": ladeTsModul("lib/expectancy/erwartungswert.ts").exports,
+        });
+        const ewMod = ladeTsModul("lib/expectancy/erwartungswert.ts");
+        const hebelBericht = hb.exports?.hebelBericht;
+        const hebelText = hb.exports?.hebelText;
+        const rrBand = hb.exports?.rrBand;
+        const befundVon = hb.exports?.befundVon;
+        const erwartungswert = ewMod.exports?.erwartungswert;
+        if (hb.fehler || typeof hebelBericht !== "function"
+          || typeof hebelText !== "function" || typeof rrBand !== "function"
+          || typeof befundVon !== "function" || typeof erwartungswert !== "function") {
+          torPruefung("hebel.ts ist nicht ausfuehrbar", false,
+            hb.fehler ?? ewMod.fehler ?? "nicht exportiert");
+        } else {
+          // ── rrBand: die Schwelle liegt bei 1.5, und 0 ist KEIN R/R ──
+          //
+          // `riskReward` hat im Schema `@default(0)`. Eine 0 als Band
+          // "< 1.5" zu zaehlen hiesse, "nie geschrieben" als Messung
+          // auszugeben — derselbe Fehler wie bei `profitLoss` am 26.10.
+          for (const [wert, band] of [[0, "ohne Angabe"], [null, "ohne Angabe"],
+            [Number.NaN, "ohne Angabe"], [-1, "ohne Angabe"],
+            [1.49, "< 1.5 (unter der Einstiegs-Schwelle)"],
+            [1.5, "1.5 – 1.99"], [1.99, "1.5 – 1.99"], [2, "2.0 – 2.99"],
+            [2.99, "2.0 – 2.99"], [3, "≥ 3.0"], [10, "≥ 3.0"]]) {
+            const b = rrBand(Number.isFinite(wert) ? wert : (wert === null ? null : wert));
+            torPruefung(`rrBand(${String(wert)}) ergibt nicht "${band}"`,
+              b === band, `bekam: ${b}`);
+          }
+
+          // ── Zeilen bauen: 40 Gewinner/Verlierer in EINEM Markt ──────
+          const zeilenH = [];
+          for (let i = 0; i < 40; i++) {
+            zeilenH.push({
+              profitLoss: i % 3 === 0 ? 10 : -4,
+              notes: JSON.stringify({ stil: "DAYTRADING" }),
+              result: i % 3 === 0 ? "WIN" : "LOSS",
+              updatedAt: "2026-10-20T10:00:00.000Z",
+              riskReward: 2.0, market: "EURUSD", direction: "BUY",
+              strategy: "Trend",
+            });
+          }
+          // ABSICHTLICH UNBEQUEM: zehn Breakeven dazu. Ohne sie sind
+          // `trefferquote` (ueber alle gewerteten) und
+          // `trefferquoteEntschieden` (ueber die entschiedenen) zufaellig
+          // GLEICH — ein vertauschter Nenner faellt dann nicht auf. Genau
+          // so ist die Sabotage H8 zuerst entwischt.
+          for (let i = 0; i < 10; i++) {
+            zeilenH.push({
+              profitLoss: 0, notes: JSON.stringify({ stil: "DAYTRADING" }),
+              result: "BREAKEVEN", updatedAt: "2026-10-20T10:00:00.000Z",
+              riskReward: 2.0, market: "EURUSD", direction: "BUY",
+              strategy: "Trend",
+            });
+          }
+          const direkt = erwartungswert(zeilenH, null);
+          // SELBSTPRUEFUNG der Testdaten: verlieren sie die Eigenschaft,
+          // ist die Nenner-Pruefung darunter wertlos.
+          torPruefung("die Testdaten enthalten keinen Breakeven — die "
+            + "Pruefung auf den NENNER kann den Fehler dann gar nicht "
+            + "ausdruecken",
+            direkt.breakeven > 0 && direkt.entschieden < direkt.gewertet,
+            `be=${direkt.breakeven} entschieden=${direkt.entschieden} `
+            + `gewertet=${direkt.gewertet}`);
+          torPruefung("die beiden Trefferquoten sind in den Testdaten "
+            + "GLEICH — dann beweist ein Vergleich nichts",
+            direkt.trefferquote !== direkt.trefferquoteEntschieden,
+            `${direkt.trefferquote} vs ${direkt.trefferquoteEntschieden}`);
+          const dims = hebelBericht(zeilenH, null);
+          const marktDim = dims.find((d) => d.titel === "Markt");
+          const eineGruppe = marktDim?.gruppen?.[0];
+          torPruefung("die Markt-Dimension fehlt oder ist leer",
+            !!eineGruppe && eineGruppe.name === "EURUSD",
+            JSON.stringify(marktDim?.gruppen?.map((g) => g.name)));
+          torPruefung("/hebel rechnet eine ANDERE Zahl als /edge — dann "
+            + "koennen sich beide Befehle widersprechen",
+            !!eineGruppe && eineGruppe.ew === direkt.erwartungswert
+            && eineGruppe.gewertet === direkt.gewertet,
+            `hebel=${eineGruppe?.ew} edge=${direkt.erwartungswert}`);
+          torPruefung("die Trefferquote je Gruppe hat einen anderen Nenner "
+            + "als bei /edge",
+            !!eineGruppe && eineGruppe.trefferquote === direkt.trefferquoteEntschieden,
+            `${eineGruppe?.trefferquote} vs ${direkt.trefferquoteEntschieden}`);
+
+          // ── Das FENSTER muss durchgereicht werden ──────────────────
+          //
+          // Ohne diese Pruefung rechnete `/hebel 60` stillschweigend
+          // ALLES und saehe dabei wie ein Fenster aus. `jetzt` ist
+          // injizierbar, damit die Pruefung nicht an der Wanduhr haengt.
+          const altZeilen = zeilenH.map((r) => ({
+            ...r, updatedAt: "2026-01-05T10:00:00.000Z",
+          }));
+          const mitFenster = hebelBericht(altZeilen,
+            { tage: 30, jetzt: new Date("2026-10-29T12:00:00.000Z") });
+          const gFenster = mitFenster.find((d) => d.titel === "Markt")?.gruppen?.[0];
+          torPruefung("das Zeitfenster wird nicht durchgereicht — /hebel 60 "
+            + "rechnete dann alles und saehe wie ein Fenster aus",
+            !!gFenster && gFenster.gewertet === 0,
+            JSON.stringify(gFenster));
+          // Gegenprobe: OHNE Fenster muessen dieselben Zeilen zaehlen.
+          const ohneFenster = hebelBericht(altZeilen, null);
+          const gOhne = ohneFenster.find((d) => d.titel === "Markt")?.gruppen?.[0];
+          torPruefung("ohne Fenster werden die alten Zeilen trotzdem "
+            + "verworfen — dann waere das Fenster immer an",
+            !!gOhne && gOhne.gewertet === 50, JSON.stringify(gOhne));
+
+          // ── Unter MIN_TRADES wird KEIN Erwartungswert ausgegeben ────
+          const wenig = hebelBericht(zeilenH.slice(0, 5), null);
+          const wenigGruppe = wenig.find((d) => d.titel === "Markt")?.gruppen?.[0];
+          torPruefung("eine Gruppe unter MIN_TRADES bekommt trotzdem einen "
+            + "Erwartungswert — ein Ausreisser verschiebt den dann komplett",
+            !!wenigGruppe && wenigGruppe.belastbar === false
+            && wenigGruppe.ew === null, JSON.stringify(wenigGruppe));
+
+          // ── Der Befund braucht ZWEI belastbare Gruppen ──────────────
+          torPruefung("ein Befund wird ohne jede belastbare Gruppe behauptet",
+            /kein Befund/.test(befundVon([{ name: "A", ew: 5, gewertet: 3,
+              trefferquote: null, rr: null, belastbar: false }])), "");
+          torPruefung("ein Befund wird aus EINER Gruppe behauptet — ohne "
+            + "Vergleich ist das keine Erkenntnis",
+            /ohne Vergleichsgruppe/.test(befundVon([{ name: "A", ew: 5,
+              gewertet: 50, trefferquote: 50, rr: 1, belastbar: true }])), "");
+          const beide = befundVon([
+            { name: "A", ew: -5, gewertet: 50, trefferquote: 40, rr: 0.5, belastbar: true },
+            { name: "B", ew: 3, gewertet: 60, trefferquote: 55, rr: 1.4, belastbar: true },
+            { name: "C", ew: 99, gewertet: 4, trefferquote: 90, rr: 9, belastbar: false },
+          ]);
+          torPruefung("der Befund nennt nicht die beste UND die "
+            + "schlechteste belastbare Gruppe samt Unterschied",
+            /„B"/.test(beide) && /„A"/.test(beide) && /8\.00/.test(beide), beide);
+          torPruefung("eine NICHT belastbare Gruppe geht in den Befund ein "
+            + "— 4 Trades mit EW 99 sind Rauschen, kein Hebel",
+            !/„C"/.test(beide), beide);
+
+          // ── Der Text sagt, was er NICHT weiss ───────────────────────
+          const tH = hebelText(dims, 60);
+          torPruefung("der Text verschweigt, dass ein Unterschied keine "
+            + "Zusage ist",
+            /keine Zusage/.test(tH) && /MENGE der Trades/.test(tH), tH.slice(-300));
+          torPruefung("der Text behauptet eine Confidence-Empfehlung — die "
+            + "`Trade`-Tabelle hat gar keine Confidence-Spalte",
+            /Nicht berechenbar/.test(tH) && /Confidence/.test(tH), tH.slice(-300));
+          torPruefung("das Fenster steht nicht in der Antwort",
+            /letzte <b>60<\/b> Tage/.test(tH), tH.slice(0, 200));
+          torPruefung("ohne Fenster wird ein Fenster vorgetaeuscht",
+            /Zeitraum: <b>alles<\/b>/.test(hebelText(dims, null)), "");
+        }
+
+        // ── UND DIE VERDRAHTUNG ────────────────────────────────────────
+        const whH = read("frontend/app/api/telegram/webhook/route.ts");
+        torPruefung("/hebel wird nicht behandelt",
+          /textLower === "\/hebel"/.test(whH), "webhook");
+        torPruefung("/hebel ruft hebelBericht\/hebelText nicht auf",
+          /hebelBericht\(zeilen/.test(whH) && /hebelText\(/.test(whH), "webhook");
+        // Dieselben vier Spalten wie /edge — sonst waeren die Ausschluesse
+        // andere und die Zahlen koennten auseinanderlaufen.
+        for (const spalte of ["profitLoss", "notes", "result", "updatedAt",
+          "riskReward", "market", "direction", "strategy"]) {
+          torPruefung(`/hebel liest die Spalte \`${spalte}\` nicht mit`,
+            new RegExp(`${spalte}: true`).test(whH), spalte);
+        }
+        torPruefung("/hebel echot die Eingabe zurueck — ein Telegram-Verlauf "
+          + "laesst sich nicht zurueckholen (29.09.)",
+          !/\/hebel \$\{arg/.test(whH), "webhook");
+        torPruefung("/hebel prueft das Argument nicht streng auf Ziffern "
+          + "(`parseInt(\"1e\")` ergibt 1)",
+          (whH.match(/\/\^\\d\+\$\/\.test\(arg\)/g) || []).length >= 2, "webhook");
+      }
+
       // ── WARUM KEIN TRADE? (29.10.) ─────────────────────────────────────
       //
       // Vom 23. bis 29.10. wurde keine Position eroeffnet, und `/status`
