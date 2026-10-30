@@ -1416,6 +1416,11 @@ each market's own data, never from habit or from these examples' direction:
   const claudeUnterGrenzeConf: number[] = [];
   // Messwerte fuer die Zyklus-Bilanz (16.09.) — reine Zaehler, entscheiden nichts.
   const bilanzRichtungen = { WAIT: 0, BUY: 0, SELL: 0 };
+  // „WAIT" und „nicht geantwortet" waren bis zum 30.10. dasselbe (siehe
+  // die Zaehlstelle im `else if (hasGPT)`-Zweig weiter unten). Bei 0
+  // Richtungen aus 3210 Analysen war damit nicht feststellbar, ob GPT
+  // schweigt oder ablehnt — zwei sehr verschiedene Lagen.
+  let ohneGptAntwortZahl = 0;
   const regelbrueche: Record<string, number> = {};
   let vetoZahl = 0;
   let stilVerworfenZahl = 0;
@@ -1519,6 +1524,11 @@ each market's own data, never from habit or from these examples' direction:
       }
     } else if (hasGPT) {
       // GPT hat dieses Symbol trotz Anweisung nicht beantwortet → sicherer WAIT
+      //
+      // GEZAEHLT WIRD IM SELBEN ZWEIG, der die Entscheidung trifft
+      // (Regel vom 22.09.): so koennen Zahl und Verhalten nicht
+      // auseinanderlaufen. An der Entscheidung aendert sich NICHTS.
+      ohneGptAntwortZahl++;
       gpt = { ...noSignal(market), source: "GPT_REAL" };
     } else if (ta && ta.signal !== "NEUTRAL") {
       // Kein GPT → TA-Lib Signal direkt als Fallback nutzen
@@ -2265,6 +2275,9 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       // zwar mit demselben `if`. Beide Zahlen sind deshalb per Konstruktion
       // gleich: so viele 🔒-Zeilen im Log, so viel steht hier.
       ohneVolleDaten: ohneVolleDatenZahl,
+      // Siehe `ohneGptAntwortZahl` oben: eine ausgebliebene Antwort ist
+      // kein WAIT-Urteil.
+      ohneGptAntwort: ohneGptAntwortZahl,
       ohneVolleDatenGrund: ohneVolleDatenGruende,
       claudeGefragt,
       regelbrueche,

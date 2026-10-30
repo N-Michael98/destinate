@@ -2573,6 +2573,17 @@ module.exports = async function pruefe() {
           const mit = (o) => handelsLage({ ...LEER, ...o });
           const txt = (r) => r.zeilen.join("\n");
 
+          // ALLES BEKANNT — sonst greift das „unbekannt"-Urteil VOR den
+          // GO-Zweigen und der Fall ist gar nicht erreichbar. Genau so
+          // sind die drei Tor-Pruefungen zuerst fehlgeschlagen.
+          const BEKANNT = {
+            brokerVerbunden: true, modus: "AUTO", offenePositionen: 0,
+            maxGleichzeitig: 6, tagesZaehler: 0, tagesLimit: 21,
+            tagesLimitAktiv: true, kontostand: 1870.57,
+            hoechststand: 1990.36, maxDrawdownProzent: 10,
+            inHandelszeit: true, zyklenHeute: 258, ausgaenge: { "x": 1 },
+          };
+
           // 1. ALLES UNBEKANNT darf NICHTS behaupten — weder "blockiert"
           //    noch "in Ordnung". Das ist der haeufigste Fall, wenn es
           //    wirklich brennt.
@@ -2702,7 +2713,7 @@ module.exports = async function pruefe() {
             scans: 162, maerkte: 4860, richtungen: 36, vetos: 2,
             stilVerworfen: 1, ohneVolleDaten: 5,
             ohneVolleDatenGrund: { "Strategien": 5 },
-            unterGrenze: 20, confMin: 65, confMax: 68,
+            unterGrenze: 20, confMin: 65, confMax: 68, ohneGptAntwort: 5,
             rrAbgelehnt: 7, ohneStopZiel: 1, go: 0,
           };
           const tr = mit({ brokerVerbunden: true, modus: "AUTO",
@@ -2728,6 +2739,24 @@ module.exports = async function pruefe() {
               + "nicht ihre eigene Zahl",
               zeile !== "" && zeile.includes(zahlText), `${name} -> ${zeile}`);
           }
+          // ── „WAIT" IST NICHT „KEINE ANTWORT" (30.10.) ──────────────
+          //
+          // Am 30.10. standen 0 Richtungen aus 3210 Analysen in der
+          // Bilanz. Ob GPT ablehnte oder gar nicht antwortete, war daraus
+          // NICHT zu beantworten — beides wurde als WAIT gezaehlt.
+          torPruefung("die Zahl der Maerkte OHNE GPT-Antwort fehlt — dann "
+            + "ist ein Ausfall von einem Urteil nicht zu unterscheiden",
+            /ohne GPT-Antwort: 5/.test(tTr), tTr.slice(0, 300));
+          torPruefung("bei 0 ohne Antwort wird trotzdem der Zusatz "
+            + "\"kein Urteil\" behauptet",
+            !/ohne GPT-Antwort: 0 \(als WAIT/.test(
+              txt(mit({ ...BEKANNT, trichter: { ...TRICHTER, ohneGptAntwort: 0 } }))),
+            "0-Fall");
+          torPruefung("eine unbekannte Zahl ohne GPT-Antwort wird zu 0 — "
+            + "aus \"nicht gemessen\" wird damit eine Messung",
+            /ohne GPT-Antwort: unbekannt/.test(
+              txt(mit({ ...BEKANNT, trichter: { ...TRICHTER, ohneGptAntwort: null } }))),
+            "null-Fall");
           torPruefung("der GRUND des Datenausfalls fehlt — die Zahl allein "
             + "sagt nicht, WELCHER Dienst weg war (22.09.)",
             /Strategien 5/.test(tTr), tTr.slice(0, 200));
@@ -2763,16 +2792,6 @@ module.exports = async function pruefe() {
             /kein einziger Zyklus kam bis zur Analyse/.test(txt(trOhne)),
             txt(trOhne).slice(0, 200));
 
-          // ALLES BEKANNT — sonst greift das „unbekannt"-Urteil VOR den
-          // GO-Zweigen und der Fall ist gar nicht erreichbar. Genau so
-          // sind die drei Tor-Pruefungen zuerst fehlgeschlagen.
-          const BEKANNT = {
-            brokerVerbunden: true, modus: "AUTO", offenePositionen: 0,
-            maxGleichzeitig: 6, tagesZaehler: 0, tagesLimit: 21,
-            tagesLimitAktiv: true, kontostand: 1870.57,
-            hoechststand: 1990.36, maxDrawdownProzent: 10,
-            inHandelszeit: true, zyklenHeute: 258, ausgaenge: { "x": 1 },
-          };
 
           // ── DIE TORE NACH DEM GO (30.10.) ──────────────────────────
           //
@@ -2872,6 +2891,57 @@ module.exports = async function pruefe() {
         // unbeteiligtes Vorkommen in einem anderen Befehl. Die Sabotage an
         // der Faktensammlung blieb damit gruen: "ein Treffer beweist nichts
         // ueber die andere Stelle" (25.10.).
+        // ── GEZAEHLT WIRD, WO ENTSCHIEDEN WIRD (30.10.) ────────────────
+        //
+        // Der Zaehler `ohneGptAntwortZahl` muss in GENAU dem Zweig stehen,
+        // der die Entscheidung trifft. Steht er woanders, koennen Zahl und
+        // Verhalten auseinanderlaufen — die Regel vom 22.09., dort fuer die
+        // Logzeile, hier fuer die Bilanz.
+        {
+          const ai = read("frontend/lib/market-scanner/ai-analysis-engine.ts");
+          const marke = "} else if (hasGPT) {";
+          const p = ai.indexOf(marke);
+          torPruefung("der Zweig `else if (hasGPT)` ist nicht auffindbar — "
+            + "ohne ihn beweist die Pruefung darunter nichts",
+            p >= 0, `indexOf = ${p}`);
+          // Den Zweig per Klammerzaehler ausschneiden: ein Zeichen-Fenster
+          // bewiese nur Naehe, nicht Zugehoerigkeit (22.09.).
+          let zweig = "";
+          if (p >= 0) {
+            let tiefe = 0;
+            for (let i = ai.indexOf("{", p); i < ai.length; i++) {
+              if (ai[i] === "{") tiefe++;
+              else if (ai[i] === "}") { tiefe--; if (tiefe === 0) { zweig = ai.slice(p, i + 1); break; } }
+            }
+          }
+          torPruefung("der Zaehler steht NICHT im Zweig, der entscheidet — "
+            + "Zahl und Verhalten koennen dann auseinanderlaufen",
+            zweig.includes("ohneGptAntwortZahl++")
+            && zweig.includes("noSignal(market)"), `${zweig.length} Zeichen`);
+          // Und die Gegenprobe: der Zaehler darf NICHT auch im Zweig stehen,
+          // der eine ECHTE Antwort verarbeitet — sonst zaehlt er Urteile mit.
+          const echt = ai.indexOf("if (hasGPT && gptData?.direction) {");
+          const echterZweig = echt >= 0 && p > echt ? ai.slice(echt, p) : "";
+          torPruefung("der Zaehler laeuft auch im Zweig mit ECHTER Antwort "
+            + "— dann zaehlt er Urteile als Ausfall",
+            echterZweig.length > 100 && !echterZweig.includes("ohneGptAntwortZahl++"),
+            `${echterZweig.length} Zeichen`);
+          torPruefung("die ScanDaten tragen `ohneGptAntwort` nicht",
+            /ohneGptAntwort: ohneGptAntwortZahl,/.test(ai), "ScanDaten");
+          // Die Tagesbilanz muss die Zahl auch NENNEN.
+          const zb = read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts");
+          torPruefung("die ZYKLUS-Zeile nennt die Zahl ohne GPT-Antwort "
+            + "nicht — dort bleibt \"30W\" sonst mehrdeutig",
+            /ohne GPT-Antwort \$\{s\.ohneGptAntwort\}/.test(zb), "bilanzZeile");
+          torPruefung("die Tagesbilanz nennt die Zahl ohne GPT-Antwort nicht",
+            /davon OHNE GPT-Antwort/.test(zb), "zyklus-bilanz");
+          torPruefung("die Tagessumme addiert `ohneGptAntwort` nicht mit "
+            + "`zahl()` auf BEIDEN Seiten — eine Summe von gestern hat das "
+            + "Feld noch nicht",
+            /t\.ohneGptAntwort = zahl\(t\.ohneGptAntwort\) \+ zahl\(s\.ohneGptAntwort\);/.test(zb),
+            "tagessummeAddieren");
+        }
+
         // DIE TRICHTER-FELDER HEISSEN WIE IN `Tagessumme` — an der QUELLE
         // geholt, nicht aus dem Gedaechtnis (Fehler vom 30.09.).
         {
@@ -2883,7 +2953,8 @@ module.exports = async function pruefe() {
             typ.length > 100, `${typ.length} Zeichen`);
           for (const feld of ["scans", "maerkte", "gpt", "vetos", "stilVerworfen",
             "ohneVolleDaten", "ohneVolleDatenGrund", "unterGrenze", "confMin",
-            "confMax", "rrAbgelehnt", "ohneStopZiel", "go", "tore"]) {
+            "confMax", "rrAbgelehnt", "ohneStopZiel", "go", "tore",
+            "ohneGptAntwort"]) {
             torPruefung(`\`${feld}\` steht nicht in \`Tagessumme\` — /status `
               + "liest dann einen Namen, den es nicht gibt",
               new RegExp(`\\b${feld}\\s*:`).test(typ)

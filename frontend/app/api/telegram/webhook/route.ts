@@ -597,6 +597,7 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
           vetos?: number; stilVerworfen?: number;
           ohneVolleDaten?: number; ohneVolleDatenGrund?: Record<string, number>;
           unterGrenze?: number; confMin?: number | null; confMax?: number | null;
+          ohneGptAntwort?: number;
           rrAbgelehnt?: number; ohneStopZiel?: number; go?: number;
           tore?: Record<string, { ja?: number; nein?: number;
             fallback?: number; gruende?: Record<string, number> }>;
@@ -653,6 +654,7 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
               stilVerworfen: tagessumme.stilVerworfen ?? null,
               ohneVolleDaten: tagessumme.ohneVolleDaten ?? null,
               ohneVolleDatenGrund: tagessumme.ohneVolleDatenGrund ?? null,
+              ohneGptAntwort: tagessumme.ohneGptAntwort ?? null,
               unterGrenze: tagessumme.unterGrenze ?? null,
               confMin: tagessumme.confMin ?? null,
               confMax: tagessumme.confMax ?? null,

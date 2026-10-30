@@ -88,6 +88,14 @@ export interface TrichterZahlen {
   maerkte: number | null;
   /** BUY + SELL: die Signale, die ueberhaupt eine Richtung hatten. */
   richtungen: number | null;
+  /**
+   * Maerkte, fuer die GPT GAR NICHT geantwortet hat (30.10.).
+   *
+   * Sie wurden bis dahin als WAIT gezaehlt — „GPT lehnt ab" und „GPT
+   * schweigt" sahen damit identisch aus. Bei 0 Richtungen aus 3210
+   * Analysen ist das die Frage, mit der man ins Log steigt.
+   */
+  ohneGptAntwort: number | null;
   vetos: number | null;
   stilVerworfen: number | null;
   ohneVolleDaten: number | null;
@@ -291,6 +299,10 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     const maerkte = zahl(t.maerkte);
     zeilen.push(`🔻 <b>Trichter heute</b> (${scans} Analysen`
       + `${maerkte === null ? "" : `, ${maerkte} Marktanalysen`}):`);
+    const ohneAntwort = zahl(t.ohneGptAntwort);
+    zeilen.push(`   • ohne GPT-Antwort: `
+      + `${ohneAntwort === null ? "unbekannt" : ohneAntwort}`
+      + `${ohneAntwort !== null && ohneAntwort > 0 ? " (als WAIT gezählt, aber kein Urteil)" : ""}`);
     zeilen.push(`   • Richtungssignale (BUY/SELL): `
       + `${richt === null ? "unbekannt" : richt}`);
     for (const [name, n] of stufen) {

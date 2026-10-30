@@ -58,6 +58,9 @@ export type ScanDaten = {
    *  Die blosse Anzahl sagt nicht, WELCHER Dienst ausgefallen ist — und genau
    *  das ist die Frage, mit der man ins Railway-Log steigt. */
   ohneVolleDatenGrund: Record<string, number>;
+  /** Maerkte, fuer die GPT GAR NICHT geantwortet hat (30.10.).
+   *  Bis dahin als WAIT gezaehlt — ein Ausfall gab sich als Urteil aus. */
+  ohneGptAntwort: number;
   claudeGefragt: number;
   /** GPT-Antworten, die dem eigenen Prompt widersprechen — Anzahl je Art. */
   regelbrueche: Record<string, number>;
@@ -106,6 +109,8 @@ export type Tagessumme = {
    *  Tagesbilanz einen Backend-Ausfall als "die KI wollte nicht". */
   ohneVolleDaten: number;
   ohneVolleDatenGrund: Record<string, number>;
+  /** Siehe ScanDaten.ohneGptAntwort (30.10.). */
+  ohneGptAntwort: number;
   claudeGefragt: number;
   /** Broker-Fehler nach Grund — die Zahl allein sagt nicht, WARUM (20.09.). */
   fehlgeschlagenGruende: Record<string, number>;
@@ -190,6 +195,10 @@ export function bilanzZeile(b: ZyklusBilanz): string {
       ? ` (${Math.min(...s.unterGrenze)}–${Math.max(...s.unterGrenze)})`
       : "";
     teile.push(`GPT ${s.gpt.WAIT}W/${s.gpt.BUY}B/${s.gpt.SELL}S`);
+    // Ohne diese Zahl bleibt „30W" mehrdeutig: dreissig WAIT-URTEILE oder
+    // dreissig ausgebliebene Antworten (30.10.). Nur bei > 0, wie bei
+    // `stilVerworfen` und `ohneStopZiel` — eine 0 waere nur Rauschen.
+    if (zahl(s.ohneGptAntwort) > 0) teile.push(`ohne GPT-Antwort ${s.ohneGptAntwort}`);
     teile.push(`Veto ${s.vetos}`);
     if (s.stilVerworfen > 0) teile.push(`Stil ${s.stilVerworfen}`);
     // Vor `<Grenze`, weil das Daten-Tor im Trichter VOR der Confidence steht:
@@ -232,6 +241,7 @@ export function leereTagessumme(datum: string): Tagessumme {
     gpt: { WAIT: 0, BUY: 0, SELL: 0 }, vetos: 0, stilVerworfen: 0,
     unterGrenze: 0, confMin: null, confMax: null, go: 0, rrAbgelehnt: 0,
     ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
+    ohneGptAntwort: 0,
     claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
     fehlgeschlagenGruende: {},
     regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
@@ -274,6 +284,9 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     t.rrAbgelehnt += zahl(s.rrAbgelehnt);
     t.ohneStopZiel = zahl(t.ohneStopZiel) + zahl(s.ohneStopZiel);
     t.ohneVolleDaten = zahl(t.ohneVolleDaten) + zahl(s.ohneVolleDaten);
+    // `zahl()` auch auf den Summanden links: eine Tagessumme aus Redis
+    // kann von gestern stammen und dieses Feld noch nicht haben.
+    t.ohneGptAntwort = zahl(t.ohneGptAntwort) + zahl(s.ohneGptAntwort);
     // `t.ohneVolleDatenGrund` kann fehlen, wenn die Tagessumme aus Redis noch
     // von gestern stammt (ohne dieses Feld) — derselbe Fall, den `zahl()` eine
     // Zeile tiefer fuer die Zahlen abfaengt.
@@ -361,6 +374,10 @@ export function tagesbilanzText(t: Tagessumme): string {
   if (t.scans > 0) {
     zeilen.push("");
     zeilen.push(`🧠 GPT: ${t.gpt.WAIT} WAIT · ${t.gpt.BUY} BUY · ${t.gpt.SELL} SELL (${t.maerkte} Marktanalysen)`);
+    // Ein Ausfall darf sich nicht als Urteil ausgeben (30.10.): von den
+    // WAIT sind das die, bei denen GPT gar nicht geantwortet hat.
+    zeilen.push(`🤐 davon OHNE GPT-Antwort: ${zahl(t.ohneGptAntwort)} `
+      + `(als WAIT gezählt, aber kein Urteil)`);
     zeilen.push(`🚧 Vetos: ${t.vetos} · Stil verworfen: ${t.stilVerworfen}`);
     const spanne = t.confMin !== null ? ` (Confidence ${t.confMin}–${t.confMax})` : "";
     zeilen.push(`📉 Unter der Untergrenze: ${t.unterGrenze}${spanne}`);

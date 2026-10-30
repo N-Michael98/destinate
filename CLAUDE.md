@@ -1937,7 +1937,7 @@ Tageslimit zurückgesetzt.
 
 ### Absicherung
 
-`safety-nets` **rechnet** `handelsLage()` durch (650 → **762**): alles
+`safety-nets` **rechnet** `handelsLage()` durch (650 → **773**): alles
 unbekannt darf **nichts** behaupten, jeder der drei stillen Ausgänge wird
 einzeln gefangen, der Drawdown wird gerechnet (2000 → 1700 = −15 % gegen
 Grenze 10), ein `NaN` gilt nicht als Zahl, und der **gesunde** Fall muss
@@ -2064,7 +2064,7 @@ erreichbar. Jetzt ein vollständiger „alles bekannt"-Satz **plus eine
 Selbstprüfung**, die rot wird, wenn die Testdaten diese Eigenschaft
 verlieren.
 
-#### Noch offen: WAIT und „nicht geantwortet" sind dasselbe
+#### Behoben: WAIT und „nicht geantwortet" waren dasselbe
 
 Gezählt wird `normalisiereRichtung(gptData?.direction ?? "WAIT")`, und
 daneben steht der Zweig
@@ -2082,10 +2082,42 @@ und bei **0 von 3210** Richtungen ist genau das die Frage, mit der man ins
 Railway-Log steigt. Fehlerklasse „ein Ausfall darf sich nicht als Ergebnis
 ausgeben".
 
-**Nicht geändert:** die Zählstelle liegt in `ai-analysis-engine.ts`, einer
-der acht Dateien mit erhöhtem Risiko. Der Eingriff wäre reine Messung (ein
-Zähler `ohneGptAntwort` in `ScanDaten`, eine Zeile im Trichter) — er
-braucht trotzdem eine ausdrückliche Zustimmung.
+**Jetzt gezählt — und zwar im SELBEN Zweig, der entscheidet.** Der Zähler
+`ohneGptAntwortZahl` steht direkt neben `gpt = { ...noSignal(market) }`, so
+wie es die Regel vom 22.09. verlangt: Zahl und Verhalten können nicht
+auseinanderlaufen. Die Zahl geht über `ScanDaten` in die `Tagessumme`, von
+dort in die **Tagesbilanz** („davon OHNE GPT-Antwort") und in den
+`/status`-Trichter.
+
+**Die Änderung an der Hochrisiko-Datei ist reine Messung** — belegt, nicht
+behauptet: der Diff besteht aus einem Kommentar, einer
+Zähler-Deklaration, einem `++` und einem Feld in `ScanDaten`. **Keine**
+Entscheidungszeile ist angefasst; `gpt = { ...noSignal(market), source:
+"GPT_REAL" };` steht Zeichen für Zeichen unverändert da. Vorher lief die
+Pflicht-Impact-Analyse (`system-map --impact`): benutzt von Scanner-Route,
+Analyse-Agent und Orchestrator, abgesichert durch **sechs** Prüfer —
+darunter `snapshot` (Prüfsumme des GPT-Regelteils) und `prompt-zahlen`.
+
+**Eine Summe von gestern kennt das Feld noch nicht.** Deshalb steht
+`zahl()` auf **beiden** Seiten der Addition — dieselbe Vorsicht wie bei
+`ohneStopZiel`. Ohne sie wirft die erste Tagessumme nach dem Deploy.
+
+Die Zahl steht auch in der **Zyklus-Zeile** (`[zyklus]`, eine pro Lauf) —
+ohne sie bliebe dort `GPT 30W/0B/0S` genauso mehrdeutig wie in der
+Tagesbilanz. Nur bei > 0, wie `Stil` und `ohne Stop/Ziel`.
+
+`safety-nets` 762 → **773**, **9 von 9 Sabotagen**. Die wichtigste ist die
+**Gegenprobe**: der Zähler darf **nicht** auch im Zweig mit einer ECHTEN
+Antwort laufen — sonst zählte er Urteile als Ausfall. Der Zweig wird dafür
+per Klammerzähler ausgeschnitten; ein Zeichen-Fenster bewiese nur Nähe,
+nicht Zugehörigkeit (22.09.).
+
+**Zwei eigene Fehler beim Einbau, beide vom eigenen Skript gefangen:** ein
+Anker traf **zwei** Stellen (`ScanDaten` und `Tagessumme` haben dieselbe
+Zeilenfolge) — der Lauf brach ab, und die halb geänderte Datei wurde exakt
+auf HEAD zurückgestellt. Und ein fest verdrahtetes `\r\n` in einer
+Ersetzung machte `zyklus-bilanz.ts` **gemischt**; der Schlusscheck hat es
+gemeldet, die Datei ist wieder rein LF, der Inhalt unverändert.
 
 #### Ein erzeugter Patch hat sich selbst zerlegt — `$&`
 
