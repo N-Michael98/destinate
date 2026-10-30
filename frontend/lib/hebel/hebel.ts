@@ -198,6 +198,20 @@ export function hebelBericht(
 ): HebelDimension[] {
   const dims: HebelDimension[] = [];
 
+  // DIE FRAGE, FUER DIE ES /hebel GIBT (30.10.): taugt der gemessene
+  // Konsens etwas? Steht erst seit heute im Trade — aeltere Zeilen
+  // tragen die Angabe nicht und erscheinen als „ohne Angabe".
+  dims.push({
+    titel: "Signalherkunft",
+    hinweis: "Wird erst seit dem 30.10. mitgeschrieben — ältere Trades "
+      + "stehen unter „ohne Angabe“. `MEASURED_CONSENSUS` heisst: GPT "
+      + "sagte WAIT, und TA-Lib, Strategien und Entry-Quality waren sich "
+      + "einig.",
+    gruppen: gruppiere(zeilen,
+      (z) => ausNotizen(z.notes ?? null, "signalQuelle") ?? "ohne Angabe", fenster),
+    befund: "",
+  });
+
   dims.push({
     titel: "Geplantes R/R beim Einstieg",
     hinweis: "Die Einstiegs-Schwelle liegt bei 1.5. `riskReward` hat im "

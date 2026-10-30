@@ -2444,6 +2444,37 @@ module.exports = async function pruefe() {
             torPruefung("der Titel behauptet 'Strategie', obwohl die Spalte "
               + "`<Stil> | <Strategie>` enthaelt",
               /titel: "Strategie-Feld \(Stil \| Strategie\)"/.test(hb), "Titel");
+
+            // ── DIE SIGNALHERKUNFT (30.10.) ─────────────────────────
+            //
+            // Ob ein Trade von GPT oder vom gemessenen Konsens kam, stand
+            // bis heute NIRGENDS. Ohne diese Angabe laesst sich der Regler
+            // `allowMeasuredConsensus` nicht an Daten beurteilen.
+            torPruefung("der Trade-Tracker schreibt `signalQuelle` nicht "
+              + "mehr in die Notizen — die Herkunft waere wieder weg",
+              /\bsignalQuelle\b/.test(block), "Notizen-Block");
+            torPruefung("/hebel liest die Signalherkunft nicht",
+              /ausNotizen\(z\.notes \?\? null, "signalQuelle"\)/.test(hb)
+              && /titel: "Signalherkunft",/.test(hb), "hebel.ts");
+            // Fehlt die Angabe, muss der Schluessel WEGGELASSEN werden —
+            // eine erfundene Quelle waere schlimmer als keine.
+            const trAll = read("frontend/lib/capital-com/capital-trade-tracker.ts");
+            torPruefung("eine fehlende Signalherkunft wird erfunden statt "
+              + "weggelassen",
+              /\.\.\.\(trade\.signalQuelle \? \{ signalQuelle: trade\.signalQuelle \} : \{\}\)/
+                .test(trAll), "Tracker");
+            // BEIDE Schreibwege. Nur den automatischen zu erfassen hiesse,
+            // die Haelfte der Trades als „ohne Angabe" zu fuehren.
+            const orch = read("frontend/lib/agents/orchestrator-agent.ts");
+            torPruefung("der AUTOMATISCHE Weg gibt die Signalherkunft nicht "
+              + "mit",
+              /signalQuelle: candidate\.gpt\.source,/.test(orch), "orchestrator");
+            const route = read("frontend/app/api/capital-com/execute/route.ts");
+            torPruefung("der MANUELLE Weg gibt die Signalherkunft nicht mit",
+              /signalQuelle:/.test(route), "execute/route");
+            const panel = read("frontend/components/MarketScannerPanel.tsx");
+            torPruefung("der Scanner schickt die Signalherkunft nicht mit",
+              /signalQuelle: opp\.gpt\.source,/.test(panel), "MarketScannerPanel");
           }
 
           // ── Zeilen bauen: 40 Gewinner/Verlierer in EINEM Markt ──────
@@ -2458,6 +2489,42 @@ module.exports = async function pruefe() {
               strategy: "Trend",
             });
           }
+          // Die Signalherkunft MUSS gruppieren — und eine fehlende Angabe
+          // bleibt „ohne Angabe", statt eine Quelle zu erfinden.
+          {
+            const mitQuelle = [];
+            for (let i = 0; i < 35; i++) {
+              mitQuelle.push({
+                profitLoss: i % 3 === 0 ? 9 : -4,
+                result: i % 3 === 0 ? "WIN" : "LOSS",
+                updatedAt: "2026-10-28T10:00:00.000Z",
+                notes: JSON.stringify({
+                  tradingStyle: "DAYTRADING",
+                  signalQuelle: i < 32 ? "MEASURED_CONSENSUS" : "GPT_REAL",
+                }),
+                riskReward: 2, market: "EURUSD", direction: "BUY",
+                strategy: "DAYTRADING | DAYTRADING",
+              });
+            }
+            const dQ = hebelBericht(mitQuelle, null)
+              .find((d) => d.titel === "Signalherkunft");
+            torPruefung("die Dimension Signalherkunft fehlt",
+              !!dQ, JSON.stringify(hebelBericht(mitQuelle, null).map((d) => d.titel)));
+            torPruefung("die Signalherkunft gruppiert nicht nach der Quelle",
+              dQ?.gruppen?.[0]?.name === "MEASURED_CONSENSUS"
+              && dQ?.gruppen?.[0]?.gewertet === 32,
+              JSON.stringify(dQ?.gruppen?.map((g) => `${g.name}:${g.gewertet}`)));
+            // Eine Zeile OHNE Angabe darf keine Quelle bekommen.
+            const ohneQ = hebelBericht([{
+              profitLoss: 5, result: "WIN", updatedAt: "2026-10-28T10:00:00.000Z",
+              notes: JSON.stringify({ tradingStyle: "DAYTRADING" }),
+              riskReward: 2, market: "EURUSD", direction: "BUY", strategy: "x",
+            }], null).find((d) => d.titel === "Signalherkunft");
+            torPruefung("eine fehlende Signalherkunft wird erfunden",
+              ohneQ?.gruppen?.[0]?.name === "ohne Angabe",
+              JSON.stringify(ohneQ?.gruppen?.map((g) => g.name)));
+          }
+
           // ABSICHTLICH UNBEQUEM: zehn Breakeven dazu. Ohne sie sind
           // `trefferquote` (ueber alle gewerteten) und
           // `trefferquoteEntschieden` (ueber die entschiedenen) zufaellig

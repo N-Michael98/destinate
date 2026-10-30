@@ -2199,7 +2199,7 @@ hereingereicht; die Funktion ist exportiert und muss **für sich** stimmen.
 
 ### Absicherung
 
-`safety-nets` **rechnet** das (715 → **778**): `rrBand` an elf Werten,
+`safety-nets` **rechnet** das (715 → **787**): `rrBand` an elf Werten,
 die Gleichheit mit `/edge`, das durchgereichte Fenster **samt**
 Gegenprobe ohne Fenster, der `MIN_TRADES`-Riegel, der Befund mit null,
 einer und zwei belastbaren Gruppen — und dass der Text seine eigenen
@@ -2246,10 +2246,47 @@ Gegenprobe gehört dazu — benennt der Tracker das Feld um, wird er rot.
 Strategie)" mit dem Hinweis, dass die Spalte die **Signalherkunft nicht**
 unterscheidet.
 
-**Und daraus folgt die Grenze von `/hebel`:** ob ein Trade von GPT oder vom
-gemessenen Konsens kam, steht **nirgends** im Trade. `notes.source` heisst
-dort „auto-scan" gegen „rekonstruiert". Ohne diese Angabe lässt sich der
-Regler `allowMeasuredConsensus` **nicht an Daten beurteilen**.
+**Und daraus folgte die Grenze von `/hebel`:** ob ein Trade von GPT oder
+vom gemessenen Konsens kam, stand **nirgends** im Trade. `notes.source`
+heisst dort „auto-scan" gegen „rekonstruiert" — das ist der **Schreibweg**,
+nicht die Signalquelle. Damit liess sich der Regler
+`allowMeasuredConsensus` **nicht an Daten beurteilen**.
+
+### Die Signalherkunft steht jetzt im Trade (30.10.)
+
+`TradeRecord.signalQuelle` trägt den Wert aus `GPTMarketAnalysis.source`
+(`GPT_REAL` / `MEASURED_CONSENSUS` / `GPT_SIMULATED`) in die Notizen, und
+`/hebel` hat dafür eine **eigene Dimension**.
+
+**Beide Schreibwege, nicht nur einer.** Der automatische über den
+Orchestrator **und** der manuelle über `/api/capital-com/execute` ←
+`MarketScannerPanel` — dort steht die Quelle ohnehin schon als Abzeichen in
+der Zeile. Nur einen zu erfassen hiesse, die Hälfte der Trades dauerhaft
+als „ohne Angabe" zu führen.
+
+**Fehlt die Angabe, wird der Schlüssel WEGGELASSEN** — wie bei `dealId`.
+Ein `?? "GPT_REAL"` hätte aus „nicht gemessen" eine Quelle gemacht; das ist
+die Sabotage Q2 und sie wird rot.
+
+**Reine Messung an einer Hochrisiko-Datei:** der Diff des Orchestrators
+besteht aus einem Kommentar, einem Feld im Journal-Aufruf und `source?:
+string` in der Typdeklaration des Parameters. Keine Entscheidung, keine
+Grösse, kein Stop, keine Schwelle. Vorher lief die Pflicht-Impact-Analyse.
+
+**`tsc` hat den Einbau zurecht abgelehnt** — der Parametertyp von
+`postTradeActions` beschreibt `candidate.gpt` inline und kannte `source`
+nicht. Dieselbe Lehre wie am 27.10.: `ladeTsModul` transpiliert ohne
+Typprüfung, deshalb müssen **beide** laufen.
+
+**Ehrlich zur Reichweite:** ältere Trades tragen die Angabe **nicht** und
+erscheinen als „ohne Angabe". Der Regler lässt sich also **nicht heute**
+beurteilen, sondern erst, wenn genug neue Zeilen da sind — `MIN_TRADES`
+ist 30 je Gruppe. Das steht so im Hinweis der Dimension, damit niemand
+eine leere Gruppe für ein Urteil hält.
+
+`safety-nets` 778 → **787**, **7 von 7 Sabotagen** — jedes Glied der Kette
+einzeln: Tracker, Orchestrator, Route, Scanner, Leser, Dimension, und die
+erfundene Quelle.
 
 ### Was NICHT gebaut wurde — und warum
 

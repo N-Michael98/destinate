@@ -419,7 +419,10 @@ async function fetchMarkets(
 // ── Post-Trade Aktionen ───────────────────────────────────────────────────────
 
 async function postTradeActions(params: {
-  candidate: { symbol: string; gpt: { direction: string; stopLoss: number; takeProfit: number; confidence: number; tradingStyle?: string }; bid?: number; claude: { maxRiskPercent: number } };
+  // `source` gehoert mit in den Typ (30.10.) — `tsc` hat den Einbau sonst
+  // zurecht abgelehnt. Optional, weil der Aufrufer sie nicht garantiert:
+  // fehlt sie, bleibt das Feld in den Notizen weg statt geraten zu werden.
+  candidate: { symbol: string; gpt: { direction: string; stopLoss: number; takeProfit: number; confidence: number; tradingStyle?: string; source?: string }; bid?: number; claude: { maxRiskPercent: number } };
   execResult: Awaited<ReturnType<typeof runExecutionAgent>>;
   style: string;
   balance: number;
@@ -508,6 +511,9 @@ async function postTradeActions(params: {
       accountBalance: balance,
       riskPercent:  riskPct,
       confidence:   candidate.gpt.confidence,
+      // REINE MESSUNG (30.10.): woher das Signal kam. Ohne diese
+      // Angabe laesst sich `allowMeasuredConsensus` nicht beurteilen.
+      signalQuelle: candidate.gpt.source,
       entryContext,
     });
   } catch (e) {

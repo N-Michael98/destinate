@@ -51,6 +51,11 @@ export async function POST(request: Request) {
           accountBalance: req.accountBalance,
           riskPercent: req.riskPercent,
           confidence: req.confidence,
+          // Auch der manuelle Weg schreibt die Quelle mit (30.10.) —
+          // sonst waere die Messung nur halb. Fehlt sie, bleibt das
+          // Feld leer statt geraten.
+          signalQuelle: typeof (body as { signalQuelle?: unknown }).signalQuelle === "string"
+            ? (body as { signalQuelle?: string }).signalQuelle : undefined,
         });
       } catch { /* non-fatal */ }
     }

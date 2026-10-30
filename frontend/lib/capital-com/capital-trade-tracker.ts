@@ -37,6 +37,20 @@ export interface TradeRecord {
    *  rekonstruiert ist. Stil und Confidence sind bei diesen Zeilen UNBEKANNT,
    *  und man muss das später ansehen können. */
   rekonstruiert?: boolean;
+  /**
+   * WOHER das Signal kam (30.10.): `GPT_REAL`, `MEASURED_CONSENSUS`
+   * oder `GPT_SIMULATED` — der Wert aus `GPTMarketAnalysis.source`.
+   *
+   * Bis heute stand das NIRGENDS im Trade. `notes.source` ist der
+   * SCHREIBWEG (auto-scan gegen rekonstruiert), nicht die Quelle.
+   * Damit liess sich der Regler `allowMeasuredConsensus` nicht an
+   * Daten beurteilen: ob Konsens-Trades etwas taugen, war nicht
+   * messbar.
+   *
+   * Fehlt die Angabe, wird der Schluessel WEGGELASSEN — `/hebel`
+   * zeigt dann „ohne Angabe" statt einer erfundenen Quelle.
+   */
+  signalQuelle?: string;
 }
 
 // ── Journal-Zeilen, die noch nicht geschrieben werden konnten (20.08.) ───────
@@ -215,6 +229,9 @@ async function versucheJournalZeile(
         confidence: trade.confidence,
         broker: "Capital.com DEMO",
         source: trade.rekonstruiert ? "rekonstruiert-aus-position" : "auto-scan",
+        // NICHT dasselbe wie `source` darueber: das ist der Schreibweg,
+        // dies die SIGNALQUELLE (30.10.). Weggelassen, wenn unbekannt.
+        ...(trade.signalQuelle ? { signalQuelle: trade.signalQuelle } : {}),
         ...(trade.rekonstruiert ? { rekonstruiert: true } : {}),
         ...(trade.icPositionId ? { icPositionId: trade.icPositionId } : {}),
         ...(trade.entryContext ? { entryContext: trade.entryContext } : {}),

@@ -166,6 +166,10 @@ export default function MarketScannerPanel() {
       confidence: opp.gpt.confidence,
       strategy: opp.gpt.tradingStyle,
       tradingStyle: opp.gpt.tradingStyle,
+      // Die Signalquelle mitschicken (30.10.) — sie steht hier ohnehin
+      // als Abzeichen in der Zeile. Ohne sie waere der manuelle Weg in
+      // der Auswertung dauerhaft „ohne Angabe".
+      signalQuelle: opp.gpt.source,
     };
     const [r, icR] = await Promise.all([
       fetch("/api/capital-com/execute", {
