@@ -98,6 +98,24 @@ export interface TrichterZahlen {
   rrAbgelehnt: number | null;
   ohneStopZiel: number | null;
   go: number | null;
+  /**
+   * Die Tore NACH dem GO (`Tagessumme.tore`): Walk-Forward, Confidence-
+   * Schwelle, Stil-Limit, Meta-KI … Jedes meldet `ja`/`nein` und den
+   * Grund.
+   *
+   * WOZU. Am 30.10. standen im Bericht `GO: 2` und als Ausgang „Keine
+   * Kandidaten nach Filter: 2". Welches der drei Tore das war, lag
+   * laengst in derselben Tagessumme — und wurde nicht gezeigt.
+   */
+  tore: Record<string, TorZahlen> | null;
+}
+
+/** Ein Tor, wie es die Zyklus-Bilanz zaehlt (`TorSumme` dort). */
+export interface TorZahlen {
+  ja?: number;
+  nein?: number;
+  fallback?: number;
+  gruende?: Record<string, number>;
 }
 
 export interface HandelsLage {
@@ -256,6 +274,7 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   // Verweis ist keine Antwort: dieselben Zahlen liegen in derselben
   // Tagessumme, die oben schon gelesen wird.
   let groessteStufe: { name: string; n: number } | null = null;
+  let groesstesTor: { name: string; n: number } | null = null;
   const t = e.trichter;
   const scans = zahl(t?.scans ?? null);
   if (t && scans !== null && scans > 0) {
@@ -296,6 +315,34 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     }
     const go = zahl(t.go);
     zeilen.push(`   • <b>GO: ${go === null ? "unbekannt" : go}</b>`);
+
+    // ── WAS NACH DEM GO PASSIERT ──────────────────────────────────────
+    //
+    // Ein GO ist noch kein Trade: danach kommen Walk-Forward, die
+    // Confidence-Schwelle, das Stil-Tageslimit und die Filterkette. Genau
+    // dort starben am 30.10. beide freigegebenen Signale.
+    const tore = t.tore;
+    if (tore && Object.keys(tore).length > 0) {
+      const abgelehnt: Array<[string, number]> = [];
+      zeilen.push("   <b>Tore nach dem GO:</b>");
+      for (const [name, s] of Object.entries(tore)) {
+        const ja = zahl(s?.ja ?? null);
+        const nein = zahl(s?.nein ?? null);
+        const fb = zahl(s?.fallback ?? null);
+        // Der haeufigste Grund gehoert dazu: die Zahl allein sagt nicht,
+        // WARUM das Tor zu war — und genau das ist die Frage.
+        const gruende = Object.entries(s?.gruende ?? {})
+          .filter(([, n]) => zahl(n) !== null && (zahl(n) as number) > 0)
+          .sort((x, y) => (zahl(y[1]) as number) - (zahl(x[1]) as number));
+        const grund = gruende.length > 0 ? ` — ${gruende[0][0]} (${gruende[0][1]})` : "";
+        zeilen.push(`      ${name}: ja ${ja === null ? "?" : ja} · `
+          + `nein ${nein === null ? "?" : nein}`
+          + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${grund}`);
+        if (nein !== null && nein > 0) abgelehnt.push([name, nein]);
+      }
+      abgelehnt.sort((x, y) => y[1] - x[1]);
+      if (abgelehnt.length > 0) groesstesTor = { name: abgelehnt[0][0], n: abgelehnt[0][1] };
+    }
   } else if (t && scans === 0) {
     zeilen.push("");
     zeilen.push("🔻 Trichter heute: kein einziger Zyklus kam bis zur Analyse");
@@ -309,10 +356,20 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   } else if (unbekannt.length > 0) {
     zeilen.push("🟡 <b>Kein Tor blockt nachweislich</b> — aber "
       + `${unbekannt.length} Angabe(n) nicht feststellbar: ${unbekannt.join(", ")}`);
+  } else if (zahl(t?.go ?? null) !== null && (zahl(t?.go ?? null) as number) > 0
+    && groesstesTor !== null) {
+    // AM 30.10. ZEIGTE DIESES URTEIL AUF DIE FALSCHE STELLE. Es sagte
+    // „liegt es an der Ausführung", waehrend im selben Bericht „Keine
+    // Kandidaten nach Filter: 2" stand. Die Tore NACH dem GO sind nicht
+    // die Ausfuehrung — und sie melden sich namentlich.
+    const tor: { name: string; n: number } = groesstesTor;
+    zeilen.push(`🟡 <b>Kein Vor-Tor blockt</b>, und ${zahl(t?.go ?? null)} Signal(e) `
+      + "wurden freigegeben — aber sie sind an den Toren DANACH gescheitert. "
+      + `Grösstes: <b>${tor.name}</b> (${tor.n}× nein).`);
   } else if (zahl(t?.go ?? null) !== null && (zahl(t?.go ?? null) as number) > 0) {
     zeilen.push(`🟢 <b>Kein Tor blockt</b>, und ${zahl(t?.go ?? null)} Signal(e) `
-      + "wurden freigegeben. Bleiben die Trades trotzdem aus, liegt es an der "
-      + "Ausführung, nicht an der Signalkette.");
+      + "wurden freigegeben, und kein Tor danach hat abgelehnt. Bleiben die "
+      + "Trades trotzdem aus, liegt es an der Ausführung.");
   } else if (groessteStufe !== null) {
     const g: { name: string; n: number } = groessteStufe;
     zeilen.push("🟢 <b>Kein Tor blockt</b> — die Signale sterben im Trichter. "

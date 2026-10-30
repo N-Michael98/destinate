@@ -1937,7 +1937,7 @@ Tageslimit zurückgesetzt.
 
 ### Absicherung
 
-`safety-nets` **rechnet** `handelsLage()` durch (650 → **715**): alles
+`safety-nets` **rechnet** `handelsLage()` durch (650 → **762**): alles
 unbekannt darf **nichts** behaupten, jeder der drei stillen Ausgänge wird
 einzeln gefangen, der Drawdown wird gerechnet (2000 → 1700 = −15 % gegen
 Grenze 10), ein `NaN` gilt nicht als Zahl, und der **gesunde** Fall muss
@@ -2015,6 +2015,77 @@ Die Feldnamen hängen an der **Quelle**: `safety-nets` schneidet den Typ
 `Tagessumme` per Klammerzähler aus `zyklus-bilanz.ts` und hält jeden der
 dreizehn Namen dagegen — und dass `richtungen` wirklich **BUY + SELL**
 summiert, nicht nur BUY.
+
+### Der zweite Live-Lauf: GO 2, und trotzdem kein Trade (30.10.)
+
+```
+107 Analysen · 3210 Marktanalysen
+Richtungssignale (BUY/SELL): 0        GO: 2
+Ausgänge: Keine freigegebenen Signale 105 · Keine Kandidaten nach Filter 2
+```
+
+**GPT lieferte in 3210 Analysen NULL Richtungen.** Und die zwei GO können
+nur aus dem **gemessenen Konsens** stammen — zwingend, nicht gedeutet: ein
+GO verlangt `source === "GPT_REAL"` oder `"MEASURED_CONSENSUS"`
+(`ai-analysis-engine.ts:1897`). Bei `GPT_REAL` wäre die Richtung mitgezählt
+worden, sie ist 0. Der Konsens-Pfad feuert **ausschliesslich** bei
+`gpt.direction === "WAIT"` und nur bei eingeschaltetem Regler. **Also ist
+`allowMeasuredConsensus` im Live-System AN** — der Standard ist AUS.
+
+**Beide starben NACH dem GO:** 107 − 105 = 2, und genau zweimal lautet der
+Ausgang „Keine Kandidaten nach Filter". Der kommt aus **drei** Toren
+(`orchestrator-agent.ts:982–1017`): Walk-Forward-Überanpassung, Confidence
+unter der Schwelle, Stil-Tageslimit.
+
+#### Ein Urteil, das auf die falsche Stelle zeigt
+
+Mein eigener Block sagte dazu: *„Bleiben die Trades trotzdem aus, liegt es
+an der **Ausführung**, nicht an der Signalkette."* Im selben Bericht stand
+„Keine Kandidaten nach Filter: 2". **Die Filterkette des Orchestrators ist
+nicht die Ausführung** — das Urteil schickte in die falsche Richtung.
+
+Und welches der drei Tore es war, lag als **`tore`** in **derselben
+Tagessumme**, die der Block ohnehin liest (`TorSumme = {ja, nein,
+fallback, gruende}`). Wieder „ein Verweis ist keine Antwort", diesmal eine
+Stufe weiter hinten.
+
+Jetzt steht in `/status` ein Block **„Tore nach dem GO"** mit `ja`/`nein`,
+Rückfall und dem **häufigsten Grund** je Tor — und das Urteil **nennt das
+grösste ablehnende Tor**. „Ausführung" sagt es nur noch, wenn **kein** Tor
+abgelehnt hat.
+
+`safety-nets` 715 → **762**, **7 von 7 Sabotagen** — darunter die
+Wiederherstellung des falschen Urteils.
+
+**Die drei Tor-Prüfungen fielen zuerst durch — wieder die Testdaten:** sie
+liessen alle übrigen Eingaben auf `null`, damit griff das
+„unbekannt"-Urteil **vor** den GO-Zweigen und der Fall war gar nicht
+erreichbar. Jetzt ein vollständiger „alles bekannt"-Satz **plus eine
+Selbstprüfung**, die rot wird, wenn die Testdaten diese Eigenschaft
+verlieren.
+
+#### Noch offen: WAIT und „nicht geantwortet" sind dasselbe
+
+Gezählt wird `normalisiereRichtung(gptData?.direction ?? "WAIT")`, und
+daneben steht der Zweig
+
+```ts
+} else if (hasGPT) {
+  // GPT hat dieses Symbol trotz Anweisung nicht beantwortet → sicherer WAIT
+  gpt = { ...noSignal(market), source: "GPT_REAL" };
+}
+```
+
+**Eine ausgebliebene Antwort wird also als WAIT gezählt.** Die Bilanz kann
+„GPT sagte WAIT" nicht von „GPT hat gar nicht geantwortet" unterscheiden —
+und bei **0 von 3210** Richtungen ist genau das die Frage, mit der man ins
+Railway-Log steigt. Fehlerklasse „ein Ausfall darf sich nicht als Ergebnis
+ausgeben".
+
+**Nicht geändert:** die Zählstelle liegt in `ai-analysis-engine.ts`, einer
+der acht Dateien mit erhöhtem Risiko. Der Eingriff wäre reine Messung (ein
+Zähler `ohneGptAntwort` in `ScanDaten`, eine Zeile im Trichter) — er
+braucht trotzdem eine ausdrückliche Zustimmung.
 
 #### Ein erzeugter Patch hat sich selbst zerlegt — `$&`
 

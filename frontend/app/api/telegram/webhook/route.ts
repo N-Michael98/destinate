@@ -598,6 +598,8 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
           ohneVolleDaten?: number; ohneVolleDatenGrund?: Record<string, number>;
           unterGrenze?: number; confMin?: number | null; confMax?: number | null;
           rrAbgelehnt?: number; ohneStopZiel?: number; go?: number;
+          tore?: Record<string, { ja?: number; nein?: number;
+            fallback?: number; gruende?: Record<string, number> }>;
         }>(TAGESSUMME_SCHLUESSEL(handelstag()));
       }),
       sicher(async () => {
@@ -657,6 +659,7 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
               rrAbgelehnt: tagessumme.rrAbgelehnt ?? null,
               ohneStopZiel: tagessumme.ohneStopZiel ?? null,
               go: tagessumme.go ?? null,
+              tore: tagessumme.tore ?? null,
             }
             : null,
         }).zeilen;

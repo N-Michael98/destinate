@@ -2762,6 +2762,62 @@ module.exports = async function pruefe() {
           torPruefung("bei 0 Analysen wird ein Trichter vorgetaeuscht",
             /kein einziger Zyklus kam bis zur Analyse/.test(txt(trOhne)),
             txt(trOhne).slice(0, 200));
+
+          // ALLES BEKANNT — sonst greift das „unbekannt"-Urteil VOR den
+          // GO-Zweigen und der Fall ist gar nicht erreichbar. Genau so
+          // sind die drei Tor-Pruefungen zuerst fehlgeschlagen.
+          const BEKANNT = {
+            brokerVerbunden: true, modus: "AUTO", offenePositionen: 0,
+            maxGleichzeitig: 6, tagesZaehler: 0, tagesLimit: 21,
+            tagesLimitAktiv: true, kontostand: 1870.57,
+            hoechststand: 1990.36, maxDrawdownProzent: 10,
+            inHandelszeit: true, zyklenHeute: 258, ausgaenge: { "x": 1 },
+          };
+
+          // ── DIE TORE NACH DEM GO (30.10.) ──────────────────────────
+          //
+          // Im Live-Lauf standen `GO: 2` und als Ausgang „Keine Kandidaten
+          // nach Filter: 2" — und das Urteil sagte „liegt es an der
+          // Ausfuehrung". Die Filterkette des Orchestrators ist NICHT die
+          // Ausfuehrung. Welches Tor es war, liegt als `tore` in derselben
+          // Tagessumme.
+          const MIT_TOR = {
+            ...TRICHTER, go: 2,
+            tore: {
+              "Schwelle": { ja: 0, nein: 2, fallback: 0,
+                gruende: { "Confidence 66 < Schwelle 70": 2 } },
+              "Meta-KI": { ja: 2, nein: 0, fallback: 0, gruende: {} },
+            },
+          };
+          const trTor = mit({ ...BEKANNT, trichter: MIT_TOR });
+          const tTor = txt(trTor);
+          torPruefung("die Tore nach dem GO fehlen in der Antwort — dann "
+            + "steht dort GO 2 und kein Trade, ohne jede Erklaerung",
+            /Tore nach dem GO/.test(tTor), tTor.slice(-300));
+          torPruefung("ein Tor nennt seine ja\/nein-Zahlen nicht",
+            /Schwelle: ja 0 · nein 2/.test(tTor), tTor.slice(-300));
+          torPruefung("der GRUND des Tores fehlt — die Zahl allein sagt "
+            + "nicht, WARUM es zu war",
+            /Confidence 66 < Schwelle 70 \(2\)/.test(tTor), tTor.slice(-300));
+          torPruefung("die Tor-Testdaten lassen Angaben offen — dann greift "
+            + "das unbekannt-Urteil VOR den GO-Zweigen und der Fall ist gar "
+            + "nicht erreichbar",
+            trTor.unbekannt.length === 0, JSON.stringify(trTor.unbekannt));
+          const urteilTor = trTor.zeilen[trTor.zeilen.length - 1] ?? "";
+          torPruefung("das Urteil zeigt bei abgelehnten Toren weiter auf "
+            + "die AUSFUEHRUNG — genau der Fehler vom 30.10.",
+            /Toren DANACH/.test(urteilTor) && !/liegt es an der Ausführung/.test(urteilTor),
+            urteilTor);
+          torPruefung("das Urteil nennt das groesste ablehnende Tor nicht",
+            /Schwelle/.test(urteilTor) && /2/.test(urteilTor), urteilTor);
+          // GEGENPROBE: hat KEIN Tor abgelehnt, ist die Ausfuehrung dran.
+          const trTorJa = mit({ ...BEKANNT, trichter: { ...TRICHTER, go: 2,
+            tore: { "Meta-KI": { ja: 2, nein: 0, fallback: 0, gruende: {} } } } });
+          const urteilJa = trTorJa.zeilen[trTorJa.zeilen.length - 1] ?? "";
+          torPruefung("ohne ablehnendes Tor wird trotzdem ein Tor "
+            + "beschuldigt — dann zeigt das Urteil immer woandershin",
+            /Ausführung/.test(urteilJa) && !/Toren DANACH/.test(urteilJa),
+            urteilJa);
         }
 
         // ── UND DIE VERDRAHTUNG (Klasse 30.09.) ─────────────────────────
@@ -2827,7 +2883,7 @@ module.exports = async function pruefe() {
             typ.length > 100, `${typ.length} Zeichen`);
           for (const feld of ["scans", "maerkte", "gpt", "vetos", "stilVerworfen",
             "ohneVolleDaten", "ohneVolleDatenGrund", "unterGrenze", "confMin",
-            "confMax", "rrAbgelehnt", "ohneStopZiel", "go"]) {
+            "confMax", "rrAbgelehnt", "ohneStopZiel", "go", "tore"]) {
             torPruefung(`\`${feld}\` steht nicht in \`Tagessumme\` — /status `
               + "liest dann einen Namen, den es nicht gibt",
               new RegExp(`\\b${feld}\\s*:`).test(typ)
