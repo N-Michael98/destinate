@@ -2406,12 +2406,52 @@ module.exports = async function pruefe() {
               b === band, `bekam: ${b}`);
           }
 
+          // ── DER SCHLUESSEL KOMMT AUS DER QUELLE (30.10.) ────────────
+          //
+          // `/hebel` las `"stil"` — ein Name aus dem Gedaechtnis. Die
+          // Notizen schreiben `tradingStyle`. Die Dimension war damit
+          // dauerhaft „ohne Angabe", und der Pruefer blieb gruen, WEIL
+          // seine Testdaten denselben erfundenen Schluessel benutzten.
+          //
+          // Jetzt wird der Name dort geholt, wo er GESCHRIEBEN wird.
+          {
+            const tracker = read("frontend/lib/capital-com/capital-trade-tracker.ts");
+            const marke = "JSON.stringify({";
+            const p = tracker.indexOf(marke);
+            let block = "";
+            if (p >= 0) {
+              let tiefe = 0;
+              for (let i = tracker.indexOf("{", p); i < tracker.length; i++) {
+                if (tracker[i] === "{") tiefe++;
+                else if (tracker[i] === "}") { tiefe--; if (tiefe === 0) { block = tracker.slice(p, i + 1); break; } }
+              }
+            }
+            torPruefung("der Notizen-Block im Trade-Tracker ist nicht "
+              + "auffindbar — ohne ihn beweist die Pruefung darunter nichts",
+              block.length > 100 && /dealId/.test(block), `${block.length} Zeichen`);
+            // Selbstpruefung in BEIDE Richtungen an kontrollierten Faellen.
+            torPruefung("die Schluessel-Erkennung findet einen echten "
+              + "Schluessel nicht", /\btradingStyle\s*:/.test(block), "must-hit");
+            torPruefung("die Schluessel-Erkennung findet einen Schluessel, "
+              + "den es gar nicht gibt", !/\bstil\s*:/.test(block), "must-not-hit");
+            const hb = read("frontend/lib/hebel/hebel.ts");
+            torPruefung("/hebel liest einen Notizen-Schluessel, den der "
+              + "Trade-Tracker NICHT schreibt — die Dimension waere dauerhaft "
+              + "\"ohne Angabe\" und saehe wie ein Ergebnis aus (30.09.)",
+              /ausNotizen\(z\.notes \?\? null, "tradingStyle"\)/.test(hb)
+              && !/ausNotizen\(z\.notes \?\? null, "stil"\)/.test(hb),
+              "hebel.ts");
+            torPruefung("der Titel behauptet 'Strategie', obwohl die Spalte "
+              + "`<Stil> | <Strategie>` enthaelt",
+              /titel: "Strategie-Feld \(Stil \| Strategie\)"/.test(hb), "Titel");
+          }
+
           // ── Zeilen bauen: 40 Gewinner/Verlierer in EINEM Markt ──────
           const zeilenH = [];
           for (let i = 0; i < 40; i++) {
             zeilenH.push({
               profitLoss: i % 3 === 0 ? 10 : -4,
-              notes: JSON.stringify({ stil: "DAYTRADING" }),
+              notes: JSON.stringify({ tradingStyle: "DAYTRADING" }),
               result: i % 3 === 0 ? "WIN" : "LOSS",
               updatedAt: "2026-10-20T10:00:00.000Z",
               riskReward: 2.0, market: "EURUSD", direction: "BUY",
@@ -2425,7 +2465,7 @@ module.exports = async function pruefe() {
           // so ist die Sabotage H8 zuerst entwischt.
           for (let i = 0; i < 10; i++) {
             zeilenH.push({
-              profitLoss: 0, notes: JSON.stringify({ stil: "DAYTRADING" }),
+              profitLoss: 0, notes: JSON.stringify({ tradingStyle: "DAYTRADING" }),
               result: "BREAKEVEN", updatedAt: "2026-10-20T10:00:00.000Z",
               riskReward: 2.0, market: "EURUSD", direction: "BUY",
               strategy: "Trend",

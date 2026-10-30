@@ -2199,7 +2199,7 @@ hereingereicht; die Funktion ist exportiert und muss **für sich** stimmen.
 
 ### Absicherung
 
-`safety-nets` **rechnet** das (715 → **754**): `rrBand` an elf Werten,
+`safety-nets` **rechnet** das (715 → **778**): `rrBand` an elf Werten,
 die Gleichheit mit `/edge`, das durchgereichte Fenster **samt**
 Gegenprobe ohne Fenster, der `MIN_TRADES`-Riegel, der Befund mit null,
 einer und zwei belastbaren Gruppen — und dass der Text seine eigenen
@@ -2221,6 +2221,35 @@ ihre unbequeme Eigenschaft verlieren.
 Dazu die Gegenprobe, dass der Prüfstand nicht einfach immer rot ist: eine
 nachweislich **wirkungslose** Sabotage (ein eingefügter Kommentar) muss
 grün bleiben — die Lehre vom 15.09.
+
+### Ein Feldname aus dem Gedächtnis — in meinem eigenen `/hebel` (30.10.)
+
+`/hebel` las `ausNotizen(z.notes, "stil")`. Die Journal-Notizen schreiben
+aber **`tradingStyle`** (`capital-trade-tracker.ts`), und der autoritative
+Leser `stammdatenAusNotizen` (`risk-agent.ts:933`) liest denselben Namen.
+**Die Dimension „Handelsstil" war damit dauerhaft „ohne Angabe"** — und sah
+dabei wie ein ehrliches Ergebnis aus.
+
+Exakt die Fehlerklasse vom 30.09., einen Tag nach dem Kapitel darüber. Und
+**der Prüfer blieb grün, weil meine Testdaten denselben erfundenen
+Schlüssel benutzten** — ein Testfall, der den Fehler nicht ausdrücken kann.
+
+Jetzt holt der Prüfer den Namen **an der Quelle**: der Notizen-Block wird
+per Klammerzähler aus `capital-trade-tracker.ts` geschnitten, und die
+Gegenprobe gehört dazu — benennt der Tracker das Feld um, wird er rot.
+**4 von 4 Sabotagen**, darunter der echte Fehler exakt wiederhergestellt.
+
+**Dabei zweiter Fund:** die Spalte `Trade.strategy` bekommt
+`"<tradingStyle> | <strategy>"`, und der Orchestrator setzt
+`strategy: candidate.gpt.tradingStyle` — bei Auto-Trades steht dort also
+**zweimal der Stil**. Der Titel heisst deshalb jetzt „Strategie-Feld (Stil |
+Strategie)" mit dem Hinweis, dass die Spalte die **Signalherkunft nicht**
+unterscheidet.
+
+**Und daraus folgt die Grenze von `/hebel`:** ob ein Trade von GPT oder vom
+gemessenen Konsens kam, steht **nirgends** im Trade. `notes.source` heisst
+dort „auto-scan" gegen „rekonstruiert". Ohne diese Angabe lässt sich der
+Regler `allowMeasuredConsensus` **nicht an Daten beurteilen**.
 
 ### Was NICHT gebaut wurde — und warum
 

@@ -209,9 +209,17 @@ export function hebelBericht(
 
   dims.push({
     titel: "Handelsstil",
+    // DER SCHLUESSEL HEISST `tradingStyle`, NICHT `stil`.
+    //
+    // Hier stand bis zum 30.10. `"stil"` — ein Name aus dem Gedaechtnis.
+    // Die Journal-Notizen schreiben `tradingStyle`
+    // (`capital-trade-tracker.ts`), und der autoritative Leser
+    // `stammdatenAusNotizen` (`risk-agent.ts`) liest denselben Namen.
+    // Die Dimension war damit DAUERHAFT „ohne Angabe" — und sah dabei
+    // wie ein ehrliches Ergebnis aus. Fehlerklasse vom 30.09.
     hinweis: null,
     gruppen: gruppiere(zeilen,
-      (z) => ausNotizen(z.notes ?? null, "stil") ?? "ohne Angabe", fenster),
+      (z) => ausNotizen(z.notes ?? null, "tradingStyle") ?? "ohne Angabe", fenster),
     befund: "",
   });
 
@@ -230,8 +238,14 @@ export function hebelBericht(
   });
 
   dims.push({
-    titel: "Strategie",
-    hinweis: null,
+    // EHRLICHER TITEL: die Spalte `Trade.strategy` bekommt
+    // `"<tradingStyle> | <strategy>"` (`capital-trade-tracker.ts`), und der
+    // Orchestrator setzt `strategy: candidate.gpt.tradingStyle` — bei
+    // Auto-Trades steht dort also ZWEIMAL der Stil. „Strategie" allein
+    // waere eine Behauptung ueber einen Inhalt, den das Feld nicht hat.
+    titel: "Strategie-Feld (Stil | Strategie)",
+    hinweis: "Bei Auto-Trades tragen beide Teile den Handelsstil — die "
+      + "Spalte unterscheidet die Signalherkunft NICHT.",
     gruppen: gruppiere(zeilen, (z) => text(z.strategy) ?? "ohne Angabe", fenster),
     befund: "",
   });
