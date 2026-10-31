@@ -1422,7 +1422,8 @@ module.exports = async function pruefe() {
             // Fehler, den es im Betrieb nicht gibt. (Die Datenquellen
             // DUERFEN weiter werfen: sie liegen in `sicher()` und ergeben
             // dort "unbekannt" — genau der Fall, den die Funktion abdeckt.)
-            "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts").exports,
+            "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
+              { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
             "trading-filters/trade-filters": {
               PEAK_SCHLUESSEL: "peak_balance",
               peakZuruecksetzen: async () => ({ ok: true, alt: 10000 }),
@@ -1711,7 +1712,8 @@ module.exports = async function pruefe() {
             },
             "expectancy/erwartungswert": ewE.exports,
             "laufzeit/laufzeit-stand": lzE.exports,
-            "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts").exports,
+            "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
+              { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
             // `/hebel` importiert dynamisch. Ohne Ersatz bekaeme es den
             // Stellvertreter, `hebelText()` wuerde werfen, und der
             // Befehl landete im catch — gepruefte Zeilen gaebe es dann
@@ -2878,7 +2880,8 @@ module.exports = async function pruefe() {
       // Ternaer-Kette im Antworttext waere strukturell pruefbar, aber nicht
       // rechnerisch — genau daran scheiterte die Broker-Lage am 28.10.
       {
-        const hl = ladeTsModul("lib/handels-lage/handels-lage.ts");
+        const hl = ladeTsModul("lib/handels-lage/handels-lage.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
         const handelsLage = hl.exports?.handelsLage;
         if (hl.fehler || typeof handelsLage !== "function") {
           torPruefung("handelsLage() ist nicht ausfuehrbar", false,
@@ -2893,6 +2896,7 @@ module.exports = async function pruefe() {
           };
           const mit = (o) => handelsLage({ ...LEER, ...o });
           const txt = (r) => r.zeilen.join("\n");
+          const txt0 = txt;   // Kurzname fuer den HTML-Riegel unten
 
           // ALLES BEKANNT — sonst greift das „unbekannt"-Urteil VOR den
           // GO-Zweigen und der Fall ist gar nicht erreichbar. Genau so
@@ -2940,6 +2944,131 @@ module.exports = async function pruefe() {
             /❔ Gesamt-Drawdown: Grenze unbekannt/.test(txt(nichts))
             && !/✅ Gesamt-Drawdown/.test(txt(nichts)),
             txt(nichts).split("\n").filter((l) => /Drawdown/.test(l)).join(" | "));
+          // ── EINE NACHRICHT, DIE GAR NICHT ANKOMMT (31.10.) ─────────
+          //
+          // `/status` geht mit `parse_mode: "HTML"` raus. Ein einzelnes
+          // rohes `<` in einem fremden Text laesst Telegram die GANZE
+          // Nachricht ablehnen (HTTP 200, {ok:false, "Can't parse
+          // entities"}) — ausgerechnet bei dem Befehl, den man benutzt,
+          // wenn etwas kaputt ist.
+          //
+          // UND DER FALL IST ECHT: `orchestrator-agent.ts:1002` sendet
+          // woertlich `Confidence ${…} < Schwelle ${…}`. Genau dieses Tor
+          // war am 30.10. der Live-Fall. `zyklus-bilanz.ts` entschaerfte
+          // seit jeher mit `htmlSicher`, `handels-lage.ts` (29./30.10.
+          // gebaut) hatte NULL Escaping — "ein Fix an einer Stelle
+          // beantwortet nicht, wo die Klasse sonst noch steckt" (25.10.).
+          //
+          // GIFT-WERTE statt einer Suche nach `htmlSicher(`: eine Suche
+          // wuerde bei einer NEUEN Interpolation nichts merken.
+          {
+            // DER GIFT-WERT DARF KEIN GUELTIGES TAG SEIN. Mein erster
+            // Versuch war `A<b>B&C>D` — und `<b>` IST ein erlaubtes Tag,
+            // also filterte der Klammer-Scanner ihn weg und vier von fuenf
+            // Sabotagen blieben gruen. Derselbe Fehler wie `[RSI 82]` am
+            // 30.09.: ein Testwert, der den Fehler nicht ausdruecken kann.
+            //
+            // Und die Pruefung haengt jetzt am TEXT, nicht an einem
+            // Klammer-Scanner: der Rohwert darf NICHT vorkommen, die
+            // entschaerfte Form MUSS. Das deckt `&` mit ab, das gar keine
+            // Klammer erzeugt.
+            const GIFT = "A<ZZ B&C>D";
+            const ERLAUBT = /^<\/?(b|i|u|s|code|pre|a)(\s[^>]*)?>$/;
+            const roheKlammern = (txt) =>
+              (txt.match(/<[^>\n]*>?/g) || []).filter((x) => !ERLAUBT.test(x));
+            // Jede fremde Eingabe EINZELN vergiften — sonst verdeckt die
+            // erste die anderen.
+            const stellen = [
+              ["Modus (aus der Datenbank)", { ...BEKANNT, modus: GIFT }, GIFT],
+              ["Ausgang (aus dem Bus)",
+                { ...BEKANNT, ausgaenge: { [GIFT]: 3 } }, GIFT],
+              ["Tor-NAME", { ...BEKANNT, trichter: {
+                scans: 5, go: 1, tore: { [GIFT]: { ja: 0, nein: 2, fallback: 0, gruende: {} } } } },
+                GIFT],
+              // DER BELEGTE FALL, woertlich aus orchestrator-agent.ts:1002.
+              ["Tor-GRUND (der belegte Fall)", { ...BEKANNT, trichter: {
+                scans: 5, go: 1,
+                tore: { "Schwelle": { ja: 0, nein: 2, fallback: 0,
+                  gruende: { "Confidence 66 < Schwelle 70": 2 } } } } },
+                "Confidence 66 < Schwelle 70"],
+              ["Grund der fehlenden Daten", { ...BEKANNT, trichter: {
+                scans: 5, go: 0, ohneVolleDaten: 2,
+                ohneVolleDatenGrund: { [GIFT]: 2 } } }, GIFT],
+            ];
+            const hsF0 = ladeTsModul("lib/html-sicher/html-sicher.ts")
+              .exports?.htmlSicher;
+            for (const [was, eingabe, rohWert] of stellen) {
+              const txt = txt0(mit(eingabe));
+              const roh = roheKlammern(txt);
+              torPruefung(`${was}: eine spitze Klammer geht ROH in die `
+                + "Nachricht — Telegram lehnt sie dann ganz ab, und "
+                + "/status kommt NICHT an",
+                roh.length === 0, JSON.stringify(roh).slice(0, 180));
+              // UND an den Text gebunden: der Rohwert darf nicht drinstehen,
+              // die entschaerfte Form muss. Faengt auch ein nacktes `&`.
+              if (typeof hsF0 === "function") {
+                torPruefung(`${was}: der Rohwert steht unentschaerft in der `
+                  + "Nachricht",
+                  !txt.includes(rohWert) && txt.includes(hsF0(rohWert)),
+                  `roh=${txt.includes(rohWert)} entschaerft=${txt.includes(hsF0(rohWert))}`);
+              }
+            }
+            // GEGENPROBE: unsere EIGENEN Tags duerfen NICHT mitentschaerft
+            // werden — sonst stuende `&lt;b&gt;` im Chat. Ein Riegel, der
+            // alles escapet, waere so falsch wie keiner.
+            // Der Fall braucht einen TRICHTER, sonst traegt die Antwort nur
+            // EIN eigenes Tag (die Urteilszeile) — und an einem Tag laesst
+            // sich der Unterschied kaum ablesen. Mein erster Versuch
+            // verlangte drei Tags von einer Lage, die nur eines erzeugt:
+            // ein Testfall, der zu seiner eigenen Erwartung nicht passt.
+            const gesund = txt0(mit({ ...BEKANNT, trichter: {
+              scans: 5, maerkte: 150, richtungen: 3, go: 1,
+              tore: { "Schwelle": { ja: 1, nein: 0, fallback: 0, gruende: {} } },
+            } }));
+            const eigene = (gesund.match(/<b>/g) || []).length;
+            torPruefung("die Testlage erzeugt zu wenige eigene Tags — dann "
+              + "beweist die Gegenprobe darunter nichts",
+              eigene >= 3, `${eigene} Tags`);
+            torPruefung("die eigenen <b>-Tags werden mitentschaerft — dann "
+              + "steht &lt;b&gt; im Chat",
+              eigene >= 3 && !/&lt;b&gt;/.test(gesund), `${eigene} Tags`);
+            // EINE Definition, nicht zwei Kopien. Identitaet, nicht Text:
+            // zwei gleich aussehende Funktionen koennen auseinanderlaufen.
+            const hsMod = ladeTsModul("lib/html-sicher/html-sicher.ts");
+            const zbMod = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts",
+              { "html-sicher/html-sicher": hsMod.exports });
+            torPruefung("`htmlSicher` ist in zyklus-bilanz eine ZWEITE "
+              + "Kopie — zwei Stellen, an denen sie auseinanderlaufen",
+              typeof hsMod.exports?.htmlSicher === "function"
+              && zbMod.exports?.htmlSicher === hsMod.exports.htmlSicher,
+              `hs=${typeof hsMod.exports?.htmlSicher} zb=${typeof zbMod.exports?.htmlSicher}`);
+            // Die REIHENFOLGE: `&` muss zuerst ersetzt werden, sonst wird
+            // das `&` der eben erzeugten `&lt;` nochmals ersetzt.
+            const hsF = hsMod.exports?.htmlSicher;
+            if (typeof hsF === "function") {
+              torPruefung("htmlSicher ersetzt `&` nicht ZUERST — dann wird "
+                + "aus `<` ein doppelt entschaerftes `&amp;lt;`",
+                hsF("a < b") === "a &lt; b"
+                && hsF("a & b") === "a &amp; b"
+                && hsF("x>y") === "x&gt;y",
+                `${hsF("a < b")} | ${hsF("a & b")} | ${hsF("x>y")}`);
+            }
+            // Und die Tagesbilanz muss denselben echten Grund entschaerfen.
+            const tbF = zbMod.exports?.tagesbilanzText;
+            const leerF = zbMod.exports?.leereTagessumme;
+            if (typeof tbF === "function" && typeof leerF === "function") {
+              const tg = Object.assign(leerF("2026-10-31"), {
+                zyklen: 5, scans: 5,
+                tore: { "Schwelle": { ja: 0, nein: 2, fallback: 0,
+                  gruende: { "Confidence 66 < Schwelle 70": 2 } } },
+              });
+              const rohTb = roheKlammern(tbF(tg));
+              torPruefung("die Tagesbilanz schickt eine rohe spitze "
+                + "Klammer raus — sie kaeme dann gar nicht an",
+                rohTb.length === 0, JSON.stringify(rohTb).slice(0, 180));
+            }
+          }
+
           // GEGENPROBE: eine echte 0 ist eine Messung, kein Ausfall — sie
           // darf NICHT als unbekannt gelten, sonst waere der Riegel nur
           // "immer unbekannt" (Lehre vom 15.09.).
@@ -3168,9 +3297,16 @@ module.exports = async function pruefe() {
             /Tore nach dem GO/.test(tTor), tTor.slice(-300));
           torPruefung("ein Tor nennt seine ja\/nein-Zahlen nicht",
             /Schwelle: ja 0 · nein 2/.test(tTor), tTor.slice(-300));
+          // ENTSCHAERFT ERWARTET (31.10.). Diese Pruefung verlangte bis
+          // heute das ROHE `<` im Text — sie hat den Fehler damit
+          // FESTGESCHRIEBEN. Mit `parse_mode: "HTML"` lehnt Telegram eine
+          // solche Nachricht ganz ab; /status kam dann nicht an. Die
+          // Gegenrichtung gehoert dazu: das rohe Zeichen darf NICHT mehr
+          // auftauchen, sonst waere die Pruefung mit beidem zufrieden.
           torPruefung("der GRUND des Tores fehlt — die Zahl allein sagt "
             + "nicht, WARUM es zu war",
-            /Confidence 66 < Schwelle 70 \(2\)/.test(tTor), tTor.slice(-300));
+            /Confidence 66 &lt; Schwelle 70 \(2\)/.test(tTor)
+            && !/Confidence 66 < Schwelle/.test(tTor), tTor.slice(-300));
           torPruefung("die Tor-Testdaten lassen Angaben offen — dann greift "
             + "das unbekannt-Urteil VOR den GO-Zweigen und der Fall ist gar "
             + "nicht erreichbar",
@@ -3917,6 +4053,7 @@ module.exports = async function pruefe() {
     const gesendet = [];
     const busModul = ladeTsModul("lib/agents/agent-bus.ts");
     const bilanzModul = busModul.fehler ? busModul : ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts", {
+      "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
       "agent-bus": busModul.exports,
       "redis-cache": {
         cacheGet: async (k) => (speicher.has(k) ? JSON.parse(speicher.get(k)) : null),
@@ -4550,7 +4687,8 @@ module.exports = async function pruefe() {
   //
   // GERECHNET mit der echten Funktion, nicht gelesen.
   {
-    const zb = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts");
+    const zb = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
     const tb = zb.exports?.tagesbilanzText;
     const leer = zb.exports?.leereTagessumme;
     if (zb.fehler || typeof tb !== "function" || typeof leer !== "function") {

@@ -338,9 +338,11 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
 }
 
 /** Fuer Telegram (parse_mode HTML) — ein `<` im Grund liesse die Nachricht sonst scheitern. */
-export function htmlSicher(s: string): string {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+// EINE Definition, gemeinsam mit `handels-lage.ts` (31.10.). Zwei Kopien
+// waeren zwei Stellen, an denen sie auseinanderlaufen koennen — dieselbe
+// Begruendung wie bei `herkunftListe()` in /edge.
+export { htmlSicher } from "../html-sicher/html-sicher";
+import { htmlSicher } from "../html-sicher/html-sicher";
 
 /** Die Tagesbilanz als Telegram-Text. */
 export function tagesbilanzText(t: Tagessumme): string {

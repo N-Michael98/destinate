@@ -1,3 +1,5 @@
+import { htmlSicher } from "../html-sicher/html-sicher";
+
 /**
  * WARUM KEIN TRADE? (29.10.)
  *
@@ -168,8 +170,9 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   } else if (e.modus === "AUTO") {
     zeilen.push("✅ Modus: AUTO");
   } else {
-    blocker.push(`Modus ist ${e.modus}, nicht AUTO`);
-    zeilen.push(`⛔ Modus: ${e.modus} — gehandelt wird nur bei AUTO`);
+    blocker.push(`Modus ist ${htmlSicher(String(e.modus))}, nicht AUTO`);
+    zeilen.push(`⛔ Modus: ${htmlSicher(String(e.modus))} — gehandelt `
+      + "wird nur bei AUTO");
   }
 
   // ── 3. Offene Positionen gegen das Limit ─────────────────────────────────
@@ -280,7 +283,7 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     } else {
       zeilen.push("📤 Ausgänge heute:");
       for (const [grund, n] of sortiert.slice(0, 5)) {
-        zeilen.push(`   • ${grund}: ${n}`);
+        zeilen.push(`   • ${htmlSicher(grund)}: ${n}`);
       }
       const rest = sortiert.length - 5;
       if (rest > 0) zeilen.push(`   • (${rest} weitere)`);
@@ -317,21 +320,21 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     zeilen.push(`   • Richtungssignale (BUY/SELL): `
       + `${richt === null ? "unbekannt" : richt}`);
     for (const [name, n] of stufen) {
-      if (n === null) { zeilen.push(`   • ${name}: unbekannt`); continue; }
+      if (n === null) { zeilen.push(`   • ${htmlSicher(name)}: unbekannt`); continue; }
       // Der Grund gehoert dazu: die Zahl allein sagt nicht, WELCHER Dienst
       // ausgefallen ist — genau die Frage, mit der man ins Log steigt.
       let zusatz = "";
       if (name.startsWith("ohne vollständige") && t.ohneVolleDatenGrund) {
         const g = Object.entries(t.ohneVolleDatenGrund)
           .filter(([, v]) => zahl(v) !== null && (zahl(v) as number) > 0)
-          .map(([k, v]) => `${k} ${v}`).join(", ");
+          .map(([k, v]) => `${htmlSicher(k)} ${v}`).join(", ");
         if (g) zusatz = ` — ${g}`;
       }
       if (name.startsWith("unter der Confidence")) {
         const cMin = zahl(t.confMin); const cMax = zahl(t.confMax);
         if (cMin !== null && cMax !== null) zusatz = ` (${cMin}–${cMax})`;
       }
-      zeilen.push(`   • ${name}: ${n}${zusatz}`);
+      zeilen.push(`   • ${htmlSicher(name)}: ${n}${zusatz}`);
       if (n > 0 && (groessteStufe === null || n > groessteStufe.n)) {
         groessteStufe = { name, n };
       }
@@ -357,8 +360,12 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
         const gruende = Object.entries(s?.gruende ?? {})
           .filter(([, n]) => zahl(n) !== null && (zahl(n) as number) > 0)
           .sort((x, y) => (zahl(y[1]) as number) - (zahl(x[1]) as number));
-        const grund = gruende.length > 0 ? ` — ${gruende[0][0]} (${gruende[0][1]})` : "";
-        zeilen.push(`      ${name}: ja ${ja === null ? "?" : ja} · `
+        // DER BELEGTE FALL (31.10.): `orchestrator-agent.ts:1002` sendet
+        // `Confidence 66 < Schwelle 70`. Ohne Escaping bricht das die
+        // ganze Nachricht, und /status kommt NICHT an.
+        const grund = gruende.length > 0
+          ? ` — ${htmlSicher(String(gruende[0][0]))} (${gruende[0][1]})` : "";
+        zeilen.push(`      ${htmlSicher(name)}: ja ${ja === null ? "?" : ja} · `
           + `nein ${nein === null ? "?" : nein}`
           + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${grund}`);
         if (nein !== null && nein > 0) abgelehnt.push([name, nein]);
@@ -388,7 +395,7 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     const tor: { name: string; n: number } = groesstesTor;
     zeilen.push(`🟡 <b>Kein Vor-Tor blockt</b>, und ${zahl(t?.go ?? null)} Signal(e) `
       + "wurden freigegeben — aber sie sind an den Toren DANACH gescheitert. "
-      + `Grösstes: <b>${tor.name}</b> (${tor.n}× nein).`);
+      + `Grösstes: <b>${htmlSicher(tor.name)}</b> (${tor.n}× nein).`);
   } else if (zahl(t?.go ?? null) !== null && (zahl(t?.go ?? null) as number) > 0) {
     zeilen.push(`🟢 <b>Kein Tor blockt</b>, und ${zahl(t?.go ?? null)} Signal(e) `
       + "wurden freigegeben, und kein Tor danach hat abgelehnt. Bleiben die "
@@ -396,7 +403,7 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   } else if (groessteStufe !== null) {
     const g: { name: string; n: number } = groessteStufe;
     zeilen.push("🟢 <b>Kein Tor blockt</b> — die Signale sterben im Trichter. "
-      + `Grösste Stufe heute: <b>${g.name}</b> (${g.n}).`);
+      + `Grösste Stufe heute: <b>${htmlSicher(g.name)}</b> (${g.n}).`);
   } else {
     zeilen.push("🟢 <b>Kein Tor blockt.</b> Bleiben die Trades trotzdem aus, "
       + "stirbt das Signal im Trichter — die Zyklus-Tagesbilanz (22:05 UTC) "
