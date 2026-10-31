@@ -2917,6 +2917,38 @@ module.exports = async function pruefe() {
             + "System aus",
             nichts.unbekannt.length >= 6 && /unbekannt/i.test(txt(nichts)),
             JSON.stringify(nichts.unbekannt));
+          // JEDE Angabe NAMENTLICH (31.10.). Die Schranke `>= 6` war zu
+          // schwach: der Gesamt-Drawdown fehlte in der Liste, weil
+          // `grenze === null || grenze <= 0` in EINEM Zweig stand und ein
+          // unlesbarer Einstellungs-Lesepfad "✅ keine Grenze gesetzt"
+          // meldete. Mit dem Fehler waren es 7 Einträge, ohne ihn 8 —
+          // beides passiert eine untere Schranke. "Zaehlen statt finden"
+          // (25.10.), hier: NAMENTLICH statt gezaehlt.
+          for (const name of ["Broker-Sitzung", "Modus", "Offene Positionen",
+            "Tageslimit", "Drawdown-Grenze", "Handelszeit", "Zyklen heute",
+            "Ausgänge"]) {
+            torPruefung(`"${name}" fehlt in der Liste der unbekannten `
+              + "Angaben — das Urteil zaehlt sie dann nicht mit, und eine "
+              + "nicht lesbare Angabe sieht wie eine gepruefte aus",
+              nichts.unbekannt.includes(name),
+              JSON.stringify(nichts.unbekannt));
+          }
+          // Die Drawdown-Grenze: unbekannt und AUS sind zwei Lagen.
+          torPruefung("eine unlesbare Drawdown-Grenze wird als \"keine "
+            + "Grenze gesetzt\" gemeldet — ein gruenes Haekchen fuer einen "
+            + "Wert, den niemand lesen konnte",
+            /❔ Gesamt-Drawdown: Grenze unbekannt/.test(txt(nichts))
+            && !/✅ Gesamt-Drawdown/.test(txt(nichts)),
+            txt(nichts).split("\n").filter((l) => /Drawdown/.test(l)).join(" | "));
+          // GEGENPROBE: eine echte 0 ist eine Messung, kein Ausfall — sie
+          // darf NICHT als unbekannt gelten, sonst waere der Riegel nur
+          // "immer unbekannt" (Lehre vom 15.09.).
+          const ddAus = mit({ ...BEKANNT, maxDrawdownProzent: 0 });
+          torPruefung("eine echte 0 als Drawdown-Grenze gilt als unbekannt "
+            + "— aus einer Messung darf kein \"unbekannt\" werden (22.09.)",
+            /✅ Gesamt-Drawdown: keine Grenze gesetzt/.test(txt(ddAus))
+            && !ddAus.unbekannt.includes("Drawdown-Grenze"),
+            JSON.stringify(ddAus.unbekannt));
           torPruefung("bei unbekannten Werten wird trotzdem \"verbunden\" "
             + "oder \"AUTO\" behauptet",
             !/✅ Broker/.test(txt(nichts)) && !/✅ Modus/.test(txt(nichts)),

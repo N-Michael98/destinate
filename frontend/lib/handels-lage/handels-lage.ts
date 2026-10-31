@@ -210,7 +210,18 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   const peak = zahl(e.hoechststand);
   const stand = zahl(e.kontostand);
   const grenze = zahl(e.maxDrawdownProzent);
-  if (grenze === null || grenze <= 0) {
+  // DREIWERTIG, wie jedes andere Feld hier (31.10.). Vorher stand hier
+  // `grenze === null || grenze <= 0` in EINEM Zweig — damit meldete ein
+  // fehlgeschlagener Einstellungs-Lesepfad "✅ keine Grenze gesetzt": ein
+  // gruenes Haekchen fuer einen Wert, den niemand lesen konnte, und der
+  // Eintrag fehlte in `unbekannt`. Genau die stille Null aus der Regel vom
+  // 22.09., und besonders teuer hier: diese Antwort wird gelesen, WEIL
+  // etwas kaputt ist — fehlende Werte sind der Normalfall.
+  if (grenze === null) {
+    unbekannt.push("Drawdown-Grenze");
+    zeilen.push("❔ Gesamt-Drawdown: Grenze unbekannt (Einstellungen nicht "
+      + "lesbar) — die Sperre kann aktiv sein und stumm blocken");
+  } else if (grenze <= 0) {
     zeilen.push("✅ Gesamt-Drawdown: keine Grenze gesetzt");
   } else if (peak === null || stand === null || peak <= 0) {
     unbekannt.push("Gesamt-Drawdown");

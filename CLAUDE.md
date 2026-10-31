@@ -2374,6 +2374,47 @@ bleibt — sonst wäre der Riegel nur „immer rot" (Lehre vom 15.09.).
 
 `safety-nets` 787 → **826**.
 
+### Ein grünes Häkchen für einen Wert, den niemand lesen konnte (31.10.)
+
+Gefunden beim Rauchtest der echten `POST`-Funktion, nicht im Prüfer: bei
+**allem unbekannt** meldete `/status`
+**„✅ Gesamt-Drawdown: keine Grenze gesetzt"**. Die Ursache war ein
+einziger zusammengefasster Zweig in `handelsLage()` — meinem eigenen Code
+von zwei Tagen vorher:
+
+```ts
+if (grenze === null || grenze <= 0) {        // zwei Lagen, ein Zweig
+  zeilen.push("✅ Gesamt-Drawdown: keine Grenze gesetzt");
+}
+```
+
+`null` heisst hier **„Einstellungen nicht lesbar"**
+(`einst?.riskSettings?.maxTotalDrawdownPct ?? null`), `0` heisst
+**„bewusst aus"**. Zusammengefasst wird aus einem unlesbaren
+Einstellungs-Lesepfad die Behauptung, es gäbe keine Sperre — und der
+Eintrag fehlte in `unbekannt`, also **zählte das Urteil ihn nicht mit**
+(7 statt 8 nicht feststellbare Angaben).
+
+**Besonders teuer genau hier:** diese Antwort wird gelesen, **weil** etwas
+kaputt ist — fehlende Werte sind der Normalfall, nicht die Ausnahme. Und
+die Gesamt-Drawdown-Sperre ist die eine, die sich **nicht selbst heilt**
+(29.09.): sie kann aktiv sein und jeden Zyklus stumm blocken, während
+`/status` sie als „nicht gesetzt" ausgibt. Jedes andere Feld derselben
+Funktion ist dreiwertig — nur dieses nicht.
+
+**Und der Prüfer konnte es nicht sehen:** die Zusicherung lautete
+`nichts.unbekannt.length >= 6`. Mit dem Fehler waren es **7** Einträge,
+ohne ihn **8** — eine untere Schranke passiert beides. „Zählen statt
+finden" (25.10.), hier eine Stufe weiter: **namentlich** statt gezählt.
+Alle acht Angaben werden jetzt einzeln verlangt, dazu die Gegenprobe, dass
+eine **echte 0** nicht als unbekannt gilt — sonst wäre der Riegel nur
+„immer unbekannt", und aus einer Messung würde ein „unbekannt" (die
+Regel vom 22.09. in der anderen Richtung).
+
+**3 von 3 Sabotagen**, und die erste ist der eigentliche Nachweis: sie
+stellt den alten Zweig wieder her und wird rot. Genau diese Fassung war
+zwei Tage lang grün. `safety-nets` 826 → **836**.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist
