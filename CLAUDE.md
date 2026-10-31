@@ -2415,6 +2415,121 @@ Regel vom 22.09. in der anderen Richtung).
 stellt den alten Zweig wieder her und wird rot. Genau diese Fassung war
 zwei Tage lang grün. `safety-nets` 826 → **836**.
 
+### Eine Nachricht, die gar nicht ankommt (31.10.)
+
+Gefunden bei der dreifachen Kontrolle **nach** dem Push — und es ist der
+schwerste Fund des Tages.
+
+`handels-lage.ts` interpoliert fremde Texte in Zeilen, die mit
+`parse_mode: "HTML"` rausgehen, und hatte **null** Escaping: 0 Treffer
+für `htmlSicher`, gegen **8** in `zyklus-bilanz.ts`. Dieselbe Klasse wie
+`reply()` am 26.10. — eine Funktion, die der Fix an der Schwesterstelle
+nie erfasst hat.
+
+**Ausgeführt belegt, nicht vermutet.** `orchestrator-agent.ts:1002`
+sendet wörtlich:
+
+```ts
+reason: `Confidence ${o.gpt.confidence} < Schwelle ${threshold}`
+```
+
+Gerendert ergab das:
+
+```
+Schwelle: ja 0 · nein 2 — Confidence 66 < Schwelle 70 (2)
+```
+
+Ein rohes `<`. Telegram antwortet darauf mit **HTTP 200** und
+`{ok:false, description:"Can't parse entities …"}` — die **ganze**
+`/status`-Antwort kommt dann nicht an. Ausgerechnet bei dem Befehl, den
+man benutzt, wenn etwas kaputt ist, und ausgerechnet im Live-Fall vom
+30.10.: genau dieses Tor hat dort **beide** GO abgelehnt.
+
+**Und eine bestehende Prüfung hat den Fehler festgeschrieben.** Die Zeile
+vom 30.10. lautete:
+
+```js
+/Confidence 66 < Schwelle 70 \(2\)/.test(tTor)
+```
+
+Sie **verlangte** das rohe Zeichen. Jetzt wird die entschärfte Form
+verlangt **und** die Gegenrichtung geprüft, dass das rohe nicht mehr
+auftaucht — sonst wäre sie mit beidem zufrieden.
+
+**Eine Definition, nicht zwei Kopien.** `htmlSicher` liegt jetzt in
+`lib/html-sicher/html-sicher.ts` — rein, ohne Importe, ohne
+Seiteneffekte. `handels-lage.ts` darf es importieren, ohne sich an den
+Bus-, Redis- und Telegram-Modulgraphen zu binden; dieselbe Begründung wie
+bei `herkunftListe()` in `/edge`. Die **Reihenfolge** ist mitgeprüft: `&`
+muss zuerst ersetzt werden, sonst wird aus `<` ein `&amp;lt;`.
+
+Alle **fünf** `ladeTsModul`-Stellen bekamen den Ersatz — ohne ihn wirft
+der Stellvertreter beim Aufruf, die Falle vom 29.10. eine Ebene tiefer.
+
+**9 von 9 Sabotagen — aber fünf fielen zuerst durch, vier aus einem
+Grund:** mein Gift-Wert war `A<b>B&C>D`, und **`<b>` IST ein gültiges
+Tag** — der Klammer-Scanner filterte ihn weg. Zum wiederholten Mal „ein
+Testwert, der den Fehler nicht ausdrücken kann, beweist nichts". Jetzt
+`A<ZZ B&C>D`, und die Prüfung hängt am **Text** statt an einem Scanner:
+der Rohwert darf **nicht** vorkommen, die entschärfte Form **muss** — das
+deckt `&` mit ab, das gar keine Klammer erzeugt. Die fünfte war eine
+wirkungslose Sabotage im `blocker`-Zweig, den der gesunde Testfall nie
+betritt.
+
+Geprüft werden **fünf Gift-Stellen einzeln** (Modus, Ausgang, Tor-Name,
+Tor-Grund, Daten-Grund) — so fällt auch eine Interpolation auf, die es
+morgen erst gibt. Dazu die Gegenprobe, dass unsere **eigenen** `<b>`-Tags
+nicht mitentschärft werden: ein Riegel, der alles escapet, wäre so falsch
+wie keiner.
+
+### Und `/status` war nie auf Länge gemessen (31.10.)
+
+`/edge` (26.10.), die Tagesbilanz und `/hebel` (31.10.) sind gemessen.
+`/status` **nicht** — und er ist in drei Tagen **dreimal** gewachsen:
+Laufender Stand (27.10.), `handelsLage` (29.10.), Trichter + Tore nach
+dem GO (30.10.).
+
+Gemessen durch die echte `POST`-Funktion:
+
+| Fall | Zeichen |
+|---|---|
+| echte Lage 30.10. | 1685 ✓ |
+| volle Lage (6 Tore, 10 Ausgänge) | 2101 ✓ |
+| Härtefall: 20 Tore, 40 Ausgänge, lange Namen | **4837 ✗ — 741 zu viel** |
+
+**Der erste Messversuch war ein kaputtes Werkzeug**, und das Kennzeichen
+stand sofort da: alle drei Lagen ergaben **exakt 1132**. Ursache war, dass
+`TAGESSUMME_SCHLUESSEL`, `PEAK_SCHLUESSEL`, die Broker-Sitzung und die
+Handelszeit als Stellvertreter kamen und jedes `sicher()` den Fehler
+auffing — jede Lage war „alles unbekannt". Drei verschiedene Eingaben mit
+identischem Ergebnis sind kein Befund. Seitdem trägt das Werkzeug eine
+**Selbstprüfung**: drei Lagen müssen drei verschiedene Längen ergeben.
+
+**Zwanzig Tore kann es aber nicht geben.** `GateName` in `agent-bus.ts`
+ist eine **geschlossene Union**. Mit allen Namen daraus, dem längsten
+echten Grund (75 Zeichen, über alle `meldeTorEntscheidung`-Stellen
+gemessen) und den **dreizehn** echten Zyklus-Ausgängen ergibt der Block
+2486 Zeichen, gesamt **3550 von 4096** — **546 Zeichen Luft**.
+
+**Also kein Stückeln und kein Deckel:** eine Mechanik, die nachweislich
+nie greift, wäre Arbeit auf Verdacht (Lehre vom 26.10.). Stattdessen eine
+**Messung**, die rot wird, wenn die Annahme bricht — und beide Mengen
+kommen aus der **Quelle** (`GateName` aus dem Bus, die Ausgänge aus dem
+Orchestrator), damit ein elftes Tor automatisch mitgerechnet wird. Ein
+fester Satz im Prüfer würde die Annahme einfrieren.
+
+**3 von 4 Sabotagen**, und beide Ausreisser gehören zur Methode:
+
+| Sabotage | Befund |
+|---|---|
+| alle Tor-Gründe statt nur dem häufigsten | entwischte zuerst: **meine Härtefall-Daten hatten nur EINEN Grund je Tor** — dann ist „alle zeigen" dasselbe wie „einen zeigen". Jetzt vier je Tor |
+| Deckel der Ausgänge entfernt (`slice(0, 5)`) | **wirkungslos, ausgerechnet belegt**: +8 Zeilen × max 55 Zeichen = +440, Ergebnis **3990** von 4096. Sie kann den Riegel nicht auslösen; als „entwischt" zu zählen wäre ein Messfehler |
+
+Der erste Punkt ist die **sechste** Wiederholung derselben Lehre an einem
+Tag. Deshalb steht der Grund jetzt im Prüfer, direkt über den Testdaten.
+
+`safety-nets` 836 → **855**, Karte 1014 → **1016** Kanten.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist

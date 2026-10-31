@@ -2944,6 +2944,100 @@ module.exports = async function pruefe() {
             /❔ Gesamt-Drawdown: Grenze unbekannt/.test(txt(nichts))
             && !/✅ Gesamt-Drawdown/.test(txt(nichts)),
             txt(nichts).split("\n").filter((l) => /Drawdown/.test(l)).join(" | "));
+          // ── UND SIE MUSS UNTER 4096 ZEICHEN BLEIBEN (31.10.) ───────
+          //
+          // GEMESSEN durch die echte POST-Funktion: echte Lage 1685,
+          // volle Lage 2101, ein Haertefall mit 20 erfundenen Toren
+          // 4837 — darueber. Die Tor-Schleife hat KEINEN Deckel (die
+          // Ausgaenge haben einen: slice(0, 5)).
+          //
+          // Aber zwanzig Tore kann es nicht geben: `GateName` ist eine
+          // GESCHLOSSENE Union. Mit allen zehn echten Namen und dem
+          // laengsten echten Grund ergibt der Block 2422 Zeichen,
+          // gesamt ~3486 — unter der Grenze. Deshalb KEIN Deckel und
+          // kein Stueckeln: eine Mechanik, die nachweislich nie greift,
+          // waere Arbeit auf Verdacht (Lehre vom 26.10.).
+          //
+          // Stattdessen diese MESSUNG. Die Namen kommen aus der QUELLE,
+          // damit ein elftes Tor automatisch mitgerechnet wird — ein
+          // fester Satz im Pruefer wuerde die Annahme einfrieren.
+          {
+            // Der Rest der /status-Antwort (Killswitch, Laufender Stand,
+            // Befehlsliste) ist gemessen: 2101 - 1037 = 1064 Zeichen.
+            const REST_GEMESSEN = 1064;
+            const TELEGRAM_MAX = 4096;
+            const bus = read("frontend/lib/agents/agent-bus.ts");
+            const uStart = bus.indexOf("export type GateName =");
+            const uEnde = uStart >= 0 ? bus.indexOf(";", uStart) : -1;
+            const union = uStart >= 0 && uEnde > uStart
+              ? bus.slice(uStart, uEnde) : "";
+            const torNamen = [...union.matchAll(/\|\s*"([^"]+)"/g)].map((m) => m[1]);
+            // SELBSTPRUEFUNG: eine leere oder zu kurze Liste wuerde die
+            // Messung wertlos machen und saehe wie ein gutes Ergebnis aus.
+            torPruefung("die Tor-Namen liessen sich nicht aus `GateName` "
+              + "lesen — dann misst der Riegel darunter nichts",
+              torNamen.length >= 8 && torNamen.includes("Schwelle")
+              && torNamen.includes("Filterkette"),
+              `${torNamen.length}: ${JSON.stringify(torNamen).slice(0, 160)}`);
+            // Der laengste ECHTE Grund, gemessen ueber alle
+            // `meldeTorEntscheidung`-Stellen (75 Zeichen nach Einsetzung).
+            const LANGER_GRUND =
+              "SPREAD_TOO_WIDE: Spread 4.2 Punkte = 0.38 % des Kurses, erlaubt sind 0.25 %";
+            // MEHRERE Gruende je Tor. Mein erster Versuch gab jedem Tor
+            // genau EINEN — dann ist "alle Gruende zeigen" dasselbe wie
+            // "den haeufigsten zeigen", und die Sabotage blieb gruen.
+            // Ueber 288 Zyklen lehnt ein Tor aus verschiedenen Gruenden ab.
+            const toreMax = {};
+            for (const n of torNamen) {
+              toreMax[n] = { ja: 12, nein: 34, fallback: 2, gruende: {
+                [LANGER_GRUND]: 30, [`${LANGER_GRUND} (2)`]: 20,
+                [`${LANGER_GRUND} (3)`]: 10, [`${LANGER_GRUND} (4)`]: 5 } };
+            }
+            // DIE AUSGAENGE AUCH AUS DER QUELLE. Ihre Zahl geraten zu haben
+            // war der Grund, warum die Sabotage "Deckel entfernt" zuerst
+            // gruen blieb: zwoelf erfundene statt der echten dreizehn.
+            const orch = read("frontend/lib/agents/orchestrator-agent.ts");
+            const ausgangNamen = [...new Set(
+              [...orch.matchAll(/return "([^"]{8,})";/g)].map((m) => m[1]))];
+            torPruefung("die Zyklus-Ausgaenge liessen sich nicht aus dem "
+              + "Orchestrator lesen — dann misst der Riegel zu wenig",
+              ausgangNamen.length >= 10
+              && ausgangNamen.includes("Modus nicht AUTO")
+              && ausgangNamen.includes("Keine Kandidaten nach Filter"),
+              `${ausgangNamen.length}: ${JSON.stringify(ausgangNamen).slice(0, 140)}`);
+            const schlimmst = txt0(mit({ ...BEKANNT,
+              ausgaenge: Object.fromEntries(
+                ausgangNamen.map((a, i) => [a, 300 - i])),
+              trichter: {
+                scans: 288, maerkte: 8640, richtungen: 120, vetos: 55,
+                stilVerworfen: 12, ohneVolleDaten: 44,
+                ohneVolleDatenGrund: { "Strategien": 20, "TA-Lib": 14,
+                  "TA-Lib+Strategien": 10 },
+                unterGrenze: 300, confMin: 60, confMax: 79, rrAbgelehnt: 210,
+                ohneStopZiel: 30, go: 90, ohneGptAntwort: 120, tore: toreMax,
+              } }));
+            torPruefung("die /status-Antwort reisst Telegrams 4096 Zeichen "
+              + "im schlimmsten ECHTEN Fall (alle Tore der GateName-Union, "
+              + "laengster echter Grund) — sie kaeme dann GAR NICHT an",
+              schlimmst.length + REST_GEMESSEN <= TELEGRAM_MAX,
+              `${schlimmst.length} + ${REST_GEMESSEN} Rest = `
+              + `${schlimmst.length + REST_GEMESSEN} von ${TELEGRAM_MAX}`);
+            // GEGENPROBE: der Riegel darf nicht einfach immer gruen sein.
+            // Dieselbe Lage mit zwanzigfach langen Gruenden MUSS reissen —
+            // sonst messe ich nur, dass eine Addition funktioniert.
+            const toreLang = {};
+            for (const n of torNamen) {
+              toreLang[n] = { ja: 12, nein: 34, fallback: 2,
+                gruende: { [LANGER_GRUND.repeat(20)]: 30 } };
+            }
+            const zuLang = txt0(mit({ ...BEKANNT, trichter: {
+              scans: 288, go: 90, tore: toreLang } }));
+            torPruefung("der Laengen-Riegel ist immer gruen — eine Lage "
+              + "mit zwanzigfach langen Gruenden muss die Grenze reissen",
+              zuLang.length + REST_GEMESSEN > TELEGRAM_MAX,
+              `${zuLang.length} Zeichen`);
+          }
+
           // ── EINE NACHRICHT, DIE GAR NICHT ANKOMMT (31.10.) ─────────
           //
           // `/status` geht mit `parse_mode: "HTML"` raus. Ein einzelnes
