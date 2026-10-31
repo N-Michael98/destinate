@@ -2288,6 +2288,92 @@ eine leere Gruppe für ein Urteil hält.
 einzeln: Tracker, Orchestrator, Route, Scanner, Leser, Dimension, und die
 erfundene Quelle.
 
+### Die Antwort konnte gar nicht ankommen (31.10.)
+
+Telegram nimmt **4096 Zeichen** und lehnt eine längere Nachricht mit HTTP
+200 und `{ok:false}` ab — der Befehl verpufft dann, seit dem 26.10.
+immerhin mit Logzeile. Bei `/edge` war die Länge am 26.10. gemessen worden.
+Bei `/hebel` **nicht** — und `/hebel` ist der längste Befehl des Programms:
+fünf Dimensionen mit je bis zu sechs Gruppen.
+
+Gemessen, nicht geschätzt:
+
+| Fall | Zeichen |
+|---|---|
+| 3 Gruppen je Dimension | 3002 ✓ |
+| **6 Gruppen** (`GRUPPEN_MAX`, bei 30 Märkten der Normalfall) | **3831 ✓** |
+| Härtefall: 10 Gruppen, lange Namen | **4973 ✗ — 877 zu viel** |
+
+**Keine Stückelung gebaut und nichts still abgeschnitten.** `hebelText()`
+baut den Text mit immer weniger Gruppen je Dimension, bis er unter
+`MAX_ZEICHEN` (3900) passt; was fehlt, steht weiterhin als
+„(N weitere Gruppen, M Trades)" in der Zeile, und der **Grund** der
+Kürzung wird genannt. Der Härtefall liegt jetzt bei **3500**.
+
+**Und damit ist der offene Punkt vom 26.10. beantwortet** („`sendTelegram`
+kennt keine Längengrenze — nicht geändert, weil nicht gemessen"). Jetzt
+gemessen: `/edge` kommt im Härtefall auf **2939**, die Tagesbilanz mit 40
+Ausgängen und 20 Toren auf **3700** — beide unter der Grenze. Also wird
+dort nichts gebaut: eine Mechanik, die nachweislich nie greift, ist Arbeit
+auf Verdacht.
+
+### Mein eigener Prüfer rechnete ohne die Ausschlüsse
+
+Der `/hebel`-Prüfstand lud `erwartungswert` **ohne** den Tracker-Ersatz.
+Damit ist `ETIKETTEN_OHNE_ERGEBNIS` ein Stellvertreter, der beim Aufruf
+**wirft** — und der Prüfer blieb trotzdem grün, weil seine Testdaten
+**keinen einzigen `exitReason`** trugen: der Ausschlusspfad wurde nie
+betreten. Die wichtigste Zusicherung des Befehls — „dieselbe Zahl wie
+`/edge`" — war damit **nur ohne Ausschlüsse** geprüft.
+
+Ausgeführt belegt: nimmt man den Ersatz wieder weg, meldet der Prüfer
+*„PRÜFER ABGESTÜRZT: keine Aussenwelt im Prüfstand"*. Jetzt steht er drin,
+und eine `KEIN_PNL`-Zeile mit **P&L 999** liegt in den Testdaten — würde
+sie mitgerechnet, sprengte sie jeden Erwartungswert sichtbar.
+
+Das ist zum wiederholten Mal **„ein Testfall, der den Fehler nicht
+ausdrücken kann, beweist nichts"** — diesmal nicht an einer Zahl, sondern
+an einem ganzen **Zweig**, den die Daten nie erreichten.
+
+### `/hebel` war nur strukturell geprüft — jetzt End-to-End
+
+`/edge` hat seit dem 27.10. einen Prüfstand, der die **echte**
+`POST`-Funktion fährt; genau der fand `parseInt("1e") === 1`. `/hebel`
+spiegelt dieselbe Argument-Behandlung und wurde **nur mit einem Regex auf
+den Quelltext** geprüft — „ein Regex prüft den Wortlaut, nicht das
+Verhalten".
+
+Jetzt läuft `/hebel` durch dieselbe `POST`: die acht Spalten **zur
+Laufzeit** aus dem echten `select`, `status != OPEN` ebenso, das Fenster
+an der Zahl, die sieben gefährlichen Argumente (`1e5`, `0x10`, `6e2`
+darunter), kein Echo der Eingabe — und die Länge der echten Antwort.
+
+**Dabei eine zweite eigene Lücke gefunden.** Die Spalten-Prüfung von
+gestern suchte `profitLoss: true` in der **ganzen** Webhook-Datei. Vier
+der acht Namen stehen auch im `/edge`-Block. Ausgeführt belegt: entfernt
+man `profitLoss: true` aus dem `/hebel`-Select, steht der Name weiterhin
+in der Datei — **die alte Prüfung wäre grün geblieben**, und die
+Markt-Dimension hätte dauerhaft „ohne Angabe" gemeldet. „Ein Treffer
+beweist nichts über die andere Stelle" (25.10.). Jetzt wird der Block
+ausgeschnitten, mit Selbstprüfung: er muss `hebelBericht` enthalten und
+`/edge` **nicht**.
+
+**14 von 14 Sabotagen** — aber **zwei fielen zuerst durch, beide wegen zu
+schwacher Prüfungen von mir, und beide dieselbe Fehlerklasse:**
+
+| entwischt | warum |
+|---|---|
+| die Rest-Zeile „(N weitere Gruppen, M Trades)" entfernt | ich suchte den **Wortlaut** „weitere Gruppen" — der steht auch in der **Kürzungs-Begründung** selbst, die Suche war schon dort zufrieden. Jetzt an die Form gebunden: `• (N weitere Gruppen, M Trades)` |
+| das Fenster wird nicht an `hebelBericht` durchgereicht | ich suchte „ohne Vergleichsgruppe" **irgendwo im Text** — der Satz steht auch im Befund einer **anderen** Dimension, wo alles „ohne Angabe" ist. Jetzt muss die BTCUSD-Zeile selbst auf **0 gewertete Trades** fallen |
+
+Das ist die **dritte und vierte** Wiederholung derselben Lehre an einem
+Tag. Die Antwort ist beide Male dieselbe: den Ausdruck an die **Zahl oder
+die Form** binden, nicht an ein Wort. Dazu die Gegenprobe, dass eine
+nachweislich wirkungslose Änderung (ein eingefügter Kommentar) **grün**
+bleibt — sonst wäre der Riegel nur „immer rot" (Lehre vom 15.09.).
+
+`safety-nets` 787 → **826**.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist

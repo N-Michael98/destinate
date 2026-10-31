@@ -1676,13 +1676,21 @@ module.exports = async function pruefe() {
           // 40 Zeilen von gestern, 40 aus dem Juni — das Fenster MUSS trennen.
           const heute = new Date();
           const vorTagen = (n) => new Date(heute.getTime() - n * 86400000).toISOString();
+          // Die vier /hebel-Groessen stehen MIT drin (31.10.): `/edge`
+          // liest sie nicht und rechnet unveraendert weiter, aber ohne
+          // sie waere jede /hebel-Dimension "ohne Angabe" — und der
+          // Pruefstand bewiese nichts ueber das Gruppieren.
           const zeilenDb = [
             ...Array.from({ length: 40 }, () => ({
               profitLoss: 12, notes: '{"exitReason":"ZIEL"}',
-              result: "WIN", updatedAt: vorTagen(3) })),
+              result: "WIN", updatedAt: vorTagen(3),
+              riskReward: 2.0, market: "EURUSD", direction: "BUY",
+              strategy: "Trend" })),
             ...Array.from({ length: 40 }, () => ({
               profitLoss: -8, notes: '{"exitReason":"STOP"}',
-              result: "LOSS", updatedAt: vorTagen(200) })),
+              result: "LOSS", updatedAt: vorTagen(200),
+              riskReward: 1.2, market: "BTCUSD", direction: "SELL",
+              strategy: "Range" })),
           ];
           const whE = ewE.fehler ? ewE : ladeTsModul("app/api/telegram/webhook/route.ts", {
             "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
@@ -1704,6 +1712,12 @@ module.exports = async function pruefe() {
             "expectancy/erwartungswert": ewE.exports,
             "laufzeit/laufzeit-stand": lzE.exports,
             "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts").exports,
+            // `/hebel` importiert dynamisch. Ohne Ersatz bekaeme es den
+            // Stellvertreter, `hebelText()` wuerde werfen, und der
+            // Befehl landete im catch — gepruefte Zeilen gaebe es dann
+            // keine. Das ECHTE Modul, mit dem ECHTEN erwartungswert.
+            "lib/hebel/hebel": ladeTsModul("lib/hebel/hebel.ts",
+              { "expectancy/erwartungswert": ewE.exports }).exports,
           });
           if (whE.fehler || typeof whE.exports?.POST !== "function") {
             torPruefung("/edge ist nicht end-to-end ausfuehrbar", false,
@@ -1828,6 +1842,104 @@ module.exports = async function pruefe() {
             // Gegenprobe: ein TEIL der Eingabe darf auch nicht durchrutschen.
             await edge("/edge abcdefghijklmnopqrstuvwxyz");
             torPruefung("ein gekuerztes Echo der Eingabe rutscht durch",
+              !/abcdefghij/.test(antw.at(-1) ?? ""),
+              (antw.at(-1) ?? "").replace(/\n/g, " ").slice(0, 120));
+
+            // ── /hebel END-TO-END (31.10.) ──────────────────────────
+            //
+            // `/hebel` war bis heute NUR strukturell geprueft: ein
+            // Regex auf den Webhook-Quelltext. Genau dieser
+            // Pruefstand fand am 27.10. bei `/edge` einen echten
+            // Fehler (`parseInt("1e")` ergibt 1) — und `/hebel`
+            // spiegelt dieselbe Argument-Behandlung.
+            await edge("/hebel");
+            const aH = antw.at(-1) ?? "";
+            torPruefung("/hebel antwortet nicht oder faellt in sein "
+              + "catch — dann ist der Befehl end-to-end kaputt",
+              /Hebel — was würde etwas ändern\?/.test(aH)
+              && !/fehlgeschlagen/.test(aH),
+              aH.replace(/\n/g, " ").slice(0, 200));
+            // AN DIE ZAHLEN GEBUNDEN, nicht an den Namen: 40 Gewinner zu
+            // je 12 ergeben EW 12.00, 40 Verlierer zu je -8 ergeben -8.00.
+            // Ein blosses /EURUSD/ koennte auch aus einer anderen
+            // Dimension stammen.
+            torPruefung("/hebel gruppiert die Maerkte nicht oder rechnet "
+              + "sie falsch — die Spalte kommt dann nicht in der Rechnung an",
+              /• EURUSD: EW <b>12\.00<\/b> · 40 Trades/.test(aH)
+              && /• BTCUSD: EW <b>-8\.00<\/b> · 40 Trades/.test(aH),
+              aH.replace(/\n/g, " ").slice(0, 400));
+            torPruefung("/hebel ohne Angabe taeuscht ein Fenster vor",
+              /Zeitraum: <b>alles<\/b>/.test(aH),
+              aH.replace(/\n/g, " ").slice(0, 160));
+            // DIE SPALTEN ZUR LAUFZEIT. Die Struktur-Pruefung konnte
+            // das nicht: vier der acht Namen stehen auch im
+            // `/edge`-Block derselben Datei.
+            const selH = abfragen.at(-1)?.select ?? {};
+            for (const spalte of ["profitLoss", "notes", "result",
+              "updatedAt", "riskReward", "market", "direction", "strategy"]) {
+              torPruefung(`/hebel fragt die Spalte \`${spalte}\` zur `
+                + "LAUFZEIT nicht ab — die Dimension bliebe dauerhaft "
+                + "\"ohne Angabe\" und saehe wie ein Ergebnis aus",
+                selH[spalte] === true, JSON.stringify(selH));
+            }
+            torPruefung("/hebel liest offene Trades mit — ihr P&L ist "
+              + "ein Zwischenstand, kein Ergebnis (zur Laufzeit)",
+              abfragen.at(-1)?.where?.status?.not === "OPEN",
+              JSON.stringify(abfragen.at(-1)?.where ?? null));
+            // Das FENSTER muss bis in die Rechnung kommen: mit 60
+            // Tagen faellt der halbe Bestand (200 Tage alt) heraus,
+            // und damit bleibt nur EINE belastbare Gruppe uebrig.
+            await edge("/hebel 60");
+            const aH60 = antw.at(-1) ?? "";
+            // AN DIE ZAHL GEBUNDEN. Mein erster Versuch verlangte
+            // `/ohne Vergleichsgruppe/` irgendwo im Text — und genau
+            // DAMIT entwischte die Sabotage: der Satz steht auch im
+            // Befund einer ANDEREN Dimension (dort ist alles "ohne
+            // Angabe"). "Ein Treffer beweist nichts ueber die andere
+            // Stelle" (25.10.), zum dritten Mal heute. Jetzt muss die
+            // BTCUSD-Zeile selbst auf 0 gewertete Trades fallen.
+            torPruefung("/hebel 60 reicht das Fenster nicht durch — "
+              + "die Tagesangabe verpufft dann auf dem Weg",
+              /letzte <b>60<\/b> Tage/.test(aH60)
+              && /• BTCUSD: 0 Trades — zu wenig/.test(aH60)
+              && /• EURUSD: EW <b>12\.00<\/b> · 40 Trades/.test(aH60),
+              aH60.replace(/\n/g, " ").slice(0, 400));
+            // Die Antwort muss ANKOMMEN — Telegram nimmt 4096.
+            for (const [was, a] of [["ohne Fenster", aH], ["mit 60", aH60]]) {
+              torPruefung(`die /hebel-Antwort ${was} reisst Telegrams `
+                + "Grenze von 4096 Zeichen — sie kaeme nicht an",
+                a.length <= 4096, `${a.length} Zeichen`);
+            }
+            // Eine unbrauchbare Angabe darf NICHT still zu "alles"
+            // werden. Die drei hinteren sind die gefaehrlichen:
+            // Number("1e5")=100000, Number("0x10")=16, Number("6e2")=600
+            // — ohne sie laesst sich `/^\d+$/` auf `/^\d/` verkuerzen.
+            for (const schlecht of ["/hebel abc", "/hebel 0", "/hebel -5",
+              "/hebel 1e", "/hebel 1e5", "/hebel 0x10", "/hebel 6e2"]) {
+              const vorher = abfragen.length;
+              await edge(schlecht);
+              const a = antw.at(-1) ?? "";
+              torPruefung(`'${schlecht}' wird still zu einer `
+                + "Gesamtrechnung, statt abgelehnt zu werden",
+                /keine Anzahl Tage/.test(a) && !/Zeitraum:/.test(a),
+                a.replace(/\n/g, " ").slice(0, 110));
+              torPruefung(`'${schlecht}' fragt trotzdem die Datenbank ab`,
+                abfragen.length === vorher,
+                `${abfragen.length - vorher} Abfragen nach der Ablehnung`);
+            }
+            // UND DIE EINGABE DARF NICHT ZURUECK IN DEN CHAT (29.09.).
+            const geheimH = "geheim123xyz";          // 12 Zeichen
+            await edge(`/hebel ${geheimH}`);
+            const aGeheimH = antw.at(-1) ?? "";
+            torPruefung("/hebel schickt die Eingabe in den Chat zurueck "
+              + "— ein Telegram-Verlauf laesst sich nicht zurueckholen",
+              !aGeheimH.includes(geheimH) && !aGeheimH.includes("geheim"),
+              aGeheimH.replace(/\n/g, " ").slice(0, 120));
+            torPruefung("/hebel sagt gar nichts ueber die Eingabe — dann "
+              + "weiss man nicht, ob sie ueberhaupt ankam",
+              /12 Zeichen/.test(aGeheimH), aGeheimH.replace(/\n/g, " ").slice(0, 120));
+            await edge("/hebel abcdefghijklmnopqrstuvwxyz");
+            torPruefung("ein gekuerztes Echo rutscht bei /hebel durch",
               !/abcdefghij/.test(antw.at(-1) ?? ""),
               (antw.at(-1) ?? "").replace(/\n/g, " ").slice(0, 120));
           }
@@ -2376,10 +2488,17 @@ module.exports = async function pruefe() {
       // Wahrheit — und am 26.10. hat sich genau so eine Antwort um den
       // Faktor 5.32 selbst widersprochen.
       {
+        // MIT TRACKER-ERSATZ (31.10.). Ohne ihn ist
+        // `ETIKETTEN_OHNE_ERGEBNIS` ein Stellvertreter, der beim Aufruf
+        // WIRFT — der Pruefer lief nur gruen, weil seine Testdaten den
+        // Ausschlusspfad nie betraten. Die Zusicherung "dieselbe Zahl
+        // wie /edge" war damit OHNE Ausschluesse geprueft.
+        const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+        const ewMod = ladeTsModul("lib/expectancy/erwartungswert.ts",
+          { "capital-trade-tracker": trE.exports });
         const hb = ladeTsModul("lib/hebel/hebel.ts", {
-          "expectancy/erwartungswert": ladeTsModul("lib/expectancy/erwartungswert.ts").exports,
+          "expectancy/erwartungswert": ewMod.exports,
         });
-        const ewMod = ladeTsModul("lib/expectancy/erwartungswert.ts");
         const hebelBericht = hb.exports?.hebelBericht;
         const hebelText = hb.exports?.hebelText;
         const rrBand = hb.exports?.rrBand;
@@ -2404,6 +2523,64 @@ module.exports = async function pruefe() {
             const b = rrBand(Number.isFinite(wert) ? wert : (wert === null ? null : wert));
             torPruefung(`rrBand(${String(wert)}) ergibt nicht "${band}"`,
               b === band, `bekam: ${b}`);
+          }
+
+          // ── DIE ANTWORT MUSS ANKOMMEN (31.10.) ─────────────────────
+          //
+          // Telegram nimmt 4096 Zeichen und lehnt laengere mit HTTP 200
+          // und {ok:false} ab — der Befehl verpufft dann (seit dem
+          // 26.10. immerhin mit Logzeile). GEMESSEN: sechs Gruppen je
+          // Dimension (bei 30 Maerkten der Normalfall) ergaben 3831
+          // Zeichen, ein Haertefall mit langen Namen 4973.
+          {
+            const MAXZ = hb.exports?.MAX_ZEICHEN;
+            torPruefung("MAX_ZEICHEN ist nicht exportiert oder liegt "
+              + "nicht unter Telegrams 4096",
+              typeof MAXZ === "number" && MAXZ > 0 && MAXZ <= 4096,
+              String(MAXZ));
+            // Ein Haertefall: zehn Gruppen je Dimension, lange Namen.
+            const hart = [];
+            for (let g = 0; g < 10; g++) {
+              for (let i = 0; i < 40; i++) {
+                hart.push({
+                  profitLoss: i % 3 === 0 ? 10 : -4,
+                  result: i % 3 === 0 ? "WIN" : "LOSS",
+                  updatedAt: "2026-10-20T10:00:00.000Z",
+                  notes: JSON.stringify({
+                    tradingStyle: `HANDELSSTIL_MIT_SEHR_LANGEM_NAMEN_${g}`,
+                    signalQuelle: `SIGNALQUELLE_MIT_SEHR_LANGEM_NAMEN_${g}`,
+                  }),
+                  riskReward: 1 + g * 0.6,
+                  market: `MARKT_MIT_SEHR_LANGEM_NAMEN_NUMMER_${g}`,
+                  direction: g % 2 === 0 ? "BUY" : "SELL",
+                  strategy: `STRATEGIE_FELD_MIT_LANGEM_NAMEN_${g}`,
+                });
+              }
+            }
+            const tHart = hebelText(hebelBericht(hart, null), 60);
+            torPruefung("die /hebel-Antwort reisst Telegrams Grenze — "
+              + "sie kaeme dann gar nicht an",
+              tHart.length <= (typeof MAXZ === "number" ? MAXZ : 4096),
+              `${tHart.length} Zeichen`);
+            torPruefung("die Kuerzung verschweigt ihren GRUND — dann "
+              + "sieht eine unvollstaendige Antwort wie eine ganze aus",
+              /Wegen der Telegram-Grenze/.test(tHart), tHart.slice(-240));
+            // AN DIE FORM GEBUNDEN, nicht an den Wortlaut: der Satz
+            // "weitere Gruppen" steht auch in der Kuerzungs-Begruendung
+            // selbst. Eine Suche nach ihm war zuerst schon DORT zufrieden
+            // und blieb gruen, obwohl die Rest-Zeile entfernt war —
+            // "ein Treffer beweist nichts ueber die andere Stelle" (25.10.).
+            torPruefung("die gekuerzte Antwort sagt nicht, WIE VIEL fehlt",
+              /• \(\d+ weitere Gruppen, \d+ Trades\)/.test(tHart),
+              tHart.slice(-240));
+            // GEGENPROBE: ein kleiner Fall darf NICHT gekuerzt werden.
+            // Ohne sie waere ein Riegel gruen, der immer kuerzt.
+            const tKlein = hebelText(hebelBericht(hart.slice(0, 40), null), 60);
+            torPruefung("auch eine kurze Antwort wird gekuerzt — dann "
+              + "fehlen Gruppen ohne Not",
+              !/Wegen der Telegram-Grenze/.test(tKlein)
+              && tKlein.length < tHart.length + 1,
+              `${tKlein.length} Zeichen`);
           }
 
           // ── DER SCHLUESSEL KOMMT AUS DER QUELLE (30.10.) ────────────
@@ -2538,7 +2715,24 @@ module.exports = async function pruefe() {
               strategy: "Trend",
             });
           }
+          // EINE AUSGESCHLOSSENE ZEILE (31.10.). Ohne sie beweist
+          // "dieselbe Zahl wie /edge" nichts ueber die AUSSCHLUESSE —
+          // und genau die sind der Grund, warum `/hebel` dieselbe
+          // Funktion benutzt. Ihr P&L von 999 wuerde jeden
+          // Erwartungswert sprengen, wenn sie mitgerechnet wuerde.
+          zeilenH.push({
+            profitLoss: 999, result: "BREAKEVEN",
+            updatedAt: "2026-10-20T10:00:00.000Z",
+            notes: JSON.stringify({ tradingStyle: "DAYTRADING", exitReason: "KEIN_PNL" }),
+            riskReward: 2.0, market: "EURUSD", direction: "BUY",
+            strategy: "Trend",
+          });
           const direkt = erwartungswert(zeilenH, null);
+          torPruefung("die ausgeschlossene Zeile (KEIN_PNL) wird "
+            + "MITgerechnet — dann gelten fuer /hebel andere Regeln "
+            + "als fuer /edge",
+            direkt.ohneErgebnis === 1 && direkt.gewertet === 50,
+            `ohneErgebnis=${direkt.ohneErgebnis} gewertet=${direkt.gewertet}`);
           // SELBSTPRUEFUNG der Testdaten: verlieren sie die Eigenschaft,
           // ist die Nenner-Pruefung darunter wertlos.
           torPruefung("die Testdaten enthalten keinen Breakeven — die "
@@ -2639,10 +2833,30 @@ module.exports = async function pruefe() {
           /hebelBericht\(zeilen/.test(whH) && /hebelText\(/.test(whH), "webhook");
         // Dieselben vier Spalten wie /edge — sonst waeren die Ausschluesse
         // andere und die Zahlen koennten auseinanderlaufen.
-        for (const spalte of ["profitLoss", "notes", "result", "updatedAt",
-          "riskReward", "market", "direction", "strategy"]) {
-          torPruefung(`/hebel liest die Spalte \`${spalte}\` nicht mit`,
-            new RegExp(`${spalte}: true`).test(whH), spalte);
+        //
+        // NUR IM /hebel-BLOCK (31.10.). Vorher wurde die GANZE Datei
+        // durchsucht — und `profitLoss`, `notes`, `result`, `updatedAt`
+        // stehen auch im `/edge`-Block. Haette `/hebel` sie verloren,
+        // waere der Pruefer gruen geblieben: "ein Treffer beweist nichts
+        // ueber die andere Stelle" (25.10.). Die Laufzeit-Pruefung im
+        // End-to-End-Pruefstand ist der eigentliche Nachweis; dies hier
+        // haelt die Stelle fest, auch wenn das Modul nicht ladbar ist.
+        {
+          const aH = whH.indexOf('textLower === "/hebel"');
+          const eH = whH.indexOf('textLower === "/help"', aH);
+          const blockH = aH >= 0 && eH > aH ? whH.slice(aH, eH) : "";
+          // SELBSTPRUEFUNG: ein leerer oder zu weiter Ausschnitt
+          // bewiese nichts. Er muss /hebel enthalten und /edge NICHT.
+          torPruefung("der /hebel-Block liess sich nicht ausschneiden — "
+            + "dann prueft die Spaltenliste die falsche Stelle",
+            blockH.includes("hebelBericht(zeilen")
+            && !blockH.includes('textLower === "/edge"'),
+            `${blockH.length} Zeichen`);
+          for (const spalte of ["profitLoss", "notes", "result", "updatedAt",
+            "riskReward", "market", "direction", "strategy"]) {
+            torPruefung(`/hebel liest die Spalte \`${spalte}\` nicht mit`,
+              new RegExp(`\\b${spalte}: true`).test(blockH), spalte);
+          }
         }
         torPruefung("/hebel echot die Eingabe zurueck — ein Telegram-Verlauf "
           + "laesst sich nicht zurueckholen (29.09.)",

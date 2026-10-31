@@ -271,9 +271,30 @@ export function hebelBericht(
 /** Wie viele Gruppen je Dimension gezeigt werden — der Rest wird GEZÄHLT. */
 export const GRUPPEN_MAX = 6;
 
-export function hebelText(
+/**
+ * Obergrenze der Antwort in Zeichen (31.10.).
+ *
+ * Telegram nimmt 4096 und lehnt laengere Nachrichten mit HTTP 200 und
+ * `{ok:false}` ab — der Befehl verpufft dann. GEMESSEN: drei Gruppen je
+ * Dimension ergeben 3002 Zeichen, SECHS (bei 30 Maerkten der Normalfall)
+ * bereits 3831, ein Haertefall mit langen Namen 4973.
+ *
+ * 3900 statt 4096: Luft fuer HTML-Entities, die Telegram laenger zaehlt
+ * als das Zeichen im Quelltext.
+ */
+export const MAX_ZEICHEN = 3900;
+
+/**
+ * Baut den Text mit hoechstens `maxGruppen` Gruppen je Dimension.
+ *
+ * Als eigene Funktion, damit `hebelText()` sie mit kleiner werdendem
+ * `maxGruppen` erneut aufrufen kann, bis die Antwort unter die
+ * Telegram-Grenze passt — und damit ein Pruefer sie AUSFUEHREN kann.
+ */
+function textMit(
   dims: ReadonlyArray<HebelDimension>,
   fensterTage: number | null,
+  maxGruppen: number,
 ): string {
   const z: string[] = [];
   z.push("🔧 <b>Hebel — was würde etwas ändern?</b>");
@@ -289,7 +310,7 @@ export function hebelText(
     z.push("");
     z.push(`<b>${d.titel}</b>`);
     if (d.hinweis) z.push(`<i>${d.hinweis}</i>`);
-    const gezeigt = d.gruppen.slice(0, GRUPPEN_MAX);
+    const gezeigt = d.gruppen.slice(0, maxGruppen);
     for (const g of gezeigt) {
       if (!g.belastbar) {
         z.push(`   • ${g.name}: ${g.gewertet} Trades — zu wenig für einen `
@@ -303,7 +324,7 @@ export function hebelText(
     }
     const rest = d.gruppen.length - gezeigt.length;
     if (rest > 0) {
-      const restTrades = d.gruppen.slice(GRUPPEN_MAX)
+      const restTrades = d.gruppen.slice(maxGruppen)
         .reduce((s, g) => s + g.gewertet, 0);
       z.push(`   • (${rest} weitere Gruppen, ${restTrades} Trades)`);
     }
@@ -318,5 +339,37 @@ export function hebelText(
   z.push("🚫 <b>Nicht berechenbar:</b> die Confidence-Schwelle. Die "
     + "<code>Trade</code>-Tabelle hat keine Confidence-Spalte — eine "
     + "Empfehlung dazu wäre erfunden.");
+  if (maxGruppen < GRUPPEN_MAX) {
+    z.push("");
+    z.push(`ℹ️ Wegen der Telegram-Grenze werden je Dimension nur `
+      + `${maxGruppen} statt ${GRUPPEN_MAX} Gruppen gezeigt — was fehlt, `
+      + `steht als „weitere Gruppen“ in der jeweiligen Zeile.`);
+  }
   return z.join("\n");
+}
+
+/**
+ * Die Antwort — garantiert unter `MAX_ZEICHEN`.
+ *
+ * KEINE Stueckelung und kein stilles Abschneiden: es werden weniger
+ * Gruppen je Dimension gezeigt, bis es passt, und was fehlt, steht
+ * weiterhin als „(N weitere Gruppen, M Trades)" in der Zeile. Der GRUND
+ * der Kuerzung wird benannt.
+ *
+ * Passt selbst EINE Gruppe je Dimension nicht, wird hart gekuerzt — mit
+ * einer Zeile, die das sagt. Eine stumm abgeschnittene Antwort waere
+ * schlimmer als eine kurze.
+ */
+export function hebelText(
+  dims: ReadonlyArray<HebelDimension>,
+  fensterTage: number | null,
+): string {
+  for (let max = GRUPPEN_MAX; max >= 1; max--) {
+    const t = textMit(dims, fensterTage, max);
+    if (t.length <= MAX_ZEICHEN) return t;
+  }
+  const hinweis = "\n\n✂️ Gekürzt: selbst mit einer Gruppe je Dimension "
+    + "passt die Antwort nicht in eine Telegram-Nachricht.";
+  return textMit(dims, fensterTage, 1).slice(0, MAX_ZEICHEN - hinweis.length)
+    + hinweis;
 }
