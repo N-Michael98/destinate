@@ -2679,6 +2679,140 @@ Stringlänge.
 
 `safety-nets` 864 → **880**, Karte 1016 → **1017** Kanten.
 
+## Der tote Bereich ist abgebaut — 66 Routen und 60 Module (01.11.)
+
+Die Zahl **67** stammte vom 15.09. und war sechs Wochen alt. Erst neu
+gemessen, dann gelöscht.
+
+**Das Messwerkzeug hat zwei Fassungen gebraucht.** Die erste ergab **5**
+statt 67 — und das war ein Messfehler, kein Fortschritt: `SYSTEM_MAP.md`
+listet **jeden Dateipfad**, und `frontend/app/api/foo/route.ts` *enthält*
+die Zeichenfolge `/api/foo`. Genau die Falle, die hier für `.next` und
+`tsconfig.tsbuildinfo` schon beschrieben steht — nur mit einer anderen
+Datei. Dazu nennt `CLAUDE.md` Routen in Backticks; Dokumentation ist kein
+Aufrufer.
+
+Die strenge Fassung sucht nur in **Code**, verlangt den Pfad **direkt
+hinter einem Anführungszeichen** und trägt vier Selbstprüfungen: fünf
+bekannte Routen müssen Aufrufer haben, ein erfundener Pfad darf keine
+haben, `/api/validation-agent` (nur in Kommentaren) darf nicht treffen,
+und `/api/settings-gibt-es-nicht` darf nicht als Teilkette durchgehen.
+**Ergebnis: 82 mit Aufrufer, 67 ohne — die dokumentierte Zahl, exakt
+reproduziert.**
+
+### Warum das Löschen sicher war — vier Belege, kein einziger vermutet
+
+1. **Kein externer Aufruf möglich.** `proxy.ts:222` gibt für **jeden**
+   API-Pfad ohne gültiges JWT `401` zurück, und der Matcher deckt alles
+   ausser `_next/static`, `_next/image`, `favicon.ico` ab. Öffentlich sind
+   genau vier Pfade (`PUBLIC_PATHS`): die drei Auth-Routen und
+   `/api/telegram/webhook` — **keiner davon unter den 67**. Damit konnte
+   kein Monitor, kein Cron und kein Dritter sie erreichen. `/api/health`
+   war als Gesundheits-Endpunkt ohnehin unbrauchbar: es steht nicht in
+   `PUBLIC_PATHS`.
+2. **Null bewegen Geld.** Ausgeführt geprüft: keine der 67 platziert oder
+   schliesst eine Order, verschiebt einen Stop oder berührt den
+   Killswitch.
+3. **Zwei schreiben in die Datenbank** — `/api/paper-orders` und
+   `/api/paper-orders/[id]`, und zwar ausschliesslich `prisma.paperOrder`,
+   **nicht** die `Trade`-Tabelle. `/edge` und `/hebel` sind unberührt, und
+   `PaperOrder` liest sonst niemand.
+4. **Die Mission-Control-Registry ist intakt:** von ihren 13 Endpunkten
+   war **keiner** betroffen, und alle 13 haben ihre Datei noch.
+
+### Und doch hat ein Prüfer beim Löschen abgestürzt
+
+`python-ueberwachung` fiel sofort um: *„Datei fehlt:
+frontend/app/api/python-status/route.ts"*.
+
+**Das war ein Loch in meinem Werkzeug.** Es sucht den **URL-Pfad** hinter
+einem Anführungszeichen. Der Prüfer liest aber den **Dateipfad**:
+`read("frontend/app/api/python-status/route.ts")` — dort steht vor
+`/api/` ein `p` (von „app"), kein Anführungszeichen.
+
+Also eine **zweite** Messung, auf Dateipfade, kommentarbereinigt, mit
+Selbstprüfung in beide Richtungen: der bekannte Verweis muss gefunden
+werden, und `/api/diagnostics-agent` — das **nur in Kommentaren** vorkommt
+— darf **nicht** zählen. Ergebnis: **genau eine** Kollision.
+`/api/python-status` ist wiederhergestellt, **66** sind entfernt. Ein
+Prüfer existiert, weil etwas wichtig war.
+
+### Die Module: 60 Dateien, und zwei Beinahe-Unfälle
+
+Erreichbarkeit gerechnet über die Kanten aus `SYSTEM_MAP.md` (der Auflöser
+ist geprüft: `--audit` meldet 0 nicht aufgelöste, 0 gar nicht gelesene),
+von 94 Einstiegspunkten aus. **60 von 468 TS-Dateien unerreichbar, 0 davon
+von einem Prüfer geladen.**
+
+| Beinahe-Unfall | gefangen durch |
+|---|---|
+| `next.config.ts` und `prisma.config.ts` galten als „von niemandem erreicht" | **Werkzeug-Konfiguration ist ein Einstiegspunkt ohne Import** — Next.js und die Prisma-CLI lesen sie selbst. Löschen hätte den Build zerstört. Gefangen beim Lesen der Liste, vor dem Löschen |
+| `lib/portfolio-brain` sah als ganzer Ordner tot aus (13 Dateien) | **mein Lesefehler.** Der Ordner hat 18 Dateien: `brain-manager`, `brain-types`, `brain-safety`, `brain-inputs` und `portfolio-brain-memory` sind über `/api/portfolio-brain` und `/api/mission-control/health` **erreichbar**. Meine Ordner-Zusammenfassung verdeckte das. Gelöscht wurde **dateiweise**, und die Schlussprüfung verlangt genau diese fünf Dateien |
+
+Dazu eine **zweite, unabhängige** Prüfung je Datei: eine direkte Suche nach
+dem Importpfad in allen Formen (`@/lib/x/y`, `./y`, Index-Import),
+kommentarbereinigt, mit Selbstprüfung an `brain-manager.ts` (muss
+Importeure finden) und an einer erfundenen Datei (darf keine finden).
+
+### Der Prüfer hat den letzten Fehler selbst gefunden
+
+Nach dem Modul-Abbau wurde `safety-nets` rot: *„die Quarantäne-Liste nennt
+Module, die es nicht mehr gibt"*. Die Liste (15.09.) bewacht sieben
+Module, die **erfundene** Latenz/Spread/Slippage rechnen — sie dürfen den
+Handelspfad nicht erreichen, **und sie müssen existieren**, sonst prüft
+der Riegel ins Leere und täuscht Sicherheit vor.
+
+`lib/broker-evolution-intelligence` war das letzte Glied der Kette und ist
+jetzt weg. **Eine Löschung ist stärker als eine Quarantäne** — was es
+nicht gibt, kann niemand an die Broker-Auswahl hängen. Die Liste ist um
+diesen einen Eintrag gekürzt, die übrigen **sechs** bleiben: sie sind über
+`/api/dynamic-position-allocation` weiter erreichbar.
+
+### Nebenbei gefunden, NICHT behoben: eine Anzeige, die Gesundheit erfindet
+
+`lib/dependency-scanner/dependency-scanner-engine.ts` ist eine **fest
+verdrahtete Liste** von 17 Einträgen mit `status: "ACTIVE"` (11×) und
+`healthStatus: "HEALTHY"` (14×) — und sie **liest das Dateisystem nicht
+einmal**. Sie hängt über `/api/dependency-scanner` in der
+Mission-Control-Registry.
+
+Das ist die Fehlerklasse von `market-health.ts` („TradingView verbunden,
+20 ms") und `/trading-journal` („Coming Soon"): etwas Erfundenes gibt sich
+als Messung aus. **Nicht in dieser Runde angefasst** — eine Sache auf
+einmal, und der Umbau braucht eine eigene Entscheidung.
+
+Was ich **doch** getan habe: die **vier** Abhängigkeits-Namen entfernt, die
+*meine* Löschung hängen liess (`economic-calendar`,
+`strategy-species-classification`, `species-execution-queue-integration`,
+`broker-routing-layer`). Von den 31 Namen zeigten schon vorher acht auf
+nichts; ich stelle den Stand von vorher wieder her, statt still neue
+Lücken dazuzulegen. Alle 14 `apiRoute`-Werte zeigen weiter auf existierende
+Routen — nachgeprüft.
+
+**Und `checkEconomicCalendar` bleibt unberührt:** die Filterstufe
+`ECONOMIC_CALENDAR` ist eine Funktion **in `trade-filters.ts`**, die das
+Python-Backend fragt. Sie benutzt `lib/economic-calendar` nicht — deshalb
+war dieses Modul löschbar, ohne eine Filterstufe zu verlieren.
+
+### Das Ergebnis, gemessen
+
+| | vorher | nachher |
+|---|---|---|
+| API-Routen | 149 | **83** |
+| TS-Dateien im Frontend | 468 | **408** |
+| Import-Kanten | 1017 | **871** |
+| Dateien im `secrets`-Scan | 615 | **489** |
+| Route-Handler im `standalone`-Bündel | — | **83** |
+| Quelldateien im Bündel | 0 | **0** (Regel vom 15.09. hält) |
+
+`npm run check` grün (23 Prüfer, 880 Prüfungen), `tsc` **0 Fehler**,
+`npm run build` *Compiled successfully*, **Snapshot 299 Werte
+unverändert** — kein Risikowert wurde berührt. Alle vier Telegram-Befehle
+end-to-end nachgefahren, alle Kernpfade vorhanden.
+
+Und der Rückweg ist ein normaler `git revert`: nichts davon ist eine
+Schema- oder Datenänderung.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist

@@ -3859,7 +3859,17 @@ module.exports = async function pruefe() {
       "lib/adaptive-broker-weighting",
       "lib/autonomous-broker-optimization",
       "lib/broker-reputation-memory",
-      "lib/broker-evolution-intelligence",
+      // `lib/broker-evolution-intelligence` stand hier bis zum 01.11. und ist
+      // jetzt GELOESCHT — zusammen mit seiner Route, die niemand rief. Eine
+      // Loeschung ist STAERKER als eine Quarantaene: was es nicht gibt, kann
+      // niemand an die Broker-Auswahl haengen. Der Prüfer hat die Luecke
+      // selbst gemeldet ("nennt Module, die es nicht mehr gibt"), genau wie
+      // er soll — sonst waere ein toter Riegel stehengeblieben, der
+      // Sicherheit vortaeuscht.
+      //
+      // Die uebrigen SECHS bleiben: sie sind ueber
+      // `/api/dynamic-position-allocation` weiter erreichbar und rechnen
+      // weiter mit erfundenen Werten.
       "lib/broker-performance-memory",
       "lib/dynamic-position-allocation",
     ];
