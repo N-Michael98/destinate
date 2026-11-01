@@ -5908,6 +5908,83 @@ module.exports = async function pruefe() {
               `${summeHerkunft} von ${MAXH + 3}, `
               + `letztes=${vieleEtiketten.breakevenHerkunft.at(-1)?.etikett}`);
 
+            // ── UND /edge MUSS UNTER 4096 ZEICHEN BLEIBEN (01.11.) ──────
+            //
+            // `/hebel`, `/status` und die Tagesbilanz hatten am 31.10. ihren
+            // Laengen-Riegel bekommen — `/edge` war NUR gemessen (2939) und
+            // nie gebunden. Das war die letzte offene Stelle derselben Frage.
+            //
+            // GEMESSEN an der Obergrenze: 3 Abschnitte x (HERKUNFT_MAX + 1)
+            // Zeilen mit den LAENGSTEN moeglichen Etiketten = 3143 von 4096,
+            // 953 Zeichen Luft.
+            //
+            // EIGENER MESSFEHLER DABEI, benannt: ich hatte behauptet,
+            // `erwartungswert.ts` habe "keinen Deckel" — gesucht hatte ich
+            // nach `slice(0, <Ziffer>)`. Der Deckel ist aber
+            // `slice(0, HERKUNFT_MAX)`, eine BENANNTE KONSTANTE. Ein
+            // Suchmuster auf ein Literal uebersieht jede benannte Grenze.
+            {
+              // `NIE_BESTAETIGT`/`KEIN_PNL` sind ausgeschlossen und koennen
+              // in der Aufschluesselung NICHT auftauchen. Mit ihnen in den
+              // Testdaten fielen genau die laengsten Paare weg, der Deckel
+              // wurde nie erreicht (720 statt 3240 gewerteter Zeilen) — und
+              // die Messung haette die Obergrenze verfehlt.
+              const GR = ["KEIN_SCHLUSSKURS", "DAZWISCHEN", "UNBEKANNT", "STOP", "ZIEL"];
+              const RS = ["CLOSED_TIME", "BREAKEVEN", "CLOSED", "LOSS", "WIN"];
+              const paare = [];
+              for (const r of RS) for (const g of GR) paare.push([r, g]);
+              paare.sort((a, b) => (b[0] + b[1]).length - (a[0] + a[1]).length);
+              const lang = [];
+              let kk = 0;
+              for (const pnl of [12.34, -8.76, 0]) {
+                for (let p = 0; p < MAXH + 3; p++) {
+                  const [res, grund] = paare[p % paare.length];
+                  for (let i = 0; i < 40; i++, kk++) {
+                    lang.push({
+                      profitLoss: pnl, result: res,
+                      updatedAt: `${i % 2 === 0 ? "2026-01-03" : "2026-10-28"}T10:00:00.000Z`,
+                      notes: JSON.stringify({ exitReason: grund, exitPosition: 1.0834 }),
+                    });
+                  }
+                }
+              }
+              const langText = txt(f(lang, null));
+              // SELBSTPRUEFUNG: ohne erreichten Deckel sagt die Messung
+              // nichts ueber die Obergrenze — genau so ist mein erster
+              // Versuch danebengegangen.
+              const restZeilen = (langText.match(/weitere \(\d+ Etiketten\)/g) || []).length;
+              torPruefung("der Herkunfts-Deckel wird im Laengen-Testfall gar "
+                + "nicht erreicht — dann trifft die Messung die Obergrenze "
+                + "nicht",
+                restZeilen === 3, `${restZeilen} Rest-Zeilen`);
+              torPruefung("die /edge-Antwort reisst Telegrams 4096 Zeichen an "
+                + "ihrer Obergrenze — sie kaeme dann gar nicht an, und "
+                + "`sendTelegram` kennt keine Laengengrenze",
+                langText.length <= 4096, `${langText.length} von 4096`);
+              // GEGENPROBE: der Riegel darf nicht immer gruen sein. Mit
+              // zehnfach langen Etiketten MUSS die Grenze reissen — sonst
+              // messe ich nur, dass eine Zahl kleiner als 4096 ist.
+              // DIE VIELFALT MUSS BLEIBEN. Mein erster Versuch gab ALLEN
+              // Zeilen dasselbe lange Etikett — dann bleibt nur EIN Etikett
+              // je Abschnitt, und der Text wurde KUERZER (2099) statt
+              // laenger. Jetzt bekommt jedes Etikett sein eigenes Anhaengsel.
+              const zuLang = lang.map((zz, idx) => {
+                const alt = JSON.parse(zz.notes);
+                return {
+                  ...zz,
+                  notes: JSON.stringify({
+                    ...alt,
+                    exitReason: `${alt.exitReason}_${"X".repeat(40)}_${idx % (MAXH + 3)}`,
+                  }),
+                  result: `${zz.result}_${"Y".repeat(30)}`,
+                };
+              });
+              const zuLangText = txt(f(zuLang, null));
+              torPruefung("der /edge-Laengenriegel ist immer gruen — "
+                + "zehnfach lange Etiketten muessen die Grenze reissen",
+                zuLangText.length > 4096, `${zuLangText.length} Zeichen`);
+            }
+
             // Unlesbare Notizen werden GEMELDET, nicht still mitgerechnet.
             const kaputt = f([...viele(30, 10), { profitLoss: 5, notes: "kein json" },
               { profitLoss: null, notes: "{}" }]);

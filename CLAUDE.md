@@ -2582,6 +2582,44 @@ herum, lässt genau das Tor wegfallen, wegen dem man hinsieht.
 
 `safety-nets` 855 → **861**.
 
+### Und `/edge` war der letzte ohne Riegel (01.11.)
+
+`/hebel`, `/status` und die Tagesbilanz haben ihren Längen-Riegel. `/edge`
+war **nur gemessen** (2939 am 31.10.) und nie gebunden — die letzte offene
+Stelle derselben Frage.
+
+**Ergebnis: begrenzt und belegt.** `herkunftListe` kürzt auf
+`HERKUNFT_MAX` Etiketten je Abschnitt und bündelt den Rest als
+„weitere (N Etiketten)". An der Obergrenze — drei Abschnitte × (6 + 1)
+Zeilen mit den **längsten möglichen** Etiketten — sind es **3143 von
+4096**, also 953 Zeichen Luft. Jetzt hängt das an einer Prüfung, samt
+Gegenprobe mit zehnfach langen Etiketten.
+
+**Drei eigene Messfehler auf dem Weg, alle von der Selbstprüfung gefangen:**
+
+| Messfehler | Folge |
+|---|---|
+| ich behauptete, `erwartungswert.ts` habe **keinen Deckel** | gesucht hatte ich nach `slice(0, <Ziffer>)`. Der Deckel ist `slice(0, HERKUNFT_MAX)` — eine **benannte Konstante**. Ein Suchmuster auf ein Literal übersieht jede benannte Grenze |
+| `NIE_BESTAETIGT` in den Testdaten | es ist in `ETIKETTEN_OHNE_ERGEBNIS` und wird **ausgeschlossen** — damit fielen genau die längsten Paare weg, der Deckel wurde nie erreicht (720 statt 3240 gewerteter Zeilen) |
+| die Gegenprobe gab **allen** Zeilen dasselbe lange Etikett | dann bleibt nur **ein** Etikett je Abschnitt, und der Text wurde **kürzer** (2099) statt länger. Jetzt bekommt jedes Etikett sein eigenes Anhängsel |
+
+Der erste ist der wichtigste, weil er eine **falsche Behauptung** war und
+nicht nur eine schwache Messung: ich hatte „kein Deckel" geschrieben,
+obwohl es einen gibt. Die Selbstprüfung („ohne erreichten Deckel sagt die
+Messung nichts") hat ihn aufgedeckt — ohne sie stünde hier eine erfundene
+Lücke.
+
+**Damit ist die Längenfrage für alle vier Telegram-Antworten geschlossen:**
+
+| Antwort | Obergrenze | gebunden durch |
+|---|---|---|
+| `/hebel` | 3500 (Härtefall) | `MAX_ZEICHEN`-Schleife, kürzt mit Begründung |
+| `/status` | 3550 | Messung aus der Quelle (`GateName` + Orchestrator-Ausgänge) |
+| Tagesbilanz | 3032 | Deckel von 6 Toren, nach Ablehnungen sortiert, Rest gezählt |
+| `/edge` | 3143 | `HERKUNFT_MAX` + Messung an der Obergrenze |
+
+`safety-nets` 861 → **864**.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist
