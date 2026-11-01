@@ -3147,6 +3147,7 @@ module.exports = async function pruefe() {
                 && hsF("x>y") === "x&gt;y",
                 `${hsF("a < b")} | ${hsF("a & b")} | ${hsF("x>y")}`);
             }
+
             // Und die Tagesbilanz muss denselben echten Grund entschaerfen.
             const tbF = zbMod.exports?.tagesbilanzText;
             const leerF = zbMod.exports?.leereTagessumme;
@@ -3160,6 +3161,135 @@ module.exports = async function pruefe() {
               torPruefung("die Tagesbilanz schickt eine rohe spitze "
                 + "Klammer raus — sie kaeme dann gar nicht an",
                 rohTb.length === 0, JSON.stringify(rohTb).slice(0, 180));
+            }
+
+            // ── UND DIE TAGESBILANZ HAT NUR ~790 ZEICHEN LUFT (31.10.) ─
+            //
+            // `sendTelegram` kennt KEINE Laengengrenze (offener Punkt
+            // seit dem 26.10., heute gemessen). Eine Tagesbilanz ueber
+            // 4096 Zeichen kaeme nicht an — immerhin mit Logzeile.
+            //
+            // GEMESSEN mit den ECHTEN Gruenden: 3309 von 4096. Mit dem
+            // laengsten echten Grund (dem der Filterkette, 66 Zeichen)
+            // auf ALLEN elf Toren waeren es 4627 — das ist aber nicht
+            // erreichbar, weil nur dieses EINE Tor Gruende dieser Laenge
+            // erzeugt. Deshalb KEIN Deckel: eine Mechanik, die
+            // nachweislich nie greift, ist Arbeit auf Verdacht (26.10.).
+            //
+            // Die Tor-Namen kommen aus der QUELLE — ein zwoelftes Tor
+            // wird automatisch mitgerechnet, und dann wird diese
+            // Pruefung rot, bevor die Nachricht ausbleibt.
+            if (typeof tbF === "function" && typeof leerF === "function") {
+              const busQ = read("frontend/lib/agents/agent-bus.ts");
+              const q0 = busQ.indexOf("export type GateName =");
+              const q1 = q0 >= 0 ? busQ.indexOf(";", q0) : -1;
+              const namenQ = q0 >= 0 && q1 > q0
+                ? [...busQ.slice(q0, q1).matchAll(/\|\s*"([^"]+)"/g)].map((m) => m[1])
+                : [];
+              torPruefung("die Tor-Namen fuer die Tagesbilanz-Messung "
+                + "liessen sich nicht lesen — dann misst sie nichts",
+                namenQ.length >= 8, String(namenQ.length));
+              // DIE ECHTEN GRUENDE, mit eingesetzten Werten. Nicht ein
+              // erfundener langer Text: genau damit habe ich mir heute
+              // ein falsches "REISST DIE GRENZE" gemessen.
+              const ECHTE_GRUENDE = [
+                "Confidence 66 < Schwelle 70",
+                "Position bereits offen (Pyramiding aus)",
+                "Limit 2/2 Positionen pro Symbol erreicht",
+                "Tageslimit SCALPING erreicht",
+                "DAILY_LOSS_LIMIT: Tagesverlust-Limit erreicht: -3.2% (Max: -5%)",
+              ];
+              // Eigener Geltungsbereich: `ausgangNamen` aus dem
+              // Laengen-Riegel liegt in einem anderen Block.
+              const orchQ = read("frontend/lib/agents/orchestrator-agent.ts");
+              const ausgQ = [...new Set(
+                [...orchQ.matchAll(/return "([^"]{8,})";/g)].map((m) => m[1]))];
+              torPruefung("die Zyklus-Ausgaenge fuer die "
+                + "Tagesbilanz-Messung liessen sich nicht lesen",
+                ausgQ.length >= 10, String(ausgQ.length));
+              // ZEHN Gruende je Tor, obwohl die Anzeige nur DREI zeigt.
+              // Mein erster Versuch gab genau drei — dann aendert ein
+              // `slice(0, 8)` statt `slice(0, 3)` nichts, und genau diese
+              // Sabotage blieb gruen. Ueber 288 Zyklen hat ein Tor leicht
+              // zehn verschiedene Gruende (die Confidence steht mit drin).
+              const toreQ = {};
+              namenQ.forEach((n, i) => {
+                const g = {};
+                for (let j = 0; j < 10; j++) {
+                  g[`${ECHTE_GRUENDE[(i + j) % ECHTE_GRUENDE.length]} #${j}`] = 30 - j;
+                }
+                toreQ[n] = { ja: 12, nein: 34, fallback: 2, gruende: g };
+              });
+              const voll = Object.assign(leerF("2026-10-31"), {
+                zyklen: 288, scans: 288, maerkte: 8640,
+                gpt: { WAIT: 8000, BUY: 400, SELL: 240 }, ohneGptAntwort: 120,
+                ausgaenge: Object.fromEntries(ausgQ.map((a, i) => [a, 300 - i])),
+                vetos: 55, stilVerworfen: 12, unterGrenze: 300,
+                confMin: 60, confMax: 79, rrAbgelehnt: 210, ohneStopZiel: 30,
+                ohneVolleDaten: 44, ohneVolleDatenGrund: { "Strategien": 20,
+                  "TA-Lib": 14, "TA-Lib+Strategien": 10 },
+                go: 90, claudeGefragt: 300, newsZyklen: 120, mtfSumme: 5000,
+                regelbrueche: { "BUY an Resistance": 40, "SELL an Support": 30,
+                  "BUY ohne bullishen 1D-Trend/Signal": 25,
+                  "SELL ohne bearishen 1D-Trend/Signal": 20,
+                  "Richtung unbekannt": 5 },
+                tore: toreQ, trades: 12, fehlgeschlagen: 8,
+                // ACHT lange Broker-Fehler, obwohl die Anzeige FUENF zeigt
+                // — und die Laenge ist dort NICHT geklemmt. Kurze Texte
+                // ("EURUSD: MARKET_CLOSED") konnten das nicht ausdruecken.
+                fehlgeschlagenGruende: Object.fromEntries(
+                  ["EURUSD", "BTCUSD", "SPX500", "GOLD", "UKOIL", "ETHUSD",
+                    "GER40", "SILVER"].map((sym, i) => [
+                    `${sym}: error.invalid.details - Position size exceeds `
+                    + `maximum allowed for this instrument`, 8 - i])),
+                dauerSummeMs: 900000, dauerMaxMs: 60000,
+              });
+              const vollText = tbF(voll);
+              torPruefung("die Tagesbilanz reisst Telegrams 4096 Zeichen "
+                + "— sie kaeme dann nicht an, und `sendTelegram` kennt "
+                + "keine Laengengrenze",
+                vollText.length <= 4096, `${vollText.length} von 4096`);
+              // GEGENPROBE: der Riegel darf nicht einfach immer gruen
+              // sein. Zehnfach lange Gruende MUESSEN die Grenze reissen.
+              const toreLangQ = {};
+              namenQ.forEach((n) => { toreLangQ[n] = { ja: 1, nein: 2,
+                fallback: 0, gruende: { [ECHTE_GRUENDE[4].repeat(10)]: 2 } }; });
+              const zuLangQ = tbF(Object.assign(leerF("2026-10-31"),
+                { zyklen: 1, scans: 1, tore: toreLangQ }));
+              torPruefung("der Tagesbilanz-Riegel ist immer gruen — "
+                + "zehnfach lange Gruende muessen die Grenze reissen",
+                zuLangQ.length > 4096, `${zuLangQ.length} Zeichen`);
+              // ── DER DECKEL DER TOR-LISTE (31.10.) ────────────────────
+              //
+              // Sie hatte keinen, waehrend die Ausgaenge einen haben —
+              // und gemessen lag der Haertefall bei 4087 von 4096, also
+              // NEUN Zeichen Luft. Jetzt sechs Tore, nach Ablehnungen
+              // sortiert, und der Rest wird GEZAEHLT.
+              torPruefung("weggelassene Tore werden verschwiegen statt "
+                + "gezaehlt — eine stille Kuerzung sieht wie eine "
+                + "vollstaendige Liste aus",
+                namenQ.length <= 6
+                || /\(\d+ weitere Tore, \d+ Ablehnungen\)/.test(vollText),
+                vollText.split("\n").filter((l) => /weitere Tore/.test(l)).join(" | ")
+                || `${namenQ.length} Tore, keine Rest-Zeile`);
+              // Und die REIHENFOLGE: nach Ablehnungen, nicht nach
+              // Eintreffen. Sonst entscheidet der Zufall, welches Tor
+              // wegfaellt — und das wichtigste fehlt.
+              const vieleTore = {};
+              namenQ.forEach((n, i) => {
+                vieleTore[n] = { ja: 1, nein: (i === namenQ.length - 1 ? 999 : i + 1),
+                  fallback: 0, gruende: { "Grund": 1 } };
+              });
+              const sortText = tbF(Object.assign(leerF("2026-10-31"),
+                { zyklen: 1, scans: 1, tore: vieleTore }));
+              const letzter = namenQ[namenQ.length - 1];
+              torPruefung("die Tor-Liste wird nicht nach Ablehnungen "
+                + "sortiert — dann faellt das wichtigste Tor weg, weil es "
+                + "zuletzt eingetroffen ist",
+                namenQ.length <= 6
+                || new RegExp(`${letzter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: `
+                  + "1 ja · 999 nein").test(sortText),
+                sortText.split("\n").filter((l) => /nein/.test(l)).slice(0, 3).join(" | "));
             }
           }
 

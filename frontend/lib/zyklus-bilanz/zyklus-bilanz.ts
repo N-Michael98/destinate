@@ -410,7 +410,19 @@ export function tagesbilanzText(t: Tagessumme): string {
       zeilen.push(`⚠️ GPT gegen eigenen Prompt: ${brueche.map(([k, n]) => `${htmlSicher(k)} ${n}`).join(", ")}`);
     }
   }
-  const tore = Object.entries(t.tore);
+  // DIE LISTE BRAUCHT EINEN DECKEL (31.10.). Sie hatte keinen, während die
+  // Ausgänge oben einen haben — und gemessen war der Härtefall bei **4087
+  // von 4096** Zeichen, also neun Zeichen Luft. `sendTelegram` kennt keine
+  // Längengrenze: eine zu lange Tagesbilanz käme GAR NICHT an, immerhin mit
+  // Logzeile (25.10.).
+  //
+  // Nach Ablehnungen sortiert, damit nicht die Reihenfolge des Eintreffens
+  // entscheidet, welches Tor wegfällt. Und was fehlt, wird GEZÄHLT statt
+  // verschwiegen — dieselbe Regel wie bei den Ausgängen: eine stille
+  // Kürzung sieht wie eine vollständige Liste aus.
+  const TORE_MAX = 6;
+  const alleTore = Object.entries(t.tore).sort((a, b) => b[1].nein - a[1].nein);
+  const tore = alleTore.slice(0, TORE_MAX);
   if (tore.length > 0) {
     zeilen.push("");
     zeilen.push("🚪 <b>Tore</b>");
@@ -422,6 +434,11 @@ export function tagesbilanzText(t: Tagessumme): string {
       zeilen.push(`   ${htmlSicher(gate)}: ${ja}${s.nein} nein${fb}`);
       const top = Object.entries(s.gruende).sort((a, b) => b[1] - a[1]).slice(0, 3);
       for (const [k, n] of top) zeilen.push(`      – ${htmlSicher(k)} (${n}×)`);
+    }
+    const restTore = alleTore.length - tore.length;
+    if (restTore > 0) {
+      const restNein = alleTore.slice(TORE_MAX).reduce((sum, [, s]) => sum + s.nein, 0);
+      zeilen.push(`   (${restTore} weitere Tore, ${restNein} Ablehnungen)`);
     }
   }
   zeilen.push("");

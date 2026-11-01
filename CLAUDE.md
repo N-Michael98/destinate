@@ -2530,6 +2530,58 @@ Tag. Deshalb steht der Grund jetzt im Prüfer, direkt über den Testdaten.
 
 `safety-nets` 836 → **855**, Karte 1014 → **1016** Kanten.
 
+### Die Tagesbilanz hatte NEUN Zeichen Luft (31.10.)
+
+Dieselbe Frage eine Stelle weiter — und hier war die Antwort anders.
+
+`sendTelegram` kennt **keine** Längengrenze (offener Punkt seit dem
+26.10.). Die Tor-Liste der Tagesbilanz hatte **keinen Deckel**, während
+die Ausgänge in derselben Funktion einen haben (`slice(0, 8)`).
+
+Gemessen mit den **echten** geschlossenen Mengen — elf Tor-Namen aus der
+`GateName`-Union, dreizehn Zyklus-Ausgänge aus dem Orchestrator, die
+echten Grund-Texte mit eingesetzten Werten, fünf lange Broker-Fehler:
+**4087 von 4096**. Neun Zeichen.
+
+Das ist keine Reserve. Deshalb bekommt die Tor-Liste jetzt einen Deckel
+von sechs — **nach Ablehnungen sortiert**, damit nicht die Reihenfolge
+des Eintreffens entscheidet, welches Tor wegfällt, und was fehlt wird
+**gezählt** (`(5 weitere Tore, 130 Ablehnungen)`). Ergebnis: **3032 von
+4096**, und die Zahl bleibt flach, wenn Tore dazukommen.
+
+**Zwei eigene Messfehler auf dem Weg, beide benannt:**
+
+- Mein erster Härtefall ergab **5287** und sah nach einem akuten Defekt
+  aus. Er war falsch: ich hatte einen **erfundenen** 75-Zeichen-Grund auf
+  alle elf Tore gelegt. Die echten Gründe sind 27–47 Zeichen, nur der der
+  Filterkette ist ~66 — und **nur dieses eine Tor** erzeugt solche. Mit
+  den echten Texten sind es 3309. Eine erfundene Zahl macht aus einer
+  Messung eine Behauptung, auch wenn sie in die „sichere" Richtung zeigt.
+- Das Mess-Werkzeug gab beim Sabotage-Lauf ein **`NaN`** zurück und mein
+  Urteil lautete trotzdem „kann den Riegel nicht auslösen (NaN von
+  4096)". Ursache: das Kind lief dieselbe Datei und brach an der
+  Anker-Prüfung ab, die nach der Sabotage nicht mehr greifen konnte. Ein
+  `NaN` darf nicht als Zahl durchgehen — jetzt bricht die Messung ab und
+  nennt den Grund, statt ein Urteil zu erfinden.
+
+**7 von 8 Sabotagen rot**, die achte **ausgerechnet wirkungslos:**
+
+| Sabotage | Befund |
+|---|---|
+| acht Gründe je Tor statt drei | rot — entwischte zuerst, weil meine Testdaten nur **drei** Gründe je Tor hatten. Jetzt zehn, damit der Deckel überhaupt sichtbar wird |
+| Deckel der Ausgänge entfernt | rot |
+| zehn weitere Tore in der Union | rot — gefangen vom `/status`-Längenriegel, der dieselbe Union liest |
+| Deckel der Broker-Fehler entfernt | **wirkungslos, ausgeführt belegt**: +299 Zeichen → **2873** von 4096. Und die Zahl geht nicht verloren, `fehlgeschlagen: 8` steht als Summe da |
+| der Deckel selbst entfernt | rot — über die fehlende Rest-Zeile |
+| die Rest-Zeile verschwiegen | rot |
+| Sortierung entfernt | rot |
+| Sortierung **gedreht** (die wenigsten zuerst) | rot |
+
+Die letzte ist die wichtigste: eine Sortierung, die *da* ist, aber falsch
+herum, lässt genau das Tor wegfallen, wegen dem man hinsieht.
+
+`safety-nets` 855 → **861**.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist
