@@ -1,3 +1,4 @@
+import { htmlSicher } from "../html-sicher/html-sicher";
 import Anthropic from "@anthropic-ai/sdk";
 import { leseSicherheitsereignisse, entferneAnalysierte } from "./security-event-logger";
 import { blockIP } from "./ip-blocklist";
@@ -207,7 +208,13 @@ Respond ONLY with the JSON object, nothing else.`;
 
     const result: WatchdogResult = {
       verdict: parsed.verdict,
-      summary: parsed.summary,
+      // ENTSCHAERFT AN DER QUELLE (01.11.). `parsed.summary` ist ein von
+      // der KI geschriebener Satz und geht in fuenf Telegram-Alarme, die
+      // mit `parse_mode: "HTML"` rausgehen. Ein `<` oder `&` darin liess
+      // Telegram die GANZE Nachricht ablehnen — beim Watchdog waere das
+      // der Sicherheitsalarm selbst. `sendTelegram` faengt das seit heute
+      // zusaetzlich an der Grenze ab, aber dann ohne Formatierung.
+      summary: htmlSicher(parsed.summary),
       eventCount: events.length,
     };
 

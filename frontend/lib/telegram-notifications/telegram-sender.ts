@@ -116,6 +116,39 @@ export function telegramFehlerMelden(
     + "Zyklus-Absturz, KI-Tor-Ausfall oder Tagesbilanz.";
 }
 
+/**
+ * Hat Telegram die Nachricht wegen KAPUTTEM HTML abgelehnt? (01.11.)
+ *
+ * Telegram antwortet mit HTTP 200 und
+ * `{ok:false, description:"Bad Request: can't parse entities …"}`.
+ * Nur dieser Fall darf wiederholt werden — ein 429 oder eine
+ * unbekannte Chat-ID kehrt deterministisch zurueck, und bei 429 waere
+ * Nachlegen genau falsch (dieselbe Regel wie beim 502-Rueckfall vom
+ * 22.09.).
+ */
+export function htmlAbgelehnt(grund: string | undefined): boolean {
+  return /can't parse entities|can not parse entities|unsupported start tag|unclosed|reserved and must be escaped/i.test(grund ?? "");
+}
+
+/**
+ * Eine Nachricht an Telegram — und sie kommt an, auch wenn ihr HTML
+ * kaputt ist.
+ *
+ * WARUM DER ZWEITE VERSUCH (01.11.): mehrere Aufrufer setzen fremden
+ * Text ein, der ein `<` tragen kann — `result.summary` im
+ * Sicherheits-Watchdog ist von der KI geschrieben, und ein Fehlertext
+ * kann ein ganzer HTML-Koerper sein. Ein einzelnes `<` liess bisher die
+ * GANZE Nachricht ausfallen; beim Watchdog waere das der
+ * Sicherheitsalarm selbst.
+ *
+ * Der Alarm ist wichtiger als das Fettgedruckte. Deshalb EIN zweiter
+ * Versuch ohne `parse_mode` — und er wird GEMELDET: eine stumm
+ * degradierte Nachricht waere die naechste Luege.
+ *
+ * `console.warn`, nicht `console.error(m)`: die drei Fehler-Ausgaenge
+ * sind seit dem 25.10. GEZAEHLT (genau drei), und diese Meldung ist
+ * kein Fehlschlag — die Nachricht ist angekommen.
+ */
 export async function sendTelegram(text: string): Promise<boolean> {
   if (!isTelegramConfigured()) {
     const m = telegramFehlerMelden("nicht-konfiguriert", "");
@@ -131,6 +164,22 @@ export async function sendTelegram(text: string): Promise<boolean> {
     // Der GRUND steht in `description` — bis heute weggeworfen.
     const data = await res.json() as { ok: boolean; description?: string; error_code?: number };
     if (!data.ok) {
+      if (htmlAbgelehnt(data.description)) {
+        const roh = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: CHAT_ID, text }),   // OHNE parse_mode
+        });
+        const d2 = await roh.json() as { ok: boolean; description?: string };
+        if (d2.ok) {
+          console.warn("[telegram] ⚠️ HTML abgelehnt — als REINER TEXT "
+            + "zugestellt. Die Meldung ist angekommen, aber ohne "
+            + `Formatierung. Grund: ${data.description ?? "ohne Grund"}`);
+          const ok = telegramFehlerMelden("ok", "");
+          if (ok) console.log(ok);
+          return true;
+        }
+      }
       const m = telegramFehlerMelden("abgelehnt",
         `${data.error_code ?? res.status} ${data.description ?? ""}`.trim());
       if (m) console.error(m);

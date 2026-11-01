@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 460 · Kanten: 1016
+Dateien mit internen Abhängigkeiten: 460 · Kanten: 1017
 
 
 ## analysis-engine/api
@@ -1347,6 +1347,7 @@ Dateien mit internen Abhängigkeiten: 460 · Kanten: 1016
 - `frontend/lib/security-watchdog/claude-watchdog.ts`
   - → `frontend/lib/ai-gate/ai-gate-alert.ts`
   - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/html-sicher/html-sicher.ts`
   - → `frontend/lib/killswitch/index.ts`
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/security-watchdog/security-event-logger.ts`

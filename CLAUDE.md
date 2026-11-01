@@ -2620,6 +2620,65 @@ Lücke.
 
 `safety-nets` 861 → **864**.
 
+### Ein von der KI geschriebener Satz konnte den Sicherheitsalarm verschlucken (01.11.)
+
+Gefunden beim systematischen Durchgang aller Telegram-Sender: **13
+Dateien** schicken Nachrichten, vier Antworten waren gemessen — die
+übrigen neun habe ich einzeln von Hand gelesen.
+
+Sieben sind nachweislich begrenzt (feste Texte, ein Konstanten-Array,
+`slice(0, 10)` mit Zählung). **Einer nicht:**
+
+```ts
+const parsed = JSON.parse(raw) as { verdict: WatchdogVerdict; summary: string };
+...
+await sendTelegram(`⚠️ <b>Security Watchdog — ATTACK …</b>\n\n${result.summary}…`);
+```
+
+`result.summary` ist ein **von Claude geschriebener Satz**. `sendTelegram`
+sendet mit `parse_mode: "HTML"` (Zeile 129), und `claude-watchdog.ts`
+hatte **null** Escaping. Schreibt das Modell „Rate `<`5/min" oder ein
+`&`, lehnt Telegram die **ganze** Nachricht ab — und das wäre der
+**Sicherheitsalarm selbst**.
+
+Dieselbe Klasse wie `/status` am 31.10., aber hier schlimmer: es sind
+**elf** Aufrufstellen, und mehrere reichen Fehlertexte durch — ein 502
+kann einen HTML-Körper tragen, der voller `<` ist.
+
+**Behoben auf zwei Ebenen, und die Reihenfolge ist der Punkt:**
+
+1. **An der Grenze.** Lehnt Telegram wegen kaputtem HTML ab, geht **ein**
+   zweiter Versuch **ohne `parse_mode`** raus. Der Alarm ist wichtiger als
+   das Fettgedruckte. Das deckt alle elf Stellen **und jede künftige** —
+   eine Zusicherung gehört an die Stelle, an der sie gilt.
+2. **An der Quelle.** `summary: htmlSicher(parsed.summary)`, damit die
+   Formatierung erhalten bleibt statt nur zu überleben.
+
+**Nur der HTML-Fehler wird wiederholt** (`htmlAbgelehnt()`): ein 429 kehrt
+deterministisch zurück, und bei Drosselung wäre Nachlegen genau falsch —
+dieselbe Regel wie beim 502-Rückfall vom 22.09. Und die Degradierung wird
+**gemeldet** (`console.warn`): eine stumm auf reinen Text gefallene
+Nachricht wäre die nächste Lüge.
+
+`console.warn`, nicht `console.error(m)` — die drei Fehler-Ausgänge sind
+seit dem 25.10. **gezählt** (genau drei), und dieser Fall ist kein
+Fehlschlag: die Nachricht ist angekommen.
+
+**7 von 7 Sabotagen**, und zwei fielen zuerst durch:
+
+| entwischt | Diagnose |
+|---|---|
+| `if (htmlAbgelehnt(…))` → `if (false)` | der **Wortlaut** bleibt vollständig stehen: Export, Rumpf, zweiter `fetch`. Alle Struktur-Prüfungen blieben grün — wörtlich die Fehlerklasse vom 28.10. Jetzt läuft die **echte** `sendTelegram` gegen einen **gezählten** `fetch`: HTML-Fehler ⇒ zwei Anfragen, die zweite ohne `parse_mode`; 429 ⇒ eine; Erfolg ⇒ eine; zweimal abgelehnt ⇒ `false` |
+| „der Prüfer zählt Kommentare mit" | **das war meine eigene Falschbehauptung.** `tsQ` ist seit jeher bereinigt — ausgerechnet: roh 4 Treffer, kommentarbereinigt 3. Die „4" kam aus meinem **Patch-Skript**, das die rohe Datei las. Die Sabotage richtete sich gegen eine Prüfung, die es zurecht nicht gibt; sie ist entfernt |
+
+**Und mein Testwert konnte den Fall nicht ausdrücken:** `isTelegramConfigured()`
+prüft `BOT_TOKEN.length > 10`, mein Token war `"pruefstand"` — genau
+**zehn** Zeichen, also `10 > 10` = false. Alle vier ausgeführten Prüfungen
+sahen 0 Anfragen. Zum wiederholten Mal dieselbe Lehre, diesmal an einer
+Stringlänge.
+
+`safety-nets` 864 → **880**, Karte 1016 → **1017** Kanten.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist

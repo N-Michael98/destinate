@@ -5298,6 +5298,12 @@ module.exports = async function pruefe() {
           // liessen den Ausdruck weiter zutreffen, und der Pruefer blieb
           // gruen. Dasselbe Muster wie "ein Wort im Kommentar ist keine
           // Verwendung": ein Treffer beweist nichts ueber die anderen Stellen.
+          // `tsQ` ist oben SCHON kommentarbereinigt (Zeile 5278/5279) — das
+          // ist wichtig und war schon richtig: beim Einbau des Rueckfalls
+          // auf reinen Text habe ich einen Kommentar geschrieben, der
+          // `console.error(m)` nur ERWAEHNT. Auf der rohen Datei sind es
+          // damit vier Treffer, kommentarbereinigt drei. Nachgerechnet und
+          // belegt, nicht vermutet: der Pruefer zaehlt drei.
           const fehlerAusgaben = (tsQ.match(/console\.error\(m\)/g) ?? []).length;
           torPruefung("nicht mehr alle drei Fehler-Ausgaenge melden ins Log",
             fehlerAusgaben === 3,
@@ -5306,6 +5312,160 @@ module.exports = async function pruefe() {
           torPruefung("der Erfolgsfall schreibt keine Zeile ins Log",
             (tsQ.match(/console\.log\(m\)/g) ?? []).length === 1,
             "die Rueckkehr des Kanals gehoert gemeldet");
+
+          // ── EIN ROHES `<` DARF DEN ALARM NICHT VERSCHLUCKEN (01.11.) ──
+          //
+          // `sendTelegram` schickt mit `parse_mode: "HTML"`. Mehrere der elf
+          // Aufrufer setzen fremden Text ein: `result.summary` im
+          // Sicherheits-Watchdog ist von der KI geschrieben, und ein
+          // Fehlertext kann ein ganzer HTML-Koerper sein. Ein einzelnes `<`
+          // liess bisher die GANZE Nachricht ausfallen — beim Watchdog waere
+          // das der Sicherheitsalarm selbst.
+          torPruefung("`htmlAbgelehnt` fehlt — dann wird ein kaputtes HTML "
+            + "nicht von einem 429 unterschieden",
+            /export function htmlAbgelehnt\(/.test(tsQ), "telegram-sender");
+          torPruefung("es gibt keinen zweiten Versuch OHNE parse_mode — ein "
+            + "einzelnes `<` verschluckt dann den ganzen Alarm",
+            /body: JSON\.stringify\(\{ chat_id: CHAT_ID, text \}\)/.test(tsQ),
+            "telegram-sender");
+          torPruefung("die Degradierung auf reinen Text wird verschwiegen — "
+            + "eine stumm degradierte Nachricht ist die naechste Luege",
+            /console\.warn\(/.test(tsQ) && /REINER TEXT/.test(tsQ),
+            "telegram-sender");
+          // Der Modelltext wird AN DER QUELLE entschaerft, damit die
+          // Formatierung erhalten bleibt.
+          {
+            const wdQ = read("frontend/lib/security-watchdog/claude-watchdog.ts");
+            torPruefung("der Watchdog setzt den KI-Satz `summary` ungeschuetzt "
+              + "in eine HTML-Nachricht — ein `<` darin kostet den Alarm",
+              /summary: htmlSicher\(parsed\.summary\)/.test(wdQ),
+              "claude-watchdog");
+          }
+          // Und die Entscheidung GERECHNET, nicht gelesen: nur der
+          // HTML-Fehler darf wiederholt werden.
+          {
+            const tsMod = ladeTsModul("lib/telegram-notifications/telegram-sender.ts");
+            const hA = tsMod.exports?.htmlAbgelehnt;
+            if (typeof hA !== "function") {
+              torPruefung("htmlAbgelehnt ist nicht ausfuehrbar", false,
+                tsMod.fehler ?? "nicht exportiert");
+            } else {
+              for (const [grund, soll] of [
+                ["Bad Request: can't parse entities: Unsupported start tag \"ZZ\"", true],
+                ["Bad Request: can't parse entities in message text", true],
+                ["Bad Request: unclosed start tag at byte offset 42", true],
+                ["Too Many Requests: retry after 30", false],
+                ["Bad Request: chat not found", false],
+                ["Forbidden: bot was blocked by the user", false],
+                [undefined, false],
+                ["", false],
+              ]) {
+                torPruefung(`htmlAbgelehnt(${JSON.stringify(grund)}) ergibt `
+                  + `nicht ${soll} — ein 429 darf NICHT wiederholt werden, `
+                  + "ein kaputtes HTML schon",
+                  hA(grund) === soll, `bekam ${hA(grund)}`);
+              }
+            }
+          }
+          // ── UND DER RUECKFALL WIRD AUSGEFUEHRT, NICHT GELESEN ─────────
+          //
+          // `if (htmlAbgelehnt(...))` zu `if (false)` zu machen laesst JEDEN
+          // Wortlaut stehen: der Export, der Rumpf, der zweite `fetch`. Die
+          // Struktur-Pruefungen oben blieben dabei gruen — woertlich die
+          // Fehlerklasse vom 28.10. ("ein Regex prueft den Wortlaut, nicht
+          // das Verhalten"). Deshalb die ECHTE Funktion gegen einen
+          // GEZAEHLTEN `fetch`.
+          {
+            const altFetch = global.fetch;
+            const altLage = global.__telegram_lage__;
+            const altEnv = {
+              TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+              TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+            };
+            try {
+              // VOR dem Laden setzen: `isTelegramConfigured()` liest die
+              // Umgebung beim Modulstart.
+              //
+              // UND LANG GENUG: die Pruefung lautet `BOT_TOKEN.length > 10`.
+              // Mein erster Testwert war "pruefstand" — genau ZEHN Zeichen,
+              // also `10 > 10` = false, und alle vier Pruefungen darunter
+              // sahen 0 Anfragen. Ein Testwert, der den Fall nicht
+              // ausdruecken kann, beweist nichts.
+              process.env.TELEGRAM_BOT_TOKEN = "pruefstand-token-1234";
+              process.env.TELEGRAM_CHAT_ID = "424242";
+              const tsL = ladeTsModul("lib/telegram-notifications/telegram-sender.ts");
+              const senden = tsL.exports?.sendTelegram;
+              if (typeof senden !== "function") {
+                torPruefung("sendTelegram ist nicht ausfuehrbar", false,
+                  tsL.fehler ?? "nicht exportiert");
+              } else {
+                const anfragen = [];
+                const antworte = (folge) => {
+                  global.fetch = async (_u, opt) => {
+                    anfragen.push(JSON.parse(opt?.body ?? "{}"));
+                    const a = folge[Math.min(anfragen.length - 1, folge.length - 1)];
+                    return { ok: true, status: 200, json: async () => a };
+                  };
+                };
+                const HTML_FEHLER = { ok: false, error_code: 400,
+                  description: "Bad Request: can't parse entities: Unsupported start tag \"ZZ\"" };
+
+                // 1. HTML abgelehnt -> ZWEITER Versuch OHNE parse_mode.
+                global.__telegram_lage__ = undefined;
+                anfragen.length = 0;
+                antworte([HTML_FEHLER, { ok: true }]);
+                const r1 = await senden("Alarm A <ZZ B & C");
+                torPruefung("ein kaputtes HTML wird nicht als reiner Text "
+                  + "nachgeschickt — der Alarm verpufft dann ganz",
+                  r1 === true && anfragen.length === 2
+                  && anfragen[0].parse_mode === "HTML"
+                  && anfragen[1].parse_mode === undefined
+                  && anfragen[1].text === "Alarm A <ZZ B & C",
+                  `${anfragen.length} Anfragen, parse_mode: `
+                  + JSON.stringify(anfragen.map((a) => a.parse_mode ?? "(ohne)")));
+
+                // 2. GEGENPROBE: ein 429 darf NICHT wiederholt werden.
+                global.__telegram_lage__ = undefined;
+                anfragen.length = 0;
+                antworte([{ ok: false, error_code: 429,
+                  description: "Too Many Requests: retry after 30" }]);
+                const r2 = await senden("egal");
+                torPruefung("ein 429 wird wiederholt — bei Drosselung ist "
+                  + "Nachlegen genau falsch (Regel vom 22.09.)",
+                  r2 === false && anfragen.length === 1,
+                  `${anfragen.length} Anfragen, Ergebnis ${r2}`);
+
+                // 3. GEGENPROBE: ein GELUNGENER Versand sendet EINMAL.
+                global.__telegram_lage__ = undefined;
+                anfragen.length = 0;
+                antworte([{ ok: true }]);
+                const r3 = await senden("alles gut");
+                torPruefung("ein gelungener Versand wird wiederholt — dann "
+                  + "kaeme jede Meldung doppelt an",
+                  r3 === true && anfragen.length === 1,
+                  `${anfragen.length} Anfragen`);
+
+                // 4. Scheitert AUCH der reine Text, ist es ein Fehlschlag.
+                global.__telegram_lage__ = undefined;
+                anfragen.length = 0;
+                antworte([HTML_FEHLER, { ok: false, error_code: 400,
+                  description: "Bad Request: message is too long" }]);
+                const r4 = await senden("Alarm <ZZ");
+                torPruefung("ein zweimal abgelehnter Versand gibt sich als "
+                  + "Erfolg aus — ein Ausfall darf kein Ergebnis sein",
+                  r4 === false && anfragen.length === 2,
+                  `${anfragen.length} Anfragen, Ergebnis ${r4}`);
+              }
+            } finally {
+              global.fetch = altFetch;
+              if (altLage === undefined) delete global.__telegram_lage__;
+              else global.__telegram_lage__ = altLage;
+              for (const [k, v] of Object.entries(altEnv)) {
+                if (v === undefined) delete process.env[k];
+                else process.env[k] = v;
+              }
+            }
+          }
         }
 
         // ── DREI NEUE GETEILTE ZUSTAENDE — ZWEI INSTANZEN (25.10.) ────────
