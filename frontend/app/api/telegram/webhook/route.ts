@@ -789,6 +789,11 @@ ${SYSTEM_BEFEHLE}`
           select: {
             profitLoss: true, notes: true, result: true, updatedAt: true,
             riskReward: true, market: true, direction: true, strategy: true,
+            // `createdAt` ist der EROEFFNUNGSzeitpunkt (`updatedAt` ist
+            // der Schluss). Ohne ihn waere die Stunden-Dimension
+            // dauerhaft "ohne Angabe" und saehe wie ein Ergebnis aus —
+            // Fehlerklasse 30.09.
+            createdAt: true,
           },
         });
         await reply(chatId, hebelText(

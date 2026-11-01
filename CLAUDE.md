@@ -2880,6 +2880,96 @@ sich ein Auto-Tuner **schneller in den Verlust**: er lockert die Tore, bis
 wieder Trades durchkommen, und aus „keine Trades" werden „schlechte
 Trades".
 
+## Das Handelsfenster ist in UTC festgenagelt (01.11.)
+
+Anlass: die Beobachtung „selten werden Positionen vor 12:00 eröffnet,
+obwohl London um 08:00 anfängt". `isWithinTradingSession()` rechnet mit
+**festen UTC-Stunden** (`orchestrator-agent.ts:567`):
+
+```ts
+const londonOpen =  8 * 60; //  08:00 UTC
+const nyClose    = 22 * 60; //  22:00 UTC
+```
+
+**Gerechnet mit echter Zonen-Arithmetik, nicht behauptet:**
+
+| | Fenster 08–22 UTC heisst | London-Eröffnung 08:00 | NY-Schluss 17:00 |
+|---|---|---|---|
+| **Winter** (jetzt, seit 25.10.) | **09:00–23:00 Zürich** | 08:00 UTC — **passt** | 22:00 UTC — **passt** |
+| **Sommer** | **10:00–24:00 Zürich** | 07:00 UTC — **1 h zu spät** | 21:00 UTC — **1 h zu lang** |
+
+Daraus folgen **zwei** Befunde, und sie sind verschieden:
+
+1. **Im Sommer greift das Fenster an beiden Enden daneben.** London
+   wechselt auf BST, New York auf EDT — das feste UTC-Fenster kann beide
+   nicht treffen. Die erste Stunde der Londoner Session fehlt, und nach
+   NY-Schluss läuft es eine Stunde weiter. Dieselbe Fehlerklasse wie die
+   **festen zwei Stunden** beim Broker-Zeitfix am 22.09.: „eine Zeitzone,
+   keine feste Verschiebung".
+2. **In Ortszeit beginnt der Handel um 09:00, nicht um 08:00** (Winter).
+   Wer 08:00 erwartet, sieht die erste Stunde leer — und das ist kein
+   Fehler, sondern die Definition.
+
+**Beides ist NICHT geändert.** `isWithinTradingSession()` ist „das Tor
+für JEDEN neuen Trade" (so steht es bei den rechnenden Prüfern), und ein
+früherer Start heisst mehr Trades in der dünnsten Stunde des Tages. Das
+gehört entschieden, nicht nebenbei gemacht.
+
+### Und „selten vor 12:00" war bisher nicht nachprüfbar
+
+Aus dem Code lässt sich das **nicht** beantworten — nur aus den Trades.
+`Trade.createdAt` trägt den Eröffnungszeitpunkt und wurde von **keinem**
+Befehl gelesen (`/edge` und `/hebel` lasen nur `updatedAt`, den Schluss).
+
+`/hebel` hat deshalb seit heute die Dimension **„Eröffnungsstunde
+(UTC)"** — dieselbe `erwartungswert()`-Funktion wie alle anderen, also
+keine zweite Wahrheit. Damit wird aus der Beobachtung eine Zahl, und
+zwar eine doppelte: **wann** eröffnet wird *und* **ob die frühen Stunden
+etwas taugen**. Ohne das zweite wäre ein früherer Start blind.
+
+**Drei Regeln, alle aus früheren Funden:**
+
+- **Eine fehlende Zeit wird NICHT 00 Uhr.** Das wäre „um Mitternacht
+  eröffnet" — eine Behauptung statt einer Messung; dieselbe Regel wie bei
+  `profitLoss` (26.10.), `riskReward` (29.10.) und dem Kurs-Alter (22.09.).
+- **UTC, nicht Ortszeit.** Das Fenster ist in UTC definiert, und eine
+  Ortszeit verschöbe sich zwischen Sommer und Winter mitten durch die
+  Auswertung.
+- **Chronologisch sortiert, nicht nach Menge.** Nach Menge sortiert liesse
+  sich die Frage „sind die frühen Stunden leer?" gar nicht ablesen.
+
+**7 von 7 Sabotagen**, und die eine, die zuerst durchfiel, ist zum
+wiederholten Mal dieselbe: die Prüfung „holt `/hebel` die Spalte
+`createdAt`?" lief auf dem **rohen** Block — und `// createdAt: true,`
+passte weiter. „Ein Wort im Kommentar ist keine Verwendung", diesmal in
+der Prüfung selbst. Jetzt kommentarbereinigt, mit Selbstprüfung der
+Bereinigung.
+
+**Die Länge hält:** mit sieben Dimensionen und 16 Stunden-Gruppen sind es
+im Härtefall **3882 von 4096** — der `MAX_ZEICHEN`-Riegel kürzt und nennt
+den Grund. Gemessen, nachdem der erste Testfall **kein** `createdAt`
+trug und damit nur EINE Stunden-Gruppe erzeugte: ein Testfall, der den
+Fall nicht ausdrücken kann, beweist nichts.
+
+### Offen und benannt: `Tageslimit: unbekannt` an jedem ruhigen Tag
+
+`/status` meldete am 01.11. **„❔ Tageslimit: unbekannt"**. Die Ursache
+ist `cacheGet()` (`redis-cache.ts:42`): es gibt `null` für **drei**
+verschiedene Lagen zurück — Redis nicht erreichbar, Redis wirft, **oder
+der Schlüssel fehlt**. An einem Tag ohne Trades existiert
+`daily_trades:<Datum>` schlicht nicht, und aus „noch keine Trades" wird
+„unbekannt".
+
+Der Besitzer selbst liest das anders: der Orchestrator nimmt
+`redisDailyRaw?.count ?? 0` — für ihn ist ein fehlender Schlüssel **0**.
+Die Anzeige ist also pessimistischer als die Wahrheit, und das Urteil
+zählt eine „nicht feststellbare" Angabe mehr als nötig.
+
+**Nicht behoben**, weil die saubere Lösung in der Cache-Schicht liegt
+(„Redis hat geantwortet, der Schlüssel fehlt" von „Redis antwortet
+nicht" trennen) und damit jeden Leser im Programm berührt. Eigene
+Entscheidung, eigene Runde.
+
 ## Ohne Stop keine Order (28.10.)
 
 Gefunden beim Nachgehen der Frage, ob offene Positionen geschützt sind, wenn

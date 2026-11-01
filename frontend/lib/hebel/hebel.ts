@@ -49,6 +49,8 @@ export type HebelZeile = TradeZeile & {
   market?: string | null;
   direction?: string | null;
   strategy?: string | null;
+  /** Eröffnungszeitpunkt (`Trade.createdAt`) — für die Stunden-Dimension. */
+  createdAt?: Date | string | number | null;
 };
 
 export type HebelGruppe = {
@@ -192,6 +194,32 @@ export function befundVon(gruppen: ReadonlyArray<HebelGruppe>): string {
     + `Unterschied ${diff.toFixed(2)} je Trade`;
 }
 
+/**
+ * Die Eröffnungsstunde in UTC als Bandname — oder „ohne Angabe“.
+ *
+ * FEHLT DIE ANGABE, WIRD SIE NICHT 0. Eine 0 hiesse „um Mitternacht
+ * eröffnet" — eine Behauptung statt einer Messung. Dieselbe Regel wie
+ * bei `profitLoss` (26.10.), `riskReward` (29.10.) und dem Kurs-Alter
+ * (22.09.).
+ *
+ * UTC, nicht Ortszeit: das Handelsfenster ist in UTC definiert
+ * (`isWithinTradingSession`, 08–22 UTC), und eine Ortszeit verschöbe
+ * sich zwischen Sommer und Winter mitten durch die Auswertung.
+ */
+export function stundeBand(v: Date | string | number | null | undefined): string {
+  if (v === null || v === undefined) return "ohne Angabe";
+  const d = v instanceof Date ? v : new Date(v);
+  const t = d.getTime();
+  if (!Number.isFinite(t)) return "ohne Angabe";
+  return `${String(d.getUTCHours()).padStart(2, "0")} UTC`;
+}
+
+/** Die Reihenfolge der Stunden-Gruppen: chronologisch, nicht nach Menge. */
+export const STUNDEN_ORDNUNG: string[] = [
+  ...Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")} UTC`),
+  "ohne Angabe",
+];
+
 export function hebelBericht(
   zeilen: ReadonlyArray<HebelZeile>,
   fenster?: EwFenster | null,
@@ -241,6 +269,23 @@ export function hebelBericht(
     titel: "Richtung",
     hinweis: null,
     gruppen: gruppiere(zeilen, (z) => text(z.direction) ?? "ohne Angabe", fenster),
+    befund: "",
+  });
+
+  // ── WANN WIRD EROEFFNET? (01.11.) ─────────────────────────────────
+  //
+  // Anlass: die Beobachtung, dass selten vor Mittag eroeffnet wird.
+  // Das Handelsfenster ist 08–22 UTC (`isWithinTradingSession`), also
+  // 09–23 Uhr Zuerich im Winter und 10–24 Uhr im Sommer. Ob die frühen
+  // Stunden WIRKLICH leer sind — und ob sie etwas taugen — sagt nur
+  // diese Aufschlüsselung.
+  dims.push({
+    titel: "Eröffnungsstunde (UTC)",
+    hinweis: "Das Handelsfenster ist 08–22 UTC = 09–23 Uhr Zürich im "
+      + "Winter, 10–24 Uhr im Sommer. Eine fehlende Angabe wird NICHT "
+      + "zu 00 Uhr.",
+    gruppen: gruppiere(zeilen, (z) => stundeBand(z.createdAt ?? null),
+      fenster, STUNDEN_ORDNUNG),
     befund: "",
   });
 

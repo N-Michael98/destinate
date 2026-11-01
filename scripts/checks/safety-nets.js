@@ -2527,6 +2527,115 @@ module.exports = async function pruefe() {
               b === band, `bekam: ${b}`);
           }
 
+          // ── WANN WIRD EROEFFNET? (01.11.) ──────────────────────────
+          //
+          // Anlass: "selten Positionen vor 12:00". Aus dem Code nicht
+          // beantwortbar — nur aus `Trade.createdAt`, das bisher kein
+          // Befehl gelesen hat.
+          {
+            const stundeBand = hb.exports?.stundeBand;
+            const ordnung = hb.exports?.STUNDEN_ORDNUNG;
+            if (typeof stundeBand !== "function" || !Array.isArray(ordnung)) {
+              torPruefung("stundeBand/STUNDEN_ORDNUNG nicht exportiert", false,
+                `${typeof stundeBand} / ${typeof ordnung}`);
+            } else {
+              // EINE FEHLENDE ANGABE WIRD NICHT 0 UHR. Das waere eine
+              // Behauptung statt einer Messung — dieselbe Regel wie bei
+              // `profitLoss` (26.10.), `riskReward` (29.10.) und dem
+              // Kurs-Alter (22.09.).
+              for (const [wert, soll] of [
+                [new Date("2026-10-20T08:30:00Z"), "08 UTC"],
+                [new Date("2026-10-20T00:00:00Z"), "00 UTC"],
+                [new Date("2026-10-20T23:59:59Z"), "23 UTC"],
+                ["2026-10-20T07:05:00Z", "07 UTC"],
+                [null, "ohne Angabe"], [undefined, "ohne Angabe"],
+                ["kein datum", "ohne Angabe"], [Number.NaN, "ohne Angabe"],
+              ]) {
+                const b = stundeBand(wert);
+                torPruefung(`stundeBand(${wert instanceof Date
+                  ? wert.toISOString() : JSON.stringify(wert)}) ergibt nicht `
+                  + `"${soll}"`, b === soll, `bekam: ${b}`);
+              }
+              torPruefung("die Stunden-Ordnung ist nicht vollstaendig — "
+                + "dann sortiert die Anzeige nach Menge statt nach Uhrzeit",
+                ordnung.length === 25 && ordnung[0] === "00 UTC"
+                && ordnung[23] === "23 UTC" && ordnung[24] === "ohne Angabe",
+                `${ordnung.length}: ${ordnung.slice(0, 3).join(", ")}`);
+
+              // AUSGEFUEHRT: die Dimension muss da sein UND chronologisch
+              // sortieren. Nach Menge sortiert waere die Frage "ist es
+              // frueh leer?" gar nicht ablesbar.
+              const zeilenS = [];
+              for (let i = 0; i < 120; i++) {
+                // Stunde 14 bekommt die MEISTEN Zeilen — eine Sortierung
+                // nach Menge zoege sie nach vorn.
+                const std = i < 80 ? 14 : (i < 100 ? 9 : 8);
+                zeilenS.push({
+                  profitLoss: i % 3 === 0 ? 6 : -3,
+                  result: i % 3 === 0 ? "WIN" : "LOSS",
+                  updatedAt: "2026-10-20T10:00:00.000Z",
+                  createdAt: `2026-10-20T${String(std).padStart(2, "0")}:10:00.000Z`,
+                  notes: JSON.stringify({ tradingStyle: "DAYTRADING" }),
+                  riskReward: 2, market: "EURUSD", direction: "BUY",
+                  strategy: "Trend",
+                });
+              }
+              const dS = hebelBericht(zeilenS, null)
+                .find((d) => d.titel === "Eröffnungsstunde (UTC)");
+              torPruefung("die Dimension Eröffnungsstunde fehlt",
+                !!dS, JSON.stringify(hebelBericht(zeilenS, null).map((d) => d.titel)));
+              torPruefung("die Stunden sind nicht chronologisch sortiert — "
+                + "nach Menge sortiert laesst sich \"frueh leer?\" nicht ablesen",
+                dS?.gruppen?.[0]?.name === "08 UTC"
+                && dS?.gruppen?.[1]?.name === "09 UTC"
+                && dS?.gruppen?.[2]?.name === "14 UTC",
+                JSON.stringify(dS?.gruppen?.map((g) => `${g.name}:${g.gewertet}`)));
+              // Und die Zahl muss stimmen: 80 Zeilen um 14 UTC.
+              torPruefung("die Stunden-Gruppen zaehlen falsch",
+                dS?.gruppen?.find((g) => g.name === "14 UTC")?.gewertet === 80,
+                JSON.stringify(dS?.gruppen?.map((g) => `${g.name}:${g.gewertet}`)));
+              // Eine Zeile OHNE createdAt darf NICHT zu "00 UTC" werden.
+              const ohneZeit = hebelBericht([{
+                profitLoss: 5, result: "WIN", updatedAt: "2026-10-20T10:00:00.000Z",
+                notes: JSON.stringify({ tradingStyle: "DAYTRADING" }),
+                riskReward: 2, market: "EURUSD", direction: "BUY", strategy: "x",
+              }], null).find((d) => d.titel === "Eröffnungsstunde (UTC)");
+              torPruefung("eine fehlende Eröffnungszeit wird zu 00 UTC — "
+                + "aus \"nicht gemessen\" wird dann Mitternacht",
+                ohneZeit?.gruppen?.[0]?.name === "ohne Angabe",
+                JSON.stringify(ohneZeit?.gruppen?.map((g) => g.name)));
+            }
+            // DIE VERDRAHTUNG: ohne `createdAt` in der Abfrage waere die
+            // Dimension dauerhaft "ohne Angabe" und saehe wie ein Ergebnis
+            // aus — Fehlerklasse 30.09. Im /hebel-BLOCK, nicht irgendwo.
+            {
+              // EIGENE LESUNG: `whH` wird erst weiter unten deklariert, und
+              // ein Zugriff davor wirft (`Cannot access before
+              // initialization`) — vom Pruefer selbst gemeldet.
+              const whH2 = read("frontend/app/api/telegram/webhook/route.ts");
+              const aH2 = whH2.indexOf('textLower === "/hebel"');
+              const eH2 = whH2.indexOf('textLower === "/help"', aH2);
+              // KOMMENTARBEREINIGT. Mein erster Versuch prueffte den ROHEN
+              // Block — und `// createdAt: true,` passte weiter, die
+              // Sabotage blieb gruen. "Ein Wort im Kommentar ist keine
+              // Verwendung", diesmal in der Pruefung selbst.
+              const blockH2 = (aH2 >= 0 && eH2 > aH2 ? whH2.slice(aH2, eH2) : "")
+                .replace(/\/\*[\s\S]*?\*\//g, " ")
+                .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+              // SELBSTPRUEFUNG der Bereinigung: der Block muss den Aufruf
+              // noch enthalten, aber keinen Kommentartext mehr.
+              torPruefung("die Kommentar-Bereinigung des /hebel-Blocks greift "
+                + "nicht — dann zaehlt eine auskommentierte Spalte mit",
+                blockH2.includes("hebelBericht(zeilen")
+                && !/Fehlerklasse 30\.09/.test(blockH2),
+                `${blockH2.length} Zeichen`);
+              torPruefung("/hebel holt `createdAt` nicht — die "
+                + "Eröffnungsstunde bliebe dauerhaft \"ohne Angabe\"",
+                /\bcreatedAt: true/.test(blockH2),
+                `${blockH2.length} Zeichen Block`);
+            }
+          }
+
           // ── DIE ANTWORT MUSS ANKOMMEN (31.10.) ─────────────────────
           //
           // Telegram nimmt 4096 Zeichen und lehnt laengere mit HTTP 200
