@@ -19,7 +19,9 @@ import { useEffect, useState, useCallback } from "react";
  *
  *  2. ES WAR DIE FALSCHE ROUTE. Die erwarteten Namen (`queue`,
  *     `queuedTrades`, `rank`, `adaptiveConfidence`, `riskPerTradePercent`)
- *     gehören zu `/api/execution-queue-engine` — und die ruft **niemand** auf.
+ *     gehörten zu `/api/execution-queue-engine` — und die rief **niemand**
+ *     auf. Seit dem 01.11. gibt es sie nicht mehr: sie war eine der 66
+ *     Routen ohne Aufrufer, die mit dem toten Bereich entfernt wurden.
  *
  *  3. „KORRIGIEREN" WÄRE FALSCH GEWESEN. Beide Queue-Module erklären sich
  *     selbst als nicht-live (`liveTradingEnabled: false` bzw.
