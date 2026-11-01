@@ -3595,10 +3595,45 @@ davon las eine **Broker**-Zeit, die konstruktionsgemäss leer sein kann —
 die hier behobene. Die anderen 29 lesen Zeitstempel, die **unser eigener**
 Code schreibt (`updatedAt`, `checkedAt`, `generatedAt`, `scannedAt`).
 
-**Ehrlich zur Grenze:** ob bei diesen 29 das Feld im Einzelfall **fehlen**
-kann, ist **nicht gemessen** — `new Date(undefined)` ergäbe dort dasselbe
-„Invalid Date". Das ist eine eigene Messung und war nicht Teil dieses
-Commits.
+#### Nachgemessen am 01.11.: kein aktiver Defekt
+
+Hier stand: *„ob bei diesen 29 das Feld im Einzelfall **fehlen** kann, ist
+**nicht gemessen**."* Jetzt gemessen — die Frage ist, ob `new Date(undefined)`
+(„Invalid Date") oder `new Date(null)` erreichbar ist. Das Zweite ist das
+schlimmere: es ergibt **01.01.1970**, also ein Datum, das echt aussieht.
+
+| | |
+|---|---|
+| Stellen `new Date(<Variable>).toLocale…` | **29** |
+| mit Wahrheits-Riegel (`{x && …}`, Ternär, `if`) | **13** |
+| Feld in **derselben Datei** als Pflichtfeld deklariert | **13** |
+| als `any` gelesen → an der **Quelle** geprüft, Feld wird unbedingt gesetzt | **2** |
+| optionales Feld **ohne** Riegel | **1** |
+
+Die eine Stelle ist `UnifiedMissionControlDashboard.tsx:161`
+(`new Date(report.checkedAt)`, lokal als `checkedAt?: string` deklariert).
+**Über den Livepfad nicht erreichbar:** `/api/mission-control/health` setzt
+`checkedAt` unbedingt (`:163`) und deklariert es als Pflichtfeld (`:34`) —
+nur der lokale Typ der Komponente ist lockerer. Dieselbe Lage wie bei
+`checkPriceAvailable` (24.08.).
+
+**Nichts geändert.** Eine Absicherung zu bauen, die nachweislich nie
+greift, wäre Arbeit auf Verdacht — die Regel vom 26.10. Die Messung ist
+das Ergebnis, nicht der Anlass für Code.
+
+**Vier eigene Messfehler auf dem Weg, alle gefangen** — und sie sind der
+Grund, warum das Ergebnis etwas wert ist:
+
+| Messfehler | Folge |
+|---|---|
+| Riegel nur auf **derselben** Zeile und `if (` in 3 Zeilen davor gesucht | **24 Falschmeldungen** — das JSX-Muster `{x && (` steht eine Zeile darüber |
+| Feldname **global** gezählt | `updatedAt` hat 114 Deklarationen in generierten Prisma-Modellen und fremden Komponenten; das sagt nichts über die Aufrufstelle (Geltungsbereich-Fehler vom 22.10.) |
+| `?.` im Riegel nicht erkannt | `{zustand?.updatedAt && (` galt als ungeschützt — **2 Falschmeldungen** |
+| Zuweisungen als Deklarationen gezählt | `feld: wert` sieht aus wie `feld: Typ`; jetzt muss der Typ mit einem Grundtyp oder gross beginnen |
+
+Jede Fassung trägt eine **Selbstprüfung** an selbst gebauten Quelltexten,
+darunter die Gegenprobe, dass ein **anderes** Feld im Riegel **nicht**
+schützt. Am Dateiinhalt hinge sie an einer Formulierung.
 
 ## Ohne Kurs wird nicht gehandelt
 
