@@ -2819,6 +2819,38 @@ end-to-end nachgefahren, alle Kernpfade vorhanden.
 Und der Rückweg ist ein normaler `git revert`: nichts davon ist eine
 Schema- oder Datenänderung.
 
+### Was der Abbau zurücklässt — und was schon vorher lag (01.11.)
+
+Drei Modelle im Prisma-Schema haben **null** Code-Stellen. Getrennt
+gemessen gegen den Stand vor dem Abbau, damit klar ist, was ich
+verursacht habe:
+
+| Modell | vorher | heute | wer |
+|---|---|---|---|
+| `PaperOrder` | 2 | **0** | **durch diesen Abbau** — die zwei Schreiber waren `/api/paper-orders` und `.../[id]` |
+| `LearningSnapshot` | 0 | 0 | lag schon vorher ohne Verweis |
+| `BacktestRun` | 0 | 0 | lag schon vorher ohne Verweis |
+
+**Das Schema bleibt unangetastet.** Ein Modell zu entfernen heisst eine
+Migration, und eine Tabelle zu löschen ist **unumkehrbar** — das ist eine
+eigene Entscheidung und war nicht gefragt. Die Tabellen kosten nichts
+ausser einem Eintrag im Schema; `/edge` und `/hebel` lesen ausschliesslich
+`Trade`.
+
+**Belegt, dass der Start noch trägt** — ohne den Server anzufassen:
+`frontend/.env` ist vorhanden, ein lokaler Start würde sich am echten
+Broker anmelden und die Handelsschleifen anwerfen. Stattdessen jeder
+Import aus `instrumentation.ts` gegen die Datei geprüft, zwei Ebenen
+tief: **49 Dateien, 146 interne Importe, 0 unauflösbar** — darunter
+namentlich `./lib/ai-agent/memory/agent-memory`, die **einzige** aus
+`lib/ai-agent` behaltene Datei, weil `instrumentation.ts:150` sie
+dynamisch aus der Schleife lädt. Dazu `system-map --audit`: 0 nicht
+aufgelöste, 0 gar nicht gelesene.
+
+**Und das Deploy-Bündel hält die Regeln vom 15.09.:** 0 Build-Warnungen,
+Prisma-Engine enthalten, **0 Quelldateien**, kein `CLAUDE.md`, 83
+Route-Handler — genau so viele wie im Quelltext.
+
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist
