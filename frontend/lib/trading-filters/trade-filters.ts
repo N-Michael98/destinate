@@ -11,6 +11,36 @@
  */
 
 import { pythonBackendAuthHeader } from "@/lib/python-backend/auth-header";
+import { redisLageMelden } from "@/lib/redis-lage/redis-lage";
+
+/**
+ * EIN REDIS-AUSFALL DARF NICHT STUMM SEIN (01.11.).
+ *
+ * Ausgefuehrt gemessen gegen das ECHTE Cache-Modul ohne `REDIS_URL`:
+ * alle drei Verlustgrenzen hielten den Ausfall fuer den ERSTEN Lauf
+ * ihres Zeitraums und schrieben den aktuellen Kontostand als
+ * Bezugspunkt (`herkunft: "speicher"`) — bei NULL Logzeilen. Der
+ * Schutz misst danach vom Ausfall-Moment und ist damit schwaecher,
+ * ohne dass es jemand erfaehrt.
+ *
+ * Jetzt wird KEIN Bezugspunkt angelegt, solange niemand geantwortet
+ * hat — der echte Wert liegt in Redis und kommt von selbst zurueck.
+ * Geblockt wird deswegen NICHT: `ein Redis-Aussetzer darf den Handel
+ * nicht anhalten` steht seit dem 09.09. in dieser Datei und ist durch
+ * `safety-nets` gebunden. Neu ist nur, dass der Ausfall HOERBAR ist.
+ *
+ * Statischer Import: das Modul ist winzig, rein und ohne
+ * Seiteneffekte — ein dynamischer Import waere eine zusaetzliche
+ * Laufzeit-Fehlerquelle in der Filterkette (Regel vom 27.10.).
+ */
+function redisLage(stelle: string, aus: boolean, folge: string): void {
+  if (!redisLageMelden(stelle, aus ? "aus" : "ok")) return;
+  if (aus) {
+    console.error(`[filter] ⛔ ${stelle}: Redis hat NICHT geantwortet — ${folge}`);
+  } else {
+    console.log(`[filter] 🟢 ${stelle}: Redis antwortet wieder — der Schutz misst wieder vom gespeicherten Bezugspunkt.`);
+  }
+}
 
 const PYTHON_BASE = () =>
   process.env.PYTHON_BACKEND_NEW_URL ?? process.env.PYTHON_BACKEND_URL ?? "";
@@ -133,10 +163,19 @@ export async function checkDailyLossLimit(
 ): Promise<FilterResult> {
   try {
     if (currentBalance <= 0) return { allowed: true, reason: "" };
-    const { cacheGet, cacheSet } = await import("../cache/redis-cache");
+    const { cacheLesen, cacheSet } = await import("../cache/redis-cache");
     const today = new Date().toISOString().slice(0, 10);
     const key = `day_start_balance:${today}`;
-    const stored = await cacheGet<{ balance: number }>(key);
+    const gelesen = await cacheLesen<{ balance: number }>(key);
+
+    // Niemand hat geantwortet: NICHT den Tagesstart neu setzen.
+    if (gelesen.herkunft === "aus") {
+      redisLage("Tagesverlust-Grenze", true,
+        "der Tagesstart-Kontostand ist nicht lesbar. Es wird KEIN neuer Bezugspunkt gesetzt (das wuerde die Grenze still auf den jetzigen Stand schieben). Die Tagesverlust-Grenze ist bis zur Rueckkehr von Redis OHNE Wirkung — gehandelt wird weiter.");
+      return { allowed: true, reason: "" };
+    }
+    redisLage("Tagesverlust-Grenze", false, "");
+    const stored = gelesen.wert;
 
     if (!stored) {
       // Erster Zyklus des Tages: Startkontostand festhalten (48 h TTL — der
@@ -178,9 +217,18 @@ export async function checkWeeklyLossLimit(
 ): Promise<FilterResult> {
   try {
     if (currentBalance <= 0) return { allowed: true, reason: "" };
-    const { cacheGet, cacheSet } = await import("../cache/redis-cache");
+    const { cacheLesen, cacheSet } = await import("../cache/redis-cache");
     const key = `week_start_balance:${isoWeekKey()}`;
-    const stored = await cacheGet<{ balance: number; alerted?: boolean }>(key);
+    const gelesen = await cacheLesen<{ balance: number; alerted?: boolean }>(key);
+
+    // Niemand hat geantwortet: NICHT den Wochenstart neu setzen.
+    if (gelesen.herkunft === "aus") {
+      redisLage("Wochenverlust-Grenze", true,
+        "der Wochenstart-Kontostand ist nicht lesbar. Es wird KEIN neuer Bezugspunkt gesetzt. Die Wochenverlust-Grenze ist bis zur Rueckkehr von Redis OHNE Wirkung — gehandelt wird weiter.");
+      return { allowed: true, reason: "" };
+    }
+    redisLage("Wochenverlust-Grenze", false, "");
+    const stored = gelesen.wert;
 
     if (!stored) {
       // Erster Zyklus dieser Woche: Startbalance festhalten (8 Tage TTL)
@@ -290,8 +338,21 @@ export const PEAK_TTL_SEK = 365 * 24 * 60 * 60; // 1 Jahr
  */
 export async function peakZuruecksetzen(): Promise<{ ok: boolean; alt: number | null; fehler?: string }> {
   try {
-    const { cacheGet, cacheDel } = await import("../cache/redis-cache");
-    const vorher = await cacheGet<{ peak: number }>(PEAK_SCHLUESSEL);
+    const { cacheLesen, cacheDel } = await import("../cache/redis-cache");
+    const gelesen = await cacheLesen<{ peak: number }>(PEAK_SCHLUESSEL);
+    // Ein Ausfall darf sich nicht als Ergebnis ausgeben (01.11.).
+    //
+    // Gemessen: ohne diese Abfrage meldete `/peakreset` bei einem
+    // Redis-Ausfall `ok: true` — `cacheDel` loescht dann nur den
+    // prozesseigenen Speicher, Redis haelt den echten Hoechststand
+    // weiter. Der Nutzer glaubt, die Sackgasse sei geoeffnet; sie ist
+    // es nicht. Dieser Befehl SENKT den Schutz, also muss er ehrlich
+    // sagen, wenn er nichts getan hat.
+    if (gelesen.herkunft === "aus") {
+      return { ok: false, alt: null,
+        fehler: "Redis hat nicht geantwortet — der gespeicherte Hoechststand ist UNVERAENDERT. Es wurde nichts zurueckgesetzt." };
+    }
+    const vorher = gelesen.wert;
     const alt = Number.isFinite(vorher?.peak) ? (vorher as { peak: number }).peak : null;
     await cacheDel(PEAK_SCHLUESSEL);
     console.warn(`[filter] ♻️ Hoechststand zurueckgesetzt (vorher ${alt === null ? "nicht gesetzt" : alt.toFixed(2)}) `
@@ -310,14 +371,22 @@ export async function checkTotalDrawdownLimit(
     return { allowed: true, reason: "" };
   }
   try {
-    const { cacheGet, cacheSet } = await import("../cache/redis-cache");
+    const { cacheLesen, cacheSet } = await import("../cache/redis-cache");
     const KEY = PEAK_SCHLUESSEL;
     const TTL = PEAK_TTL_SEK;
     // `alerted` wie beim Wochenlimit: die Meldung soll einmal je Hoechststand
     // kommen, nicht alle fuenf Minuten. Ein neuer Peak ueberschreibt den
     // Schluessel unten OHNE das Feld — damit meldet der naechste Einbruch
     // wieder, und zwar genau einmal.
-    const stored = await cacheGet<{ peak: number; alerted?: boolean }>(KEY);
+    const gelesen = await cacheLesen<{ peak: number; alerted?: boolean }>(KEY);
+    // Niemand hat geantwortet: NICHT den Hoechststand neu setzen.
+    if (gelesen.herkunft === "aus") {
+      redisLage("Gesamt-Drawdown-Grenze", true,
+        "der gespeicherte Hoechststand ist nicht lesbar. Es wird KEIN neuer Hoechststand gesetzt (das wuerde den Bezugspunkt still auf den jetzigen Stand schieben). Die Drawdown-Grenze ist bis zur Rueckkehr von Redis OHNE Wirkung — gehandelt wird weiter.");
+      return { allowed: true, reason: "" };
+    }
+    redisLage("Gesamt-Drawdown-Grenze", false, "");
+    const stored = gelesen.wert;
     const peak = stored?.peak ?? 0;
 
     if (currentBalance > peak) {

@@ -3154,12 +3154,130 @@ in Dateien mit erhöhtem Risiko liegen und eine Zustimmung brauchen:
 | `trade-filters.ts:320` | `checkTotalDrawdownLimit` bekommt `peak = 0`, schreibt den aktuellen Stand als neuen Höchststand — der Gesamt-Drawdown misst ebenfalls neu |
 
 Alle drei zeigen in dieselbe Richtung: der Schutz wird **schwächer**, nicht
-strenger, und niemand erfährt es. Das Werkzeug dagegen steht jetzt
-(`cacheLesen`); es dort zu benutzen ist eine eigene Runde mit eigenem Plan.
+strenger, und niemand erfährt es.
+
+**Am selben Tag behoben — und es waren fünf, nicht drei.** Der Abschnitt
+darunter rechnet jeden Fall vor.
 
 Vierter Fall, ohne Geldfolge: `auto-execute/route.ts:61` meldet bei einem
 Ausfall `0` statt „unbekannt". Reiner Statusbericht, keine Entscheidung —
 derselbe Gedanke, andere Grössenordnung.
+
+### Ein Redis-Ausfall schob drei Verlustgrenzen auf den Ausfall-Moment (01.11.)
+
+Die drei benannten Funde sind behoben — **und beim Nachmessen wurden es**
+**fünf**. Zwei hatte meine erste Liste übersehen, und beide stehen in
+derselben Datei wie die anderen.
+
+**Zuerst ein Messfehler in meiner eigenen Liste.** Mein Suchwerkzeug
+nummerierte die *kommentarbereinigte* Fassung — ein Blockkommentar wird
+dort zu einem Leerzeichen und **kollabiert Zeilen**. Die Fundstellen habe
+ich danach am echten Dateiinhalt gegengelesen, aber die **Wochen**-Grenze
+stand gar nicht in der Liste. Wer nach Zeilennummern arbeitet, muss sie
+an der Datei prüfen, nicht am Werkzeug.
+
+**Und der Prüfer bildete den Ausfall falsch nach.** Sechs Prüfstände
+liessen `cacheGet` **werfen**. Das echte `redis-cache.ts` wirft **nie** an
+den Aufrufer — es fängt intern und gibt `null` bzw. `herkunft: "aus"`.
+Ausgeführt belegt: `cacheGet` ohne `REDIS_URL` → `wirft=false, wert=null`.
+Das alte Modell prüfte also einen Pfad, den es im Betrieb **nicht gibt** —
+und genau deshalb blieben vier Funde unsichtbar. Dieselbe Klasse wie „ein
+Testfall, der den Fehler nicht ausdrücken kann", nur eine Ebene höher: ein
+**Prüfstand**, der den Fehlerfall nicht nachbildet.
+
+#### Gemessen vor dem Fix, mit dem echten Cache-Modul
+
+| Aufruf | Rückgabe | danach in Redis/Speicher | Meldungen |
+|---|---|---|---|
+| `checkDailyLossLimit(1000, 3)` | `allowed: true` | `day_start_balance = {balance:1000, herkunft:"speicher"}` | **0** |
+| `checkWeeklyLossLimit(1000, 6)` | `allowed: true` | `week_start_balance` ebenso | **0** |
+| `checkTotalDrawdownLimit(1000, 10)` | `allowed: true` | `peak_balance = {peak:1000, herkunft:"speicher"}` | **0** |
+| `peakZuruecksetzen()` | **`{ok: true, alt: 1000}`** | Redis hält den echten Höchststand weiter | 0 |
+| `restoreKillswitchFromRedis()` | `false` | — | **0** |
+
+Jede der drei Grenzen hielt den Ausfall für den **ersten Lauf ihres
+Zeitraums** und schrieb den aktuellen Kontostand als Bezugspunkt. Der
+Schutz misst danach vom Ausfall-Moment — also von einem tieferen Stand —
+und ist damit schwächer. `herkunft: "speicher"` ist der Beleg: der Wert
+stammt aus dem prozesseigenen Zwischenspeicher, nicht aus Redis.
+
+`/peakreset` ist der unangenehmste Fall: der Befehl **senkt den Schutz**,
+meldete „zurückgesetzt" — und `cacheDel` hatte nur den prozesseigenen
+Speicher geleert. Wer das liest, glaubt die Sackgasse sei geöffnet.
+
+Und `restoreKillswitchFromRedis()` gab `false` **ohne eine Zeile**, während
+`instrumentation.ts:202` nur bei `true` etwas schreibt. Ein Deploy während
+eines Redis-Ausfalls löst damit eine aktive Sperre auf — lautlos. Der Satz
+„er überlebt einen Deploy" gilt **nur, wenn Redis antwortet**.
+
+#### Was sich ändert — und was ausdrücklich nicht
+
+**Geändert:** bei `herkunft === "aus"` wird **kein** Bezugspunkt mehr
+angelegt, und der Ausfall ist **hörbar**. Der echte Wert liegt in Redis und
+kommt von selbst zurück; so heilt sich die Lage, statt sich zu verschieben.
+`/peakreset` meldet `ok: false` **mit Grund** und löscht nichts. Der
+Killswitch unterscheidet drei Lagen, und auch der gesunde Fall schreibt
+eine Zeile — ohne sie sieht „geprüft, nichts da" aus wie „nicht geprüft".
+
+**NICHT geändert:** ob gehandelt wird. `ein Redis-Aussetzer darf den Handel
+nicht anhalten` steht seit dem 09.09. in `trade-filters.ts` und ist durch
+`safety-nets` gebunden — ein Lesefehler soll keinen Handelsstopp auslösen.
+Keine Schwelle, keine Grösse, kein Stop, kein Limit, keine Filterreihenfolge.
+**Snapshot 299 Werte unverändert.** Die Wiederherstellung des Killswitch
+greift unter genau derselben Bedingung wie vorher, die Rückgabe bleibt
+`boolean`, und `instrumentation.ts` ist unberührt.
+
+**Kein Telegram-Alarm aus dem Notaus-Modul.** Das würde `lib/killswitch/`
+eine Abhängigkeit auf den Sender geben, und beim Serverstart ist der Kanal
+nicht verlässlich. Bewusst benannt, nicht übersehen.
+
+#### Die Drossel gehört auf `global` — und je Stelle eigen
+
+Drei Grenzen × 288 Zyklen wären über 800 Zeilen am Tag. `redisLageMelden()`
+(`lib/redis-lage/`) meldet deshalb jeden **Wechsel** — auch die Rückkehr zu
+`ok` — und einen **Dauerausfall** alle 30 Minuten erneut; ein gesunder
+Dauerzustand schweigt, ein gesunder Start ist keine Nachricht.
+
+Eigene Datei aus demselben Grund wie `htmlSicher` (31.10.): rein, ohne
+Importe, ohne Seiteneffekte — beide Nutzer stehen auf der Liste der Dateien
+mit erhöhtem Risiko, dort gehört ein kleiner Diff hin.
+
+Der Zustand liegt auf `global.__redis_lage__`, **je Stelle ein eigener
+Eintrag**. Die Grenzen laufen aus `instrumentation.ts`, `/peakreset` und
+`/status` aus `app/api` — zwei Modulkopien (Regel vom 28.07.). Und teilten
+sich die Stellen einen Eintrag, verdeckte die erste Meldung die anderen
+drei: wieder ein stummer Ausfall, nur eine Ebene höher. `safety-nets` lädt
+das Modul **zweimal**, meldet über A und prüft über B.
+
+#### Absicherung
+
+`safety-nets` 923 → **948** Prüfungen, **16 von 16 Sabotagen** plus die
+Gegenprobe. Die entscheidende Zusicherung ist nicht der Rückgabewert,
+sondern: **bei einem Ausfall darf `cacheSet` null mal gerufen werden.** Ein
+`allowed: true` allein sähe bei allen Varianten gleich aus.
+
+Dazu musste der **neue Import in alle neun Prüfstände** nachgezogen werden,
+die `trade-filters.ts` laden: ohne Ersatz ist es der Stellvertreter, und der
+**wirft beim Aufruf** — `redisLage` steht *innerhalb* des `try` jeder
+Grenze, ein Wurf dort ginge als `allowed: true` durch und der ganze Riegel
+sähe grün aus. Genau die Falle vom 31.10., hier bei sieben bestehenden
+Stellen zuerst übersehen; der Prüferlauf hat sie gemeldet.
+
+**Vier eigene Fehler im Nachweis selbst**, alle gehören zur Methode:
+
+| Fehler | Diagnose |
+|---|---|
+| „Redis zurück" meldete nichts | `getRedisClient()` liest `REDIS_URL` beim **Aufruf**, nicht beim Laden — ich hatte sie vorher gelöscht. Es war noch ein Ausfall, die Drossel schwieg zu Recht. Beinahe ein Prüferloch gemeldet, das es nicht gibt |
+| S6 „zurück auf `cacheGet`" | nur den Aufruf ersetzt, nicht die Destrukturierung → `ReferenceError` statt des gemeinten Rückbaus |
+| S9 `} catch (e) {` | kommt **dreimal** in der Datei vor, Anker nicht eindeutig; der zweite Entwurf hätte die Klammerbilanz zerstört |
+| S15 „geteilter Zustand" | `k.get("alle")` erzeugt **keinen** geteilten Zustand, sondern gar keinen Treffer — jeder Aufruf sieht sich als den ersten. Dreimal daneben |
+
+Und eine **zu schwache Prüfung von mir**: „zwei Stellen verdecken sich"
+verlangte nur, dass *beide* melden — das tun sie bei geteiltem Zustand
+**auch**. Jetzt der unterscheidende Fall: ein gesunder Start auf der
+zweiten Stelle muss **schweigen**; bei geteiltem Zustand liest er den
+Eintrag der ersten und meldet einen Wechsel. Zum wiederholten Mal: **ein
+Testfall, der den Fehler nicht ausdrücken kann, beweist nichts.**
 
 ## Ohne Stop keine Order (28.10.)
 

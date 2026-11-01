@@ -93,18 +93,67 @@ export function getKillswitchReport(): KillswitchReport {
   return { ...getState() };
 }
 
-// Wird beim Server-Start aufgerufen — stellt Killswitch aus Redis wieder her
+/**
+ * Wird beim Server-Start aufgerufen — stellt Killswitch aus Redis wieder her.
+ *
+ * DER STILLE FALL (01.11.). Hier stand `cacheGet`, und das gibt `null` für
+ * DREI Lagen zurück: Redis nicht erreichbar, Redis wirft, oder der
+ * Schlüssel fehlt. Ein `false` hiess damit zweierlei — „es war kein
+ * Killswitch gespeichert" (der Normalfall) und „ich weiss es nicht".
+ *
+ * Ausgeführt gemessen am 01.11. gegen das echte Cache-Modul ohne
+ * `REDIS_URL`: Rückgabe `false`, **0 Meldungen**. Und `instrumentation.ts`
+ * schreibt nur bei `true` eine Zeile. Ein Deploy, bei dem Redis gerade weg
+ * ist, löst damit eine aktive Sperre auf — lautlos.
+ *
+ * `CLAUDE.md` sagt „er überlebt einen Deploy". Das gilt **nur, wenn Redis
+ * antwortet**, und genau das stand nirgends.
+ *
+ * WAS SICH NICHT ÄNDERT: ob gehandelt wird. Die Wiederherstellung greift
+ * unter genau derselben Bedingung wie vorher (`herkunft !== "aus"` **und**
+ * `triggered`), die Rückgabe bleibt `boolean`, und `instrumentation.ts`
+ * bleibt unberührt. Neu ist ausschliesslich, dass die drei Lagen
+ * auseinanderzuhalten sind.
+ *
+ * KEIN Telegram-Alarm von hier: das würde dem Notaus-Modul eine
+ * Abhängigkeit auf den Sender geben, und beim Serverstart ist der Kanal
+ * nicht verlässlich. Bewusst benannt, nicht übersehen.
+ */
 export async function restoreKillswitchFromRedis(): Promise<boolean> {
   try {
-    const { cacheGet } = await import("@/lib/cache/redis-cache");
-    const saved = await cacheGet<KillswitchReport>(REDIS_KEY);
-    if (saved && saved.triggered) {
-      setState(saved);
-      console.log(`[killswitch] 🔴 State aus Redis wiederhergestellt — System bleibt gesperrt (seit ${saved.triggeredAt})`);
+    const { cacheLesen } = await import("@/lib/cache/redis-cache");
+    const gelesen = await cacheLesen<KillswitchReport>(REDIS_KEY);
+
+    if (gelesen.herkunft === "aus") {
+      console.error(
+        "[killswitch] ⛔ Zustand NICHT feststellbar — niemand hat geantwortet "
+        + "(weder Redis noch der prozesseigene Speicher). Eine zuvor aktive "
+        + "Sperre ist damit NICHT wiederhergestellt, und das System handelt, "
+        + "als wäre sie nie gesetzt worden. Mit /status den Stand prüfen und "
+        + "bei Zweifel per /killswitch erneut sperren.",
+      );
+      return false;
+    }
+    if (gelesen.wert && gelesen.wert.triggered) {
+      setState(gelesen.wert);
+      console.log(`[killswitch] 🔴 State aus Redis wiederhergestellt — System bleibt gesperrt (seit ${gelesen.wert.triggeredAt})`);
       return true;
     }
-  } catch { /* non-fatal */ }
-  return false;
+    // Redis HAT geantwortet: es gibt wirklich keine aktive Sperre. Diese
+    // Zeile ist der Unterschied zwischen „geprüft, nichts da" und
+    // „nicht geprüft" — ohne sie sehen beide Lagen gleich aus.
+    console.log("[killswitch] 🟢 Redis geantwortet — keine aktive Sperre gespeichert, Trading freigegeben.");
+    return false;
+  } catch (e) {
+    // Vorher: `catch { }` — der Grund ging verloren. „Wer den Grund nicht
+    // mitschreibt, muss ihn später raten" (22.09.).
+    console.error(
+      "[killswitch] ⛔ Wiederherstellung FEHLGESCHLAGEN — "
+      + `${e instanceof Error ? e.message : String(e)}. Eine zuvor aktive `
+      + "Sperre ist NICHT wiederhergestellt.",
+    );
+    return false;
+  }
 }
 
 /** Trennt beide Broker-Sessions — OHNE gespeicherte Credentials zu löschen

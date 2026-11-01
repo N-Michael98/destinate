@@ -1114,9 +1114,17 @@ module.exports = async function pruefe() {
   // Geprueft wird RECHNEND mit gestelltem Redis — eine Struktur-Pruefung saehe
   // einen Schluessel, aber nicht, ob der Riegel danach greift.
   {
+    // Das ECHTE Drossel-Modul, nicht der Stellvertreter: der wirft beim
+    // Aufruf, und `redisLage` steht INNERHALB des `try` jeder Grenze —
+    // ein Wurf dort wuerde als `allowed: true` durchgehen und der ganze
+    // Riegel saehe gruen aus. Die Falle vom 31.10., hier bei sieben
+    // bestehenden Pruefstaenden zuerst uebersehen.
+    const lageModul = ladeTsModul("lib/redis-lage/redis-lage.ts").exports;
     const bauFilter = (speicher) => ladeTsModul("lib/trading-filters/trade-filters.ts", {
+      "redis-lage/redis-lage": lageModul,
       "redis-cache": {
         cacheGet: async (k) => (k in speicher ? speicher[k] : null),
+      cacheLesen: async (k) => (k in speicher ? { wert: speicher[k], herkunft: "redis" } : { wert: null, herkunft: "redis" }),
         cacheSet: async (k, v) => { speicher[k] = v; return true; },
       },
     });
@@ -1156,16 +1164,70 @@ module.exports = async function pruefe() {
         const e2 = await f3.exports.checkDailyLossLimit(1540, 3);
         torPruefung("ein neuer Tag blockt sofort", e2.allowed === true,
           JSON.stringify(e2));
-        // Und ein Redis-Ausfall darf den Handel NICHT anhalten.
+        // ── WIE SIEHT EIN REDIS-AUSFALL WIRKLICH AUS? (01.11.) ──────
+        //
+        // Hier stand ein Pruefstand, dessen `cacheGet` WIRFT. Das echte
+        // `redis-cache.ts` wirft NIE an den Aufrufer — es faengt intern
+        // und gibt `null` bzw. `herkunft: "aus"`. Ausgefuehrt belegt am
+        // 01.11.: `cacheGet` ohne REDIS_URL -> wirft=false, wert=null.
+        // Das alte Modell prueft also einen Pfad, den es im Betrieb
+        // nicht gibt — und genau deshalb blieben vier Funde unsichtbar.
+        const ausfall = { gesetzt: [], meldungen: [] };
         const f4 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+          "redis-lage/redis-lage": lageModul,
           "redis-cache": {
-            cacheGet: async () => { throw new Error("Redis weg"); },
-            cacheSet: async () => { throw new Error("Redis weg"); },
+            cacheGet: async () => null,
+            cacheLesen: async () => ({ wert: null, herkunft: "aus" }),
+            cacheSet: async (k) => { ausfall.gesetzt.push(k); },
           },
         });
-        const g = await f4.exports.checkDailyLossLimit(1540, 3);
+        const altErr = console.error;
+        console.error = (...a) => ausfall.meldungen.push(a.join(" "));
+        let g;
+        try {
+          delete global.__redis_lage__;
+          g = await f4.exports.checkDailyLossLimit(1540, 3);
+        } finally { console.error = altErr; }
         torPruefung("ein Redis-Ausfall haelt den Handel an",
           g.allowed === true, JSON.stringify(g));
+        // DER FUND vom 01.11.: der Ausfall galt als ERSTER Zyklus des
+        // Tages und schrieb den aktuellen Stand als Tagesstart. Damit
+        // misst die Grenze ab da vom Ausfall-Moment — der Schutz wird
+        // schwaecher, und niemand erfaehrt es.
+        torPruefung("ein Redis-Ausfall setzt den Tagesstart NEU — die Grenze misst danach vom Ausfall-Moment",
+          ausfall.gesetzt.length === 0, `geschrieben: ${JSON.stringify(ausfall.gesetzt)}`);
+        torPruefung("der Ausfall ist STUMM — ein Dauerausfall sieht aus wie ein gesunder Lauf",
+          ausfall.meldungen.length === 1
+          && /Tagesverlust-Grenze/.test(ausfall.meldungen[0] ?? "")
+          && /KEIN neuer Bezugspunkt/.test(ausfall.meldungen[0] ?? ""),
+          `${ausfall.meldungen.length} Meldung(en): ${(ausfall.meldungen[0] ?? "").slice(0, 90)}`);
+
+        // DIE WOCHEN-GRENZE hat dieselbe Struktur und fehlte in meiner
+        // ersten Fundliste — nachgetragen am 01.11.
+        const ausfallW = { gesetzt: [], meldungen: [] };
+        const f5 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+          "redis-lage/redis-lage": lageModul,
+          "redis-cache": {
+            cacheGet: async () => null,
+            cacheLesen: async () => ({ wert: null, herkunft: "aus" }),
+            cacheSet: async (k) => { ausfallW.gesetzt.push(k); },
+          },
+        });
+        const altErrW = console.error;
+        console.error = (...a) => ausfallW.meldungen.push(a.join(" "));
+        let gw;
+        try {
+          delete global.__redis_lage__;
+          gw = await f5.exports.checkWeeklyLossLimit(1540, 6);
+        } finally { console.error = altErrW; }
+        torPruefung("ein Redis-Ausfall haelt den Handel an (Woche)",
+          gw.allowed === true, JSON.stringify(gw));
+        torPruefung("ein Redis-Ausfall setzt den WOCHENstart NEU",
+          ausfallW.gesetzt.length === 0, `geschrieben: ${JSON.stringify(ausfallW.gesetzt)}`);
+        torPruefung("der Wochen-Ausfall ist STUMM",
+          ausfallW.meldungen.length === 1
+          && /Wochenverlust-Grenze/.test(ausfallW.meldungen[0] ?? ""),
+          `${ausfallW.meldungen.length}: ${(ausfallW.meldungen[0] ?? "").slice(0, 80)}`);
       } finally {
         console.log = stillesLog;
       }
@@ -1188,8 +1250,10 @@ module.exports = async function pruefe() {
       const speicher2 = {};
       const gesendet = [];
       const bauDD = () => ladeTsModul("lib/trading-filters/trade-filters.ts", {
+        "redis-lage/redis-lage": lageModul,
         "redis-cache": {
           cacheGet: async (k) => (k in speicher2 ? speicher2[k] : null),
+        cacheLesen: async (k) => (k in speicher2 ? { wert: speicher2[k], herkunft: "redis" } : { wert: null, herkunft: "redis" }),
           cacheSet: async (k, v) => { speicher2[k] = v; return true; },
         },
         "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async (t) => { gesendet.push(t); } },
@@ -1252,8 +1316,10 @@ module.exports = async function pruefe() {
           const sp3 = { peak_balance: { peak: 10000 } };
           const ges3 = [];
           const d3 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-lage/redis-lage": lageModul,
             "redis-cache": {
               cacheGet: async (k) => (k in sp3 ? sp3[k] : null),
+            cacheLesen: async (k) => (k in sp3 ? { wert: sp3[k], herkunft: "redis" } : { wert: null, herkunft: "redis" }),
               cacheSet: async (k, v) => { sp3[k] = JSON.parse(JSON.stringify(v)); return true; },
             },
             "telegram-sender": {
@@ -1299,8 +1365,10 @@ module.exports = async function pruefe() {
           const sp4 = {};
           const ges4 = [];
           const d4 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-lage/redis-lage": lageModul,
             "redis-cache": {
               cacheGet: async (k) => (k in sp4 ? sp4[k] : null),
+            cacheLesen: async (k) => (k in sp4 ? { wert: sp4[k], herkunft: "redis" } : { wert: null, herkunft: "redis" }),
               cacheSet: async (k, v) => { sp4[k] = JSON.parse(JSON.stringify(v)); return true; },
               cacheDel: async (k) => { delete sp4[k]; return true; },
             },
@@ -1340,29 +1408,128 @@ module.exports = async function pruefe() {
             torPruefung("ein Reset ohne gespeicherten Wert wirft oder erfindet eine Zahl",
               leer4.ok === true && leer4.alt === null, JSON.stringify(leer4));
           }
-          // Bei Redis-Ausfall darf der Reset nicht so tun, als haette er geklappt.
+          // Bei Redis-Ausfall darf der Reset nicht so tun, als haette er
+          // geklappt — und der ECHTE Ausfall wirft nicht, er gibt
+          // `herkunft: "aus"` (01.11.). Gemessen vor dem Fix:
+          // `{ok:true, alt:1000}` — `cacheDel` loescht dann nur den
+          // prozesseigenen Speicher, Redis haelt den echten Hoechststand
+          // weiter. Der Nutzer glaubt, die Sackgasse sei geoeffnet.
+          const geloescht5 = [];
           const d5 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-lage/redis-lage": lageModul,
             "redis-cache": {
-              cacheGet: async () => { throw new Error("Redis weg"); },
-              cacheDel: async () => { throw new Error("Redis weg"); },
+              cacheGet: async () => null,
+              cacheLesen: async () => ({ wert: null, herkunft: "aus" }),
+              cacheDel: async (k) => { geloescht5.push(k); },
             },
           });
           if (typeof d5.exports.peakZuruecksetzen === "function") {
             const k5 = await d5.exports.peakZuruecksetzen();
             torPruefung("ein Reset bei Redis-Ausfall meldet Erfolg",
               k5.ok === false && typeof k5.fehler === "string", JSON.stringify(k5));
+            torPruefung("der Reset loescht bei einem Ausfall trotzdem — dann ist nur der prozesseigene Speicher weg und Redis unveraendert",
+              geloescht5.length === 0, JSON.stringify(geloescht5));
           }
-
-          // Redis weg -> nicht blockieren.
-          const d2 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+          // Und die werfende Variante bleibt geprueft: das `catch` muss
+          // halten, auch wenn der heutige Cache nicht wirft.
+          const d5b = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-lage/redis-lage": lageModul,
             "redis-cache": {
-              cacheGet: async () => { throw new Error("Redis weg"); },
-              cacheSet: async () => { throw new Error("Redis weg"); },
+              cacheLesen: async () => { throw new Error("Redis weg"); },
+              cacheDel: async () => { throw new Error("Redis weg"); },
             },
           });
-          const g2 = await d2.exports.checkTotalDrawdownLimit(1000, 10);
+          if (typeof d5b.exports.peakZuruecksetzen === "function") {
+            const k5b = await d5b.exports.peakZuruecksetzen();
+            torPruefung("ein WERFENDER Cache bringt den Reset zum Absturz",
+              k5b.ok === false && typeof k5b.fehler === "string", JSON.stringify(k5b));
+          }
+
+          // Redis weg -> nicht blockieren, aber auch KEINEN neuen
+          // Hoechststand setzen (01.11.). Gemessen vor dem Fix:
+          // `peak_balance = {peak:1000, herkunft:"speicher"}` — der
+          // Bezugspunkt war still auf den Ausfall-Moment geschoben.
+          const dd2 = { gesetzt: [], meldungen: [] };
+          const d2 = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+            "redis-lage/redis-lage": lageModul,
+            "redis-cache": {
+              cacheGet: async () => null,
+              cacheLesen: async () => ({ wert: null, herkunft: "aus" }),
+              cacheSet: async (k) => { dd2.gesetzt.push(k); },
+            },
+          });
+          const altErr2 = console.error;
+          console.error = (...a) => dd2.meldungen.push(a.join(" "));
+          let g2;
+          try {
+            delete global.__redis_lage__;
+            g2 = await d2.exports.checkTotalDrawdownLimit(1000, 10);
+          } finally { console.error = altErr2; }
           torPruefung("ein Redis-Ausfall sperrt den Handel",
             g2.allowed === true, JSON.stringify(g2));
+          torPruefung("ein Redis-Ausfall setzt den Hoechststand NEU — der Drawdown misst danach vom Ausfall-Moment",
+            dd2.gesetzt.length === 0, `geschrieben: ${JSON.stringify(dd2.gesetzt)}`);
+          torPruefung("der Drawdown-Ausfall ist STUMM",
+            dd2.meldungen.length === 1
+            && /Gesamt-Drawdown-Grenze/.test(dd2.meldungen[0] ?? "")
+            && /KEIN neuer Hoechststand/.test(dd2.meldungen[0] ?? ""),
+            `${dd2.meldungen.length}: ${(dd2.meldungen[0] ?? "").slice(0, 90)}`);
+
+          // ── DIE DROSSEL, AUSGEFUEHRT ──────────────────────────────
+          //
+          // Drei Grenzen x 288 Zyklen waeren ueber 800 Zeilen am Tag.
+          // Und der Zustand liegt auf `global`, weil die Grenzen aus
+          // `instrumentation.ts` laufen, `/peakreset` aber in `app/api`
+          // — zwei Modulkopien (Regel 28.07., dreimal uebergangen am
+          // 25.10.). Deshalb hier ZWEI Kopien: melden ueber A, pruefen
+          // ueber B.
+          const lgA = ladeTsModul("lib/redis-lage/redis-lage.ts");
+          const lgB = ladeTsModul("lib/redis-lage/redis-lage.ts");
+          if (typeof lgA.exports?.redisLageMelden !== "function") {
+            torPruefung("redisLageMelden nicht ausfuehrbar", false,
+              lgA.fehler ?? "Export fehlt");
+          } else {
+            delete global.__redis_lage__;
+            const abstand = lgA.exports.REDIS_MELDE_ABSTAND_MS;
+            torPruefung("der Meldeabstand ist keine 30 Minuten",
+              abstand === 30 * 60 * 1000, String(abstand));
+            const m1 = lgA.exports.redisLageMelden("p", "aus", 1000);
+            const m2 = lgB.exports.redisLageMelden("p", "aus", 2000);
+            const m3 = lgB.exports.redisLageMelden("p", "aus", 1000 + abstand);
+            const m4 = lgB.exports.redisLageMelden("p", "ok", 1000 + abstand + 5);
+            torPruefung("ein Ausfall wird beim ersten Mal nicht gemeldet",
+              m1 === true, String(m1));
+            torPruefung("der Zustand ist MODUL-SCOPED — jede Kopie drosselt fuer sich, bei einem Dauerausfall kaeme alles doppelt",
+              m2 === false, `ueber die zweite Kopie: ${m2}`);
+            torPruefung("ein Dauerausfall verschwindet nach der ersten Meldung fuer immer",
+              m3 === true, String(m3));
+            torPruefung("die RUECKKEHR wird verschwiegen — dann bleibt offen, ob der Ausfall vorbei ist",
+              m4 === true, String(m4));
+            // Gegenprobe: ein gesunder Dauerzustand schweigt, und ein
+            // gesunder START ist keine Nachricht.
+            delete global.__redis_lage__;
+            const h1 = lgA.exports.redisLageMelden("q", "ok", 1000);
+            const h2 = lgA.exports.redisLageMelden("q", "ok", 1000 + 10 * abstand);
+            torPruefung("ein gesunder Start oder Dauerzustand meldet sich — das waere Laerm statt Information",
+              h1 === false && h2 === false, `${h1} / ${h2}`);
+            // Und zwei verschiedene Stellen duerfen sich NICHT verdecken.
+            delete global.__redis_lage__;
+            const v1 = lgA.exports.redisLageMelden("eins", "aus", 1000);
+            const v2 = lgA.exports.redisLageMelden("zwei", "aus", 1000);
+            // DER UNTERSCHEIDENDE FALL. Nur zu verlangen, dass beide
+            // melden, reicht NICHT — das tun sie bei geteiltem Zustand
+            // auch (im Sabotage-Lauf vom 01.11. vorgefuehrt). Ein
+            // gesunder START ist bei getrenntem Zustand keine Nachricht;
+            // bei geteiltem liest "drei" den Eintrag von "eins" (Lage
+            // "aus") und meldet den Wechsel.
+            delete global.__redis_lage__;
+            lgA.exports.redisLageMelden("eins", "aus", 1000);
+            const v3 = lgA.exports.redisLageMelden("drei", "ok", 1100);
+            torPruefung("zwei Stellen teilen einen Zustand — die Lage der einen verdeckt die andere",
+              v1 === true && v2 === true && v3 === false,
+              `eins=${v1} zwei=${v2} drei-gesund=${v3} (drei muss false sein)`);
+            delete global.__redis_lage__;
+          }
         } finally {
           console.log = stillesLog2;
         }
@@ -6681,6 +6848,93 @@ module.exports = async function pruefe() {
         torPruefung("STAGE 3 sagt nicht mehr, dass /reset genuegt",
           /\/reset genuegt/.test(ks) || /\/reset genügt/.test(ks),
           "genau diese Frage stellt sich im Ernstfall");
+
+        // ── DIE WIEDERHERSTELLUNG, AUSGEFUEHRT (01.11.) ─────────────
+        //
+        // `CLAUDE.md` sagt "er ueberlebt einen Deploy". Das gilt NUR,
+        // wenn Redis antwortet — und genau das stand nirgends. Hier
+        // stand `cacheGet`, und das gibt `null` fuer DREI Lagen zurueck.
+        // Ausgefuehrt gemessen am 01.11. gegen das echte Cache-Modul
+        // ohne REDIS_URL: Rueckgabe `false`, NULL Meldungen. Und
+        // `instrumentation.ts` schreibt nur bei `true` eine Zeile. Ein
+        // Deploy waehrend eines Redis-Ausfalls loest damit eine aktive
+        // Sperre auf — lautlos.
+        //
+        // Ein Regex kann das nicht trennen: der Unterschied liegt im
+        // Verhalten, nicht im Wortlaut.
+        {
+          const ksLauf = async (antwort) => {
+            const altZustand = global.__killswitch_state__;
+            const altL = console.log, altE = console.error;
+            const meld = { log: [], err: [] };
+            let r, gesperrt;
+            try {
+              delete global.__killswitch_state__;
+              console.log = (...a) => meld.log.push(a.join(" "));
+              console.error = (...a) => meld.err.push(a.join(" "));
+              const m = ladeTsModul("lib/killswitch/killswitch-engine.ts", {
+                "cache/redis-cache": {
+                  cacheLesen: async () => (typeof antwort === "function"
+                    ? antwort() : antwort),
+                  cacheGet: async () => null,
+                  cacheSet: async () => undefined,
+                  cacheDel: async () => undefined,
+                },
+              });
+              if (m.fehler) return { fehler: m.fehler, meld };
+              r = await m.exports.restoreKillswitchFromRedis();
+              gesperrt = m.exports.getKillswitchReport().triggered === true;
+            } finally {
+              console.log = altL; console.error = altE;
+              if (altZustand === undefined) delete global.__killswitch_state__;
+              else global.__killswitch_state__ = altZustand;
+            }
+            return { r, gesperrt, meld };
+          };
+
+          // (a) NIEMAND hat geantwortet -> der gefaehrliche Fall.
+          const a = await ksLauf({ wert: null, herkunft: "aus" });
+          torPruefung("die Wiederherstellung ist nicht ausfuehrbar",
+            !a.fehler, a.fehler ?? "ok");
+          torPruefung("ein Redis-Ausfall beim Start ist STUMM — eine zuvor aktive Sperre loest sich dann lautlos auf",
+            a.meld.err.length === 1
+            && /NICHT feststellbar/.test(a.meld.err[0] ?? ""),
+            `${a.meld.err.length} Fehlermeldung(en): ${(a.meld.err[0] ?? "").slice(0, 90)}`);
+          torPruefung("die Meldung sagt nicht, was daraus folgt",
+            /NICHT wiederhergestellt/.test(a.meld.err[0] ?? ""),
+            (a.meld.err[0] ?? "").slice(0, 140));
+          torPruefung("ein Ausfall sperrt das System von sich aus — das waere ein Handelsstopp aus einem Lesefehler",
+            a.r === false && a.gesperrt === false, `${a.r} / ${a.gesperrt}`);
+
+          // (b) Redis sagt: Sperre AKTIV -> muss wiederhergestellt werden.
+          const b = await ksLauf({ wert: { triggered: true, armed: false,
+            systemLocked: true, triggeredAt: "2026-11-01T10:00:00Z",
+            stages: [], summary: "t" }, herkunft: "redis" });
+          torPruefung("eine aktive Sperre wird NICHT mehr wiederhergestellt — dann ist ein Redeploy doch ein Reset",
+            b.r === true && b.gesperrt === true, `${b.r} / ${b.gesperrt}`);
+
+          // (c) Redis HAT geantwortet, nur ist nichts gespeichert. Diese
+          //     Lage muss von (a) UNTERSCHEIDBAR sein — sonst ist der
+          //     ganze Fix wirkungslos.
+          const c = await ksLauf({ wert: null, herkunft: "redis" });
+          torPruefung("der gesunde Fall meldet sich nicht — dann sieht \"geprueft, nichts da\" aus wie \"nicht geprueft\"",
+            c.meld.err.length === 0 && c.meld.log.length === 1
+            && /keine aktive Sperre/.test(c.meld.log[0] ?? ""),
+            `err=${c.meld.err.length} log=${c.meld.log.length}: ${(c.meld.log[0] ?? "").slice(0, 80)}`);
+          torPruefung("der gesunde Fall sperrt",
+            c.r === false && c.gesperrt === false, `${c.r} / ${c.gesperrt}`);
+
+          // (d) Ein WERFENDER Cache: der Grund darf nicht verschluckt
+          //     werden ("wer den Grund nicht mitschreibt, muss ihn
+          //     spaeter raten", 22.09.). Vorher stand hier `catch { }`.
+          const d = await ksLauf(() => { throw new Error("Redis kaputt"); });
+          torPruefung("ein geworfener Fehler wird still verschluckt",
+            d.meld.err.length === 1
+            && /Redis kaputt/.test(d.meld.err[0] ?? ""),
+            `${d.meld.err.length}: ${(d.meld.err[0] ?? "").slice(0, 90)}`);
+          torPruefung("ein geworfener Fehler sperrt oder meldet Erfolg",
+            d.r === false && d.gesperrt === false, `${d.r} / ${d.gesperrt}`);
+        }
 
         // STAGE 1: der Unterschied zwischen den Brokern muss dastehen —
         // und er muss zum Code passen (IC loescht seinen Token wirklich).
