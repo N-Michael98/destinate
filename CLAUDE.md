@@ -288,11 +288,16 @@ Zwischenstand, kein Ergebnis) und Zeilen **ohne Markt** (sie landeten sonst als
 Symbol `UNKNOWN` mit eigener Win-Rate in der Lerntabelle). Beides wird gemeldet,
 nicht still verworfen.
 
-**Was das NICHT tut:** am Handel ändert sich nichts. `getLearningAdjustmentFactor()`
-wird nur von `strategy-evolution/evolution-engine.ts` gelesen, und das läuft in
-keiner Schleife. Der Weg vom Gelernten zum Handel ist eine eigene, bewusste
-Entscheidung — und gehört erst gegangen, wenn gemessen ist, dass das Lernsignal
-etwas taugt.
+**Was das NICHT tut:** am Handel ändert sich nichts.
+`getLearningAdjustmentFactor()` wird **von niemandem** gelesen — seit dem
+01.11. Bis dahin war `strategy-evolution/evolution-engine.ts:56` der
+einzige Leser, und der ist mit dem toten Bereich entfernt worden. Die
+Funktion steht weiter exportiert in `trade-feedback-engine.ts:460`.
+
+Der Weg vom Gelernten zum Handel ist eine eigene, bewusste Entscheidung —
+und gehört erst gegangen, wenn gemessen ist, dass das Lernsignal etwas
+taugt. **Dass der letzte Leser weg ist, ändert daran nichts:** er lief in
+keiner Schleife und hat nie etwas verstellt.
 
 **Zweiter Lernstrang — ERLEDIGT, die Entscheidung ist gefallen (15.09.).**
 Hier stand bis heute: „`lib/learning-feedback-integration/` und
@@ -1091,9 +1096,10 @@ Konsequenzen.
 
 Die drei offenen Schritte sind **belegt, nicht ausgedacht**: MetaTrader 5 kommt
 im ganzen Programm nicht vor (gesucht in `lib`, `app/api`, `backend/services`),
-die IC-Ausführung steht auf `false`, und `getLearningAdjustmentFactor()` wird
-nur von `strategy-evolution/evolution-engine.ts:56` gelesen — das läuft in
-keiner Schleife. Die Fundstelle in `instrumentation.ts:835` ist ein
+die IC-Ausführung steht auf `false`, und `getLearningAdjustmentFactor()`
+wird **von niemandem** gelesen (seit 01.11.; bis dahin nur von
+`strategy-evolution/evolution-engine.ts:56`, das mit dem toten Bereich
+entfernt wurde). Die Fundstelle in `instrumentation.ts:835` ist ein
 **Kommentar**: „ein Wort im Kommentar ist keine Verwendung".
 
 `menue-ansichten` **rechnet** das jetzt (38 → 76 Prüfungen) und hält die Seite
@@ -2816,14 +2822,24 @@ Schema- oder Datenänderung.
 ### Was NICHT gebaut wurde — und warum
 
 Eine **Selbstverstellung** (das Programm dreht die Schwellen selbst) ist
-damit ausdrücklich **nicht** gebaut. Gemessen am 29.10.: es gibt bereits
+damit ausdrücklich **nicht** gebaut. Gemessen am 29.10.: es gab
 **fünfzehn** Module mit genau diesem Zweck —
 `adaptive-broker-weighting`, `autonomous-trading-evolution`,
-`evolution-governance`, `strategy-evolution`,
-`strategy-weight-auto-rebalancing` und zehn weitere —, und **0 von 15
-hängen an einer Schleife**. Sie hängen aneinander und an API-Routen; mit
+`evolution-governance` und weitere —, und **0 von 15 hängen an einer
+Schleife**. Sie hängen aneinander und an API-Routen; mit
 `system-map --impact` gegengeprüft, kein Pfad führt zu
 `instrumentation.ts`.
+
+**Stand 01.11.:** `strategy-evolution` und
+`strategy-weight-auto-rebalancing` sind mit dem toten Bereich **entfernt**
+— ihre Routen rief niemand, und von einer Schleife aus waren sie nicht
+erreichbar. Die Zahl **fünfzehn** ist damit überholt; sie **nicht** neu
+beziffert, weil „Modul mit diesem Zweck" eine inhaltliche Auswahl ist und
+keine Graphen-Messung. Neu gemessen wurde nur das Kriterium selbst: von
+94 lib-Ordnern erreicht die Schleife **27**, die übrigen **63** hängen
+ausschliesslich an Routen — darunter auch völlig gesunde wie `expectancy`,
+`hebel` und `handels-lage`, die der Telegram-Webhook ruft. „Nicht an einer
+Schleife" heisst also nicht „überflüssig".
 
 Ein „Automat" wäre hier also **Verdrahten, nicht Bauen** — und gehört erst
 gegangen, wenn gemessen ist, dass die Verstellung den Erwartungswert

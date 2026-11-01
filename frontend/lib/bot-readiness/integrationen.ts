@@ -154,10 +154,11 @@ export function integrationsStand(eingabe: IntegrationsEingabe): IntegrationsSta
  *    `app/api` und `backend/services`).
  *  - `icMarketsExecutionEnabled` steht auf `false` (`settings-store.ts:19`,
  *    im Snapshot gesichert).
- *  - `getLearningAdjustmentFactor()` wird NUR von
- *    `strategy-evolution/evolution-engine.ts:56` gelesen, und das läuft in
- *    keiner Schleife. Die Fundstelle in `instrumentation.ts:835` ist ein
- *    KOMMENTAR — „ein Wort im Kommentar ist keine Verwendung".
+ *  - `getLearningAdjustmentFactor()` wird von NIEMANDEM gelesen (seit
+ *    01.11.). Bis dahin war `strategy-evolution/evolution-engine.ts:56`
+ *    der einzige Leser; er ist mit dem toten Bereich entfernt worden und
+ *    lief in keiner Schleife. Die Fundstelle in `instrumentation.ts:835`
+ *    ist ein KOMMENTAR — „ein Wort im Kommentar ist keine Verwendung".
  *
  * Bewusst statisch: es sind Aussagen über den Bauzustand, keine Messwerte.
  * Ändert sich einer, ändert sich diese Liste — und der Prüfer hält sie an
