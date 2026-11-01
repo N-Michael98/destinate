@@ -2981,6 +2981,74 @@ Tageslimit. `jetzt` bleibt injizierbar, damit der Prüfstand die echten
 Grenzen rechnet statt den Wortlaut festzunageln. **Snapshot unverändert** —
 das Fenster war dort nie erfasst.
 
+### Der erste Live-Lauf — und ein Fund im eigenen Text (01./02.11.)
+
+`/status` auf `0ab9a12`, Sonntag 01.11. um 23:31 Zürich:
+
+```
+✅ Tageslimit: 0/21                    ← morgens noch „❔ unbekannt"
+⛔ Handelszeit: ZU (Mo–Fr, 07:00 London bis 17:00 New York
+                   = 08:00–23:00 Zürich)
+✅ Zyklen heute: 267                   📤 Ausserhalb Handelszeit: 267
+🔻 Trichter heute: kein einziger Zyklus kam bis zur Analyse
+```
+
+**Der Tageslimit-Fix wirkt im Betrieb.** Und „267 von 267 ausserhalb der
+Handelszeit" ist **richtig**, nicht auffällig: der 01.11.2026 ist ein
+**Sonntag** (gerechnet, nicht angenommen). Ausgeführt gegengeprüft: Mo
+02.11. 08:00 Zürich → **offen**, 23:00 → zu.
+
+#### Aber „08:00–23:00 Zürich" war fest verdrahtet
+
+An **drei** Stellen in `handels-lage.ts` stand die Ortszeit als Literal.
+Der erste Teil der Zeile ist die Definition und immer wahr; die
+Zürich-Übersetzung hängt dagegen an den Zeitzonen.
+
+Ausgerechnet mit der **echten** `isWithinTradingSession()` über jeden Tag
+2026 und 2027: an **35 Werktagen** schliesst das Fenster in Wirklichkeit um
+**22:00** Zürich — immer dann, wenn EU- und US-Sommerzeit auseinanderlaufen
+und London/New York 4 statt 5 Stunden auseinander liegen (09.–27.03.2026,
+26.–30.10.2026, 15.–26.03.2027, …).
+
+**Ehrlich zur Reichweite:** der Text existiert erst seit dem 01.11. und ist
+**nie falsch ausgeliefert worden** — der erste falsche Tag wäre der
+**15.03.2027**. Ein Fund vor dem Schaden, kein Schaden. Die Fehlerklasse ist
+trotzdem dieselbe wie bei den zwei falschen Killswitch-Texten (27.09.) und
+`market-health.ts`, und die Verwandtschaft zum Broker-Zeitfix vom 22.09. ist
+wörtlich: **eine Zeitzone, keine feste Verschiebung** — diesmal von mir
+selbst übergangen, einen Tag nach dem Kapitel darüber.
+
+`fensterInAnzeigeZone()` (`lib/handelsfenster/`) rechnet es jetzt. Die
+**Grenzen bleiben in `orchestrator-agent.ts`** und werden hereingereicht —
+damit gibt es sie weiter genau einmal, und die Datei mit erhöhtem Risiko
+wird **nicht angefasst**. Dieselbe Begründung wie bei `htmlSicher` und
+`redisLageMelden`. `null` heisst unbekannt: dann fällt die Ortszeit-Angabe
+**weg**, statt geraten zu werden.
+
+**Nachgewiesen über 522 Werktage: 0 Abweichungen** gegen das echte Tor.
+
+#### Zwei Prüferlöcher, die erst die Sabotage zeigte
+
+Im ersten Lauf nur **5 von 8**:
+
+| entwischt | Diagnose |
+|---|---|
+| die Umstellungs-Nachkorrektur entfernt | **meine vier Testtage lagen ALLE neben einer Umstellung.** Gemessen: ohne die Korrektur zeigt `/status` an **8 Zeitpunkten** (den Umstellungs-Sonntagen) `07:00–23:00` bzw. `09:00–22:00`. Jetzt sind die vier Umstellungstage eigene Fälle |
+| der Webhook reicht `null` durch | **die Verdrahtung war ungeprüft** — die Rechnung war geprüft, ihre Aufrufstelle nicht. Wörtlich die Klasse vom 30.09. Jetzt verlangt `/status` end-to-end ein `= HH:MM–HH:MM Zürich` |
+
+Dazu **drei eigene Messfehler**: mein erster Parallelitäts-Sabotage-Entwurf
+zerstörte die Datei syntaktisch (dann meldet der Prüfer etwas anderes und der
+Nachweis ist wertlos — jetzt werden zwei Variablen **vertauscht**, das
+übersetzt und ist trotzdem falsch); mein Ersatz-Einschub traf **vier**
+Prüfstände, aber nicht den entscheidenden, weil `/edge` den Laufzeit-Ersatz
+in anderer Form schreibt; und meine „kein Literal mehr"-Prüfung scheiterte
+an **meinem eigenen Kommentar**, der das alte Literal zitiert — ein Wort im
+Kommentar ist keine Verwendung, also kommentarbereinigt.
+
+`safety-nets` 955 → **967**, **8 von 8** in der zweiten Runde, und die
+**18 Sabotagen** der Redis-Runde laufen als Gegenprobe weiter durch: **26
+von 26** an diesem Tag.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.)
 
 Anlass: die Beobachtung „selten werden Positionen vor 12:00 eröffnet,

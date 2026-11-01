@@ -65,6 +65,23 @@ export interface HandelsLageEingaben {
   maxDrawdownProzent: number | null;
   /** `isWithinTradingSession()`. */
   inHandelszeit: boolean | null;
+  /**
+   * Das Fenster in Ortszeit, z.B. `08:00–23:00` — GERECHNET (01.11.).
+   *
+   * Hier stand der Text dreimal als Literal `08:00–23:00 Zürich`.
+   * Ausgerechnet mit der echten `isWithinTradingSession()` ueber
+   * 2026+2027: an **35 Werktagen** schliesst das Fenster in
+   * Wirklichkeit um **22:00** Zuerich — immer dann, wenn EU- und
+   * US-Sommerzeit auseinanderlaufen und London/New York 4 statt 5
+   * Stunden auseinander liegen. Erster falscher Tag waere der
+   * 15.03.2027 gewesen; der Text ist erst seit dem 01.11. da und
+   * damit nie falsch ausgeliefert worden.
+   *
+   * `null` heisst **unbekannt**: dann wird die Ortszeit-Angabe
+   * WEGGELASSEN statt geraten. Die Definition (07:00 London bis
+   * 17:00 New York) bleibt stehen — die ist immer wahr.
+   */
+  fensterOrtszeit: string | null;
   /** Zyklen heute (aus `zyklus:tag:<UTC-Datum>`). */
   zyklenHeute: number | null;
   /** Ausgaenge heute mit Anzahl (aus derselben Tagessumme). */
@@ -244,14 +261,21 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   }
 
   // ── 6. Handelszeit ───────────────────────────────────────────────────────
+  // Die Ortszeit-Angabe faellt WEG, wenn sie nicht berechenbar ist —
+  // eine geratene waere genau die Luege, die dieser Block behebt.
+  // Nicht nur `=== null`: ein leerer String ergaebe ` =  Zürich` und
+  // ein durchgerutschtes `undefined` sogar ` = undefined Zürich`. Was
+  // nicht wie eine Uhrzeit aussieht, wird WEGGELASSEN.
+  const ortszeit = e.fensterOrtszeit && e.fensterOrtszeit.trim() !== ""
+    ? ` = ${htmlSicher(e.fensterOrtszeit)} Zürich` : "";
   if (e.inHandelszeit === true) {
     zeilen.push("✅ Handelszeit: offen (Mo–Fr, 07:00 London bis 17:00 "
-      + "New York = 08:00–23:00 Zürich)");
+      + `New York${ortszeit})`);
   } else if (e.inHandelszeit === false) {
     blocker.push("Ausserhalb der Handelszeit — ausserhalb Mo–Fr, "
-      + "08:00–23:00 Zürich, normal");
-    zeilen.push("⛔ Handelszeit: ZU (Mo–Fr, 07:00 London bis 17:00 New York "
-      + "= 08:00–23:00 Zürich) — ausserhalb davon normal");
+      + `07:00 London bis 17:00 New York${ortszeit}, normal`);
+    zeilen.push("⛔ Handelszeit: ZU (Mo–Fr, 07:00 London bis 17:00 New York"
+      + `${ortszeit}) — ausserhalb davon normal`);
   } else {
     unbekannt.push("Handelszeit");
     zeilen.push("❔ Handelszeit: unbekannt");

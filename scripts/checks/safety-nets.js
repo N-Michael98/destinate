@@ -1675,6 +1675,13 @@ module.exports = async function pruefe() {
             // Ersatz liefe der Pruefstand gegen den Stellvertreter und meldete
             // einen Fehler, den es im Betrieb nicht gibt.
             "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+            // Ohne diesen Ersatz ist es der Stellvertreter, der beim Aufruf
+            // wirft — /status zeigte das Fenster dann nie, und die
+            // Verdrahtung waere ungeprueft (Klasse vom 30.09.).
+            "handelsfenster/fenster-text": ladeTsModul("lib/handelsfenster/fenster-text.ts").exports,
+            "agents/orchestrator-agent": { isWithinTradingSession: () => true,
+              HANDELSFENSTER: { oeffnetLondon: 7 * 60, schliesstNewYork: 17 * 60,
+                zoneLondon: "Europe/London", zoneNewYork: "America/New_York" } },
             // Seit dem 29.10. nennt /status, WARUM nicht gehandelt wird.
             // Ohne diesen Ersatz liefe der Aufruf gegen den Stellvertreter,
             // der beim Aufruf wirft — der Pruefstand meldete dann einen
@@ -1773,6 +1780,13 @@ module.exports = async function pruefe() {
                     resetKillswitch: () => ({ triggered: false }),
                   },
                   "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+                  // Ohne diesen Ersatz ist es der Stellvertreter, der beim Aufruf
+                  // wirft — /status zeigte das Fenster dann nie, und die
+                  // Verdrahtung waere ungeprueft (Klasse vom 30.09.).
+                  "handelsfenster/fenster-text": ladeTsModul("lib/handelsfenster/fenster-text.ts").exports,
+                  "agents/orchestrator-agent": { isWithinTradingSession: () => true,
+                    HANDELSFENSTER: { oeffnetLondon: 7 * 60, schliesstNewYork: 17 * 60,
+                      zoneLondon: "Europe/London", zoneNewYork: "America/New_York" } },
                   "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
                     { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
                   "trading-filters/trade-filters": {
@@ -1859,6 +1873,13 @@ module.exports = async function pruefe() {
                       resetKillswitch: () => ({ triggered: false }),
                     },
                     "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+                    // Ohne diesen Ersatz ist es der Stellvertreter, der beim Aufruf
+                    // wirft — /status zeigte das Fenster dann nie, und die
+                    // Verdrahtung waere ungeprueft (Klasse vom 30.09.).
+                    "handelsfenster/fenster-text": ladeTsModul("lib/handelsfenster/fenster-text.ts").exports,
+                    "agents/orchestrator-agent": { isWithinTradingSession: () => true,
+                      HANDELSFENSTER: { oeffnetLondon: 7 * 60, schliesstNewYork: 17 * 60,
+                        zoneLondon: "Europe/London", zoneNewYork: "America/New_York" } },
                     "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
                       { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
                     "trading-filters/trade-filters": {
@@ -2130,6 +2151,14 @@ module.exports = async function pruefe() {
             },
             "expectancy/erwartungswert": ewE.exports,
             "laufzeit/laufzeit-stand": lzE.exports,
+            // Der /edge-Pruefstand schreibt den Laufzeit-Ersatz in ANDERER
+            // Form (lzE.exports), deshalb hat der zeilenbasierte Einschub
+            // ihn uebersprungen — vier andere Pruefstaende getroffen, den
+            // entscheidenden nicht. Genau hier laeuft /status end-to-end.
+            "handelsfenster/fenster-text": ladeTsModul("lib/handelsfenster/fenster-text.ts").exports,
+            "agents/orchestrator-agent": { isWithinTradingSession: () => true,
+              HANDELSFENSTER: { oeffnetLondon: 7 * 60, schliesstNewYork: 17 * 60,
+                zoneLondon: "Europe/London", zoneNewYork: "America/New_York" } },
             "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
               { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
             // `/hebel` importiert dynamisch. Ohne Ersatz bekaeme es den
@@ -2346,6 +2375,13 @@ module.exports = async function pruefe() {
                         "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
                       }).exports,
                     "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+                    // Ohne diesen Ersatz ist es der Stellvertreter, der beim Aufruf
+                    // wirft — /status zeigte das Fenster dann nie, und die
+                    // Verdrahtung waere ungeprueft (Klasse vom 30.09.).
+                    "handelsfenster/fenster-text": ladeTsModul("lib/handelsfenster/fenster-text.ts").exports,
+                    "agents/orchestrator-agent": { isWithinTradingSession: () => true,
+                      HANDELSFENSTER: { oeffnetLondon: 7 * 60, schliesstNewYork: 17 * 60,
+                        zoneLondon: "Europe/London", zoneNewYork: "America/New_York" } },
                   });
                   if (whL.fehler || typeof whL.exports?.POST !== "function") {
                     torPruefung(`${lage}: /status nicht ausfuehrbar`, false,
@@ -2372,6 +2408,14 @@ module.exports = async function pruefe() {
             // echte POST-Funktion, mit der echten Umgebungsvariablen.
             await edge("/status");
             const aStatus = antw.at(-1) ?? "";
+            // DIE VERDRAHTUNG (01.11.). Im Sabotage-Lauf durfte der
+            // Webhook `fensterOrtszeit: null` durchreichen und ALLES
+            // blieb gruen — die Rechnung war geprueft, ihre Aufrufstelle
+            // nicht. Genau die Fehlerklasse vom 30.09.
+            torPruefung("/status zeigt das Handelsfenster nicht in Ortszeit "
+              + "— dann ist die Rechnung geprueft, aber nie benutzt",
+              /= \d\d:\d\d–\d\d:\d\d Zürich/.test(aStatus),
+              (aStatus.match(/Handelszeit:[^\n]*/) ?? ["(keine Zeile)"])[0].slice(0, 120));
             torPruefung("/status nennt den laufenden Commit nicht — dann ist "
               + "'ist mein Fix schon oben?' nur zu erraten",
               /Laufender Stand/.test(aStatus) && /a02fc4a/.test(aStatus)
@@ -4377,9 +4421,69 @@ module.exports = async function pruefe() {
           torPruefung("der Trichter wird gar nicht uebergeben",
             /trichter: tagessumme/.test(W), wPfad);
         }
-        torPruefung("die Faktensammlung laeuft NACHEINANDER — sieben "
-          + "Quellen mal fuenf Sekunden waeren 35 s bis zur Antwort",
-          /\[einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, tagesZaehler\]\s*=\s*await Promise\.all\(\[/.test(W), wPfad);
+        torPruefung("die Faktensammlung laeuft NACHEINANDER — acht "
+          + "Quellen mal fuenf Sekunden waeren 40 s bis zur Antwort",
+          /\[einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, fensterText, tagesZaehler\]\s*=\s*await Promise\.all\(\[/.test(W), wPfad);
+
+        // ── DAS FENSTER IN ORTSZEIT WIRD GERECHNET (01.11.) ────────
+        //
+        // In `handels-lage.ts` stand dreimal das Literal
+        // "08:00–23:00 Zürich". Ausgerechnet mit der ECHTEN
+        // `isWithinTradingSession()` ueber 2026+2027: an 35 Werktagen
+        // schliesst das Fenster in Wirklichkeit um 22:00 Zuerich —
+        // immer dann, wenn EU- und US-Sommerzeit auseinanderlaufen.
+        // Der Text ist erst seit dem 01.11. da und war nie falsch
+        // ausgeliefert; erster falscher Tag waere der 15.03.2027.
+        {
+          const hlQ = read("frontend/lib/handels-lage/handels-lage.ts")
+            .replace(/\/\*[\s\S]*?\*\//g, " ")
+            .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+          torPruefung("das Fenster steht wieder als Literal im Text — an 35 Werktagen pro zwei Jahre ist es dann eine Stunde daneben",
+            !/08:00–23:00/.test(hlQ),
+            "kommentarbereinigt gesucht: ein Wort im Kommentar ist keine Verwendung");
+
+          const ft = ladeTsModul("lib/handelsfenster/fenster-text.ts");
+          const orchM = ladeTsModul("lib/agents/orchestrator-agent.ts");
+          const rechne = ft.exports?.fensterInAnzeigeZone;
+          const G = orchM.exports?.HANDELSFENSTER;
+          if (typeof rechne !== "function" || !G) {
+            torPruefung("fensterInAnzeigeZone nicht ausfuehrbar", false,
+              ft.fehler ?? orchM.fehler ?? "Export fehlt");
+          } else {
+            // Winter, Sommer und BEIDE Umstellungsfenster. Die ersten
+            // zwei allein koennten den Fehler nicht ausdruecken: sie
+            // ergeben beide 23:00 (Lehre vom 31.10.).
+            for (const [name, ms, soll] of [
+              ["Mo 02.11.2026 Winter", Date.UTC(2026, 10, 2, 12), "08:00–23:00"],
+              ["Mi 15.07.2026 Sommer", Date.UTC(2026, 6, 15, 12), "08:00–23:00"],
+              ["Do 29.10.2026 EU um, US nicht", Date.UTC(2026, 9, 29, 12), "08:00–22:00"],
+              ["Mo 16.03.2027 US um, EU nicht", Date.UTC(2027, 2, 16, 12), "08:00–22:00"],
+              // DIE UMSTELLUNGSTAGE SELBST. Ohne sie bleibt die
+              // Nachkorrektur in `zeitpunktFuer` ungeprueft: meine ersten
+              // vier Faelle lagen ALLE neben einer Umstellung, und die
+              // Sabotage blieb gruen. Gemessen: ohne die Korrektur zeigt
+              // /status an diesen Tagen 07:00–23:00 bzw. 09:00–22:00.
+              ["So 08.03.2026 US stellt um", Date.UTC(2026, 2, 8, 6, 30), "08:00–22:00"],
+              ["So 29.03.2026 EU stellt um", Date.UTC(2026, 2, 29, 0, 30), "08:00–22:00"],
+              ["So 25.10.2026 EU stellt zurueck", Date.UTC(2026, 9, 25, 0, 30), "08:00–23:00"],
+              ["So 14.03.2027 US stellt um", Date.UTC(2027, 2, 14, 6, 30), "08:00–22:00"],
+            ]) {
+              const ist = rechne(G, new Date(ms));
+              torPruefung(`${name}: das Fenster wird falsch uebersetzt`,
+                ist === soll, `${ist} statt ${soll}`);
+            }
+            // Es muss aus den GRENZEN kommen, nicht aus einer Tabelle.
+            const anders = rechne({ ...G, schliesstNewYork: 16 * 60 },
+              new Date(Date.UTC(2026, 10, 2, 12)));
+            torPruefung("das Ergebnis haengt nicht an den uebergebenen Grenzen — dann ist es doch wieder fest verdrahtet",
+              anders === "08:00–22:00", String(anders));
+            // Und eine unaufloesbare Zone heisst UNBEKANNT, nicht geraten.
+            torPruefung("eine unaufloesbare Zone wird geraten statt null",
+              rechne({ ...G, zoneNewYork: "Gibt/EsNicht" },
+                new Date(Date.UTC(2026, 10, 2, 12))) === null,
+              "null heisst unbekannt");
+          }
+        }
         torPruefung("die Faktensammlung hat keine Zeitgrenze — /status "
           + "haengt dann an einem toten Broker",
           /setTimeout\(\(\) => r\(null\), \d+\)/.test(W), wPfad);

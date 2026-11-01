@@ -571,10 +571,10 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         } catch { return null; }
       };
 
-      // NEBENEINANDER, nicht nacheinander: sieben Quellen mal fuenf
-      // Sekunden Obergrenze waeren 35 s bis zur Antwort. Keine haengt von
+      // NEBENEINANDER, nicht nacheinander: acht Quellen mal fuenf
+      // Sekunden Obergrenze waeren 40 s bis zur Antwort. Keine haengt von
       // einer anderen ab, also ist die Obergrenze so fuenf Sekunden.
-      const [einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, tagesZaehler] =
+      const [einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, fensterText, tagesZaehler] =
         await Promise.all([
       sicher(async () => {
         const { getSettings } = await import("@/lib/settings/settings-store");
@@ -621,6 +621,16 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         const { isWithinTradingSession } = await import("@/lib/agents/orchestrator-agent");
         return isWithinTradingSession();
       }),
+      // Das Fenster in Ortszeit GERECHNET (01.11.). Es stand dreimal
+      // als Literal in `handels-lage.ts` und waere an 35 Werktagen in
+      // 2026+2027 eine Stunde daneben — immer dann, wenn EU- und
+      // US-Sommerzeit auseinanderlaufen. Die Grenzen kommen aus
+      // `HANDELSFENSTER`, es gibt sie also weiter genau einmal.
+      sicher(async () => {
+        const { HANDELSFENSTER } = await import("@/lib/agents/orchestrator-agent");
+        const { fensterInAnzeigeZone } = await import("@/lib/handelsfenster/fenster-text");
+        return fensterInAnzeigeZone(HANDELSFENSTER);
+      }),
       // EIN LESEPFAD LEGT GEMEINSAMEN ZUSTAND NICHT AN (Regel vom 07.09.).
       // Besitzer von `__daily_trades__` ist der Orchestrator. Passt das
       // Datum nicht, wird hier NICHT geschrieben, sondern dieselbe Quelle
@@ -661,6 +671,7 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
           hoechststand: hoechst,
           maxDrawdownProzent: einst?.riskSettings?.maxTotalDrawdownPct ?? null,
           inHandelszeit: inZeit,
+          fensterOrtszeit: fensterText,
           zyklenHeute: typeof tagessumme?.zyklen === "number" ? tagessumme.zyklen : null,
           ausgaenge: tagessumme?.ausgaenge ?? null,
           // Der Trichter kommt aus DERSELBEN Tagessumme. Fehlt sie, ist
