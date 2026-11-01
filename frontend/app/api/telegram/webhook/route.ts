@@ -491,10 +491,24 @@ Gib dein <b>Admin-Passwort</b> ein um das System zu reaktivieren (60 Sekunden):`
 
     if (textLower === "/peakreset") {
       const { PEAK_SCHLUESSEL } = await import("@/lib/trading-filters/trade-filters");
-      const { cacheGet } = await import("@/lib/cache/redis-cache");
+      const { cacheLesen } = await import("@/lib/cache/redis-cache");
       const { getCapitalSession } = await import("@/lib/capital-com/capital-com-session");
-      const jetzt = await cacheGet<{ peak: number }>(PEAK_SCHLUESSEL).catch(() => null);
+      const gelesen = await cacheLesen<{ peak: number }>(PEAK_SCHLUESSEL)
+        .catch(() => ({ wert: null, herkunft: "aus" as const }));
       const stand = getCapitalSession()?.balance;
+
+      // NIEMAND HAT GEANTWORTET (01.11.). Hier stand nur `!jetzt`, und die
+      // Antwort lautete dann "Es ist gar kein Höchststand gespeichert".
+      // Bei einem Redis-Ausfall ist das eine BEHAUPTUNG: der Höchststand
+      // kann sehr wohl gesetzt sein. Der Nutzer glaubt dann, die
+      // Sackgasse sei offen — in dem Befehl, der genau dafür existiert.
+      // Ein Reset wäre hier ausserdem blind: `cacheDel` erwischt nur den
+      // prozesseigenen Speicher, Redis behält den echten Wert.
+      if (gelesen.herkunft === "aus") {
+        await reply(chatId, "❌ Höchststand <b>nicht abrufbar</b> — niemand hat geantwortet (weder Redis noch der prozesseigene Speicher). Es wurde <b>nichts</b> zurückgesetzt, und ob ein Höchststand gespeichert ist, lässt sich gerade NICHT feststellen. Später erneut versuchen; /status zeigt die Lage.");
+        return NextResponse.json({ ok: true });
+      }
+      const jetzt = gelesen.wert;
 
       if (!jetzt || !Number.isFinite(jetzt.peak)) {
         await reply(chatId, "ℹ️ Es ist gar kein Höchststand gespeichert — nichts zurückzusetzen. "

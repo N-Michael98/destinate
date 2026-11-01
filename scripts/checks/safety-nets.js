@@ -1687,7 +1687,14 @@ module.exports = async function pruefe() {
               PEAK_SCHLUESSEL: "peak_balance",
               peakZuruecksetzen: async () => ({ ok: true, alt: 10000 }),
             },
-            "cache/redis-cache": { cacheGet: async () => ({ peak: 10000 }), cacheSet: async () => true, cacheDel: async () => true },
+            // Seit dem 01.11. liest der /peakreset-Vorlauf mit cacheLesen.
+            // Ohne diesen Ersatz ist es der Stellvertreter, der Vorlauf
+            // faellt auf "nicht abrufbar" und der ganze Passwort-Pfad
+            // darunter wird nie betreten — derselbe Fall wie bei den neun
+            // trade-filters-Pruefstaenden.
+            "cache/redis-cache": { cacheGet: async () => ({ peak: 10000 }),
+              cacheLesen: async () => ({ wert: { peak: 10000 }, herkunft: "redis" }),
+              cacheSet: async () => true, cacheDel: async () => true },
             "capital-com/capital-com-session": { getCapitalSession: () => ({ balance: 9982.56 }) },
           });
           if (wh.fehler || typeof wh.exports.POST !== "function") {
@@ -1733,6 +1740,158 @@ module.exports = async function pruefe() {
               alarme.some((a) => /ZURÜCKGESETZT/.test(a))
               || /zurückgesetzt/i.test(antworten.at(-1) ?? ""),
               (antworten.at(-1) ?? "").slice(0, 60));
+
+            // ── UND EIN FEHLSCHLAG MUSS BEIM NUTZER ANKOMMEN (01.11.) ──
+            //
+            // Seit heute gibt `peakZuruecksetzen()` bei einem Redis-
+            // Ausfall `ok: false` zurueck statt stillschweigend Erfolg zu
+            // melden. Diese Kette war bis jetzt nur GELESEN: der
+            // Pruefstand oben ersetzt die Funktion durch `{ok: true}`,
+            // der neue Zweig lief nie. Ein Fix, dessen Meldeweg
+            // ungeprueft ist, ist ein halber Fix.
+            {
+              const antw2 = [], alarme2 = [];
+              let prAufrufe = 0;
+              let prLesen = 0;
+              const altF2 = global.fetch;
+              let wh2;
+              try {
+                global.fetch = async (_u, init) => {
+                  antw2.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+                  return okAntwort();
+                };
+                wh2 = ladeTsModul("app/api/telegram/webhook/route.ts", {
+                  "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
+                  "telegram-notifications/telegram-sender": {
+                    sendTelegram: async (t) => { alarme2.push(String(t)); return true; },
+                    telegramZeit: () => "1.11.2026, 20:00:00 MEZ", telegramDatum: () => "1.11.2026",
+                  },
+                  "lib/killswitch": {
+                    getKillswitchReport: () => ({ triggered: false, armed: true,
+                      systemLocked: false, stages: [], summary: "ok" }),
+                    triggerKillswitch: () => ({ triggered: true }),
+                    resetKillswitch: () => ({ triggered: false }),
+                  },
+                  "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+                  "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
+                    { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
+                  "trading-filters/trade-filters": {
+                    PEAK_SCHLUESSEL: "peak_balance",
+                    peakZuruecksetzen: async () => { prAufrufe++;
+                      return { ok: false, alt: null,
+                        fehler: "Redis hat nicht geantwortet — der gespeicherte Hoechststand ist UNVERAENDERT." }; },
+                  },
+                  // Zwei Lagen in EINEM Lauf: der erste /peakreset-Aufruf
+                  // bekommt ein cacheLesen, das "aus" MELDET, der zweite
+                  // eines, das WIRFT. Der catch-Rueckfall muss dann
+                  // ebenfalls "aus" ergeben — ein erfundener Hoechststand
+                  // dort waere die Luege aus der Regel vom 22.09.
+                  "cache/redis-cache": { cacheGet: async () => null,
+                    cacheLesen: async () => {
+                      prLesen++;
+                      if (prLesen > 1) throw new Error("Redis kaputt");
+                      return { wert: null, herkunft: "aus" };
+                    },
+                    cacheSet: async () => true, cacheDel: async () => true },
+                  "capital-com/capital-com-session": { getCapitalSession: () => null },
+                });
+                if (!wh2.fehler && typeof wh2.exports?.POST === "function") {
+                  const s2 = (text) => wh2.exports.POST({ json: async () => ({
+                    message: { chat: { id: Number(chat) },
+                      from: { first_name: "Pruefstand" }, text } }) });
+                  await s2("/peakreset");
+                  await s2("/peakreset");   // zweiter Lauf: cacheLesen WIRFT
+                  await s2(pw);
+                }
+              } finally { global.fetch = altF2; }
+              const alleZ = antw2.join("\n");
+              torPruefung("/peakreset ist nicht ausfuehrbar",
+                !wh2?.fehler, wh2?.fehler ?? "ok");
+              // DER SECHSTE FUND, von genau dieser Pruefung aufgedeckt:
+              // der Vorlauf von /peakreset las den Hoechststand mit
+              // `cacheGet` und antwortete bei `null` "Es ist gar kein
+              // Hoechststand gespeichert". Bei einem Ausfall ist das eine
+              // BEHAUPTUNG — der Wert kann sehr wohl gesetzt sein, und der
+              // Nutzer glaubt, die Sackgasse sei offen.
+              // GEZAEHLT, nicht gefunden: es sind ZWEI Laeufe — der erste
+              // mit einem cacheLesen, das "aus" meldet, der zweite mit
+              // einem, das WIRFT. Eine Suche nach dem ersten Treffer waere
+              // mit dem Ergebnis des ersten Laufs schon zufrieden, und eine
+              // Sabotage am catch-Rueckfall blieb gruen. Lehre vom 25.10.
+              const nichtAbrufbar = (alleZ.match(/nicht abrufbar/g) || []).length;
+              torPruefung("ein Redis-Ausfall wird als \"gar kein Hoechststand gespeichert\" ausgegeben — eine Behauptung statt einer Messung",
+                nichtAbrufbar === 2 && /niemand hat geantwortet/.test(alleZ)
+                && !/gar kein Höchststand gespeichert/.test(alleZ),
+                `${nichtAbrufbar}x "nicht abrufbar" (erwartet 2: gemeldet + geworfen)` + ` — ${alleZ.replace(/\n/g, " | ").slice(-120)}`);
+              // Und ein Reset waere hier BLIND: `cacheDel` erwischt nur den
+              // prozesseigenen Speicher, Redis behaelt den echten Wert.
+              torPruefung("bei einem Ausfall wird trotzdem zurueckgesetzt",
+                prAufrufe === 0, `peakZuruecksetzen ${prAufrufe}x gerufen`);
+              torPruefung("ein Ausfall meldet TROTZDEM Erfolg in den Kanal",
+                !alarme2.some((a) => /ZURÜCKGESETZT/.test(a))
+                && !/♻️ Passwort korrekt/.test(alleZ),
+                `${alarme2.length} Kanal-Meldung(en): ${(alarme2[0] ?? "keine").slice(0, 60)}`);
+
+              // ZWEITER FALL: Redis ANTWORTET mit einem Hoechststand, aber
+              // das Zuruecksetzen selbst scheitert. Dann muss der Grund
+              // beim Nutzer ankommen — das ist der Zweig `if (!ergebnis.ok)`.
+              {
+                const antw3 = [];
+                let pr3 = 0;
+                const altF3 = global.fetch;
+                let wh3;
+                try {
+                  global.fetch = async (_u, init) => {
+                    antw3.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+                    return okAntwort();
+                  };
+                  wh3 = ladeTsModul("app/api/telegram/webhook/route.ts", {
+                    "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
+                    "telegram-notifications/telegram-sender": {
+                      sendTelegram: async (t) => { antw3.push(String(t)); return true; },
+                      telegramZeit: () => "1.11.2026, 20:00:00 MEZ",
+                      telegramDatum: () => "1.11.2026",
+                    },
+                    "lib/killswitch": {
+                      getKillswitchReport: () => ({ triggered: false, armed: true,
+                        systemLocked: false, stages: [], summary: "ok" }),
+                      triggerKillswitch: () => ({ triggered: true }),
+                      resetKillswitch: () => ({ triggered: false }),
+                    },
+                    "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+                    "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
+                      { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
+                    "trading-filters/trade-filters": {
+                      PEAK_SCHLUESSEL: "peak_balance",
+                      peakZuruecksetzen: async () => { pr3++; return { ok: false, alt: null,
+                        fehler: "Redis hat nicht geantwortet — UNVERAENDERT." }; },
+                    },
+                    "cache/redis-cache": {
+                      cacheGet: async () => ({ peak: 2000 }),
+                      cacheLesen: async () => ({ wert: { peak: 2000 }, herkunft: "redis" }),
+                      cacheSet: async () => true, cacheDel: async () => true },
+                    "capital-com/capital-com-session": { getCapitalSession: () => ({ balance: 1870 }) },
+                  });
+                  if (!wh3.fehler && typeof wh3.exports?.POST === "function") {
+                    const s3 = (text) => wh3.exports.POST({ json: async () => ({
+                      message: { chat: { id: Number(chat) },
+                        from: { first_name: "Pruefstand" }, text } }) });
+                    await s3("/peakreset");
+                    await s3(pw);
+                  }
+                } finally { global.fetch = altF3; }
+                const alle3 = antw3.join("\n");
+                torPruefung("der Vorlauf fragt nicht nach dem Passwort, wenn ein Hoechststand da ist",
+                  /Admin-Passwort/.test(alle3), alle3.slice(0, 80));
+                torPruefung("ein gescheitertes Zuruecksetzen meldet dem Nutzer nichts — er glaubt dann, die Sperre sei geloest",
+                  pr3 === 1 && /fehlgeschlagen/i.test(alle3)
+                  && /UNVERAENDERT/.test(alle3),
+                  `${pr3}x gerufen: ${alle3.replace(/\n/g, " | ").slice(-140)}`);
+                torPruefung("ein gescheitertes Zuruecksetzen meldet TROTZDEM Erfolg",
+                  !/ZURÜCKGESETZT/.test(alle3) && !/♻️ Passwort korrekt/.test(alle3),
+                  alle3.replace(/\n/g, " | ").slice(-120));
+              }
+            }
 
             // ── reply() DARF EINEN FEHLSCHLAG NICHT VERSCHLUCKEN (26.10.) ──
             //

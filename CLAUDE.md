@@ -3279,6 +3279,68 @@ zweiten Stelle muss **schweigen**; bei geteiltem Zustand liest er den
 Eintrag der ersten und meldet einen Wechsel. Zum wiederholten Mal: **ein
 Testfall, der den Fehler nicht ausdrücken kann, beweist nichts.**
 
+#### Der neue Prüfer fand sofort einen sechsten Fund
+
+Die Kette „Ausfall → `ok: false` → der Nutzer erfährt es" war nur
+**gelesen**: der Webhook-Prüfstand ersetzt `peakZuruecksetzen` durch
+`{ok: true}`, der neue Zweig lief dort nie. Ein Fix, dessen Meldeweg
+ungeprüft ist, ist ein halber Fix — also ausgeführt nachgezogen. Und der
+erste Lauf war **rot**, aber an einer anderen Stelle als erwartet:
+
+```ts
+const jetzt = await cacheGet<{ peak: number }>(PEAK_SCHLUESSEL).catch(() => null);
+if (!jetzt || !Number.isFinite(jetzt.peak)) {
+  await reply(chatId, "ℹ️ Es ist gar kein Höchststand gespeichert — nichts zurückzusetzen. …");
+```
+
+`/peakreset` liest den Höchststand **vor** der Passwortfrage. Bei einem
+Redis-Ausfall antwortete der Bot damit **„Es ist gar kein Höchststand
+gespeichert"** — eine **Behauptung**, keine Messung. Der Wert kann sehr
+wohl gesetzt sein, und der Nutzer glaubt dann, die Sackgasse sei offen.
+Ausgerechnet in dem Befehl, der **existiert, weil** der Gesamt-Drawdown
+eine Sackgasse ist (29.09.).
+
+Jetzt drei Lagen: `aus` → *„nicht abrufbar — niemand hat geantwortet, es
+wurde NICHTS zurückgesetzt"*; Redis antwortet und der Schlüssel fehlt →
+der alte Text, der dann **stimmt**; Redis antwortet mit einem Wert → wie
+bisher die Passwortfrage. Ein Reset wäre im Ausfall ausserdem **blind**:
+`cacheDel` erwischt nur den prozesseigenen Speicher, Redis behält den
+echten Wert.
+
+**Zwei Prüfer-Lehren daraus, beide alt und beide erneut fällig:**
+
+- **Ein neuer Aufruf braucht seinen Ersatz überall.** Nach der Umstellung
+  auf `cacheLesen` brach der *bestehende* `/peakreset`-Prüfstand: sein
+  Cache-Ersatz kannte nur `cacheGet`, der Stellvertreter warf, und mein
+  `.catch` fiel auf „aus" — der ganze Passwort-Pfad darunter wurde nie
+  mehr betreten. Dieselbe Falle wie bei den neun trade-filters-Prüfständen,
+  nur eine Datei weiter.
+- **Zählen statt finden.** Der Prüfstand fährt `/peakreset` **zweimal**:
+  einmal mit einem `cacheLesen`, das `aus` meldet, einmal mit einem, das
+  **wirft**. Eine Suche nach „nicht abrufbar" war mit dem Ergebnis des
+  **ersten** Laufs schon zufrieden — eine Sabotage am `catch`-Rückfall
+  blieb grün. Jetzt müssen es **zwei** Treffer sein. Wörtlich die Lehre
+  vom 25.10.: ein Treffer beweist nichts über die andere Stelle.
+
+`safety-nets` 948 → **955**, **18 von 18 Sabotagen** (S17 stellt den Fund
+wieder her, S18 lässt den `catch`-Rückfall einen Höchststand erfinden).
+
+**Zwei weitere eigene Fehler dabei:** mein `node -e` enthielt Backticks,
+und die **Shell hat sie als Befehl ausgeführt** (`.catch: command not
+found`) — ein Kommentar kam verstümmelt in der Datei an. Die Regel steht
+seit Wochen im Gedächtnis und ich habe sie wieder getreten: alles mit
+Backtick gehört über das Write-Werkzeug in eine Datei. Und `prAufrufe ===
+0` ist eine Zusicherung, die **keine einzelne Sabotage reissen kann** —
+zwei unabhängige Riegel stehen davor. Sie bleibt als Gürtel-und-Hosenträger
+stehen, wird aber **nicht** als gefangene Sabotage gezählt.
+
+**Nach dem Fix gemessen:** von 29 `cacheGet`-Aufrufstellen sind **23**
+übrig — `trade-filters.ts` und `killswitch-engine.ts` lesen vollständig
+über `cacheLesen`. Die drei verbliebenen, die eine Lage verwechseln
+*könnten*, sind die oben begründeten: `peak_balance` in `/status`
+(„unbekannt" ist dort richtig), `zyklus:tag:<Datum>` (0 wäre ein
+Fehlalarm) und der Statusbericht in `auto-execute`.
+
 ## Ohne Stop keine Order (28.10.)
 
 Gefunden beim Nachgehen der Frage, ob offene Positionen geschützt sind, wenn
