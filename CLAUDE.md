@@ -3052,24 +3052,114 @@ den Grund. Gemessen, nachdem der erste Testfall **kein** `createdAt`
 trug und damit nur EINE Stunden-Gruppe erzeugte: ein Testfall, der den
 Fall nicht ausdrücken kann, beweist nichts.
 
-### Offen und benannt: `Tageslimit: unbekannt` an jedem ruhigen Tag
+### „Keine Trades" ist nicht „unbekannt" (01.11.)
 
-`/status` meldete am 01.11. **„❔ Tageslimit: unbekannt"**. Die Ursache
-ist `cacheGet()` (`redis-cache.ts:42`): es gibt `null` für **drei**
-verschiedene Lagen zurück — Redis nicht erreichbar, Redis wirft, **oder
+`/status` meldete am 01.11. **„❔ Tageslimit: unbekannt"** — und das an
+**jedem** ruhigen Tag.
+
+Die Ursache liegt eine Schicht tiefer: `cacheGet()` gibt `null` für **drei
+verschiedene Lagen** zurück — Redis nicht erreichbar, Redis wirft, **oder
 der Schlüssel fehlt**. An einem Tag ohne Trades existiert
-`daily_trades:<Datum>` schlicht nicht, und aus „noch keine Trades" wird
+`daily_trades:<Datum>` schlicht nicht, und aus „noch keine Trades" wurde
 „unbekannt".
 
-Der Besitzer selbst liest das anders: der Orchestrator nimmt
+**Der Besitzer liest das anders.** `orchestrator-agent.ts:853` nimmt
 `redisDailyRaw?.count ?? 0` — für ihn ist ein fehlender Schlüssel **0**.
-Die Anzeige ist also pessimistischer als die Wahrheit, und das Urteil
-zählt eine „nicht feststellbare" Angabe mehr als nötig.
+Die Anzeige war also pessimistischer als die Wahrheit, und das Urteil
+zählte eine „nicht feststellbare" Angabe mehr, als es gab.
 
-**Nicht behoben**, weil die saubere Lösung in der Cache-Schicht liegt
-(„Redis hat geantwortet, der Schlüssel fehlt" von „Redis antwortet
-nicht" trennen) und damit jeden Leser im Programm berührt. Eigene
-Entscheidung, eigene Runde.
+Das ist die Regel vom 22.09. **in der anderen Richtung**: dort durfte aus
+„unbekannt" keine Messung werden — hier darf aus einer **Messung** kein
+„unbekannt" werden. Beide Male ist die stille Gleichsetzung der Fehler.
+
+**Jetzt sagt `cacheLesen()` zusätzlich, WOHER die Antwort kommt:**
+
+| Herkunft | ein `null` heisst dann |
+|---|---|
+| `redis` | den Schlüssel gibt es **wirklich nicht** |
+| `speicher` | aus dem prozesseigenen Zwischenspeicher, gilt nur hier |
+| `aus` | **niemand hat geantwortet** — unbekannt |
+
+`/status` bildet damit genau ab, was der Besitzer tut: Redis antwortet und
+der Schlüssel fehlt → **0 Trades heute**. Niemand antwortet → **unbekannt**.
+
+**`cacheGet()` ist auf `cacheLesen()` zurückgeführt** — eine Umsetzung,
+nicht zwei. Zwei Fassungen desselben Lesewegs könnten auseinanderlaufen,
+und dann widersprechen sich zwei Antworten auf dieselbe Frage; dieselbe
+Begründung wie bei `herkunftListe()` in `/edge` und `erwartungswert()` in
+`/hebel`. Für alle **29** bestehenden Aufrufstellen ändert sich **nichts**.
+
+#### Zwei Stellen bleiben bewusst bei „unbekannt"
+
+- **`peak_balance`** — fehlt der Schlüssel, ist der Höchststand wirklich
+  noch nicht gesetzt, und der Drawdown ist dann **nicht berechenbar**.
+  „Unbekannt" ist dort also schon richtig.
+- **`zyklus:tag:<Datum>`** — hier wäre die Umstellung ein **Fehler**:
+  fehlt der Schlüssel, würde `/status` „Zyklen heute: 0" melden, und das
+  ist in `handelsLage()` ein **Blocker** („die Schleife läuft nicht").
+  Zwischen 00:00 UTC und dem ersten Zyklus wäre das ein Fehlalarm — jeden
+  Tag. Nachgedacht, nicht übertragen.
+
+#### Absicherung — und das Loch, das erst der Sabotage-Lauf zeigte
+
+`safety-nets` prüft auf **zwei** Ebenen, weil eine nicht reicht:
+
+1. **`/status` ausgeführt** gegen einen `cacheLesen`-Stellvertreter, der die
+   drei Lagen spielt, mit der Tageslimit-Zeile aus der echten Antwort.
+2. **`cacheLesen()` selbst ausgeführt** — gegen einen gefälschten
+   Redis-Client (Treffer und Nicht-Treffer), gegen „kein Redis", gegen den
+   prozesseigenen Speicher, plus die Gegenprobe, dass `cacheGet()` weiter
+   den **Wert** liefert und nicht die Herkunft.
+
+**Ebene 2 fehlte zuerst, und das war ein echtes Prüferloch.** Drei von
+sieben Sabotagen trafen `redis-cache.ts` und blieben **grün** — im
+`/status`-Prüfstand ist dieses Modul durch einen Stellvertreter **ersetzt**,
+das echte lief dort also gar nicht. Wörtlich die Fehlerklasse vom 30.09.:
+**eine geprüfte Funktion, die nie echte Werte bekommt, beweist nichts über
+sich.** Nach dem Nachbau **8 von 8**, 918 → **923** Prüfungen; die
+Gegenprobe (eine wirkungslose Änderung bleibt grün) gehört dazu.
+
+**Zwei eigene Messfehler, beide gehören zur Methode:**
+
+- Mein erster Prüfstand lauschte an `sendTelegram` und bekam
+  „(keine Zeile)". `/status` antwortet über `reply()`, und das benutzt
+  **`global.fetch`** — der Stellvertreter sass am falschen Ende.
+- Nach dem Nachbau wurden T4/T5 rot, aber mit **„andere Zeile"**: die
+  Erwartung im Sabotage-Skript zeigte noch auf den alten, indirekten
+  Nachweisweg. Sie als gefangen zu zählen war richtig, **7/7 zu melden
+  wäre falsch gewesen** — erst die korrigierte Erwartung belegt, dass die
+  **richtige** Prüfung anschlägt und nicht irgendeine.
+
+#### Wo steckt die Klasse noch? 29 Aufrufstellen, einzeln beurteilt
+
+Die systematische Frage nach dem Fund: welcher **andere** Leser
+verwechselt „Schlüssel fehlt" mit „unbekannt" — oder, schlimmer, mit einem
+**Wert**? Gemessen über alle `cacheGet`/`cacheGetOrFetch`-Aufrufe im
+Frontend, mit Selbstprüfung gegen die bekannte Stelle im Orchestrator, und
+**jeder Treffer von Hand nachgelesen** — die Markierung allein ist kein
+Befund.
+
+**26 von 29 sind richtig.** Entweder *ist* der Ersatz die Wahrheit (eine
+fehlende Sperrliste bedeutet keine gesperrten IPs, eine fehlende Tagessumme
+einen Tag ohne Zyklen), oder die Stelle bildet selbst ehrlich auf `null` ab
+(`insights-reader.ts`, `claude-watchdog.ts`).
+
+**Drei haben eine echte Folge** — alle **benannt, nicht geändert**, weil sie
+in Dateien mit erhöhtem Risiko liegen und eine Zustimmung brauchen:
+
+| Stelle | was ein Redis-Ausfall dort bedeutet |
+|---|---|
+| `killswitch-engine.ts:100` | `restoreKillswitchFromRedis()` gibt `false` zurück — **stumm**, und `instrumentation.ts:202` schreibt nur bei `true` eine Zeile. Der Satz „er überlebt einen Deploy" gilt damit **nur, wenn Redis antwortet** |
+| `trade-filters.ts:139` | `checkDailyLossLimit` liest das als **ersten Zyklus des Tages** und schreibt den aktuellen Kontostand als Tagesstart. Die Tagesverlust-Grenze misst danach vom Ausfall-Moment |
+| `trade-filters.ts:320` | `checkTotalDrawdownLimit` bekommt `peak = 0`, schreibt den aktuellen Stand als neuen Höchststand — der Gesamt-Drawdown misst ebenfalls neu |
+
+Alle drei zeigen in dieselbe Richtung: der Schutz wird **schwächer**, nicht
+strenger, und niemand erfährt es. Das Werkzeug dagegen steht jetzt
+(`cacheLesen`); es dort zu benutzen ist eine eigene Runde mit eigenem Plan.
+
+Vierter Fall, ohne Geldfolge: `auto-execute/route.ts:61` meldet bei einem
+Ausfall `0` statt „unbekannt". Reiner Statusbericht, keine Entscheidung —
+derselbe Gedanke, andere Grössenordnung.
 
 ## Ohne Stop keine Order (28.10.)
 

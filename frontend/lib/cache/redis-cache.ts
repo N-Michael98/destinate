@@ -39,17 +39,59 @@ async function getClient() {
   return _client;
 }
 
-export async function cacheGet<T>(key: string): Promise<T | null> {
+/**
+ * Woher eine Antwort kommt.
+ *
+ * - `redis`   — Redis hat geantwortet. Ein `null` heisst dann: den
+ *               Schluessel gibt es WIRKLICH nicht.
+ * - `speicher`— aus dem prozesseigenen Zwischenspeicher (Redis war
+ *               nicht erreichbar). Gilt nur fuer diesen Prozess.
+ * - `aus`     — niemand hat geantwortet. Ein `null` heisst dann:
+ *               UNBEKANNT, nicht "gibt es nicht".
+ */
+export type CacheHerkunft = "redis" | "speicher" | "aus";
+
+export type CacheLesung<T> = { wert: T | null; herkunft: CacheHerkunft };
+
+/**
+ * Lesen MIT Herkunft (01.11.).
+ *
+ * ANLASS: `/status` meldete an jedem ruhigen Tag
+ * "Tageslimit: unbekannt". `cacheGet()` gibt `null` fuer DREI Lagen
+ * zurueck — Redis weg, Redis wirft, oder der Schluessel fehlt. An
+ * einem Tag ohne Trades existiert `daily_trades:<Datum>` schlicht
+ * nicht, und aus "noch keine Trades" wurde "unbekannt".
+ *
+ * Das ist die Regel vom 22.09. in der anderen Richtung: aus einer
+ * MESSUNG darf kein "unbekannt" werden. Wer unterscheiden muss,
+ * braucht die Herkunft — die Zahl allein gibt sie nicht her.
+ */
+export async function cacheLesen<T>(key: string): Promise<CacheLesung<T>> {
   const client = await getClient();
   if (client) {
     try {
       const val = await client.get(key);
-      return val ? JSON.parse(val) as T : null;
-    } catch { /* fall through to mem */ }
+      return { wert: val ? JSON.parse(val) as T : null, herkunft: "redis" };
+    } catch { /* Redis hat NICHT geantwortet — weiter zum Speicher */ }
   }
   const entry = memCache.get(key);
-  if (!entry || Date.now() > entry.expiresAt) { memCache.delete(key); return null; }
-  return entry.value as T;
+  if (!entry || Date.now() > entry.expiresAt) {
+    memCache.delete(key);
+    return { wert: null, herkunft: "aus" };
+  }
+  return { wert: entry.value as T, herkunft: "speicher" };
+}
+
+/**
+ * Lesen ohne Herkunft — genau wie bisher.
+ *
+ * EINE Umsetzung, nicht zwei: zwei Fassungen desselben Lesewegs
+ * koennten auseinanderlaufen, und dann widersprechen sich zwei
+ * Antworten auf dieselbe Frage. Dieselbe Begruendung wie bei
+ * `herkunftListe()` in /edge und `erwartungswert()` in /hebel.
+ */
+export async function cacheGet<T>(key: string): Promise<T | null> {
+  return (await cacheLesen<T>(key)).wert;
 }
 
 export async function cacheSet(key: string, value: unknown, ttlSeconds = 30): Promise<void> {

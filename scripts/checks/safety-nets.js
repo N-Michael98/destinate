@@ -1872,13 +1872,176 @@ module.exports = async function pruefe() {
                 `${abfragen.length - vorher} Abfragen nach der Ablehnung`);
             }
 
-            // DIE EINGABE DARF NICHT IN DEN CHAT ZURUECK (Regel 29.09.).
+            // ── "KEINE TRADES" IST NICHT "UNBEKANNT" (01.11.) ──────────
             //
-            // Ein Telegram-Verlauf liegt auf jedem angemeldeten Geraet und auf
-            // Telegrams Servern und laesst sich nicht zurueckholen. Wer sich
-            // vertippt und `/edge <etwas Vertrauliches>` schickt, haette es
-            // sonst dauerhaft dort stehen. Die Meldung braucht das Argument
-            // nicht — Laenge und die richtige Form erklaeren alles.
+            // `/status` meldete an JEDEM ruhigen Tag "Tageslimit:
+            // unbekannt". `cacheGet()` gibt `null` fuer drei Lagen zurueck
+            // — Redis weg, Redis wirft, oder der Schluessel fehlt. Ohne
+            // Trades existiert `daily_trades:<Datum>` nicht, und aus
+            // "noch keine Trades" wurde "unbekannt".
+            //
+            // Der BESITZER liest das anders: `orchestrator-agent.ts:853`
+            // nimmt `redisDailyRaw?.count ?? 0`. Die Anzeige war also
+            // pessimistischer als die Wahrheit.
+            //
+            // AUSGEFUEHRT gegen einen Stellvertreter, der die drei Lagen
+            // spielt — ein Regex koennte das nicht unterscheiden.
+            {
+              const rcEcht = ladeTsModul("lib/cache/redis-cache.ts");
+              const lesen = rcEcht.exports?.cacheLesen;
+              const holen = rcEcht.exports?.cacheGet;
+              torPruefung("`cacheLesen` fehlt — dann laesst sich \"Schluessel "
+                + "fehlt\" nicht von \"Redis weg\" trennen",
+                typeof lesen === "function" && typeof holen === "function",
+                `${typeof lesen} / ${typeof holen}`);
+
+              // ── `cacheLesen` SELBST ausfuehren ──────────────────────
+              //
+              // Die drei Lagen unten pruefen, wie `/status` mit der
+              // Herkunft UMGEHT — aber dort ist `redis-cache` durch einen
+              // Stellvertreter ersetzt. Im Sabotage-Lauf blieben deshalb
+              // drei Sabotagen AN redis-cache.ts gruen: das echte Modul
+              // lief gar nicht. Also hier das ECHTE Modul gegen einen
+              // gefaelschten Redis-Client.
+              {
+                const altUrl = process.env.REDIS_URL;
+                try {
+                  process.env.REDIS_URL = "redis://pruefstand:6379";
+                  const bestand = new Map([["da", JSON.stringify({ count: 7 })]]);
+                  const falscherClient = {
+                    on() { return this; },
+                    async connect() { return this; },
+                    async get(k) { return bestand.has(k) ? bestand.get(k) : null; },
+                    async setEx() { return "OK"; },
+                  };
+                  const rcMit = ladeTsModul("lib/cache/redis-cache.ts",
+                    { redis: { createClient: () => falscherClient } });
+                  const lesenMit = rcMit.exports?.cacheLesen;
+                  const holenMit = rcMit.exports?.cacheGet;
+                  if (typeof lesenMit !== "function" || typeof holenMit !== "function") {
+                    torPruefung("redis-cache ist nicht ausfuehrbar", false,
+                      rcMit.fehler ?? "nicht exportiert");
+                  } else {
+                    const da = await lesenMit("da");
+                    torPruefung("Redis antwortet MIT Wert, aber die Herkunft "
+                      + "ist nicht `redis` oder der Wert fehlt",
+                      da.herkunft === "redis" && da.wert?.count === 7,
+                      JSON.stringify(da));
+                    const fehlt = await lesenMit("gibt-es-nicht");
+                    torPruefung("Redis antwortet OHNE Treffer, aber die "
+                      + "Herkunft ist nicht `redis` — dann ist \"Schluessel "
+                      + "fehlt\" nicht von \"Redis weg\" zu trennen",
+                      fehlt.herkunft === "redis" && fehlt.wert === null,
+                      JSON.stringify(fehlt));
+                    // `cacheGet` muss GENAU den Wert liefern, nichts anderes.
+                    torPruefung("`cacheGet` gibt nicht mehr den Wert zurueck "
+                      + "— dann liest jeder Aufrufer im Programm Unsinn",
+                      (await holenMit("da"))?.count === 7
+                      && (await holenMit("gibt-es-nicht")) === null,
+                      JSON.stringify(await holenMit("da")));
+                  }
+
+                  // OHNE Redis: eine fehlende Antwort heisst `aus`.
+                  delete process.env.REDIS_URL;
+                  const rcOhne = ladeTsModul("lib/cache/redis-cache.ts");
+                  const lesenOhne = rcOhne.exports?.cacheLesen;
+                  const setzenOhne = rcOhne.exports?.cacheSet;
+                  if (typeof lesenOhne === "function") {
+                    const aus = await lesenOhne("gibt-es-nicht");
+                    torPruefung("ohne Redis meldet `cacheLesen` nicht `aus` — "
+                      + "dann gilt ein Ausfall als \"Schluessel fehlt\", und "
+                      + "aus unbekannt wird eine Messung",
+                      aus.herkunft === "aus" && aus.wert === null,
+                      JSON.stringify(aus));
+                    // Und der prozesseigene Speicher meldet sich als solcher.
+                    if (typeof setzenOhne === "function") {
+                      await setzenOhne("mem", { a: 1 }, 60);
+                      const sp = await lesenOhne("mem");
+                      torPruefung("der prozesseigene Speicher gibt sich als "
+                        + "Redis aus — dann sieht eine lokale Kopie wie eine "
+                        + "verbindliche Antwort aus",
+                        sp.herkunft === "speicher" && sp.wert?.a === 1,
+                        JSON.stringify(sp));
+                    }
+                  }
+                } finally {
+                  if (altUrl === undefined) delete process.env.REDIS_URL;
+                  else process.env.REDIS_URL = altUrl;
+                }
+              }
+
+              // DREI LAGEN, je eine eigene Antwort.
+              for (const [lage, antwort, sollZahl] of [
+                ["Redis antwortet mit 7 Trades", { wert: { count: 7 }, herkunft: "redis" }, 7],
+                ["Redis antwortet, Schluessel fehlt", { wert: null, herkunft: "redis" }, 0],
+                ["niemand antwortet", { wert: null, herkunft: "aus" }, null],
+              ]) {
+                const altLage = global.__daily_trades__;
+                const altF = global.fetch;
+                let text = "";
+                try {
+                  delete global.__daily_trades__;
+                  // `/status` antwortet ueber `reply()`, und das benutzt
+                  // `global.fetch` — NICHT `sendTelegram`. Mein erster
+                  // Versuch lauschte nur an `sendTelegram` und bekam
+                  // "(keine Zeile)": der Stellvertreter sass am falschen
+                  // Ende.
+                  global.fetch = async (_u, opt) => {
+                    try {
+                      const b = JSON.parse(opt?.body ?? "{}");
+                      if (typeof b.text === "string") text += `${b.text}\n`;
+                    } catch { /* egal */ }
+                    return { ok: true, status: 200,
+                      json: async () => ({ ok: true }),
+                      text: async () => "{\"ok\":true}" };
+                  };
+                  const whL = ladeTsModul("app/api/telegram/webhook/route.ts", {
+                    "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
+                    "telegram-notifications/telegram-sender": {
+                      sendTelegram: async (t) => { text = t; return true; },
+                      telegramZeit: () => "01.11.2026, 14:00:00 MEZ",
+                      telegramDatum: () => "01.11.2026",
+                    },
+                    "lib/killswitch": { getKillswitchReport: () => ({ triggered: false,
+                      armed: true, systemLocked: false, stages: [], summary: "ok" }) },
+                    "app/lib/prisma": { getPrisma: () => ({ trade: { findMany: async () => [] } }) },
+                    "cache/redis-cache": {
+                      cacheLesen: async (k) => (String(k).startsWith("daily_trades:")
+                        ? antwort : { wert: null, herkunft: "aus" }),
+                      cacheGet: async () => null,
+                      cacheSet: async () => undefined,
+                    },
+                    "settings/settings-store": { getSettings: async () => ({
+                      botSettings: { mode: "AUTO", maxConcurrentPositions: 6,
+                        maxTradesPerDay: 21, tradeLimitEnabled: true },
+                      riskSettings: { maxTotalDrawdownPct: 10 } }) },
+                    "handels-lage/handels-lage":
+                      ladeTsModul("lib/handels-lage/handels-lage.ts", {
+                        "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
+                      }).exports,
+                    "laufzeit/laufzeit-stand": ladeTsModul("lib/laufzeit/laufzeit-stand.ts").exports,
+                  });
+                  if (whL.fehler || typeof whL.exports?.POST !== "function") {
+                    torPruefung(`${lage}: /status nicht ausfuehrbar`, false,
+                      whL.fehler ?? "POST fehlt");
+                  } else {
+                    await whL.exports.POST({ json: async () => ({ message: {
+                      chat: { id: Number(chat) }, from: { first_name: "P" },
+                      text: "/status" } }) });
+                  }
+                } finally {
+                  global.fetch = altF;
+                  if (altLage === undefined) delete global.__daily_trades__;
+                  else global.__daily_trades__ = altLage;
+                }
+                const zeile = text.split("\n").find((l) => /Tageslimit/.test(l)) ?? "";
+                const soll = sollZahl === null ? "❔ Tageslimit: unbekannt"
+                  : `✅ Tageslimit: ${sollZahl}/21`;
+                torPruefung(`${lage}: /status meldet nicht "${soll}"`,
+                  zeile.includes(soll), `bekam: ${zeile || "(keine Zeile)"}`);
+              }
+            }
+
             // /status muss den laufenden Stand nennen — END-TO-END durch die
             // echte POST-Funktion, mit der echten Umgebungsvariablen.
             await edge("/status");
@@ -1922,6 +2085,13 @@ module.exports = async function pruefe() {
               !aStatus.includes("a02fc4a9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6"),
               aStatus.replace(/\n/g, " ").slice(0, 200));
 
+            // DIE EINGABE DARF NICHT IN DEN CHAT ZURUECK (Regel 29.09.).
+            //
+            // Ein Telegram-Verlauf liegt auf jedem angemeldeten Geraet und auf
+            // Telegrams Servern und laesst sich nicht zurueckholen. Wer sich
+            // vertippt und `/edge <etwas Vertrauliches>` schickt, haette es
+            // sonst dauerhaft dort stehen. Die Meldung braucht das Argument
+            // nicht — Laenge und die richtige Form erklaeren alles.
             const geheim = "geheim123xyz";          // 12 Zeichen
             await edge(`/edge ${geheim}`);
             const aGeheim = antw.at(-1) ?? "";

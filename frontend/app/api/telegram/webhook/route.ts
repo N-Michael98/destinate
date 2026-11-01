@@ -615,9 +615,17 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         const heuteKey = new Date().toISOString().slice(0, 10);
         const dt = global.__daily_trades__;
         if (dt && dt.date === heuteKey && typeof dt.count === "number") return dt.count;
-        const { cacheGet } = await import("@/lib/cache/redis-cache");
-        const v = await cacheGet<{ count: number }>(`daily_trades:${heuteKey}`);
-        return typeof v?.count === "number" ? v.count : null;
+        const { cacheLesen } = await import("@/lib/cache/redis-cache");
+        const v = await cacheLesen<{ count: number }>(`daily_trades:${heuteKey}`);
+        if (typeof v.wert?.count === "number") return v.wert.count;
+        // REDIS HAT GEANTWORTET, DER SCHLUESSEL FEHLT (01.11.): dann hat
+        // es heute noch KEINEN Trade gegeben — das ist eine Messung, kein
+        // Nichtwissen. Genau so liest es der Besitzer selbst
+        // (`redisDailyRaw?.count ?? 0`, orchestrator-agent.ts:853).
+        // Vorher stand hier an JEDEM ruhigen Tag "Tageslimit: unbekannt".
+        if (v.herkunft === "redis") return 0;
+        // Niemand hat geantwortet — DAS ist unbekannt.
+        return null;
       }),
         ]);
 
