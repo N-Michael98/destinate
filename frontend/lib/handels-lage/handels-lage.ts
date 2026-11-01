@@ -245,10 +245,13 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
 
   // ── 6. Handelszeit ───────────────────────────────────────────────────────
   if (e.inHandelszeit === true) {
-    zeilen.push("✅ Handelszeit: offen (Mo–Fr 08–22 UTC)");
+    zeilen.push("✅ Handelszeit: offen (Mo–Fr, 07:00 London bis 17:00 "
+      + "New York = 08:00–23:00 Zürich)");
   } else if (e.inHandelszeit === false) {
-    blocker.push("Ausserhalb der Handelszeit — ausserhalb Mo–Fr 08–22 UTC normal");
-    zeilen.push("⛔ Handelszeit: ZU (Mo–Fr 08–22 UTC) — ausserhalb davon normal");
+    blocker.push("Ausserhalb der Handelszeit — ausserhalb Mo–Fr, "
+      + "08:00–23:00 Zürich, normal");
+    zeilen.push("⛔ Handelszeit: ZU (Mo–Fr, 07:00 London bis 17:00 New York "
+      + "= 08:00–23:00 Zürich) — ausserhalb davon normal");
   } else {
     unbekannt.push("Handelszeit");
     zeilen.push("❔ Handelszeit: unbekannt");

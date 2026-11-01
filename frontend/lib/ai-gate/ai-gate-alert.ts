@@ -66,7 +66,7 @@ export const TOR_FOLGE: Record<string, string> = {
  */
 const BLEIBT_AKTIV = [
   "Killswitch (seit 07.09. direkt in beiden Ausführungsfunktionen)",
-  "Handelszeitfenster Mo–Fr 08:00–22:00 UTC",
+  "Handelszeitfenster Mo–Fr, 07:00 London bis 17:00 New York",
   "Filterkette, neun Stufen (u. a. Kurs vorhanden, Spread, Duplikat-Schutz)",
   "Freigabe-Schwelle inkl. Untergrenze 70",
   "Positions- und Tageslimit",

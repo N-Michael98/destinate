@@ -2880,6 +2880,107 @@ sich ein Auto-Tuner **schneller in den Verlust**: er lockert die Tore, bis
 wieder Trades durchkommen, und aus „keine Trades" werden „schlechte
 Trades".
 
+## Das Handelsfenster hängt jetzt an den Börsenzonen (01.11.)
+
+**Geändert auf ausdrückliche Anweisung**, und zwar beides auf einmal: der
+Sommerzeit-Fehler ist behoben **und** das Fenster öffnet eine Stunde
+früher.
+
+```ts
+export const HANDELSFENSTER = {
+  oeffnetLondon:    7 * 60,   // 07:00 Europe/London
+  schliesstNewYork: 17 * 60,  // 17:00 America/New_York
+} as const;
+```
+
+**Ausgerechnet, nicht behauptet** — die echten Grenzen in allen drei Lagen:
+
+| | öffnet | schliesst |
+|---|---|---|
+| **Winter** Mo 02.11. | 07:00 UTC = 07:00 London = **08:00 Zürich** = 02:00 NY | 22:00 UTC = **17:00 NY** |
+| **Sommer** Mi 15.07. | 06:00 UTC = 07:00 London = **08:00 Zürich** = 02:00 NY | 21:00 UTC = **17:00 NY** |
+| **Übergang** Mo 09.03. | 07:00 UTC = 07:00 London = **08:00 Zürich** | 21:00 UTC = **17:00 NY** |
+
+**08:00 Zürich, ganzjährig** — das war die Bitte, und sie steht als eigene
+Prüfung im Netz: der Prüfstand sucht sich den UTC-Zeitpunkt, der in Zürich
+08:00 ergibt, und verlangt, dass das Tor dann offen ist. Sommer wie Winter.
+
+**Warum das ganzjährig aufgeht:** gemessen an **allen 365 Tagen 2026** ist
+Zürich **immer exakt 60 Minuten** vor London — beide folgen denselben
+EU-Umstellungsterminen. Deshalb ist „07:00 London" ganzjährig „08:00
+Zürich". Das ist belegt, nicht angenommen.
+
+### Was das feste UTC-Fenster wirklich falsch gemacht hat
+
+Vorher standen dort `8 * 60` und `22 * 60`. Gemessen über 2026:
+
+- **Im Sommer** öffnete es um 08:00 UTC, London aber um 08:00 BST = 07:00
+  UTC — **die erste Stunde der Londoner Session fehlte**. Und es blieb bis
+  22:00 UTC offen, während New York schon um 21:00 UTC (17:00 EDT)
+  geschlossen hatte.
+- **An 28 Tagen** (9.–27.03. und 26.–31.10.) liegen London und New York
+  **4 statt 5 Stunden** auseinander, weil US- und EU-Sommerzeit zu
+  verschiedenen Terminen wechseln. Dann stimmte **keine** der beiden
+  Grenzen.
+
+Dieselbe Fehlerklasse wie die **festen zwei Stunden** beim Broker-Zeitfix
+am 22.09.: „eine Zeitzone, keine feste Verschiebung".
+
+### Die zusätzliche Stunde ist eine Entscheidung, keine Korrektur
+
+07:00 statt 08:00 London bedeutet **75 statt 70 Wochenstunden**. Die
+Stunde vor der Londoner Eröffnung ist die dünnste des Tages, mit den
+weitesten Spreads. Der Schutz dagegen ist **nicht** dieses Tor, sondern
+der bestehende `SPREAD_TOO_WIDE`-Filter in `trade-filters.ts` — und
+`/hebel` weist die Eröffnungsstunde seit heute aus, damit sich an Daten
+ablesen lässt, ob die frühen Stunden etwas taugen.
+
+### Ein Ausfall macht nicht stumm zu
+
+Lässt sich eine Zone nicht auflösen (kaputtes ICU), bleibt das Tor **zu** —
+das ist die sichere Richtung. Aber es wird **laut**: ein stummes Dauer-„zu"
+sähe aus wie ein ewiges Wochenende, und genau diese Verwechslung hat am
+29.10. sieben Tage gekostet.
+
+### Absicherung
+
+`safety-nets` **rechnet** die Grenzen jetzt in **drei Lagen** statt an
+einem einzigen Tag (895 → **913** Prüfungen): Winter, Sommer und beide
+Übergangsrichtungen, dazu die Zusage „08:00 Zürich" als eigene Rechnung.
+
+**Die alten sieben Fälle lagen ALLE auf dem 07.09.2026** — und der liegt in
+der Sommerzeit. Ein Testfall, der den Fehler nicht ausdrücken kann, beweist
+nichts: genau deshalb ist die Lücke zwei Monate unentdeckt geblieben.
+
+**10 von 10 Sabotagen**, darunter die wichtigste — **das alte Fenster
+zurück**, das bis heute grün war. Zwei fielen zuerst durch, beide eigene
+Fehler:
+
+| entwischt | Diagnose |
+|---|---|
+| das alte Fenster zurück | **Messfehler im Nachweis:** die Datei ist rein **CRLF**, mein Anker benutzte nackte `\n` — 0 Treffer, also gar nicht sabotiert |
+| der Ausfall wird stumm (`console.error` → `void`) | **echtes Prüferloch:** die Prüfung suchte den **Wortlaut** „Handelszeit NICHT berechenbar", und `void (…)` lässt ihn stehen. „Ein Regex prüft den Wortlaut, nicht das Verhalten" (30.09.) — in der Prüfung selbst. Jetzt wird der Ausfall-Zweig per **Klammerzähler** ausgeschnitten und `console.error(` nur **darin** verlangt, mit Selbstprüfung des Ausschnitts |
+
+### Und alle Texte, die das alte Fenster behaupteten
+
+Sieben Stellen in fünf Dateien sagten „Mo–Fr 08–22 UTC" — die
+`/status`-Anzeige (drei Zeilen), die Liste „was ohne KI weiterläuft", zwei
+Kommentare in `/hebel`, der Tagesbilanz-Kommentar und die Begründung des
+UTC-Tagesschlüssels. Alle mitgezogen. Eine Anzeige, die etwas behauptet,
+das der Code nicht tut, ist die Fehlerklasse von `market-health.ts` und den
+zwei falschen Killswitch-Texten (27.09.).
+
+**Der UTC-Tagesschlüssel bleibt richtig** — nachgerechnet: das Fenster
+reicht von 06:00/07:00 UTC bis 21:00/22:00 UTC und überschreitet **nie**
+Mitternacht UTC. Ein Handelstag fällt also immer in genau ein UTC-Datum.
+
+### Was das NICHT tut
+
+Keine Schwelle, keine Grösse, kein Stop, kein Limit, keine Filterkette, kein
+Tageslimit. `jetzt` bleibt injizierbar, damit der Prüfstand die echten
+Grenzen rechnet statt den Wortlaut festzunageln. **Snapshot unverändert** —
+das Fenster war dort nie erfasst.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.)
 
 Anlass: die Beobachtung „selten werden Positionen vor 12:00 eröffnet,

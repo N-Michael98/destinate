@@ -406,21 +406,113 @@ module.exports = async function pruefe() {
       + "ueber jeden neuen Trade entscheidet, bleibt ungeprueft");
   } else {
     const imFenster = orchModul.exports.isWithinTradingSession;
-    // 07.09.2026 ist ein Montag, 11.09. ein Freitag, 12.09. Samstag,
-    // 06.09. Sonntag — nachgerechnet, nicht angenommen.
+    const FENSTER = orchModul.exports.HANDELSFENSTER;
+
+    // ── AN DIE BOERSENZONEN GEBUNDEN (01.11.) ───────────────────────────
+    //
+    // Die alten sieben Faelle lagen ALLE auf demselben Tag (07.09.2026) —
+    // und der liegt in der Sommerzeit. Damit konnte der Testfall die
+    // Sommer/Winter-Luecke GAR NICHT ausdruecken, und sie blieb zwei
+    // Monate unentdeckt. Jetzt: Winter, Sommer UND ein Uebergangstag, an
+    // dem London und New York 4 statt 5 Stunden auseinanderliegen.
+    //
+    // Wochentage nachgerechnet, nicht angenommen: 02.11. Mo, 06.11. Fr,
+    // 07.11. Sa, 01.11. So, 15.07. Mi, 17.07. Fr, 09.03. Mo, 27.10. Di.
+    torPruefung("HANDELSFENSTER wird nicht exportiert — dann haengt der "
+      + "Pruefstand an Zahlen statt an der Quelle",
+      !!FENSTER && FENSTER.oeffnetLondon === 7 * 60
+      && FENSTER.schliesstNewYork === 17 * 60
+      && FENSTER.zoneLondon === "Europe/London"
+      && FENSTER.zoneNewYork === "America/New_York",
+      JSON.stringify(FENSTER ?? null));
+
     for (const [name, iso, soll] of [
-      ["Montag 07:59 UTC — eine Minute zu frueh", "2026-09-07T07:59:00Z", false],
-      ["Montag 08:00 UTC — London oeffnet", "2026-09-07T08:00:00Z", true],
-      ["Montag 21:59 UTC — letzte Minute", "2026-09-07T21:59:00Z", true],
-      ["Montag 22:00 UTC — New York schliesst", "2026-09-07T22:00:00Z", false],
-      ["Freitag 21:59 UTC — Wochenschluss", "2026-09-11T21:59:00Z", true],
-      ["Samstag 12:00 UTC", "2026-09-12T12:00:00Z", false],
-      ["Sonntag 12:00 UTC", "2026-09-06T12:00:00Z", false],
+      // WINTER (MEZ/GMT): oeffnet 07:00 UTC, schliesst 22:00 UTC.
+      ["WINTER Mo 06:59 UTC — eine Minute zu frueh", "2026-11-02T06:59:00Z", false],
+      ["WINTER Mo 07:00 UTC — 08:00 Zuerich, Fenster auf", "2026-11-02T07:00:00Z", true],
+      ["WINTER Mo 21:59 UTC — letzte Minute", "2026-11-02T21:59:00Z", true],
+      ["WINTER Mo 22:00 UTC — New York schliesst", "2026-11-02T22:00:00Z", false],
+      ["WINTER Fr 21:59 UTC — Wochenschluss", "2026-11-06T21:59:00Z", true],
+      ["WINTER Sa 12:00 UTC", "2026-11-07T12:00:00Z", false],
+      ["WINTER So 12:00 UTC", "2026-11-01T12:00:00Z", false],
+      // SOMMER (MESZ/BST/EDT): oeffnet 06:00 UTC, schliesst 21:00 UTC.
+      // GENAU DIESE VIER haette das alte Fenster falsch beantwortet.
+      ["SOMMER Mi 05:59 UTC — eine Minute zu frueh", "2026-07-15T05:59:00Z", false],
+      ["SOMMER Mi 06:00 UTC — 08:00 Zuerich, Fenster auf", "2026-07-15T06:00:00Z", true],
+      ["SOMMER Mi 07:30 UTC — alt war hier ZU", "2026-07-15T07:30:00Z", true],
+      ["SOMMER Mi 20:59 UTC — letzte Minute", "2026-07-15T20:59:00Z", true],
+      ["SOMMER Mi 21:00 UTC — New York schliesst, alt war hier OFFEN", "2026-07-15T21:00:00Z", false],
+      ["SOMMER Fr 21:30 UTC — nach NY-Schluss", "2026-07-17T21:30:00Z", false],
+      // UEBERGANG: US schon EDT, EU noch GMT → 4 h Abstand statt 5.
+      ["UEBERGANG Mo 07:00 UTC — auf", "2026-03-09T07:00:00Z", true],
+      ["UEBERGANG Mo 20:59 UTC — letzte Minute", "2026-03-09T20:59:00Z", true],
+      ["UEBERGANG Mo 21:00 UTC — NY schliesst, alt war hier OFFEN", "2026-03-09T21:00:00Z", false],
+      // UEBERGANG andersherum: EU schon MEZ, US noch EDT.
+      ["UEBERGANG Di 20:59 UTC — letzte Minute", "2026-10-27T20:59:00Z", true],
+      ["UEBERGANG Di 21:00 UTC — NY schliesst", "2026-10-27T21:00:00Z", false],
     ]) {
       const ist = imFenster(new Date(iso));
       torPruefung(`Handelsfenster falsch: ${name}`, ist === soll,
         `ist ${ist}, soll ${soll}`);
     }
+
+    // DIE ZUSAGE AN DEN NUTZER, als eigene Rechnung: um 08:00 ZUERICHER
+    // Zeit muss das Fenster offen sein — Sommer wie Winter. Gemessen an
+    // allen 365 Tagen 2026 ist Zuerich IMMER exakt 60 Min vor London,
+    // deshalb ist 07:00 London ganzjaehrig 08:00 Zuerich.
+    for (const [name, datum] of [["Winter", "2026-11-02"], ["Sommer", "2026-07-15"]]) {
+      // Den UTC-Zeitpunkt suchen, der in Zuerich 08:00 ergibt.
+      let treffer = null;
+      for (let u = 0; u < 24 * 60; u++) {
+        const d = new Date(`${datum}T00:00:00Z`);
+        d.setUTCMinutes(u);
+        const zh = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Zurich",
+          hour12: false, hour: "2-digit", minute: "2-digit" }).format(d);
+        if (zh === "08:00") { treffer = d; break; }
+      }
+      torPruefung(`${name}: 08:00 Zuerich ist nicht auffindbar`,
+        treffer !== null, datum);
+      if (treffer) {
+        torPruefung(`${name}: um 08:00 Zuericher Zeit ist das Fenster ZU — `
+          + "genau das war die Bitte",
+          imFenster(treffer) === true, treffer.toISOString());
+      }
+    }
+
+    // EIN AUSFALL DARF NICHT STUMM ZUMACHEN. Faellt die Zonen-Rechnung
+    // aus, bleibt das Tor zu — das ist richtig, aber ein stummes
+    // Dauer-"zu" saehe aus wie ein ewiges Wochenende.
+    // AN DEN ZWEIG GEBUNDEN, nicht an den Wortlaut. Mein erster Versuch
+    // suchte nur, ob der Text "Handelszeit NICHT berechenbar" IRGENDWO
+    // steht — und die Sabotage `console.error(...)` → `void (...)` liess
+    // ihn stehen. "Ein Regex prueft den Wortlaut, nicht das Verhalten"
+    // (30.09.), hier in der Pruefung selbst. Jetzt wird der Ausfall-Zweig
+    // per Klammerzaehler ausgeschnitten und NUR darin gesucht.
+    {
+      const start = orch.indexOf("if (tag === null || london === null");
+      let zweig = "";
+      if (start >= 0) {
+        const auf = orch.indexOf("{", start);
+        let tiefe = 0;
+        for (let i = auf; i < orch.length && i < auf + 2000; i++) {
+          if (orch[i] === "{") tiefe++;
+          else if (orch[i] === "}") { tiefe--; if (tiefe === 0) { zweig = orch.slice(auf, i + 1); break; } }
+        }
+      }
+      // SELBSTPRUEFUNG: ein leerer Ausschnitt bewiese nichts.
+      torPruefung("der Ausfall-Zweig liess sich nicht ausschneiden — dann "
+        + "prueft die Zeile darunter ins Leere",
+        zweig.length > 50 && zweig.includes("return false"),
+        `${zweig.length} Zeichen`);
+      torPruefung("ein Ausfall der Zonen-Rechnung bleibt stumm — dann ist er "
+        + "von einem Wochenende nicht zu unterscheiden",
+        /console\.error\(/.test(zweig) && /Handelszeit NICHT berechenbar/.test(zweig)
+        && /Das Tor bleibt ZU/.test(zweig), `${zweig.length} Zeichen Zweig`);
+    }
+    // Und er darf NICHT als "offen" durchgehen.
+    torPruefung("ein Ausfall der Zonen-Rechnung gibt sich als OFFEN aus",
+      /if \(tag === null \|\| london === null \|\| newYork === null\) \{[\s\S]{0,600}?return false;/
+        .test(orch), "orchestrator-agent");
   }
 
   // Strukturell: die teure Analyse muss VOR dem Ruecksprung stehen bleiben —

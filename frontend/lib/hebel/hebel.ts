@@ -203,7 +203,8 @@ export function befundVon(gruppen: ReadonlyArray<HebelGruppe>): string {
  * (22.09.).
  *
  * UTC, nicht Ortszeit: das Handelsfenster ist in UTC definiert
- * (`isWithinTradingSession`, 08–22 UTC), und eine Ortszeit verschöbe
+ * (`isWithinTradingSession`: 07:00 London bis 17:00 New York), und eine
+ * Ortszeit verschöbe
  * sich zwischen Sommer und Winter mitten durch die Auswertung.
  */
 export function stundeBand(v: Date | string | number | null | undefined): string {
@@ -275,15 +276,16 @@ export function hebelBericht(
   // ── WANN WIRD EROEFFNET? (01.11.) ─────────────────────────────────
   //
   // Anlass: die Beobachtung, dass selten vor Mittag eroeffnet wird.
-  // Das Handelsfenster ist 08–22 UTC (`isWithinTradingSession`), also
-  // 09–23 Uhr Zuerich im Winter und 10–24 Uhr im Sommer. Ob die frühen
+  // Das Handelsfenster laeuft von 07:00 London bis 17:00 New York
+  // (`isWithinTradingSession`), also ganzjaehrig 08:00–23:00 Uhr
+  // Zuerich. Ob die frühen
   // Stunden WIRKLICH leer sind — und ob sie etwas taugen — sagt nur
   // diese Aufschlüsselung.
   dims.push({
     titel: "Eröffnungsstunde (UTC)",
-    hinweis: "Das Handelsfenster ist 08–22 UTC = 09–23 Uhr Zürich im "
-      + "Winter, 10–24 Uhr im Sommer. Eine fehlende Angabe wird NICHT "
-      + "zu 00 Uhr.",
+    hinweis: "Das Fenster läuft von 07:00 London bis 17:00 New York — "
+      + "ganzjährig 08:00–23:00 Uhr Zürich. Eine fehlende Angabe wird "
+      + "NICHT zu 00 Uhr.",
     gruppen: gruppiere(zeilen, (z) => stundeBand(z.createdAt ?? null),
       fenster, STUNDEN_ORDNUNG),
     befund: "",

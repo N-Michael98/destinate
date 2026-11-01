@@ -282,7 +282,8 @@ export async function register() {
           // raus (`if (rows.length > 0)`) — waehrend der Trade-Duerre kam also
           // gar nichts, und niemand erfuhr, WO die Signale starben. Er laeuft
           // ausserdem um 20:00 Zuerich, das Handelsfenster endet aber erst um
-          // 22:00 UTC. Die Bilanz geht deshalb IMMER und NACH Handelsschluss
+          // 22:00 UTC im Winter, 21:00 UTC im Sommer (17:00 New York).
+          // Die Bilanz geht deshalb IMMER und NACH Handelsschluss
           // raus. Reine Meldung; `tagesbilanzSenden` wirft nie.
           cron.schedule("5 22 * * 1-5", async () => {
             try {

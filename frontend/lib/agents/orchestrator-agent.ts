@@ -538,9 +538,8 @@ async function postTradeActions(params: {
 }
 
 // ── Trading Session Check ─────────────────────────────────────────────────────
-// London:   08:00–17:00 UTC  |  New York: 13:00–22:00 UTC
-// Overlap:  13:00–17:00 UTC  (aktivste Zeit)
-// Gesamt:   08:00–22:00 UTC, Montag–Freitag
+// Oeffnet 07:00 Europe/London (eine Stunde vor der Londoner Eroeffnung),
+// schliesst 17:00 America/New_York. Montag–Freitag nach Londoner Datum.
 
 /**
  * Exportiert und mit einstellbarem Zeitpunkt (07.09.).
@@ -552,22 +551,91 @@ async function postTradeActions(params: {
  * aufgefallen, wenn es zu spaet ist.
  *
  * `jetzt` ist ein Parameter, damit der Pruefer die Grenzen WIRKLICH ausrechnen
- * kann statt den Wortlaut festzunageln. Ohne Angabe verhaelt sich die Funktion
- * exakt wie vorher.
+ * kann statt den Wortlaut festzunageln.
+ *
+ * ── AN DIE BOERSENZONEN GEBUNDEN STATT AN FESTE UTC-STUNDEN (01.11.) ──
+ *
+ * Vorher standen hier `8 * 60` und `22 * 60` — feste UTC-Stunden. Das
+ * trifft die Sessions nur im Winter. GEMESSEN ueber alle 365 Tage 2026:
+ *
+ *   - Im Sommer oeffnet London um 08:00 BST = 07:00 UTC. Das alte Fenster
+ *     ging erst um 08:00 UTC auf — die erste Stunde der Londoner Session
+ *     fehlte.
+ *   - New York schliesst im Sommer 17:00 EDT = 21:00 UTC. Das alte Fenster
+ *     blieb bis 22:00 UTC offen — eine Stunde nach Schluss.
+ *   - An 28 Tagen (9.–27.03. und 26.–31.10.) liegen London und New York
+ *     4 statt 5 Stunden auseinander, weil US- und EU-Sommerzeit zu
+ *     verschiedenen Terminen wechseln. Dann stimmt KEINE feste Grenze.
+ *
+ * Das ist dieselbe Fehlerklasse wie die festen zwei Stunden beim
+ * Broker-Zeitfix (22.09.): eine Zeitzone, keine feste Verschiebung.
+ *
+ * ── UND ES OEFFNET EINE STUNDE FRUEHER ──────────────────────────────
+ *
+ * 07:00 London statt 08:00. Das ist eine bewusste Entscheidung, keine
+ * Korrektur: die Stunde vor der Londoner Eroeffnung ist die duennste des
+ * Tages, mit den weitesten Spreads. Der Schutz dagegen ist der bestehende
+ * Spread-Filter (`SPREAD_TOO_WIDE` in `trade-filters.ts`), nicht dieses
+ * Tor.
+ *
+ * 07:00 London ist GANZJAEHRIG 08:00 Zuerich — gemessen an allen 365
+ * Tagen 2026: der Abstand Zuerich↔London ist IMMER exakt 60 Minuten,
+ * weil beide denselben EU-Umstellungsterminen folgen.
  */
+export const HANDELSFENSTER = {
+  /** 07:00 Europe/London — eine Stunde vor der Londoner Eroeffnung. */
+  oeffnetLondon: 7 * 60,
+  /** 17:00 America/New_York — der echte Schluss der US-Session. */
+  schliesstNewYork: 17 * 60,
+  zoneLondon: "Europe/London",
+  zoneNewYork: "America/New_York",
+} as const;
+
+/** Ortszeit in einer Zone als Minuten seit Mitternacht — oder `null`. */
+function minutenInZone(d: Date, zone: string): number | null {
+  try {
+    const teile = new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone, hour12: false, hour: "2-digit", minute: "2-digit",
+    }).formatToParts(d);
+    const h = Number(teile.find((t) => t.type === "hour")?.value);
+    const m = Number(teile.find((t) => t.type === "minute")?.value);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return (h % 24) * 60 + m;   // manche Umgebungen liefern 24 statt 00
+  } catch { return null; }
+}
+
+/** Wochentag in einer Zone (0=So … 6=Sa) — oder `null`. */
+function wochentagInZone(d: Date, zone: string): number | null {
+  try {
+    const kurz = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, weekday: "short",
+    }).format(d);
+    const i = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(kurz);
+    return i < 0 ? null : i;
+  } catch { return null; }
+}
+
 export function isWithinTradingSession(jetzt: Date = new Date()): boolean {
-  const now = jetzt;
-  const dayUTC = now.getUTCDay(); // 0=So, 1=Mo, ..., 5=Fr, 6=Sa
-  if (dayUTC === 0 || dayUTC === 6) return false; // Wochenende
+  const tag = wochentagInZone(jetzt, HANDELSFENSTER.zoneLondon);
+  const london = minutenInZone(jetzt, HANDELSFENSTER.zoneLondon);
+  const newYork = minutenInZone(jetzt, HANDELSFENSTER.zoneNewYork);
 
-  const hourUTC = now.getUTCHours();
-  const minuteUTC = now.getUTCMinutes();
-  const timeUTC = hourUTC * 60 + minuteUTC;
+  // EIN AUSFALL DARF SICH NICHT ALS ERGEBNIS AUSGEBEN — und schon gar
+  // nicht als "offen". Faellt die Zonen-Rechnung aus (kaputtes ICU),
+  // bleibt das Tor ZU, und das wird LAUT gemeldet: ein stummes
+  // Dauer-"zu" saehe aus wie ein ewiges Wochenende.
+  if (tag === null || london === null || newYork === null) {
+    console.error("[orchestrator] ⛔ Handelszeit NICHT berechenbar — die "
+      + `Zeitzonen ${HANDELSFENSTER.zoneLondon}/${HANDELSFENSTER.zoneNewYork} `
+      + "liessen sich nicht aufloesen. Das Tor bleibt ZU, es wird KEIN "
+      + "Trade eroeffnet, solange das so ist.");
+    return false;
+  }
 
-  const londonOpen  =  8 * 60; //  08:00 UTC
-  const nyClose     = 22 * 60; //  22:00 UTC
+  if (tag === 0 || tag === 6) return false;   // Wochenende (Londoner Datum)
 
-  return timeUTC >= londonOpen && timeUTC < nyClose;
+  return london >= HANDELSFENSTER.oeffnetLondon
+    && newYork < HANDELSFENSTER.schliesstNewYork;
 }
 
 // ── Hauptzyklus ───────────────────────────────────────────────────────────────
@@ -753,7 +821,7 @@ async function zyklusInnen(): Promise<string> {
     return "Modus nicht AUTO";
   }
 
-  // ── 1b. Trading Session prüfen (London 08:00 + New York bis 22:00 UTC) ────
+  // ── 1b. Trading Session prüfen (07:00 London bis 17:00 New York) ─────────
   // Ausnahme: Offene Positionen werden auch ausserhalb der Session überwacht
   const { capitalGetPositions } = await import("../capital-com/capital-com-client");
   const session0 = getCapitalSession()!;
@@ -765,7 +833,7 @@ async function zyklusInnen(): Promise<string> {
       console.log("[orchestrator] Ausserhalb Session — aber offene Positionen vorhanden, nur Monitoring (kein neuer Trade)");
       // Kein return — läuft weiter aber ExecutionAgent wird nicht aufgerufen (openCount >= maxConcurrent gesetzt)
     } else {
-      console.log("[orchestrator] Ausserhalb Trading Session (Mo–Fr 08:00–22:00 UTC) — Zyklus übersprungen");
+      console.log("[orchestrator] Ausserhalb Trading Session (Mo–Fr, 07:00 London bis 17:00 New York) — Zyklus übersprungen");
       return "Ausserhalb Handelszeit";
     }
   }
@@ -853,8 +921,8 @@ async function zyklusInnen(): Promise<string> {
   // Markt mit Richtung (am 07.09. gemessen: 19 von 30).
   //
   // Ausserhalb der Session kann daraus nachweislich NIE ein Trade entstehen.
-  // Das Handelsfenster ist Mo–Fr 08:00–22:00 UTC, also 70 von 168
-  // Wochenstunden: 58 % der Zyklen rechneten für nichts. Seit dem 07.09. läuft
+  // Das Handelsfenster ist Mo–Fr von 07:00 London bis 17:00 New York, also
+  // 75 von 168 Wochenstunden: 55 % der Zyklen rechneten für nichts. Seit dem 07.09. läuft
   // der Scan zudem auf den konfigurierten Modellen (gpt-4o statt mini, Sonnet
   // statt Haiku) — dieselbe Verschwendung kostet damit ein Vielfaches.
   //

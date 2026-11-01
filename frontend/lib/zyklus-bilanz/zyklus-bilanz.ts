@@ -473,7 +473,15 @@ function zustand(): BilanzZustand {
 export const TAGESSUMME_SCHLUESSEL = (datum: string) => `zyklus:tag:${datum}`;
 const TAGESSUMME_TTL = 3 * 24 * 60 * 60;
 
-/** UTC-Datum — das Handelsfenster ist in UTC definiert (Mo–Fr 08–22). */
+/**
+ * UTC-Datum als Tagesschlüssel.
+ *
+ * Seit dem 01.11. ist das Fenster an die Börsenzonen gebunden (07:00 London
+ * bis 17:00 New York) statt an feste UTC-Stunden. Der UTC-Tag bleibt
+ * trotzdem der richtige Schlüssel: gerechnet reicht das Fenster von 06:00
+ * bzw. 07:00 UTC bis 21:00 bzw. 22:00 UTC und überschreitet damit **nie**
+ * Mitternacht UTC. Ein Handelstag fällt also immer in genau ein UTC-Datum.
+ */
 export function handelstag(jetzt: Date = new Date()): string {
   return jetzt.toISOString().slice(0, 10);
 }
