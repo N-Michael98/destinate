@@ -76,6 +76,33 @@ export type TorEintrag = {
   approve: boolean;
   reason: string;
   fallback?: boolean;
+  /** Die Confidence, mit der dieses Tor entschieden hat (02.11.).
+   *
+   *  GEFUNDEN BEIM GEGENLESEN des /status vom 02.11. 23:16: das Tor
+   *  meldete `Confidence # < Schwelle # (38)` — `grundSchluessel()`
+   *  ersetzt jede Zahl durch `#`, richtig fuers Zaehlen. Damit fehlte
+   *  genau die Zahl, an der die Entscheidung haengt (die Vor-Tor-Stufe
+   *  zeigt ihre Spanne laengst: `86 (52-69)`).
+   *
+   *  DIE ZAHL LAG BEREITS AUF DEM BUS. `GateDecisionPayload.confidence`
+   *  gibt es seit der Einfuehrung des Typs, und VIER Stellen senden sie
+   *  (orchestrator-agent.ts:1077/1084, execution-agent.ts:208/227).
+   *  Gelesen hat sie NIEMAND — `bilanzVerbuchen` ist der einzige
+   *  Abonnent von `GATE:DECISION` und hat das Feld fallen lassen.
+   *  Das ist "ein Feld ohne Empfaenger" (28.10.), nur in der
+   *  Gegenrichtung zu "ein Abo ohne Sender" (17.09.). */
+  confidence?: number;
+  /** BUY oder SELL — welche Seite dieses Tor abgelehnt hat (02.11.).
+   *
+   *  ZWEITER FUND DESSELBEN RIEGELS. Nachdem `confidence` gelesen wird,
+   *  meldete die neue Gegenrichtungs-Pruefung sofort `direction`: auch
+   *  sie wird von jeder Tor-Stelle gesendet und war nirgends gelesen.
+   *
+   *  Nicht als Ausnahme eingetragen, sondern BENUTZT — die Zahl ist
+   *  brauchbar: `/hebel` misst auf echten Trades EW +0.76 fuer SELL
+   *  gegen -3.41 fuer BUY. Welche Seite ein Tor wegwirft, gehoert
+   *  deshalb sichtbar. */
+  direction?: string;
 };
 
 export type ZyklusBilanz = {
@@ -88,7 +115,20 @@ export type ZyklusBilanz = {
   fehlgeschlagen: string[];
 };
 
-export type TorSumme = { ja: number; nein: number; fallback: number; gruende: Record<string, number> };
+/** Die Spanne der Confidence je Ablehnungsgrund (02.11.).
+ *
+ *  OPTIONAL MIT ABSICHT: eine Tagessumme von gestern kennt das Feld
+ *  nicht. Dieselbe Vorsicht wie bei `ohneStopZiel` und
+ *  `ohneGptAntwort` — ohne sie waere die erste Summe nach dem Deploy
+ *  kaputt. Fehlt sie, wird KEINE Spanne gezeigt (nicht 0-0: das waere
+ *  eine Behauptung statt einer Messung). */
+export type ConfSpanne = { min: number; max: number };
+
+export type TorSumme = { ja: number; nein: number; fallback: number; gruende: Record<string, number>;
+  confSpanne?: Record<string, ConfSpanne>;
+  /** Abgelehnte Richtungen je Tor. Optional wie `confSpanne`: eine
+   *  Summe von gestern kennt das Feld nicht. */
+  richtungen?: Record<string, number> };
 
 export type Tagessumme = {
   datum: string;
@@ -163,13 +203,52 @@ const text = (x: unknown): string => String(x ?? "").slice(0, MAX_TEXT);
  * "Confidence 74 < Schwelle 76" und "Confidence 73 < Schwelle 76" je ein
  * eigener Grund und die Tagessumme zerfiele in Einzelfaelle.
  */
+/** Obergrenze des Gruppierungs-Schluessels. */
+export const GRUND_MAX = 80;
+/** Unter so viel Zeichen wird NICHT an der Wortgrenze gekuerzt — sonst
+ *  bliebe von einem Grund ohne fruehes Leerzeichen fast nichts uebrig. */
+export const GRUND_MIN_WORT = 40;
+
 export function grundSchluessel(grund: string): string {
-  return text(grund)
+  const roh = text(grund)
     .replace(/\([^)]*\)/g, "")          // Klammerzusaetze (Einstellungswerte u. ae.)
     .replace(/-?\d+(?:[.,]\d+)?/g, "#")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80) || "ohne Grund";
+    .trim();
+  if (roh.length <= GRUND_MAX) return roh || "ohne Grund";
+  // AN DER WORTGRENZE SCHNEIDEN (02.11.). Der harte Schnitt traf am
+  // 02.11. live mitten ins Wort: "... aber TA-Signal ze" — nachgezaehlt
+  // exakt 80 Zeichen. Eine Diagnose, die im interessanten Fall
+  // abbricht, ist die Fehlerklasse "im interessanten Fall nicht
+  // schweigen", angewandt auf die Messung selbst.
+  //
+  // DETERMINISTISCH, damit das Gruppieren unberuehrt bleibt: derselbe
+  // Grund ergibt denselben Schnitt und faellt weiter zusammen.
+  const schnitt = roh.slice(0, GRUND_MAX - 1);
+  const letzte = schnitt.lastIndexOf(" ");
+  const kurz = letzte >= GRUND_MIN_WORT ? schnitt.slice(0, letzte) : schnitt;
+  return kurz + "\u2026";
+}
+
+/** Die Confidence-Spanne als Text — leer, wenn nichts zu melden ist.
+ *
+ *  Eine fehlende Spanne ergibt KEINE Zahl. Dieselbe Regel wie beim
+ *  Kurs-Alter (22.09.) und bei `exitPosition` (27.10.): eine stille
+ *  Ersatzzahl macht aus "nicht gemessen" eine Messung. */
+/** Die abgelehnten Richtungen als Text — leer, wenn nichts da ist.
+ *  Nach Menge sortiert, damit die haeufigere Seite vorne steht. */
+export function richtungText(r: Record<string, number> | undefined): string {
+  const e = Object.entries(r ?? {}).filter(([, n]) => Number.isFinite(n) && n > 0);
+  if (e.length === 0) return "";
+  e.sort((a, b) => b[1] - a[1]);
+  return ` · ${e.map(([d, n]) => `${n} ${d}`).join("/")}`;
+}
+
+export function confText(sp: ConfSpanne | undefined): string {
+  if (!sp || !Number.isFinite(sp.min) || !Number.isFinite(sp.max)) return "";
+  return sp.min === sp.max
+    ? ` · Confidence ${sp.min}`
+    : ` · Confidence ${sp.min}\u2013${sp.max}`;
 }
 
 /** Ein Bus-Ereignis in die laufende Bilanz uebernehmen. Unbekanntes wird ignoriert. */
@@ -193,6 +272,13 @@ export function bilanzVerbuchen(
         approve: p.approve,
         reason: text(p.reason),
         fallback: p.fallback === true,
+        // Nur eine ENDLICHE Zahl. Ein NaN faellt sonst durch jeden
+        // Vergleich und landete in Math.min/max als NaN — dieselbe
+        // Falle wie `rrBand(NaN)` am 29.10.
+        confidence: typeof p.confidence === "number" && Number.isFinite(p.confidence)
+          ? p.confidence : undefined,
+        direction: typeof p.direction === "string" && p.direction.trim() !== ""
+          ? p.direction.trim().toUpperCase() : undefined,
       });
       break;
     }
@@ -333,8 +419,24 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
       const k = grundSchluessel(tor.reason);
       if (summe.gruende[k] !== undefined || Object.keys(summe.gruende).length < MAX_GRUENDE_JE_TOR) {
         summe.gruende[k] = (summe.gruende[k] ?? 0) + 1;
+        // IM SELBEN `if` wie der Grund (Regel vom 22.09.): sonst koennte
+        // die Spanne einen Grund nennen, den die Liste gar nicht zeigt.
+        const c = tor.confidence;
+        if (typeof c === "number" && Number.isFinite(c)) {
+          summe.confSpanne ??= {};
+          const alt = summe.confSpanne[k];
+          summe.confSpanne[k] = alt
+            ? { min: Math.min(alt.min, c), max: Math.max(alt.max, c) }
+            : { min: c, max: c };
+        }
       } else {
         summe.gruende["(weitere)"] = (summe.gruende["(weitere)"] ?? 0) + 1;
+      }
+      // Die Richtung haengt am TOR, nicht am Grund — sonst zerfiele sie
+      // mit jedem neuen Grundtext. Und nur bei Ablehnungen, wie `gruende`.
+      if (tor.direction) {
+        summe.richtungen ??= {};
+        summe.richtungen[tor.direction] = (summe.richtungen[tor.direction] ?? 0) + 1;
       }
     }
     t.tore[tor.gate] = summe;
@@ -449,12 +551,15 @@ export function tagesbilanzText(t: Tagessumme): string {
     zeilen.push("🚪 <b>Tore</b>");
     for (const [gate, s] of tore) {
       const fb = s.fallback > 0 ? ` · ${s.fallback} Rückfall` : "";
-      // Reine Sperr-Tore (Duplikat, Filterkette …) melden nur Ablehnungen —
-      // "0 ja" wuerde dort faelschlich nach "nichts durchgelassen" klingen.
+      // Seit dem 02.11. meldet nur noch `Zyklus-Limit` ausschliesslich
+      // Ablehnungen — es ist kein Kandidaten-Tor. Dort wuerde "0 ja"
+      // faelschlich nach "nichts durchgelassen" klingen.
       const ja = s.ja > 0 ? `${s.ja} ja · ` : "";
-      zeilen.push(`   ${htmlSicher(gate)}: ${ja}${s.nein} nein${fb}`);
+      zeilen.push(`   ${htmlSicher(gate)}: ${ja}${s.nein} nein${fb}${htmlSicher(richtungText(s.richtungen))}`);
       const top = Object.entries(s.gruende).sort((a, b) => b[1] - a[1]).slice(0, 3);
-      for (const [k, n] of top) zeilen.push(`      – ${htmlSicher(k)} (${n}×)`);
+      for (const [k, n] of top) {
+        zeilen.push(`      – ${htmlSicher(k)} (${n}×)${confText(s.confSpanne?.[k])}`);
+      }
     }
     const restTore = alleTore.length - tore.length;
     if (restTore > 0) {

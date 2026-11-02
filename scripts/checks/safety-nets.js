@@ -4392,7 +4392,12 @@ module.exports = async function pruefe() {
             ...TRICHTER, go: 2,
             tore: {
               "Schwelle": { ja: 0, nein: 2, fallback: 0,
-                gruende: { "Confidence 66 < Schwelle 70": 2 } },
+                gruende: { "Confidence 66 < Schwelle 70": 2 },
+                // Die Spanne gehoert in die ANTWORT, nicht nur in die
+                // Rechnung — am 30.09. war eine vollstaendig gepruefte
+                // Funktion dauerhaft ohne echte Werte.
+                confSpanne: { "Confidence 66 < Schwelle 70": { min: 66, max: 69 } },
+                richtungen: { BUY: 2 } },
               "Meta-KI": { ja: 2, nein: 0, fallback: 0, gruende: {} },
             },
           };
@@ -4413,6 +4418,12 @@ module.exports = async function pruefe() {
             + "nicht, WARUM es zu war",
             /Confidence 66 &lt; Schwelle 70 \(2\)/.test(tTor)
             && !/Confidence 66 < Schwelle/.test(tTor), tTor.slice(-300));
+          torPruefung("das Tor nennt die Confidence-Spanne nicht — dann steht "
+            + "dort `Confidence # < Schwelle #` und die Zahl, um die es "
+            + "geht, fehlt (Fund 02.11.)",
+            /Confidence 66\u201369/.test(tTor), tTor.slice(-300));
+          torPruefung("das Tor nennt die abgelehnte Richtung nicht",
+            /2 BUY/.test(tTor), tTor.slice(-300));
           torPruefung("die Tor-Testdaten lassen Angaben offen — dann greift "
             + "das unbekannt-Urteil VOR den GO-Zweigen und der Fall ist gar "
             + "nicht erreichbar",
@@ -5251,6 +5262,42 @@ module.exports = async function pruefe() {
           === B.grundSchluessel("Confidence 73 < Schwelle 77 (autoApprove 77, minConfidence 70)")
           && B.grundSchluessel("Confidence 74 < Schwelle 76") === "Confidence # < Schwelle #",
           B.grundSchluessel("Confidence 74 < Schwelle 76 (x)"));
+        // DER SCHNITT MITTEN IM WORT (02.11.). Live auf /status stand:
+        //   "taSignal=NEUTRAL bei SELL-Richtung: trend#D=BEARISH vorhanden,
+        //    aber TA-Signal ze"   <- nachgezaehlt exakt 80 Zeichen.
+        // Der harte `.slice(0, 80)` hat die Diagnose mitten im Wort
+        // abgeschnitten. Jetzt an der Wortgrenze, mit Auslassungszeichen.
+        {
+          const lang = "taSignal=NEUTRAL bei SELL-Richtung: trend1D=BEARISH "
+            + "vorhanden, aber TA-Signal zeigt keine Bestaetigung der Richtung";
+          const k = B.grundSchluessel(lang);
+          const max = B.GRUND_MAX;
+          torPruefung("GRUND_MAX ist nicht exportiert — dann friert der Pruefstand eine Zahl ein",
+            typeof max === "number" && max > 0, String(max));
+          torPruefung("ein Tor-Grund wird mitten im Wort abgeschnitten",
+            k.length <= max && k.endsWith("\u2026")
+            && !/ze\u2026$/.test(k) && !/ \u2026$/.test(k),
+            JSON.stringify(k));
+          // Das Gruppieren darf der Schnitt NICHT veraendern.
+          torPruefung("der Wortgrenzen-Schnitt ist nicht deterministisch",
+            B.grundSchluessel(lang) === k, JSON.stringify(k));
+          // GEGENPROBE: ein Riegel, der IMMER kuerzt, waere so falsch wie
+          // keiner — kurze Gruende muessen unveraendert bleiben.
+          torPruefung("ein kurzer Grund wird unnoetig gekuerzt",
+            B.grundSchluessel("Ueberanpassungsverdacht") === "Ueberanpassungsverdacht");
+          // Ein Grund OHNE Leerzeichen darf nicht fast leer werden.
+          torPruefung("ein Grund ohne Leerzeichen schrumpft auf nichts",
+            B.grundSchluessel("A".repeat(200)).length >= max - 1,
+            String(B.grundSchluessel("A".repeat(200)).length));
+          // UND DER FALL, DEN MEINE TESTDATEN NICHT AUSDRUECKEN KONNTEN:
+          // ein Leerzeichen GANZ VORNE. Ohne die GRUND_MIN_WORT-Schranke
+          // bliebe davon "A\u2026" uebrig — der Grund waere weg. Mit
+          // `"A".repeat(200)` faellt das nicht auf: dort gibt es gar kein
+          // Leerzeichen und die Sabotage kostet genau EIN Zeichen.
+          const frueh = B.grundSchluessel("A B" + "C".repeat(200));
+          torPruefung("ein Grund mit fruehem Leerzeichen schrumpft auf fast nichts",
+            frueh.length >= B.GRUND_MIN_WORT, JSON.stringify(frueh));
+        }
         torPruefung("der Handelstag ist nicht das UTC-Datum",
           B.handelstag(new Date("2026-09-17T01:30:00+02:00")) === "2026-09-16"
           && B.handelstag(new Date("2026-09-16T23:30:00Z")) === "2026-09-16");
@@ -5292,6 +5339,86 @@ module.exports = async function pruefe() {
           JSON.stringify(t1.tore["Meta-KI"]));
         torPruefung("ein KI-Rueckfall wird als Zustimmung gezaehlt, ohne als Rueckfall zu erscheinen",
           t1.tore["Ausfuehrungs-KI"]?.fallback === 1);
+        // ── DIE CONFIDENCE AM TOR (02.11.) ─────────────────────────
+        //
+        // `GateDecisionPayload.confidence` wurde von VIER Stellen
+        // gesendet und von NIEMANDEM gelesen. Genau diese Zahl fehlte
+        // am 02.11. im groessten Blocker des Tages: der Trichter zeigt
+        // `86 (52-69)`, das Tor nur `Confidence # < Schwelle # (38)`.
+        {
+          const bc = B.neueBilanz(0);
+          bc.ende = 1000; bc.ausgang = "Keine Kandidaten nach Filter";
+          const tor = (approve, reason, confidence, direction) => B.bilanzVerbuchen(bc,
+            { type: "GATE:DECISION", payload: { gate: "Schwelle", approve, reason, confidence, direction } });
+          tor(false, "Confidence 70 < Schwelle 80", 70, "BUY");
+          tor(false, "Confidence 79 < Schwelle 80", 79, "SELL");
+          tor(false, "Confidence 74 < Schwelle 80", 74, "BUY");
+          // Ein NaN darf die Spanne nicht vergiften (Lehre 29.10.).
+          tor(false, "Confidence 99 < Schwelle 80", NaN, "buy");
+          // Eine ZUSTIMMUNG fuehrt keinen Ablehnungsgrund — und damit
+          // auch keine Spanne. Sonst stuende die Spanne der
+          // Freigegebenen unter einem Ablehnungsgrund.
+          tor(true, "Confidence 85 >= Schwelle 80", 85, "SELL");
+          const tc = B.tagessummeAddieren(null, bc, "2026-11-02");
+          const spAlle = tc.tore["Schwelle"]?.confSpanne ?? {};
+          const sp = spAlle["Confidence # < Schwelle #"];
+          torPruefung("die Confidence am Tor wird nicht mitgefuehrt",
+            !!sp && sp.min === 70 && sp.max === 79, JSON.stringify(sp ?? null));
+          torPruefung("ein NaN vergiftet die Confidence-Spanne",
+            !!sp && Number.isFinite(sp.min) && Number.isFinite(sp.max), JSON.stringify(sp ?? null));
+          torPruefung("eine Zustimmung erzeugt eine Spanne unter einem Ablehnungsgrund",
+            Object.keys(spAlle).length === 1, JSON.stringify(spAlle));
+          // Die Spanne darf nur Gruende nennen, die die Liste auch zeigt.
+          const fremd = Object.keys(spAlle)
+            .filter((n) => tc.tore["Schwelle"].gruende[n] === undefined);
+          torPruefung("die Spanne nennt einen Grund, den die Liste nicht zeigt",
+            fremd.length === 0, fremd.join(", "));
+          // EINE SUMME VON GESTERN kennt das Feld nicht.
+          const alt = JSON.parse(JSON.stringify(tc));
+          for (const g of Object.values(alt.tore)) delete g.confSpanne;
+          let warf = null;
+          try { B.tagessummeAddieren(alt, bc, "2026-11-02"); } catch (e) { warf = e.message; }
+          torPruefung("eine Tagessumme von gestern (ohne confSpanne) wirft",
+            warf === null, String(warf));
+          // DIREKT GERUFEN, nicht ueber den Bus: `bilanzVerbuchen`
+          // filtert ein NaN schon am Eingang, der Riegel in der Summe
+          // waere sonst unerreichbar und damit ungeprueft. Die Funktion
+          // ist exportiert und muss FUER SICH stimmen (Lehre 29.10.).
+          const roh = { start: 0, ende: 1, ausgang: "x", trades: [], fehlgeschlagen: [],
+            tore: [
+              { gate: "Schwelle", approve: false, reason: "Confidence 70 < Schwelle 80", confidence: 70 },
+              { gate: "Schwelle", approve: false, reason: "Confidence 99 < Schwelle 80", confidence: NaN },
+            ] };
+          const spD = B.tagessummeAddieren(null, roh, "2026-11-02")
+            .tore["Schwelle"]?.confSpanne?.["Confidence # < Schwelle #"];
+          torPruefung("ein NaN aus einer handgebauten Bilanz vergiftet die Spanne",
+            !!spD && spD.min === 70 && spD.max === 70, JSON.stringify(spD ?? null));
+          // confText: Spanne, Einzelwert, nichts.
+          torPruefung("confText erfindet eine Zahl, wo keine gemessen wurde",
+            B.confText(undefined) === "" && B.confText({ min: NaN, max: 5 }) === ""
+            && /Confidence 70\u201379/.test(B.confText({ min: 70, max: 79 }))
+            && /Confidence 74$/.test(B.confText({ min: 74, max: 74 })),
+            JSON.stringify([B.confText(undefined), B.confText({ min: 70, max: 79 })]));
+          // Und die Tagesbilanz muss sie ZEIGEN.
+          // WELCHE SEITE das Tor wegwirft — zweiter Fund des neuen
+          // Gegenrichtungs-Riegels: auch `direction` war gesendet und
+          // nie gelesen.
+          const ri = tc.tore["Schwelle"]?.richtungen ?? {};
+          torPruefung("die abgelehnte Richtung wird nicht mitgefuehrt",
+            ri.BUY === 3 && ri.SELL === 1, JSON.stringify(ri));
+          torPruefung("eine Zustimmung wird als abgelehnte Richtung gezaehlt",
+            (ri.BUY ?? 0) + (ri.SELL ?? 0) === 4, JSON.stringify(ri));
+          torPruefung("richtungText erfindet eine Seite, wo keine gemessen wurde",
+            B.richtungText(undefined) === "" && B.richtungText({}) === ""
+            && /3 BUY\/1 SELL/.test(B.richtungText(ri)),
+            JSON.stringify([B.richtungText(undefined), B.richtungText(ri)]));
+          const htmlC = B.tagesbilanzText({ ...B.leereTagessumme("2026-11-02"), zyklen: 1, tore: tc.tore });
+          torPruefung("die Tagesbilanz zeigt die abgelehnte Richtung nicht",
+            /3 BUY\/1 SELL/.test(htmlC), htmlC.slice(-300));
+          torPruefung("die Tagesbilanz zeigt die Confidence-Spanne nicht",
+            /Confidence 70\u201379/.test(htmlC), htmlC.slice(-300));
+        }
+
         // Obergrenzen — AN DER QUELLE, nicht als feste Zahl (02.11.).
         //
         // Hier standen `300` und `=== 200`. Als der Deckel am 02.11. auf
@@ -7944,6 +8071,78 @@ module.exports = async function pruefe() {
           sender.length === 0 ? "kein Sender" : schlecht.map((s) => `${s.datei}: sendet ${s.schluessel.join(", ") || "nichts"}, gebraucht ${noetig.join(", ")}`).join(" | "));
       }
     }
+  }
+
+  // ══ EIN GESENDETES FELD OHNE LESER (02.11.) ═════════════════════════════
+  //
+  // Bis heute hielt der Pruefer nur EINE Richtung: was die Zyklus-Bilanz
+  // LIEST, muss gesendet werden. Die Gegenrichtung fehlte — und genau
+  // dort lag der Fund: `GateDecisionPayload.confidence` wurde von vier
+  // Stellen gesendet und von niemandem gelesen. Ein Feld ohne Empfaenger
+  // ist dieselbe Klasse wie ein Abo ohne Sender (17.09.).
+  //
+  // Beide Seiten kommen aus der QUELLE: die Feldnamen aus dem Typ
+  // `GateDecisionPayload`, die gelesenen aus dem `case`-Block von
+  // `bilanzVerbuchen` — per Klammerzaehler, nicht per Zeichenfenster
+  // (ein Fenster beweist Naehe, nicht Zugehoerigkeit, 22.09.).
+  {
+    const ohneK = (q) => q.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    // Klammerzaehler MIT Zeichenketten-Bewusstsein: eine `}` in einem
+    // Text schliesst sonst den Block (Falle vom 30.09.).
+    const block = (q, anker) => {
+      const von = q.indexOf(anker);
+      if (von < 0) return null;
+      const auf = q.indexOf("{", von);
+      if (auf < 0) return null;
+      let tiefe = 0;
+      for (let i = auf; i < q.length; i++) {
+        const c = q[i];
+        if (c === "{") tiefe++;
+        else if (c === "}") { tiefe--; if (tiefe === 0) return q.slice(auf + 1, i); }
+        else if (c === '"' || c === "'" || c === "`") {
+          const anf = c; i++;
+          while (i < q.length && q[i] !== anf) { if (q[i] === "\\") i++; i++; }
+        }
+      }
+      return null;
+    };
+    const typBlock = block(ohneK(read("frontend/lib/agents/agent-bus.ts")),
+      "export interface GateDecisionPayload");
+    const leseBlock = block(ohneK(read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts")),
+      'case "GATE:DECISION":');
+    const felder = typBlock
+      ? [...typBlock.matchAll(/(\w+)\??\s*:/g)].map((m) => m[1]) : [];
+    torPruefung("der Ausschnitt fuer die Gegenrichtung ist leer — die Messung ist blind",
+      !!typBlock && !!leseBlock && felder.includes("gate") && felder.includes("reason"),
+      `Typ ${typBlock ? typBlock.length : 0} Zeichen, Leser ${leseBlock ? leseBlock.length : 0}, Felder ${felder.join(",")}`);
+    if (typBlock && leseBlock) {
+      const liest = new Set([...leseBlock.matchAll(/\bp\.(\w+)/g)].map((m) => m[1]));
+      const stumm = felder.filter((f) => !liest.has(f));
+      torPruefung("ein Feld der Tor-Nutzlast wird gesendet und von niemandem gelesen",
+        stumm.length === 0,
+        stumm.length ? `${stumm.join(", ")} — gesendet, nie gelesen (Fund 02.11.)` : "");
+      // SELBSTPRUEFUNG: ein erfundenes Feld MUSS auffallen, sonst ist die
+      // Messung nur deshalb gruen, weil sie nichts sieht.
+      const probe = [...felder, "gibtEsNichtImLeser"].filter((f) => !liest.has(f));
+      torPruefung("die Gegenrichtungs-Messung findet ein erfundenes Feld nicht — sie ist blind",
+        probe.length === 1 && probe[0] === "gibtEsNichtImLeser", probe.join(", "));
+    }
+  }
+
+  // ══ DIE SPANNE MUSS DURCH DEN WEBHOOK-TYP PASSEN (02.11.) ═══════════════
+  //
+  // Am 30.09. war eine vollstaendig gepruefte Funktion dauerhaft ohne
+  // echte Werte, weil die Aufrufstelle den Feldnamen falsch las. Hier
+  // deklariert der Webhook die Form der Tagessumme selbst — fehlt das
+  // Feld dort, ist die Spanne statisch `undefined`.
+  {
+    const whQ = read("frontend/app/api/telegram/webhook/route.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    torPruefung("der Webhook-Typ kennt `confSpanne` nicht — dann kommt die "
+      + "Spanne nie in /status an",
+      /confSpanne\?\s*:/.test(whQ) && /richtungen\?\s*:/.test(whQ)
+      && /tore\?\s*:/.test(whQ),
+      "Feld im `tore`-Typ von /status");
   }
 
   // ══ ORCHESTRATOR- UND AUSFUEHRUNGS-KI: URTEILE GEPRUEFT (16.09.) ═════════

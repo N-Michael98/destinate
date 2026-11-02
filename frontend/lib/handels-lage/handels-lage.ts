@@ -143,6 +143,12 @@ export interface TorZahlen {
   nein?: number;
   fallback?: number;
   gruende?: Record<string, number>;
+  /** Spanne der Confidence je Ablehnungsgrund (02.11.) — siehe
+   *  `TorSumme` in zyklus-bilanz.ts. `undefined` heisst: die
+   *  Tagessumme stammt von vor dem Einbau, NICHT "Spanne 0". */
+  confSpanne?: Record<string, { min: number; max: number }>;
+  /** Abgelehnte Richtungen je Tor (02.11.) — siehe `TorSumme`. */
+  richtungen?: Record<string, number>;
 }
 
 export interface HandelsLage {
@@ -390,11 +396,29 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
         // DER BELEGTE FALL (31.10.): `orchestrator-agent.ts:1002` sendet
         // `Confidence 66 < Schwelle 70`. Ohne Escaping bricht das die
         // ganze Nachricht, und /status kommt NICHT an.
+        // DIE ZAHL, DIE BIS HEUTE FEHLTE (02.11.): `grundSchluessel()`
+        // maskiert jede Zahl mit `#`, richtig fuers Zaehlen. Am 02.11.
+        // stand deshalb `Confidence # < Schwelle # (38)` — und genau
+        // diese Schwelle war der groesste Blocker des Tages.
+        const sp = gruende.length > 0
+          ? s?.confSpanne?.[String(gruende[0][0])] : undefined;
+        const conf = sp && Number.isFinite(sp.min) && Number.isFinite(sp.max)
+          ? (sp.min === sp.max
+              ? ` · Confidence ${sp.min}`
+              : ` · Confidence ${sp.min}\u2013${sp.max}`)
+          : "";
         const grund = gruende.length > 0
-          ? ` — ${htmlSicher(String(gruende[0][0]))} (${gruende[0][1]})` : "";
+          ? ` — ${htmlSicher(String(gruende[0][0]))} (${gruende[0][1]})${conf}` : "";
+        // Welche SEITE das Tor wegwirft. Gesendet wurde sie seit jeher,
+        // gelesen hat sie bis zum 02.11. niemand.
+        const ri = Object.entries(s?.richtungen ?? {})
+          .filter(([, n]) => zahl(n) !== null && (zahl(n) as number) > 0)
+          .sort((x, y) => (zahl(y[1]) as number) - (zahl(x[1]) as number));
+        const richt = ri.length > 0
+          ? ` · ${ri.map(([d, n]) => `${n} ${htmlSicher(d)}`).join("/")}` : "";
         zeilen.push(`      ${htmlSicher(name)}: ja ${ja === null ? "?" : ja} · `
           + `nein ${nein === null ? "?" : nein}`
-          + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${grund}`);
+          + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${richt}${grund}`);
         if (nein !== null && nein > 0) abgelehnt.push([name, nein]);
       }
       abgelehnt.sort((x, y) => y[1] - x[1]);
