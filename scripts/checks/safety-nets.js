@@ -5292,15 +5292,25 @@ module.exports = async function pruefe() {
           JSON.stringify(t1.tore["Meta-KI"]));
         torPruefung("ein KI-Rueckfall wird als Zustimmung gezaehlt, ohne als Rueckfall zu erscheinen",
           t1.tore["Ausfuehrungs-KI"]?.fallback === 1);
-        // Obergrenzen
+        // Obergrenzen — AN DER QUELLE, nicht als feste Zahl (02.11.).
+        //
+        // Hier standen `300` und `=== 200`. Als der Deckel am 02.11. auf
+        // 400 stieg, wurde die Pruefung zu Recht rot — sie haette sonst
+        // stillschweigend nichts mehr geprueft. Jetzt kommt die Schranke
+        // aus dem Modul und der Pruefstand fuettert immer darueber.
+        const deckelJeZyklus = B.MAX_TORE_JE_ZYKLUS;
+        torPruefung("MAX_TORE_JE_ZYKLUS ist nicht exportiert — dann friert der Pruefstand wieder eine Zahl ein",
+          typeof deckelJeZyklus === "number" && deckelJeZyklus > 0,
+          String(deckelJeZyklus));
         const viel = B.neueBilanz(0);
-        for (let i = 0; i < 300; i++) {
+        for (let i = 0; i < deckelJeZyklus + 50; i++) {
           B.bilanzVerbuchen(viel, { type: "GATE:DECISION", payload: { gate: "Schwelle", approve: false, reason: `Grund Nummer ${i} ${"x".repeat(i % 40)}` } });
         }
         const tViel = B.tagessummeAddieren(null, viel, "2026-09-16");
         torPruefung("die Zyklus- oder Tagesbilanz waechst unbegrenzt",
-          viel.tore.length === 200 && Object.keys(tViel.tore["Schwelle"].gruende).length <= 26,
-          `${viel.tore.length} Tore, ${Object.keys(tViel.tore["Schwelle"].gruende).length} Gruende`);
+          viel.tore.length === deckelJeZyklus
+          && Object.keys(tViel.tore["Schwelle"].gruende).length <= 26,
+          `${viel.tore.length} Tore (Deckel ${deckelJeZyklus}), ${Object.keys(tViel.tore["Schwelle"].gruende).length} Gruende`);
 
         // ── ein ganzer Zyklus ueber den ECHTEN Bus ──
         const stilleLog = console.log;
@@ -7315,6 +7325,135 @@ module.exports = async function pruefe() {
           torPruefung("der Grund geht ROH in eine HTML-Nachricht — Telegram lehnt sie dann ab (Lehre vom 02.11.)",
             /tgSicher\(gptGrund/.test(aiQ),
             "der Antwortkoerper ist fremder Text");
+        }
+
+        // ── JEDES TOR MELDET BEIDE RICHTUNGEN (02.11.) ──────────────
+        //
+        // `/status` zeigte "Walk-Forward: ja 0 · nein 22". Gemessen:
+        // fuenf Tore meldeten AUSSCHLIESSLICH Ablehnungen, ihr `ja`
+        // konnte nie > 0 werden. In Wahrheit waren 13 durchgegangen —
+        // die Arithmetik beweist es (Meta-KI 35 ja, 22 + 13 = 35).
+        //
+        // Klammerzaehlung statt Zeilen-Regex: ein mehrzeiliger Aufruf
+        // wuerde sonst uebersehen (Lehre vom 17.09.).
+        {
+          const argBlock = (s, von) => {
+            let tiefe = 0, inStr = null;
+            for (let i = von; i < s.length; i++) {
+              const c = s[i];
+              if (inStr) {
+                if (c === "\\") { i++; continue; }
+                if (c === inStr) inStr = null;
+                continue;
+              }
+              if (c === '"' || c === "'" || c === "`") { inStr = c; continue; }
+              if (c === "(") tiefe++;
+              else if (c === ")") { tiefe--; if (tiefe === 0) return s.slice(von, i + 1); }
+            }
+            return null;
+          };
+          // SELBSTPRUEFUNG an selbst gebauten Zeichenketten — am
+          // Dateiinhalt hinge sie an einer Formulierung.
+          {
+            const p1 = 'f({ gate: "X", approve: true })';
+            const p2 = 'f({ gate: "Y(", approve: false })';
+            torPruefung("der Klammerzaehler kennt keine Zeichenketten",
+              argBlock(p1, p1.indexOf("(")) === '({ gate: "X", approve: true })'
+              && argBlock(p2, p2.indexOf("(")) === '({ gate: "Y(", approve: false })',
+              "eine ( in einem Text wuerde sonst mitzaehlen");
+          }
+
+          // AUSNAHME, benannt und begruendet: `Zyklus-Limit` ist KEIN
+          // Kandidaten-Tor. Es meldet einmal je Zyklus, wie viele
+          // Kandidaten gar nicht mehr drankamen — ein "ja" waere dort
+          // erfunden. Ohne diese Liste waere die Pruefung ewig rot; ohne
+          // Begruendung waere sie ein Loch.
+          const NUR_ABLEHNUNG = new Set(["Zyklus-Limit"]);
+
+          const orQ = read("frontend/lib/agents/orchestrator-agent.ts");
+          const anQ = read("frontend/lib/agents/analysis-agent.ts");
+          const ohneK = (s) => s
+            .replace(/\/\*[\s\S]*?\*\//g, " ")
+            .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+          const tore = new Map();
+          for (const q of [ohneK(orQ), ohneK(anQ)]) {
+            let i = 0;
+            while ((i = q.indexOf("meldeTorEntscheidung", i)) !== -1) {
+              const k = q.indexOf("(", i);
+              const b = k === -1 ? null : argBlock(q, k);
+              i += 20;
+              if (!b) continue;
+              const g = b.match(/gate:\s*"([^"]+)"/);
+              const a = b.match(/approve:\s*([^,}\s]+)/);
+              if (!g || !a) continue;
+              if (!tore.has(g[1])) tore.set(g[1], { ja: 0, nein: 0, dyn: 0 });
+              const t = tore.get(g[1]);
+              if (a[1] === "true") t.ja++;
+              else if (a[1] === "false") t.nein++;
+              else t.dyn++;
+            }
+          }
+          torPruefung("keine Tor-Meldung gefunden — der Zaehler ist kaputt",
+            tore.size >= 8, `${tore.size} Tore erkannt`);
+          for (const [name, t] of [...tore].sort()) {
+            if (NUR_ABLEHNUNG.has(name)) {
+              // Gegenprobe: die Ausnahme darf nicht unbemerkt zum Tor
+              // werden. Meldet sie ploetzlich ein `ja`, gehoert sie aus
+              // der Liste — und das soll auffallen.
+              torPruefung(`${name} meldet jetzt ein JA — dann gehoert es nicht mehr in die Ausnahmeliste`,
+                t.ja === 0 && t.dyn === 0, `ja=${t.ja} dyn=${t.dyn}`);
+              continue;
+            }
+            torPruefung(`${name} meldet NUR Ablehnungen — sein \`ja\` in `
+              + "/status ist dann strukturell, nicht gemessen",
+              t.ja > 0 || t.dyn > 0, `ja=${t.ja} nein=${t.nein} dyn=${t.dyn}`);
+          }
+
+          // DIE REIHENFOLGE GEHOERT DAZU (02.11.).
+          //
+          // Das Schwellen-JA stand frueher am ENDE der Kette, hinter dem
+          // Stil-Limit — und hiess damit "hat die ganze Kette ueberstanden",
+          // waehrend das NEIN nur die Confidence zaehlte. Zwei Mengen unter
+          // einem Namen. Eine reine Symmetrie-Pruefung saehe das nicht.
+          //
+          // BEIDE Stellen werden auf Existenz geprueft, DANN die Reihenfolge:
+          // ein indexOf-Vergleich gegen -1 kann nie wahr werden (25.10.).
+          {
+            const q = ohneK(orQ);
+            const iJa = q.indexOf('gate: "Schwelle", symbol: o.symbol, direction: o.gpt.direction, approve: true');
+            const iStil = q.indexOf('gate: "Stil-Limit"');
+            torPruefung("die Schwellen-Zustimmung oder das Stil-Limit fehlt",
+              iJa >= 0 && iStil >= 0, `ja@${iJa} stil@${iStil}`);
+            torPruefung("das Schwellen-JA steht hinter dem Stil-Limit — dann "
+              + "heisst es wieder \"ganze Kette ueberstanden\" statt \"Schwelle "
+              + "bestanden\"",
+              iJa >= 0 && iStil >= 0 && iJa < iStil, `ja@${iJa} stil@${iStil}`);
+          }
+
+          // ── DER DECKEL DARF NICHT ZUSCHNAPPEN ─────────────────────
+          //
+          // Mehr Meldungen je Zyklus heisst: `MAX_TORE_JE_ZYKLUS` kann
+          // greifen — und was wegfaellt, sind die SPAETEN Tore
+          // (Filterkette, Override, Ausfuehrungs-KI), also die
+          // interessantesten. Die Schranke kommt aus der QUELLE.
+          const wlStart = orQ.indexOf("const WATCHLIST = [");
+          let tiefe = 0, wlEnde = -1;
+          for (let k = orQ.indexOf("[", wlStart); k < orQ.length; k++) {
+            if (orQ[k] === "[") tiefe++;
+            else if (orQ[k] === "]") { tiefe--; if (tiefe === 0) { wlEnde = k; break; } }
+          }
+          const wl = wlStart >= 0 && wlEnde > wlStart
+            ? (orQ.slice(wlStart, wlEnde).match(/"[A-Z0-9]{4,8}"/g) || []).length : 0;
+          torPruefung("die Watchlist laesst sich nicht aus der Quelle zaehlen",
+            wl >= 20, `${wl} Symbole`);
+          const zbQ = read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts");
+          const deckel = Number((zbQ.match(/MAX_TORE_JE_ZYKLUS = (\d+)/) || [])[1] ?? 0);
+          // 7 Tore je Kandidat + eine Meta-KI-Meldung je Signal, dazu
+          // Orchestrator-KI und Zyklus-Limit.
+          const noetig = wl * 8 + 2;
+          torPruefung("der Tor-Deckel schnappt zu — die spaeten Tore fallen dann aus der Bilanz",
+            deckel >= noetig,
+            `Deckel ${deckel}, noetig ${noetig} (${wl} Maerkte x 8 + 2)`);
         }
 
         torPruefung("STAGE 3 sagt nicht mehr, dass /reset genuegt",

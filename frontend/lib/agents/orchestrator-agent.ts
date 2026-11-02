@@ -1060,6 +1060,13 @@ async function zyklusInnen(): Promise<string> {
       meldeTorEntscheidung(AGENT_ID, { gate: "Walk-Forward", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: "Überanpassungsverdacht" });
       return false;
     }
+    // JEDES TOR MELDET BEIDE RICHTUNGEN (02.11.).
+    //
+    // Hier stand nur die Ablehnung. `/status` zeigte deshalb "ja 0 ·
+    // nein 22" — das liest sich als "dieses Tor laesst nichts durch",
+    // obwohl 13 Kandidaten passiert hatten. Die Zahl war strukturell,
+    // nicht gemessen.
+    meldeTorEntscheidung(AGENT_ID, { gate: "Walk-Forward", symbol: o.symbol, direction: o.gpt.direction, approve: true, reason: "kein Überanpassungsverdacht" });
     if (o.gpt.confidence < threshold) {
       verworfen.push(
         `${o.symbol}: Confidence ${o.gpt.confidence} < Schwelle ${threshold}` +
@@ -1070,6 +1077,11 @@ async function zyklusInnen(): Promise<string> {
       meldeTorEntscheidung(AGENT_ID, { gate: "Schwelle", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: `Confidence ${o.gpt.confidence} < Schwelle ${threshold}`, confidence: o.gpt.confidence });
       return false;
     }
+    // An der EIGENEN Stelle, nicht am Ende der Kette: vorher stand das
+    // `ja` hinter dem Stil-Limit und hiess damit "hat die ganze Kette
+    // ueberstanden" — waehrend das `nein` nur die Confidence zaehlte.
+    // Zwei Mengen unter einem Namen.
+    meldeTorEntscheidung(AGENT_ID, { gate: "Schwelle", symbol: o.symbol, direction: o.gpt.direction, approve: true, reason: `Confidence ${o.gpt.confidence} >= Schwelle ${threshold}`, confidence: o.gpt.confidence });
     const s = (o.gpt.tradingStyle ?? "DAYTRADING").toUpperCase();
     const heute = global.__daily_trades__?.byStyle[s] ?? 0;
     const grenze = stilGrenze(styleLimit as Record<string, number>, s);
@@ -1078,7 +1090,7 @@ async function zyklusInnen(): Promise<string> {
       meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: `Tageslimit ${s} erreicht` });
       return false;
     }
-    meldeTorEntscheidung(AGENT_ID, { gate: "Schwelle", symbol: o.symbol, direction: o.gpt.direction, approve: true, reason: `Confidence ${o.gpt.confidence} >= Schwelle ${threshold}`, confidence: o.gpt.confidence });
+    meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: true, reason: `Tageslimit ${s} nicht erreicht (${heute}/${grenze})` });
     return true;
   });
 
@@ -1321,6 +1333,9 @@ async function zyklusInnen(): Promise<string> {
         continue;
       }
       console.log(`[orchestrator] 🔼 ${candidate.symbol}: Pyramiding erlaubt — ${samePositions.length}/${maxPerSym} offen, alle auf BE+, Confidence ${candidate.gpt.confidence} >= ${pyrMinConf}`);
+      // Nur HIER, nicht wenn gar keine Position offen ist: dann war das
+      // Tor nicht beteiligt, und "nicht beteiligt" ist kein "ja".
+      meldeTorEntscheidung(AGENT_ID, { gate: "Duplikat", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: true, reason: `Pyramiding erlaubt (${samePositions.length}/${maxPerSym} offen, alle auf BE+)` });
     }
 
     // Analysis-Engine Score — TESTPHASE (User-Entscheid 15.07.): NUR LOGGEN,
@@ -1365,6 +1380,7 @@ async function zyklusInnen(): Promise<string> {
       meldeTorEntscheidung(AGENT_ID, { gate: "Filterkette", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: `${filterResult.blockedBy}: ${filterResult.reason}` });
       continue;
     }
+    meldeTorEntscheidung(AGENT_ID, { gate: "Filterkette", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: true, reason: "alle Filterstufen bestanden" });
 
     // Volatility-adjusted Risk
     const atr = (candidate.taSignals as { atr?: number } | undefined)?.atr ?? 0;

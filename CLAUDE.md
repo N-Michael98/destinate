@@ -3246,6 +3246,112 @@ geprüft) und an der Verdrahtung, die **strukturell** gebunden ist. Der
 nächste Scan mit Guthaben ist die Live-Probe: er muss die Rückkehr-Meldung
 schicken.
 
+## Ein `ja 0`, das niemand je hochzählen konnte (02.11.)
+
+Mit wieder gefülltem Guthaben lieferte GPT **72 Richtungssignale**
+(vorher 0) und der Trichter lief bis `GO: 36`. Darunter stand:
+
+```
+Tore nach dem GO:
+  Meta-KI:         ja 35 · nein 1
+  Walk-Forward:    ja  0 · nein 22 — Überanpassungsverdacht
+  Schwelle:        ja  0 · nein 13 — Confidence # < Schwelle #
+🟡 … Grösstes: Walk-Forward (22× nein).
+```
+
+**`Walk-Forward: ja 0` war falsch.** Die Arithmetik beweist es: Meta-KI
+liess **35** durch, 22 + 13 = **35** — also sind beim Walk-Forward **13
+passiert** und erst an der Schwelle gestorben.
+
+Gemessen mit Klammerzählung über alle `meldeTorEntscheidung`-Stellen (ein
+Zeilen-Regex hätte mehrzeilige Aufrufe übersehen), mit Selbstprüfung:
+**fünf Tore meldeten ausschliesslich Ablehnungen** — Walk-Forward,
+Stil-Limit, Filterkette, Duplikat, Zyklus-Limit. Ihr `ja` konnte **nie**
+> 0 werden.
+
+Das ist „eine Anzeige behauptet etwas, das der Code nicht tut" — **in
+meiner eigenen Anzeige vom 30.10.**, und mein Urteil darunter baute
+darauf auf und schickte auf Walk-Forward.
+
+### Zwei Mengen unter einem Namen
+
+`Schwelle: ja` stand am **Ende** der Kette, hinter dem Stil-Limit — es
+hiess also „hat die ganze Kette überstanden", während `Schwelle: nein`
+nur die Confidence zählte. Jetzt steht die Zustimmung an der **eigenen**
+Stelle, und der Prüfer hält die **Reihenfolge** fest (beide Positionen
+erst auf Existenz, dann vergleichen — `indexOf(…) < -1` kann nie wahr
+werden, die Lehre vom 25.10.).
+
+### Was NICHT geändert wurde
+
+**Keine Bedingung.** Belegt, nicht behauptet: der Diff von
+`orchestrator-agent.ts` enthält **ausschliesslich** `meldeTorEntscheidung`-
+Zeilen und Kommentare, und die Zahl der `return false` wie der `continue`
+ist **unverändert**. **Snapshot 299 Werte unverändert.** Vorher lief die
+Pflicht-Impact-Analyse: zwei direkte Nutzer, **acht** Prüfer.
+
+`Zyklus-Limit` bleibt bei Ablehnungen — es ist **kein** Kandidaten-Tor,
+sondern meldet einmal je Zyklus, wie viele gar nicht mehr drankamen. Ein
+„ja" wäre dort erfunden. Die Ausnahme steht **namentlich und begründet**
+im Prüfer, mit der Gegenprobe: meldet sie je ein `ja`, wird er rot.
+
+### Der Deckel wäre fast zugeschnappt
+
+Das wäre mir beinahe durchgerutscht: die Zyklus-Bilanz nimmt nur
+`MAX_TORE_JE_ZYKLUS` Tor-Ereignisse. **Ausgerechnet**, nicht geschätzt:
+
+```
+30 Märkte × 7 Tore je Kandidat   = 210
++ Meta-KI (eine je GO-Signal)    =  30
++ Orchestrator-KI, Zyklus-Limit  =   2   →  242
+```
+
+Mit **200** wäre der Deckel genau jetzt gefallen — und weg wären die
+**späten** Tore (Filterkette, Override, Ausführungs-KI), also die
+interessantesten. Ein Deckel, der die Ablehnungen verdrängt, wäre
+schlimmer als keiner. Jetzt **400**, und `safety-nets` rechnet die
+Schranke aus der **Quelle** nach (Watchlist-Grösse × 8 + 2).
+
+**Und ein bestehender Prüfer hat die Änderung sofort gefangen** — er
+fütterte fest `300` und erwartete `=== 200`. Beides Zahlen aus dem Jahr
+der Einführung. Er wurde zu Recht rot; jetzt ist `MAX_TORE_JE_ZYKLUS`
+**exportiert**, der Prüfstand füttert `Deckel + 50` und verlangt genau
+den Deckel. So kann er nicht mehr veralten.
+
+### Absicherung
+
+`safety-nets` 988 → **1004**, **8 von 8 Sabotagen** plus Gegenprobe. Die
+erste stellt den Fund wieder her: nimmt man dem Walk-Forward die
+Zustimmung, wird er rot.
+
+**Eine Sabotage war zuerst wirkungslos**, und das gehört zur Methode: ich
+tauschte das Schwellen-`ja` nur mit der **nächsten** Zeile — es blieb
+damit vor dem Stil-Limit, die Reihenfolge-Prüfung galt weiter. Eine
+Sabotage, die nicht sabotiert, ist kein Befund. Jetzt wandert die Meldung
+wirklich ans Ende des Blocks, also genau dorthin, wo sie bis heute stand.
+
+**Zwei eigene Nachlässigkeiten dabei:** drei eingefügte Zeilen hatten
+**sechs statt vier** Leerzeichen Einzug (behoben), und zum **fünften Mal
+an zwei Tagen** hat die Shell in einem `node -e` die Backticks als Befehl
+ausgeführt — diesmal verschwanden die **Detail-Argumente** zweier
+Prüfungen (`, );`). Syntaktisch gültig, aber der Befund hätte keine Zahlen
+mehr genannt. Repariert und nachgemessen.
+
+### Was der Trichter jetzt NICHT sagt
+
+Am Tor steht `Confidence # < Schwelle #`. `grundSchluessel()` ersetzt
+jede Zahl durch `#`, damit gleiche Gründe zusammenfallen — richtig fürs
+Zählen, aber die **Spanne** fehlt, die die Vor-Tor-Stufe zeigt
+(`11 (55–69)`). Genau sie bräuchte man für „Schwelle senken?".
+**Benannt, nicht geändert** — eine Sache auf einmal.
+
+Und die Handelsfrage bleibt: `blockOverfitMarkets` ist **AN** (Standard
+**AUS**) — zwingend, nicht vermutet, denn ohne den Schalter wäre
+`ueberangepasst` leer und es hätte keine Ablehnung gegeben. Damit ist
+„Überanpassungsverdacht" heute der grösste einzelne Blocker. **Welche**
+Märkte und **wie alt** die Daten sind, steht in der Logzeile
+`[orchestrator] 🔬 Walk-Forward`.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.)
 
 Anlass: die Beobachtung „selten werden Positionen vor 12:00 eröffnet,

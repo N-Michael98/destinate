@@ -126,7 +126,28 @@ export type Tagessumme = {
 };
 
 /** Obergrenzen, damit weder die Zyklus- noch die Tagesbilanz unbegrenzt waechst. */
-const MAX_TORE_JE_ZYKLUS = 200;
+/**
+ * AUSGERECHNET, nicht geschaetzt (02.11.).
+ *
+ * Seit dem 02.11. meldet JEDES Kandidaten-Tor beide Richtungen. Damit
+ * steigt die Zahl der Ereignisse je Zyklus deutlich:
+ *
+ *   30 Maerkte (Watchlist) x 7 Tore je Kandidat        = 210
+ *   + Meta-KI (eine Meldung je GO-Signal, max 30)      =  30
+ *   + Orchestrator-KI und Zyklus-Limit                 =   2
+ *                                                      = 242
+ *
+ * Mit 200 waere der Deckel GENAU jetzt zugeschnappt — und was
+ * wegfaellt, sind die SPAETEN Tore (Filterkette, Override,
+ * Ausfuehrungs-KI), also die interessantesten. Ein Deckel, der die
+ * Ablehnungen verdraengt, waere schlimmer als keiner.
+ *
+ * 400 laesst Luft fuer eine groessere Watchlist; `safety-nets` rechnet
+ * die Schranke aus der QUELLE nach und wird rot, wenn sie bricht.
+ */
+/** Exportiert, damit der Pruefstand die Schranke aus der QUELLE nimmt
+ *  statt eine Zahl einzufrieren (02.11.). */
+export const MAX_TORE_JE_ZYKLUS = 400;
 const MAX_GRUENDE_JE_TOR = 25;
 const MAX_TEXT = 160;
 
