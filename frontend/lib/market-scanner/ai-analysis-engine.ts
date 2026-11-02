@@ -1,5 +1,8 @@
 // Real GPT + Claude analysis engine — uses stored API keys + Python Backend TA data
 import { getAISettings } from "../ai-config/ai-config-store";
+import { lageMelden } from "../redis-lage/redis-lage";
+import { sendTelegram } from "../telegram-notifications/telegram-sender";
+import { htmlSicher as tgSicher } from "../html-sicher/html-sicher";
 import type { CapitalMarket } from "../capital-com/capital-com-client";
 import { MIN_SIGNAL_CONFIDENCE } from "../broker-config";
 import { pythonBackendAuthHeader } from "../python-backend/auth-header";
@@ -375,9 +378,73 @@ export function tokenBudget(anzahlMaerkte: number): number {
   return Math.min(16000, Math.max(4000, roh));
 }
 
+/**
+ * Was der Aufruf ERGEBEN hat — nicht nur, ob er klappte (02.11.).
+ *
+ * Vorher gab `callGPT` fuer JEDEN Fehler `null` zurueck. Der Aufrufer
+ * konnte einen Netzaussetzer nicht von einem leeren Konto
+ * unterscheiden und versuchte es stur mit dem zweiten Modell — bei
+ * `insufficient_quota` garantiert vergeblich, denn das ist ein
+ * KONTO-Limit und kein Modell-Limit. Belegt am 02.11. im Log:
+ * zweimal HTTP 429 im selben Zyklus, 141 Zyklen lang.
+ */
+export type GptAufrufLage = {
+  /** Der Antworttext, oder `null` wenn nichts kam. */
+  text: string | null;
+  /** HTTP-Status; `null` bei einem Netzfehler. */
+  status: number | null;
+  /** Kurzer Grund fuer Log und Alarm — leer, wenn es geklappt hat. */
+  grund: string;
+  /**
+   * Ein zweiter Versuch mit einem ANDEREN Modell kann nicht helfen.
+   *
+   * Nur 429 und 401: beide liegen auf KONTO-Ebene (Guthaben, API-Key).
+   * **403 ausdruecklich NICHT** — das war der Fund vom 07.09.
+   * ("Project does not have access to model gpt-4o"), und genau dafuer
+   * gibt es den Rueckfall. 5xx und Netzfehler ebenfalls nicht: die
+   * koennen vorbeigehen.
+   */
+  endgueltig: boolean;
+};
+
+/**
+ * Aus Status und Antwortkoerper: Grund + ob ein zweiter Versuch mit
+ * einem ANDEREN Modell helfen kann (02.11.).
+ *
+ * Eigene, exportierte Funktion, damit der Pruefer sie RECHNEN kann.
+ * Als Ausdruck in `callGPT` waere sie nur strukturell pruefbar — und
+ * "ein Regex prueft den Wortlaut, nicht das Verhalten" (30.09.).
+ *
+ * `status === null` heisst Netzfehler.
+ */
+export function gptFehlerLage(
+  status: number | null,
+  body: string,
+): { grund: string; endgueltig: boolean } {
+  const kurz = body.slice(0, 160);
+  if (status === null) {
+    // Ein Netzaussetzer kann vorbeigehen — der zweite Versuch bleibt
+    // erlaubt. Ihn hier zu sperren waere die Gegenrichtung desselben
+    // Fehlers.
+    return { grund: `Netzfehler: ${kurz}`, endgueltig: false };
+  }
+  const quote = /insufficient_quota|no credits remaining/i.test(body);
+  return {
+    grund: `HTTP ${status}${quote ? " — KEIN GUTHABEN (insufficient_quota)" : ""}`
+      + `: ${kurz}`,
+    // NUR 429 und 401 — beide liegen auf KONTO-Ebene.
+    //
+    // 403 ausdruecklich NICHT: das war der Fund vom 07.09. ("Project
+    // does not have access to model gpt-4o"), und genau dafuer gibt es
+    // den Rueckfall auf das zweite Modell. 404 (Modell unbekannt)
+    // ebensowenig, und 5xx koennen vorbeigehen.
+    endgueltig: status === 429 || status === 401,
+  };
+}
+
 async function callGPT(
   apiKey: string, model: string, prompt: string, maxTokens = 4000,
-): Promise<string | null> {
+): Promise<GptAufrufLage> {
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -393,7 +460,7 @@ async function callGPT(
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.warn(`[ai-engine] ⛔ GPT HTTP ${res.status}: ${body.slice(0, 200)}`);
-      return null;
+      return { text: null, status: res.status, ...gptFehlerLage(res.status, body) };
     }
     const data = await res.json() as Record<string, unknown>;
     const choices = data.choices as Array<{ message: { content: string }; finish_reason?: string }>;
@@ -409,10 +476,17 @@ async function callGPT(
         + `max_tokens=${maxTokens}) — das JSON ist unvollstaendig, dieser Scan `
         + `verliert Gelegenheiten. Grenze erhoehen.`);
     }
-    return choices?.[0]?.message?.content ?? null;
+    const inhalt = choices?.[0]?.message?.content ?? null;
+    return {
+      text: inhalt,
+      status: res.status,
+      grund: inhalt === null ? "Antwort ohne Inhalt" : "",
+      endgueltig: false,
+    };
   } catch (e) {
-    console.warn(`[ai-engine] ⛔ GPT Call fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
-    return null;
+    const m = e instanceof Error ? e.message : String(e);
+    console.warn(`[ai-engine] ⛔ GPT Call fehlgeschlagen: ${m}`);
+    return { text: null, status: null, ...gptFehlerLage(null, m) };
   }
 }
 
@@ -1323,7 +1397,9 @@ each market's own data, never from habit or from these examples' direction:
     // frühere feste Wert 4000 stammte aus der Testphase mit ~22 Märkten.
     const platz = tokenBudget(validMarkets.length);
     const gptBeginn = Date.now();
-    let raw = await callGPT(ai.openai.apiKey, scanGptModel, prompt, platz);
+    const ersterGpt = await callGPT(ai.openai.apiKey, scanGptModel, prompt, platz);
+    let raw = ersterGpt.text;
+    let gptGrund = ersterGpt.grund;
 
     // ── Das Sicherheitsnetz greift jetzt in BEIDE Richtungen (07.09.) ──────
     //
@@ -1349,10 +1425,25 @@ each market's own data, never from habit or from these examples' direction:
     const zweitModell = scanGptModel === ai.openai.model
       ? (CHEAP_GPT[ai.openai.model] ?? "")
       : ai.openai.model;
-    if (raw === null && zweitModell && zweitModell !== scanGptModel) {
+    // EIN 429/401 WIRD NICHT WIEDERHOLT (02.11.).
+    //
+    // Die Regel steht seit dem 22.09. im Projekt — dort fuer
+    // `fetchStrategySignals`: "der Fehler kehrt deterministisch zurueck,
+    // und bei 429 waere Nachlegen genau falsch". Fuer `callGPT` galt sie
+    // nie. Am 02.11. kostete das 141 Zyklen lang je eine zweite
+    // vergebliche Anfrage: das Guthaben war leer, und ein anderes Modell
+    // auf demselben Konto bekommt denselben 429.
+    if (ersterGpt.endgueltig) {
+      console.warn(`[ai-engine] ⏹️ Kein zweiter Modellversuch — `
+        + `${ersterGpt.grund.slice(0, 120)} liegt auf Konto-Ebene, ein `
+        + `anderes Modell bekommt denselben Fehler.`);
+    }
+    if (raw === null && !ersterGpt.endgueltig && zweitModell && zweitModell !== scanGptModel) {
       console.warn(`[ai-engine] ↩️ ${scanGptModel} hat nicht geantwortet — `
         + `zweiter Versuch mit ${zweitModell}`);
-      raw = await callGPT(ai.openai.apiKey, zweitModell, prompt, platz);
+      const zweiterGpt = await callGPT(ai.openai.apiKey, zweitModell, prompt, platz);
+      raw = zweiterGpt.text;
+      if (zweiterGpt.grund) gptGrund = zweiterGpt.grund;
       if (raw !== null) {
         console.warn(`[ai-engine] ⚠️ Die Analyse läuft mit ${zweitModell} statt `
           + `${scanGptModel} — die Modellwahl greift NICHT. Prüfen, ob das Projekt `
@@ -1365,6 +1456,40 @@ each market's own data, never from habit or from these examples' direction:
       if (opp.epic) gptBatchResult[opp.epic] = opp;
     }
     console.log(`[ai-engine] GPT-Batch: ${raw ? `Antwort ${raw.length} Zeichen` : "KEINE ANTWORT (Call fehlgeschlagen)"} → ${Object.keys(gptBatchResult).length} Opportunities`);
+
+    // ── DIE SIGNALQUELLE DARF NICHT STUMM STERBEN (02.11.) ──────────
+    //
+    // Gemessen: im ganzen Scan-Pfad gab es NULL `sendTelegram`. Am
+    // 02.11. lieferte GPT in 4230 von 4230 Marktanalysen nichts — das
+    // Guthaben war leer —, und die einzige Spur war eine Logzeile im
+    // Railway-Log. Gefunden wurde es nur, weil jemand gezielt dort
+    // nachgesehen hat.
+    //
+    // Die Tagesbilanz traegt die ZAHL seit dem 30.10., aber einmal am
+    // Tag und ohne GRUND. Fehlerklasse: eine Diagnose darf im
+    // interessanten Fall nicht schweigen.
+    //
+    // Gedrosselt ueber die bestehende Drossel — eine Umsetzung, nicht
+    // zwei. Der Zustand liegt dort auf `global`, weil der Scan aus
+    // `instrumentation.ts` laeuft und die Routen eine andere Modulkopie
+    // sehen (Regel vom 28.07.).
+    const quelleTot = Object.keys(gptBatchResult).length === 0;
+    if (lageMelden("GPT-Signalquelle", quelleTot ? "aus" : "ok")) {
+      // Der Grund MUSS mit: ohne ihn steht man wieder vor der Frage,
+      // die uns heute ins Railway-Log geschickt hat. Und er wird
+      // entschaerft — er traegt fremden Text (OpenAIs Antwortkoerper),
+      // und `sendTelegram` sendet als HTML (Lehre vom 02.11.).
+      const text = quelleTot
+        ? `🤐 <b>KI-SIGNALQUELLE LIEFERT NICHTS</b>\n\n`
+          + `GPT hat fuer ALLE ${validMarkets.length} Maerkte keine `
+          + `verwertbare Antwort geliefert.\n`
+          + `Grund: <code>${tgSicher(gptGrund || "Antwort kam, aber 0 Opportunities")}</code>\n\n`
+          + `<b>Folge:</b> keine Richtungssignale aus GPT. Es wird `
+          + `hoechstens noch ueber den gemessenen Konsens gehandelt.`
+        : `✅ <b>KI-Signalquelle antwortet wieder</b>\n\n`
+          + `${Object.keys(gptBatchResult).length} Gelegenheiten im letzten Scan.`;
+      void sendTelegram(text);
+    }
 
     // WARUM sagt GPT "WAIT"? (03.08.) Der Trichter zeigt seit heute, DASS alle
     // 30 Märkte an dieser Stelle ausscheiden — nicht aber, an welcher der zwölf

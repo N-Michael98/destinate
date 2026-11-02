@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 357 · Kanten: 874
+Dateien mit internen Abhängigkeiten: 357 · Kanten: 877
 
 
 ## analysis-engine/api
@@ -963,8 +963,11 @@ Dateien mit internen Abhängigkeiten: 357 · Kanten: 874
   - → `frontend/lib/broker-config/index.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
+  - → `frontend/lib/html-sicher/html-sicher.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
+  - → `frontend/lib/redis-lage/redis-lage.ts`
   - → `frontend/lib/settings/settings-store.ts`
+  - → `frontend/lib/telegram-notifications/telegram-sender.ts`
   - → `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
 - `frontend/lib/market-universe/market-regime-sync.ts`
   - → `frontend/lib/market-universe/market-universe.ts`
@@ -1290,8 +1293,8 @@ Dateien mit internen Abhängigkeiten: 357 · Kanten: 874
 - `frontend/lib/smart-broker-selection/index.ts` — von 22 Dateien
 - `frontend/app/lib/prisma.ts` — von 19 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 18 Dateien
+- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 17 Dateien
 - `frontend/lib/cache/redis-cache.ts` — von 16 Dateien
-- `frontend/lib/telegram-notifications/telegram-sender.ts` — von 16 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien

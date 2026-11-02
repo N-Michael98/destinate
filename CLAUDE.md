@@ -3164,12 +3164,87 @@ Damit bleiben **drei** Lagen, die der Trichter nicht trennt:
 | die Antwort ist abgeschnitten | `⛔ GPT-Antwort ABGESCHNITTEN (finish_reason=length)` |
 | die Epics passen nicht | `GPT-Batch: Antwort N Zeichen → M Opportunities` mit **M > 0** |
 
-`callGPT` protokolliert Status **und** Antwortkörper — die Ursache steht
-also im Railway-Log von `destinate`. **Nicht geändert:** die Zahl in den
-Trichter zu holen hiesse, `ai-analysis-engine.ts` anzufassen (Datei mit
-erhöhtem Risiko), und das gehört entschieden, nicht nebenbei gemacht.
-Es ist dieselbe Regel wie am 22.09.: **jede Stufe braucht eine eigene
-Zahl** — hier fehlt sie noch.
+`callGPT` protokolliert Status **und** Antwortkörper — die Ursache stand
+also im Railway-Log von `destinate`.
+
+### URSACHE GEFUNDEN: das OpenAI-Guthaben war leer (02.11.)
+
+Aus dem Log, wörtlich:
+
+```
+[ai-engine] ⛔ GPT HTTP 429:
+  "message": "You have no credits remaining. Add credits to continue…"
+  "type": "insufficient_quota"
+[ai-engine] ↩️ gpt-4o hat nicht geantwortet — zweiter Versuch mit gpt-4o-mini
+[ai-engine] ⛔ GPT HTTP 429:  (derselbe Fehler)
+[ai-engine] GPT-Batch: KEINE ANTWORT (Call fehlgeschlagen) → 0 Opportunities
+```
+
+**Kein Code-Fehler.** Die Kette ist lückenlos: kein Guthaben → keine
+Antwort → 0 Opportunities → 4230× „ohne GPT-Antwort" → 0 Richtungen → nur
+Konsens-GO → Walk-Forward/Schwelle → kein Trade. Guthaben wurde
+aufgeladen.
+
+**Drei Funde, die der Log aufgedeckt hat** — alle behoben, alle als reine
+Diagnose, **keine** Entscheidungszeile angefasst (im Diff nachgewiesen:
+kein `goSignal`, `approved`, `confidence`, keine Schwelle, kein Stop,
+keine Grösse). **Snapshot 299 Werte unverändert.**
+
+#### 1. Ein 429 wurde sinnlos wiederholt
+
+`callGPT` gab für **jeden** Fehler `null` zurück. Der Aufrufer konnte
+einen Netzaussetzer nicht von einem leeren Konto unterscheiden und
+versuchte stur das zweite Modell — bei `insufficient_quota` garantiert
+vergeblich, denn das ist ein **Konto**-Limit und kein Modell-Limit.
+141 Zyklen lang je eine zweite tote Anfrage.
+
+Die Regel steht seit dem **22.09.** im Projekt — dort für
+`fetchStrategySignals`: *„der Fehler kehrt deterministisch zurück, und bei
+429 wäre Nachlegen genau falsch"*. Für `callGPT` galt sie nie. Wieder: ein
+Fix an einer Stelle beantwortet nicht, wo die Klasse sonst noch steckt.
+
+**Und die Gegenrichtung ist der eigentliche Punkt.** `403` bleibt
+ausdrücklich **wiederholbar* — das war der Fund vom 07.09. („Project does
+not have access to model gpt-4o"), und **genau dafür** gibt es den
+Rückfall. Ebenso 404, 5xx und Netzfehler. Endgültig sind nur **429 und
+401**: beide liegen auf Konto-Ebene.
+
+#### 2. Die Signalquelle konnte stumm sterben
+
+Gemessen: **0** Vorkommen von `sendTelegram` in `ai-analysis-engine.ts`,
+`analysis-agent.ts` **und** `orchestrator-agent.ts`. Die Tagesbilanz trägt
+seit dem 30.10. `🤐 davon OHNE GPT-Antwort: N` — eine **Zahl**, keinen
+**Grund**, und einmal am Tag um 22:05 UTC. Gefunden wurde es nur, weil
+jemand gezielt ins Railway-Log gesehen hat.
+
+Jetzt meldet der Scanner den Totalausfall **mit Grund und Folge**,
+gedrosselt über die **bestehende** Drossel (`lageMelden`, ein Alias auf
+`redisLageMelden` — eine Umsetzung, nicht zwei) und auf `global`, weil der
+Scan aus `instrumentation.ts` läuft. Die Rückkehr wird ebenfalls gemeldet.
+
+**Der Grund wird entschärft** (`htmlSicher`): er trägt OpenAIs
+Antwortkörper, also fremden Text, und `sendTelegram` sendet als HTML —
+genau die Lehre vom selben Tag.
+
+#### 3. Die Entscheidung gehört in eine Funktion
+
+`gptFehlerLage(status, body)` ist **exportiert und rein**. Als Ausdruck in
+`callGPT` wäre sie nur strukturell prüfbar — und „ein Regex prüft den
+Wortlaut, nicht das Verhalten" (30.09.).
+
+`safety-nets` **rechnet** sie an sieben Lagen durch (975 → **988**), und
+die wichtigste ist die **Gegenprobe**: wird `403` endgültig, ist das Netz
+vom 07.09. wieder abgeschaltet — die Prüfung wird dann rot.
+
+**8 von 8 Sabotagen** plus Gegenprobe, darunter: der Alarm entfernt, der
+Grund roh ins HTML, der Antwortkörper aus dem Grund gestrichen, und die
+Verdrahtung `!ersterGpt.endgueltig` entfernt.
+
+**Ehrlich zur Grenze:** die *Entscheidung* ist ausgeführt geprüft, das
+Feuern des Alarms hängt an `lageMelden` (seit dem 01.11. ausgeführt
+geprüft) und an der Verdrahtung, die **strukturell** gebunden ist. Der
+nächste Scan mit Guthaben ist die Live-Probe: er muss die Rückkehr-Meldung
+schicken.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.)
 

@@ -64,6 +64,22 @@ export const REDIS_MELDE_ABSTAND_MS = 30 * 60 * 1000;
  * - Der **erste** Blick auf eine Stelle meldet nur, wenn sie `aus` ist:
  *   ein gesunder Start ist keine Nachricht.
  */
+/**
+ * Dieselbe Drossel unter neutralem Namen (02.11.).
+ *
+ * Die Mechanik ist nicht Redis-spezifisch — der erste Nutzer war es,
+ * daher der Dateiname. Seit dem 02.11. meldet auch der Scanner damit
+ * den Totalausfall der Signalquelle. Ein ALIAS, keine zweite Fassung:
+ * zwei Umsetzungen derselben Drossel koennten auseinanderlaufen.
+ */
+export function lageMelden(
+  stelle: string,
+  lage: RedisLage,
+  jetzt: number = Date.now(),
+): boolean {
+  return redisLageMelden(stelle, lage, jetzt);
+}
+
 export function redisLageMelden(
   stelle: string,
   lage: RedisLage,

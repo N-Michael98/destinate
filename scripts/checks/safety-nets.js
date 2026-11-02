@@ -7249,6 +7249,74 @@ module.exports = async function pruefe() {
         torPruefung("STAGE 3 behauptet wieder, die Loops seien gestoppt",
           !/Trading-Loops[^"]*gestoppt/.test(ks) && /laufen WEITER/.test(ks),
           "sie laufen und werden blockiert — /reset genuegt, kein Redeploy");
+        // ── DIE KI-SIGNALQUELLE (02.11.) ────────────────────────────
+        //
+        // ANLASS, aus dem Railway-Log belegt: das OpenAI-Guthaben war
+        // leer, GPT antwortete in 4230 von 4230 Marktanalysen nicht, und
+        // der Code versuchte es JEDES MAL ein zweites Mal mit dem anderen
+        // Modell — bei `insufficient_quota` garantiert vergeblich, denn
+        // das ist ein KONTO-Limit. Dazu gab es keinen einzigen Alarm.
+        {
+          const aiM = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts");
+          const lage = aiM.exports?.gptFehlerLage;
+          if (typeof lage !== "function") {
+            torPruefung("gptFehlerLage nicht ausfuehrbar", false,
+              aiM.fehler ?? "Export fehlt");
+          } else {
+            // ENDGUELTIG: nur Konto-Ebene.
+            for (const [name, status, body, soll] of [
+              ["429 + kein Guthaben (der Fall vom 02.11.)", 429,
+                '{"error":{"message":"You have no credits remaining.",'
+                + '"type":"insufficient_quota"}}', true],
+              ["429 blosse Drosselung", 429, "rate limit", true],
+              ["401 falscher Schluessel", 401, "invalid api key", true],
+              // DIE GEGENPROBE, und sie ist die wichtigste: 403 war der
+              // Fund vom 07.09. ("Project does not have access to model"),
+              // und GENAU dafuer gibt es den Rueckfall. Wird 403
+              // endgueltig, ist das Netz vom 07.09. wieder abgeschaltet.
+              ["403 kein Zugriff auf das Modell (07.09.)", 403,
+                "Project does not have access to model gpt-4o", false],
+              ["404 Modell unbekannt", 404, "model not found", false],
+              ["500 beim Anbieter", 500, "server error", false],
+              ["Netzfehler", null, "ECONNRESET", false],
+            ]) {
+              const r = lage(status, body);
+              torPruefung(`${name}: endgueltig falsch beurteilt — `
+                + `${soll ? "ein zweiter Versuch ist vergeblich" : "der Rueckfall wird gesperrt"}`,
+                r.endgueltig === soll,
+                `endgueltig=${r.endgueltig}, erwartet ${soll}`);
+            }
+            // Der GRUND muss das leere Guthaben benennen — sonst steht man
+            // wieder vor der Frage, die ins Railway-Log geschickt hat.
+            const g = lage(429, '{"type":"insufficient_quota"}');
+            torPruefung("der Grund nennt das leere Guthaben nicht",
+              /KEIN GUTHABEN/.test(g.grund) && /429/.test(g.grund),
+              g.grund.slice(0, 110));
+            torPruefung("der Antwortkoerper fehlt im Grund — wer ihn nicht mitschreibt, muss ihn spaeter raten",
+              /Serverfehler-Text/.test(lage(500, "Serverfehler-Text").grund),
+              lage(500, "Serverfehler-Text").grund.slice(0, 110));
+          }
+
+          // DIE VERDRAHTUNG: ohne sie waere die Funktion geprueft und nie
+          // benutzt (Fehlerklasse 30.09.).
+          const aiQ = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+            .replace(/\/\*[\s\S]*?\*\//g, " ")
+            .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+          torPruefung("der zweite Modellversuch haengt nicht mehr an `endgueltig` — dann wird ein 429 wieder sinnlos wiederholt",
+            /raw === null && !ersterGpt\.endgueltig && zweitModell/.test(aiQ),
+            "kommentarbereinigt gesucht");
+          torPruefung("beide Fehlerzweige rechnen nicht mit gptFehlerLage",
+            (aiQ.match(/\.\.\.gptFehlerLage\(/g) || []).length === 2,
+            `${(aiQ.match(/\.\.\.gptFehlerLage\(/g) || []).length} Stellen`);
+          torPruefung("der Scanner meldet den Totalausfall der Signalquelle nicht — dann stirbt sie wieder stumm",
+            /lageMelden\("GPT-Signalquelle"/.test(aiQ)
+            && /sendTelegram\(/.test(aiQ),
+            "0 sendTelegram im Scan-Pfad war der Zustand am 02.11.");
+          torPruefung("der Grund geht ROH in eine HTML-Nachricht — Telegram lehnt sie dann ab (Lehre vom 02.11.)",
+            /tgSicher\(gptGrund/.test(aiQ),
+            "der Antwortkoerper ist fremder Text");
+        }
+
         torPruefung("STAGE 3 sagt nicht mehr, dass /reset genuegt",
           /\/reset genuegt/.test(ks) || /\/reset genügt/.test(ks),
           "genau diese Frage stellt sich im Ernstfall");
