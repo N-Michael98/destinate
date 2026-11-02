@@ -170,8 +170,26 @@ function handleEvent(event: AgentEvent): void {
 
     case "RISK:BE_SET": {
       const symbol = String(event.payload.symbol ?? "");
-      const progress = Number(event.payload.progress ?? 0);
-      console.log(`[diag-agent] ✅ BE gesetzt: ${symbol} bei ${(progress*100).toFixed(0)}%`);
+      // EIN FELDNAME AUS DEM GEDAECHTNIS (gefunden 03.11.).
+      //
+      // Hier stand `event.payload.progress`. Gesendet wird aber
+      // `profitPct` (risk-agent.ts:696) — `progress` kommt im ganzen
+      // Programm auf KEINER Sendestelle vor. Die Zeile meldete damit
+      // seit jeher "bei 0%", und zwar bei JEDEM Breakeven.
+      //
+      // Dieselbe Klasse, die `safety-nets` fuer die Zyklus-Bilanz seit
+      // dem 17.09. haelt ("liest Schluessel, die nicht gesendet werden")
+      // — nur war der Diagnose-Agent nie erfasst. Ein Fix an einer
+      // Stelle beantwortet nicht, wo die Klasse sonst noch steckt.
+      //
+      // UND EIN FEHLENDER WERT WIRD NICHT 0: das waere "Breakeven bei
+      // 0 % Gewinn" — eine Behauptung statt einer Messung (Regel vom
+      // 22.09.). `profitPct` ist ein ANTEIL (0..1), ueberall sonst mit
+      // *100 formatiert (risk-agent.ts:408, :550, :660).
+      const roh = event.payload.profitPct;
+      const gewinn = typeof roh === "number" && Number.isFinite(roh)
+        ? `${(roh * 100).toFixed(2)}%` : "unbekannt";
+      console.log(`[diag-agent] ✅ BE gesetzt: ${symbol} bei ${gewinn}`);
       break;
     }
 

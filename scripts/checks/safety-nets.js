@@ -8129,6 +8129,101 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DER DIAGNOSE-AGENT LIEST EINEN SCHLUESSEL, DEN NIEMAND SENDET ═══════
+  //
+  // Seit dem 17.09. haelt der Pruefer diese Zusicherung fuer die
+  // Zyklus-Bilanz. Der DIAGNOSE-Agent war nie erfasst — und genau dort
+  // stand `event.payload.progress`, waehrend der Sender `profitPct`
+  // schickt. Die Zeile meldete bei jedem Breakeven "bei 0%".
+  //
+  // Beide Seiten aus der QUELLE: die gelesenen Namen aus handleEvent,
+  // die gesendeten aus allen `payload: { ... }`-Literalen im Programm.
+  {
+    const ohneK2 = (q) => q.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    // JE EREIGNISTYP, NICHT GLOBAL. Die erste Fassung verglich alle
+    // gelesenen gegen alle gesendeten Namen — und blieb im Sabotage-Lauf
+    // gruen, als der BE_SET-Sender `profitPct` umbenannte: RISK:PARTIAL_TP
+    // sendet denselben Namen, also lag er weiter im Topf. Woertlich "ein
+    // Treffer beweist nichts ueber die andere Stelle" (25.10.).
+    const schnitt = (q, von) => {
+      const auf = q.indexOf("{", von);
+      if (auf < 0) return "";
+      let tiefe = 0;
+      for (let i = auf; i < q.length; i++) {
+        const c = q[i];
+        if (c === "{") tiefe++;
+        else if (c === "}") { tiefe--; if (tiefe === 0) return q.slice(auf + 1, i); }
+        else if (c === '"' || c === "'" || c === "`") {
+          const a = c; i++;
+          while (i < q.length && q[i] !== a) { if (q[i] === "\\") i++; i++; }
+        }
+      }
+      return "";
+    };
+    const namen = (rumpf) => {
+      const raus = new Set();
+      for (const m of rumpf.matchAll(/event\.payload[?]?\.(\w+)/g)) raus.add(m[1]);
+      for (const m of rumpf.matchAll(/const\s*\{([^}]*)\}\s*=\s*event\.payload/g)) {
+        for (const n of m[1].split(",")) {
+          const k = n.split(":")[0].trim();
+          if (/^\w+$/.test(k)) raus.add(k);
+        }
+      }
+      return raus;
+    };
+    const daQ = ohneK2(read("frontend/lib/agents/diagnostics-agent.ts"));
+    // Was liest der Agent JE Fall?
+    const liestJe = new Map();
+    for (const m of daQ.matchAll(/case\s+"([A-Z][A-Z_]*:[A-Z_]+)"\s*:/g)) {
+      liestJe.set(m[1], namen(schnitt(daQ, m.index)));
+    }
+    // Was sendet wer JE Typ?
+    const sendetJe = new Map();
+    for (const d of ["frontend/lib/agents/risk-agent.ts", "frontend/lib/agents/execution-agent.ts",
+      "frontend/lib/agents/orchestrator-agent.ts", "frontend/lib/agents/analysis-agent.ts"]) {
+      const q = ohneK2(read(d));
+      for (const m of q.matchAll(/type\s*:\s*"([A-Z][A-Z_]*:[A-Z_]+)"/g)) {
+        const pl = q.indexOf("payload", m.index);
+        if (pl < 0 || pl - m.index > 400) continue;
+        const rumpf = schnitt(q, pl);
+        const set = sendetJe.get(m[1]) ?? new Set();
+        for (const n of rumpf.split(",")) {
+          const k = n.split(":")[0].trim().replace(/^\.\.\./, "");
+          if (/^\w+$/.test(k)) set.add(k);
+        }
+        sendetJe.set(m[1], set);
+      }
+    }
+    torPruefung("die Messung je Ereignistyp ist blind — sie findet bekannte Stellen nicht",
+      (liestJe.get("RISK:BE_SET")?.has("profitPct") ?? false)
+      && (sendetJe.get("RISK:BE_SET")?.has("profitPct") ?? false)
+      && (liestJe.get("RISK:ERROR")?.has("error") ?? false),
+      `${liestJe.size} Faelle gelesen, ${sendetJe.size} Typen gesendet`);
+    const blind = [];
+    for (const [typ, keys] of liestJe) {
+      const gesendet = sendetJe.get(typ);
+      if (!gesendet) continue;   // kein Sender in den Agenten — eigene Frage
+      for (const k of keys) if (!gesendet.has(k)) blind.push(`${typ}.${k}`);
+    }
+    torPruefung("der Diagnose-Agent liest einen Schluessel, den sein Sender nicht sendet",
+      blind.length === 0,
+      blind.length ? `${blind.join(", ")} — der Wert ist dann immer der Rueckfall (Fund 03.11.)` : "");
+    // SELBSTPRUEFUNG: ein erfundener Name MUSS auffallen.
+    const probe = [];
+    for (const [typ, keys] of liestJe) {
+      const gesendet = sendetJe.get(typ);
+      if (!gesendet) continue;
+      for (const k of [...keys, "gibtEsAlsSenderNicht"]) if (!gesendet.has(k)) probe.push(`${typ}.${k}`);
+    }
+    torPruefung("die Messung findet einen erfundenen Schluessel nicht — sie ist blind",
+      probe.length > 0 && probe.every((p) => p.endsWith(".gibtEsAlsSenderNicht")),
+      probe.join(", "));
+    // UND EIN FEHLENDER WERT DARF NICHT 0 WERDEN (Regel vom 22.09.).
+    torPruefung("ein fehlender Breakeven-Gewinn wird als 0 % ausgegeben",
+      /gewinn\s*=\s*typeof roh === "number" && Number\.isFinite\(roh\)/.test(daQ)
+      && /"unbekannt"/.test(daQ), "BE-Zeile in diagnostics-agent.ts");
+  }
+
   // ══ DIE SPANNE MUSS DURCH DEN WEBHOOK-TYP PASSEN (02.11.) ═══════════════
   //
   // Am 30.09. war eine vollstaendig gepruefte Funktion dauerhaft ohne
