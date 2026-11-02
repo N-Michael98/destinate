@@ -3049,6 +3049,128 @@ Kommentar ist keine Verwendung, also kommentarbereinigt.
 **18 Sabotagen** der Redis-Runde laufen als Gegenprobe weiter durch: **26
 von 26** an diesem Tag.
 
+## `/hebel` kam nie an — ein `<` im eigenen Bandnamen (02.11.)
+
+Zwei Tage lang blieb `/hebel` **stumm**: keine Antwort, keine
+Fehlermeldung, nichts. `/status` antwortete im selben Chat normal.
+
+**Ausgeführt reproduziert**, nicht geschlossen: die echte `POST`-Funktion
+gegen einen `fetch`, der Telegrams Verhalten nachbildet.
+
+```
+[1] parse_mode=HTML  2849 Zeichen  ROHE <: 2
+    … wird nicht als R/R 0 mitgerechnet.</i> |    • < 1.5 (unter der …
+[telegram-webhook] ❌ Antwort NICHT zugestellt (2849 Zeichen): 400 Bad
+Request: can't parse entities — der Befehl verpufft sonst spurlos.
+```
+
+`hebel.ts` hatte **null** `htmlSicher`-Aufrufe, und sein R/R-Band heisst
+wörtlich **`"< 1.5 (unter der Einstiegs-Schwelle)"`**. Die Antwort geht mit
+`parse_mode: "HTML"` raus — Telegram lehnt sie mit **HTTP 200** und
+`{ok:false}` ab.
+
+Das ist **genau** der Fund vom 31.10. (`handels-lage.ts` ohne Escaping),
+nur eine Datei weiter. Damals habe ich alle Telegram-**Sender**
+durchgesehen — aber nicht die Module, die den **Text bauen**. Ein Fix an
+einer Stelle beantwortet nicht, wo die Klasse sonst noch steckt.
+
+### Und der Rückfall fehlte genau dort, wo jeder Befehl durchgeht
+
+Am 01.11. bekam `sendTelegram` einen zweiten Versuch **ohne**
+`parse_mode`, wenn Telegram wegen kaputtem HTML ablehnt. **`reply()` nicht
+— und durch `reply()` geht JEDE Befehls-Antwort.** Ein Alarm hätte also
+überlebt, eine Antwort auf `/status`, `/edge`, `/hebel`, `/killswitch`
+oder `/peakreset` nicht.
+
+Jetzt beide Hälften:
+
+1. **An der Quelle:** `hebel.ts` entschärft jeden Gruppennamen, Titel und
+   Hinweis mit `htmlSicher`.
+2. **An der Grenze:** `reply()` versucht es bei kaputtem HTML **einmal**
+   als reiner Text — dieselbe Erkennung (`htmlAbgelehnt`), keine zweite
+   Fassung. Ein 429 wird **nicht** wiederholt (Regel vom 22.09.), und die
+   Degradierung wird gemeldet (`console.warn`), sonst wäre sie die
+   nächste stille Lüge.
+
+Nach dem Fix gemessen: **2855 Zeichen, 0 rohe `<`**.
+
+### Drei eigene Werkzeugfehler auf dem Weg — alle benannt
+
+| Fehler | Folge |
+|---|---|
+| mein Messwerkzeug lud `hebel.ts` ohne das neue `html-sicher` | der Stellvertreter warf, `/hebel` fiel in sein `catch`, und ich mass **meinen Prüfstand statt den Code** (61 statt 2855 Zeichen) |
+| zeilenbasierter Einschub von `htmlAbgelehnt` | landete **neben** dem `telegram-sender`-Objekt statt darin — syntaktisch gültig, fachlich falsch. Zehnmal |
+| `"telegram-sender": {` als Suchmuster | trifft **nicht** `"telegram-notifications/telegram-sender": {` — nur 4 von 10 Tabellen erwischt |
+
+Dazu zum **vierten Mal an einem Tag** die Backtick-Falle: ein `node -e`
+mit Backticks im Kommentar, und die Shell führte sie als Befehl aus
+(`hebel.ts: command not found`) — der Kommentar kam verstümmelt an, der
+Code blieb heil, beides repariert.
+
+**Und der Prüferlauf hat den eigentlichen Weg gewiesen:** er stürzte mit
+*„keine Aussenwelt im Prüfstand"* ab. Erst der **Stapel** zeigte die
+Stelle (`befundVon` → ein zweiter, ganz anderer `hebel.ts`-Prüfstand).
+Ohne ihn hätte ich weiter geraten.
+
+### Absicherung
+
+`safety-nets` 967 → **975**, **7 von 7 Sabotagen** plus Gegenprobe:
+
+- `/hebel` **end-to-end**: die ausgehende Antwort darf **kein** `<`
+  enthalten, das kein bekanntes Tag öffnet — unsere eigenen `<b>`/`<i>`
+  bleiben, ein Riegel, der alles entschärft, wäre so falsch wie keiner.
+- Die **Gegenprobe der Testdaten**: das Band `&lt; 1.5` **muss** in der
+  Antwort vorkommen, sonst prüft die Zeile darüber an Daten, die den
+  Fehler nicht ausdrücken können.
+- `reply()` **ausgeführt**: HTML-Ablehnung ⇒ **zwei** Anfragen, die zweite
+  ohne `parse_mode`; ein 429 ⇒ **eine**; die Degradierung wird gemeldet;
+  ein geretteter Versand meldet **keinen** Fehlschlag.
+
+**Eine Sabotage entwischte zuerst** — und wieder waren es die Testdaten:
+die Zeile für eine **nicht belastbare** Gruppe trägt denselben Bandnamen,
+aber in den End-to-End-Daten ist keine solche Gruppe mit `<`-Namen dabei.
+Der Zweig wurde nie betreten. Jetzt läuft `hebelText()` zusätzlich direkt
+gegen einen Bericht mit **beiden** Zeilenarten und dem Giftnamen
+`< 1.5 & >test` — samt Gegenprobe, dass beide Zeilenarten wirklich im
+Text stehen.
+
+### Offen und benannt: warum GPT schweigt
+
+Derselbe `/status` zeigt den eigentlichen Grund, warum **heute keine
+Position eröffnet wurde**:
+
+```
+Trichter heute (141 Analysen, 4230 Marktanalysen):
+• ohne GPT-Antwort: 4230   ← ALLE
+• Richtungssignale (BUY/SELL): 0          • GO: 30
+Tore nach dem GO:  Walk-Forward: nein 22 · Schwelle: nein 8
+```
+
+**141 × 30 = 4230** — *jede* Suche in `gptBatchResult` ging daneben. Die
+30 GO stammen damit zwingend aus dem gemessenen Konsens (Regel vom
+30.10.) und sterben an den Toren danach.
+
+Im Code nachgelesen, nicht vermutet: `gptBatchResult[opp.epic] = opp`
+wird aus GPTs eigener Antwort gefüllt, und der Prompt verlangt `epic`
+ausdrücklich (`"epic": "GOLD"`). **Kein statischer Feldnamen-Fehler.**
+`tokenBudget(30)` ergibt **5750** — Abschneiden ist also nicht
+offensichtlich die Ursache.
+
+Damit bleiben **drei** Lagen, die der Trichter nicht trennt:
+
+| Lage | im Log erkennbar an |
+|---|---|
+| der Aufruf scheitert | `[ai-engine] ⛔ GPT HTTP …` oder `⛔ GPT Call fehlgeschlagen` |
+| die Antwort ist abgeschnitten | `⛔ GPT-Antwort ABGESCHNITTEN (finish_reason=length)` |
+| die Epics passen nicht | `GPT-Batch: Antwort N Zeichen → M Opportunities` mit **M > 0** |
+
+`callGPT` protokolliert Status **und** Antwortkörper — die Ursache steht
+also im Railway-Log von `destinate`. **Nicht geändert:** die Zahl in den
+Trichter zu holen hiesse, `ai-analysis-engine.ts` anzufassen (Datei mit
+erhöhtem Risiko), und das gehört entschieden, nicht nebenbei gemacht.
+Es ist dieselbe Regel wie am 22.09.: **jede Stufe braucht eine eigene
+Zahl** — hier fehlt sie noch.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.)
 
 Anlass: die Beobachtung „selten werden Positionen vor 12:00 eröffnet,

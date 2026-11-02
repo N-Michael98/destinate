@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { sendTelegram, telegramZeit, telegramDatum } from "@/lib/telegram-notifications/telegram-sender";
+import { sendTelegram, telegramZeit, telegramDatum, htmlAbgelehnt } from "@/lib/telegram-notifications/telegram-sender";
 import { triggerKillswitch, resetKillswitch, getKillswitchReport } from "@/lib/killswitch";
 // STATISCH, nicht dynamisch: das Modul ist winzig, rein und ohne
 // Nebenwirkungen. Ein `await import()` haette hier nur eine zusaetzliche
@@ -99,6 +99,44 @@ async function reply(chatId: number, text: string): Promise<void> {
       }
     }
     if (grund) {
+      // KAPUTTES HTML: EIN zweiter Versuch als reiner Text (02.11.).
+      //
+      // Den Rueckfall bekam am 01.11. nur `sendTelegram`. `reply()` ist
+      // die eigene Funktion des Webhooks, durch die JEDE Befehls-Antwort
+      // geht — sie meldete die Ablehnung zwar, liess die Antwort aber
+      // verloren. Ausgefuehrt belegt am 02.11.: `/hebel` enthaelt das
+      // R/R-Band "< 1.5 …" mit rohem `<`, Telegram lehnt mit HTTP 200
+      // und ok:false ab, und beim Nutzer kam NICHTS an.
+      //
+      // Nur der HTML-Fehler wird wiederholt: ein 429 kehrt
+      // deterministisch zurueck, und bei Drosselung waere Nachlegen
+      // genau falsch (Regel vom 22.09.).
+      if (htmlAbgelehnt(grund)) {
+        let zweiterGrund = "";
+        try {
+          const res2 = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: chatId, text }),
+          });
+          const roh2 = await res2.text().catch(() => "");
+          const d2 = roh2 ? (JSON.parse(roh2) as { ok?: boolean; description?: string }) : null;
+          if (!d2 || d2.ok !== true) zweiterGrund = d2?.description ?? `HTTP ${res2.status}`;
+        } catch (e2) {
+          zweiterGrund = e2 instanceof Error ? e2.message : String(e2);
+        }
+        if (!zweiterGrund) {
+          // Angekommen — aber ohne Formatierung. Das gehoert gesagt,
+          // sonst waere es die naechste stille Degradierung.
+          console.warn(`[telegram-webhook] ⚠️ HTML abgelehnt (${grund}) — `
+            + `als REINER TEXT zugestellt (${text.length} Zeichen).`);
+          return;
+        }
+        console.error(`[telegram-webhook] ❌ Antwort NICHT zugestellt `
+          + `(${text.length} Zeichen): ${grund}; zweiter Versuch ohne `
+          + `parse_mode ebenfalls abgelehnt: ${zweiterGrund}`);
+        return;
+      }
       console.error(`[telegram-webhook] ❌ Antwort NICHT zugestellt `
         + `(${text.length} Zeichen): ${grund} — der Befehl verpufft sonst spurlos.`);
     }

@@ -37,6 +37,8 @@
  * Reine Rechnung: keine Order, kein Stop, keine Einstellung.
  */
 
+import { htmlSicher } from "@/lib/html-sicher/html-sicher";
+
 import {
   erwartungswert, MIN_TRADES,
   type TradeZeile, type EwFenster,
@@ -181,15 +183,15 @@ export function befundVon(gruppen: ReadonlyArray<HebelGruppe>): string {
   }
   if (belastbar.length === 1) {
     const g = belastbar[0];
-    return `nur eine belastbare Gruppe (${g.name}, ${g.gewertet} Trades) — `
+    return `nur eine belastbare Gruppe (${htmlSicher(g.name)}, ${g.gewertet} Trades) — `
       + "ohne Vergleichsgruppe kein Befund";
   }
   const sortiert = [...belastbar].sort((a, b) => (b.ew as number) - (a.ew as number));
   const best = sortiert[0];
   const schlecht = sortiert[sortiert.length - 1];
   const diff = (best.ew as number) - (schlecht.ew as number);
-  return `beste Gruppe „${best.name}" EW ${(best.ew as number).toFixed(2)} `
-    + `(${best.gewertet} Trades) · schlechteste „${schlecht.name}" EW `
+  return `beste Gruppe „${htmlSicher(best.name)}" EW ${(best.ew as number).toFixed(2)} `
+    + `(${best.gewertet} Trades) · schlechteste „${htmlSicher(schlecht.name)}" EW `
     + `${(schlecht.ew as number).toFixed(2)} (${schlecht.gewertet}) · `
     + `Unterschied ${diff.toFixed(2)} je Trade`;
 }
@@ -355,18 +357,18 @@ function textMit(
 
   for (const d of dims) {
     z.push("");
-    z.push(`<b>${d.titel}</b>`);
-    if (d.hinweis) z.push(`<i>${d.hinweis}</i>`);
+    z.push(`<b>${htmlSicher(d.titel)}</b>`);
+    if (d.hinweis) z.push(`<i>${htmlSicher(d.hinweis)}</i>`);
     const gezeigt = d.gruppen.slice(0, maxGruppen);
     for (const g of gezeigt) {
       if (!g.belastbar) {
-        z.push(`   • ${g.name}: ${g.gewertet} Trades — zu wenig für einen `
+        z.push(`   • ${htmlSicher(g.name)}: ${g.gewertet} Trades — zu wenig für einen `
           + `Erwartungswert`);
         continue;
       }
       const tq = g.trefferquote === null ? "—" : `${g.trefferquote.toFixed(0)} %`;
       const rr = g.rr === null ? "—" : g.rr.toFixed(2);
-      z.push(`   • ${g.name}: EW <b>${(g.ew as number).toFixed(2)}</b> · `
+      z.push(`   • ${htmlSicher(g.name)}: EW <b>${(g.ew as number).toFixed(2)}</b> · `
         + `${g.gewertet} Trades · Treffer ${tq} · R/R ${rr}`);
     }
     const rest = d.gruppen.length - gezeigt.length;

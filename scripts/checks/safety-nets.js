@@ -10,6 +10,19 @@
 const fs = require("fs");
 const path = require("path");
 const { read, ladeTsModul, objectBlock, ROOT, sourceFiles } = require("./_lib");
+
+// Seit dem 02.11. faellt `reply()` bei kaputtem HTML auf reinen Text
+// zurueck und braucht dafuer `htmlAbgelehnt`. JEDER Webhook-Pruefstand
+// muss die Funktion liefern — ohne Ersatz ist es der Stellvertreter, und
+// der wirft beim Aufruf. Die ECHTE Funktion, keine zweite Kopie des
+// Regex: zwei Fassungen koennten auseinanderlaufen.
+// Und hebel.ts entschaerft seit dem 02.11. seine Gruppennamen — jede
+// Ladestelle braucht das ECHTE Modul, sonst wirft der Stellvertreter in
+// befundVon() und der ganze Pruefer stuerzt ab (so geschehen).
+const htmlSicherEcht = ladeTsModul("lib/html-sicher/html-sicher.ts").exports;
+
+const tgHtml = ladeTsModul("lib/telegram-notifications/telegram-sender.ts")
+  .exports?.htmlAbgelehnt;
 const { execFileSync } = require("child_process");
 
 /** Benutzt ein Prüfer die naive Kommentar-Entfernung ohne URL-Schutz?
@@ -1256,7 +1269,7 @@ module.exports = async function pruefe() {
         cacheLesen: async (k) => (k in speicher2 ? { wert: speicher2[k], herkunft: "redis" } : { wert: null, herkunft: "redis" }),
           cacheSet: async (k, v) => { speicher2[k] = v; return true; },
         },
-        "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async (t) => { gesendet.push(t); } },
+        "telegram-sender": { htmlAbgelehnt: tgHtml, telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async (t) => { gesendet.push(t); } },
       });
       const d1 = bauDD();
       if (d1.fehler || typeof d1.exports.checkTotalDrawdownLimit !== "function") {
@@ -1322,7 +1335,7 @@ module.exports = async function pruefe() {
             cacheLesen: async (k) => (k in sp3 ? { wert: sp3[k], herkunft: "redis" } : { wert: null, herkunft: "redis" }),
               cacheSet: async (k, v) => { sp3[k] = JSON.parse(JSON.stringify(v)); return true; },
             },
-            "telegram-sender": {
+            "telegram-sender": { htmlAbgelehnt: tgHtml,
               telegramZeit: () => "28.9.2026, 20:18:37 MESZ", telegramDatum: () => "28.9.2026",
               sendTelegram: async (t) => { ges3.push(String(t)); },
             },
@@ -1372,7 +1385,7 @@ module.exports = async function pruefe() {
               cacheSet: async (k, v) => { sp4[k] = JSON.parse(JSON.stringify(v)); return true; },
               cacheDel: async (k) => { delete sp4[k]; return true; },
             },
-            "telegram-sender": {
+            "telegram-sender": { htmlAbgelehnt: tgHtml,
               telegramZeit: () => "29.9.2026, 12:00:00 MESZ", telegramDatum: () => "29.9.2026",
               sendTelegram: async (t) => { ges4.push(String(t)); },
             },
@@ -1663,7 +1676,7 @@ module.exports = async function pruefe() {
           };
           const wh = ladeTsModul("app/api/telegram/webhook/route.ts", {
             "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
-            "telegram-notifications/telegram-sender": {
+            "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
               sendTelegram: async (t) => { alarme.push(String(t)); return true; },
               telegramZeit: () => "29.9.2026, 22:20:06 MESZ", telegramDatum: () => "29.9.2026",
             },
@@ -1769,7 +1782,7 @@ module.exports = async function pruefe() {
                 };
                 wh2 = ladeTsModul("app/api/telegram/webhook/route.ts", {
                   "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
-                  "telegram-notifications/telegram-sender": {
+                  "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
                     sendTelegram: async (t) => { alarme2.push(String(t)); return true; },
                     telegramZeit: () => "1.11.2026, 20:00:00 MEZ", telegramDatum: () => "1.11.2026",
                   },
@@ -1861,7 +1874,7 @@ module.exports = async function pruefe() {
                   };
                   wh3 = ladeTsModul("app/api/telegram/webhook/route.ts", {
                     "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
-                    "telegram-notifications/telegram-sender": {
+                    "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
                       sendTelegram: async (t) => { antw3.push(String(t)); return true; },
                       telegramZeit: () => "1.11.2026, 20:00:00 MEZ",
                       telegramDatum: () => "1.11.2026",
@@ -1970,6 +1983,62 @@ module.exports = async function pruefe() {
               + "spaeter raten",
               meldungen.some((m) => /Too Many Requests/.test(m) && /429/.test(m)),
               meldungen.join(" | ").slice(0, 120));
+
+            // ── KAPUTTES HTML: RUECKFALL AUF REINEN TEXT (02.11.) ────
+            //
+            // Den Rueckfall bekam am 01.11. nur `sendTelegram`.
+            // `reply()` meldete die Ablehnung zwar, liess die Antwort
+            // aber verloren — und durch `reply()` geht JEDE
+            // Befehls-Antwort. Gemessen am 02.11. an `/hebel`.
+            {
+              const altWarn = console.warn;
+              const warnungen = [];
+              const anfragen = [];
+              meldungen.length = 0;
+              console.error = (...a) => { meldungen.push(a.join(" ")); };
+              console.warn = (...a) => { warnungen.push(a.join(" ")); };
+              try {
+                global.fetch = async (_u, init) => {
+                  const b = JSON.parse(String(init?.body ?? "{}"));
+                  anfragen.push(b);
+                  if (b.parse_mode === "HTML") {
+                    return { ok: true, status: 200, text: async () => JSON.stringify({
+                      ok: false, error_code: 400,
+                      description: "Bad Request: can't parse entities: Unsupported start tag" }) };
+                  }
+                  return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) };
+                };
+                await schicke("/status");
+              } finally { console.error = altErr; console.warn = altWarn; }
+              torPruefung("reply() faellt bei kaputtem HTML NICHT auf reinen Text zurueck — die Antwort ist dann verloren",
+                anfragen.length === 2
+                && anfragen[0].parse_mode === "HTML"
+                && anfragen[1].parse_mode === undefined,
+                `${anfragen.length} Anfrage(n): `
+                + anfragen.map((a) => a.parse_mode ?? "ohne").join(" / "));
+              torPruefung("die Degradierung auf reinen Text wird verschwiegen",
+                warnungen.some((w) => /REINER TEXT/.test(w)),
+                warnungen.join(" | ").slice(0, 110) || "(keine Warnung)");
+              torPruefung("ein geretteter Versand meldet TROTZDEM einen Fehlschlag",
+                !meldungen.some((m) => /NICHT zugestellt/.test(m)),
+                meldungen.join(" | ").slice(0, 110) || "(keine Fehlermeldung)");
+
+              // Und ein 429 wird NICHT wiederholt: er kehrt
+              // deterministisch zurueck, Nachlegen waere genau falsch.
+              anfragen.length = 0;
+              meldungen.length = 0;
+              console.error = (...a) => { meldungen.push(a.join(" ")); };
+              try {
+                global.fetch = async (_u, init) => {
+                  anfragen.push(JSON.parse(String(init?.body ?? "{}")));
+                  return { ok: true, status: 200, text: async () => JSON.stringify({
+                    ok: false, error_code: 429, description: "Too Many Requests: retry after 30" }) };
+                };
+                await schicke("/status");
+              } finally { console.error = altErr; }
+              torPruefung("ein 429 wird wiederholt — bei Drosselung ist Nachlegen genau falsch",
+                anfragen.length === 1, `${anfragen.length} Anfrage(n)`);
+            }
 
             // GEGENPROBE: ein GELUNGENER Versand darf NICHT melden. Ohne sie
             // waere eine Pruefung gruen, die bei jeder Antwort Alarm schlaegt.
@@ -2134,7 +2203,7 @@ module.exports = async function pruefe() {
           ];
           const whE = ewE.fehler ? ewE : ladeTsModul("app/api/telegram/webhook/route.ts", {
             "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
-            "telegram-notifications/telegram-sender": {
+            "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
               sendTelegram: async () => true,
               // Der Stellvertreter gibt das ARGUMENT zurueck, nicht eine feste
               // Zeichenkette: nur so laesst sich pruefen, dass die Startzeit
@@ -2165,8 +2234,13 @@ module.exports = async function pruefe() {
             // Stellvertreter, `hebelText()` wuerde werfen, und der
             // Befehl landete im catch — gepruefte Zeilen gaebe es dann
             // keine. Das ECHTE Modul, mit dem ECHTEN erwartungswert.
-            "lib/hebel/hebel": ladeTsModul("lib/hebel/hebel.ts",
-              { "expectancy/erwartungswert": ewE.exports }).exports,
+            "lib/hebel/hebel": ladeTsModul("lib/hebel/hebel.ts", {
+              "expectancy/erwartungswert": ewE.exports,
+              // Seit dem 02.11. entschaerft `hebel.ts` seine
+              // Gruppennamen. Ohne diesen Ersatz wirft der
+              // Stellvertreter, und /hebel landete im catch.
+              "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
+            }).exports,
           });
           if (whE.fehler || typeof whE.exports?.POST !== "function") {
             torPruefung("/edge ist nicht end-to-end ausfuehrbar", false,
@@ -2352,7 +2426,7 @@ module.exports = async function pruefe() {
                   };
                   const whL = ladeTsModul("app/api/telegram/webhook/route.ts", {
                     "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
-                    "telegram-notifications/telegram-sender": {
+                    "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
                       sendTelegram: async (t) => { text = t; return true; },
                       telegramZeit: () => "01.11.2026, 14:00:00 MEZ",
                       telegramDatum: () => "01.11.2026",
@@ -2493,6 +2567,38 @@ module.exports = async function pruefe() {
               /Hebel — was würde etwas ändern\?/.test(aH)
               && !/fehlgeschlagen/.test(aH),
               aH.replace(/\n/g, " ").slice(0, 200));
+
+            // ── KEIN ROHES `<` IN DER ANTWORT (02.11.) ──────────────
+            //
+            // DER FUND: `hebel.ts` hatte NULL Escaping, und sein
+            // R/R-Band heisst woertlich "< 1.5 (unter der
+            // Einstiegs-Schwelle)". Die Antwort geht mit
+            // `parse_mode: "HTML"` raus — Telegram lehnt sie mit HTTP
+            // 200 und ok:false ab, und beim Nutzer kam am 01./02.11.
+            // NICHTS an. Dieselbe Klasse wie `handels-lage.ts` am
+            // 31.10., eine Datei weiter.
+            //
+            // Gesucht wird ein `<`, das KEIN bekanntes Tag eroeffnet —
+            // unsere eigenen <b>/<i> duerfen bleiben, ein Riegel, der
+            // alles entschaerft, waere so falsch wie keiner.
+            const rohesKleiner = (t) =>
+              (t.match(/<(?![/]?(b|i|u|s|code|pre|a)\b)/g) || []).length;
+            // SELBSTPRUEFUNG an selbst gebauten Texten, nicht am Inhalt.
+            if (rohesKleiner("a <b>fett</b> b") !== 0
+              || rohesKleiner("R/R < 1.5") !== 1) {
+              torPruefung("die <-Erkennung ist kaputt", false,
+                `${rohesKleiner("a <b>fett</b> b")} / ${rohesKleiner("R/R < 1.5")}`);
+            }
+            torPruefung("/hebel sendet ein ROHES < — Telegram lehnt die ganze Antwort ab, und der Befehl verpufft",
+              rohesKleiner(aH) === 0,
+              `${rohesKleiner(aH)} rohe < — z.B. ...`
+              + aH.slice(Math.max(0, aH.search(/<(?![/]?(b|i|u|s|code|pre|a)\b)/) - 40),
+                aH.search(/<(?![/]?(b|i|u|s|code|pre|a)\b)/) + 40).replace(/\n/g, " | "));
+            // Und die Gegenprobe: das Band MUSS da sein, sonst prueft
+            // die Zeile oben an Daten, die den Fehler nicht ausdruecken.
+            torPruefung("das Band \"< 1.5\" fehlt in den Testdaten — dann beweist die Escaping-Pruefung nichts",
+              /&lt; 1\.5/.test(aH),
+              aH.includes("1.5") ? "1.5 kommt vor, aber nicht entschaerft" : "kein 1.5-Band");
             // AN DIE ZAHLEN GEBUNDEN, nicht an den Namen: 40 Gewinner zu
             // je 12 ergeben EW 12.00, 40 Verlierer zu je -8 ergeben -8.00.
             // Ein blosses /EURUSD/ koennte auch aus einer anderen
@@ -3130,7 +3236,7 @@ module.exports = async function pruefe() {
         const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
         const ewMod = ladeTsModul("lib/expectancy/erwartungswert.ts",
           { "capital-trade-tracker": trE.exports });
-        const hb = ladeTsModul("lib/hebel/hebel.ts", {
+        const hb = ladeTsModul("lib/hebel/hebel.ts", { "html-sicher/html-sicher": htmlSicherEcht,
           "expectancy/erwartungswert": ewMod.exports,
         });
         const hebelBericht = hb.exports?.hebelBericht;
@@ -3300,6 +3406,41 @@ module.exports = async function pruefe() {
                 });
               }
             }
+            // ── BEIDE ZEILENARTEN ENTSCHAERFT (02.11.) ──────────────
+            //
+            // Der End-to-End-Fall deckt nur die BELASTBARE Zeile ab: in
+            // den Testdaten ist keine Gruppe mit `<`-Namen unbelastbar,
+            // also wurde der zweite Zweig nie betreten und eine Sabotage
+            // daran blieb gruen. Hier beide, direkt an der Funktion.
+            {
+              const gift = "< 1.5 & >test";
+              const bericht = [{
+                titel: "Pruefstand", hinweis: "", befund: "x",
+                gruppen: [
+                  { name: gift, gewertet: 40, ew: 1.5, trefferquote: 50,
+                    rr: 1.2, belastbar: true },
+                  { name: gift, gewertet: 3, ew: null, trefferquote: null,
+                    rr: null, belastbar: false },
+                ],
+              }];
+              const t = hebelText(bericht, null);
+              const roheKleiner = (s) =>
+                (s.match(/<(?![/]?(b|i|u|s|code|pre|a)\b)/g) || []).length;
+              // SELBSTPRUEFUNG an selbst gebauten Texten.
+              if (roheKleiner("<b>ok</b>") !== 0 || roheKleiner("a < b") !== 1) {
+                torPruefung("die <-Erkennung im Einzelfall ist kaputt", false,
+                  `${roheKleiner("<b>ok</b>")} / ${roheKleiner("a < b")}`);
+              }
+              torPruefung("eine Gruppenzeile sendet ein ROHES < oder & — Telegram lehnt die ganze Antwort ab",
+                roheKleiner(t) === 0 && !/&(?!(amp|lt|gt|quot|#39);)/.test(t),
+                t.split(/\r?\n/).filter((l) => /</.test(l)).slice(0, 2).join(" | ").slice(0, 150));
+              // Gegenprobe: BEIDE Zeilenarten muessen wirklich im Text
+              // stehen, sonst prueft die Zeile oben an einem leeren Satz.
+              torPruefung("der Testbericht enthaelt nicht BEIDE Zeilenarten — dann beweist die Pruefung nichts",
+                /zu wenig für einen/.test(t) && /EW <b>/.test(t),
+                t.replace(/\n/g, " | ").slice(0, 160));
+            }
+
             const tHart = hebelText(hebelBericht(hart, null), 60);
             torPruefung("die /hebel-Antwort reisst Telegrams Grenze — "
               + "sie kaeme dann gar nicht an",
@@ -5094,7 +5235,7 @@ module.exports = async function pruefe() {
         cacheGet: async (k) => (speicher.has(k) ? JSON.parse(speicher.get(k)) : null),
         cacheSet: async (k, v) => { speicher.set(k, JSON.stringify(v)); },
       },
-      "telegram-sender": { telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async (t) => { gesendet.push(t); return true; } },
+      "telegram-sender": { htmlAbgelehnt: tgHtml, telegramZeit: () => "27.9.2026, 14:48:11 MESZ", telegramDatum: () => "27.9.2026", sendTelegram: async (t) => { gesendet.push(t); return true; } },
     });
     try {
       if (bilanzModul.fehler) {
@@ -5411,7 +5552,7 @@ module.exports = async function pruefe() {
       const alarme = [];
       const ersatz = {
         "agent-bus": busModul.exports,
-        "telegram-notifications/telegram-sender": {
+        "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
           sendTelegram: async (m) => { alarme.push(String(m)); return true; },
           telegramZeit: () => "27.9.2026, 14:48:11 MESZ",
           telegramDatum: () => "27.9.2026",
