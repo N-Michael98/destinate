@@ -586,11 +586,35 @@ module.exports = function pruefe() {
       "sonst liest GPT 'UNKNOWN' als neutrale Messung");
     // Und der ATR bleibt bewusst bei 0 — das ist geprueft, nicht vergessen:
     // jede Verwendung behandelt 0 als unbekannt.
-    const filterQuelle = read("frontend/lib/trading-filters/trade-filters.ts");
+    // AN DAS VERHALTEN GEBUNDEN, NICHT AN DEN WORTLAUT (03.11.).
+    //
+    // Hier stand der Riegel als Zeichenkette:
+    //     /if \(!atr \|\| !currentPrice \|\| currentPrice <= 0\)/
+    // Die Absicht ist richtig und wichtig — solange `atr_14 or 0` gesendet
+    // wird, MUSS jede Verwendung die 0 als unbekannt behandeln. Der Anker
+    // hing aber an der Formulierung. Als der Riegel am 03.11. VERSCHAERFT
+    // wurde (`!Number.isFinite(atr) || atr <= 0`, faengt zusaetzlich
+    // negative und unendliche Werte), wurde diese Pruefung rot, obwohl das
+    // Verhalten BESSER geworden war.
+    //
+    // Woertlich die Fehlerklasse "ein Regex prueft den Wortlaut, nicht das
+    // Verhalten" (30.09.) — diesmal im Pruefer selbst. Jetzt wird die echte
+    // Funktion AUSGEFUEHRT, mit Gegenprobe: ein gueltiger ATR darf NICHT in
+    // den Rueckfall fallen, sonst waere ein Riegel, der alles kuerzt,
+    // genauso gruen wie der richtige (Lehre vom 15.09.).
+    const volaModul = ladeTsModul("lib/trading-filters/trade-filters.ts");
+    const gv = volaModul.exports?.getVolatilityAdjustedRisk;
+    const stillesLogAtr = console.log;
+    console.log = () => {};
+    const atrNull = typeof gv === "function" ? gv("PRUEFUNG", 2.0, 0, 100) : null;
+    const atrEcht = typeof gv === "function" ? gv("PRUEFUNG", 2.0, 0.5, 100) : null;
+    console.log = stillesLogAtr;
     pruefe1("die 0 des ATR wird nicht mehr ueberall als 'unbekannt' behandelt",
-      /if \(!atr \|\| !currentPrice \|\| currentPrice <= 0\)/.test(filterQuelle)
+      typeof gv === "function" && atrNull !== null && atrNull < 2.0 && atrEcht === 2.0
       && (ohneKomm.match(/ta\.atr > 0/g) || []).length >= 3,
-      "solange `atr_14 or 0` gesendet wird, MUSS jede Verwendung die 0 abfangen");
+      `solange \`atr_14 or 0\` gesendet wird, MUSS jede Verwendung die 0 abfangen `
+      + `— ATR 0 ergab ${atrNull} (muss unter dem Grundrisiko 2.0 liegen), `
+      + `ATR 0.5 ergab ${atrEcht} (muss 2.0 bleiben)`);
 
     // Der Analyzer selbst: `_safe()` gibt None ODER 0.0 zurueck — ein
     // Wahrheitswert wirft beides in einen Topf und verwirft eine echte 0.

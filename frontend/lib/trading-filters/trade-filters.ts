@@ -387,7 +387,36 @@ export async function checkTotalDrawdownLimit(
     }
     redisLage("Gesamt-Drawdown-Grenze", false, "");
     const stored = gelesen.wert;
-    const peak = stored?.peak ?? 0;
+    // EIN UNBRAUCHBARER HOECHSTSTAND IST KEINE 0 (03.11.).
+    //
+    // Hier stand `stored?.peak ?? 0`. Ausgefuehrt ueber sechs Lagen:
+    //
+    //     null            -> neuer Hoechststand  (richtig: erster Lauf)
+    //     {} ohne peak    -> neuer Hoechststand  <- Bezugspunkt still verschoben
+    //     peak: null      -> neuer Hoechststand  <- dito
+    //     peak: "abc"     -> dd = NaN -> erlaubt <- Grenze stumm aus
+    //     peak: NaN       -> dd = NaN -> erlaubt <- dito
+    //     peak: 2000      -> gesperrt            (richtig)
+    //
+    // `NaN >= grenze` ist false — zum vierten Mal dieselbe Falle
+    // (checkPriceAvailable 24.08., ordersRiegel 28.10., rrBand 29.10.).
+    //
+    // UNTERSCHIED ZUM FUND VOM 01.11.: dort hatte Redis NICHT geantwortet,
+    // der echte Wert lag noch da und kam von selbst zurueck — deshalb wird
+    // in diesem Fall nichts geschrieben. Hier HAT Redis geantwortet, und
+    // der Inhalt ist unbrauchbar; er kommt nie von selbst in Ordnung. Also
+    // wird der Bezugspunkt neu gesetzt wie beim allerersten Lauf — aber
+    // HOERBAR, denn still waere es genau der Fehler vom 01.11.
+    const peakRoh = stored?.peak;
+    const peakLesbar = typeof peakRoh === "number" && Number.isFinite(peakRoh) && peakRoh > 0;
+    if (stored != null && !peakLesbar) {
+      console.warn(
+        `[filter] ⚠️ Gesamt-Drawdown: der gespeicherte Hoechststand ist UNBRAUCHBAR `
+        + `(${JSON.stringify(peakRoh)}). Redis hat geantwortet, der Inhalt taugt nicht — `
+        + `der Bezugspunkt wird auf den jetzigen Kontostand gesetzt. Bis dahin war die `
+        + `Grenze OHNE Wirkung.`);
+    }
+    const peak = peakLesbar ? peakRoh : 0;
 
     if (currentBalance > peak) {
       await cacheSet(KEY, { peak: currentBalance }, TTL);
@@ -618,7 +647,32 @@ export function getVolatilityAdjustedRisk(
   atr: number,
   currentPrice: number
 ): number {
-  if (!atr || !currentPrice || currentPrice <= 0) {
+  // EIN NEGATIVER ATR IST KEINE NIEDRIGE VOLATILITAET (03.11.).
+  //
+  // Hier stand `!atr`. Das faengt 0, NaN und undefined — aber NICHT
+  // einen negativen Wert. Ausgefuehrt gemessen in der Generalkontrolle:
+  //
+  //     ATR  0          -> 0.4x   (richtig, Fix vom 24.08.)
+  //     ATR  undefined  -> 0.4x   (richtig)
+  //     ATR  NaN        -> 0.4x   (richtig)
+  //     ATR -5          -> 0.7x   <- fiel in `atrPct < 0.3`
+  //
+  // Ein ATR ist mathematisch nie negativ, der Fall kaeme also aus einem
+  // Fehler im Python-Backend. Genau dafuer steht der Riegel hier und
+  // nicht beim Aufrufer — dieselbe Begruendung wie bei
+  // `checkPriceAvailable` (24.08.): `runAllFilters` gibt ein Versprechen,
+  // das nicht davon abhaengen darf, dass ein Aufrufer zwei Module weiter
+  // vorsichtig war.
+  //
+  // `Number.isFinite` fasst auch `Infinity` beim Preis: `!Infinity` ist
+  // false, und `atr / Infinity` ergaebe atrPct 0 -> wieder 0.7x.
+  //
+  // DIE AENDERUNG VERSCHIEBT NUR IN DIE SICHERE RICHTUNG: betroffen sind
+  // ausschliesslich entartete Eingaben, und sie bekommen statt 0.7x den
+  // kleinsten Faktor der Tabelle. Fuer jeden gueltigen ATR aendert sich
+  // NICHTS.
+  if (!Number.isFinite(atr) || atr <= 0
+    || !Number.isFinite(currentPrice) || currentPrice <= 0) {
     const ohneDaten = Math.max(
       0.1, Math.round(baseRiskPct * RISIKO_OHNE_VOLA_DATEN * 10) / 10
     );

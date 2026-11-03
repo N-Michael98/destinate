@@ -1260,6 +1260,93 @@ module.exports = async function pruefe() {
     // gesehenen Kontostand. Ohne offene Positionen kann der Stand nicht
     // steigen, und ohne steigenden Stand wird nicht gehandelt.
     {
+      // ── EIN UNBRAUCHBARER HOECHSTSTAND IST KEINE 0 (03.11.) ──────────
+      //
+      // Gefunden in der Generalkontrolle, ausgefuehrt ueber sechs Lagen:
+      // `stored?.peak ?? 0` machte aus JEDEM unbrauchbaren Inhalt eine 0.
+      // `{}` und `peak: null` setzten damit still einen NEUEN Bezugspunkt,
+      // Text und NaN ergaben `dd = NaN` -> `NaN >= grenze` ist false ->
+      // erlaubt. Die Gesamt-Drawdown-Grenze war in all diesen Lagen OHNE
+      // Wirkung, und niemand erfuhr es. Vierte Wiederholung derselben
+      // Falle (checkPriceAvailable 24.08., ordersRiegel 28.10., rrBand 29.10.).
+      //
+      // UNTERSCHIED ZUM FUND VOM 01.11.: dort hatte Redis NICHT geantwortet
+      // — dann wird nichts geschrieben, der echte Wert kommt von selbst
+      // zurueck. Hier ANTWORTET Redis, der Inhalt taugt nur nichts; er
+      // kommt nie in Ordnung. Also neu setzen wie beim ersten Lauf, aber
+      // HOERBAR — still waere genau der Fehler vom 01.11.
+      for (const [nameDD, gespeichert, sollMelden] of [
+        ["leer, erster Lauf", null, false],
+        ["{} ohne peak", {}, true],
+        ["peak null", { peak: null }, true],
+        ["peak Text", { peak: "abc" }, true],
+        ["peak NaN", { peak: NaN }, true],
+        ["peak 0", { peak: 0 }, true],
+      ]) {
+        const geschrieben = [];
+        const warnungen = [];
+        const m = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+          "redis-lage/redis-lage": lageModul,
+          "redis-cache": {
+            cacheGet: async () => gespeichert,
+            cacheLesen: async () => ({ wert: gespeichert, herkunft: "redis" }),
+            cacheSet: async (k, v) => { geschrieben.push(v); return true; },
+          },
+          "telegram-sender": { htmlAbgelehnt: tgHtml, telegramZeit: () => "x",
+            telegramDatum: () => "x", sendTelegram: async () => true },
+        }); // je Lage ein eigener Prüfstand
+        const fU = m.exports?.checkTotalDrawdownLimit;
+        if (typeof fU !== "function") {
+          torPruefung(`checkTotalDrawdownLimit fehlt (${nameDD})`, false, m.fehler ?? "");
+          continue;
+        }
+        const sLog = console.log, sWarn = console.warn;
+        console.log = () => {};
+        console.warn = (...a) => warnungen.push(a.join(" "));
+        let rDD;
+        try { rDD = await fU(1700, 10); }
+        catch (e) { rDD = { allowed: `WIRFT ${e.message}` }; }
+        console.log = sLog; console.warn = sWarn;
+        torPruefung(`ein unbrauchbarer Hoechststand (${nameDD}) sperrt oder wirft`,
+          rDD.allowed === true, JSON.stringify(rDD));
+        torPruefung(`der Bezugspunkt wird bei (${nameDD}) nicht neu gesetzt`,
+          geschrieben.length === 1 && geschrieben[0]?.peak === 1700,
+          JSON.stringify(geschrieben));
+        torPruefung(`ein unbrauchbarer Hoechststand (${nameDD}) bleibt STUMM`,
+          (warnungen.length > 0) === sollMelden,
+          `${warnungen.length} Meldungen, erwartet ${sollMelden ? "mindestens eine" : "keine"}`);
+      }
+      // GEGENPROBE: ein GESUNDER Hoechststand sperrt weiterhin und gilt
+      // NICHT als unbrauchbar — sonst waere der Riegel nur "immer rot"
+      // bzw. haette die Grenze ganz abgeschaltet (Lehre vom 15.09.).
+      {
+        const geschrieben = [];
+        const warnungen = [];
+        const gespeichert = { peak: 2000 };
+        const m = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+          "redis-lage/redis-lage": lageModul,
+          "redis-cache": {
+            cacheGet: async () => gespeichert,
+            cacheLesen: async () => ({ wert: gespeichert, herkunft: "redis" }),
+            cacheSet: async (k, v) => { geschrieben.push(v); return true; },
+          },
+          "telegram-sender": { htmlAbgelehnt: tgHtml, telegramZeit: () => "x",
+            telegramDatum: () => "x", sendTelegram: async () => true },
+        }); // Gegenprobe gesund
+        const fU = m.exports?.checkTotalDrawdownLimit;
+        const sLog = console.log, sWarn = console.warn;
+        console.log = () => {};
+        console.warn = (...a) => warnungen.push(a.join(" "));
+        let rDD;
+        try { rDD = await fU(1700, 10); }
+        catch (e) { rDD = { allowed: `WIRFT ${e.message}` }; }
+        console.log = sLog; console.warn = sWarn;
+        torPruefung("ein gesunder Hoechststand sperrt nicht mehr (-15 % gegen Grenze 10)",
+          rDD.allowed === false, JSON.stringify(rDD));
+        torPruefung("ein gesunder Hoechststand gilt faelschlich als unbrauchbar",
+          warnungen.length === 0, warnungen.join(" | ").slice(0, 120));
+      }
+
       const speicher2 = {};
       const gesendet = [];
       const bauDD = () => ladeTsModul("lib/trading-filters/trade-filters.ts", {

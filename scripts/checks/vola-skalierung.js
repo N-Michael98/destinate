@@ -120,6 +120,31 @@ module.exports = function pruefe() {
     pruefe1("ein NaN-Preis wird nicht vorsorglich gekuerzt",
       f("PRUEFUNG", 2.0, 1.5, NaN) === OHNE_DATEN);
 
+    // EIN NEGATIVER ATR IST KEINE NIEDRIGE VOLATILITAET (03.11.).
+    //
+    // Genau dieser Fall fehlte hier — geprueft wurden der negative PREIS und
+    // der NaN-Preis, nie der ATR selbst. Die Bedingung lautete `!atr`, und
+    // das faengt 0, NaN und undefined, aber NICHT einen negativen Wert: der
+    // fiel in `atrPct < 0.3` ("zu niedrige Vola") und bekam 0.7x statt 0.4x.
+    // Gemessen in der Generalkontrolle vom 03.11., ausgefuehrt:
+    //
+    //     ATR  0 / undefined / NaN  -> 0.4x   (richtig seit 24.08.)
+    //     ATR -5                    -> 0.7x   <- der Fund
+    pruefe1("ein negativer ATR wird nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, -5, 100) === OHNE_DATEN, `bekommen ${f("PRUEFUNG", 2.0, -5, 100)}`);
+    pruefe1("ein NaN-ATR wird nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, NaN, 100) === OHNE_DATEN, `bekommen ${f("PRUEFUNG", 2.0, NaN, 100)}`);
+    // `!Infinity` ist false — ein unendlicher Wert kaeme sonst durch und
+    // ergaebe atrPct 0 bzw. Infinity, also wieder eine erfundene Stufe.
+    pruefe1("ein unendlicher ATR wird nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, Infinity, 100) === OHNE_DATEN);
+    pruefe1("ein unendlicher Preis wird nicht vorsorglich gekuerzt",
+      f("PRUEFUNG", 2.0, 1.5, Infinity) === OHNE_DATEN);
+    // GEGENPROBE: ein GUELTIGER ATR darf NICHT in den Rueckfall fallen. Ein
+    // Riegel, der alles kuerzt, waere so falsch wie keiner (Lehre 15.09.).
+    pruefe1("ein gueltiger ATR faellt faelschlich in den Rueckfall",
+      f("PRUEFUNG", 2.0, 0.5, 100) === 2.0, `bekommen ${f("PRUEFUNG", 2.0, 0.5, 100)}`);
+
     // DIE EIGENSCHAFT, nicht die Zahl. Ueberlebt jede spaetere Umkalibrierung
     // der Tabelle: fehlende Daten duerfen NIE weniger vorsichtig behandelt
     // werden als der bekannt schlechteste Fall.
