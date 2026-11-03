@@ -218,9 +218,50 @@ export function stundeBand(v: Date | string | number | null | undefined): string
 }
 
 /** Die Reihenfolge der Stunden-Gruppen: chronologisch, nicht nach Menge. */
+/**
+ * NUR BEI AUTO-TRADES IST `createdAt` DIE EROEFFNUNG (03.11.).
+ *
+ * Gemessen ueber alle vier Schreibwege der `Trade`-Tabelle:
+ *
+ *   notes.source                  Schreiber                 createdAt ist
+ *   auto-scan                     Tracker, NOW() beim       DIE EROEFFNUNG
+ *                                 Platzieren der Order
+ *   rekonstruiert-aus-position    derselbe INSERT, aber     die REKONSTRUKTIONS-
+ *                                 beim Nachtragen einer     zeit
+ *                                 schon offenen Position
+ *   tx-sync                       sync-journal, tx.date     die BROKER-
+ *                                                           TRANSAKTIONSzeit
+ *   (kein source)                 POST /api/trades,         die EINGABEzeit
+ *                                 Prisma-Standard now()
+ *
+ * Die Dimension heisst „Eroeffnungsstunde". Fuer drei der vier Wege
+ * waere das eine Behauptung statt einer Messung — dieselbe Regel wie
+ * beim Kurs-Alter (22.09.) und bei `profitLoss` (26.10.).
+ *
+ * Sie werden NICHT still verworfen, sondern bekommen eine eigene,
+ * benannte Gruppe: wer sie sieht, weiss, wie viele Zeilen die Frage
+ * nicht beantworten koennen. Die Begruendung steht im Hinweis der
+ * Dimension, damit der Gruppenname kurz bleibt (Laengen-Riegel).
+ */
+export const STUNDE_NACHGETRAGEN = "nachgetragen";
+export const STUNDE_SYNC = "Journal-Sync";
+
+export function eroeffnungsStunde(
+  v: Date | string | number | null | undefined,
+  quelle: string | null,
+): string {
+  if (quelle === "rekonstruiert-aus-position") return STUNDE_NACHGETRAGEN;
+  if (quelle === "tx-sync") return STUNDE_SYNC;
+  // Kein bekannter Schreibweg: die Zeit koennte alles sein.
+  if (quelle !== "auto-scan") return "ohne Angabe";
+  return stundeBand(v);
+}
+
 export const STUNDEN_ORDNUNG: string[] = [
   ...Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")} UTC`),
   "ohne Angabe",
+  STUNDE_NACHGETRAGEN,
+  STUNDE_SYNC,
 ];
 
 export function hebelBericht(
@@ -279,16 +320,27 @@ export function hebelBericht(
   //
   // Anlass: die Beobachtung, dass selten vor Mittag eroeffnet wird.
   // Das Handelsfenster laeuft von 07:00 London bis 17:00 New York
-  // (`isWithinTradingSession`), also ganzjaehrig 08:00–23:00 Uhr
-  // Zuerich. Ob die frühen
-  // Stunden WIRKLICH leer sind — und ob sie etwas taugen — sagt nur
-  // diese Aufschlüsselung.
+  // (`isWithinTradingSession`). Ob die fruehen Stunden WIRKLICH leer
+  // sind — und ob sie etwas taugen — sagt nur diese Aufschluesselung.
+  //
+  // DIE ORTSZEIT STEHT HIER NICHT MEHR. Sie stand als Literal
+  // "ganzjaehrig 08:00–23:00 Uhr Zuerich" im Hinweis — und das ist
+  // falsch: an 35 Werktagen pro zwei Jahre schliesst das Fenster um
+  // 22:00 Zuerich, weil EU- und US-Sommerzeit zu verschiedenen
+  // Terminen wechseln (ausgerechnet am 02.11. ueber 522 Werktage).
+  // In `handels-lage.ts` wurde der Satz damals gerechnet statt
+  // behauptet; DIESE Stelle blieb uebrig — ein Fix an einer Stelle
+  // beantwortet nicht, wo die Klasse sonst noch steckt. Die Dimension
+  // rechnet ohnehin in UTC, also faellt die Uebersetzung ersatzlos weg.
   dims.push({
     titel: "Eröffnungsstunde (UTC)",
-    hinweis: "Das Fenster läuft von 07:00 London bis 17:00 New York — "
-      + "ganzjährig 08:00–23:00 Uhr Zürich. Eine fehlende Angabe wird "
-      + "NICHT zu 00 Uhr.",
-    gruppen: gruppiere(zeilen, (z) => stundeBand(z.createdAt ?? null),
+    hinweis: "Nur bei Auto-Trades ist die gespeicherte Zeit die Eröffnung. "
+      + "Nachgetragene Zeilen tragen die Rekonstruktionszeit, Zeilen aus dem "
+      + "Journal-Sync die Broker-Transaktionszeit — beide stehen als eigene "
+      + "Gruppe statt als Stunde. Das Fenster läuft von 07:00 London bis "
+      + "17:00 New York. Eine fehlende Angabe wird NICHT zu 00 Uhr.",
+    gruppen: gruppiere(zeilen,
+      (z) => eroeffnungsStunde(z.createdAt ?? null, ausNotizen(z.notes ?? null, "source")),
       fenster, STUNDEN_ORDNUNG),
     befund: "",
   });

@@ -3546,11 +3546,21 @@ module.exports = async function pruefe() {
                   ? wert.toISOString() : JSON.stringify(wert)}) ergibt nicht `
                   + `"${soll}"`, b === soll, `bekam: ${b}`);
               }
+              // AN DER EIGENSCHAFT, NICHT AN EINER ZAHL (03.11.). Hier stand
+              // `ordnung.length === 25`. Als am 03.11. zwei benannte Gruppen
+              // dazukamen, wurde die Pruefung rot, obwohl die Ordnung richtig
+              // war — dieselbe Falle wie `=== 200` beim Tor-Deckel (02.11.).
+              const NACHG = hb.exports?.STUNDE_NACHGETRAGEN;
+              const SYNCG = hb.exports?.STUNDE_SYNC;
+              const stundenTeil = ordnung.slice(0, 24)
+                .every((n, i) => n === `${String(i).padStart(2, "0")} UTC`);
+              const restTeil = ordnung.slice(24);
               torPruefung("die Stunden-Ordnung ist nicht vollstaendig — "
                 + "dann sortiert die Anzeige nach Menge statt nach Uhrzeit",
-                ordnung.length === 25 && ordnung[0] === "00 UTC"
-                && ordnung[23] === "23 UTC" && ordnung[24] === "ohne Angabe",
-                `${ordnung.length}: ${ordnung.slice(0, 3).join(", ")}`);
+                stundenTeil && restTeil.length === 3
+                && restTeil[0] === "ohne Angabe"
+                && restTeil[1] === NACHG && restTeil[2] === SYNCG,
+                `${ordnung.length}: ${ordnung.slice(22).join(", ")}`);
 
               // AUSGEFUEHRT: die Dimension muss da sein UND chronologisch
               // sortieren. Nach Menge sortiert waere die Frage "ist es
@@ -3565,7 +3575,11 @@ module.exports = async function pruefe() {
                   result: i % 3 === 0 ? "WIN" : "LOSS",
                   updatedAt: "2026-10-20T10:00:00.000Z",
                   createdAt: `2026-10-20T${String(std).padStart(2, "0")}:10:00.000Z`,
-                  notes: JSON.stringify({ tradingStyle: "DAYTRADING" }),
+                  // OHNE `source` waere seit dem 03.11. JEDE Zeile "ohne
+                  // Angabe" — die Dimension zaehlt nur Auto-Trades als
+                  // Eroeffnungsstunde. Ein Testfall ohne Schreibweg koennte
+                  // die Sortierung gar nicht mehr ausdruecken.
+                  notes: JSON.stringify({ tradingStyle: "DAYTRADING", source: "auto-scan" }),
                   riskReward: 2, market: "EURUSD", direction: "BUY",
                   strategy: "Trend",
                 });
@@ -3584,10 +3598,77 @@ module.exports = async function pruefe() {
               torPruefung("die Stunden-Gruppen zaehlen falsch",
                 dS?.gruppen?.find((g) => g.name === "14 UTC")?.gewertet === 80,
                 JSON.stringify(dS?.gruppen?.map((g) => `${g.name}:${g.gewertet}`)));
+              // ── NUR AUTO-TRADES TRAGEN DIE EROEFFNUNG (03.11.) ──────
+              //
+              // Gemessen ueber alle vier Schreibwege der Trade-Tabelle:
+              // `auto-scan` schreibt NOW() beim Platzieren (= Eroeffnung),
+              // `rekonstruiert-aus-position` NOW() beim Nachtragen,
+              // `tx-sync` die Broker-Transaktionszeit, und ein manueller
+              // Eintrag ueber POST /api/trades die Eingabezeit. Drei von
+              // vier sind KEINE Eroeffnung — sie als Stunde zu zaehlen
+              // waere eine Behauptung statt einer Messung.
+              const es = hb.exports?.eroeffnungsStunde;
+              torPruefung("eroeffnungsStunde ist nicht exportiert",
+                typeof es === "function", String(typeof es));
+              if (typeof es === "function") {
+                const ZEIT = "2026-10-20T14:10:00.000Z";
+                for (const [quelle, soll] of [
+                  ["auto-scan", "14 UTC"],
+                  ["rekonstruiert-aus-position", NACHG],
+                  ["tx-sync", SYNCG],
+                  [null, "ohne Angabe"],
+                  ["", "ohne Angabe"],
+                  ["irgendwas-neues", "ohne Angabe"],
+                ]) {
+                  const ist = es(ZEIT, quelle);
+                  torPruefung(`eroeffnungsStunde(${JSON.stringify(quelle)}) ergibt `
+                    + `nicht "${soll}"`, ist === soll, `bekam: ${ist}`);
+                }
+                // Und bei einem Auto-Trade OHNE Zeit bleibt es "ohne Angabe"
+                // — nicht 00 UTC.
+                torPruefung("ein Auto-Trade ohne Zeit wird zu 00 UTC",
+                  es(null, "auto-scan") === "ohne Angabe"
+                  && es("kein datum", "auto-scan") === "ohne Angabe",
+                  `${es(null, "auto-scan")} / ${es("kein datum", "auto-scan")}`);
+                // AUSGEFUEHRT ueber die ganze Dimension: die drei Wege
+                // bekommen eigene Gruppen, werden also gezaehlt und nicht
+                // still verworfen.
+                const gemischt = [];
+                for (let i = 0; i < 100; i++) {
+                  const q = i < 40 ? "auto-scan" : i < 70 ? "tx-sync"
+                    : i < 90 ? "rekonstruiert-aus-position" : null;
+                  gemischt.push({
+                    profitLoss: i % 3 === 0 ? 6 : -3,
+                    result: i % 3 === 0 ? "WIN" : "LOSS",
+                    updatedAt: "2026-10-20T10:00:00.000Z",
+                    createdAt: ZEIT,
+                    notes: JSON.stringify(q ? { source: q } : {}),
+                    riskReward: 2, market: "EURUSD", direction: "BUY", strategy: "x",
+                  });
+                }
+                const dG = hebelBericht(gemischt, null)
+                  .find((d) => d.titel === "Eröffnungsstunde (UTC)");
+                const zahl = (n) => dG?.gruppen?.find((g) => g.name === n)?.gewertet ?? -1;
+                torPruefung("die Schreibwege werden als Eroeffnungsstunde "
+                  + "mitgezaehlt — dann misst die Dimension etwas anderes, "
+                  + "als ihr Titel sagt",
+                  zahl("14 UTC") === 40 && zahl(SYNCG) === 30
+                  && zahl(NACHG) === 20 && zahl("ohne Angabe") === 10,
+                  JSON.stringify(dG?.gruppen?.map((g) => `${g.name}:${g.gewertet}`)));
+                // Und der Hinweis sagt, WARUM — sonst steht dort eine
+                // Gruppe "Journal-Sync" ohne jede Erklaerung.
+                torPruefung("der Hinweis erklaert die eigenen Gruppen nicht",
+                  /Auto-Trades/.test(dG?.hinweis ?? "")
+                  && /Broker-Transaktionszeit/.test(dG?.hinweis ?? ""),
+                  (dG?.hinweis ?? "").slice(0, 120));
+              }
+
               // Eine Zeile OHNE createdAt darf NICHT zu "00 UTC" werden.
+              // MIT Schreibweg, OHNE Zeit: so prueft der Fall wirklich die
+              // fehlende ZEIT und nicht den fehlenden Schreibweg.
               const ohneZeit = hebelBericht([{
                 profitLoss: 5, result: "WIN", updatedAt: "2026-10-20T10:00:00.000Z",
-                notes: JSON.stringify({ tradingStyle: "DAYTRADING" }),
+                notes: JSON.stringify({ tradingStyle: "DAYTRADING", source: "auto-scan" }),
                 riskReward: 2, market: "EURUSD", direction: "BUY", strategy: "x",
               }], null).find((d) => d.titel === "Eröffnungsstunde (UTC)");
               torPruefung("eine fehlende Eröffnungszeit wird zu 00 UTC — "
@@ -4839,12 +4920,36 @@ module.exports = async function pruefe() {
         // Der Text ist erst seit dem 01.11. da und war nie falsch
         // ausgeliefert; erster falscher Tag waere der 15.03.2027.
         {
-          const hlQ = read("frontend/lib/handels-lage/handels-lage.ts")
-            .replace(/\/\*[\s\S]*?\*\//g, " ")
+          // ÜBER ALLE DATEIEN, NICHT NUR EINE (03.11.). Dieser Riegel
+          // galt bis heute allein fuer `handels-lage.ts` — und genau
+          // deshalb blieb `/hebel` uebrig: dort stand der Satz weiter,
+          // sogar mit dem Wort "ganzjaehrig". Ein Treffer beweist nichts
+          // ueber die andere Stelle (25.10.).
+          //
+          // KEINE DATEI-AUSNAHME. `fenster-text.ts` traegt das Beispiel in
+          // seinem Blockkommentar — die Bereinigung entfernt es ohnehin.
+          // Eine namentliche Ausnahme wuerde dagegen auch ein echtes
+          // Literal dort verstecken, sobald es je eines gibt.
+          const ohneK4 = (q) => q.replace(/\/\*[\s\S]*?\*\//g, " ")
             .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+          const zurichDateien = sourceFiles([".ts", ".tsx"])
+            .filter((d) => d.startsWith("frontend/"))
+            .filter((d) => /08:00–23:00/.test(ohneK4(read(d))));
           torPruefung("das Fenster steht wieder als Literal im Text — an 35 Werktagen pro zwei Jahre ist es dann eine Stunde daneben",
-            !/08:00–23:00/.test(hlQ),
-            "kommentarbereinigt gesucht: ein Wort im Kommentar ist keine Verwendung");
+            zurichDateien.length === 0,
+            zurichDateien.join(", ") || "kommentarbereinigt ueber alle Quelldateien gesucht");
+          // SELBSTPRUEFUNG an GEBAUTEN Zeichenketten, nicht an einer Datei:
+          // am Dateiinhalt hinge sie an einer Formulierung. Beide Richtungen,
+          // sonst waere "0 Treffer" auch mit kaputter Suche gruen.
+          torPruefung("die Zuerich-Suche ist blind — sie findet das Literal nicht einmal in einem gebauten Beispiel",
+            /08:00–23:00/.test(ohneK4('const t = "08:00–23:00 Zuerich";'))
+            && !/08:00–23:00/.test(ohneK4("// nur ein Kommentar 08:00–23:00")),
+            "Treffer in Code muss gefunden, Treffer im Kommentar ignoriert werden");
+          // Und sie muss ueberhaupt Dateien angesehen haben: null geprueft
+          // ist kein sauberes Ergebnis, sondern ein kaputtes Werkzeug.
+          torPruefung("die Zuerich-Suche hat gar keine Dateien gelesen",
+            sourceFiles([".ts", ".tsx"]).filter((d) => d.startsWith("frontend/")).length > 300,
+            `${sourceFiles([".ts", ".tsx"]).filter((d) => d.startsWith("frontend/")).length} Dateien`);
 
           const ft = ladeTsModul("lib/handelsfenster/fenster-text.ts");
           const orchM = ladeTsModul("lib/agents/orchestrator-agent.ts");
