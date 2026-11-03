@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 357 · Kanten: 877
+Dateien mit internen Abhängigkeiten: 357 · Kanten: 880
 
 
 ## analysis-engine/api
@@ -461,6 +461,7 @@ Dateien mit internen Abhängigkeiten: 357 · Kanten: 877
   - → `frontend/app/lib/prisma.ts`
 - `frontend/app/api/trades/route.ts`
   - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/app/api/trading-style-priority-engine/route.ts`
   - → `frontend/lib/trading-style-priority-engine/index.ts`
 - `frontend/app/generated/prisma/browser.ts`
@@ -511,6 +512,7 @@ Dateien mit internen Abhängigkeiten: 357 · Kanten: 877
   - → `frontend/components/UnifiedMissionControlDashboard.tsx`
 - `frontend/app/trading-journal/page.tsx`
   - → `frontend/lib/bot-readiness/integrationen.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 
 ## frontend/components
 
@@ -920,6 +922,7 @@ Dateien mit internen Abhängigkeiten: 357 · Kanten: 877
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/learning/learning-store.ts`
   - → `frontend/lib/paper-trading/paper-history.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/lib/malwarebytes-integration/index.ts`
   - → `frontend/lib/malwarebytes-integration/malwarebytes-engine.ts`
   - → `frontend/lib/malwarebytes-integration/malwarebytes-types.ts`

@@ -8073,6 +8073,88 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ EINE LESART FUER DIE RICHTUNG (03.11.) ══════════════════════════════
+  //
+  // `/hebel` zeigte am 02.11.: BUY 585 · SELL 226 · LONG 3. Der Bot
+  // schreibt BUY/SELL, das Eingabeformular in /trading-journal schrieb
+  // LONG/SHORT ungeprueft in dieselbe Spalte (Trade.direction ist im
+  // Schema nur String). `getDirectionStats` verglich mit === "LONG" und
+  // lief damit ueber DREI von 814 Zeilen; die Trade-Liste faerbte jeden
+  // BUY rot. Dieselbe Route wurde von app/page.tsx mit dem RICHTIGEN
+  // Vokabular gelesen — zwei Leser, zwei Sprachen.
+  {
+    const rm = ladeTsModul("lib/richtung/richtung.ts");
+    const lr = rm.exports?.lesbareRichtung, ra = rm.exports?.richtungAnzeige;
+    if (rm.fehler || typeof lr !== "function" || typeof ra !== "function") {
+      funde.push(`richtung.ts nicht ausfuehrbar: ${rm.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      torPruefung("BUY/SELL oder LONG/SHORT werden nicht als Richtung gelesen",
+        lr("BUY") === "BUY" && lr("LONG") === "BUY" && lr("long") === "BUY"
+        && lr(" Long ") === "BUY" && lr("SELL") === "SELL" && lr("SHORT") === "SELL"
+        && lr("short") === "SELL",
+        JSON.stringify([lr("BUY"), lr("LONG"), lr("long"), lr(" Long "), lr("SHORT")]));
+      // EIN UNLESBARER WERT WIRD NICHT ZU EINER RICHTUNG. Eine stille
+      // Ersatzrichtung zaehlte eine Position auf die falsche Seite.
+      torPruefung("ein unlesbarer Wert wird still zu einer Richtung",
+        lr("") === null && lr("UNBEKANNT") === null && lr(null) === null
+        && lr(undefined) === null && lr(42) === null && lr({}) === null,
+        JSON.stringify([lr(""), lr("UNBEKANNT"), lr(null), lr(42)]));
+      // Die ANZEIGE versteckt einen kaputten Wert nicht.
+      torPruefung("ein kaputter Richtungswert sieht in der Liste heil aus",
+        ra("LONG") === "BUY" && ra("UNBEKANNT") === "UNBEKANNT?"
+        && ra("") === "\u2014" && ra(null) === "\u2014",
+        JSON.stringify([ra("LONG"), ra("UNBEKANNT"), ra("")]));
+    }
+
+    // ── Verdrahtung: kommentarbereinigt, sonst zaehlt eine Erwaehnung
+    //    im Kommentar als Verwendung (Fehlerklasse aus CLAUDE.md).
+    const ohneK3 = (q) => q.replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    const tjQ = ohneK3(read("frontend/app/trading-journal/page.tsx"));
+    torPruefung("die Kommentar-Bereinigung ist blind — sie streift nichts ab",
+      !/Fehlerklasse aus CLAUDE/.test(ohneK3("// Fehlerklasse aus CLAUDE.md"))
+      && /behalten/.test(ohneK3("const x = 1; // behalten".replace("// behalten", "behalten"))),
+      "Selbstpruefung der Bereinigung");
+    torPruefung("/trading-journal vergleicht die Richtung wieder mit LONG/SHORT",
+      !/direction\s*===\s*"(LONG|SHORT)"/.test(tjQ)
+      && /lesbareRichtung\(trade\.direction\)/.test(tjQ),
+      (tjQ.match(/direction\s*===\s*"(LONG|SHORT)"/g) || []).join(" | "));
+    torPruefung("das Eingabeformular bietet wieder LONG/SHORT an",
+      !/<option value="(LONG|SHORT)">/.test(tjQ)
+      && (tjQ.match(/<option value="(BUY|SELL)">/g) || []).length === 4,
+      (tjQ.match(/<option value="\w+">/g) || []).join(" "));
+    torPruefung("der Standardwert der Richtungs-Felder ist wieder LONG",
+      !/useState\("(LONG|SHORT)"\)/.test(tjQ),
+      (tjQ.match(/useState\("\w+"\)/g) || []).slice(0, 6).join(" "));
+
+    // Die Geldtabelle nimmt nur noch die abgebildete Richtung.
+    const trQ = ohneK3(read("frontend/app/api/trades/route.ts"));
+    torPruefung("/api/trades schreibt die rohe Eingabe in die Trade-Spalte",
+      !/direction:\s*body\.direction/.test(trQ)
+      && /lesbareRichtung\(body\.direction\)/.test(trQ)
+      && /direction:\s*richtung/.test(trQ),
+      (trQ.match(/direction:\s*[\w.]+/g) || []).join(" | "));
+
+    // EINE Umsetzung, nicht zwei: zwei Fassungen derselben Abbildung
+    // koennten auseinanderlaufen — und dann hiesse dieselbe Zeile an zwei
+    // Stellen verschieden, also genau der Fehler, der hier behoben wurde.
+    let rumpfe = 0;
+    // `sourceFiles` nimmt ENDUNGEN, kein Verzeichnis. Ein `sourceFiles("frontend")`
+    // ergab 0 Dateien — die harte Zusicherung `=== 1` hat das sofort gemeldet,
+    // eine Schranke `<= 1` waere stillschweigend gruen geblieben (Lehre 31.10.).
+    const quellen = sourceFiles([".ts", ".tsx"]).filter((d) => d.startsWith("frontend/"));
+    torPruefung("die Rumpf-Suche findet gar keine Quelldateien — sie ist blind",
+      quellen.length > 300, `${quellen.length} Dateien`);
+    for (const d of quellen) {
+      const q = ohneK3(read(d));
+      if (/export function lesbareRichtung\s*\(/.test(q)) rumpfe++;
+    }
+    torPruefung("lesbareRichtung ist mehr als einmal ausgeschrieben",
+      rumpfe === 1, `${rumpfe} Rumpf/Ruempfe gefunden`);
+  }
+
   // ══ EIN GESENDETES FELD OHNE LESER (02.11.) ═════════════════════════════
   //
   // Bis heute hielt der Pruefer nur EINE Richtung: was die Zyklus-Bilanz

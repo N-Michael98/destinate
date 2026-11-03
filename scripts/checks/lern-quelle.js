@@ -79,6 +79,7 @@ function baue(zeilen, dbWirft = false) {
     pendingPredictions: [], insights: [], lastAnalyzed: "",
   };
   return ladeTsModul("lib/learning/trade-feedback-engine.ts", {
+    "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
     prisma: {
       getPrisma: () => {
         if (dbWirft) throw new Error("DB weg (Prüfstand)");
@@ -325,6 +326,7 @@ module.exports = async function pruefe() {
       insights: [], lastAnalyzed: "",
     };
     const pModul = ladeTsModul("lib/learning/trade-feedback-engine.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
       prisma: {
         getPrisma: () => ({
           trade: { findMany: async (args) => findManyNachbau([...P_ZEILEN], args) },

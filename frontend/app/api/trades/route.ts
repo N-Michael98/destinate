@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { lesbareRichtung } from "@/lib/richtung/richtung";
 import { prisma } from "../../lib/prisma";
 
 function calculateRiskValues(input: {
@@ -68,8 +69,28 @@ export async function POST(request: Request) {
     const accountSize = body.accountSize ? Number(body.accountSize) : 30000;
     const riskPercent = body.riskPercent ? Number(body.riskPercent) : 1;
 
+    // DIE SPALTE NIMMT NUR NOCH BUY/SELL (03.11.).
+    //
+    // Hier stand `direction: body.direction` — ungeprueft, zweimal. Das
+    // Eingabeformular im Journal schickte `"LONG"`/`"SHORT"`, und im
+    // Schema ist `Trade.direction` nur `String`. Gemessen ueber /hebel
+    // am 02.11.: drei Zeilen mit `LONG` neben 811 mit BUY/SELL — genug,
+    // um die Richtungs-Statistik derselben Seite auf 3 von 814 Zeilen
+    // zu stellen.
+    //
+    // LONG/SHORT werden weiterhin ANGENOMMEN und abgebildet (der
+    // Broker-Pfad benutzt die Woerter); alles andere wird abgewiesen,
+    // statt still in die Geldtabelle zu wandern.
+    const richtung = lesbareRichtung(body.direction);
+    if (!richtung) {
+      return NextResponse.json(
+        { success: false, error: "direction muss BUY oder SELL sein (LONG/SHORT werden abgebildet)" },
+        { status: 400 }
+      );
+    }
+
     const riskValues = calculateRiskValues({
-      direction: body.direction,
+      direction: richtung,
       entry,
       stopLoss,
       takeProfit,
@@ -80,7 +101,7 @@ export async function POST(request: Request) {
     const trade = await prisma.trade.create({
       data: {
         market: body.market,
-        direction: body.direction,
+        direction: richtung,
         strategy: body.strategy ?? "Unclassified",
         entry,
         stopLoss,

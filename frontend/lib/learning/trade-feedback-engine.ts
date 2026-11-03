@@ -1,4 +1,5 @@
 import { PaperHistory } from "@/lib/paper-trading/paper-history";
+import { lesbareRichtung } from "../richtung/richtung";
 import { getPrisma } from "../../app/lib/prisma";
 import {
   readLearningState,
@@ -75,13 +76,17 @@ export type LernQuelle = "echt" | "papier" | "beide";
  * LONG/SHORT werden mitgelesen, weil der Broker-Pfad diese Wörter benutzt;
  * beides ist eindeutig und muss nicht geraten werden.
  */
-export function lesbareRichtung(roh: unknown): "BUY" | "SELL" | null {
-  if (typeof roh !== "string") return null;
-  const t = roh.trim().toUpperCase();
-  if (t === "SELL" || t === "SHORT") return "SELL";
-  if (t === "BUY" || t === "LONG") return "BUY";
-  return null;
-}
+// SEIT DEM 03.11. LIEGT DIE ABBILDUNG IN `lib/richtung/richtung.ts`.
+//
+// Grund: `/trading-journal` braucht dieselbe Lesart, kann dieses Modul
+// aber nicht laden (Prisma, Papierhandel). Eine zweite Fassung waere
+// eine zweite Wahrheit — genau der Fehler, der dort behoben wurde.
+// Re-Export, damit jede bestehende Aufrufstelle unveraendert bleibt.
+// Ein `export { x } from "…"` reicht hier NICHT: es reicht den Namen nur
+// weiter, holt ihn aber nicht in den eigenen Gueltigkeitsbereich — die drei
+// Aufrufstellen weiter unten waeren undefiniert. `tsc` hat das sofort
+// gemeldet (TS2304, dreimal). Deshalb Import oben, Re-Export hier.
+export { lesbareRichtung };
 
 /** Geschlossene Trades aus der ECHTEN Trade-Tabelle.
  *

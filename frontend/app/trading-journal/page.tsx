@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { lesbareRichtung, richtungAnzeige } from "@/lib/richtung/richtung";
 import {
   integrationsStand,
   offeneSchritte,
@@ -873,8 +874,17 @@ function getAITradeReviewStats(data: Trade[]) {
 function getDirectionStats(data: Trade[]) {
   const closedTrades = data.filter((trade) => trade.status === "CLOSED");
 
-  const longTrades = closedTrades.filter((trade) => trade.direction === "LONG");
-  const shortTrades = closedTrades.filter((trade) => trade.direction === "SHORT");
+  // DER BOT SCHREIBT BUY/SELL, NICHT LONG/SHORT (Fund 02.11.).
+  //
+  // Hier stand `=== "LONG"` / `=== "SHORT"`. Gemessen ueber /hebel:
+  // 585 BUY, 226 SELL, 3 LONG — diese Statistik lief also ueber DREI
+  // von 814 Zeilen, `shortTrades` war 0, und darunter standen trotzdem
+  // "Best Direction", zwei Trefferquoten und zwei CHF-Summen.
+  //
+  // `lesbareRichtung` ist DIESELBE Funktion, die der Lernzyklus
+  // benutzt — keine zweite Lesart.
+  const longTrades = closedTrades.filter((trade) => lesbareRichtung(trade.direction) === "BUY");
+  const shortTrades = closedTrades.filter((trade) => lesbareRichtung(trade.direction) === "SELL");
 
   const longWins = longTrades.filter((trade) => trade.profitLoss > 0).length;
   const shortWins = shortTrades.filter((trade) => trade.profitLoss > 0).length;
@@ -891,7 +901,7 @@ function getDirectionStats(data: Trade[]) {
       shortTrades.length > 0 ? Math.round((shortWins / shortTrades.length) * 100) : 0,
     longProfit: Number(longProfit.toFixed(2)),
     shortProfit: Number(shortProfit.toFixed(2)),
-    bestDirection: longProfit >= shortProfit ? "LONG" : "SHORT",
+    bestDirection: longProfit >= shortProfit ? "BUY" : "SELL",
   };
 }
 
@@ -1480,7 +1490,7 @@ export default function TradingJournal() {
   const [signalRiskReward, setSignalRiskReward] = useState("2");
 
   const [market, setMarket] = useState("");
-  const [direction, setDirection] = useState("LONG");
+  const [direction, setDirection] = useState("BUY");
   const [strategy, setStrategy] = useState("Liquidity Sweep");
   const [entry, setEntry] = useState("");
   const [stopLoss, setStopLoss] = useState("");
@@ -1498,7 +1508,7 @@ export default function TradingJournal() {
 
   const [editingTrade, setEditingTrade] = useState<Trade | null>(null);
   const [editMarket, setEditMarket] = useState("");
-  const [editDirection, setEditDirection] = useState("LONG");
+  const [editDirection, setEditDirection] = useState("BUY");
   const [editStrategy, setEditStrategy] = useState("Liquidity Sweep");
   const [editEntry, setEditEntry] = useState("");
   const [editStopLoss, setEditStopLoss] = useState("");
@@ -2419,8 +2429,8 @@ export default function TradingJournal() {
                 <div className="grid grid-cols-4 gap-4">
                   <input placeholder="Market" value={editMarket} onChange={(event) => setEditMarket(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
                   <select value={editDirection} onChange={(event) => setEditDirection(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
-                    <option value="LONG">LONG</option>
-                    <option value="SHORT">SHORT</option>
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
                   </select>
                   <select value={editStrategy} onChange={(event) => setEditStrategy(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
                     {strategies.map((strategyItem) => (
@@ -2454,8 +2464,8 @@ export default function TradingJournal() {
               <div className="grid grid-cols-4 gap-4">
                 <input placeholder="Market, z.B. Gold" value={market} onChange={(event) => setMarket(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl" />
                 <select value={direction} onChange={(event) => setDirection(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
-                  <option value="LONG">LONG</option>
-                  <option value="SHORT">SHORT</option>
+                  <option value="BUY">BUY</option>
+                  <option value="SELL">SELL</option>
                 </select>
                 <select value={strategy} onChange={(event) => setStrategy(event.target.value)} className="bg-black border border-gray-700 p-3 rounded-xl">
                   {strategies.map((strategyItem) => (
@@ -2789,12 +2799,12 @@ export default function TradingJournal() {
                 <h2 className="font-bold">Best Direction</h2>
                 <p className="text-3xl mt-6 text-green-400">{directionStats.bestDirection}</p>
                 <p className="text-gray-400 mt-2">
-                  LONG {directionStats.longWinrate}% · SHORT {directionStats.shortWinrate}%
+                  BUY {directionStats.longWinrate}% · SELL {directionStats.shortWinrate}%
                 </p>
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-blue-800">
-                <h2 className="font-bold">LONG Performance</h2>
+                <h2 className="font-bold">BUY Performance</h2>
                 <p className={directionStats.longProfit >= 0 ? "text-3xl mt-6 text-green-400" : "text-3xl mt-6 text-red-400"}>
                   {directionStats.longProfit} CHF
                 </p>
@@ -2802,7 +2812,7 @@ export default function TradingJournal() {
               </div>
 
               <div className="bg-gray-900 p-6 rounded-2xl border border-orange-800">
-                <h2 className="font-bold">SHORT Performance</h2>
+                <h2 className="font-bold">SELL Performance</h2>
                 <p className={directionStats.shortProfit >= 0 ? "text-3xl mt-6 text-green-400" : "text-3xl mt-6 text-red-400"}>
                   {directionStats.shortProfit} CHF
                 </p>
@@ -4026,7 +4036,13 @@ export default function TradingJournal() {
                   <div key={trade.id} className="grid grid-cols-17 gap-4 p-4 border-t border-gray-800 items-center">
                     <div>{new Date(trade.date).toLocaleDateString("de-CH")}</div>
                     <div>{trade.market}</div>
-                    <div className={trade.direction === "LONG" ? "text-green-400" : "text-red-400"}>{trade.direction}</div>
+                    {/* Gefaerbt nach der ABGEBILDETEN Richtung: `=== "LONG"`
+                        machte aus jedem BUY des Bots eine rote Zeile. Angezeigt
+                        wird der Rohwert mit `?`, wenn er unlesbar ist — eine
+                        kaputte Zeile soll nicht heil aussehen. */}
+                    <div className={lesbareRichtung(trade.direction) === "BUY" ? "text-green-400"
+                      : lesbareRichtung(trade.direction) === "SELL" ? "text-red-400" : "text-yellow-400"}>
+                      {richtungAnzeige(trade.direction)}</div>
                     <div>{trade.strategy || "Unclassified"}</div>
                     <div>{trade.entry}</div>
                     <div>{trade.stopLoss}</div>
