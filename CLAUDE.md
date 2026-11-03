@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer JEDEN neuen Trade; seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -1784,6 +1784,10 @@ Antwort Alarm schlägt.
 aber keine Längengrenze**. Eine Tagesbilanz über 4096 Zeichen käme nicht an —
 immerhin mit Logzeile. Nicht geändert, weil nicht gemessen.
 
+> **Beantwortet am 31.10.** — siehe „Die Antwort konnte gar nicht ankommen".
+> Gemessen statt vermutet: `/edge` 2939, Tagesbilanz 3700, beide unter der
+> Grenze; nur `/hebel` lag darüber und hat seitdem einen Riegel.
+
 ### Nebenbei belegt: der Prisma-Client ist programmweit `any`
 
 `app/lib/prisma.ts` holt den Client per `require("@prisma/client")`. Ein
@@ -3343,7 +3347,13 @@ Am Tor steht `Confidence # < Schwelle #`. `grundSchluessel()` ersetzt
 jede Zahl durch `#`, damit gleiche Gründe zusammenfallen — richtig fürs
 Zählen, aber die **Spanne** fehlt, die die Vor-Tor-Stufe zeigt
 (`11 (55–69)`). Genau sie bräuchte man für „Schwelle senken?".
-**Benannt, nicht geändert** — eine Sache auf einmal.
+
+**ERLEDIGT am 02.11. (`49383b8`).** Hier stand bis dahin „benannt, nicht
+geändert". Die Zahl lag die ganze Zeit **auf dem Bus**:
+`GateDecisionPayload.confidence` wird von **vier** Stellen gesendet und
+wurde von **niemandem** gelesen. Jetzt führt die Tagessumme je
+Ablehnungsgrund eine Spanne mit, und am Tor steht
+`Confidence # < Schwelle # (38) · Confidence 70–79 · 30 BUY/8 SELL`.
 
 Und die Handelsfrage bleibt: `blockOverfitMarkets` ist **AN** (Standard
 **AUS**) — zwingend, nicht vermutet, denn ohne den Schalter wäre
@@ -3352,7 +3362,21 @@ Und die Handelsfrage bleibt: `blockOverfitMarkets` ist **AN** (Standard
 Märkte und **wie alt** die Daten sind, steht in der Logzeile
 `[orchestrator] 🔬 Walk-Forward`.
 
-## Das Handelsfenster ist in UTC festgenagelt (01.11.)
+## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
+
+> **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben
+> Tag.** Er endete mit „Beides ist NICHT geändert" — geändert wurde es
+> wenige Stunden später trotzdem, und zwar in „Das Handelsfenster hängt
+> jetzt an den Börsenzonen (01.11.)" weiter oben. Im Code gibt es die
+> festen `8 * 60` / `22 * 60` nicht mehr; `orchestrator-agent.ts:558`
+> sagt das ausdrücklich, die Grenzen stehen seit `b7c91a9` in
+> `HANDELSFENSTER` mit Zonen.
+>
+> Der Abschnitt bleibt stehen, weil die Herleitung und die Messung
+> weiter gelten — aber er ist **keine Beschreibung des heutigen
+> Zustands**. Gefunden am 03.11. beim Richtigstellen des Satzes über
+> das Handelszeit-Tor. Das ist die Fehlerklasse „eine Anweisung, die
+> etwas beschreibt, das es nicht mehr gibt" — in dieser Datei selbst.
 
 Anlass: die Beobachtung „selten werden Positionen vor 12:00 eröffnet,
 obwohl London um 08:00 anfängt". `isWithinTradingSession()` rechnet mit
@@ -3382,10 +3406,47 @@ Daraus folgen **zwei** Befunde, und sie sind verschieden:
    Wer 08:00 erwartet, sieht die erste Stunde leer — und das ist kein
    Fehler, sondern die Definition.
 
-**Beides ist NICHT geändert.** `isWithinTradingSession()` ist „das Tor
-für JEDEN neuen Trade" (so steht es bei den rechnenden Prüfern), und ein
-früherer Start heisst mehr Trades in der dünnsten Stunde des Tages. Das
-gehört entschieden, nicht nebenbei gemacht.
+**Beides war beim Schreiben nicht geändert** — am selben Tag dann doch,
+siehe den Kasten am Anfang dieses Abschnitts.
+
+### Das Handelszeit-Tor gilt nicht überall (03.11.)
+
+Hier stand: `isWithinTradingSession()` ist „das Tor für JEDEN neuen
+Trade". **Das stimmt so nicht**, und es stand genauso in der
+Prüfer-Tabelle ganz oben. Nachgezählt, nicht vermutet — die Funktion hat
+im ganzen Programm **genau zwei** Entscheidungsstellen, beide in
+`orchestrator-agent.ts`:
+
+| Stelle | was sie tut |
+|---|---|
+| `:831` | ausserhalb der Zeit: **ohne** offene Positionen endet der Zyklus; **mit** offenen Positionen läuft er als reines Monitoring weiter |
+| `:875` | `blockNewTrades` — sperrt neue Trades innerhalb des Zyklus (`:877`, `:881`, `:942`) |
+
+Die dritte Fundstelle (`webhook/route.ts:665`) ist die **Anzeige** in
+`/status`, keine Entscheidung.
+
+**Der manuelle Weg prüft die Handelszeit NICHT.** `POST
+/api/capital-com/execute` hat genau **einen** Aufrufer —
+`MarketScannerPanel.tsx:175`, im Dashboard erreichbar
+(`app/page.tsx:3676`). Geprüft wird dort:
+
+| Riegel | wo |
+|---|---|
+| Broker verbunden | `execute/route.ts:8` |
+| Killswitch | `capital-com-execution.ts:309` |
+| Stop **und** Ziel vorhanden | `capital-com-execution.ts:322` (`ordersRiegel`) |
+| **Handelszeit** | **nirgends** |
+
+**Das ist kein Defekt.** Ein Mensch, der bewusst klickt, ist etwas
+anderes als der Automat, und Notaus plus Stop-Riegel greifen auch dort.
+Aber der Satz behauptete mehr, als der Code tut — genau die Fehlerklasse
+von `market-health.ts` und den zwei falschen Killswitch-Texten (27.09.),
+diesmal in der Anweisung selbst.
+
+Und die ursprüngliche Aussage bleibt richtig: ein früherer Start heisst
+mehr Trades in der dünnsten Stunde des Tages. Das gehört entschieden,
+nicht nebenbei gemacht — am 01.11. ist es ausdrücklich entschieden
+worden.
 
 ### Und „selten vor 12:00" war bisher nicht nachprüfbar
 
