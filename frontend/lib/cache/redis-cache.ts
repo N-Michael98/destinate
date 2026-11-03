@@ -1,4 +1,35 @@
+import { lageMelden } from "../redis-lage/redis-lage";
+
 type CacheEntry = { value: unknown; expiresAt: number };
+
+/**
+ * EIN FEHLGESCHLAGENER SCHREIB- ODER LOESCHVORGANG WAR STUMM (03.11.)
+ *
+ * Gefunden in der Generalkontrolle: `cacheSet` und `cacheDel` endeten
+ * beide auf `catch {}`. Ein Schreibfehler fiel damit still in den
+ * prozesseigenen Speicher, und ein Loeschfehler blieb ganz ohne Spur.
+ *
+ * DAS IST DERSELBE FUND WIE AM 01.11., EINE SCHICHT TIEFER. Dort war
+ * die Lage "Redis antwortet nicht" (der LESEweg, behoben ueber
+ * `cacheLesen` mit Herkunft). Hier antwortet Redis, und der Vorgang
+ * selbst scheitert — das sah bis heute aus wie Erfolg.
+ *
+ * Teuer wurde es bei `/peakreset`: der Befehl SENKT den Schutz und
+ * meldete "zurueckgesetzt", waehrend Redis den Hoechststand behielt.
+ * Deshalb gibt `cacheDel` jetzt zurueck, ob der Wert wirklich weg ist.
+ *
+ * JE STELLE EIN EIGENER ZUSTAND (Regel vom 01.11.): teilten sich
+ * Schreib- und Loeschweg einen, verdeckte die erste Meldung die andere.
+ * Gedrosselt wird ueber `lageMelden` — die BESTEHENDE Drossel, keine
+ * zweite Fassung.
+ *
+ * OHNE CLIENT wird NICHTS gemeldet: dass Redis ganz fehlt, sagt der
+ * Leseweg schon ueber `herkunft: "aus"`. Hier geht es allein um den
+ * Fall, der bisher unsichtbar war.
+ */
+const SCHREIB_STELLE = "Redis-Schreibpfad";
+const LOESCH_STELLE = "Redis-Loeschpfad";
+const grund = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 160);
 
 // In-memory fallback wenn Redis nicht verfügbar
 const memCache = new Map<string, CacheEntry>();
@@ -97,7 +128,24 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
 export async function cacheSet(key: string, value: unknown, ttlSeconds = 30): Promise<void> {
   const client = await getClient();
   if (client) {
-    try { await client.setEx(key, ttlSeconds, JSON.stringify(value)); return; } catch {}
+    try {
+      await client.setEx(key, ttlSeconds, JSON.stringify(value));
+      lageMelden(SCHREIB_STELLE, "ok");
+      return;
+    } catch (e) {
+      // Der Wert faellt gleich in den prozesseigenen Speicher — er
+      // ueberlebt damit KEINEN Neustart, und der Aufrufer erfaehrt es
+      // nicht. Die Rueckgabe bleibt `void`: ein `boolean`, den keiner
+      // der achtzehn Aufrufer liest, waere genau der Fehler vom 25.10.
+      // in neuer Verpackung.
+      if (lageMelden(SCHREIB_STELLE, "aus")) {
+        console.warn(
+          `[cache] ⚠️ Redis NIMMT KEINE SCHREIBVORGAENGE an (${grund(e)}). `
+          + `Die Werte landen im prozesseigenen Speicher und ueberleben keinen `
+          + `Neustart — betroffen sind unter anderem der Tages-/Wochen-Bezugspunkt, `
+          + `der Hoechststand und die Zyklus-Tagessumme.`);
+      }
+    }
   }
   memCache.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
   if (memCache.size > 500) {
@@ -106,10 +154,33 @@ export async function cacheSet(key: string, value: unknown, ttlSeconds = 30): Pr
   }
 }
 
-export async function cacheDel(key: string): Promise<void> {
+/**
+ * Loeschen — und sagen, ob es geklappt hat.
+ *
+ * `true` heisst: der Wert ist weg, soweit er erreichbar war. Gibt es
+ * gar keinen Redis-Client, ist der prozesseigene Speicher der ganze
+ * Speicher — dann ist das Loeschen vollstaendig. Antwortet ein Client
+ * aber der Befehl scheitert, kann Redis den Wert WEITER halten: dann
+ * `false`, damit ein Aufrufer wie `/peakreset` nicht Erfolg meldet.
+ */
+export async function cacheDel(key: string): Promise<boolean> {
   const client = await getClient();
-  if (client) { try { await client.del(key); } catch {} }
+  let weg = true;
+  if (client) {
+    try {
+      await client.del(key);
+      lageMelden(LOESCH_STELLE, "ok");
+    } catch (e) {
+      weg = false;
+      if (lageMelden(LOESCH_STELLE, "aus")) {
+        console.warn(
+          `[cache] ⚠️ Redis LOESCHT NICHT (${grund(e)}). Der Wert bleibt dort `
+          + `stehen; geleert wird nur der prozesseigene Speicher.`);
+      }
+    }
+  }
   memCache.delete(key);
+  return weg;
 }
 
 export async function cacheGetOrFetch<T>(

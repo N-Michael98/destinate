@@ -111,8 +111,22 @@ function ladeTsModul(relPfad, ersatz = {}) {
       construct: () => ({}),
     });
     // Erst nach einem passenden Ersatz suchen, sonst der Stellvertreter.
+    //
+    // DER LAENGSTE TREFFER GEWINNT (03.11.). Vorher entschied die
+    // Einfuegereihenfolge — und ein kurzer Schluessel verdeckte still einen
+    // laengeren: `"../redis-lage/redis-lage"` enthaelt `"redis"`, also bekam
+    // ein Prüfstand mit `{ redis: {...}, "redis-lage/redis-lage": {...} }`
+    // fuer BEIDE Importe den Redis-Client. Der Fehler zeigt sich erst beim
+    // AUFRUF ("lageMelden is not a function") — in einem Prüfstand, der den
+    // Pfad nicht betritt, bliebe er unsichtbar und der Prüfer gruen.
+    //
+    // Nach Laenge absteigend ist die Zuordnung von der Reihenfolge im
+    // Objektliteral unabhaengig. Bei gleicher Laenge bleibt es bei der
+    // bisherigen Reihenfolge.
+    const eintraege = Object.entries(ersatz)
+      .sort((a, b) => String(b[0]).length - String(a[0]).length);
     const holen = (angabe) => {
-      for (const [teil, objekt] of Object.entries(ersatz)) {
+      for (const [teil, objekt] of eintraege) {
         if (String(angabe).includes(teil)) return objekt;
       }
       return stellvertreter();

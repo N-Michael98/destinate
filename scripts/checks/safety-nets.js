@@ -2403,7 +2403,171 @@ module.exports = async function pruefe() {
             // AUSGEFUEHRT gegen einen Stellvertreter, der die drei Lagen
             // spielt — ein Regex koennte das nicht unterscheiden.
             {
-              const rcEcht = ladeTsModul("lib/cache/redis-cache.ts");
+              // ── EIN FEHLGESCHLAGENER SCHREIB-/LOESCHVORGANG WAR STUMM (03.11.) ──
+              //
+              // `cacheSet` und `cacheDel` endeten beide auf `catch {}`. Ein
+              // Schreibfehler fiel still in den prozesseigenen Speicher, ein
+              // Loeschfehler blieb ganz ohne Spur — und `/peakreset` meldete
+              // deshalb Erfolg, waehrend Redis den Hoechststand behielt.
+              //
+              // Derselbe Fund wie am 01.11., eine Schicht tiefer: dort
+              // antwortete Redis NICHT (Leseweg), hier antwortet es und der
+              // Vorgang selbst scheitert.
+              {
+                const altUrlW = process.env.REDIS_URL;
+                const lageEcht = () => ladeTsModul("lib/redis-lage/redis-lage.ts").exports;
+                const bauCache = (client) => ladeTsModul("lib/cache/redis-cache.ts", {
+                  redis: { createClient: () => client },
+                  "redis-lage/redis-lage": lageEcht(),
+                });
+                const client = (kaputt) => ({
+                  on: () => {}, connect: async () => {},
+                  get: async () => null,
+                  setEx: async () => { if (kaputt === "set") throw new Error("setEx kaputt"); return "OK"; },
+                  del: async () => { if (kaputt === "del") throw new Error("del kaputt"); return 1; },
+                });
+                // JEDER FALL BEKOMMT EINEN FRISCHEN DROSSEL-ZUSTAND. Er liegt
+                // auf `global`, und ohne das Zuruecksetzen schlaegt die Drossel
+                // des vorigen Falls durch — dann misst man die Drossel, nicht
+                // das Verhalten.
+                const fahre = async (c, tun) => {
+                  const vorherLage = global.__redis_lage__;
+                  global.__redis_lage__ = undefined;
+                  const m = bauCache(c);
+                  const warn = [];
+                  const sWarn = console.warn;
+                  console.warn = (...a) => warn.push(a.join(" "));
+                  let r;
+                  try { r = await tun(m.exports); }
+                  catch (e) { r = `WIRFT ${e.message}`; }
+                  console.warn = sWarn;
+                  global.__redis_lage__ = vorherLage;
+                  return { r, warn, fehler: m.fehler };
+                };
+                try {
+                  process.env.REDIS_URL = "redis://pruefstand";
+
+                  const sKaputt = await fahre(client("set"),
+                    async (x) => { await x.cacheSet("k", { v: 1 }, 60); return "fertig"; });
+                  torPruefung("ein fehlgeschlagener Redis-SCHREIBvorgang bleibt stumm",
+                    sKaputt.r === "fertig" && sKaputt.warn.length === 1
+                    && /KEINE SCHREIBVORGAENGE/.test(sKaputt.warn[0]),
+                    `${sKaputt.fehler ?? ""} ${sKaputt.warn.length} Meldungen: ${sKaputt.warn.join(" | ").slice(0, 150)}`);
+
+                  // GEGENPROBE: ein gelungener Schreibvorgang meldet NICHTS.
+                  // Ein Riegel, der bei jedem Schreiben Alarm schlaegt, waere
+                  // so falsch wie keiner (Lehre vom 15.09.).
+                  const sOk = await fahre(client(null),
+                    async (x) => { await x.cacheSet("k", { v: 1 }, 60); return "fertig"; });
+                  torPruefung("ein GELUNGENER Schreibvorgang meldet faelschlich einen Ausfall",
+                    sOk.warn.length === 0, sOk.warn.join(" | ").slice(0, 150));
+
+                  const dKaputt = await fahre(client("del"), (x) => x.cacheDel("k"));
+                  torPruefung("ein fehlgeschlagener Redis-LOESCHvorgang gibt Erfolg zurueck",
+                    dKaputt.r === false && dKaputt.warn.length === 1
+                    && /LOESCHT NICHT/.test(dKaputt.warn[0]),
+                    `${JSON.stringify(dKaputt.r)} ${dKaputt.warn.join(" | ").slice(0, 150)}`);
+
+                  const dOk = await fahre(client(null), (x) => x.cacheDel("k"));
+                  torPruefung("ein gelungenes Loeschen gibt false oder meldet einen Ausfall",
+                    dOk.r === true && dOk.warn.length === 0,
+                    `${JSON.stringify(dOk.r)} ${dOk.warn.join(" | ")}`);
+
+                  // ── DIE MASKIERUNG, zwei Vorgaenge auf EINER Modulkopie ──
+                  //
+                  // Die erste Fassung dieser Pruefung setzte den Drossel-
+                  // Zustand vor jedem Fall zurueck. Zwei Sabotagen blieben
+                  // deshalb gruen, obwohl sie wirken: "der gelungene Vorgang
+                  // meldet sich als Ausfall" und "beide Wege teilen sich den
+                  // Zustand" verschieben NUR den Zustand — gedruckt wird erst
+                  // beim naechsten echten Fehlschlag, und genau der kam im
+                  // Pruefstand nie. Ein Testfall, der den Fehler nicht
+                  // ausdruecken kann, beweist nichts.
+                  //
+                  // Jetzt: EIN Modul, EIN Zustand, drei Vorgaenge nacheinander.
+                  {
+                    const vorherLage = global.__redis_lage__;
+                    global.__redis_lage__ = undefined;
+                    let setKaputt = false, delKaputt = false;
+                    const wackel = {
+                      on: () => {}, connect: async () => {}, get: async () => null,
+                      setEx: async () => { if (setKaputt) throw new Error("setEx kaputt"); return "OK"; },
+                      del: async () => { if (delKaputt) throw new Error("del kaputt"); return 1; },
+                    };
+                    const mk = bauCache(wackel);
+                    const w = [];
+                    const sW = console.warn;
+                    console.warn = (...a) => w.push(a.join(" "));
+                    let nachGut = -1, nachSchlecht = -1, nachDel = -1;
+                    try {
+                      await mk.exports.cacheSet("k", { v: 1 }, 60);   // gelingt
+                      nachGut = w.length;
+                      setKaputt = true;
+                      await mk.exports.cacheSet("k", { v: 2 }, 60);   // scheitert
+                      nachSchlecht = w.length;
+                      delKaputt = true;
+                      await mk.exports.cacheDel("k");                  // scheitert
+                      nachDel = w.length;
+                    } catch { /* der Fall selbst darf nie werfen */ }
+                    console.warn = sW;
+                    global.__redis_lage__ = vorherLage;
+                    torPruefung("ein gelungener Schreibvorgang stellt den naechsten "
+                      + "Fehlschlag stumm",
+                      nachGut === 0 && nachSchlecht === 1
+                      && /SCHREIBVORGAENGE/.test(w[0] ?? ""),
+                      `nach gut ${nachGut}, nach schlecht ${nachSchlecht}: ${(w[0] ?? "").slice(0, 110)}`);
+                    torPruefung("ein Ausfall im SCHREIBweg stellt den LOESCHweg stumm — "
+                      + "dann verdeckt die erste Meldung die andere",
+                      nachDel === 2 && /LOESCHT NICHT/.test(w[1] ?? ""),
+                      `${nachDel} Meldungen: ${w.join(" | ").slice(0, 160)}`);
+                  }
+
+                  // OHNE CLIENT ist der prozesseigene Speicher der ganze
+                  // Speicher — dann ist das Loeschen vollstaendig, und dass
+                  // Redis fehlt, sagt der LESEweg (`herkunft: "aus"`).
+                  delete process.env.REDIS_URL;
+                  const dOhne = await fahre(null, (x) => x.cacheDel("k"));
+                  torPruefung("ohne Redis meldet das Loeschen einen Fehlschlag",
+                    dOhne.r === true && dOhne.warn.length === 0,
+                    `${JSON.stringify(dOhne.r)} ${dOhne.warn.join(" | ")}`);
+                } finally {
+                  if (altUrlW === undefined) delete process.env.REDIS_URL;
+                  else process.env.REDIS_URL = altUrlW;
+                }
+
+                // UND DER WEG BIS ZUM NUTZER: /peakreset darf keinen Erfolg
+                // melden, den es nicht gab. Die Kette war bis heute nur
+                // gelesen — ein Fix, dessen Meldeweg ungeprueft ist, ist ein
+                // halber Fix (Lehre vom 01.11.).
+                for (const [name, delErgebnis, sollOk] of [
+                  ["Redis loescht nicht", false, false],
+                  ["Redis loescht", true, true],
+                ]) {
+                  const tfM = ladeTsModul("lib/trading-filters/trade-filters.ts", {
+                    "redis-lage/redis-lage": lageEcht(),
+                    "redis-cache": {
+                      cacheLesen: async () => ({ wert: { peak: 2000 }, herkunft: "redis" }),
+                      cacheGet: async () => ({ peak: 2000 }),
+                      cacheSet: async () => true,
+                      cacheDel: async () => delErgebnis,
+                    },
+                    "telegram-sender": { htmlAbgelehnt: tgHtml, telegramZeit: () => "x",
+                      telegramDatum: () => "x", sendTelegram: async () => true },
+                  });
+                  const pz = tfM.exports?.peakZuruecksetzen;
+                  const sLogP = console.warn;
+                  console.warn = () => {};
+                  let erg;
+                  try { erg = typeof pz === "function" ? await pz() : { ok: "kein Export" }; }
+                  catch (e) { erg = { ok: `WIRFT ${e.message}` }; }
+                  console.warn = sLogP;
+                  torPruefung(`/peakreset meldet bei "${name}" das Falsche`,
+                    erg.ok === sollOk && (sollOk || /NICHT geloescht/.test(String(erg.fehler ?? ""))),
+                    JSON.stringify(erg));
+                }
+              }
+
+              const rcEcht = ladeTsModul("lib/cache/redis-cache.ts", { "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports });
               const lesen = rcEcht.exports?.cacheLesen;
               const holen = rcEcht.exports?.cacheGet;
               torPruefung("`cacheLesen` fehlt — dann laesst sich \"Schluessel "
@@ -2431,7 +2595,8 @@ module.exports = async function pruefe() {
                     async setEx() { return "OK"; },
                   };
                   const rcMit = ladeTsModul("lib/cache/redis-cache.ts",
-                    { redis: { createClient: () => falscherClient } });
+                    { redis: { createClient: () => falscherClient },
+                      "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports });
                   const lesenMit = rcMit.exports?.cacheLesen;
                   const holenMit = rcMit.exports?.cacheGet;
                   if (typeof lesenMit !== "function" || typeof holenMit !== "function") {
@@ -2459,7 +2624,7 @@ module.exports = async function pruefe() {
 
                   // OHNE Redis: eine fehlende Antwort heisst `aus`.
                   delete process.env.REDIS_URL;
-                  const rcOhne = ladeTsModul("lib/cache/redis-cache.ts");
+                  const rcOhne = ladeTsModul("lib/cache/redis-cache.ts", { "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports });
                   const lesenOhne = rcOhne.exports?.cacheLesen;
                   const setzenOhne = rcOhne.exports?.cacheSet;
                   if (typeof lesenOhne === "function") {
@@ -8636,6 +8801,7 @@ module.exports = async function pruefe() {
     try {
       const cache = ladeTsModul("lib/cache/redis-cache.ts", {
         "redis": { createClient: () => { throw new Error("kein Redis im Pruefstand"); } },
+        "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
       });
       const log = cache.fehler ? cache : ladeTsModul("lib/security-watchdog/security-event-logger.ts",
         { "redis-cache": cache.exports });

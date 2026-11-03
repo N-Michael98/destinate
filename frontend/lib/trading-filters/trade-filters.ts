@@ -354,7 +354,17 @@ export async function peakZuruecksetzen(): Promise<{ ok: boolean; alt: number | 
     }
     const vorher = gelesen.wert;
     const alt = Number.isFinite(vorher?.peak) ? (vorher as { peak: number }).peak : null;
-    await cacheDel(PEAK_SCHLUESSEL);
+    // UND DAS LOESCHEN SELBST KANN SCHEITERN (03.11.).
+    //
+    // Die Abfrage oben faengt "Redis hat nicht geantwortet". Antwortet
+    // Redis aber, und der Loeschbefehl scheitert, haelt Redis den
+    // Hoechststand weiter — und bis heute meldete dieser Befehl trotzdem
+    // Erfolg. Derselbe Fund wie am 01.11., eine Schicht tiefer.
+    const weg = await cacheDel(PEAK_SCHLUESSEL);
+    if (!weg) {
+      return { ok: false, alt,
+        fehler: "Redis hat den Hoechststand NICHT geloescht — er gilt UNVERAENDERT weiter. Es wurde nichts zurueckgesetzt." };
+    }
     console.warn(`[filter] ♻️ Hoechststand zurueckgesetzt (vorher ${alt === null ? "nicht gesetzt" : alt.toFixed(2)}) `
       + `— der naechste Zyklus setzt ihn auf den aktuellen Kontostand.`);
     return { ok: true, alt };

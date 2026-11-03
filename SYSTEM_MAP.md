@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 357 · Kanten: 880
+Dateien mit internen Abhängigkeiten: 358 · Kanten: 881
 
 
 ## analysis-engine/api
@@ -730,6 +730,8 @@ Dateien mit internen Abhängigkeiten: 357 · Kanten: 880
 - `frontend/lib/broker-reputation-memory/index.ts`
   - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-engine.ts`
   - → `frontend/lib/broker-reputation-memory/broker-reputation-memory-types.ts`
+- `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/redis-lage/redis-lage.ts`
 - `frontend/lib/capital-com/active-trade-manager.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/agent-bus.ts`
