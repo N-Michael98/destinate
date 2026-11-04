@@ -4955,6 +4955,11 @@ module.exports = async function pruefe() {
               // war diese Fixture bis heute gebaut.
               "Meta-KI": { ja: 2, nein: 0, fallback: 0, gruende: {},
                 richtungenJa: { SELL: 2 } },
+              // DER DEPLOY-UEBERGANG als eigener Fall (04.11.): `ja` kommt
+              // aus der alten Summe in Redis, die Aufteilung erst ab dem
+              // Deploy. `9 ja (1 SELL)` las sich wie alle neun.
+              "Duplikat": { ja: 9, nein: 0, fallback: 0, gruende: {},
+                richtungenJa: { SELL: 1 } },
             },
           };
           const trTor = mit({ ...BEKANNT, trichter: MIT_TOR });
@@ -5000,6 +5005,18 @@ module.exports = async function pruefe() {
             MIT_TOR.tore["Meta-KI"].richtungenJa?.SELL === 2
             && MIT_TOR.tore["Meta-KI"].ja === 2,
             JSON.stringify(MIT_TOR.tore["Meta-KI"]));
+          // DER DEPLOY-UEBERGANG in /status (04.11.): deckt die Aufteilung
+          // ihre Seite nicht ab, MUSS dastehen, wie viele sie beschreibt.
+          torPruefung("/status verschweigt, dass die Aufteilung nur einen "
+            + "Teil der Seite beschreibt — nach einem Deploy mitten am Tag "
+            + "liest sich die Klammer dann wie die ganze Seite",
+            /Duplikat: ja 9 \(davon 1 mit Richtung: 1 SELL\)/.test(tTor),
+            (tTor.match(/Duplikat[^\n]*/) ?? ["(keine Zeile)"])[0]);
+          // Und die Gegenprobe: bei VOLLER Abdeckung kein Zusatz.
+          torPruefung("/status relativiert eine VOLLE Abdeckung",
+            /Meta-KI: ja 2 \(2 SELL\)/.test(tTor)
+            && !/Meta-KI: ja 2 \(davon/.test(tTor),
+            (tTor.match(/Meta-KI[^\n]*/) ?? ["(keine Zeile)"])[0]);
           torPruefung("die Tor-Testdaten lassen Angaben offen — dann greift "
             + "das unbekannt-Urteil VOR den GO-Zweigen und der Fall ist gar "
             + "nicht erreichbar",
@@ -6068,6 +6085,81 @@ module.exports = async function pruefe() {
             + "Seite (sie liest sich dann als Summe beider)",
             /1 ja \(1 SELL\) \u00b7 4 nein \(3 BUY\/1 SELL\)/.test(htmlC),
             (htmlC.match(/Schwelle:[^\n]*/) || ["(keine Tor-Zeile)"])[0]);
+          // ══ EINE TEILABDECKUNG DARF NICHT WIE DIE GANZE SEITE AUSSEHEN ══
+          //
+          // AUSGEFUEHRT BELEGT am Deploy vom 04.11.: die Tagessumme des Tages
+          // liegt in Redis, und `tagessummeAddieren` uebernimmt die
+          // gespeicherten `ja`-Zaehler. `richtungenJa` faengt dagegen beim
+          // Deploy bei 0 an. Gemessen ergab das
+          //
+          //     Meta-KI: 67 ja (2 SELL/1 BUY)
+          //
+          // — die Klammer beschrieb DREI von 67 und las sich wie alle 67.
+          // Das ist die Mehrdeutigkeit, die dieser Tag behebt, einen Tag
+          // weiter gedacht: sie geht um 00:00 UTC von selbst weg, kehrt aber
+          // zurueck, sobald ein Tor seine Richtung nur auf EINEM Zweig
+          // sendet. Gezaehlt, nicht gehofft.
+          {
+            const voll = B.richtungText({ SELL: 2, BUY: 1 }, true, 3);
+            const teil = B.richtungText({ SELL: 2, BUY: 1 }, true, 67);
+            const ohne = B.richtungText({ SELL: 2, BUY: 1 }, true);
+            torPruefung("eine Teilabdeckung sieht aus wie die ganze Seite",
+              teil === " (davon 3 mit Richtung: 2 SELL/1 BUY)",
+              JSON.stringify(teil));
+            // GEGENPROBE: bei VOLLER Abdeckung darf der Zusatz NICHT
+            // dastehen — sonst waere die Zeile immer relativiert und der
+            // Riegel nur "immer davon" (Lehre vom 15.09.).
+            torPruefung("eine volle Abdeckung wird faelschlich relativiert",
+              voll === " (2 SELL/1 BUY)" && ohne === " (2 SELL/1 BUY)",
+              JSON.stringify([voll, ohne]));
+            // Eine unbrauchbare Seitenzahl darf nicht relativieren.
+            torPruefung("ein NaN als Seitenzahl relativiert die Aufteilung",
+              B.richtungText({ SELL: 2 }, true, Number.NaN) === " (2 SELL)",
+              JSON.stringify(B.richtungText({ SELL: 2 }, true, Number.NaN)));
+
+            // Und die TAGESBILANZ muss es zeigen — mit dem echten Uebergang
+            // als Testfall: `ja` aus der alten Summe, Aufteilung erst ab jetzt.
+            const uebergang = {
+              ...B.leereTagessumme("2026-11-04"), zyklen: 1,
+              tore: {
+                "Meta-KI": { ja: 67, nein: 16, fallback: 0,
+                  gruende: { "x": 16 }, richtungen: { SELL: 12, BUY: 4 },
+                  richtungenJa: { SELL: 2, BUY: 1 } },
+                // UND DIE ANDERE SEITE. Ohne dieses Tor war die `nein`-Seite
+                // in JEDEM Testfall voll abgedeckt — dann aendert es nichts,
+                // ob die Zahl durchgereicht wird, und die Sabotage blieb
+                // gruen. Vierter Fall derselben Lehre an diesem Tag.
+                "Schwelle": { ja: 0, nein: 40, fallback: 0,
+                  gruende: { "y": 40 }, richtungen: { SELL: 5 } },
+              },
+            };
+            const tU = B.tagesbilanzText(uebergang);
+            torPruefung("die Tagesbilanz verschweigt, dass die Aufteilung nur "
+              + "einen Teil der Seite beschreibt",
+              /67 ja \(davon 3 mit Richtung: 2 SELL\/1 BUY\) · 16 nein \(12 SELL\/4 BUY\)/.test(tU),
+              (tU.match(/Meta-KI[^\n]*/) || ["(keine Tor-Zeile)"])[0]);
+            // Und dieselbe Zusicherung fuer die NEIN-Seite — sonst ist nur
+            // der eine der beiden Durchreich-Pfade geprueft.
+            torPruefung("die Tagesbilanz reicht die nein-Zahl nicht durch — "
+              + "dann sieht eine teilabgedeckte Ablehnungs-Seite wie die "
+              + "ganze aus",
+              /40 nein \(davon 5 mit Richtung: 5 SELL\)/.test(tU),
+              (tU.match(/Schwelle[^\n]*/) || ["(keine Tor-Zeile)"])[0]);
+            // SELBSTPRUEFUNG der Testdaten: es braucht eine Seite mit VOLLER
+            // und je eine mit TEILWEISER Abdeckung auf BEIDEN Seiten, sonst
+            // beweisen die Zeilen darueber nichts.
+            const su = (o) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
+            const mkU = uebergang.tore["Meta-KI"], schU = uebergang.tore["Schwelle"];
+            torPruefung("die Uebergangs-Testdaten haben nicht alle drei Lagen "
+              + "— dann kann die Pruefung den Fehler nicht ausdruecken",
+              mkU.ja > su(mkU.richtungenJa)          // ja teilweise
+              && mkU.nein === su(mkU.richtungen)     // nein voll
+              && schU.nein > su(schU.richtungen),    // nein teilweise
+              `ja ${mkU.ja}/${su(mkU.richtungenJa)}, `
+              + `nein ${mkU.nein}/${su(mkU.richtungen)}, `
+              + `Schwelle nein ${schU.nein}/${su(schU.richtungen)}`);
+          }
+
           // EINE SUMME VON GESTERN kennt auch dieses Feld nicht.
           const alt2 = JSON.parse(JSON.stringify(tc));
           for (const g of Object.values(alt2.tore)) delete g.richtungenJa;

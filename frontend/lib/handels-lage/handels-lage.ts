@@ -423,16 +423,25 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
         // der Zeile. Bis zum 04.11. stand dort `ja 64 · nein 16 · 12
         // SELL/4 BUY`, und das las sich, als beschriebe die Aufteilung alle
         // 80 — sie beschrieb nur die 16.
-        const seite = (r: Record<string, number> | undefined) => {
+        // `anzahl` ist die Zahl der Seite: deckt die Aufteilung sie nicht ab,
+        // wird gesagt, wie viele sie beschreibt. AUSGEFUEHRT BELEGT am
+        // Deploy-Uebergang vom 04.11. — `ja` zaehlt den ganzen Tag aus Redis,
+        // die Aufteilung erst ab dem Deploy, und `67 ja (2 SELL/1 BUY)` las
+        // sich wie alle 67. Siehe `richtungText` in `zyklus-bilanz.ts`.
+        const seite = (r: Record<string, number> | undefined,
+          anzahl: number | null) => {
           const e = Object.entries(r ?? {})
             .filter(([, n]) => zahl(n) !== null && (zahl(n) as number) > 0)
             .sort((x, y) => (zahl(y[1]) as number) - (zahl(x[1]) as number));
-          return e.length === 0
-            ? "" : ` (${e.map(([d, n]) => `${n} ${htmlSicher(d)}`).join("/")})`;
+          if (e.length === 0) return "";
+          const kern = e.map(([d, n]) => `${n} ${htmlSicher(d)}`).join("/");
+          const summe = e.reduce((su, [, n]) => su + (zahl(n) as number), 0);
+          return anzahl !== null && summe < anzahl
+            ? ` (davon ${summe} mit Richtung: ${kern})` : ` (${kern})`;
         };
         zeilen.push(`      ${htmlSicher(name)}: ja ${ja === null ? "?" : ja}`
-          + `${seite(s?.richtungenJa)} · nein ${nein === null ? "?" : nein}`
-          + `${seite(s?.richtungen)}`
+          + `${seite(s?.richtungenJa, ja)} · nein ${nein === null ? "?" : nein}`
+          + `${seite(s?.richtungen, nein)}`
           + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${grund}`);
         if (nein !== null && nein > 0) abgelehnt.push([name, nein]);
       }

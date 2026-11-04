@@ -268,12 +268,36 @@ export function richtungText(
    *  `64 ja · 16 nein · 12 SELL/4 BUY`, und die Aufteilung las sich, als
    *  beschriebe sie alle 80. */
   klammer = false,
+  /**
+   * DIE ZAHL DER SEITE (`ja` bzw. `nein`) — und warum sie hier steht (04.11.).
+   *
+   * AUSGEFUEHRT BELEGT, nicht vermutet: die Tagessumme eines Tages liegt in
+   * Redis, und `tagessummeAddieren` uebernimmt die gespeicherten `ja`-Zaehler.
+   * Wird `richtungenJa` mitten am Tag eingefuehrt, zaehlt `ja` den GANZEN Tag,
+   * die Aufteilung aber nur ab dem Deploy. Gemessen am Uebergang vom 04.11.:
+   *
+   *     Meta-KI: 67 ja (2 SELL/1 BUY)
+   *
+   * Die Klammer beschreibt **3** von 67 — und liest sich wie alle 67. Das ist
+   * genau die Mehrdeutigkeit, die an diesem Tag behoben wurde, einen Tag
+   * weiter gedacht. Sie verschwindet um 00:00 UTC von selbst, aber sie tritt
+   * wieder auf, sobald ein Tor seine Richtung nur auf EINEM Zweig sendet.
+   *
+   * Deckt die Aufteilung ihre Seite nicht ab, wird gesagt, wie viele sie
+   * beschreibt. `undefined` heisst „nicht vergleichen" — damit bleibt die
+   * alte Form unveraendert.
+   */
+  seitenZahl?: number,
 ): string {
   const e = Object.entries(r ?? {}).filter(([, n]) => Number.isFinite(n) && n > 0);
   if (e.length === 0) return "";
   e.sort((a, b) => b[1] - a[1]);
   const kern = e.map(([d, n]) => `${n} ${d}`).join("/");
-  return klammer ? ` (${kern})` : ` · ${kern}`;
+  const summe = e.reduce((s, [, n]) => s + n, 0);
+  const vollstaendig = seitenZahl === undefined
+    || !Number.isFinite(seitenZahl) || summe >= seitenZahl;
+  const inhalt = vollstaendig ? kern : `davon ${summe} mit Richtung: ${kern}`;
+  return klammer ? ` (${inhalt})` : ` · ${inhalt}`;
 }
 
 export function confText(sp: ConfSpanne | undefined): string {
@@ -596,9 +620,9 @@ export function tagesbilanzText(t: Tagessumme): string {
       // Ablehnungen — es ist kein Kandidaten-Tor. Dort wuerde "0 ja"
       // faelschlich nach "nichts durchgelassen" klingen.
       const ja = s.ja > 0
-        ? `${s.ja} ja${htmlSicher(richtungText(s.richtungenJa, true))} · ` : "";
+        ? `${s.ja} ja${htmlSicher(richtungText(s.richtungenJa, true, s.ja))} · ` : "";
       zeilen.push(`   ${htmlSicher(gate)}: ${ja}${s.nein} nein`
-        + `${htmlSicher(richtungText(s.richtungen, true))}${fb}`);
+        + `${htmlSicher(richtungText(s.richtungen, true, s.nein))}${fb}`);
       const top = Object.entries(s.gruende).sort((a, b) => b[1] - a[1]).slice(0, 3);
       for (const [k, n] of top) {
         zeilen.push(`      – ${htmlSicher(k)} (${n}×)${confText(s.confSpanne?.[k])}`);
