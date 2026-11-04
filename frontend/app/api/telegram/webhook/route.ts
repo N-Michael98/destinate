@@ -657,7 +657,12 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
             // an, waere aber statisch `undefined` — die Fehlerklasse vom
             // 30.09.: eine geprueffte Funktion, die nie echte Werte sieht.
             confSpanne?: Record<string, { min: number; max: number }>;
-            richtungen?: Record<string, number> }>;
+            richtungen?: Record<string, number>;
+            // Dasselbe fuer die ZUGESTIMMTE Seite (04.11.). Fehlt das Feld
+            // hier, kaeme es zur Laufzeit an und waere statisch `undefined`
+            // — und die GO-Aufteilung bliebe dauerhaft leer, obwohl sie in
+            // Redis steht. Derselbe Grund wie bei `confSpanne` darueber.
+            richtungenJa?: Record<string, number> }>;
         }>(TAGESSUMME_SCHLUESSEL(handelstag()));
       }),
       sicher(async () => {

@@ -128,7 +128,29 @@ export type TorSumme = { ja: number; nein: number; fallback: number; gruende: Re
   confSpanne?: Record<string, ConfSpanne>;
   /** Abgelehnte Richtungen je Tor. Optional wie `confSpanne`: eine
    *  Summe von gestern kennt das Feld nicht. */
-  richtungen?: Record<string, number> };
+  richtungen?: Record<string, number>;
+  /** ── DIE ANDERE SEITE (04.11.) ───────────────────────────────────────
+   *
+   *  ZUGESTIMMTE Richtungen je Tor. `direction` wird von jeder
+   *  `meldeTorEntscheidung`-Stelle gesendet — bei `approve: true` ebenso
+   *  wie bei `false` (nachgezaehlt: je Tor zwei Aufrufe, beide mit
+   *  Richtung) — und `TorEintrag.direction` speichert sie auch in beiden
+   *  Faellen. Gelesen wurde sie nur im `else`-Zweig.
+   *
+   *  WAS DAMIT NICHT ZU BEANTWORTEN WAR: `/status` vom 04.11. zeigte 79
+   *  Ablehnungen nach dem GO, davon 67 SELL (85 %) — und `/hebel` misst
+   *  SELL als die EINZIGE Richtung mit positivem Erwartungswert (+0.75
+   *  gegen BUY -3.41). Ob die Tore eine Seite BEVORZUGT wegwerfen oder nur
+   *  die Mischung der Signale abbilden, liess sich NICHT entscheiden: die
+   *  Richtungsaufteilung der 80 GO stand nirgends.
+   *
+   *  Sie steht jetzt hier. Das erste Tor nach dem GO (Meta-KI) sieht JEDES
+   *  GO-Signal — `ja + nein` dort IST die GO-Aufteilung.
+   *
+   *  Dieselbe Fehlerklasse wie `confidence` am 02.11., nur in der halben
+   *  Form: ein Feld, das gesendet und gespeichert, aber nur auf einer
+   *  Seite gelesen wird. Optional aus demselben Grund wie `richtungen`. */
+  richtungenJa?: Record<string, number> };
 
 export type Tagessumme = {
   datum: string;
@@ -237,11 +259,21 @@ export function grundSchluessel(grund: string): string {
  *  Ersatzzahl macht aus "nicht gemessen" eine Messung. */
 /** Die abgelehnten Richtungen als Text — leer, wenn nichts da ist.
  *  Nach Menge sortiert, damit die haeufigere Seite vorne steht. */
-export function richtungText(r: Record<string, number> | undefined): string {
+export function richtungText(
+  r: Record<string, number> | undefined,
+  /** `true` setzt die Aufteilung in Klammern DIREKT hinter ihre Seite
+   *  (`64 ja (41 SELL/23 BUY)`) statt hinten an die Zeile. Standard ist
+   *  `false` — die alte Form bleibt damit Zeichen fuer Zeichen gleich, und
+   *  nur SO ist die Zeile ueberhaupt eindeutig: bis zum 04.11. stand
+   *  `64 ja · 16 nein · 12 SELL/4 BUY`, und die Aufteilung las sich, als
+   *  beschriebe sie alle 80. */
+  klammer = false,
+): string {
   const e = Object.entries(r ?? {}).filter(([, n]) => Number.isFinite(n) && n > 0);
   if (e.length === 0) return "";
   e.sort((a, b) => b[1] - a[1]);
-  return ` · ${e.map(([d, n]) => `${n} ${d}`).join("/")}`;
+  const kern = e.map(([d, n]) => `${n} ${d}`).join("/");
+  return klammer ? ` (${kern})` : ` · ${kern}`;
 }
 
 export function confText(sp: ConfSpanne | undefined): string {
@@ -413,8 +445,17 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
   for (const tor of b.tore) {
     const summe = t.tore[tor.gate] ?? { ja: 0, nein: 0, fallback: 0, gruende: {} };
     if (tor.fallback) summe.fallback++;
-    if (tor.approve) summe.ja++;
-    else {
+    if (tor.approve) {
+      summe.ja++;
+      // IM SELBEN `if` wie der Zaehler (Regel vom 22.09.): sonst koennten
+      // `ja` und seine Aufteilung auseinanderlaufen. Dieselbe Form wie im
+      // `else`-Zweig darunter, nur fuer die andere Seite — die Richtung
+      // haengt am TOR, nicht am Grund (eine Zustimmung hat keinen).
+      if (tor.direction) {
+        summe.richtungenJa ??= {};
+        summe.richtungenJa[tor.direction] = (summe.richtungenJa[tor.direction] ?? 0) + 1;
+      }
+    } else {
       summe.nein++;
       const k = grundSchluessel(tor.reason);
       if (summe.gruende[k] !== undefined || Object.keys(summe.gruende).length < MAX_GRUENDE_JE_TOR) {
@@ -554,8 +595,10 @@ export function tagesbilanzText(t: Tagessumme): string {
       // Seit dem 02.11. meldet nur noch `Zyklus-Limit` ausschliesslich
       // Ablehnungen — es ist kein Kandidaten-Tor. Dort wuerde "0 ja"
       // faelschlich nach "nichts durchgelassen" klingen.
-      const ja = s.ja > 0 ? `${s.ja} ja · ` : "";
-      zeilen.push(`   ${htmlSicher(gate)}: ${ja}${s.nein} nein${fb}${htmlSicher(richtungText(s.richtungen))}`);
+      const ja = s.ja > 0
+        ? `${s.ja} ja${htmlSicher(richtungText(s.richtungenJa, true))} · ` : "";
+      zeilen.push(`   ${htmlSicher(gate)}: ${ja}${s.nein} nein`
+        + `${htmlSicher(richtungText(s.richtungen, true))}${fb}`);
       const top = Object.entries(s.gruende).sort((a, b) => b[1] - a[1]).slice(0, 3);
       for (const [k, n] of top) {
         zeilen.push(`      – ${htmlSicher(k)} (${n}×)${confText(s.confSpanne?.[k])}`);

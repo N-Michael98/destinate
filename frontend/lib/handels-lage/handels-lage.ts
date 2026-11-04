@@ -149,6 +149,11 @@ export interface TorZahlen {
   confSpanne?: Record<string, { min: number; max: number }>;
   /** Abgelehnte Richtungen je Tor (02.11.) — siehe `TorSumme`. */
   richtungen?: Record<string, number>;
+  /** Siehe `TorSumme.richtungenJa` in `zyklus-bilanz.ts` (04.11.): die
+   *  ZUGESTIMMTEN Richtungen. Ohne sie war die Frage "wirft ein Tor eine
+   *  Seite bevorzugt weg?" nicht entscheidbar, weil die Aufteilung der GO
+   *  nirgends stand. Optional — eine Summe von gestern kennt das Feld nicht. */
+  richtungenJa?: Record<string, number>;
 }
 
 export interface HandelsLage {
@@ -409,16 +414,26 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
           : "";
         const grund = gruende.length > 0
           ? ` — ${htmlSicher(String(gruende[0][0]))} (${gruende[0][1]})${conf}` : "";
-        // Welche SEITE das Tor wegwirft. Gesendet wurde sie seit jeher,
-        // gelesen hat sie bis zum 02.11. niemand.
-        const ri = Object.entries(s?.richtungen ?? {})
-          .filter(([, n]) => zahl(n) !== null && (zahl(n) as number) > 0)
-          .sort((x, y) => (zahl(y[1]) as number) - (zahl(x[1]) as number));
-        const richt = ri.length > 0
-          ? ` · ${ri.map(([d, n]) => `${n} ${htmlSicher(d)}`).join("/")}` : "";
-        zeilen.push(`      ${htmlSicher(name)}: ja ${ja === null ? "?" : ja} · `
-          + `nein ${nein === null ? "?" : nein}`
-          + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${richt}${grund}`);
+        // Welche SEITE das Tor wegwirft — und seit dem 04.11. auch, welche
+        // es DURCHLAESST. EIN Helfer fuer beide Seiten: zwei Ausdruecke
+        // koennten auseinanderlaufen, und dann hiesse dieselbe Zahl an zwei
+        // Stellen verschieden.
+        //
+        // Die Aufteilung steht DIREKT hinter ihrer Seite, nicht hinten an
+        // der Zeile. Bis zum 04.11. stand dort `ja 64 · nein 16 · 12
+        // SELL/4 BUY`, und das las sich, als beschriebe die Aufteilung alle
+        // 80 — sie beschrieb nur die 16.
+        const seite = (r: Record<string, number> | undefined) => {
+          const e = Object.entries(r ?? {})
+            .filter(([, n]) => zahl(n) !== null && (zahl(n) as number) > 0)
+            .sort((x, y) => (zahl(y[1]) as number) - (zahl(x[1]) as number));
+          return e.length === 0
+            ? "" : ` (${e.map(([d, n]) => `${n} ${htmlSicher(d)}`).join("/")})`;
+        };
+        zeilen.push(`      ${htmlSicher(name)}: ja ${ja === null ? "?" : ja}`
+          + `${seite(s?.richtungenJa)} · nein ${nein === null ? "?" : nein}`
+          + `${seite(s?.richtungen)}`
+          + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${grund}`);
         if (nein !== null && nein > 0) abgelehnt.push([name, nein]);
       }
       abgelehnt.sort((x, y) => y[1] - x[1]);

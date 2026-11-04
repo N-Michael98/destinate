@@ -4267,7 +4267,20 @@ module.exports = async function pruefe() {
             for (const n of torNamen) {
               toreMax[n] = { ja: 12, nein: 34, fallback: 2, gruende: {
                 [LANGER_GRUND]: 30, [`${LANGER_GRUND} (2)`]: 20,
-                [`${LANGER_GRUND} (3)`]: 10, [`${LANGER_GRUND} (4)`]: 5 } };
+                [`${LANGER_GRUND} (3)`]: 10, [`${LANGER_GRUND} (4)`]: 5 },
+                // ── EIN FUND IM RIEGEL SELBST (04.11.) ──────────────────
+                //
+                // Bis heute trug der Haertefall KEINE Richtungsaufteilung —
+                // auch nicht die, die am 02.11. dazukam. Die dokumentierten
+                // 3550 Zeichen waren damit zu optimistisch: sie messen einen
+                // Fall, der nicht der schlimmste ist. "Ein Testfall, der den
+                // Fehler nicht ausdrucken kann, beweist nichts" — hier auf
+                // eine LAENGENMESSUNG angewandt.
+                //
+                // Dreistellige Zahlen und beide Seiten, weil ueber 288
+                // Zyklen genau das zusammenkommt.
+                richtungen: { SELL: 234, BUY: 198 },
+                richtungenJa: { SELL: 187, BUY: 145 } };
             }
             // DIE AUSGAENGE AUCH AUS DER QUELLE. Ihre Zahl geraten zu haben
             // war der Grund, warum die Sabotage "Deckel entfernt" zuerst
@@ -4281,7 +4294,7 @@ module.exports = async function pruefe() {
               && ausgangNamen.includes("Modus nicht AUTO")
               && ausgangNamen.includes("Keine Kandidaten nach Filter"),
               `${ausgangNamen.length}: ${JSON.stringify(ausgangNamen).slice(0, 140)}`);
-            const schlimmst = txt0(mit({ ...BEKANNT,
+            const haertefall = (tore) => txt0(mit({ ...BEKANNT,
               ausgaenge: Object.fromEntries(
                 ausgangNamen.map((a, i) => [a, 300 - i])),
               trichter: {
@@ -4290,8 +4303,35 @@ module.exports = async function pruefe() {
                 ohneVolleDatenGrund: { "Strategien": 20, "TA-Lib": 14,
                   "TA-Lib+Strategien": 10 },
                 unterGrenze: 300, confMin: 60, confMax: 79, rrAbgelehnt: 210,
-                ohneStopZiel: 30, go: 90, ohneGptAntwort: 120, tore: toreMax,
+                ohneStopZiel: 30, go: 90, ohneGptAntwort: 120, tore,
               } }));
+            const schlimmst = haertefall(toreMax);
+            // ── DER HAERTEFALL MUSS DER HAERTEFALL BLEIBEN (04.11.) ─────
+            //
+            // Hier lag der Fund: bis heute trug `toreMax` KEINE
+            // Richtungsaufteilung — auch nicht die vom 02.11. Gemessen
+            // ergibt das 3573 statt 3991 Zeichen, die dokumentierten
+            // ~3550 waren also um 418 zu optimistisch, und die Luft
+            // betrug nicht 523, sondern 105.
+            //
+            // Eine Pruefung auf "ist das Feld da?" waere zu schwach:
+            // entfernt man es, wird der Text KUERZER und der Riegel bleibt
+            // zufrieden. Deshalb an der MESSUNG gebunden — der Haertefall
+            // MIT Aufteilungen muss deutlich laenger sein als ohne.
+            const toreOhne = {};
+            for (const n of torNamen) {
+              const kopie = { ...toreMax[n] };
+              delete kopie.richtungen;
+              delete kopie.richtungenJa;
+              toreOhne[n] = kopie;
+            }
+            const ohneSplit = haertefall(toreOhne);
+            torPruefung("der Laengen-Haertefall traegt keine (oder fast "
+              + "keine) Richtungsaufteilung — dann misst er einen Fall, der "
+              + "NICHT der schlimmste ist",
+              schlimmst.length - ohneSplit.length >= 300,
+              `mit ${schlimmst.length}, ohne ${ohneSplit.length}, `
+              + `Differenz ${schlimmst.length - ohneSplit.length}`);
             torPruefung("die /status-Antwort reisst Telegrams 4096 Zeichen "
               + "im schlimmsten ECHTEN Fall (alle Tore der GateName-Union, "
               + "laengster echter Grund) — sie kaeme dann GAR NICHT an",
@@ -4792,7 +4832,12 @@ module.exports = async function pruefe() {
                 // Funktion dauerhaft ohne echte Werte.
                 confSpanne: { "Confidence 66 < Schwelle 70": { min: 66, max: 69 } },
                 richtungen: { BUY: 2 } },
-              "Meta-KI": { ja: 2, nein: 0, fallback: 0, gruende: {} },
+              // `richtungenJa` (04.11.) MUSS hier stehen: ohne eine
+              // zugestimmte Richtung in den Testdaten koennte keine
+              // Pruefung darunter den Fehler ausdruecken — und genau so
+              // war diese Fixture bis heute gebaut.
+              "Meta-KI": { ja: 2, nein: 0, fallback: 0, gruende: {},
+                richtungenJa: { SELL: 2 } },
             },
           };
           const trTor = mit({ ...BEKANNT, trichter: MIT_TOR });
@@ -4816,8 +4861,28 @@ module.exports = async function pruefe() {
             + "dort `Confidence # < Schwelle #` und die Zahl, um die es "
             + "geht, fehlt (Fund 02.11.)",
             /Confidence 66\u201369/.test(tTor), tTor.slice(-300));
-          torPruefung("das Tor nennt die abgelehnte Richtung nicht",
-            /2 BUY/.test(tTor), tTor.slice(-300));
+          // GEBUNDEN AN DIE STELLUNG, nicht nur an den Inhalt (04.11.).
+          // `/2 BUY/` traf irgendwo im Text — damit war die Pruefung auch
+          // mit der alten, MEHRDEUTIGEN Form zufrieden, in der die
+          // Aufteilung hinten an der Zeile stand und sich las, als
+          // beschriebe sie beide Seiten.
+          torPruefung("das Tor nennt die abgelehnte Richtung nicht, oder "
+            + "nicht bei ihrer Zahl",
+            /Schwelle: ja 0 · nein 2 \(2 BUY\)/.test(tTor), tTor.slice(-300));
+          // Und die ANDERE Seite: ohne sie ist nicht entscheidbar, ob ein
+          // Tor eine Richtung BEVORZUGT wegwirft oder nur die Mischung der
+          // Signale abbildet. Am 04.11. waren 67 von 79 Ablehnungen SELL —
+          // und SELL ist laut /hebel die einzige Richtung mit positivem EW.
+          torPruefung("das Tor nennt die ZUGESTIMMTE Richtung nicht — dann "
+            + "bleibt die Aufteilung der GO unbekannt",
+            /Meta-KI: ja 2 \(2 SELL\) · nein 0/.test(tTor), tTor.slice(-300));
+          // SELBSTPRUEFUNG der Testdaten: verlieren sie die zugestimmte
+          // Richtung, sind beide Pruefungen darueber wertlos.
+          torPruefung("die Tor-Testdaten tragen keine zugestimmte Richtung "
+            + "mehr — dann beweist die Pruefung darueber nichts",
+            MIT_TOR.tore["Meta-KI"].richtungenJa?.SELL === 2
+            && MIT_TOR.tore["Meta-KI"].ja === 2,
+            JSON.stringify(MIT_TOR.tore["Meta-KI"]));
           torPruefung("die Tor-Testdaten lassen Angaben offen — dann greift "
             + "das unbekannt-Urteil VOR den GO-Zweigen und der Fall ist gar "
             + "nicht erreichbar",
@@ -5835,6 +5900,64 @@ module.exports = async function pruefe() {
             /3 BUY\/1 SELL/.test(htmlC), htmlC.slice(-300));
           torPruefung("die Tagesbilanz zeigt die Confidence-Spanne nicht",
             /Confidence 70\u201379/.test(htmlC), htmlC.slice(-300));
+
+          // \u2550\u2550 DIE ANDERE SEITE: ZUGESTIMMTE RICHTUNGEN (04.11.) \u2550\u2550\u2550\u2550\u2550\u2550\u2550
+          //
+          // `direction` wird von jeder meldeTorEntscheidung-Stelle bei
+          // approve TRUE WIE FALSE gesendet und von `TorEintrag` in beiden
+          // Faellen gespeichert \u2014 gelesen wurde sie nur im `else`-Zweig.
+          // Damit war `/status` vom 04.11. nicht auswertbar: 79
+          // Ablehnungen, 67 davon SELL (85 %), und SELL ist laut /hebel die
+          // einzige Richtung mit positivem EW \u2014 ob die Tore eine Seite
+          // BEVORZUGT wegwerfen, liess sich nicht entscheiden, weil die
+          // Aufteilung der GO nirgends stand.
+          const rj = tc.tore["Schwelle"]?.richtungenJa ?? {};
+          // SELBSTPRUEFUNG der Testdaten: ohne eine Zustimmung MIT Richtung
+          // und ohne Ablehnungen auf BEIDEN Seiten koennte keine der
+          // Pruefungen darunter den Fehler ausdruecken.
+          torPruefung("die Testdaten haben keine Zustimmung mit Richtung "
+            + "oder keine Ablehnung auf beiden Seiten \u2014 dann beweisen die "
+            + "Pruefungen darunter nichts",
+            tc.tore["Schwelle"]?.ja === 1 && tc.tore["Schwelle"]?.nein === 4
+            && ri.BUY === 3 && ri.SELL === 1,
+            `ja=${tc.tore["Schwelle"]?.ja} nein=${tc.tore["Schwelle"]?.nein} `
+            + `nein-Richtungen=${JSON.stringify(ri)}`);
+          torPruefung("die ZUGESTIMMTE Richtung wird nicht mitgefuehrt",
+            rj.SELL === 1, JSON.stringify(rj));
+          // BEIDE Gegenrichtungen. Ohne sie koennten die zwei Zaehler
+          // vertauscht sein und beide Pruefungen trotzdem zutreffen.
+          torPruefung("eine Ablehnung wird als zugestimmte Richtung gezaehlt",
+            Object.values(rj).reduce((a, b) => a + b, 0) === 1
+            && rj.BUY === undefined, JSON.stringify(rj));
+          torPruefung("die Summe der Richtungen passt nicht zu ja/nein",
+            Object.values(rj).reduce((a, b) => a + b, 0) === tc.tore["Schwelle"].ja
+            && Object.values(ri).reduce((a, b) => a + b, 0) === tc.tore["Schwelle"].nein,
+            `ja=${tc.tore["Schwelle"].ja} rj=${JSON.stringify(rj)} `
+            + `nein=${tc.tore["Schwelle"].nein} ri=${JSON.stringify(ri)}`);
+          // Die KLAMMER-Form, und die alte Form UNVERAENDERT. Beide aus
+          // derselben Funktion \u2014 zwei Fassungen liefen auseinander.
+          torPruefung("richtungText kennt die Klammer-Form nicht, oder die "
+            + "alte Form hat sich geaendert",
+            B.richtungText({ SELL: 1 }, true) === " (1 SELL)"
+            && B.richtungText({ SELL: 1 }) === " \u00b7 1 SELL"
+            && B.richtungText(undefined, true) === "",
+            JSON.stringify([B.richtungText({ SELL: 1 }, true),
+              B.richtungText({ SELL: 1 })]));
+          // DIE ZEILE MUSS EINDEUTIG SEIN. Bis zum 04.11. stand dort
+          // "1 ja \u00b7 4 nein \u00b7 3 BUY/1 SELL", und die Aufteilung las sich,
+          // als beschriebe sie alle 5. Jetzt steht jede Seite bei ihrer
+          // Zahl \u2014 das bindet Inhalt UND Stellung.
+          torPruefung("die Tagesbilanz stellt die Aufteilung nicht zu ihrer "
+            + "Seite (sie liest sich dann als Summe beider)",
+            /1 ja \(1 SELL\) \u00b7 4 nein \(3 BUY\/1 SELL\)/.test(htmlC),
+            (htmlC.match(/Schwelle:[^\n]*/) || ["(keine Tor-Zeile)"])[0]);
+          // EINE SUMME VON GESTERN kennt auch dieses Feld nicht.
+          const alt2 = JSON.parse(JSON.stringify(tc));
+          for (const g of Object.values(alt2.tore)) delete g.richtungenJa;
+          let warf2 = null;
+          try { B.tagessummeAddieren(alt2, bc, "2026-11-02"); } catch (e) { warf2 = e.message; }
+          torPruefung("eine Tagessumme von gestern (ohne richtungenJa) wirft",
+            warf2 === null, String(warf2));
         }
 
         // Obergrenzen — AN DER QUELLE, nicht als feste Zahl (02.11.).
