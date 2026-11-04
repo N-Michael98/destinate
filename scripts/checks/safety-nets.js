@@ -3798,6 +3798,123 @@ module.exports = async function pruefe() {
             torPruefung("die gekuerzte Antwort sagt nicht, WIE VIEL fehlt",
               /• \(\d+ weitere Gruppen, \d+ Trades\)/.test(tHart),
               tHart.slice(-240));
+
+            // ══ DER MASSSTAB GEGEN DEN ALTBESTAND (04.11.) ═══════════
+            //
+            // `/hebel` nannte am 02. und 04.11. „beste Gruppe 00 UTC,
+            // EW 2.18, 64 Trades". Diese 64 tragen wirklich
+            // `source: "auto-scan"` — aber aus der Zeit VOR dem
+            // 27.06.2026, als es gar kein Handelszeit-Tor gab
+            // (`isWithinTradingSession` kam mit 98f4466; im Commit davor
+            // kommt der Name NULL mal vor). Heute ist 00 UTC Sommer wie
+            // Winter ZU. Die Empfehlung zeigte auf ein System, das es
+            // nicht mehr gibt — und daran war NICHTS zu erkennen.
+            {
+              const endeText = hb.exports?.endeText;
+              const massstabVon = hb.exports?.massstabVon;
+              if (typeof endeText !== "function" || typeof massstabVon !== "function") {
+                torPruefung("endeText/massstabVon sind nicht ausfuehrbar", false,
+                  `endeText=${typeof endeText} massstabVon=${typeof massstabVon}`);
+              } else {
+                // BEDINGUNGSLOS. Die erste Fassung schwieg, wenn die Gruppe
+                // bis an den Massstab heranreichte — dann ist ein fehlendes
+                // Datum nicht von „nicht gemessen" zu unterscheiden, und
+                // genau diese Mehrdeutigkeit ist die Fehlerklasse, die hier
+                // am haeufigsten zugeschlagen hat.
+                torPruefung("endeText nennt das Ende nicht bedingungslos",
+                  endeText("2026-06-20") === " · bis 2026-06-20"
+                  && endeText("2026-10-22") === " · bis 2026-10-22",
+                  JSON.stringify([endeText("2026-06-20"), endeText("2026-10-22")]));
+                // OHNE DATUM heisst ohne Datum — niemals „heute".
+                torPruefung("ein fehlendes Datum wird zu einem Datum",
+                  endeText(null) === " · ohne Datum",
+                  JSON.stringify(endeText(null)));
+                // Der Massstab ist das MAXIMUM, und `null` wenn es keines gibt.
+                const dimA = [{ titel: "x", hinweis: null, befund: "", gruppen: [
+                  { name: "a", ew: 1, gewertet: 40, trefferquote: 1, rr: 1,
+                    belastbar: true, zuletzt: "2026-06-20" },
+                  { name: "b", ew: 1, gewertet: 40, trefferquote: 1, rr: 1,
+                    belastbar: true, zuletzt: "2026-10-22" },
+                  { name: "c", ew: 1, gewertet: 40, trefferquote: 1, rr: 1,
+                    belastbar: true, zuletzt: null }] }];
+                torPruefung("der Massstab ist nicht das Maximum der Gruppen",
+                  massstabVon(dimA) === "2026-10-22", String(massstabVon(dimA)));
+                torPruefung("ein Massstab wird erfunden, wo kein Datum ist",
+                  massstabVon([{ titel: "x", hinweis: null, befund: "", gruppen: [
+                    { name: "a", ew: 1, gewertet: 40, trefferquote: 1, rr: 1,
+                      belastbar: true, zuletzt: null }] }]) === null
+                  && massstabVon([]) === null,
+                  "beide muessen null sein");
+
+                // ── UND DAS GANZE AUSGEFUEHRT, mit dem ECHTEN Fall ──
+                //
+                // Die Testdaten MUESSEN eine alte und eine aktuelle Gruppe
+                // haben, sonst kann keine Pruefung den Fehler ausdruecken —
+                // das ist die Lehre, die hier am oeftesten faellig war.
+                const machZ = (n, tag, stunde, pnl) =>
+                  Array.from({ length: n }, () => ({
+                    profitLoss: pnl, result: pnl > 0 ? "WIN" : "LOSS",
+                    exitReason: "DAZWISCHEN", market: "EURUSD", riskReward: 2,
+                    strategy: "DAYTRADING | DAYTRADING", direction: "BUY",
+                    createdAt: `${tag}T${String(stunde).padStart(2, "0")}:10:00.000Z`,
+                    updatedAt: `${tag}T12:00:00.000Z`,
+                    notes: JSON.stringify({ source: "auto-scan",
+                      tradingStyle: "DAYTRADING" }),
+                  }));
+                const altNeu = [
+                  // Der echte Fall: 64 Zeilen um 00 UTC aus dem JUNI …
+                  ...machZ(64, "2026-06-20", 0, 6),
+                  // … neben aktuellen vom OKTOBER.
+                  ...machZ(40, "2026-10-22", 8, -3),
+                ];
+                const bAltNeu = hebelBericht(altNeu, null);
+                const stD = bAltNeu.find((d) => d.titel === "Eröffnungsstunde (UTC)");
+                const g00 = stD?.gruppen?.find((g) => g.name === "00 UTC");
+                torPruefung("die Testdaten enthalten keine ALTE und keine "
+                  + "AKTUELLE Gruppe — dann beweist die Pruefung darunter nichts",
+                  g00?.gewertet === 64 && g00?.zuletzt === "2026-06-20"
+                  && stD?.gruppen?.some((g) => g.zuletzt === "2026-10-22"),
+                  `00UTC=${g00?.gewertet}/${g00?.zuletzt} `
+                  + `Gruppen=${JSON.stringify(stD?.gruppen?.map((g) => [g.name, g.zuletzt]))}`);
+                torPruefung("der Befund nennt das Ende der besten Gruppe "
+                  + "nicht — dann zeigt die Empfehlung auf Altbestand, ohne "
+                  + "dass man es sieht",
+                  /beste Gruppe „00 UTC".*bis 2026-06-20/.test(stD?.befund ?? ""),
+                  String(stD?.befund).slice(0, 200));
+                const tAltNeu = hebelText(bAltNeu, null);
+                torPruefung("die Antwort nennt den Massstab nicht — dann ist "
+                  + 'ein „bis 2026-06-20" nicht einzuordnen',
+                  /Massstab: neuester Trade mit Ergebnis <b>2026-10-22<\/b>/.test(tAltNeu),
+                  (tAltNeu.match(/Massstab[^\n]*/) ?? ["(keine Zeile)"])[0]);
+
+                // ── DIE ABSTUFUNG: ERKLAERUNG VERLIEREN, NICHT ZAHLEN ──
+                //
+                // Ohne die zweite Stufe fiel der Haertefall am 04.11.
+                // durch den BODEN: der harte Schnitt verlor den ganzen
+                // „Nicht berechenbar"-Block und endete mitten im HTML.
+                torPruefung("der Haertefall faellt durch den Boden — dann "
+                  + "wird mitten im HTML abgeschnitten und ZAHLEN gehen "
+                  + "verloren",
+                  !/✂️ Gekürzt/.test(tHart), tHart.slice(-200));
+                torPruefung("im Haertefall fehlt eine Befund-Zeile — der "
+                  + "Schnitt hat Zahlen gekostet",
+                  (tHart.match(/^ *→ /gm) || []).length
+                    === hebelBericht(hart, null).length,
+                  `${(tHart.match(/^ *→ /gm) || []).length} von `
+                  + `${hebelBericht(hart, null).length}`);
+                // Und die Stufe muss sich MELDEN. Eine stumm weggelassene
+                // Erklaerung ist dieselbe Luege wie ein stummer Schnitt.
+                torPruefung("die weggelassenen Hinweise werden verschwiegen",
+                  /Hinweise sind weggelassen/.test(tHart), tHart.slice(-240));
+                // GEGENPROBE: die Stufe darf NICHT immer greifen. Bei einer
+                // kleinen Lage muessen die Hinweise dastehen, sonst waere
+                // der Riegel nur „immer ohne Hinweise" (Lehre 15.09.).
+                torPruefung("die Hinweis-Stufe greift auch bei einer kleinen "
+                  + "Lage — dann fehlt die Erklaerung immer",
+                  /<i>/.test(tAltNeu) && !/Hinweise sind weggelassen/.test(tAltNeu),
+                  `<i>-Zahl ${(tAltNeu.match(/<i>/g) || []).length}`);
+              }
+            }
             // GEGENPROBE: ein kleiner Fall darf NICHT gekuerzt werden.
             // Ohne sie waere ein Riegel gruen, der immer kuerzt.
             const tKlein = hebelText(hebelBericht(hart.slice(0, 40), null), 60);

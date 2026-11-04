@@ -67,6 +67,26 @@ export type HebelGruppe = {
   rr: number | null;
   /** Ab `MIN_TRADES` — darunter wird KEIN Erwartungswert ausgegeben. */
   belastbar: boolean;
+  /**
+   * NEUESTE ENTSCHIEDENE ZEILE DIESER GRUPPE (`YYYY-MM-DD`) — der Massstab
+   * gegen den Altbestand (04.11.).
+   *
+   * ANLASS: `/hebel` nannte am 02.11. und 04.11. „beste Gruppe 00 UTC,
+   * EW 2.18, 64 Trades". Diese 64 tragen wirklich `source: "auto-scan"`,
+   * sind also echte Auto-Eröffnungen — aber aus der Zeit VOR dem
+   * 27.06.2026, als es gar kein Handelszeit-Tor gab
+   * (`isWithinTradingSession` kam mit `98f4466`; im Commit davor kommt der
+   * Name null mal vor). Heute ist 00 UTC Sommer wie Winter ZU.
+   *
+   * Die Empfehlung zeigte damit auf ein System, das es nicht mehr gibt —
+   * und daran war NICHTS zu erkennen. Dieselbe Frage hat `/edge` am
+   * 26.10. mit der Zeitspanne je Etikett geloest: „endet ein Etikett lange
+   * vor dem letzten Trade mit Ergebnis, ist es Altbestand".
+   *
+   * `null` heisst OHNE DATUM — nicht „heute". Eine stille Ersatzzahl machte
+   * aus „nicht einordenbar" eine Messung (Regel vom 22.09.).
+   */
+  zuletzt: string | null;
 };
 
 export type HebelDimension = {
@@ -157,6 +177,11 @@ function gruppiere(
       trefferquote: e.gewertet >= MIN_TRADES ? e.trefferquoteEntschieden : null,
       rr: e.gewertet >= MIN_TRADES ? e.rr : null,
       belastbar: e.gewertet >= MIN_TRADES,
+      // AUS DEMSELBEN ERGEBNIS, keine zweite Rechnung: `erwartungswert()`
+      // fuehrt das Datum der neuesten ENTSCHIEDENEN Zeile seit dem 26.10.
+      // mit, weil `/edge` es als Massstab braucht. Eine eigene Faltung hier
+      // waere eine zweite Wahrheit — und die koennte /edge widersprechen.
+      zuletzt: e.zuletztEntschieden,
     });
   }
   if (ordnung) {
@@ -177,6 +202,26 @@ function gruppiere(
  * gegen EW −3 (n=200)" ist keine Erkenntnis, sondern Rauschen — und genau so
  * entstehen die Empfehlungen, die Geld kosten.
  */
+/**
+ * Das Ende einer Gruppe als Text — **immer**, nicht nur wenn es alt ist.
+ *
+ * Die erste Fassung schwieg, wenn die Gruppe bis an den Massstab heranreichte.
+ * Das ist eine Regel, die der Leser kennen muss: ohne sie ist ein fehlendes
+ * Datum nicht von „nicht gemessen" zu unterscheiden — und genau diese
+ * Mehrdeutigkeit ist die Fehlerklasse, die dieses Projekt am häufigsten
+ * getroffen hat. `/edge` nennt die Spanne seit dem 26.10. auch
+ * bedingungslos.
+ *
+ * Ohne Datum heisst **ohne Datum**. Niemals „heute" (Regel vom 22.09.).
+ *
+ * KEIN `massstab`-Parameter: verglichen wird in der KOPFZEILE, die ihn nennt.
+ * Ein Parameter, den die Funktion nicht liest, ist ein Feld ohne Leser —
+ * dieselbe Klasse wie `capitalComActive` am 28.10.
+ */
+export function endeText(zuletzt: string | null): string {
+  return zuletzt === null ? " · ohne Datum" : ` · bis ${zuletzt}`;
+}
+
 export function befundVon(gruppen: ReadonlyArray<HebelGruppe>): string {
   const belastbar = gruppen.filter((g) => g.belastbar && g.ew !== null);
   if (belastbar.length === 0) {
@@ -192,8 +237,10 @@ export function befundVon(gruppen: ReadonlyArray<HebelGruppe>): string {
   const schlecht = sortiert[sortiert.length - 1];
   const diff = (best.ew as number) - (schlecht.ew as number);
   return `beste Gruppe „${htmlSicher(best.name)}" EW ${(best.ew as number).toFixed(2)} `
-    + `(${best.gewertet} Trades) · schlechteste „${htmlSicher(schlecht.name)}" EW `
-    + `${(schlecht.ew as number).toFixed(2)} (${schlecht.gewertet}) · `
+    + `(${best.gewertet} Trades${endeText(best.zuletzt)}) · schlechteste `
+    + `„${htmlSicher(schlecht.name)}" EW `
+    + `${(schlecht.ew as number).toFixed(2)} (${schlecht.gewertet}`
+    + `${endeText(schlecht.zuletzt)}) · `
     + `Unterschied ${diff.toFixed(2)} je Trade`;
 }
 
@@ -380,6 +427,28 @@ export function hebelBericht(
   return dims;
 }
 
+/**
+ * Der Vergleichsmassstab: die neueste ENTSCHIEDENE Zeile über alles.
+ *
+ * Jede Zeile liegt in genau einer Gruppe je Dimension — das Maximum über die
+ * Gruppen ist also der globale Wert, ohne eine zweite Rechnung. Gerechnet
+ * wird über ALLE Dimensionen, damit eine Dimension ohne entschiedene Zeile
+ * das Ergebnis nicht auf `null` zieht.
+ *
+ * EINE Umsetzung für Befund und Kopfzeile: zwei Maxima könnten
+ * auseinanderlaufen, und dann stünde in derselben Antwort zweimal ein
+ * anderer Massstab.
+ */
+export function massstabVon(dims: ReadonlyArray<HebelDimension>): string | null {
+  let max: string | null = null;
+  for (const d of dims) {
+    for (const g of d.gruppen) {
+      if (g.zuletzt !== null && (max === null || g.zuletzt > max)) max = g.zuletzt;
+    }
+  }
+  return max;
+}
+
 /** Wie viele Gruppen je Dimension gezeigt werden — der Rest wird GEZÄHLT. */
 export const GRUPPEN_MAX = 6;
 
@@ -407,6 +476,25 @@ function textMit(
   dims: ReadonlyArray<HebelDimension>,
   fensterTage: number | null,
   maxGruppen: number,
+  /**
+   * ZWEITE STUFE DER ABSTUFUNG (04.11.).
+   *
+   * GEMESSEN am Härtefall: die fünf `<i>`-Hinweise kosten **1047 Zeichen**
+   * — mehr als jede andere Stellschraube. Reicht das Kürzen der Gruppen
+   * nicht, werden sie weggelassen, BEVOR hart abgeschnitten wird.
+   *
+   * Die Reihenfolge ist der Punkt: ein harter Schnitt verliert ZAHLEN (im
+   * Härtefall fiel der ganze „Nicht berechenbar"-Block weg, und das mitten
+   * im HTML). Diese Stufe verliert nur ERKLÄRUNG. Die Zahlen sind der Zweck
+   * von `/hebel`, die Hinweise erklären sie.
+   *
+   * OHNE Standardwert, mit Absicht: `hebelText()` ist der einzige Aufrufer
+   * und übergibt ihn an beiden Stellen ausdrücklich. Ein Standard wäre
+   * damit toter Code — ausgeführt belegt: ihn auf `false` zu drehen ändert
+   * das Verhalten NICHT, die Sabotage konnte nicht greifen. Ein Wert, den
+   * niemand liest, gehört weg und nicht abgesichert.
+   */
+  mitHinweisen: boolean,
 ): string {
   const z: string[] = [];
   z.push("🔧 <b>Hebel — was würde etwas ändern?</b>");
@@ -417,11 +505,19 @@ function textMit(
   z.push(`Gerechnet wird je Gruppe mit derselben Funktion wie bei /edge. `
     + `Unter ${MIN_TRADES} gewerteten Trades wird <b>kein</b> Erwartungswert `
     + `ausgegeben.`);
+  // DER MASSSTAB GEGEN DEN ALTBESTAND (04.11.). Ohne ihn ist ein
+  // „bis 2026-06-26" im Befund nicht einzuordnen — man weiss nicht,
+  // wie weit das zurueckliegt.
+  const massstab = massstabVon(dims);
+  z.push(massstab === null
+    ? "Massstab: <b>kein Trade mit Ergebnis</b> — nichts einordenbar."
+    : `Massstab: neuester Trade mit Ergebnis <b>${massstab}</b>; `
+      + `endet eine Gruppe davor, ist sie Altbestand.`);
 
   for (const d of dims) {
     z.push("");
     z.push(`<b>${htmlSicher(d.titel)}</b>`);
-    if (d.hinweis) z.push(`<i>${htmlSicher(d.hinweis)}</i>`);
+    if (d.hinweis && mitHinweisen) z.push(`<i>${htmlSicher(d.hinweis)}</i>`);
     const gezeigt = d.gruppen.slice(0, maxGruppen);
     for (const g of gezeigt) {
       if (!g.belastbar) {
@@ -451,11 +547,20 @@ function textMit(
   z.push("🚫 <b>Nicht berechenbar:</b> die Confidence-Schwelle. Die "
     + "<code>Trade</code>-Tabelle hat keine Confidence-Spalte — eine "
     + "Empfehlung dazu wäre erfunden.");
-  if (maxGruppen < GRUPPEN_MAX) {
+  if (maxGruppen < GRUPPEN_MAX || !mitHinweisen) {
     z.push("");
-    z.push(`ℹ️ Wegen der Telegram-Grenze werden je Dimension nur `
-      + `${maxGruppen} statt ${GRUPPEN_MAX} Gruppen gezeigt — was fehlt, `
-      + `steht als „weitere Gruppen“ in der jeweiligen Zeile.`);
+    const teile: string[] = [];
+    if (maxGruppen < GRUPPEN_MAX) {
+      teile.push(`je Dimension nur <b>${maxGruppen}</b> statt ${GRUPPEN_MAX} `
+        + `Gruppen — was fehlt, steht als „weitere Gruppen“ in der Zeile`);
+    }
+    // AUCH DIESE STUFE SAGT ES. Eine stumm weggelassene Erklärung wäre
+    // dieselbe Lüge wie ein stummer Schnitt, nur leiser.
+    if (!mitHinweisen) {
+      teile.push("die erklärenden Hinweise sind weggelassen — die <b>Zahlen</b> "
+        + "sind vollständig");
+    }
+    z.push(`ℹ️ Wegen der Telegram-Grenze gekürzt: ${teile.join("; ")}.`);
   }
   return z.join("\n");
 }
@@ -476,12 +581,23 @@ export function hebelText(
   dims: ReadonlyArray<HebelDimension>,
   fensterTage: number | null,
 ): string {
-  for (let max = GRUPPEN_MAX; max >= 1; max--) {
-    const t = textMit(dims, fensterTage, max);
-    if (t.length <= MAX_ZEICHEN) return t;
+  // ZWEI STUFEN, in dieser Reihenfolge — erst weniger Gruppen, dann ohne
+  // die erklärenden Hinweise. GEMESSEN: die Hinweise kosten im Härtefall
+  // 1047 Zeichen, mehr als jede andere Stellschraube.
+  //
+  // DIE REIHENFOLGE IST DER PUNKT. Ohne die zweite Stufe fiel der
+  // Härtefall am 04.11. durch den Boden: der harte Schnitt verlor den
+  // ganzen „Nicht berechenbar"-Block und endete mitten im HTML. Ein
+  // Schnitt verliert ZAHLEN, diese Stufe nur ERKLÄRUNG.
+  for (const mitHinweisen of [true, false]) {
+    for (let max = GRUPPEN_MAX; max >= 1; max--) {
+      const t = textMit(dims, fensterTage, max, mitHinweisen);
+      if (t.length <= MAX_ZEICHEN) return t;
+    }
   }
   const hinweis = "\n\n✂️ Gekürzt: selbst mit einer Gruppe je Dimension "
-    + "passt die Antwort nicht in eine Telegram-Nachricht.";
-  return textMit(dims, fensterTage, 1).slice(0, MAX_ZEICHEN - hinweis.length)
+    + "und ohne die Hinweise passt die Antwort nicht in eine "
+    + "Telegram-Nachricht.";
+  return textMit(dims, fensterTage, 1, false).slice(0, MAX_ZEICHEN - hinweis.length)
     + hinweis;
 }
