@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { lesbareRichtung } from "@/lib/richtung/richtung";
 
 function calculateRiskValues(input: {
   entry: number;
@@ -54,6 +55,28 @@ export async function PATCH(
 
     const body = await request.json();
 
+    // ── Dieselbe Lesart wie beim Anlegen (04.11.) ───────────────────────
+    //
+    // `POST /api/trades` prueft die Richtung seit dem 03.11. — DIESER Pfad
+    // nicht. Er schrieb `body.direction` ROH in dieselbe Geldspalte, und
+    // das Eingabeformular fuellt sich mit dem Rohwert der Zeile vor
+    // (`trading-journal/page.tsx`: `setEditDirection(trade.direction)`).
+    // Ein Speichern einer alten `LONG`-Zeile schrieb damit wieder `LONG`
+    // zurueck — die Luecke, die der POST-Riegel schliessen sollte, stand
+    // hier offen. "Ein Fix an einer Stelle beantwortet nicht, wo die
+    // Klasse sonst noch steckt."
+    //
+    // Nur gepruefte Richtung, kein Rateschritt: ein unlesbarer Wert wird
+    // abgewiesen statt still abgebildet.
+    const nextDirection =
+      body.direction !== undefined ? lesbareRichtung(body.direction) : null;
+    if (body.direction !== undefined && !nextDirection) {
+      return NextResponse.json(
+        { success: false, error: "direction muss BUY oder SELL sein (LONG/SHORT werden abgebildet)" },
+        { status: 400 }
+      );
+    }
+
     const nextEntry =
       body.entry !== undefined ? Number(body.entry) : existingTrade.entry;
 
@@ -100,8 +123,8 @@ export async function PATCH(
       },
       data: {
         ...(body.market !== undefined && { market: body.market }),
-        ...(body.direction !== undefined && {
-          direction: body.direction,
+        ...(nextDirection !== null && {
+          direction: nextDirection,
         }),
         ...(body.strategy !== undefined && {
           strategy: body.strategy,

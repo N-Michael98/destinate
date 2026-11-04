@@ -8,7 +8,10 @@ import { ForwardTestResultsChart, WinRateTrendChart } from "./PerformanceCharts"
 interface ForwardTestResult {
   resultId: string;
   symbol: string;
-  side: "BUY" | "SELL";
+  // NICHT `"BUY" | "SELL"`: der Wert kommt aus der Trade-Spalte und kann
+  // ein unlesbares Etikett tragen. Ein enger Typ hier war eine Behauptung
+  // ueber fremde Daten, kein Schutz (04.11.).
+  side: string;
   tradingStyle: string;
   confidenceScore: number;
   evolvedLotSize: number;
@@ -69,10 +72,15 @@ function outcomeCls(o: string) {
   return "border-slate-500/40 bg-slate-500/10 text-slate-400";
 }
 
+// Dreiwertig (04.11.): `side` kommt aus der Trade-Spalte `direction`, und
+// die ist im Schema nur `String`. Ein `s === "BUY" ? gruen : rot` faerbte
+// jeden nicht erkannten Wert ROT — er sah damit wie ein SELL aus. Die Route
+// bildet `LONG`/`SHORT` inzwischen ab; bleibt ein Wert unlesbar, gehoert er
+// SICHTBAR und nicht als Gegenrichtung ausgegeben.
 function sideCls(s: string) {
-  return s === "BUY"
-    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-    : "border-red-500/40 bg-red-500/10 text-red-300";
+  if (s === "BUY") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-300";
+  if (s === "SELL") return "border-red-500/40 bg-red-500/10 text-red-300";
+  return "border-amber-500/40 bg-amber-500/10 text-amber-300";
 }
 
 function Chip({ label, cls }: { label: string; cls: string }) {

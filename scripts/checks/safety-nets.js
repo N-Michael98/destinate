@@ -2327,6 +2327,11 @@ module.exports = async function pruefe() {
               // Gruppennamen. Ohne diesen Ersatz wirft der
               // Stellvertreter, und /hebel landete im catch.
               "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
+              // Seit dem 04.11. gruppiert `hebel.ts` die Richtung ueber
+              // `richtungGruppe()`. Dasselbe wieder: ohne Ersatz wirft der
+              // Stellvertreter beim AUFRUF, /hebel faellt ins catch, und der
+              // gemessene Text waere der des Pruefstands, nicht der des Codes.
+              "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
             }).exports,
           });
           if (whE.fehler || typeof whE.exports?.POST !== "function") {
@@ -3490,6 +3495,9 @@ module.exports = async function pruefe() {
           { "capital-trade-tracker": trE.exports });
         const hb = ladeTsModul("lib/hebel/hebel.ts", { "html-sicher/html-sicher": htmlSicherEcht,
           "expectancy/erwartungswert": ewMod.exports,
+          // Das ECHTE Richtungs-Modul (04.11.) — nur so wird die Abbildung
+          // LONG -> BUY in der Gruppierung wirklich ausgefuehrt.
+          "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
         });
         const hebelBericht = hb.exports?.hebelBericht;
         const hebelText = hb.exports?.hebelText;
@@ -3968,6 +3976,59 @@ module.exports = async function pruefe() {
           torPruefung("die Markt-Dimension fehlt oder ist leer",
             !!eineGruppe && eineGruppe.name === "EURUSD",
             JSON.stringify(marktDim?.gruppen?.map((g) => g.name)));
+
+          // ── DIE RICHTUNG WIRD ABGEBILDET, NICHT ROH GRUPPIERT (04.11.) ──
+          //
+          // `/hebel` zeigte am 02.11. `BUY 585 · SELL 227 · LONG 3`. Die drei
+          // LONG-Zeilen bekamen eine EIGENE Gruppe: unter MIN_TRADES fiel sie
+          // aus dem Vergleich, waehrend /trading-journal und der Lernzyklus
+          // dieselben Zeilen als BUY zaehlen — zwei Leser, zwei Antworten.
+          //
+          // Das wird AUSGEFUEHRT, nicht am Wortlaut geprueft: ein Regex auf
+          // `richtungGruppe` bliebe gruen, wenn der Aufruf zwar dasteht, aber
+          // das Ergebnis verworfen wird (Fehlerklasse 28.10./30.09.).
+          {
+            const mach = (n, dir, pnl) => Array.from({ length: n }, () => ({
+              profitLoss: pnl, result: pnl > 0 ? "WIN" : pnl < 0 ? "LOSS" : "BREAKEVEN",
+              exitReason: "DAZWISCHEN", market: "EURUSD", riskReward: 2,
+              strategy: "DAYTRADING | DAYTRADING", direction: dir,
+              createdAt: "2026-10-20T10:00:00.000Z",
+              updatedAt: "2026-10-22T10:00:00.000Z",
+              notes: JSON.stringify({ source: "auto-scan", tradingStyle: "DAYTRADING" }),
+            }));
+            const gemischt = [
+              ...mach(35, "BUY", 4), ...mach(5, "LONG", 3),
+              ...mach(20, "SELL", -2), ...mach(2, "SHORT", -1),
+              ...mach(1, "KAPUTT", 1), ...mach(1, "", 1),
+            ];
+            const rDim = hebelBericht(gemischt, null).find((d) => d.titel === "Richtung");
+            const g = (name) => rDim?.gruppen?.find((x) => x.name === name)?.gewertet ?? 0;
+            const namen = (rDim?.gruppen ?? []).map((x) => x.name);
+            // SELBSTPRUEFUNG der Testdaten: ohne LONG/SHORT-Zeilen koennte
+            // keine dieser Pruefungen den Fehler ausdruecken.
+            torPruefung("die Testdaten enthalten kein LONG/SHORT — dann "
+              + "beweist die Gruppierungs-Pruefung nichts",
+              gemischt.filter((z) => z.direction === "LONG").length === 5
+              && gemischt.filter((z) => z.direction === "SHORT").length === 2,
+              `LONG=${gemischt.filter((z) => z.direction === "LONG").length} `
+              + `SHORT=${gemischt.filter((z) => z.direction === "SHORT").length}`);
+            torPruefung("LONG/SHORT bekommen in /hebel eine EIGENE Gruppe, "
+              + "statt auf BUY/SELL abgebildet zu werden",
+              !namen.includes("LONG") && !namen.includes("SHORT")
+              && g("BUY") === 40 && g("SELL") === 22,
+              `BUY=${g("BUY")} SELL=${g("SELL")} Gruppen=${JSON.stringify(namen)}`);
+            // Die Gegenrichtung: ein WIRKLICH unlesbarer Wert darf NICHT
+            // still auf eine Seite wandern. Sonst waere der Riegel nur
+            // "alles ist BUY", und aus einem kaputten Wert eine Messung.
+            torPruefung("ein unlesbarer Richtungswert verschwindet in BUY "
+              + "oder SELL, statt sichtbar zu bleiben",
+              g("KAPUTT?") === 1 && g("ohne Angabe") === 1,
+              `KAPUTT?=${g("KAPUTT?")} ohneAngabe=${g("ohne Angabe")} `
+              + `Gruppen=${JSON.stringify(namen)}`);
+            torPruefung("die Richtungs-Dimension nennt ihre Abbildung nicht",
+              /LONG\/SHORT/.test(rDim?.hinweis ?? ""),
+              JSON.stringify((rDim?.hinweis ?? "").slice(0, 60)));
+          }
           torPruefung("/hebel rechnet eine ANDERE Zahl als /edge — dann "
             + "koennen sich beide Befehle widersprechen",
             !!eineGruppe && eineGruppe.ew === direkt.erwartungswert
@@ -8510,6 +8571,106 @@ module.exports = async function pruefe() {
     }
     torPruefung("lesbareRichtung ist mehr als einmal ausgeschrieben",
       rumpfe === 1, `${rumpfe} Rumpf/Ruempfe gefunden`);
+
+    // ══ ALLE LESER DER SPALTE, NICHT NUR DIE ZWEI VON GESTERN (04.11.) ══
+    //
+    // Der Fix vom 03.11. band /trading-journal und POST /api/trades. Beim
+    // systematischen Durchgang aller 422 Quelldateien kamen FUENF weitere
+    // Leser derselben Spalte heraus — der Fix deckte 2 von 7:
+    //
+    //   PATCH /api/trades/[id]   schrieb `body.direction` ROH in die
+    //                            Geldtabelle (die POST-Luecke, noch offen)
+    //   app/page.tsx             Haupt-Dashboard: `=== "BUY" ? gruen : rot`
+    //                            faerbte eine LONG-Zeile ROT
+    //   ForwardTestingCenter     dasselbe in `sideCls`, dritte Komponente
+    //   /api/forward-testing     `as "BUY" | "SELL"` — ein Cast, der luegt
+    //   lib/hebel/hebel.ts       gruppierte roh, LONG als eigene Gruppe
+    //
+    // "Ein Fix an einer Stelle beantwortet nicht, wo die Klasse sonst noch
+    // steckt" — deshalb eine POSITIVLISTE wie bei den Order-Routen: jede
+    // Stelle NAMENTLICH, nicht als Zahl. Eine untere Schranke bemerkte
+    // einen fehlenden Eintrag nicht (Lehre vom 31.10.).
+    //
+    // NICHT auf dieser Liste und mit Absicht: `risk-agent.ts`
+    // (`zuordnungAusPositionen`) behandelt eine unlesbare Richtung als
+    // "nicht benennbar" und geht den VORSICHTIGEN Weg — das ist richtig und
+    // steht in einer Datei mit erhoehtem Risiko.
+    const rohVerboten = [
+      ["frontend/app/page.tsx", /\bt\.direction\s*===\s*"/,
+        "Haupt-Dashboard faerbt nach dem ROHEN Wert"],
+      ["frontend/app/api/forward-testing/route.ts", /\.direction as "BUY"/,
+        "/api/forward-testing castet die Trade-Spalte"],
+      ["frontend/app/api/trades/[id]/route.ts", /direction:\s*body\.direction/,
+        "PATCH schreibt die rohe Eingabe in die Geldtabelle"],
+      ["frontend/lib/hebel/hebel.ts", /text\(z\.direction\)/,
+        "/hebel gruppiert nach dem ROHEN Wert"],
+      ["frontend/app/trading-journal/page.tsx", /setEditDirection\(trade\.direction\)/,
+        "das Edit-Formular fuellt sich mit dem ROHEN Wert vor"],
+      ["frontend/app/trading-journal/page.tsx", /direction:\s*trade\.direction/,
+        "die Review-Kopfzeile zeigt den ROHEN Wert"],
+    ];
+    const normVerlangt = [
+      ["frontend/app/page.tsx", /lesbareRichtung\(t\.direction\)/,
+        "Haupt-Dashboard"],
+      ["frontend/app/api/forward-testing/route.ts", /richtungAnzeige\(t\.direction\)/,
+        "/api/forward-testing"],
+      ["frontend/app/api/trades/[id]/route.ts", /lesbareRichtung\(body\.direction\)/,
+        "PATCH /api/trades/[id]"],
+      ["frontend/lib/hebel/hebel.ts", /richtungGruppe\(z\.direction\)/,
+        "/hebel"],
+      ["frontend/app/trading-journal/page.tsx", /lesbareRichtung\(trade\.direction\)/,
+        "/trading-journal"],
+      // Die dritte Farbe: ohne sie faerbt `sideCls` jeden unbekannten Wert
+      // ROT, er sieht also wie die Gegenrichtung aus.
+      ["frontend/components/ForwardTestingCenter.tsx", /s === "SELL"/,
+        "sideCls ist dreiwertig"],
+    ];
+    // SELBSTPRUEFUNG der Muster in BEIDE Richtungen, an GEBAUTEN
+    // Zeichenketten: am Dateiinhalt hinge sie an einer Formulierung.
+    torPruefung("das Verbots-Muster findet einen rohen Leser nicht mehr",
+      /\bt\.direction\s*===\s*"/.test('x = t.direction === "BUY" ? a : b')
+      && !/\bt\.direction\s*===\s*"/.test('lesbareRichtung(t.direction) === "BUY"'),
+      "Selbstpruefung der Verbots-Muster");
+    torPruefung("ein roher Leser im KOMMENTAR wird als Befund gezaehlt",
+      !/direction:\s*body\.direction/.test(
+        ohneK3('// alt war: direction: body.direction,\nconst x = 1;')),
+      "Selbstpruefung der Bereinigung am Verbots-Muster");
+    for (const [datei, muster, name] of rohVerboten) {
+      const q = ohneK3(read(datei));
+      torPruefung(`roher Richtungs-Leser zurueck: ${name}`,
+        !muster.test(q), `${datei} — ${String(muster)}`);
+    }
+    for (const [datei, muster, name] of normVerlangt) {
+      const q = ohneK3(read(datei));
+      torPruefung(`die abgebildete Richtung fehlt in: ${name}`,
+        muster.test(q), `${datei} — ${String(muster)}`);
+    }
+
+    // `richtungGruppe` ausgefuehrt — und die Gegenprobe, dass sie sich von
+    // der Anzeige NUR im Leerfall unterscheidet. Zwei eigene Abbildungen
+    // koennten auseinanderlaufen; dann hiesse dieselbe Zeile an zwei
+    // Stellen verschieden, also genau der Fehler, der hier behoben wurde.
+    const rg = rm.exports?.richtungGruppe;
+    if (typeof rg !== "function") {
+      funde.push("richtungGruppe nicht exportiert"); zusatz++;
+    } else {
+      const ra2 = rm.exports.richtungAnzeige;
+      torPruefung("richtungGruppe bildet LONG/SHORT nicht ab",
+        rg("LONG") === "BUY" && rg("short") === "SELL" && rg(" Buy ") === "BUY",
+        JSON.stringify([rg("LONG"), rg("short"), rg(" Buy ")]));
+      torPruefung("richtungGruppe macht aus einem fehlenden Wert eine Richtung",
+        rg("") === "ohne Angabe" && rg(null) === "ohne Angabe"
+        && rg(undefined) === "ohne Angabe" && rg(42) === "ohne Angabe",
+        JSON.stringify([rg(""), rg(null), rg(undefined), rg(42)]));
+      torPruefung("richtungGruppe versteckt einen kaputten Wert",
+        rg("UNBEKANNT") === "UNBEKANNT?", String(rg("UNBEKANNT")));
+      torPruefung("Gruppe und Anzeige unterscheiden sich an mehr als dem "
+        + "Leerfall — dann sind es zwei Abbildungen",
+        ["BUY", "LONG", "sell", "SHORT", "UNBEKANNT", "x"]
+          .every((v) => rg(v) === ra2(v))
+        && rg("") !== ra2("") && ra2("") === "—",
+        JSON.stringify(["BUY", "LONG", "UNBEKANNT", ""].map((v) => [rg(v), ra2(v)])));
+    }
   }
 
   // ══ EIN GESENDETES FELD OHNE LESER (02.11.) ═════════════════════════════

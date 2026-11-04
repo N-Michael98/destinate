@@ -6,6 +6,7 @@ import PaperTradingCenter from "@/components/PaperTradingCenter";
 import AIAgentControlCenter from "@/components/AIAgentControlCenter";
 import UnifiedMissionControlDashboard from "@/components/UnifiedMissionControlDashboard";
 import { SidebarIcon } from "@/components/SidebarIcon";
+import { lesbareRichtung, richtungAnzeige } from "@/lib/richtung/richtung";
 import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 import BrokerCenterPanel from "@/components/BrokerCenterPanel";
 import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
@@ -580,7 +581,12 @@ function TradingJournalCenter() {
             {recentTrades.map((t, i) => (
               <div key={i} className="flex items-center justify-between bg-gray-900 rounded-xl px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <span className={`font-bold text-sm px-2 py-1 rounded ${t.direction === "BUY" ? "bg-green-900 text-green-300" : "bg-red-900 text-red-300"}`}>{t.direction}</span>
+                  {/* Dreiwertig (04.11.): die Spalte `Trade.direction` ist im
+                      Schema nur `String` und enthaelt nachweislich auch `LONG`.
+                      `=== "BUY" ? gruen : rot` faerbte eine LONG-Zeile ROT, sie
+                      sah also wie ein SELL aus — dieselbe Zeile, die im Journal
+                      am 03.11. behoben wurde, hier in der zweiten Komponente. */}
+                  <span className={`font-bold text-sm px-2 py-1 rounded ${lesbareRichtung(t.direction) === "BUY" ? "bg-green-900 text-green-300" : lesbareRichtung(t.direction) === "SELL" ? "bg-red-900 text-red-300" : "bg-yellow-900 text-yellow-300"}`}>{richtungAnzeige(t.direction)}</span>
                   <span className="font-semibold">{t.market}</span>
                   <span className={`text-xs px-2 py-1 rounded ${t.result === "WIN" ? "bg-green-800 text-green-200" : t.result === "LOSS" ? "bg-red-800 text-red-200" : "bg-gray-700 text-gray-300"}`}>{t.result}</span>
                 </div>

@@ -38,6 +38,7 @@
  */
 
 import { htmlSicher } from "@/lib/html-sicher/html-sicher";
+import { richtungGruppe } from "@/lib/richtung/richtung";
 
 import {
   erwartungswert, MIN_TRADES,
@@ -309,10 +310,20 @@ export function hebelBericht(
     befund: "",
   });
 
+  // DIESELBE LESART WIE UEBERALL (04.11.). Vorher stand hier
+  // `text(z.direction) ?? "ohne Angabe"` — also der ROHE Wert. Die Spalte
+  // enthaelt nachweislich auch `LONG` (3 Zeilen am 02.11.), und die bekamen
+  // damit eine EIGENE Gruppe: unter `MIN_TRADES` fiel sie aus dem Vergleich,
+  // waehrend `/trading-journal` und der Lernzyklus dieselben Zeilen als BUY
+  // zaehlen. Zwei Leser, zwei Antworten auf dieselbe Frage — genau der
+  // Fehler, der am 03.11. behoben wurde, eine Datei weiter.
   dims.push({
     titel: "Richtung",
-    hinweis: null,
-    gruppen: gruppiere(zeilen, (z) => text(z.direction) ?? "ohne Angabe", fenster),
+    hinweis: "<i>LONG/SHORT werden auf BUY/SELL abgebildet — dieselbe Lesart "
+      + "wie im Journal und im Lernzyklus. Ein unlesbarer Wert bekommt eine "
+      + "eigene Gruppe mit <code>?</code>, statt still auf eine Seite zu "
+      + "zählen.</i>",
+    gruppen: gruppiere(zeilen, (z) => richtungGruppe(z.direction), fenster),
     befund: "",
   });
 

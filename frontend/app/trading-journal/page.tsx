@@ -759,7 +759,10 @@ function getTradeReview(trade: Trade): TradeReview {
   return {
     tradeId: trade.id,
     market: trade.market,
-    direction: trade.direction,
+    // Die Review-Kopfzeile zeigte den ROHEN Wert (`{review.direction}`).
+    // Dieselbe Lesart wie die Liste darueber — sonst steht in derselben
+    // Ansicht an zwei Stellen ein anderes Wort fuer dieselbe Zeile (04.11.).
+    direction: richtungAnzeige(trade.direction),
     grade,
     score: finalScore,
     scoreValue,
@@ -1749,7 +1752,12 @@ export default function TradingJournal() {
   function startEditTrade(trade: Trade) {
     setEditingTrade(trade);
     setEditMarket(trade.market);
-    setEditDirection(trade.direction);
+    // Abgebildet, nicht roh (04.11.): das Formular bietet seit dem 03.11. nur
+    // BUY/SELL an. Ein rohes `LONG` aus einer alten Zeile passte zu KEINER
+    // Option — und wurde beim Speichern unveraendert zurueckgeschrieben.
+    // Ein unlesbarer Wert wird NICHT geraten: dann bleibt das Feld leer, und
+    // `PATCH /api/trades/[id]` weist das Speichern mit Grund ab.
+    setEditDirection(lesbareRichtung(trade.direction) ?? "");
     setEditStrategy(trade.strategy || "Liquidity Sweep");
     setEditEntry(String(trade.entry));
     setEditStopLoss(String(trade.stopLoss));

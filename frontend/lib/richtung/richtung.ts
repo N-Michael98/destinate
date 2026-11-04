@@ -69,6 +69,27 @@ export function lesbareRichtung(roh: unknown): Richtung | null {
 export function richtungAnzeige(roh: unknown): string {
   const r = lesbareRichtung(roh);
   if (r) return r;
-  const t = typeof roh === "string" ? roh.trim() : "";
-  return t === "" ? "—" : `${t}?`;
+  return rohEtikett(roh) === "" ? "—" : `${rohEtikett(roh)}?`;
+}
+
+/**
+ * Dasselbe für eine GRUPPIERUNG (`/hebel`).
+ *
+ * Unterschied zur Anzeige ist allein der Leerfall: in einer Gruppenliste
+ * heisst er „ohne Angabe" wie in jeder anderen Dimension, nicht „—".
+ *
+ * Die ABBILDUNG selbst steht trotzdem nur einmal da — alle drei Funktionen
+ * gehen durch `lesbareRichtung()`. Zwei eigene Abbildungen, die sich nur im
+ * Leerfall unterscheiden, laufen irgendwann auseinander, und dann heisst
+ * dieselbe Zeile an zwei Stellen verschieden: genau der Fehler vom 03.11.
+ */
+export function richtungGruppe(roh: unknown): string {
+  const r = lesbareRichtung(roh);
+  if (r) return r;
+  return rohEtikett(roh) === "" ? "ohne Angabe" : `${rohEtikett(roh)}?`;
+}
+
+/** Der rohe Wert als Etikett — gemeinsame Grundlage der beiden oberen. */
+function rohEtikett(roh: unknown): string {
+  return typeof roh === "string" ? roh.trim() : "";
 }

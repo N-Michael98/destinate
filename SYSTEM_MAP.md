@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 358 · Kanten: 881
+Dateien mit internen Abhängigkeiten: 358 · Kanten: 885
 
 
 ## analysis-engine/api
@@ -319,6 +319,7 @@ Dateien mit internen Abhängigkeiten: 358 · Kanten: 881
   - → `frontend/lib/execution-preparation/index.ts`
 - `frontend/app/api/forward-testing/route.ts`
   - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/app/api/gpt-analyst/analyze/route.ts`
   - → `frontend/lib/ai-config/ai-config-store.ts`
   - → `frontend/lib/gpt-analyst-engine/index.ts`
@@ -459,6 +460,7 @@ Dateien mit internen Abhängigkeiten: 358 · Kanten: 881
   - → `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
 - `frontend/app/api/trades/[id]/route.ts`
   - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/app/api/trades/route.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/richtung/richtung.ts`
@@ -510,6 +512,7 @@ Dateien mit internen Abhängigkeiten: 358 · Kanten: 881
   - → `frontend/components/SystemHealthCheck.tsx`
   - → `frontend/components/TechnicalIndicatorsPanel.tsx`
   - → `frontend/components/UnifiedMissionControlDashboard.tsx`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/app/trading-journal/page.tsx`
   - → `frontend/lib/bot-readiness/integrationen.ts`
   - → `frontend/lib/richtung/richtung.ts`
@@ -894,6 +897,7 @@ Dateien mit internen Abhängigkeiten: 358 · Kanten: 881
 - `frontend/lib/hebel/hebel.ts`
   - → `frontend/lib/expectancy/erwartungswert.ts`
   - → `frontend/lib/html-sicher/html-sicher.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
@@ -1309,5 +1313,5 @@ Dateien mit internen Abhängigkeiten: 358 · Kanten: 881
 - `analysis-engine/services/storage.py` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 8 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 7 Dateien
-- `frontend/lib/icmarkets/icmarkets-client.ts` — von 7 Dateien
+- `frontend/lib/richtung/richtung.ts` — von 7 Dateien
 

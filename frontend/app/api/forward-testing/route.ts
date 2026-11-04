@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getPrisma } from "../../lib/prisma";
+import { richtungAnzeige } from "@/lib/richtung/richtung";
 
 export async function GET() {
   try {
@@ -56,7 +57,12 @@ export async function GET() {
       return {
         resultId: t.id,
         symbol: t.market,
-        side: t.direction as "BUY" | "SELL",
+        // Ein CAST, DER LUEGT, war hier das Problem (04.11.): `t.direction`
+        // kommt aus der Trade-Spalte (Schema: nur `String`) und enthaelt
+        // nachweislich auch `LONG`. `as "BUY" | "SELL"` behauptete einen
+        // Wert, den die Zeile nicht hat — `tsc` schweigt dazu, weil der
+        // Cast genau das abschaltet. Jetzt dieselbe Lesart wie ueberall.
+        side: richtungAnzeige(t.direction),
         tradingStyle: style,
         strategy,
         confidenceScore: (meta.confidence as number) ?? 0,
