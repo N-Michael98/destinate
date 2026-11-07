@@ -1436,6 +1436,41 @@ module.exports = async function pruefe() {
         pruefe1("beim Nachtragen wurde nichts geschrieben",
           a.geschrieben.length >= 1, `${a.geschrieben.length} Schreibvorgaenge`);
 
+        // ── Fall 1b: OHNE lesbare Richtung -> KEINE Zeile (07.11.) ──────
+        //
+        // Hier stand `String(p.direction ?? "").toUpperCase() === "SELL"
+        // ? "SELL" : "BUY"` — ein unbekannter Wert wurde zu **BUY** und so
+        // in die `Trade`-Tabelle geschrieben, waehrend `symbol` und
+        // `tradingStyle` daneben ehrlich "UNBEKANNT" sagen.
+        //
+        // ERREICHBAR SEIT HEUTE: `capitalGetPositions` liefert `null`,
+        // seit der Rueckfall `?? "BUY"` dort entfernt wurde. Eine
+        // erfundene Richtung in der Geldtabelle geht in /edge, /hebel und
+        // den Lernzyklus ein — und niemand sieht ihr an, dass sie geraten
+        // ist.
+        const aNull = baueTracker([]);
+        const rNull = await aNull.modul.exports.ergaenzeFehlendeJournalZeilen(
+          POS.map((p) => ({ ...p, direction: null })), 10000);
+        pruefe1("eine Position OHNE lesbare Richtung bekommt eine Zeile mit "
+          + "ERFUNDENER Richtung",
+          rNull.angelegt === 0 && aNull.geschrieben.length === 0,
+          `angelegt=${rNull.angelegt}, ${aNull.geschrieben.length} Schreibvorgaenge`);
+        pruefe1("die uebersprungene Position bekommt keine eigene Zahl — sie "
+          + "verschwindet dann aus der Bilanz (Regel 22.09.)",
+          rNull.ohneRichtung === POS.length, JSON.stringify(rNull));
+        // GEGENPROBE: eine LESBARE Richtung muss weiter angelegt werden —
+        // sonst waere der Riegel "nie anlegen", und das Journal bliebe
+        // dauerhaft leer. Beide Richtungen, damit der Fall sie ausdruecken
+        // kann.
+        for (const dir of ["BUY", "SELL"]) {
+          const ok = baueTracker([]);
+          const rOk = await ok.modul.exports.ergaenzeFehlendeJournalZeilen(
+            POS.map((p) => ({ ...p, direction: dir })), 10000);
+          pruefe1(`der Riegel ist zu streng — ${dir} wird nicht mehr angelegt`,
+            rOk.angelegt === POS.length && rOk.ohneRichtung === 0,
+            JSON.stringify(rOk));
+        }
+
         // ── Fall 2: Zeile mit DIESER dealId -> nichts tun ────────────────
         const b = baueTracker([{ notes: JSON.stringify({ dealId: "DEAL-1" }) }]);
         const r2 = await b.modul.exports.ergaenzeFehlendeJournalZeilen(POS, 10000);
@@ -1669,6 +1704,19 @@ module.exports = async function pruefe() {
       "ein geratener Stil steuert den Zeit-Exit");
     pruefe1("der Nachtrag erfindet eine Confidence",
       /confidence: 0,/.test(trQ));
+    // UND ER ERFINDET KEINE RICHTUNG MEHR (07.11.). Die alte Form machte
+    // aus einem unbekannten Wert ein BUY und schrieb es in die Geldtabelle.
+    pruefe1("der Nachtrag erfindet wieder eine Richtung",
+      !/String\(p\.direction \?\? ""\)\.toUpperCase\(\) === "SELL" \? "SELL" : "BUY"/.test(trQ)
+      && /p\.direction === "BUY" \|\| p\.direction === "SELL"/.test(trQ),
+      "eine erfundene Richtung geht in /edge, /hebel und den Lernzyklus ein");
+    // Und die Zahl gehoert in die BILANZ-Zeile — sonst verschwindet die
+    // Stufe aus dem Log, und eine Position ohne Zeile saehe aus wie eine,
+    // die vorhanden war (Regel 22.09.).
+    pruefe1("die uebersprungenen Positionen fehlen in der Bilanz-Zeile",
+      /fehlendeZeilen\.ohneRichtung > 0/.test(trQ)
+      && /\$\{fehlendeZeilen\.ohneRichtung\} ohne/.test(trQ),
+      "jede Stufe, an der etwas stirbt, braucht ihre eigene Zahl");
     // Und er muss NACH dem dealId-Nachtrag laufen, sonst haelt er geloeste
     // Zeilen fuer unaufgeloest — oder legt vor dem Nachtrag doppelt an.
     // Auf die AUFRUFSTELLEN pruefen, nicht auf die Namen: die Definition von

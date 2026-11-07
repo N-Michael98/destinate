@@ -867,10 +867,15 @@ export async function ergaenzeFehlendeJournalZeilen(
 ): Promise<{
   angelegt: number; vorhanden: number; mehrdeutig: number;
   verwaist: number; verwaisteIds: string[];
+  /** Positionen, für die der Broker keine lesbare Richtung lieferte und
+   *  deshalb KEINE Zeile angelegt wurde (07.11.). Eine eigene Zahl, damit
+   *  dieser Fall nicht in `mehrdeutig` verschwindet — jede Stufe, an der
+   *  etwas stirbt, braucht ihre eigene (Regel vom 22.09.). */
+  ohneRichtung: number;
 }> {
   const bilanz = {
     angelegt: 0, vorhanden: 0, mehrdeutig: 0,
-    verwaist: 0, verwaisteIds: [] as string[],
+    verwaist: 0, verwaisteIds: [] as string[], ohneRichtung: 0,
   };
   try {
     if (!positionen.length) return bilanz;
@@ -896,7 +901,35 @@ export async function ergaenzeFehlendeJournalZeilen(
         bilanz.mehrdeutig++;
         continue;
       }
-      const richtung = String(p.direction ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY";
+      // ── OHNE RICHTUNG WIRD KEINE ZEILE ANGELEGT (07.11.) ──────────────
+      //
+      // Hier stand `String(p.direction ?? "").toUpperCase() === "SELL"
+      // ? "SELL" : "BUY"` — ein unbekannter Wert wurde damit zu **BUY**
+      // und als solcher in die `Trade`-Tabelle geschrieben. Daneben sagen
+      // `symbol` und `tradingStyle` ehrlich „UNBEKANNT"; die Richtung war
+      // das einzige Feld, das geraten hat.
+      //
+      // ERREICHBAR SEIT HEUTE: `capitalGetPositions` liefert `null`, seit
+      // der Rückfall `?? "BUY"` dort entfernt wurde. Vorher kam immer eine
+      // der beiden Richtungen an.
+      //
+      // Eine erfundene Richtung in der Geldtabelle ist schlimmer als eine
+      // fehlende Zeile: sie geht in `/edge`, `/hebel` und den Lernzyklus
+      // ein, und niemand sieht ihr an, dass sie geraten ist. Ohne Zeile
+      // bleibt die Position dagegen sichtbar „ohne Journal" — dann setzt
+      // der Zeit-Exit aus (19.08.) und `/status` sagt es (07.11.).
+      //
+      // Dieselbe Haltung wie `lage.erlaubt` ein paar Zeilen darüber:
+      // lieber NICHT anlegen als auf einer Annahme.
+      const richtung = p.direction === "BUY" || p.direction === "SELL"
+        ? p.direction : null;
+      if (richtung === null) {
+        bilanz.ohneRichtung++;
+        console.warn(`[trade-tracker] ⚠️ ${dealId}: KEINE Journal-Zeile angelegt — `
+          + `der Broker liefert keine lesbare Richtung. Eine erfundene Richtung `
+          + `ginge in /edge, /hebel und den Lernzyklus ein.`);
+        continue;
+      }
       const ok = await versucheJournalZeile({
         dealId,
         symbol: String(p.symbol ?? "").trim() || "UNBEKANNT",
@@ -1091,11 +1124,18 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // eine zweite Zeile für dieselbe Position an.
     const fehlendeZeilen = await ergaenzeFehlendeJournalZeilen(
       posResult.positions ?? [], session.balance > 0 ? session.balance : 0);
+    // `ohneRichtung` MIT in der Bedingung UND in der Zeile (07.11.): ohne
+    // eigene Zahl verschwindet die Stufe aus der Bilanz, und eine Position
+    // ohne Journal-Zeile saehe aus wie eine, die vorhanden war. Das ist die
+    // Regel vom 22.09. — jede Stufe, an der etwas stirbt, braucht ihre
+    // eigene Zahl.
     if (fehlendeZeilen.angelegt > 0 || fehlendeZeilen.mehrdeutig > 0
-      || fehlendeZeilen.verwaist > 0) {
+      || fehlendeZeilen.verwaist > 0 || fehlendeZeilen.ohneRichtung > 0) {
       console.log(`[trade-tracker] Fehlende Journal-Zeilen: ${fehlendeZeilen.angelegt} rekonstruiert, `
         + `${fehlendeZeilen.mehrdeutig} nicht eindeutig (offene Zeile ohne dealId oder mit `
-        + `verwaister dealId — es wird NICHT geraten), ${fehlendeZeilen.vorhanden} waren vorhanden`);
+        + `verwaister dealId — es wird NICHT geraten), ${fehlendeZeilen.ohneRichtung} ohne `
+        + `lesbare Richtung vom Broker (es wird KEINE erfunden), `
+        + `${fehlendeZeilen.vorhanden} waren vorhanden`);
     }
     // ── DIE VERWAISTE ID GEHOERT NAMENTLICH INS LOG (30.09.) ──────────────
     //
