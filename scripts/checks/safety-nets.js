@@ -9143,6 +9143,35 @@ module.exports = async function pruefe() {
       /positionen:\s*posBefunde/.test(whQ9)
       && /offenePositionen:\s*offenePos\?\.length\s*\?\?\s*null/.test(whQ9),
       (whQ9.match(/positionen:[^\n]*/g) || ["(keine Zeile)"])[0]);
+    // OHNE dealId KEIN Nachschlagen. Sonst waere der Schluessel `""`, und
+    // ein Eintrag darunter gaebe dieser Position einen FREMDEN Stil — mit
+    // einer Haltedauer-Grenze, die ihr nicht gehoert.
+    //
+    // Ueber den Livepfad nicht erreichbar (ausgefuehrt belegt:
+    // `stilKarteAusNotizen` traegt nur unter `if (m.dealId && …)` ein, `""`
+    // wird nie Schluessel) — eine Zusicherung an der Stelle, an der sie
+    // gilt, wie `checkPriceAvailable` am 24.08.
+    torPruefung("eine Position OHNE dealId schlaegt unter dem leeren "
+      + "Schluessel nach und zieht einen fremden Handelsstil",
+      /stil:\s*p\.dealId \? \(stilKarte\?\.get\(String\(p\.dealId\)\) \?\? null\) : null/.test(whQ9)
+      && !/stilKarte\?\.get\(String\(p\.dealId \?\? ""\)\)/.test(whQ9),
+      (whQ9.match(/stil:[^\n]*/g) || ["(keine stil-Zuweisung)"])[0]);
+    {
+      // Und AUSGEFUEHRT: die Karte darf gar keinen leeren Schluessel
+      // bekoennen koennen — sonst waere der Riegel oben die einzige
+      // Verteidigung und seine Begruendung falsch.
+      const SKx = ladeTsModul("lib/positionen-lage/positionen-lage.ts")
+        .exports?.stilKarteAusNotizen;
+      const leerK = typeof SKx === "function" ? SKx([
+        { notes: JSON.stringify({ dealId: "", tradingStyle: "SWING", confidence: 5 }) },
+        { notes: JSON.stringify({ dealId: null, tradingStyle: "SWING", confidence: 5 }) },
+        { notes: JSON.stringify({ dealId: 0, tradingStyle: "SWING", confidence: 5 }) },
+      ]) : null;
+      torPruefung("stilKarteAusNotizen kann einen LEEREN Schluessel "
+        + "erzeugen — dann zieht jede Position ohne dealId diesen Stil",
+        leerK !== null && leerK.size === 0 && !leerK.has(""),
+        JSON.stringify(leerK ? [...leerK] : null));
+    }
 
     // ── NEBENEINANDER, NICHT NACHEINANDER (07.11.) ────────────────────
     //

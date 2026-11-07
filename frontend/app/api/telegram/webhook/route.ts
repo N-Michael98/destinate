@@ -758,7 +758,21 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
           createdDate: p.createdDate ?? null,
           // Faellt die Journal-Quelle aus, ist `stilKarte` null — dann
           // steht ueberall "Stil unbekannt", und das ist ehrlich.
-          stil: stilKarte?.get(String(p.dealId ?? "")) ?? null,
+          //
+          // OHNE dealId wird GAR NICHT nachgeschlagen. Sonst waere der
+          // Schluessel `""`, und ein Eintrag unter `""` gaebe dieser
+          // Position einen FREMDEN Stil — mit einer Haltedauer-Grenze,
+          // die ihr nicht gehoert.
+          //
+          // EHRLICH EINGEORDNET: ueber den Livepfad ist das nicht
+          // erreichbar, weil `stilKarteAusNotizen` nur unter
+          // `if (m.dealId && …)` eintraegt und `""` damit nie Schluessel
+          // wird (ausgefuehrt geprueft). Es ist also eine Zusicherung an
+          // der Stelle, an der sie gilt, kein geschlossenes Loch — wie
+          // `checkPriceAvailable` am 24.08. Sie gehoert trotzdem hierher:
+          // diese Zeile darf nicht davon abhaengen, dass ein Modul weiter
+          // vorsichtig war.
+          stil: p.dealId ? (stilKarte?.get(String(p.dealId)) ?? null) : null,
         })), new Date());
 
       // EIN AUSFALL DARF `/status` NICHT UMBRINGEN — und sich auch nicht
