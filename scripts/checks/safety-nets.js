@@ -5268,9 +5268,33 @@ module.exports = async function pruefe() {
           torPruefung("der Trichter wird gar nicht uebergeben",
             /trichter: tagessumme/.test(W), wPfad);
         }
-        torPruefung("die Faktensammlung laeuft NACHEINANDER — acht "
-          + "Quellen mal fuenf Sekunden waeren 40 s bis zur Antwort",
-          /\[einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, fensterText, tagesZaehler\]\s*=\s*await Promise\.all\(\[/.test(W), wPfad);
+        // AN DIE EIGENSCHAFT GEBUNDEN, nicht an die Namensliste (07.11.).
+        // Diese Pruefung verlangte bis heute die EXAKTE Folge
+        // `[einst, sitzung, offeneZahl, …]`. Als `offeneZahl` zu
+        // `offenePos` wurde und eine neunte Quelle dazukam, wurde sie rot
+        // — obwohl die Parallelitaet unveraendert galt. Eine Pruefung, die
+        // an einem Namen haengt, misst den Namen, nicht die Sache.
+        //
+        // Was wirklich gilt: EINE Destrukturierung mit vielen Namen aus
+        // EINEM `Promise.all`. Ein sequentielles `await` je Quelle haette
+        // viele Zuweisungen statt einer.
+        {
+          const m = /const \[([^\]]+)\]\s*=\s*\n?\s*await Promise\.all\(\[/.exec(W);
+          const namen = m ? m[1].split(",").map((s) => s.trim()).filter(Boolean) : [];
+          torPruefung("die Faktensammlung laeuft NACHEINANDER — neun "
+            + "Quellen mal fuenf Sekunden waeren 45 s bis zur Antwort",
+            namen.length >= 8, `${namen.length} Quellen: ${namen.join(", ").slice(0, 120)}`);
+          // GEGENPROBE: die Zahl der Namen muss zur Zahl der `sicher(`-
+          // Aufrufe IM Promise.all passen. Sonst koennte eine Quelle
+          // herausfallen und die Pruefung bliebe gruen.
+          const vonA = W.indexOf("await Promise.all([");
+          const bisA = W.indexOf("\n        ]);", vonA);
+          const drin = vonA >= 0 && bisA > vonA
+            ? (W.slice(vonA, bisA).match(/sicher\(async/g) || []).length : -1;
+          torPruefung("die Zahl der Quellen passt nicht zur Zahl der Namen "
+            + "— eine Quelle ist herausgefallen oder kommt doppelt an",
+            drin === namen.length, `${drin} sicher()-Aufrufe, ${namen.length} Namen`);
+        }
 
         // ── DAS FENSTER IN ORTSZEIT WIRD GERECHNET (01.11.) ────────
         //
@@ -9108,18 +9132,80 @@ module.exports = async function pruefe() {
       !/weggeworfen/.test(ohneK9("// weggeworfen")) && /behalten/.test(ohneK9("const x = behalten;")),
       "Selbstpruefung");
     // AN DIE ZUWEISUNG GEBUNDEN, nicht an das blosse Vorkommen: ein
-    // `liste: null && positionenLage(...)` liesse den Aufruf im Text stehen
-    // und das Ergebnis verfallen — die Fehlerklasse vom 28.10. ("der Riegel
-    // wird gerechnet und weggeworfen"). `liste:` muss DIREKT den Aufruf
-    // bekommen.
+    // `posBefunde = null && positionenLage(...)` liesse den Aufruf im Text
+    // stehen und das Ergebnis verfallen — die Fehlerklasse vom 28.10.
     torPruefung("/status wirft die Positionsliste wieder weg (nur .length)",
-      /liste:\s*positionenLage\(/.test(whQ9) && /stilKarteAusNotizen\(/.test(whQ9)
+      /posBefunde\s*=\s*offenePos === null \? null : positionenLage\(/.test(whQ9)
+      && /stilKarteAusNotizen\(/.test(whQ9)
       && !/return r\?\.ok && Array\.isArray\(r\.positions\) \? r\.positions\.length : null/.test(whQ9),
-      (whQ9.match(/liste:[^\n]*/g) || ["(keine liste-Zuweisung)"]).slice(0, 2).join(" | "));
+      (whQ9.match(/posBefunde[^\n]*/g) || ["(keine Zuweisung)"]).slice(0, 2).join(" | "));
     torPruefung("/status reicht die Positionsliste nicht an handelsLage durch",
-      /positionen:\s*offeneZahl\?\.liste\s*\?\?\s*null/.test(whQ9)
-      && /offenePositionen:\s*offeneZahl\?\.anzahl\s*\?\?\s*null/.test(whQ9),
+      /positionen:\s*posBefunde/.test(whQ9)
+      && /offenePositionen:\s*offenePos\?\.length\s*\?\?\s*null/.test(whQ9),
       (whQ9.match(/positionen:[^\n]*/g) || ["(keine Zeile)"])[0]);
+
+    // ── NEBENEINANDER, NICHT NACHEINANDER (07.11.) ────────────────────
+    //
+    // DAS WAR EIN ECHTER FEHLER VON MIR, und er war kurz live. Der erste
+    // Entwurf haengte die Journal-Abfrage SEQUENTIELL hinter den
+    // Broker-Aufruf, in DERSELBEN `sicher()`-Quelle. `sicher()` bindet
+    // jede Quelle auf 5000 ms, und `capitalGetPositions` hat allein schon
+    // `AbortSignal.timeout(8000)`. Die Summe reisst die Grenze schon bei
+    // einer traegen Datenbank — und dann verliert /status BEIDES: die
+    // Liste UND die Zahl, die vorher ankam.
+    //
+    // Drei Zeilen ueber dem Code steht die Regel, die das verbietet.
+    //
+    // Geprueft per KLAMMERZAEHLER je Quelle: ein Zeichen-Fenster bewiese
+    // nur Naehe, nicht Zugehoerigkeit (22.09.).
+    {
+      const bloecke = [];
+      let i = 0;
+      while (true) {
+        const p = whQ9.indexOf("sicher(async", i);
+        if (p < 0) break;
+        let k = whQ9.indexOf("(", p), tief = 0, instr = null, ende = -1;
+        for (; k < whQ9.length; k++) {
+          const c = whQ9[k];
+          if (instr) { if (c === "\\") { k++; continue; } if (c === instr) instr = null; }
+          else if (c === '"' || c === "'" || c === "`") instr = c;
+          else if (c === "(") tief++;
+          else if (c === ")") { tief--; if (tief === 0) { ende = k; break; } }
+        }
+        if (ende < 0) break;
+        bloecke.push(whQ9.slice(p, ende + 1));
+        i = ende + 1;
+      }
+      // SELBSTPRUEFUNG: findet der Zaehler keine Bloecke, misst die
+      // Pruefung darunter nichts und saehe wie ein gutes Ergebnis aus.
+      torPruefung("der Klammerzaehler findet die sicher()-Quellen nicht — "
+        + "dann prueft die Zeile darunter NICHTS",
+        bloecke.length >= 9
+        && bloecke.some((b) => /capitalGetPositions/.test(b))
+        && bloecke.some((b) => /prisma\.trade\.findMany/.test(b)),
+        `${bloecke.length} Quellen gefunden`);
+      const zusammen = bloecke.filter(
+        (b) => /capitalGetPositions/.test(b) && /prisma\.trade\.findMany/.test(b));
+      torPruefung("Broker-Abruf und Journal-Abfrage stehen in DERSELBEN "
+        + "sicher()-Quelle — ihre Zeiten addieren sich gegen die 5-Sekunden-"
+        + "Grenze, und /status verliert dann auch die Positionszahl",
+        zusammen.length === 0,
+        `${zusammen.length} Quelle(n) mit beidem`);
+      // Und die Zusammenfuehrung gehoert NACH das Promise.all — sonst
+      // waere sie wieder Teil einer Quelle.
+      const posAll = whQ9.indexOf("await Promise.all([");
+      const posEnde = whQ9.indexOf("        ]);", posAll);
+      // DIE ERSTE Fundstelle, nicht die erste NACH dem Ende (07.11.).
+      // Mein erster Entwurf suchte ab `posEnde` — ein Aufruf INNERHALB
+      // einer Quelle waere damit unbemerkt geblieben, weil die Suche ihn
+      // gar nicht erreicht. Genau das, was die Pruefung verhindern soll.
+      const posRechnung = whQ9.indexOf("positionenLage(");
+      torPruefung("die Positions-Rechnung steht INNERHALB der Quellen "
+        + "statt danach — dann zaehlt ihre Zeit wieder gegen die "
+        + "5-Sekunden-Grenze",
+        posAll >= 0 && posEnde > posAll && posRechnung > posEnde,
+        `Promise.all@${posAll} ende@${posEnde} erste Rechnung@${posRechnung}`);
+    }
     const hlQ9 = ohneK9(read("frontend/lib/handels-lage/handels-lage.ts"));
     torPruefung("die Anzeige nennt die ausgesetzten Zeit-Exits nicht — dann "
       + "steht die Warnung NUR in einer Logzeile, die nach drei Tagen "

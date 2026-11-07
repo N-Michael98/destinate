@@ -609,10 +609,16 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         } catch { return null; }
       };
 
-      // NEBENEINANDER, nicht nacheinander: acht Quellen mal fuenf
-      // Sekunden Obergrenze waeren 40 s bis zur Antwort. Keine haengt von
+      // NEBENEINANDER, nicht nacheinander: neun Quellen mal fuenf
+      // Sekunden Obergrenze waeren 45 s bis zur Antwort. Keine haengt von
       // einer anderen ab, also ist die Obergrenze so fuenf Sekunden.
-      const [einst, sitzung, offeneZahl, hoechst, tagessumme, inZeit, fensterText, tagesZaehler] =
+      //
+      // `offenePos` heisst nicht mehr `offeneZahl`: es ist die LISTE, nicht
+      // ihre Laenge (07.11.). Ein Name, der etwas anderes sagt als sein
+      // Inhalt, ist dieselbe Fehlerklasse wie eine Anzeige, die etwas
+      // behauptet, das der Code nicht tut.
+      const [einst, sitzung, offenePos, hoechst, tagessumme, inZeit, fensterText,
+        tagesZaehler, stilKarte] =
         await Promise.all([
       sicher(async () => {
         const { getSettings } = await import("@/lib/settings/settings-store");
@@ -630,10 +636,18 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
       // Form wie `confidence` (02.11.) und `richtungenJa` (04.11.): die
       // Daten lagen die ganze Zeit da.
       //
-      // Der STIL kommt aus dem Journal — ohne ihn ist "70 h" nicht
-      // einzuordnen (SCALPING 4 h, DAYTRADING 24 h, SWING 168 h). Reiner
-      // LESEPFAD: `findMany` auf offene Zeilen, kein Schreiben (Regel vom
-      // 07.09. — ein Lesepfad legt gemeinsamen Zustand nicht an).
+      // ── NUR DIE POSITIONEN, NICHTS DAZU (07.11., korrigiert) ─────────
+      //
+      // Der erste Entwurf hing die Journal-Abfrage SEQUENTIELL hinter den
+      // Broker-Aufruf — in DERSELBEN Quelle. `sicher()` bindet jede Quelle
+      // auf 5 Sekunden, und `capitalGetPositions` hat allein schon
+      // `AbortSignal.timeout(8000)`. Die Summe haette die Grenze also
+      // schon bei einer traegen Datenbank gerissen, und dann verliert
+      // /status BEIDES: die Liste UND die Zahl, die vorher ankam.
+      //
+      // Genau drei Zeilen darueber steht die Regel, die das verbietet:
+      // "NEBENEINANDER, nicht nacheinander". Der Stil ist jetzt eine
+      // EIGENE Quelle, und keine wartet auf die andere.
       sicher(async () => {
         const m = await import("@/lib/capital-com/capital-com-session");
         const sx = m.getCapitalSession();
@@ -641,31 +655,7 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         const { capitalGetPositions } = await import("@/lib/capital-com/capital-com-client");
         const r = await capitalGetPositions(sx.apiKey, sx.cst, sx.securityToken);
         if (!r?.ok || !Array.isArray(r.positions)) return null;
-        // Die Notizen der offenen Journal-Zeilen. Faellt die Datenbank aus,
-        // bleibt die Karte leer — dann meldet jede Position "Stil
-        // unbekannt", und das ist die WAHRHEIT ueber das, was wir wissen,
-        // nicht ueber den Code.
-        const { stilKarteAusNotizen, positionenLage } =
-          await import("@/lib/positionen-lage/positionen-lage");
-        let stile = new Map<string, string>();
-        try {
-          const { prisma } = await import("@/app/lib/prisma");
-          const zeilen = await prisma.trade.findMany({
-            where: { status: "OPEN" }, select: { notes: true },
-          }) as Array<{ notes: string | null }>;
-          stile = stilKarteAusNotizen(zeilen);
-        } catch {
-          // Siehe oben: ohne Journal kein Stil, und das steht dann da.
-        }
-        return {
-          anzahl: r.positions.length,
-          liste: positionenLage(r.positions.map((p) => ({
-            symbol: p.symbol ?? null,
-            direction: p.direction ?? null,
-            createdDate: p.createdDate ?? null,
-            stil: stile.get(String(p.dealId ?? "")) ?? null,
-          })), new Date()),
-        };
+        return r.positions;
       }),
       sicher(async () => {
         const { PEAK_SCHLUESSEL } = await import("@/lib/trading-filters/trade-filters");
@@ -736,7 +726,40 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         // Niemand hat geantwortet — DAS ist unbekannt.
         return null;
       }),
+      // ── DER HANDELSSTIL AUS DEM JOURNAL — EIGENE QUELLE (07.11.) ─────
+      //
+      // Ohne ihn ist "70 h" nicht einzuordnen (SCALPING 4 h, DAYTRADING
+      // 24 h, SWING 168 h). NEBEN den Positionen, nicht dahinter: eine
+      // traege Datenbank darf die Positionszahl nicht mitreissen.
+      //
+      // Reiner LESEPFAD — `findMany`, kein Schreiben (Regel vom 07.09.).
+      // Faellt er aus, bleibt die Karte leer, und jede Position meldet
+      // "Stil unbekannt". Das ist die Wahrheit ueber das, was wir wissen,
+      // nicht ueber den Code.
+      sicher(async () => {
+        const { prisma } = await import("@/app/lib/prisma");
+        const { stilKarteAusNotizen } =
+          await import("@/lib/positionen-lage/positionen-lage");
+        const zeilen = await prisma.trade.findMany({
+          where: { status: "OPEN" }, select: { notes: true },
+        }) as Array<{ notes: string | null }>;
+        return stilKarteAusNotizen(zeilen);
+      }),
         ]);
+
+      // Zusammengefuehrt wird ERST HIER, nachdem beide Quellen da sind.
+      // `positionenLage` ist rein und rechnet in Mikrosekunden — die
+      // Zeitgrenze von `sicher()` beruehrt das nicht mehr.
+      const { positionenLage } = await import("@/lib/positionen-lage/positionen-lage");
+      const posBefunde = offenePos === null ? null : positionenLage(
+        offenePos.map((p) => ({
+          symbol: p.symbol ?? null,
+          direction: p.direction ?? null,
+          createdDate: p.createdDate ?? null,
+          // Faellt die Journal-Quelle aus, ist `stilKarte` null — dann
+          // steht ueberall "Stil unbekannt", und das ist ehrlich.
+          stil: stilKarte?.get(String(p.dealId ?? "")) ?? null,
+        })), new Date());
 
       // EIN AUSFALL DARF `/status` NICHT UMBRINGEN — und sich auch nicht
       // als Ergebnis ausgeben. Aufgefallen im Pruefstand: ein geworfener
@@ -747,10 +770,10 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         lageZeilen = handelsLage({
           brokerVerbunden: sitzung ? sitzung.verbunden : null,
           modus: einst?.botSettings?.mode ?? null,
-          offenePositionen: offeneZahl?.anzahl ?? null,
+          offenePositionen: offenePos?.length ?? null,
           // `null` heisst NICHT abrufbar, `[]` heisst keine offen — zwei
           // verschiedene Aussagen, und die Anzeige unterscheidet sie.
-          positionen: offeneZahl?.liste ?? null,
+          positionen: posBefunde,
           maxGleichzeitig: einst?.botSettings?.maxConcurrentPositions ?? null,
           tagesZaehler,
           tagesLimit: einst?.botSettings?.maxTradesPerDay ?? null,
