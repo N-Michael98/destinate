@@ -174,12 +174,43 @@ export async function runActiveTradeManager(): Promise<void> {
       e instanceof Error ? e.message : String(e));
   }
 
-  // ── 6. RiskAgent ausführen ────────────────────────────────────────────────
+  // ── 6. OHNE LESBARE RICHTUNG WIRD NICHT BEWIRTSCHAFTET (07.11.) ──────────
+  //
+  // `capitalGetPositions` erfindet seit heute kein `"BUY"` mehr, wenn der
+  // Broker keine Richtung liefert — es kommt `null`. Hier wird aussortiert,
+  // BEVOR der RiskAgent rechnet: `processPosition()` setzt aus `isBuy` den
+  // Breakeven-Stop, den Trailing-Stop und die Seite des Teilgewinns. Auf
+  // einer geratenen Richtung läge der Breakeven-Stop einer SELL-Position
+  // auf der FALSCHEN Seite des Einstiegs.
+  //
+  // DASS hier gefiltert werden MUSS, erzwingt der Typ: `LivePosition`
+  // verlangt eine Richtung, `OpenPosition` lässt sie offen. Ein Vergessen
+  // ist kein Laufzeitfehler, sondern ein Übersetzungsfehler.
+  //
+  // Das ist dieselbe Haltung wie beim geratenen Handelsstil (19.08.) und
+  // bei der fehlenden Eröffnungszeit: lieber NICHT eingreifen als auf einer
+  // Annahme. Breakeven, Teilgewinn und Trailing können eine Position nicht
+  // beenden — der Broker-seitige SL/TP schützt sie weiterhin.
+  const bewirtschaftbar = posResult.positions.filter(
+    (p): p is typeof p & { direction: "BUY" | "SELL" } => p.direction !== null);
+  const ohneRichtung = posResult.positions.length - bewirtschaftbar.length;
+  if (ohneRichtung > 0) {
+    // GEMELDET, nicht verschwiegen: ein stilles Überspringen sähe aus wie
+    // ein gesunder Lauf — die Fehlerklasse vom 25.10.
+    console.warn(`[trade-mgr] ⚠️ ${ohneRichtung} von ${posResult.positions.length} `
+      + `Position(en) OHNE lesbare Richtung vom Broker — sie werden NICHT `
+      + `bewirtschaftet (kein Breakeven, kein Teilgewinn, kein Trailing, kein `
+      + `Zeit-Exit). Der Broker-seitige SL/TP schuetzt sie weiter. Betroffen: `
+      + posResult.positions.filter((p) => p.direction === null)
+        .map((p) => `${p.symbol}/${p.dealId}`).join(", "));
+  }
+
+  // ── 7. RiskAgent ausführen ────────────────────────────────────────────────
   await runRiskAgent({
     apiKey: session.apiKey,
     cst: session.cst,
     securityToken: session.securityToken,
-    positions: posResult.positions,
+    positions: bewirtschaftbar,
     priceMap,
     dbMeta,
     atrMap,

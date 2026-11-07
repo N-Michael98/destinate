@@ -1,4 +1,10 @@
 // Capital.com Demo REST API client — DEMO execution enabled, LIVE blocked
+//
+// EINE LESART FUER DIE RICHTUNG (07.11.). `richtung.ts` ist rein, ohne
+// Importe und ohne Seiteneffekte — der Modulgraph dieser Datei waechst
+// dadurch nicht. Eine eigene Abbildung hier waere die vierte im Programm.
+import { lesbareRichtung } from "../richtung/richtung";
+
 const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
 const LIVE_BASE = "https://api-capital.backend-capital.com/api/v1";
 
@@ -212,7 +218,30 @@ export interface OpenPosition {
   dealId: string;
   epic: string;
   symbol: string;
-  direction: "BUY" | "SELL";
+  /**
+   * Richtung der Position — oder `null`, wenn der Broker keine lesbare
+   * geliefert hat (07.11.).
+   *
+   * BIS HEUTE STAND HIER `?? "BUY"`. Fehlte das Feld, wurde daraus eine
+   * Kaufposition — und der Weg von dort zum Geld ist kurz und unbewacht:
+   *
+   *   capitalGetPositions      ?? "BUY"
+   *     → active-trade-manager:43   (kein Filter auf die Richtung)
+   *       → risk-agent:496          `const isBuy = direction === "BUY"`
+   *         → risk-agent:686        `newSL = isBuy ? entry - be : entry + be`
+   *
+   * Der Breakeven-Stop einer SELL-Position laege damit auf der FALSCHEN
+   * Seite des Einstiegs. Dieselbe Fehlerklasse wie `?? 50` beim
+   * Risiko-Score (07.09.) und `?? Date.now()` beim Positionsalter
+   * (19.08.) — beide wurden genau deshalb entfernt: ein Rückfallwert an
+   * einer Stelle, die über Geld entscheidet, macht aus „unbekannt" eine
+   * Messung.
+   *
+   * EHRLICH ZUR REICHWEITE: ob Capital.com das Feld je weglässt, ist
+   * nicht belegt — nur der Pfad. Es ist also eine Zusicherung an der
+   * Stelle, an der sie gilt, kein nachgewiesener Vorfall.
+   */
+  direction: "BUY" | "SELL" | null;
   size: number;
   openLevel: number;
   stopLevel: number | null;
@@ -946,7 +975,10 @@ const positions: OpenPosition[] = (data.positions ?? []).map((p) => {
         dealId: String(pos.dealId ?? ""),
         epic,
         symbol: EPIC_TO_SYMBOL[epic] ?? epic,
-        direction: (pos.direction as "BUY" | "SELL") ?? "BUY",
+        // KEINE erfundene Richtung mehr (07.11.) — siehe `OpenPosition`.
+        // `lesbareRichtung` ist DIESELBE Lesart wie im Journal, im
+        // Lernzyklus und in /hebel; eine eigene waere die vierte.
+        direction: lesbareRichtung(pos.direction),
         size: Number(pos.dealSize ?? pos.size ?? 0),
         openLevel: Number(pos.level ?? pos.openLevel ?? 0),
         stopLevel: pos.stopLevel != null ? Number(pos.stopLevel) : null,

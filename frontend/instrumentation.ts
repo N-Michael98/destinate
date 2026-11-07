@@ -695,6 +695,25 @@ export async function register() {
                         console.warn(`[py-lifecycle] ${symbol}: Teilgewinn nicht ausgeführt — ${urteil.grund}`);
                         continue;
                       }
+                      // KEIN TEILSCHLUSS AUF GERATENER RICHTUNG (07.11.).
+                      //
+                      // `capitalClosePartial` platziert die GEGENORDER — ein
+                      // BUY wird mit einem SELL geschlossen. Bis heute stand
+                      // im Broker-Client `?? "BUY"`, fehlte die Richtung also
+                      // beim Broker, wäre hier eine Order auf der FALSCHEN
+                      // SEITE herausgegangen und hätte die Position
+                      // VERGRÖSSERT statt verkleinert.
+                      //
+                      // Jetzt ist `pos.direction` `null`, wenn nichts Lesbares
+                      // kam — und dann wird nicht gehandelt. Dieselbe Form wie
+                      // der `urteil.erlaubt`-Riegel zwei Zeilen darüber:
+                      // melden und überspringen, nicht raten.
+                      if (!pos.direction) {
+                        console.warn(`[py-lifecycle] ${symbol}: Teilgewinn NICHT ausgeführt — `
+                          + `der Broker liefert keine lesbare Richtung für deal=${tradeId}. `
+                          + `Eine Gegenorder auf einer Annahme würde die Position vergrössern.`);
+                        continue;
+                      }
                       const r = await capitalClosePartial(sess.apiKey, sess.cst, sess.securityToken, pos.epic ?? "", pos.direction, action.volume)
                         .catch((e) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
                       if (r.ok) {

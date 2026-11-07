@@ -9122,6 +9122,136 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ KEINE ERFUNDENE RICHTUNG VOM BROKER (07.11.) ════════════════════════
+  //
+  // `capitalGetPositions` hatte `direction: (pos.direction as …) ?? "BUY"`.
+  // Fehlte das Feld, wurde daraus eine Kaufposition — und der Weg zum Geld
+  // ist kurz und war unbewacht:
+  //
+  //   capitalGetPositions   ?? "BUY"
+  //     → active-trade-manager:43   (kein Filter auf die Richtung)
+  //       → risk-agent:496          `const isBuy = direction === "BUY"`
+  //         → risk-agent:686        `newSL = isBuy ? entry - be : entry + be`
+  //
+  // Der Breakeven-Stop einer SELL-Position laege auf der FALSCHEN Seite des
+  // Einstiegs. Dieselbe Klasse wie `?? 50` (07.09.) und `?? Date.now()`
+  // (19.08.).
+  //
+  // AUSGEFUEHRT, nicht am Wortlaut: `global.fetch` wird ersetzt, und die
+  // ECHTE Funktion muss die Antwort des Brokers abbilden.
+  {
+    const cc = ladeTsModul("lib/capital-com/capital-com-client.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+    });
+    const gp = cc.exports?.capitalGetPositions;
+    if (cc.fehler || typeof gp !== "function") {
+      funde.push(`capital-com-client nicht ausfuehrbar: ${cc.fehler ?? "capitalGetPositions fehlt"}`);
+      zusatz++;
+    } else {
+      const echtesFetch = global.fetch;
+      const antwort = (positions) => ({
+        ok: true, status: 200,
+        json: async () => ({ positions }),
+        text: async () => JSON.stringify({ positions }),
+      });
+      const hole = async (posRoh) => {
+        global.fetch = async () => antwort(posRoh);
+        try { return await gp("k", "c", "s"); } finally { global.fetch = echtesFetch; }
+      };
+      const bauPos = (dir) => ([{
+        position: { dealId: "D1", ...(dir === undefined ? {} : { direction: dir }),
+          dealSize: 1, level: 100, createdDate: "2026-11-04T19:30:00" },
+        market: { epic: "GOLD" },
+      }]);
+      // 1. FEHLT das Feld, darf KEINE Richtung erfunden werden.
+      const ohne = await hole(bauPos(undefined));
+      torPruefung("der Broker-Client erfindet wieder eine Richtung, wenn das "
+        + "Feld fehlt — der Breakeven-Stop laege dann auf der falschen Seite",
+        ohne?.ok === true && ohne.positions?.[0]?.direction === null,
+        JSON.stringify(ohne?.positions?.[0] ?? ohne));
+      // 2. Ein UNSINNIGER Wert ebenso.
+      const quatsch = await hole(bauPos("LEFT"));
+      torPruefung("ein unlesbarer Richtungswert wird zu einer Richtung",
+        quatsch?.positions?.[0]?.direction === null,
+        JSON.stringify(quatsch?.positions?.[0] ?? null));
+      // 3. GEGENPROBE: die echten Werte muessen weiter ankommen — sonst
+      //    waere der Riegel "alles null", und der Trade-Manager
+      //    bewirtschaftete NICHTS mehr (schlimmer als der Fund).
+      const buy = await hole(bauPos("BUY"));
+      const sell = await hole(bauPos("SELL"));
+      const klein = await hole(bauPos("sell"));
+      torPruefung("der Riegel ist zu streng — echte Richtungen kommen nicht "
+        + "mehr an, und dann wird GAR KEINE Position mehr bewirtschaftet",
+        buy?.positions?.[0]?.direction === "BUY"
+        && sell?.positions?.[0]?.direction === "SELL"
+        && klein?.positions?.[0]?.direction === "SELL",
+        JSON.stringify([buy?.positions?.[0]?.direction,
+          sell?.positions?.[0]?.direction, klein?.positions?.[0]?.direction]));
+      // 4. Und der alte Rueckfall darf nicht zurueckkommen.
+      const ccQ = read("frontend/lib/capital-com/capital-com-client.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      torPruefung("der Rueckfall `?? \"BUY\"` steht wieder in "
+        + "capitalGetPositions",
+        !/direction: \(pos\.direction as "BUY" \| "SELL"\) \?\? "BUY"/.test(ccQ)
+        && /direction: lesbareRichtung\(pos\.direction\)/.test(ccQ),
+        (ccQ.match(/direction: [^\n,]*/g) || []).slice(0, 3).join(" | "));
+    }
+
+    // ── DER TYP IST DER RIEGEL ────────────────────────────────────────
+    //
+    // `LivePosition` verlangt eine Richtung, `OpenPosition` laesst sie
+    // offen. Damit ist das Aussortieren kein Laufzeit-Versehen mehr,
+    // sondern ein Uebersetzungsfehler. Wird der Typ wieder geweitet,
+    // koennte eine Position ohne Richtung bis in die Stop-Rechnung
+    // laufen, ohne dass irgendetwas rot wird.
+    const raQ2 = read("frontend/lib/agents/risk-agent.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("LivePosition verlangt keine lesbare Richtung mehr — dann "
+      + "kann eine Position ohne Richtung bis in die Stop-Rechnung laufen",
+      /export type LivePosition = OpenPosition & \{ direction: "BUY" \| "SELL" \}/.test(raQ2),
+      (raQ2.match(/export type LivePosition[^\n]*/) ?? ["(keine Zeile)"])[0]);
+    // UND DER FILTER, der daraus folgt.
+    const atmQ = read("frontend/lib/capital-com/active-trade-manager.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("der Trade-Manager sortiert Positionen ohne Richtung nicht "
+      + "aus, oder reicht die ungefilterte Liste weiter",
+      /p\.direction !== null/.test(atmQ)
+      && /positions: bewirtschaftbar/.test(atmQ)
+      && !/positions: posResult\.positions/.test(atmQ),
+      (atmQ.match(/positions: [^\n,]*/g) || ["(keine Zeile)"]).join(" | "));
+    // AN DIE ANWEISUNG GEBUNDEN, nicht an den Wortlaut (07.11.).
+    //
+    // Hier stand `/OHNE lesbare Richtung/ && /console\.warn/`. Die Sabotage
+    // `void 0 && console.warn(…)` liess BEIDE Ausdruecke stehen und blieb
+    // GRUEN — die Meldung waere tot gewesen, der Pruefer zufrieden.
+    // "Ein Regex prueft den Wortlaut, nicht das Verhalten" (30.09.).
+    //
+    // Jetzt muss `console.warn(` eine ANWEISUNG beginnen: am Zeilenanfang,
+    // nur Leerzeichen davor. Ein vorangestelltes `void 0 &&`, `false &&`
+    // oder `//` faellt damit auf.
+    const warnAnweisung = /^[ \t]*console\.warn\(`\[trade-mgr\] ⚠️ \$\{ohneRichtung\}/m;
+    torPruefung("das Aussortieren geschieht STILL — ein stummes "
+      + "Ueberspringen saehe aus wie ein gesunder Lauf (25.10.)",
+      /OHNE lesbare Richtung/.test(atmQ) && warnAnweisung.test(atmQ),
+      (atmQ.match(/[^\n]*console\.warn\(`\[trade-mgr\] ⚠️[^\n]*/) ?? ["(keine Meldung)"])[0].slice(0, 110));
+    // SELBSTPRUEFUNG des Musters an GEBAUTEN Zeichenketten, in beide
+    // Richtungen — am Dateiinhalt haenge es an einer Formulierung.
+    torPruefung("das Anweisungs-Muster erkennt eine abgeschaltete Meldung "
+      + "nicht",
+      warnAnweisung.test("    console.warn(`[trade-mgr] ⚠️ ${ohneRichtung} x`)")
+      && !warnAnweisung.test("    void 0 && console.warn(`[trade-mgr] ⚠️ ${ohneRichtung} x`)")
+      && !warnAnweisung.test("    // console.warn(`[trade-mgr] ⚠️ ${ohneRichtung} x`)"),
+      "Selbstpruefung des Anweisungs-Musters");
+    // Und der Python-Teilschluss: eine Gegenorder auf geratener Richtung
+    // wuerde die Position VERGROESSERN statt verkleinern.
+    const insQ = read("frontend/instrumentation.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("der Python-Teilschluss handelt auf einer geratenen "
+      + "Richtung — die Gegenorder vergroesserte die Position",
+      /if \(!pos\.direction\) \{/.test(insQ),
+      (insQ.match(/capitalClosePartial\([^\n]*/) ?? ["(keine Zeile)"])[0].slice(0, 110));
+  }
+
   // ══ WAS IST MIT DEN OFFENEN POSITIONEN? (07.11.) ════════════════════════
   //
   // `/status` vom 07.11. meldete "Positionen: 1/6" — und sonst nichts. Die

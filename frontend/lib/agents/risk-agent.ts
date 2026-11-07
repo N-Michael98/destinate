@@ -24,7 +24,21 @@ const AGENT_ID = "RiskAgent";
 
 // ── Typen ─────────────────────────────────────────────────────────────────────
 
-export type LivePosition = OpenPosition;
+/**
+ * Eine offene Position, deren Richtung LESBAR ist (07.11.).
+ *
+ * `OpenPosition.direction` ist seit heute `"BUY" | "SELL" | null` — der
+ * Broker-Client erfindet kein `"BUY"` mehr, wenn das Feld fehlt. Hier wird
+ * die Richtung ZUM TRAGENDEN TEIL des Typs: `processPosition()` rechnet an
+ * fünf Stellen mit `isBuy` und setzt daraus den Breakeven-Stop, den
+ * Trailing-Stop und die Seite des Teilgewinns.
+ *
+ * Die Verengung ist Absicht und sie ist der Riegel: `tsc` verlangt damit vom
+ * AUFRUFER, Positionen ohne lesbare Richtung auszusortieren, bevor sie
+ * hierher kommen. In dieser Datei ändert sich dadurch KEINE Zeile Logik —
+ * nur die Zusicherung, unter der sie schon immer lief.
+ */
+export type LivePosition = OpenPosition & { direction: "BUY" | "SELL" };
 
 export interface PosMeta {
   beSet: boolean;
