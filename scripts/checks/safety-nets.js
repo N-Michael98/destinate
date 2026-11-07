@@ -9546,6 +9546,19 @@ module.exports = async function pruefe() {
       torPruefung("die Position ohne Eroeffnungszeit landet hinten",
         bef.findIndex((x) => x.symbol === "SPX500") < unauff.length + 1,
         `Index ${bef.findIndex((x) => x.symbol === "SPX500")} von ${bef.length}`);
+      // OHNE RICHTUNG wird keine erfunden (07.11.). `capitalGetPositions`
+      // liefert seit heute `null`, wenn der Broker nichts Lesbares schickt —
+      // die Anzeige darf daraus kein "BUY" machen.
+      torPruefung("eine Position ohne Richtung bekommt in der Anzeige eine "
+        + "erfundene",
+        PL([{ symbol: "GOLD", direction: null,
+          createdDate: "2026-11-07T10:00:00.000Z", stil: "SWING" }], JETZT)[0]
+          .richtung === "—"
+        && PL([{ symbol: "GOLD", direction: "  ",
+          createdDate: "2026-11-07T10:00:00.000Z", stil: "SWING" }], JETZT)[0]
+          .richtung === "—",
+        JSON.stringify(PL([{ symbol: "GOLD", direction: null,
+          createdDate: "2026-11-07T10:00:00.000Z", stil: "SWING" }], JETZT)[0]));
       torPruefung("ein unbekannter Stil bekommt eine Grenze aus der Tabelle",
         PL([{ symbol: "X", direction: "BUY", createdDate: "2026-11-07T10:00:00.000Z",
           stil: "GIBTESNICHT" }], JETZT)[0].grenzeStunden === null,
