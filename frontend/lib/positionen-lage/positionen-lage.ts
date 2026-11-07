@@ -159,6 +159,22 @@ function text(v: unknown): string {
 export function alterStunden(createdDate: string | null, jetzt: Date): number | null {
   const roh = text(createdDate);
   if (roh === "") return null;
+  // ── OHNE ZONENANGABE WIRD NICHT GERECHNET (07.11.) ──────────────────────
+  //
+  // Capital.com schickt seine Zeitstempel **ohne Zone**, und genau das hat am
+  // 22.09. zwei Monate lang das Kurs-Alter verfälscht: `new Date()` las die
+  // Ortszeit als UTC und bekam zwei Stunden in die Zukunft.
+  //
+  // Der Broker-Client rechnet seit damals **an der Grenze** um
+  // (`brokerZeitNachUtc`, `capital-com-client.ts:965`) und liefert entweder
+  // `""` oder ein `toISOString()` — also immer mit `Z`. Diese Funktion darf
+  // sich darauf aber nicht VERLASSEN: sie ist exportiert, und der nächste
+  // Aufrufer reicht vielleicht eine rohe Zeit herein.
+  //
+  // Ohne Zone wäre das Alter still um den Zonenversatz daneben — in Zürich
+  // ein bis zwei Stunden. Bei DAYTRADING (Grenze 24 h) entscheidet genau das
+  // über „überfällig". Also: **unbekannt**, nicht geraten.
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(roh)) return null;
   const d = new Date(roh);
   if (Number.isNaN(d.getTime())) return null;
   const ms = jetzt.getTime() - d.getTime();

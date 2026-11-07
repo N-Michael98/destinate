@@ -9220,6 +9220,49 @@ module.exports = async function pruefe() {
       torPruefung("das Alter wird falsch gerechnet",
         AS("2026-11-04T19:30:00.000Z", JETZT) === 69.9,
         String(AS("2026-11-04T19:30:00.000Z", JETZT)));
+      // ── OHNE ZONENANGABE WIRD NICHT GERECHNET (07.11.) ───────────────
+      //
+      // Capital.com schickt seine Zeitstempel OHNE Zone — genau das hat am
+      // 22.09. zwei Monate lang das Kurs-Alter verfaelscht. Der Client
+      // rechnet seit damals an der Grenze um (`brokerZeitNachUtc`,
+      // capital-com-client.ts:965) und liefert `""` oder ein
+      // `toISOString()`, also immer mit `Z`.
+      //
+      // `alterStunden` ist aber EXPORTIERT und darf sich darauf nicht
+      // verlassen. Ausgerechnet: `2026-11-04T19:30:00` roh gelesen ergibt
+      // 69.9 h, waehrend die Wahrheit (Zuerich, UTC+1) 70.9 h ist — eine
+      // Stunde zu jung, und bei DAYTRADING (Grenze 24 h) entscheidet genau
+      // das ueber "ueberfaellig".
+      torPruefung("eine ROHE Broker-Zeit ohne Zone wird gerechnet statt als "
+        + "unbekannt gemeldet — das Alter waere um den Zonenversatz daneben",
+        AS("2026-11-04T19:30:00", JETZT) === null
+        && AS("2026-11-04 19:30:00", JETZT) === null,
+        JSON.stringify([AS("2026-11-04T19:30:00", JETZT),
+          AS("2026-11-04 19:30:00", JETZT)]));
+      // GEGENPROBE: die drei UMGERECHNETEN Formen muessen weiter rechnen —
+      // sonst waere der Riegel nur "immer unbekannt", und aus einer Messung
+      // wuerde ein Nichtwissen (die Regel vom 22.09. in der anderen
+      // Richtung). `brokerZeitNachUtc` liefert die erste, die anderen
+      // koennen von einem anderen Broker kommen.
+      torPruefung("der Zonen-Riegel ist zu streng — umgerechnete Zeiten "
+        + "muessen weiter gerechnet werden",
+        AS("2026-11-04T19:30:00.000Z", JETZT) === 69.9
+        && AS("2026-11-04T19:30:00Z", JETZT) === 69.9
+        && AS("2026-11-04T20:30:00+01:00", JETZT) === 69.9,
+        JSON.stringify([AS("2026-11-04T19:30:00.000Z", JETZT),
+          AS("2026-11-04T19:30:00Z", JETZT),
+          AS("2026-11-04T20:30:00+01:00", JETZT)]));
+      // UND DIE QUELLE: der Client MUSS umrechnen, sonst waere jede
+      // Positions-Zeit ab sofort "Alter unbekannt" — richtig, aber nutzlos.
+      {
+        const ccQ = read("frontend/lib/capital-com/capital-com-client.ts")
+          .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+        torPruefung("der Broker-Client rechnet `createdDate` nicht mehr nach "
+          + "UTC um — dann meldet /status fuer JEDE Position 'Alter "
+          + "unbekannt'",
+          /createdDate:\s*brokerZeitNachUtc\(pos\.createdDate\)/.test(ccQ),
+          (ccQ.match(/createdDate:[^\n]*/g) || ["(keine Zeile)"]).slice(0, 2).join(" | "));
+      }
       // Regel vom 22.09.: bis zwei Minuten Uhren-Versatz, darueber UNBEKANNT.
       // Eine stille 0 war dort die Luege, die den Fehler zwei Monate trug.
       torPruefung("eine Zukunft wird als frisch oder als Alter ausgegeben",
