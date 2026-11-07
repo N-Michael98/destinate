@@ -1,4 +1,8 @@
 import { htmlSicher } from "../html-sicher/html-sicher";
+// NUR der Typ — `import type` wird beim Übersetzen gelöscht und erzeugt
+// keine Laufzeit-Abhängigkeit. Dieses Modul bleibt damit so importfrei wie
+// bisher; gerechnet wird in `positionen-lage.ts`, hier wird nur gezeigt.
+import type { PositionsBefund } from "../positionen-lage/positionen-lage";
 
 /**
  * WARUM KEIN TRADE? (29.10.)
@@ -49,6 +53,13 @@ export interface HandelsLageEingaben {
   modus: string | null;
   /** Anzahl offener Positionen beim Broker. */
   offenePositionen: number | null;
+  /**
+   * Was über die einzelnen offenen Positionen zu sagen ist (07.11.).
+   *
+   * `null` = nicht abrufbar. Eine LEERE Liste ist eine Aussage („keine
+   * offen"), kein Nichtwissen — deshalb die zwei verschiedenen Werte.
+   */
+  positionen?: ReadonlyArray<PositionsBefund> | null;
   /** `settings.botSettings.maxConcurrentPositions`. */
   maxGleichzeitig: number | null;
   /** `global.__daily_trades__.count`. */
@@ -178,6 +189,17 @@ export interface HandelsLage {
  */
 export const TORE_MAX_STATUS = 6;
 
+/**
+ * Wie viele offene Positionen `/status` einzeln zeigt (07.11.).
+ *
+ * `maxConcurrentPositions` ist eine EINSTELLUNG — im Standard 3, live 6,
+ * nach oben offen. Ohne Deckel wäre die Länge der Antwort von einer
+ * Einstellung abhängig, und ab irgendeiner Zahl käme `/status` gar nicht
+ * mehr an. Die Liste ist **auffälliges zuerst** sortiert, der Deckel
+ * schneidet also die unauffälligen weg — und zählt sie.
+ */
+export const POSITIONEN_MAX_STATUS = 6;
+
 /** Endliche Zahl oder `null` — ein `NaN` ist keine Messung. */
 function zahl(v: number | null | undefined): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -228,6 +250,66 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     zeilen.push(`⛔ Positionen: ${offen}/${maxOffen} — Limit erreicht, kein neuer Trade`);
   } else {
     zeilen.push(`✅ Positionen: ${offen}/${maxOffen}`);
+  }
+
+  // ── 3b. WAS IST MIT DIESEN POSITIONEN? (07.11.) ──────────────────────────
+  //
+  // `/status` vom 07.11. meldete „Positionen: 1/6" — und die Position war
+  // 70 Stunden alt, über ein Wochenende gehalten. Ob das in Ordnung ist,
+  // hängt am Handelsstil (4 / 24 / 168 h), und der stand nirgends.
+  //
+  // Die beiden Lagen, in denen der Zeit-Exit AUSGESETZT ist, schreiben je
+  // Position EINE Logzeile — nach drei Tagen aus dem Railway-Log gescrollt.
+  // Dann gibt es keine Stelle mehr, die es sagt. Hier steht es.
+  const posListe = e.positionen;
+  if (posListe && posListe.length > 0) {
+    zeilen.push("   <b>Offene Positionen:</b>");
+    // DECKEL (07.11.): `maxConcurrentPositions` ist frei einstellbar — im
+    // Standard 3, live 6, nach oben offen. Ohne Deckel waere die Laenge der
+    // Antwort eine Einstellung, und /status kaeme ab irgendeiner Zahl gar
+    // nicht mehr an. Die Liste kommt bereits AUFFAELLIGES ZUERST sortiert,
+    // der Deckel schneidet also die unauffaelligen weg.
+    for (const p of posListe.slice(0, POSITIONEN_MAX_STATUS)) {
+      const alter = p.alterStunden === null
+        ? "Alter unbekannt" : `${p.alterStunden.toFixed(1)} h`;
+      // Der Stil UND seine Grenze — die Zahl allein beantwortet die Frage
+      // nicht, und eine Grenze im Kopf des Lesers ist eine Regel zu viel.
+      const stil = p.stil === null
+        ? "Stil unbekannt"
+        : `${htmlSicher(p.stil)}${p.grenzeStunden === null
+            ? " (keine Grenze hinterlegt)" : ` (Grenze ${p.grenzeStunden} h)`}`;
+      const exit = p.zeitExit === "aktiv"
+        ? (p.ueberfaellig ? " · ⚠️ ÜBER der Haltedauer" : " · Zeit-Exit aktiv")
+        : p.zeitExit === "ohne-zeit"
+          ? " · ⚠️ Zeit-Exit kann NICHT greifen (Broker lieferte keine Eröffnungszeit)"
+          : " · ⚠️ Zeit-Exit AUSGESETZT (kein Handelsstil im Journal)";
+      zeilen.push(`      ${htmlSicher(p.symbol)} ${htmlSicher(p.richtung)} · `
+        + `${alter} · ${stil}${exit}`);
+    }
+    // ── WARUM HIER NICHTS IN `blocker` ODER `unbekannt` WANDERT ────────
+    //
+    // Mein erster Entwurf schob jede auffällige Position nach `unbekannt`.
+    // Der Prüfer hat es gefangen, und zwar zu Recht: `unbekannt` KURZ-
+    // SCHLIESST das Urteil („🟡 Kein Tor blockt nachweislich — aber N
+    // Angabe(n) nicht feststellbar"). Eine Position ohne Journal-Zeile
+    // hätte damit die ganze Tor-Diagnose verdrängt — also genau die
+    // Antwort auf „warum kein Trade?", wegen der man `/status` aufruft.
+    //
+    // Und es wäre auch inhaltlich falsch: ein ausgesetzter Zeit-Exit ist
+    // eine MESSUNG, kein Nichtwissen, und er blockt keinen neuen Trade.
+    // Er gehört in die Zeile — dort steht er, mit ⚠️, drei Zeilen über
+    // dem Urteil.
+    // Was fehlt, wird GEZÄHLT — und es wird gesagt, dass die Übrigen
+    // unauffällig sind. Sonst läse sich die Kürzung wie ein Verschweigen.
+    const restPos = posListe.length - POSITIONEN_MAX_STATUS;
+    if (restPos > 0) {
+      zeilen.push(`      (${restPos} weitere ohne Auffälligkeit)`);
+    }
+  } else if (posListe === null && offen !== null && offen > 0) {
+    // Positionen sind offen, aber die Einzelheiten kamen nicht an — gesagt,
+    // nicht verschwiegen. Ebenfalls NICHT in `unbekannt`: die Frage „warum
+    // kein Trade?" hängt nicht daran, und das Urteil gehört ihr.
+    zeilen.push("   ❔ Einzelheiten der offenen Positionen nicht abrufbar");
   }
 
   // ── 4. Tageslimit ────────────────────────────────────────────────────────

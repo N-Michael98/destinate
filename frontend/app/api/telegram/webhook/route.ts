@@ -622,13 +622,50 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         const m = await import("@/lib/capital-com/capital-com-session");
         return { verbunden: m.isCapitalConnected(), sess: m.getCapitalSession() };
       }),
+      // ── DIE LISTE, NICHT NUR IHRE LAENGE (07.11.) ────────────────────
+      //
+      // Bis heute stand hier `r.positions.length` — das volle Array wurde
+      // weggeworfen. `/status` konnte deshalb "Positionen: 1/6" sagen und
+      // sonst nichts, waehrend die Position 70 Stunden alt war. Dieselbe
+      // Form wie `confidence` (02.11.) und `richtungenJa` (04.11.): die
+      // Daten lagen die ganze Zeit da.
+      //
+      // Der STIL kommt aus dem Journal — ohne ihn ist "70 h" nicht
+      // einzuordnen (SCALPING 4 h, DAYTRADING 24 h, SWING 168 h). Reiner
+      // LESEPFAD: `findMany` auf offene Zeilen, kein Schreiben (Regel vom
+      // 07.09. — ein Lesepfad legt gemeinsamen Zustand nicht an).
       sicher(async () => {
         const m = await import("@/lib/capital-com/capital-com-session");
         const sx = m.getCapitalSession();
         if (!sx) return null;
         const { capitalGetPositions } = await import("@/lib/capital-com/capital-com-client");
         const r = await capitalGetPositions(sx.apiKey, sx.cst, sx.securityToken);
-        return r?.ok && Array.isArray(r.positions) ? r.positions.length : null;
+        if (!r?.ok || !Array.isArray(r.positions)) return null;
+        // Die Notizen der offenen Journal-Zeilen. Faellt die Datenbank aus,
+        // bleibt die Karte leer — dann meldet jede Position "Stil
+        // unbekannt", und das ist die WAHRHEIT ueber das, was wir wissen,
+        // nicht ueber den Code.
+        const { stilKarteAusNotizen, positionenLage } =
+          await import("@/lib/positionen-lage/positionen-lage");
+        let stile = new Map<string, string>();
+        try {
+          const { prisma } = await import("@/app/lib/prisma");
+          const zeilen = await prisma.trade.findMany({
+            where: { status: "OPEN" }, select: { notes: true },
+          }) as Array<{ notes: string | null }>;
+          stile = stilKarteAusNotizen(zeilen);
+        } catch {
+          // Siehe oben: ohne Journal kein Stil, und das steht dann da.
+        }
+        return {
+          anzahl: r.positions.length,
+          liste: positionenLage(r.positions.map((p) => ({
+            symbol: p.symbol ?? null,
+            direction: p.direction ?? null,
+            createdDate: p.createdDate ?? null,
+            stil: stile.get(String(p.dealId ?? "")) ?? null,
+          })), new Date()),
+        };
       }),
       sicher(async () => {
         const { PEAK_SCHLUESSEL } = await import("@/lib/trading-filters/trade-filters");
@@ -710,7 +747,10 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
         lageZeilen = handelsLage({
           brokerVerbunden: sitzung ? sitzung.verbunden : null,
           modus: einst?.botSettings?.mode ?? null,
-          offenePositionen: offeneZahl,
+          offenePositionen: offeneZahl?.anzahl ?? null,
+          // `null` heisst NICHT abrufbar, `[]` heisst keine offen — zwei
+          // verschiedene Aussagen, und die Anzeige unterscheidet sie.
+          positionen: offeneZahl?.liste ?? null,
           maxGleichzeitig: einst?.botSettings?.maxConcurrentPositions ?? null,
           tagesZaehler,
           tagesLimit: einst?.botSettings?.maxTradesPerDay ?? null,

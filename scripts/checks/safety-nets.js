@@ -4411,7 +4411,29 @@ module.exports = async function pruefe() {
               && ausgangNamen.includes("Modus nicht AUTO")
               && ausgangNamen.includes("Keine Kandidaten nach Filter"),
               `${ausgangNamen.length}: ${JSON.stringify(ausgangNamen).slice(0, 140)}`);
+            // ── DER HAERTEFALL TRAEGT AUCH DIE POSITIONEN (07.11.) ──────
+            //
+            // Sonst misst er wieder einen Fall, der NICHT der schlimmste
+            // ist — genau der Fund vom 04.11., eine Zeile weiter. Der
+            // Positions-Block hat seinen eigenen Deckel
+            // (`POSITIONEN_MAX_STATUS`), weil `maxConcurrentPositions` eine
+            // frei einstellbare Zahl ist.
+            const PMS = hl.exports?.POSITIONEN_MAX_STATUS;
+            const posMax = Array.from(
+              { length: (typeof PMS === "number" ? PMS : 6) + 4 }, (_, i) => ({
+                symbol: `SEHR_LANGER_MARKTNAME_${i}`, richtung: "SELL",
+                alterStunden: 167.9 - i, stil: "DAYTRADING",
+                grenzeStunden: 24, zeitExit: "aktiv", ueberfaellig: true,
+              }));
+            // `maxGleichzeitig` MUSS groesser sein als die Zahl der
+            // Positionen: sonst greift der Limit-Blocker, und das Urteil
+            // wird "🛑 Blockiert" statt der Tor-Diagnose. Mein erster
+            // Entwurf liess `maxGleichzeitig: 6` bei zehn Positionen stehen
+            // — der Pruefer hat es gefangen, es war ein Fehler in der
+            // FIXTURE, nicht im Code.
             const haertefall = (tore) => txt0(mit({ ...BEKANNT,
+              offenePositionen: posMax.length, positionen: posMax,
+              maxGleichzeitig: posMax.length + 1,
               ausgaenge: Object.fromEntries(
                 ausgangNamen.map((a, i) => [a, 300 - i])),
               trichter: {
@@ -8899,6 +8921,279 @@ module.exports = async function pruefe() {
         torPruefung(`die Zyklus-Bilanz liest aus ${typ} Schluessel, die nicht gesendet werden`,
           sender.length > 0 && schlecht.length === 0,
           sender.length === 0 ? "kein Sender" : schlecht.map((s) => `${s.datei}: sendet ${s.schluessel.join(", ") || "nichts"}, gebraucht ${noetig.join(", ")}`).join(" | "));
+      }
+    }
+  }
+
+  // ══ WAS IST MIT DEN OFFENEN POSITIONEN? (07.11.) ════════════════════════
+  //
+  // `/status` vom 07.11. meldete "Positionen: 1/6" — und sonst nichts. Die
+  // Position war 70 Stunden alt, ueber ein Wochenende gehalten. Ob das in
+  // Ordnung ist, haengt am Handelsstil (SCALPING 4 h, DAYTRADING 24 h,
+  // SWING 168 h), und der stand nirgends. `capitalGetPositions` liefert das
+  // volle Array, der Webhook nahm `.length` — dieselbe Form wie `confidence`
+  // (02.11.) und `richtungenJa` (04.11.).
+  {
+    const pm = ladeTsModul("lib/positionen-lage/positionen-lage.ts");
+    const PL = pm.exports?.positionenLage;
+    const AS = pm.exports?.alterStunden;
+    const SK = pm.exports?.stilKarteAusNotizen;
+    const GR = pm.exports?.STIL_GRENZEN_STUNDEN;
+    if (pm.fehler || typeof PL !== "function" || typeof AS !== "function"
+      || typeof SK !== "function" || !GR) {
+      funde.push(`positionen-lage nicht ausfuehrbar: ${pm.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      const JETZT = new Date("2026-11-07T17:22:44.000Z");
+
+      // ── DIE GRENZEN SIND EINE KOPIE — und muessen gleich bleiben ──────
+      //
+      // `/status` darf `risk-agent.ts` NICHT importieren: die Datei hat
+      // erhoehtes Risiko und zieht Prisma, Bus, Telegram und den
+      // Broker-Client nach. Dem Befehl, den man benutzt wenn etwas kaputt
+      // ist, eine Laufzeit-Fehlerquelle zu geben, ist genau der Fehler, den
+      // das Projekt am 27.10. vermieden hat. Also eine Kopie — aber eine
+      // GEBUNDENE: hier wird die echte Tabelle geschnitten und verglichen.
+      const raQ = read("frontend/lib/agents/risk-agent.ts");
+      const anker = "const STYLE_MAX_HOURS: Record<string, number> = {";
+      const von = raQ.indexOf(anker);
+      const bis = von >= 0 ? raQ.indexOf("}", von) : -1;
+      const roh = von >= 0 && bis > von ? raQ.slice(von + anker.length, bis) : "";
+      const echt = {};
+      for (const m of roh.matchAll(/(\w+)\s*:\s*(\d+)/g)) echt[m[1]] = Number(m[2]);
+      // SELBSTPRUEFUNG des Ausschnitts: findet er nichts, saehe der
+      // Vergleich darunter wie ein gutes Ergebnis aus.
+      torPruefung("die Haltedauer-Tabelle liess sich nicht aus risk-agent.ts "
+        + "schneiden — dann vergleicht die Pruefung darunter NICHTS",
+        Object.keys(echt).length >= 3 && echt.DAYTRADING === 24,
+        JSON.stringify(echt));
+      torPruefung("die Haltedauern in positionen-lage.ts weichen von "
+        + "risk-agent.ts ab — dann zeigt /status eine andere Grenze an, "
+        + "als der Zeit-Exit benutzt",
+        JSON.stringify(echt) === JSON.stringify(GR),
+        `risk-agent ${JSON.stringify(echt)} vs modul ${JSON.stringify(GR)}`);
+
+      // ── DIESELBE BEDINGUNG WIE `stammdatenAusNotizen` ────────────────
+      //
+      // Genau dann, wenn DORT kein Eintrag entsteht, gilt der Stil als
+      // geraten und der Zeit-Exit wird ausgesetzt. Eine lockerere Regel
+      // hier zeigte "DAYTRADING" an, waehrend die Position in Wirklichkeit
+      // ohne Haltedauer-Grenze laeuft — also genau die Luege, gegen die
+      // der Block gebaut ist. Beide Funktionen werden AUSGEFUEHRT.
+      const ra = ladeTsModul("lib/agents/risk-agent.ts");
+      const SA = ra.exports?.stammdatenAusNotizen;
+      const proben = [
+        { notes: JSON.stringify({ dealId: "A", tradingStyle: "SWING", confidence: 72 }) },
+        { notes: JSON.stringify({ dealId: "B", tradingStyle: "DAYTRADING", confidence: 0 }) },
+        // OHNE confidence -> beide muessen ihn VERWERFEN
+        { notes: JSON.stringify({ dealId: "C", tradingStyle: "SCALPING" }) },
+        // confidence null -> `Number(null)` waere 0; beide muessen verwerfen
+        { notes: JSON.stringify({ dealId: "D", tradingStyle: "SWING", confidence: null }) },
+        // leerer Stil
+        { notes: JSON.stringify({ dealId: "E", tradingStyle: "  ", confidence: 5 }) },
+        // ohne dealId
+        { notes: JSON.stringify({ tradingStyle: "SWING", confidence: 5 }) },
+        { notes: "kaputt {" }, { notes: null },
+      ];
+      if (typeof SA !== "function") {
+        torPruefung("stammdatenAusNotizen ist nicht ausfuehrbar — die "
+          + "Gleichheit der beiden Lesarten ist dann ungeprueft", false,
+          ra.fehler ?? "nicht exportiert");
+      } else {
+        const a = [...SK(proben)].sort();
+        const b = [...SA(proben)].map(([k, v]) => [k, v.tradingStyle]).sort();
+        // SELBSTPRUEFUNG der Proben: ohne einen VERWORFENEN Fall koennte
+        // die Gleichheit den Unterschied gar nicht ausdruecken.
+        torPruefung("die Proben enthalten keinen verworfenen Fall — dann "
+          + "beweist der Vergleich darunter nichts",
+          a.length > 0 && a.length < proben.length,
+          `${a.length} von ${proben.length} angenommen`);
+        torPruefung("stilKarteAusNotizen liest ANDERS als "
+          + "stammdatenAusNotizen — dann zeigt /status einen Stil an, auf "
+          + "den der Zeit-Exit gar nicht rechnet",
+          JSON.stringify(a) === JSON.stringify(b),
+          `modul ${JSON.stringify(a)} vs risk-agent ${JSON.stringify(b)}`);
+      }
+
+      // ── alterStunden: unbekannt bleibt unbekannt ──────────────────────
+      torPruefung("ein fehlendes oder unlesbares Datum wird zu einem Alter",
+        AS("", JETZT) === null && AS(null, JETZT) === null
+        && AS("Unsinn", JETZT) === null,
+        JSON.stringify([AS("", JETZT), AS(null, JETZT), AS("Unsinn", JETZT)]));
+      torPruefung("das Alter wird falsch gerechnet",
+        AS("2026-11-04T19:30:00.000Z", JETZT) === 69.9,
+        String(AS("2026-11-04T19:30:00.000Z", JETZT)));
+      // Regel vom 22.09.: bis zwei Minuten Uhren-Versatz, darueber UNBEKANNT.
+      // Eine stille 0 war dort die Luege, die den Fehler zwei Monate trug.
+      torPruefung("eine Zukunft wird als frisch oder als Alter ausgegeben",
+        AS("2026-11-07T17:23:30.000Z", JETZT) === 0
+        && AS("2026-11-07T18:00:00.000Z", JETZT) === null,
+        JSON.stringify([AS("2026-11-07T17:23:30.000Z", JETZT),
+          AS("2026-11-07T18:00:00.000Z", JETZT)]));
+
+      // ── positionenLage AUSGEFUEHRT ────────────────────────────────────
+      const eing = [
+        { symbol: "GOLD", direction: "SELL", createdDate: "2026-11-07T10:00:00.000Z", stil: "DAYTRADING" },
+        { symbol: "XRPUSD", direction: "BUY", createdDate: "2026-11-04T19:30:00.000Z", stil: "SWING" },
+        { symbol: "UKOIL", direction: "BUY", createdDate: "2026-11-06T10:00:00.000Z", stil: null },
+        { symbol: "SPX500", direction: "SELL", createdDate: "", stil: "DAYTRADING" },
+        { symbol: "EURUSD", direction: "BUY", createdDate: "2026-11-05T10:00:00.000Z", stil: "DAYTRADING" },
+      ];
+      const bef = PL(eing, JETZT);
+      const b = (s) => bef.find((x) => x.symbol === s);
+      // SELBSTPRUEFUNG der Testdaten: alle vier Lagen muessen vorkommen,
+      // sonst kann keine Pruefung darunter ihren Fehler ausdruecken.
+      torPruefung("die Testdaten decken nicht alle vier Lagen ab (aktiv, "
+        + "ueberfaellig, ohne Stil, ohne Zeit) — dann beweisen die "
+        + "Pruefungen darunter nichts",
+        b("GOLD")?.zeitExit === "aktiv" && b("GOLD")?.ueberfaellig === false
+        && b("EURUSD")?.ueberfaellig === true
+        && b("UKOIL")?.zeitExit === "ohne-stil"
+        && b("SPX500")?.zeitExit === "ohne-zeit",
+        JSON.stringify(bef.map((x) => [x.symbol, x.zeitExit, x.ueberfaellig])));
+      torPruefung("eine SWING-Position wird faelschlich als ueberfaellig "
+        + "gemeldet — 70 h sind unter der Grenze von 168 h",
+        b("XRPUSD")?.alterStunden === 69.9 && b("XRPUSD")?.grenzeStunden === 168
+        && b("XRPUSD")?.ueberfaellig === false,
+        JSON.stringify(b("XRPUSD")));
+      // OHNE Stil KEINE Grenze und KEIN Urteil — sonst waere "ueberfaellig"
+      // eine Behauptung auf einer Annahme, genau der Fehler, den
+      // risk-agent.ts am 19.08. losgeworden ist.
+      torPruefung("ohne Handelsstil wird eine Grenze erfunden",
+        b("UKOIL")?.grenzeStunden === null && b("UKOIL")?.ueberfaellig === false,
+        JSON.stringify(b("UKOIL")));
+      torPruefung("ohne Eroeffnungszeit wird ein Urteil gefaellt",
+        b("SPX500")?.alterStunden === null && b("SPX500")?.ueberfaellig === false,
+        JSON.stringify(b("SPX500")));
+      // ── AUFFAELLIGES ZUERST, DARIN NACH ALTER ────────────────────────
+      //
+      // DAS IST EIN RIEGEL, KEINE KOSMETIK. Der erste Entwurf sortierte nur
+      // nach Alter — und eine Position OHNE Eroeffnungszeit hat
+      // `alterStunden === null`, landete damit ganz unten und fiele als
+      // ERSTE aus dem Deckel. Ausgerechnet der Fall, in dem der Zeit-Exit
+      // gar nicht greifen kann, waere der erste, den die Anzeige
+      // verschweigt. Dieselbe Lehre wie bei der gedrehten Tor-Sortierung
+      // (31.10.).
+      const auff = bef.filter((x) => x.zeitExit !== "aktiv" || x.ueberfaellig);
+      const unauff = bef.filter((x) => !(x.zeitExit !== "aktiv" || x.ueberfaellig));
+      torPruefung("auffaellige Positionen stehen nicht vorne — dann faellt "
+        + "die ohne Eroeffnungszeit als erste aus dem Deckel",
+        bef.slice(0, auff.length).every((x) => x.zeitExit !== "aktiv" || x.ueberfaellig)
+        && auff.length === 3 && unauff.length === 2,
+        JSON.stringify(bef.map((x) => [x.symbol, x.zeitExit, x.ueberfaellig])));
+      torPruefung("innerhalb der Gruppen wird nicht nach Alter sortiert",
+        unauff[0].symbol === "XRPUSD" && unauff[1].symbol === "GOLD",
+        JSON.stringify(unauff.map((x) => [x.symbol, x.alterStunden])));
+      // Und die Position OHNE Alter darf NICHT hinten landen, wenn sie
+      // auffaellig ist — genau das war das Loch.
+      torPruefung("die Position ohne Eroeffnungszeit landet hinten",
+        bef.findIndex((x) => x.symbol === "SPX500") < unauff.length + 1,
+        `Index ${bef.findIndex((x) => x.symbol === "SPX500")} von ${bef.length}`);
+      torPruefung("ein unbekannter Stil bekommt eine Grenze aus der Tabelle",
+        PL([{ symbol: "X", direction: "BUY", createdDate: "2026-11-07T10:00:00.000Z",
+          stil: "GIBTESNICHT" }], JETZT)[0].grenzeStunden === null,
+        JSON.stringify(PL([{ symbol: "X", direction: "BUY",
+          createdDate: "2026-11-07T10:00:00.000Z", stil: "GIBTESNICHT" }], JETZT)[0]));
+    }
+
+    // ── DIE VERDRAHTUNG (07.11.) ──────────────────────────────────────
+    //
+    // Eine geprueffte Funktion, die nie echte Werte bekommt, beweist nichts
+    // ueber ihre Aufrufstelle (30.09.). Der Webhook muss die LISTE
+    // weiterreichen, nicht nur ihre Laenge.
+    const ohneK9 = (q) => q.replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    const whQ9 = ohneK9(read("frontend/app/api/telegram/webhook/route.ts"));
+    torPruefung("die Kommentar-Bereinigung ist blind — sie streift nichts ab",
+      !/weggeworfen/.test(ohneK9("// weggeworfen")) && /behalten/.test(ohneK9("const x = behalten;")),
+      "Selbstpruefung");
+    // AN DIE ZUWEISUNG GEBUNDEN, nicht an das blosse Vorkommen: ein
+    // `liste: null && positionenLage(...)` liesse den Aufruf im Text stehen
+    // und das Ergebnis verfallen — die Fehlerklasse vom 28.10. ("der Riegel
+    // wird gerechnet und weggeworfen"). `liste:` muss DIREKT den Aufruf
+    // bekommen.
+    torPruefung("/status wirft die Positionsliste wieder weg (nur .length)",
+      /liste:\s*positionenLage\(/.test(whQ9) && /stilKarteAusNotizen\(/.test(whQ9)
+      && !/return r\?\.ok && Array\.isArray\(r\.positions\) \? r\.positions\.length : null/.test(whQ9),
+      (whQ9.match(/liste:[^\n]*/g) || ["(keine liste-Zuweisung)"]).slice(0, 2).join(" | "));
+    torPruefung("/status reicht die Positionsliste nicht an handelsLage durch",
+      /positionen:\s*offeneZahl\?\.liste\s*\?\?\s*null/.test(whQ9)
+      && /offenePositionen:\s*offeneZahl\?\.anzahl\s*\?\?\s*null/.test(whQ9),
+      (whQ9.match(/positionen:[^\n]*/g) || ["(keine Zeile)"])[0]);
+    const hlQ9 = ohneK9(read("frontend/lib/handels-lage/handels-lage.ts"));
+    torPruefung("die Anzeige nennt die ausgesetzten Zeit-Exits nicht — dann "
+      + "steht die Warnung NUR in einer Logzeile, die nach drei Tagen "
+      + "weggescrollt ist",
+      /Zeit-Exit AUSGESETZT/.test(hlQ9) && /Zeit-Exit kann NICHT greifen/.test(hlQ9)
+      && /ÜBER der Haltedauer/.test(hlQ9),
+      "Texte der drei Lagen");
+    // ── DER POSITIONS-BLOCK DARF DAS URTEIL NICHT VERDRAENGEN ────────
+    //
+    // Gefunden vom Pruefer: mein erster Entwurf schob jede auffaellige
+    // Position nach `unbekannt` — und das KURZSCHLIESST das Urteil
+    // ("🟡 … N Angabe(n) nicht feststellbar"). Eine Position ohne
+    // Journal-Zeile haette damit die ganze Tor-Diagnose verdraengt, also
+    // genau die Antwort auf "warum kein Trade?".
+    {
+      const PLx = ladeTsModul("lib/positionen-lage/positionen-lage.ts").exports;
+      // EIGENER Prueffstand: `mit`/`BEKANNT`/`hl` des Lage-Blocks liegen in
+      // einem anderen Geltungsbereich. Lieber hier laden als dort einen
+      // Namen ausleihen, der morgen anders heisst.
+      const hlX = ladeTsModul("lib/handels-lage/handels-lage.ts",
+        { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+      if (hlX.fehler || typeof hlX.exports?.handelsLage !== "function") {
+        torPruefung("handels-lage ist im Positions-Pruefstand nicht ladbar",
+          false, hlX.fehler ?? "nicht exportiert");
+      } else {
+      const BEKANNT_X = {
+        brokerVerbunden: true, modus: "AUTO", offenePositionen: 0,
+        maxGleichzeitig: 6, tagesZaehler: 0, tagesLimit: 21,
+        tagesLimitAktiv: true, kontostand: 1870.57, hoechststand: 1990.36,
+        maxDrawdownProzent: 10, inHandelszeit: true, zyklenHeute: 258,
+        ausgaenge: { "x": 1 }, trichter: null, positionen: null,
+      };
+      const mit = (o) => hlX.exports.handelsLage({ ...BEKANNT_X, ...o });
+      const hl = hlX;
+      const BEKANNT = BEKANNT_X;
+      const schlimmePos = PLx?.positionenLage?.([
+        { symbol: "A", direction: "BUY", createdDate: "", stil: null },
+        { symbol: "B", direction: "SELL", createdDate: "2026-11-01T00:00:00.000Z", stil: "DAYTRADING" },
+      ], new Date("2026-11-07T17:22:44.000Z")) ?? [];
+      const lagePos = mit({ ...BEKANNT, positionen: schlimmePos,
+        offenePositionen: 2,
+        trichter: { scans: 100, go: 5, tore: {
+          "Schwelle": { ja: 0, nein: 5, fallback: 0, gruende: { "g": 5 } } } } });
+      const tPos = lagePos.zeilen.join("\n");
+      // SELBSTPRUEFUNG der Testdaten: beide Positionen MUESSEN auffaellig
+      // sein, sonst kann die Pruefung den Fehler nicht ausdruecken.
+      torPruefung("die Testpositionen sind nicht auffaellig — dann beweist "
+        + "die Pruefung darunter nichts",
+        schlimmePos.length === 2
+        && schlimmePos.every((p) => p.zeitExit !== "aktiv" || p.ueberfaellig),
+        JSON.stringify(schlimmePos.map((p) => [p.symbol, p.zeitExit, p.ueberfaellig])));
+      torPruefung("eine auffaellige Position verdraengt das Tor-Urteil — "
+        + "dann steht statt „Grösstes: Schwelle\" nur noch „N Angabe(n) "
+        + "nicht feststellbar\"",
+        /Grösstes: <b>Schwelle<\/b>/.test(tPos)
+        && !lagePos.unbekannt.some((u) => /Haltedauer|Einzelheiten/.test(u)),
+        `unbekannt=${JSON.stringify(lagePos.unbekannt)} · `
+        + (tPos.match(/🟡[^\n]*|🛑[^\n]*/) ?? ["(kein Urteil)"])[0].slice(0, 120));
+      // Und der Deckel mit seiner Rest-Zeile.
+      const viele = PLx.positionenLage(Array.from({ length: 10 }, (_, i) => ({
+        symbol: `M${i}`, direction: "BUY",
+        createdDate: `2026-11-0${(i % 5) + 1}T10:00:00.000Z`, stil: "SWING",
+      })), new Date("2026-11-07T17:22:44.000Z"));
+      const tViele = mit({ ...BEKANNT, positionen: viele, offenePositionen: 10 })
+        .zeilen.join("\n");
+      const PMSx = hl.exports?.POSITIONEN_MAX_STATUS;
+      torPruefung("der Positions-Block hat keinen Deckel — die Laenge der "
+        + "Antwort haengt dann an `maxConcurrentPositions`",
+        typeof PMSx === "number"
+        && (tViele.match(/^ {6}M\d+ /gm) || []).length === PMSx,
+        `${(tViele.match(/^ {6}M\d+ /gm) || []).length} Zeilen, Deckel ${PMSx}`);
+      torPruefung("die gekuerzte Positionsliste sagt nicht, WIE VIEL fehlt",
+        new RegExp(`\\(${10 - (PMSx ?? 6)} weitere ohne Auffälligkeit\\)`).test(tViele),
+        (tViele.match(/weitere ohne[^\n]*/) ?? ["(keine Rest-Zeile)"])[0]);
       }
     }
   }
