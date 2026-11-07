@@ -1240,6 +1240,25 @@ async function zyklusInnen(): Promise<string> {
   const isProtected = (p: { dealId?: string; direction?: string; openLevel?: number; stopLevel?: number | null }): boolean => {
     if (p.dealId && beByDealId.get(p.dealId) === true) return true;
     if (p.stopLevel == null || !p.openLevel) return false;
+    // ── OHNE RICHTUNG NICHT ABGESICHERT (07.11.) ────────────────────────
+    //
+    // Der Kommentar oben sagt es seit jeher: „Unbekannt = NICHT abgesichert
+    // (fail-safe: dann kein Nachkauf)". Der Ternär hielt das NICHT ein —
+    // ein unbekannter Wert fiel in den else-Zweig und wurde damit wie SELL
+    // geprüft.
+    //
+    // AUSGERECHNET für eine BUY-Position mit Stop UNTER dem Einstieg
+    // (`stopLevel 95`, `openLevel 100`) — also gerade NICHT abgesichert:
+    //
+    //     direction "BUY"   -> 95 >= 100 -> false   (richtig)
+    //     direction null    -> 95 <= 100 -> TRUE    (falsch)
+    //
+    // Solange `capitalGetPositions` noch `?? "BUY"` lieferte, kam hier nie
+    // etwas anderes als "BUY" oder "SELL" an. Seit dem Riegel von heute
+    // kommt `null` — mein eigener Fix hat diesen Zweig also überhaupt erst
+    // erreichbar gemacht, und zwar in die GEFÄHRLICHE Richtung: eine
+    // ungesicherte Position gälte als gesichert, und der Nachkauf liefe.
+    if (p.direction !== "BUY" && p.direction !== "SELL") return false;
     return p.direction === "BUY" ? p.stopLevel >= p.openLevel : p.stopLevel <= p.openLevel;
   };
 

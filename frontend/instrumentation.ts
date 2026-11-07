@@ -632,6 +632,25 @@ export async function register() {
                       // Ein Stop darf sich ab jetzt nur noch in Richtung Gewinn
                       // bewegen, egal welches System ihn setzen will.
                       const liveSL = typeof pos.stopLevel === "number" && pos.stopLevel > 0 ? pos.stopLevel : null;
+                      // ── OHNE RICHTUNG KEIN STOP-UMBAU (07.11.) ──────────
+                      //
+                      // `istEnger` darunter entscheidet, ob ein Stop sich nur
+                      // in Richtung GEWINN bewegt — der Riegel, der verhindert
+                      // dass irgendein System die Absicherung zurücknimmt.
+                      // Er hängt vollständig an der Richtung:
+                      //
+                      //     isBuyPos ? new_sl > liveSL : new_sl < liveSL
+                      //
+                      // Ein unbekannter Wert macht `isBuyPos` zu `false` und
+                      // prüft die BUY-Position wie eine SELL — ein LOCKERERER
+                      // Stop käme damit als „enger" durch und würde gesetzt.
+                      // Genau umgekehrt wie gemeint.
+                      if (!pos.direction) {
+                        console.warn(`[py-lifecycle] ${symbol}: SL NICHT angepasst — der Broker `
+                          + `liefert keine lesbare Richtung für deal=${tradeId}. Ob ${action.new_sl} `
+                          + `enger oder lockerer als ${liveSL} ist, haengt an ihr.`);
+                        continue;
+                      }
                       const isBuyPos = pos.direction === "BUY";
                       const istEnger = liveSL === null
                         || (isBuyPos ? action.new_sl > liveSL : action.new_sl < liveSL);

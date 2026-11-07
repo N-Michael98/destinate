@@ -9246,10 +9246,70 @@ module.exports = async function pruefe() {
     // wuerde die Position VERGROESSERN statt verkleinern.
     const insQ = read("frontend/instrumentation.ts")
       .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
-    torPruefung("der Python-Teilschluss handelt auf einer geratenen "
-      + "Richtung — die Gegenorder vergroesserte die Position",
-      /if \(!pos\.direction\) \{/.test(insQ),
-      (insQ.match(/capitalClosePartial\([^\n]*/) ?? ["(keine Zeile)"])[0].slice(0, 110));
+    // ZWEI Riegel, nicht einer — GEZAEHLT, nicht gefunden (25.10.): einer
+    // vor `capitalClosePartial` (Gegenorder) und einer vor dem SL-Umbau
+    // (`istEnger`). Ein Treffer bewiese nichts ueber die andere Stelle.
+    torPruefung("im Python-Lifecycle fehlt ein Richtungs-Riegel — es gibt "
+      + "ZWEI Stellen, die auf der Richtung handeln (Gegenorder und "
+      + "Stop-Umbau)",
+      (insQ.match(/if \(!pos\.direction\) \{/g) || []).length === 2,
+      `${(insQ.match(/if \(!pos\.direction\) \{/g) || []).length} Riegel gefunden`);
+
+    // ══ WO `null` STILL IN EINEN ZWEIG FAELLT (07.11.) ════════════════
+    //
+    // `tsc` erzwingt den Filter nur, wo `LivePosition` steht. Ueberall
+    // sonst ist `pos.direction === "BUY" ? a : b` TYPKORREKT — und `null`
+    // nimmt still den else-Zweig, wird also wie SELL behandelt. Der
+    // Riegel von heute hat diese Zweige ueberhaupt erst erreichbar
+    // gemacht; vorher kam immer "BUY" an.
+    //
+    // ZWEI Stellen waren betroffen, beide am Geld, beide AUSGERECHNET:
+    {
+      // 1. `isProtected` im Orchestrator. Der Kommentar daneben sagt seit
+      //    jeher "Unbekannt = NICHT abgesichert (fail-safe: dann kein
+      //    Nachkauf)" — der Ternaer hielt das nicht ein. Fuer eine
+      //    BUY-Position mit Stop UNTER dem Einstieg (also gerade NICHT
+      //    abgesichert) ergab `null` den Wert TRUE, und der Nachkauf lief.
+      const isProtected = (p) => {
+        if (p.stopLevel == null || !p.openLevel) return false;
+        if (p.direction !== "BUY" && p.direction !== "SELL") return false;
+        return p.direction === "BUY" ? p.stopLevel >= p.openLevel : p.stopLevel <= p.openLevel;
+      };
+      // SELBSTPRUEFUNG des Nachbaus gegen die QUELLE: weicht er ab, misst
+      // die Rechnung darunter meine eigene Meinung statt den Code.
+      const orQ = read("frontend/lib/agents/orchestrator-agent.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      torPruefung("der Fail-safe in `isProtected` fehlt — eine Position "
+        + "OHNE Richtung gilt dann als abgesichert, und der Nachkauf laeuft",
+        /if \(p\.direction !== "BUY" && p\.direction !== "SELL"\) return false;/.test(orQ)
+        && /return p\.direction === "BUY" \? p\.stopLevel >= p\.openLevel/.test(orQ),
+        (orQ.match(/p\.direction[^\n]*/g) || ["(keine Zeile)"]).slice(0, 2).join(" | "));
+      // Und die Rechnung selbst, an der Lage, die den Fehler ausdrueckt:
+      // BUY, Stop UNTER Einstieg = NICHT abgesichert.
+      torPruefung("isProtected urteilt falsch — unbekannt muss NICHT "
+        + "abgesichert heissen",
+        isProtected({ direction: "BUY", stopLevel: 95, openLevel: 100 }) === false
+        && isProtected({ direction: "BUY", stopLevel: 105, openLevel: 100 }) === true
+        && isProtected({ direction: "SELL", stopLevel: 95, openLevel: 100 }) === true
+        && isProtected({ direction: null, stopLevel: 95, openLevel: 100 }) === false
+        && isProtected({ direction: null, stopLevel: 105, openLevel: 100 }) === false,
+        JSON.stringify([
+          isProtected({ direction: "BUY", stopLevel: 95, openLevel: 100 }),
+          isProtected({ direction: null, stopLevel: 95, openLevel: 100 }),
+          isProtected({ direction: null, stopLevel: 105, openLevel: 100 })]));
+
+      // 2. Die Anzeige im LiveExecutionMonitor — dieselbe Klasse wie die
+      //    drei Faerbungen vom 04.11.: zweiwertig gefaerbt saehe eine
+      //    Position OHNE Richtung wie ein SELL aus.
+      const lemQ = read("frontend/components/LiveExecutionMonitor.tsx")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      torPruefung("die Positions-Anzeige faerbt zweiwertig — eine Position "
+        + "ohne Richtung saehe wie ein SELL aus",
+        /pos\.direction === "SELL" \? "rgba\(248,113,113,0\.15\)"/.test(lemQ)
+        && /pos\.direction === "SELL" \? "#f87171"/.test(lemQ)
+        && /\{pos\.direction \?\? "—"\}/.test(lemQ),
+        (lemQ.match(/pos\.direction[^\n]*/g) || ["(keine Zeile)"]).slice(0, 2).join(" | "));
+    }
   }
 
   // ══ WAS IST MIT DEN OFFENEN POSITIONEN? (07.11.) ════════════════════════

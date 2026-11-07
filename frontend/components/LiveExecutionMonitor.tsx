@@ -203,9 +203,17 @@ export default function LiveExecutionMonitor() {
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                   <span style={{ fontSize: "13px", fontWeight: 700, color: "#f1f5f9" }}>{pos.symbol}</span>
                   <span style={{ padding: "1px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 700,
-                    background: pos.direction === "BUY" ? "rgba(16,201,109,0.15)" : "rgba(248,113,113,0.15)",
-                    color: pos.direction === "BUY" ? "#10c96d" : "#f87171" }}>
-                    {pos.direction}
+                    // Dreiwertig (07.11.): `direction` kann seit heute `null`
+                    // sein — der Broker-Client erfindet kein "BUY" mehr.
+                    // Zweiwertig gefaerbt saehe eine Position OHNE Richtung
+                    // wie ein SELL aus; dieselbe Klasse wie die drei
+                    // Faerbungen vom 04.11.
+                    background: pos.direction === "BUY" ? "rgba(16,201,109,0.15)"
+                      : pos.direction === "SELL" ? "rgba(248,113,113,0.15)"
+                        : "rgba(245,158,11,0.15)",
+                    color: pos.direction === "BUY" ? "#10c96d"
+                      : pos.direction === "SELL" ? "#f87171" : "#f59e0b" }}>
+                    {pos.direction ?? "—"}
                   </span>
                 </div>
                 <span style={{ fontSize: "14px", fontWeight: 700, color: (pos.profitLoss ?? 0) >= 0 ? "#10c96d" : "#f87171" }}>
