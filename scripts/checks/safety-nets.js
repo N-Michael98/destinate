@@ -4443,12 +4443,92 @@ module.exports = async function pruefe() {
               toreOhne[n] = kopie;
             }
             const ohneSplit = haertefall(toreOhne);
-            torPruefung("der Laengen-Haertefall traegt keine (oder fast "
-              + "keine) Richtungsaufteilung — dann misst er einen Fall, der "
-              + "NICHT der schlimmste ist",
-              schlimmst.length - ohneSplit.length >= 300,
-              `mit ${schlimmst.length}, ohne ${ohneSplit.length}, `
-              + `Differenz ${schlimmst.length - ohneSplit.length}`);
+            // AN DIE EIGENSCHAFT GEBUNDEN, nicht an eine geeichte Zahl
+            // (07.11.). Diese Pruefung verlangte zuerst >= 300 Zeichen
+            // Differenz — geeicht auf ELF gezeigte Tore. Mit dem Deckel sind
+            // es sechs, und sie wurde zu Recht rot: die Zahl beschrieb einen
+            // Zustand, den es nicht mehr gibt. Jetzt wird GEZAEHLT, wie viele
+            // der GEZEIGTEN Tor-Zeilen eine Aufteilung tragen — das veraltet
+            // nicht, wenn sich der Deckel aendert.
+            const TMS = hl.exports?.TORE_MAX_STATUS;
+            const sollGezeigt = Math.min(torNamen.length,
+              typeof TMS === "number" ? TMS : torNamen.length);
+            const mitSplit = (schlimmst.match(/: ja \d+ \(\d+ (SELL|BUY)/g) || []).length;
+            torPruefung("der Laengen-Haertefall traegt keine Richtungs"
+              + "aufteilung auf den gezeigten Toren — dann misst er einen "
+              + "Fall, der NICHT der schlimmste ist",
+              typeof TMS === "number" && mitSplit === sollGezeigt
+              && schlimmst.length > ohneSplit.length,
+              `${mitSplit} von ${sollGezeigt} gezeigten Toren mit Aufteilung, `
+              + `mit ${schlimmst.length}, ohne ${ohneSplit.length}, `
+              + `TORE_MAX_STATUS=${TMS}`);
+            // ══ DER DECKEL IM TOR-BLOCK (07.11.) ════════════════════════
+            //
+            // GEMESSEN: elf Tore kosten 1871 Zeichen, ein Tor im Schnitt
+            // 170 — 47 % der ganzen Lage. Mit dem Rest der Antwort waren es
+            // 4012 von 4096, also 84 Zeichen Luft; ein ZWOELFTES Tor in der
+            // `GateName`-Union haette die Grenze gerissen, und dann kommt
+            // /status GAR NICHT an. Dieselbe Loesung wie in der Tagesbilanz
+            // (31.10.): nach Ablehnungen sortiert, Rest gezaehlt.
+            {
+              // Die Testdaten muessen den Deckel ERREICHEN, sonst kann
+              // keine Pruefung darunter den Fehler ausdruecken.
+              torPruefung("die Union hat nicht mehr Tore als der Deckel — "
+                + "dann greift er in den Testdaten gar nicht",
+                typeof TMS === "number" && torNamen.length > TMS,
+                `${torNamen.length} Tore, Deckel ${TMS}`);
+              const gezeigteZeilen = (schlimmst.match(/^ {6}\S[^\n]*: ja /gm) || []).length;
+              torPruefung("der Tor-Block hat keinen Deckel — elf Tore "
+                + "reissen zusammen mit dem Rest Telegrams Grenze",
+                gezeigteZeilen === sollGezeigt,
+                `${gezeigteZeilen} Tor-Zeilen, erwartet ${sollGezeigt}`);
+              // Was fehlt, wird GEZAEHLT. Eine verschwiegene Zeile waere
+              // schlimmer als eine fehlende.
+              const restZahl = torNamen.length - sollGezeigt;
+              torPruefung("die gekuerzte Tor-Liste sagt nicht, WIE VIEL fehlt",
+                new RegExp(`\\(${restZahl} weitere Tore, \\d+ Ablehnungen\\)`).test(schlimmst),
+                (schlimmst.match(/weitere Tore[^\n]*/) ?? ["(keine Rest-Zeile)"])[0]);
+              // Und die Rest-Zahl muss STIMMEN: alle Tore haben nein 34.
+              torPruefung("die Rest-Zeile nennt eine falsche Zahl Ablehnungen",
+                new RegExp(`\\(${restZahl} weitere Tore, ${restZahl * 34} Ablehnungen\\)`)
+                  .test(schlimmst),
+                (schlimmst.match(/weitere Tore[^\n]*/) ?? ["(keine)"])[0]);
+
+              // ── SORTIERT NACH ABLEHNUNGEN, nicht nach Eintreffen ──────
+              //
+              // Sonst faellt zufaellig das Tor weg, wegen dem man hinsieht.
+              // Die Lehre vom 31.10., dort als gedrehte Sortierung gefangen.
+              const schief = {};
+              torNamen.forEach((n, i) => {
+                // Das LETZTE Tor bekommt die meisten Ablehnungen — ohne
+                // Sortierung faellt es aus dem Deckel heraus.
+                schief[n] = { ja: 1, nein: i === torNamen.length - 1 ? 999 : i,
+                  fallback: 0, gruende: { "grund": 1 } };
+              });
+              const tSchief = haertefall(schief);
+              const letztes = torNamen[torNamen.length - 1];
+              torPruefung("die Tor-Liste wird nicht nach Ablehnungen "
+                + "sortiert — dann faellt das groesste Tor aus dem Deckel",
+                new RegExp(`^ {6}${letztes.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}: ja `, "m")
+                  .test(tSchief),
+                (tSchief.match(/^ {6}\S[^\n]*: ja [^\n]*/gm) || []).slice(0, 3).join(" | "));
+              // UND DAS URTEIL muss dasselbe Tor nennen — es sieht ALLE
+              // Tore, nicht nur die gezeigten.
+              //
+              // `handelsLage` gibt {blocker, unbekannt, zeilen} zurueck —
+              // ein `urteil`-FELD gibt es NICHT. Mein Rauchtest vom 04.11.
+              // schrieb `lage.urteil ?? text` und war durch den Rueckfall
+              // schwaecher, als er aussah. Hier wird die Urteilszeile selbst
+              // gesucht, an der Quelle nachgelesen statt aus dem Gedaechtnis.
+              const urteilZeile = (tSchief.match(/^(🟡|🔻|⛔|✅)[^\n]*Gr[öo]sstes[^\n]*/m)
+                ?? tSchief.match(/Gr[öo]sstes[^\n]*/) ?? [""])[0];
+              torPruefung("das Urteil nennt nicht das Tor mit den meisten "
+                + "Ablehnungen — dann zeigt es nach einem Deckel auf die "
+                + "falsche Stelle",
+                urteilZeile.includes(letztes) && /999/.test(urteilZeile),
+                urteilZeile.slice(0, 160) || "(keine Urteilszeile gefunden)");
+            }
+
             torPruefung("die /status-Antwort reisst Telegrams 4096 Zeichen "
               + "im schlimmsten ECHTEN Fall (alle Tore der GateName-Union, "
               + "laengster echter Grund) — sie kaeme dann GAR NICHT an",

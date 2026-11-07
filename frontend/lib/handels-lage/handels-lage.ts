@@ -165,6 +165,19 @@ export interface HandelsLage {
   zeilen: string[];
 }
 
+/**
+ * Wie viele Tore `/status` zeigt — der Rest wird GEZÄHLT (07.11.).
+ *
+ * EXPORTIERT, damit der Prüfer die Zahl nicht selbst führen muss. Am 02.11.
+ * ist genau das passiert: ein Prüfstand hielt `MAX_TORE_JE_ZYKLUS` als
+ * Literal fest und wurde zu Recht rot, als sich der Wert änderte. Eine Zahl,
+ * die an zwei Stellen steht, veraltet an einer davon.
+ *
+ * Sechs wie in der Tagesbilanz. Gemessen am 07.11.: elf Tore kosten 1871
+ * Zeichen, ein Tor im Schnitt 170 — ohne Deckel blieben 84 Zeichen Luft.
+ */
+export const TORE_MAX_STATUS = 6;
+
 /** Endliche Zahl oder `null` — ein `NaN` ist keine Messung. */
 function zahl(v: number | null | undefined): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -388,8 +401,24 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     const tore = t.tore;
     if (tore && Object.keys(tore).length > 0) {
       const abgelehnt: Array<[string, number]> = [];
+      const alleTore = Object.entries(tore);
+      // ── DECKEL (07.11.) ─────────────────────────────────────────────
+      //
+      // GEMESSEN: der Tor-Block ist mit elf Toren 1871 Zeichen — 47 % der
+      // ganzen Lage, ein Tor kostet im Schnitt 170. Zusammen mit dem Rest
+      // der Antwort waren es 4012 von 4096, also 84 Zeichen Luft. Ein
+      // zwoelftes Tor in der `GateName`-Union haette die Grenze gerissen,
+      // und dann kommt `/status` GAR NICHT an — ausgerechnet der Befehl,
+      // den man benutzt, wenn etwas kaputt ist.
+      //
+      // Dieselbe Loesung wie in der Tagesbilanz (31.10.): nach
+      // ABLEHNUNGEN sortieren, damit nicht die Reihenfolge des Eintreffens
+      // entscheidet, welches Tor wegfaellt — und was fehlt, wird GEZAEHLT.
+      const sortiert = [...alleTore].sort(
+        (a, b) => (zahl(b[1]?.nein ?? null) ?? -1) - (zahl(a[1]?.nein ?? null) ?? -1));
+      const gezeigt = sortiert.slice(0, TORE_MAX_STATUS);
       zeilen.push("   <b>Tore nach dem GO:</b>");
-      for (const [name, s] of Object.entries(tore)) {
+      for (const [name, s] of gezeigt) {
         const ja = zahl(s?.ja ?? null);
         const nein = zahl(s?.nein ?? null);
         const fb = zahl(s?.fallback ?? null);
@@ -443,7 +472,26 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
           + `${seite(s?.richtungenJa, ja)} · nein ${nein === null ? "?" : nein}`
           + `${seite(s?.richtungen, nein)}`
           + `${fb !== null && fb > 0 ? ` · Rückfall ${fb}` : ""}${grund}`);
-        if (nein !== null && nein > 0) abgelehnt.push([name, nein]);
+      }
+      // Was fehlt, wird GEZAEHLT — eine verschwiegene Zeile waere
+      // schlimmer als eine fehlende (31.10.).
+      const restTore = sortiert.length - gezeigt.length;
+      if (restTore > 0) {
+        const restNein = sortiert.slice(TORE_MAX_STATUS)
+          .reduce((su, [, s]) => su + (zahl(s?.nein ?? null) ?? 0), 0);
+        zeilen.push(`      (${restTore} weitere Tore, ${restNein} Ablehnungen)`);
+      }
+      // ── DAS URTEIL SIEHT ALLE TORE, NICHT NUR DIE GEZEIGTEN ──────────
+      //
+      // Bis zum Deckel entstand `abgelehnt` IN der Anzeige-Schleife. Bliebe
+      // es dabei, entschiede der Deckel mit, welches Tor als groesster
+      // Blocker gilt — eine Anzeige-Grenze wuerde die DIAGNOSE aendern.
+      // Heute faellt es nicht auf (sortiert wird nach genau dieser Zahl),
+      // aber es waere nur zufaellig richtig, und eine andere Sortierung
+      // spaeter machte daraus stillschweigend einen Fehler.
+      for (const [name, s] of alleTore) {
+        const n = zahl(s?.nein ?? null);
+        if (n !== null && n > 0) abgelehnt.push([name, n]);
       }
       abgelehnt.sort((x, y) => y[1] - x[1]);
       if (abgelehnt.length > 0) groesstesTor = { name: abgelehnt[0][0], n: abgelehnt[0][1] };
