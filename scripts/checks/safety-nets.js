@@ -2288,6 +2288,31 @@ module.exports = async function pruefe() {
               riskReward: 1.2, market: "BTCUSD", direction: "SELL",
               strategy: "Range" })),
           ];
+          // ── DIE OFFENEN POSITIONEN FUER /status (07.11.) ────────────
+          //
+          // Drei Lagen, damit der Block seinen Fehler ueberhaupt
+          // ausdruecken kann: eine mit Stil (Zeit-Exit aktiv), eine OHNE
+          // Journal-Zeile (ausgesetzt) und eine ohne Eroeffnungszeit
+          // (kann nicht greifen). Fehlte eine, bewiese der Pruefstand
+          // darunter nichts.
+          const vorStunden = (h) => new Date(heute.getTime() - h * 3600000).toISOString();
+          const posDb = [
+            { dealId: "D1", symbol: "XRPUSD", direction: "BUY",
+              createdDate: vorStunden(70) },
+            { dealId: "D9", symbol: "UKOIL", direction: "BUY",
+              createdDate: vorStunden(31) },   // keine Journal-Zeile
+            { dealId: "D2", symbol: "SPX500", direction: "SELL",
+              createdDate: "" },               // keine Eroeffnungszeit
+          ];
+          const offeneDb = [
+            { notes: '{"dealId":"D1","tradingStyle":"SWING","confidence":72}' },
+            // D2 hat einen Stil, aber KEINE Zeit — der andere Zweig.
+            { notes: '{"dealId":"D2","tradingStyle":"DAYTRADING","confidence":65}' },
+            // Ohne `confidence` gilt der Stil als GERATEN — darf NICHT
+            // in die Karte, sonst zeigte /status einen Stil an, auf den
+            // der Zeit-Exit gar nicht rechnet.
+            { notes: '{"dealId":"D9","tradingStyle":"SCALPING"}' },
+          ];
           const whE = ewE.fehler ? ewE : ladeTsModul("app/api/telegram/webhook/route.ts", {
             "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
             "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
@@ -2302,9 +2327,39 @@ module.exports = async function pruefe() {
             "lib/killswitch": {
               getKillswitchReport: () => ({ triggered: false, armed: true, systemLocked: false, stages: [], summary: "ok" }),
             },
-            "app/lib/prisma": {
-              getPrisma: () => ({ trade: { findMany: async (a) => { abfragen.push(a); return zeilenDb; } } }),
+            // ── ZWEI EXPORTE, ZWEI ABFRAGEN (07.11.) ──────────────────
+            //
+            // `/edge` und `/hebel` holen `getPrisma()`, der /status-Block
+            // seit dem 07.11. den BENANNTEN Export `prisma`. Fehlte er,
+            // wuerde `prisma.trade.findMany` werfen, `sicher()` faengt es,
+            // und der Stil waere ueberall "unbekannt" — der Pruefstand
+            // haette dann gemessen, dass sein eigener Ersatz fehlt.
+            //
+            // Und die Abfragen sind VERSCHIEDEN: `/edge` liest
+            // `status != OPEN`, /status liest `status === "OPEN"`. Der
+            // Ersatz unterscheidet sie, sonst bekaeme /status die
+            // /edge-Zeilen (ohne dealId) und der Stil bliebe leer — die
+            // Pruefung koennte den Fehler gar nicht ausdruecken.
+            "app/lib/prisma": (() => {
+              const db = { trade: { findMany: async (a) => {
+                abfragen.push(a);
+                return a?.where?.status === "OPEN" ? offeneDb : zeilenDb;
+              } } };
+              return { getPrisma: () => db, prisma: db };
+            })(),
+            // Eine echte Broker-Sitzung MIT Positionen — ohne sie liefe
+            // der ganze Positions-Block im Pruefstand nie, und seine
+            // Verdrahtung waere nur strukturell geprueft (30.09.).
+            "capital-com/capital-com-session": {
+              isCapitalConnected: () => true,
+              getCapitalSession: () => ({ apiKey: "k", cst: "c",
+                securityToken: "s", balance: 1865.2 }),
             },
+            "capital-com/capital-com-client": {
+              capitalGetPositions: async () => ({ ok: true, positions: posDb }),
+            },
+            "positionen-lage/positionen-lage":
+              ladeTsModul("lib/positionen-lage/positionen-lage.ts").exports,
             "expectancy/erwartungswert": ewE.exports,
             "laufzeit/laufzeit-stand": lzE.exports,
             // Der /edge-Pruefstand schreibt den Laufzeit-Ersatz in ANDERER
@@ -2739,6 +2794,60 @@ module.exports = async function pruefe() {
             // echte POST-Funktion, mit der echten Umgebungsvariablen.
             await edge("/status");
             const aStatus = antw.at(-1) ?? "";
+
+            // ══ DER POSITIONS-BLOCK, END-TO-END (07.11.) ══════════════
+            //
+            // Bis heute war seine Verdrahtung NUR strukturell gebunden —
+            // Regexe auf den Quelltext. "Ein Regex prueft den Wortlaut,
+            // nicht das Verhalten" (30.09.), und eine geprueffte Funktion,
+            // die nie echte Werte bekommt, beweist nichts ueber ihre
+            // Aufrufstelle. Jetzt laeuft die ECHTE POST-Funktion gegen
+            // eine echte Sitzung, echte Positionen und echte Journal-
+            // Notizen.
+            //
+            // SELBSTPRUEFUNG zuerst: kommt der Block ueberhaupt an?
+            // Ohne ihn waeren alle Zeilen darunter stumm gruen.
+            torPruefung("/status zeigt gar keinen Positions-Block — dann "
+              + "beweisen die Zeilen darunter nichts",
+              /<b>Offene Positionen:<\/b>/.test(aStatus)
+              && /Positionen: 3\/6|Positionen: 3 von/.test(aStatus),
+              (aStatus.match(/Positionen[^\n]*/g) || ["(keine Zeile)"]).slice(0, 2).join(" | "));
+            // 1. Der Stil kommt aus dem Journal — ueber die ZWEITE Quelle.
+            torPruefung("/status liest den Handelsstil nicht aus dem "
+              + "Journal — dann steht ueberall 'Stil unbekannt', obwohl "
+              + "die Zeile da ist",
+              /XRPUSD BUY · 7\d\.\d h · SWING \(Grenze 168 h\) · Zeit-Exit aktiv/.test(aStatus),
+              (aStatus.match(/XRPUSD[^\n]*/) ?? ["(keine XRPUSD-Zeile)"])[0]);
+            // 2. OHNE brauchbare Journal-Zeile: ausgesetzt, nicht geraten.
+            //    (D9 hat einen Stil, aber KEINE confidence.)
+            torPruefung("/status erfindet einen Stil, wo das Journal keinen "
+              + "brauchbaren hat — dann zeigt es eine Haltedauer-Grenze an, "
+              + "auf die der Zeit-Exit gar nicht rechnet",
+              /UKOIL BUY · 3\d\.\d h · Stil unbekannt · ⚠️ Zeit-Exit AUSGESETZT/.test(aStatus),
+              (aStatus.match(/UKOIL[^\n]*/) ?? ["(keine UKOIL-Zeile)"])[0]);
+            // 3. OHNE Eroeffnungszeit: der Zeit-Exit kann nicht greifen.
+            torPruefung("/status verschweigt eine Position, deren Zeit-Exit "
+              + "mangels Eroeffnungszeit gar nicht greifen kann",
+              /SPX500 SELL · Alter unbekannt · DAYTRADING \(Grenze 24 h\) · ⚠️ Zeit-Exit kann NICHT greifen/.test(aStatus),
+              (aStatus.match(/SPX500[^\n]*/) ?? ["(keine SPX500-Zeile)"])[0]);
+            // 4. AUFFAELLIGES ZUERST — sonst faellt die ohne Zeit als
+            //    erste aus dem Deckel.
+            torPruefung("die auffaelligen Positionen stehen nicht vorne",
+              aStatus.indexOf("UKOIL") < aStatus.indexOf("XRPUSD")
+              && aStatus.indexOf("SPX500") < aStatus.indexOf("XRPUSD"),
+              `UKOIL@${aStatus.indexOf("UKOIL")} SPX500@${aStatus.indexOf("SPX500")} `
+              + `XRPUSD@${aStatus.indexOf("XRPUSD")}`);
+            // 5. Und der Block darf das URTEIL nicht verdraengen.
+            torPruefung("der Positions-Block verdraengt das Urteil — dann "
+              + "steht statt der Tor-Diagnose nur noch 'N Angabe(n) nicht "
+              + "feststellbar'",
+              !/nicht feststellbar: [^\n]*Haltedauer/.test(aStatus),
+              (aStatus.match(/🟡[^\n]*|🛑[^\n]*|🟢[^\n]*/) ?? ["(kein Urteil)"])[0].slice(0, 140));
+            // 6. Die Journal-Abfrage lief wirklich — und auf OPEN.
+            torPruefung("/status fragt die offenen Journal-Zeilen nicht ab",
+              abfragen.some((a) => a?.where?.status === "OPEN" && a?.select?.notes === true),
+              JSON.stringify(abfragen.map((a) => a?.where ?? null).slice(-3)));
+
             // DIE VERDRAHTUNG (01.11.). Im Sabotage-Lauf durfte der
             // Webhook `fensterOrtszeit: null` durchreichen und ALLES
             // blieb gruen — die Rechnung war geprueft, ihre Aufrufstelle
@@ -9098,11 +9207,38 @@ module.exports = async function pruefe() {
       // gar nicht greifen kann, waere der erste, den die Anzeige
       // verschweigt. Dieselbe Lehre wie bei der gedrehten Tor-Sortierung
       // (31.10.).
-      const auff = bef.filter((x) => x.zeitExit !== "aktiv" || x.ueberfaellig);
-      const unauff = bef.filter((x) => !(x.zeitExit !== "aktiv" || x.ueberfaellig));
+      // DIE EXPORTIERTE FUNKTION, nicht ihr Nachbau (07.11.).
+      //
+      // Hier stand `x.zeitExit !== "aktiv" || x.ueberfaellig` — eine ZWEITE
+      // Umsetzung derselben Regel, im Pruefer. Aendert sich
+      // `brauchtAufmerksamkeit`, merkt ein Nachbau das NICHT: der Pruefer
+      // misst dann seine eigene Meinung statt den Code. Gefunden beim
+      // Nachzaehlen, welcher Export von heute wirklich AUFGERUFEN wird —
+      // dieser war der einzige, der nirgends vorkam.
+      const BA = pm.exports?.brauchtAufmerksamkeit;
+      if (typeof BA !== "function") {
+        torPruefung("brauchtAufmerksamkeit ist nicht exportiert — dann "
+          + "prueft die Sortierung einen Nachbau statt den Code", false,
+          String(typeof BA));
+      }
+      const auffFn = typeof BA === "function" ? BA : null;
+      const auff = auffFn ? bef.filter(auffFn) : [];
+      const unauff = auffFn ? bef.filter((x) => !auffFn(x)) : [];
+      // Und die Funktion selbst GERECHNET, an allen vier Lagen.
+      torPruefung("brauchtAufmerksamkeit urteilt falsch",
+        !!auffFn
+        && auffFn({ zeitExit: "ohne-zeit", ueberfaellig: false }) === true
+        && auffFn({ zeitExit: "ohne-stil", ueberfaellig: false }) === true
+        && auffFn({ zeitExit: "aktiv", ueberfaellig: true }) === true
+        && auffFn({ zeitExit: "aktiv", ueberfaellig: false }) === false,
+        auffFn ? JSON.stringify([
+          auffFn({ zeitExit: "ohne-zeit", ueberfaellig: false }),
+          auffFn({ zeitExit: "ohne-stil", ueberfaellig: false }),
+          auffFn({ zeitExit: "aktiv", ueberfaellig: true }),
+          auffFn({ zeitExit: "aktiv", ueberfaellig: false })]) : "fehlt");
       torPruefung("auffaellige Positionen stehen nicht vorne — dann faellt "
         + "die ohne Eroeffnungszeit als erste aus dem Deckel",
-        bef.slice(0, auff.length).every((x) => x.zeitExit !== "aktiv" || x.ueberfaellig)
+        !!auffFn && bef.slice(0, auff.length).every(auffFn)
         && auff.length === 3 && unauff.length === 2,
         JSON.stringify(bef.map((x) => [x.symbol, x.zeitExit, x.ueberfaellig])));
       torPruefung("innerhalb der Gruppen wird nicht nach Alter sortiert",
