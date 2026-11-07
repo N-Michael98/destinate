@@ -2295,6 +2295,9 @@ module.exports = async function pruefe() {
           // Journal-Zeile (ausgesetzt) und eine ohne Eroeffnungszeit
           // (kann nicht greifen). Fehlte eine, bewiese der Pruefstand
           // darunter nichts.
+          // Haelt das Ergebnis von `handelsLage` fest — siehe den Spion
+          // im Ersatz unten.
+          let lageSpion = null;
           const vorStunden = (h) => new Date(heute.getTime() - h * 3600000).toISOString();
           const posDb = [
             { dealId: "D1", symbol: "XRPUSD", direction: "BUY",
@@ -2370,8 +2373,21 @@ module.exports = async function pruefe() {
             "agents/orchestrator-agent": { isWithinTradingSession: () => true,
               HANDELSFENSTER: { oeffnetLondon: 7 * 60, schliesstNewYork: 17 * 60,
                 zoneLondon: "Europe/London", zoneNewYork: "America/New_York" } },
-            "handels-lage/handels-lage": ladeTsModul("lib/handels-lage/handels-lage.ts",
-              { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports,
+            // MIT SPION (07.11.): `handelsLage` wird durchgereicht, sein
+            // Ergebnis aber festgehalten. Nur so laesst sich der REST der
+            // /status-Antwort (Killswitch, Laufender Stand, Befehlsliste)
+            // MESSEN statt annehmen — `REST_GEMESSEN` war bis heute eine
+            // feste Zahl vom 31.10., drei Zeilen unter dem Kommentar, der
+            // genau davor warnt.
+            "handels-lage/handels-lage": (() => {
+              const echt = ladeTsModul("lib/handels-lage/handels-lage.ts",
+                { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports }).exports;
+              return { ...echt, handelsLage: (e) => {
+                const r = echt.handelsLage(e);
+                lageSpion = r;
+                return r;
+              } };
+            })(),
             // `/hebel` importiert dynamisch. Ohne Ersatz bekaeme es den
             // Stellvertreter, `hebelText()` wuerde werfen, und der
             // Befehl landete im catch — gepruefte Zeilen gaebe es dann
@@ -2847,6 +2863,54 @@ module.exports = async function pruefe() {
             torPruefung("/status fragt die offenen Journal-Zeilen nicht ab",
               abfragen.some((a) => a?.where?.status === "OPEN" && a?.select?.notes === true),
               JSON.stringify(abfragen.map((a) => a?.where ?? null).slice(-3)));
+
+            // ══ DER REST DER ANTWORT — GEMESSEN STATT EINGEFROREN ═════
+            //
+            // Der Laengen-Riegel weiter unten rechnet mit
+            // `REST_GEMESSEN = 1064` — dem Rest der /status-Antwort
+            // (Killswitch, Laufender Stand, Befehlsliste). Diese Zahl
+            // stammt vom 31.10. und steht DREI ZEILEN unter einem
+            // Kommentar, der genau davor warnt, Annahmen einzufrieren.
+            //
+            // /status ist seitdem viermal gewachsen. Nachgeprueft war die
+            // Zahl zuletzt am 04.11. ueber `git log` — eine Pruefung war
+            // es nie. Jetzt wird sie GEMESSEN: die ganze Antwort minus die
+            // Lage-Zeilen, die der Spion oben festhaelt.
+            {
+              // DIE ZAHL AUS DEM RIEGEL SELBST, nicht abgeschrieben.
+              //
+              // Mein erster Entwurf schrieb hier `const REST_ERWARTET =
+              // 1064; // dieselbe Zahl wie im Riegel`. Der Sabotage-Lauf
+              // hat es gefangen: die lokale Kopie auf 99999 zu setzen
+              // blieb GRUEN — eine Pruefung, die ihre eigene Schwelle
+              // fuehrt, kann sie nicht schuetzen. Eine Zahl, die an zwei
+              // Stellen steht, veraltet an einer davon (02.11.).
+              //
+              // Also wird sie aus dem Pruefer GELESEN. Senkt jemand
+              // `REST_GEMESSEN` — die gefaehrliche Richtung, denn dann
+              // rechnet der Laengen-Riegel zu wenig — wird diese Zeile rot.
+              const selbstQ = read("scripts/checks/safety-nets.js");
+              const mRest = /const REST_GEMESSEN = (\d+);/.exec(selbstQ);
+              const REST_ERWARTET = mRest ? Number(mRest[1]) : null;
+              torPruefung("REST_GEMESSEN liess sich nicht aus dem Pruefer "
+                + "lesen — dann vergleicht die Zeile darunter gegen nichts",
+                REST_ERWARTET !== null && REST_ERWARTET > 0,
+                String(REST_ERWARTET));
+              const lageText = (lageSpion?.zeilen ?? []).join("\n");
+              const gemessen = aStatus.length - lageText.length;
+              // SELBSTPRUEFUNG: ohne Lage-Zeilen waere die Differenz die
+              // ganze Antwort, und die Pruefung darunter bewiese nichts.
+              torPruefung("der Lage-Spion hat nichts festgehalten — dann "
+                + "misst die Zeile darunter die ganze Antwort statt den Rest",
+                lageText.length > 300 && aStatus.length > lageText.length,
+                `Lage ${lageText.length}, Antwort ${aStatus.length}`);
+              torPruefung("der Rest der /status-Antwort ist groesser als die "
+                + "Zahl, mit der der Laengen-Riegel rechnet — dann misst er "
+                + "zu wenig, und die Antwort kann unbemerkt zu lang werden",
+                REST_ERWARTET !== null && gemessen <= REST_ERWARTET,
+                `gemessen ${gemessen}, Riegel rechnet mit ${REST_ERWARTET} `
+                + `(Antwort ${aStatus.length}, Lage ${lageText.length})`);
+            }
 
             // DIE VERDRAHTUNG (01.11.). Im Sabotage-Lauf durfte der
             // Webhook `fensterOrtszeit: null` durchreichen und ALLES
