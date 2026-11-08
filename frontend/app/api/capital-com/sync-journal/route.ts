@@ -2,6 +2,10 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { isCapitalConnected, getCapitalSession } from "../../../../lib/capital-com/capital-com-session";
 import { getPrisma } from "../../../lib/prisma";
+// Die Grenze, an der jede Broker-Zeit umgerechnet wird (Regel 22.09.).
+// Diese Route holt `/history/transactions` mit eigenem `fetch` und ging
+// bis zum 08.11. an dieser Grenze vorbei.
+import { brokerZeitNachUtc } from "../../../../lib/capital-com/capital-com-client";
 
 const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
 
@@ -63,6 +67,16 @@ export async function POST(request: Request) {
   let aktualisiert = 0;    // bestehende Zeile mit echtem P&L geschlossen
   let neuAngelegt = 0;     // Transaktion ohne Journal-Zeile
   let uebersprungen = 0;   // Transaktion ohne verwertbaren P&L
+  // ── Zeilen, deren Eroeffnungszeit der Broker nicht liefert (08.11.) ──────
+  //
+  // Eigener Zaehler, weil er eine EIGENE Folge hat: `/hebel` gruppiert nach
+  // `Trade.createdAt` ("Eroeffnungsstunde UTC", 03.11.), und eine Zeile ohne
+  // Broker-Zeit traegt dort zwangslaeufig die Stunde des SYNC-Laufs. Die Zahl
+  // geht unten in `message`, und BEIDE Aufrufer zeigen `message` an
+  // (`app/page.tsx`, `app/trading-journal/page.tsx`) — ein stummer Zaehler
+  // waere ein Feld ohne Empfaenger (Klasse 28.10., wie `richtungUnbekannt`
+  // in derselben Zeile: null Leser im ganzen Programm).
+  let ohneBrokerZeit = 0;
 
   // ── Step 1: Get currently OPEN positions from Capital.com ──────────────────
   const posRes = await fetch(`${DEMO_BASE}/positions`, { headers: h });
@@ -230,18 +244,59 @@ export async function POST(request: Request) {
         // Feld LEER. `echteGeschlosseneTrades()` wirft leere Märkte aus und
         // MELDET das — genau der Weg vom 24.08.
         const epic = String(tx.instrumentName ?? tx.epic ?? "").trim();
-        const dateStr = String(tx.date ?? tx.dateUtc ?? new Date().toISOString()).slice(0, 19).replace("T", " ");
+        // ── ZWEI FEHLER IN EINER ZEILE (08.11.) ──────────────────────────
+        //
+        // Hier stand:
+        //   String(tx.date ?? tx.dateUtc ?? new Date().toISOString())
+        //
+        // 1. ROHE BROKER-ZEIT. Diese Route holt `/history/transactions` mit
+        //    EIGENEM `fetch` und ging damit an der Grenze vorbei, an der jede
+        //    Broker-Zeit umgerechnet wird. Capital.com schickt Ortszeit OHNE
+        //    Zone (gemessen 22.09.), und der Wert landete als `createdAt` in
+        //    der `Trade`-Tabelle — um den Zonenversatz verschoben, 1 h im
+        //    Winter, 2 h im Sommer. Die Regel vom 22.09. lautet woertlich:
+        //    "Kein Aufrufer weiter innen darf eine rohe Broker-Zeit sehen."
+        //    Und `/hebel` gruppiert seit dem 03.11. nach genau diesem Feld
+        //    und nennt die Dimension "Eroeffnungsstunde (UTC)".
+        //
+        // 2. ERFUNDENE ZEIT. Fehlte die Angabe, wurde JETZT eingesetzt — ein
+        //    Trade von vorgestern sah aus, als waere er eben eroeffnet
+        //    worden. Im Kommentar darueber steht seit dem 24.08., dass der
+        //    MARKT nicht mehr erfunden wird; das DATUM wurde dabei
+        //    uebersehen.
+        //
+        // `brokerZeitNachUtc` ist dieselbe Funktion, die der Client an sieben
+        // Stellen benutzt — keine zweite Umsetzung. Sie gibt "" fuer
+        // unbekannt und sonst ISO-UTC.
+        const utcIso = brokerZeitNachUtc(tx.date ?? tx.dateUtc);
+        const dateStr = utcIso === "" ? null : utcIso.slice(0, 19).replace("T", " ");
+        if (dateStr === null) {
+          ohneBrokerZeit++;
+          console.warn(`[sync-journal] ⚠️ deal=${dealId} ${epic || "(ohne Markt)"}: der `
+            + `Broker liefert KEINE Eroeffnungszeit (date=${JSON.stringify(tx.date)}, `
+            + `dateUtc=${JSON.stringify(tx.dateUtc)}). P&L und Ergebnis sind echt, aber `
+            + `createdAt faellt auf JETZT — die Zeile ist zeitlich NICHT einordenbar, `
+            + `und /hebel zaehlt sie in der Eroeffnungsstunde dieses Sync-Laufs.`);
+        }
+        // EIN Platzhalter weniger, wenn die Zeit fehlt: so BEHAUPTET der Code
+        // keine Broker-Zeit, die es nicht gab. Der eingesetzte Text ist eine
+        // Konstante aus DIESER Datei, keine Eingabe — und die Argumente stehen
+        // nur EINMAL da, damit die zwei Faelle nicht auseinanderlaufen.
+        const zeitFeld = dateStr === null ? "NOW()" : "$6::timestamp";
+        const argumente: unknown[] = [
+          epic, result_str, profitLoss,
+          session.balance > 0 ? session.balance : 10000,
+          JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "tx-sync",
+                          richtungUnbekannt: true }),
+        ];
+        if (dateStr !== null) argumente.push(dateStr);
         await db.$executeRawUnsafe(
           `INSERT INTO "Trade" (
             "market", "direction", "strategy", "entry", "stopLoss", "takeProfit",
             "status", "result", "profitLoss", "accountSize", "riskPercent", "riskAmount",
             "riskReward", "positionSize", "notes", "createdAt", "updatedAt"
-          ) VALUES ($1,'UNBEKANNT','Capital.com DEMO | Sync',0,0,0,'CLOSED',$2,$3,$4,1,0,0,0,$5,$6::timestamp,NOW())`,
-          epic, result_str, profitLoss,
-          session.balance > 0 ? session.balance : 10000,
-          JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "tx-sync",
-                          richtungUnbekannt: true }),
-          dateStr
+          ) VALUES ($1,'UNBEKANNT','Capital.com DEMO | Sync',0,0,0,'CLOSED',$2,$3,$4,1,0,0,0,$5,${zeitFeld},NOW())`,
+          ...argumente
         );
         neuAngelegt++;
       }
@@ -257,10 +312,13 @@ export async function POST(request: Request) {
     aktualisiert,
     neuAngelegt,
     uebersprungen,
+    ohneBrokerZeit,
     txStatus: txRes.status,
     txTotal: txCount,
     txTrades: txTradeCount,
     message: `${markiert} markiert, ${aktualisiert} mit echtem P&L geschlossen, `
       + `${neuAngelegt} neu angelegt, ${uebersprungen} ohne P&L übersprungen`
+      // Nur wenn > 0 — wie `Stil` und `ohne Stop/Ziel` in der Zyklus-Zeile.
+      + `${ohneBrokerZeit > 0 ? `, ${ohneBrokerZeit} OHNE Broker-Zeit (createdAt = jetzt)` : ""}`
   });
 }

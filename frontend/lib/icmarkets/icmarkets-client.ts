@@ -4,6 +4,8 @@
  * Uses Bearer token authentication.
  */
 
+import { lesbareRichtung } from "../richtung/richtung";
+
 const MCP_URL = process.env.ICMARKETS_MCP_URL ?? "https://mcp.ctrader.com/trading/mcp";
 const MCP_TOKEN = process.env.ICMARKETS_MCP_TOKEN ?? "";
 
@@ -234,13 +236,58 @@ export async function icGetAccount(): Promise<{
 export interface ICPosition {
   positionId: string;
   symbol: string;
-  direction: "BUY" | "SELL";
+  /**
+   * `null` heisst: der Broker hat KEINE lesbare Richtung geschickt.
+   *
+   * Bis zum 08.11. stand hier `?? "BUY"` — derselbe Fehler, der am 07.11.
+   * bei Capital.com behoben wurde (`2ef93a0`), nur beim zweiten Broker.
+   * Die Folge ist dieselbe: `icmarkets-trade-manager.ts` leitet daraus
+   * `isBuy` ab und zieht den Trailing-Stop auf `currentPrice -
+   * trailDistance` — bei einer echten SELL-Position also auf die FALSCHE
+   * Seite des Marktes.
+   *
+   * Die Verengung ist Absicht: so zaehlt `tsc` die Aufrufer auf, statt
+   * dass ich sie aus dem Gedaechtnis suche.
+   */
+  direction: "BUY" | "SELL" | null;
   volume: number;
   openPrice: number;
   stopLoss: number | null;
   takeProfit: number | null;
   profitLoss: number;
-  openTime: string;
+  /**
+   * `null` heisst: der Broker hat KEINEN Eroeffnungszeitpunkt geschickt.
+   *
+   * Bis zum 08.11. stand hier `?? new Date().toISOString()`. Das ist die
+   * Regel vom 22.09. woertlich uebergangen — "fehlt sie, bleibt sie LEER,
+   * niemals `new Date()`". Eine erfundene Zeit laesst jede Position
+   * taufrisch aussehen (`ageHours ≈ 0`), damit feuert der Zeit-Exit NIE,
+   * und auch die "AUSGESETZT"-Warnung bleibt stumm, weil die erst bei
+   * `ageHours >= maxHours` greift. Ein Dauerausfall sieht aus wie ein
+   * gesunder Lauf.
+   *
+   * NICHT behoben und ausdruecklich offen: ob cTrader hier eine Zone
+   * mitschickt. Capital.com tut es nicht (22.09.), und eine zonenlose
+   * Zeit als UTC zu lesen ist ein eigener Fehler. Hier wird nur nichts
+   * mehr ERFUNDEN; die Zone ist ungemessen und wird deshalb auch nicht
+   * umgerechnet.
+   */
+  openTime: string | null;
+}
+
+/**
+ * Ein Zeitstempel oder `null` — aber NIE eine erfundene Zeit.
+ *
+ * Absichtlich OHNE Zonen-Umrechnung: `brokerZeitNachUtc()` in
+ * `capital-com-client.ts` rechnet um, weil dort GEMESSEN ist, dass
+ * Capital.com Ortszeit ohne Zone schickt (22.09.). Fuer cTrader ist das
+ * NICHT gemessen, und eine Umrechnung auf eine Vermutung hin waere genau
+ * der Fehler, den dieser Fix behebt. Hier wird also nur nichts erfunden.
+ */
+export function zeitOderNull(roh: unknown): string | null {
+  if (typeof roh !== "string") return null;
+  const t = roh.trim();
+  return t === "" ? null : t;
 }
 
 export async function icGetPositions(): Promise<{ ok: boolean; positions?: ICPosition[]; error?: string }> {
@@ -251,13 +298,17 @@ export async function icGetPositions(): Promise<{ ok: boolean; positions?: ICPos
     const positions: ICPosition[] = raw.map((p) => ({
       positionId: String(p.positionId ?? p.id ?? ""),
       symbol: String(p.symbol ?? p.symbolName ?? ""),
-      direction: String(p.tradeSide ?? p.direction ?? "BUY").toUpperCase() === "SELL" ? "SELL" : "BUY",
+      // DIESELBE Lesart wie im ganzen Programm (`lib/richtung/richtung.ts`,
+      // seit 03.11.) — nicht eine vierte eigene. Sie kennt BUY/SELL und
+      // LONG/SHORT und gibt bei allem anderen `null`.
+      direction: lesbareRichtung(p.tradeSide ?? p.direction),
       volume: Number(p.volume ?? p.quantity ?? 0),
       openPrice: Number(p.entryPrice ?? p.openPrice ?? 0),
       stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null,
       takeProfit: p.takeProfit != null ? Number(p.takeProfit) : null,
       profitLoss: Number(p.netProfit ?? p.profitLoss ?? p.unrealizedPnl ?? 0),
-      openTime: String(p.openTime ?? p.createTime ?? new Date().toISOString()),
+      // Leer bleibt leer. Siehe die Begruendung am Feld `openTime` oben.
+      openTime: zeitOderNull(p.openTime ?? p.createTime),
     }));
     return { ok: true, positions };
   } catch (err) {

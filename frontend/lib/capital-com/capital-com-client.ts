@@ -1192,7 +1192,17 @@ export interface ClosedPositionRecord {
   dealId: string;
   epic: string;
   symbol: string;
-  direction: "BUY" | "SELL";
+  /**
+   * `null` heisst: der Broker hat KEINE lesbare Richtung geschickt (08.11.).
+   *
+   * Dreiwertig wie `OpenPosition.direction` seit dem 07.11. Nachgezaehlt,
+   * nicht vermutet: dieser Typ wird AUSSERHALB dieser Datei nirgends
+   * benutzt (0 Treffer), und `capitalGetClosedPositions` hat keinen
+   * Aufrufer — die Verengung kann also nichts brechen, und `tsc` belegt es.
+   * Wer die Funktion als Naechstes benutzt, bekommt die Dreiwertigkeit
+   * aufgezwungen statt eines erfundenen "BUY".
+   */
+  direction: "BUY" | "SELL" | null;
   size: number;
   openLevel: number;
   closeLevel: number;
@@ -1246,7 +1256,20 @@ export async function capitalGetClosedPositions(
         dealId,
         epic,
         symbol: EPIC_TO_SYMBOL[epic] ?? String(a.epic ?? epic),
-        direction: (details.direction as "BUY" | "SELL") ?? "BUY",
+        // ── AUCH HIER KEINE ERFUNDENE RICHTUNG (08.11.) ──────────────────
+        //
+        // Am 07.11. wurde `capitalGetPositions` von `?? "BUY"` befreit
+        // (`2ef93a0`); diese Stelle blieb stehen, weil sie NICHT ERREICHBAR
+        // ist — nachgezaehlt, nicht vermutet: `capitalGetClosedPositions`
+        // wird in `capital-trade-tracker.ts:1037` IMPORTIERT, aber im ganzen
+        // Programm NIE aufgerufen (0 Treffer auf den Namen mit Klammer).
+        //
+        // Trotzdem weg damit: ein importierter, nie gerufener Rumpf mit einer
+        // bekannt falschen Zeile ist eine Falle fuer den Naechsten, der ihn
+        // benutzt — und der `as`-Cast schaltet genau die Warnung ab, die ihn
+        // aufhalten wuerde. Die Verengung ist verhaltensneutral, weil es
+        // keinen Aufrufer gibt; `tsc` belegt das.
+        direction: lesbareRichtung(details.direction),
         size: Number(details.dealSize ?? details.size ?? 0),
         openLevel: Number(details.openLevel ?? details.level ?? 0),
         closeLevel: Number(details.closeLevel ?? 0),

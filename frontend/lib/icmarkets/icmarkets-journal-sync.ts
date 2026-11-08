@@ -6,17 +6,45 @@
 
 import { getPrisma } from "../../app/lib/prisma";
 import { isICMarketsConnected } from "./icmarkets-session";
-import { icGetDeals } from "./icmarkets-client";
+// `zeitOderNull` kommt aus dem Client: EINE Umsetzung, nicht zwei. Zwei
+// Fassungen desselben Lesewegs koennten auseinanderlaufen — dieselbe
+// Begruendung wie bei `htmlSicher` (31.10.) und `cacheLesen` (01.11.).
+import { icGetDeals, zeitOderNull } from "./icmarkets-client";
+import { lesbareRichtung, richtungAnzeige } from "../richtung/richtung";
 
 interface ICDeal {
   positionId: string;
   symbol: string;
-  direction: string;
+  /**
+   * `null` heisst: der Broker hat KEINE lesbare Richtung geschickt.
+   *
+   * Bis zum 08.11. stand hier `?? "BUY"`. Ehrlich zur Reichweite, im Code
+   * nachgezaehlt und NICHT vermutet: anders als bei Capital.com landet
+   * dieser Wert NICHT in der `Trade`-Tabelle — das UPDATE unten setzt
+   * `status`, `result`, `profitLoss`, `closePrice`, `updatedAt` und
+   * `notes`, keine Richtung. Die erfundene Richtung ging also allein in
+   * eine LOGZEILE. Kein Geld, aber dieselbe Luege, und ein Log ist das
+   * Werkzeug, mit dem man die naechste Ursache sucht.
+   */
+  direction: string | null;
   volume: number;
   entryPrice: number;
   closePrice: number;
   netProfit: number;
-  closeTime: string;
+  /**
+   * `null` heisst: der Broker hat KEINEN Schlusszeitpunkt geschickt (08.11.).
+   *
+   * Bis dahin stand hier `?? new Date().toISOString()` — und der Wert geht
+   * als `notes.icClosedAt` in die DATENBANK. Ein Datensatz, der eine Zeit
+   * behauptet, die es nicht gab, ist schlimmer als ein Log, der es tut: Logs
+   * sind nach Tagen weg, Datensaetze liest man Monate spaeter zur
+   * Rekonstruktion. Heute hat `icClosedAt` null Leser — genau deshalb jetzt,
+   * solange es nichts kostet.
+   *
+   * Umgerechnet wird NICHT: ob cTrader eine Zone mitschickt, ist ungemessen
+   * (Capital.com tut es nicht, 22.09.). Hier wird nur nichts erfunden.
+   */
+  closeTime: string | null;
 }
 
 async function getClosedDeals(fromTimestamp?: number): Promise<ICDeal[]> {
@@ -25,12 +53,14 @@ async function getClosedDeals(fromTimestamp?: number): Promise<ICDeal[]> {
   return res.deals.map((d) => ({
     positionId: String(d.positionId ?? d.dealId ?? d.id ?? ""),
     symbol: String(d.symbol ?? d.symbolName ?? ""),
-    direction: String(d.tradeSide ?? d.direction ?? "BUY"),
+    // Dieselbe Lesart wie im ganzen Programm (`lib/richtung/richtung.ts`).
+    direction: lesbareRichtung(d.tradeSide ?? d.direction),
     volume: Number(d.volume ?? 0),
     entryPrice: Number(d.entryPrice ?? d.openPrice ?? 0),
     closePrice: Number(d.closePrice ?? d.exitPrice ?? 0),
     netProfit: Number(d.netProfit ?? d.profitLoss ?? 0),
-    closeTime: String(d.closeTime ?? d.closeTimestamp ?? new Date().toISOString()),
+    // Leer bleibt leer — Begruendung am Feld oben.
+    closeTime: zeitOderNull(d.closeTime ?? d.closeTimestamp),
   }));
 }
 
@@ -79,11 +109,24 @@ export async function syncICMarketsJournal(): Promise<{ synced: number; skipped:
       result,
       profitLoss,
       deal.closePrice,
-      JSON.stringify({ ...meta, icClosePrice: deal.closePrice, icClosedAt: deal.closeTime, source: "ic-sync" }),
+      // FEHLT die Zeit, wird der SCHLUESSEL weggelassen (08.11.) — nicht ein
+      // erfundener Wert eingetragen. Dieselbe Regel wie bei `dealId` und
+      // `signalQuelle` (30.09./30.10.): ein fehlendes Feld ist ehrlich, ein
+      // erfundenes macht aus "nicht gemessen" eine Messung.
+      JSON.stringify({
+        ...meta,
+        icClosePrice: deal.closePrice,
+        ...(deal.closeTime === null ? {} : { icClosedAt: deal.closeTime }),
+        source: "ic-sync",
+      }),
       trade.id
     );
 
-    console.log(`[ic-journal-sync] ${deal.symbol} ${deal.direction} → ${result} CHF ${profitLoss.toFixed(2)}`);
+    // `richtungAnzeige` statt der rohen Richtung: eine fehlende Richtung
+    // heisst hier "—" und eine unbekannte "LONG?" — nicht "BUY". Ein Log,
+    // das eine Richtung erfindet, ist genau das Werkzeug, mit dem man
+    // hinterher die falsche Ursache sucht.
+    console.log(`[ic-journal-sync] ${deal.symbol} ${richtungAnzeige(deal.direction)} → ${result} CHF ${profitLoss.toFixed(2)}`);
     synced++;
   }
 

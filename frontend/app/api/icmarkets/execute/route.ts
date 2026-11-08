@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { executeICMarketsOrder } from "../../../../lib/icmarkets/icmarkets-execution";
 import { isICMarketsConnected, getICMarketsSession } from "../../../../lib/icmarkets/icmarkets-session";
+import { lesbareRichtung } from "../../../../lib/richtung/richtung";
 
 export async function POST(request: Request) {
   try {
@@ -24,12 +25,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "symbol und direction erforderlich" }, { status: 400 });
     }
 
+    // Derselbe Riegel wie in `/api/capital-com/execute` — die Begruendung
+    // steht dort ausfuehrlich. Kurz: der `as`-Cast auf `request.json()`
+    // prueft nichts, `{"direction":"LONG"}` kam durch, und weiter innen ist
+    // `req.direction === "BUY"` dann `false` (als SELL gerechnet) waehrend
+    // `tradeSide: "LONG"` an den Broker gegangen waere.
+    //
+    // Beide Routen auf einmal, weil ein Fix an EINER Stelle die Frage nicht
+    // beantwortet, wo die Klasse sonst noch steckt (Lehre 25.10.).
+    const richtung = lesbareRichtung(body.direction);
+    if (!richtung) {
+      return NextResponse.json({
+        ok: false,
+        error: "direction unlesbar — erlaubt sind BUY, SELL, LONG, SHORT",
+      }, { status: 400 });
+    }
+
     const session = getICMarketsSession();
     const accountBalance = body.accountBalance ?? session?.balance ?? 10000;
 
     const result = await executeICMarketsOrder({
       symbol: body.symbol,
-      direction: body.direction,
+      direction: richtung,
       riskPercent: body.riskPercent ?? 1.0,
       accountBalance,
       stopLossPrice: body.stopLossPrice,

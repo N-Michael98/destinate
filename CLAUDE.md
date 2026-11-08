@@ -3362,6 +3362,349 @@ Und die Handelsfrage bleibt: `blockOverfitMarkets` ist **AN** (Standard
 Märkte und **wie alt** die Daten sind, steht in der Logzeile
 `[orchestrator] 🔬 Walk-Forward`.
 
+## Derselbe Fund beim zweiten Broker — und eine ungeprüfte Grenze (08.11.)
+
+Am 07.11. wurde `capitalGetPositions` von `?? "BUY"` befreit (`2ef93a0`).
+**Das beantwortet nicht, wo die Klasse sonst noch steckt** — und bei IC
+Markets stand sie unverändert, an zwei Stellen, in derselben Abbildung noch
+ein dritter Fund dazu.
+
+### 1. Die erfundene Richtung (`icmarkets-client.ts`)
+
+```ts
+direction: String(p.tradeSide ?? p.direction ?? "BUY").toUpperCase() === "SELL" ? "SELL" : "BUY",
+```
+
+Die Kette zum Geld ist genauso kurz wie bei Capital.com:
+
+```
+icGetPositions        ?? "BUY"
+  → icmarkets-trade-manager:131   const isBuy = pos.direction === "BUY"
+    → :319                        newTrailSL = isBuy ? kurs − d : kurs + d
+```
+
+Der Trailing-Stop einer SELL-Position läge damit **unter** dem Markt, also auf
+der falschen Seite.
+
+**Und die Verengung allein macht es SCHLIMMER.** Mit `?? "BUY"` wurde eine
+fehlende Richtung zu BUY; mit `null` ist `pos.direction === "BUY"` schlicht
+`false` — die Position gilt dann als **SELL**. Genau dieser Rückbau ist mir am
+07.11. im Orchestrator unterlaufen (`6edb2aa`). Deshalb kommt der Filter am
+Rand **zuerst**, und die Typzusage (`p is …`) ist kein Schmuck: danach zählt
+`tsc` jede Stelle auf, die drinnen eine Richtung braucht. Von allein findet es
+die **nicht** — `null === "BUY"` ist gültiges TypeScript.
+
+### 2. Die erfundene Eröffnungszeit — der stillste der drei
+
+```ts
+openTime: String(p.openTime ?? p.createTime ?? new Date().toISOString()),
+```
+
+Das ist die Regel vom 22.09. **wörtlich übergangen** („fehlt sie, bleibt sie
+leer — niemals `new Date()`"). Eine erfundene Zeit lässt jede Position
+taufrisch aussehen, `ageHours ≈ 0`, der **Zeit-Exit feuert nie** — und zwar
+stumm, denn die „AUSGESETZT"-Warnung greift selbst erst bei
+`ageHours >= maxHours`. Ein Dauerausfall war von einem gesunden Lauf nicht zu
+unterscheiden.
+
+Dazu erfand der Verbraucher ein **zweites** Mal: `new Date(pos.openTime ??
+Date.now())`. Und `new Date("Unsinn").getTime()` ist `NaN`, `NaN >= maxHours`
+ist `false` — also auch dort kein Exit, stumm. **Vierte Wiederholung** der
+`Number.isFinite`-Falle (24.08., 28.10., 29.10., 03.11.).
+
+**Und eine Zukunft ist kein Alter — mit einer Korrektur an mir selbst.** Ich
+hatte zuerst gesagt, eine Zukunftszeit lasse den Zeit-Exit „nie" feuern. Das
+ist **falsch**: ein *fester* Zeitstempel in der Zukunft verschiebt das Alter
+nur um den Versatz, der Exit feuert also **verspätet**. „Nie" gilt
+ausschliesslich für die **erfundene** Zeit, weil die in *jedem* Zyklus neu auf
+„jetzt" gesetzt wurde — das war der eigentliche Fund.
+
+Trotzdem geriegelt, und zwar nach der bestehenden Regel: `alterStundenIC`
+gibt bis 2 Minuten Zukunft `0` (Uhren-Versatz, dieselbe Schranke wie
+`ageInMinutes`, 22.09.) und darüber `null` — also **unbekannt**. Unbekannt
+heisst hier **ausgesetzt**, nicht „geschlossen": das ist die Entscheidung vom
+19.08. (`risk-agent.ts`), denn ein Eingriff auf einer Annahme kostet echtes
+Geld. Dafür wird es laut, mit dem **Grund** in der Zeile — „fehlt",
+„unlesbar" und „liegt in der Zukunft" führen zu drei verschiedenen nächsten
+Schritten.
+
+**Nicht behoben und ausdrücklich offen:** ob cTrader eine Zone mitschickt.
+Capital.com tut es nicht (22.09.), und eine zonenlose Zeit als UTC zu lesen
+ist ein eigener Fehler. Hier wird nur nichts mehr **erfunden**; umgerechnet
+wird nicht, weil nicht gemessen. Genau deshalb ist die Zukunfts-Meldung
+nützlich: sie macht die offene Zonenfrage **aus dem Log** beantwortbar.
+
+**Dieselbe Lücke hat der CAPITAL-Zeit-Exit noch** (`risk-agent.ts:575`):
+fehlendes Datum → `null` ✓, `NaN` → `null` ✓, **Zukunft → eine negative
+Zahl, stumm**. Hochrisiko-Datei — gemessen und benannt, **nicht** geändert.
+
+### 3. Ehrlich zur Reichweite: der Journal-Sync schreibt KEIN Geld
+
+Meine eigene Notiz behauptete, `icmarkets-journal-sync.ts` schreibe die
+Richtung in die `Trade`-Tabelle. **Das ist falsch, im Code nachgezählt:** das
+UPDATE setzt `status`, `result`, `profitLoss`, `closePrice`, `updatedAt` und
+`notes` — keine Richtung. Die erfundene Richtung ging allein in eine
+**Logzeile**. Kein Geld — aber ein Log ist das Werkzeug, mit dem man die
+nächste Ursache sucht, und deshalb trotzdem behoben.
+
+### 4. Die ungeprüfte Grenze: beide Execute-Routen
+
+Bei der Handprüfung jedes `=== "BUY" ? a : b` gefunden, nicht gesucht:
+
+```ts
+const body = (await request.json()) as Partial<ExecutionRequest>;
+if (!body.symbol || !body.direction || !body.accountBalance) { … 400 … }
+```
+
+`request.json()` ist `any`, und der Cast **prüft nichts** — `tsc` schweigt
+dazu, weil genau das die Aufgabe eines Casts ist. `!body.direction` wies nur
+leere Werte ab: `{"direction":"LONG"}` kam **durch**, weiter innen ist
+`req.direction === "BUY"` dann `false` (als SELL gerechnet), und "LONG" ginge
+zusätzlich ins Journal bzw. als `tradeSide` an den Broker.
+
+Wortgleiche Klasse wie `PATCH /api/trades/[id]` am 04.11. (`c0e0f49`) — **der
+Fix dort deckte die Leser und den PATCH, diese zwei Routen nicht.** Beide sind
+jetzt geriegelt, `lesbareRichtung` als EINE Lesart, und alles andere wird
+**abgewiesen statt geraten**: bei einer Order ist ein 400 mit Grund besser als
+eine Richtung auf Verdacht.
+
+**GEMESSEN, nicht vermutet:** der automatische Pfad ist davon **nicht**
+betroffen. `GPTMarketAnalysis.direction` ist `"BUY" | "SELL" | "WAIT"`
+(getypt), und `goSignal` verlangt `!== "WAIT"` — dort ist die Richtung
+beweisbar BUY/SELL. Die `as "BUY" | "SELL"`-Casts im Orchestrator sind
+redundant, können aber nicht lügen. **Keine Hochrisiko-Datei angefasst.**
+
+### 5. Eine Datei ohne Typprüfung beweist nichts über sich
+
+`app/api/forward-testing/route.ts` trug `@ts-nocheck`. Die Route ist **live**
+(`app/page.tsx:978`, `ForwardTestingCenter.tsx:118`; die `.next/types`-Treffer
+sind generiert und zählen nicht, Regel 15.09.) — und `tsc` konnte zu dieser
+Datei **nichts** sagen, auch nicht zum Richtungs-Fix vom 04.11., der dort
+steht.
+
+Gemessen: nach dem Entfernen **22 Fehler**, alle in dieser Datei und alle mit
+**einer** Ursache — 1× TS2347 (`$queryRawUnsafe<T>` auf dem programmweit
+`any`-Prisma-Client) und 21× TS7006, weil das Ergebnis dadurch untypisiert
+ist. Die Zusage steht jetzt am **Ergebnis** statt als Typargument, und die
+21 Callbacks typisieren sich selbst.
+
+Die Deklaration log an vier Stellen: `id` ist `Int` (nicht String),
+**`accountSize` fehlte ganz**, obwohl die Datei es liest, `notes` ist
+`String?`, die zwei Zeitstempel sind `DateTime`. Ohne Laufzeitfolge —
+`SELECT *` bringt jede Spalte —, aber es ist die Fehlerklasse vom 30.09.: ein
+Feldname aus dem Gedächtnis.
+
+**Und „0 Fehler" wurde BEWIESEN, nicht angenommen:** ein absichtlicher
+Typfehler in der Datei wird von `tsc` gemeldet (TS2304). Ohne diese
+Gegenprobe wäre „0" von „wird gar nicht geprüft" nicht zu unterscheiden.
+
+### `findMany` ohne `take` — gemessen und NICHT gebaut
+
+Drei Stellen im Webhook lesen ohne Obergrenze. Die Frage ist nicht, ob es eine
+Grenze gibt, sondern ob eine **jemals greift**. Gerechnet mit den echten
+Funktionen:
+
+| Zeilen | `/edge` | `/hebel` | Summe |
+|---|---|---|---|
+| 845 (Stand 26.10.) | 1.7 ms | 13.0 ms | **14.7 ms** |
+| 5 000 | 8.2 ms | 51.2 ms | 59.3 ms |
+| 50 000 | 70.6 ms | 541.1 ms | 611.7 ms |
+| 200 000 | 272.9 ms | 2 180 ms | 2 453 ms |
+| 1 000 000 | 1 346 ms | 11 074 ms | 12 420 ms |
+
+Die Zeitgrenze von `sicher()` ist **5000 ms je Quelle**; gerissen wird sie
+erst bei etwa **450 000 Zeilen**. Bei 845 und nahezu null Wachstum sind das
+Jahrzehnte.
+
+**Und ein blinder `take` wäre nicht nur wirkungslos, er wäre schädlich:** er
+machte aus einer vollständigen Messung still eine teilweise — „ein Ausfall
+darf sich nicht als Ergebnis ausgeben". Eine Kürzung müsste **gemeldet**
+werden, so wie `HERKUNFT_MAX` es tut. Also nicht gebaut, sondern gemessen
+(Regel 26.10.).
+
+**Ehrliche Grenze der Messung:** die Übertragungszeit der Datenbank ist
+**nicht** gemessen — von hier aus lässt sich die Produktionsdatenbank nicht
+befragen, und eine Zahl zu behaupten, die ich nicht gemessen habe, wäre der
+Fehler selbst.
+
+### Absicherung
+
+`safety-nets` **rechnet** die IC-Abbildung aus (1196 → **1226**):
+`global.fetch` wird ersetzt, und die **echte** `icGetPositions` muss die
+Antwort des Brokers abbilden — fehlende Richtung, unlesbare Richtung, fehlende
+Zeit, leere Zeit, dazu die **Gegenproben**, dass BUY/SELL/`sell`/LONG/SHORT
+weiter ankommen und eine echte Zeit unverändert durchgeht. Ein Riegel, der
+alles auf `null` zieht, setzte den Zeit-Exit **überall** aus und wäre
+schlimmer als der Fund.
+
+Ebenso gerechnet: `alterStundenIC` an neun Lagen — Vergangenheit, `NaN`,
+`±Infinity` auf beiden Parametern, die 2-Minuten-Grenze **von beiden Seiten**,
+und die Gegenprobe, dass echte Alter Zahlen bleiben.
+
+Dazu strukturell gebunden: der Filter am Rand, die Schleife über
+`bewirtschaftbar`, die Aufräumung weiter über **alle** Positionen (sonst gälte
+eine Position ohne Richtung als geschlossen), die Meldung als **Anweisung**
+(`void 0 &&` liess am 07.11. den Wortlaut stehen), die **zwei**
+Zeit-Exit-Riegel **gezählt** statt gefunden, und das eigene Gedächtnis der
+zweiten Drossel.
+
+**26 von 26 Sabotagen** — aber erst nach **drei** Durchgängen, und die zwei
+Löcher dazwischen waren meine:
+
+| zuerst entwischt | Diagnose |
+|---|---|
+| „die zwei Drosseln teilen sich ein Gedächtnis" | die Prüfung fragte, ob der Name `alterUnbekanntGemeldetIC` **irgendwo** in der Datei steht. Die Sabotage tauschte nur den `.has()`-Riegel gegen das falsche Set — Deklaration, `.add`, `.delete` und die Meldung blieben stehen, der Ausdruck war zufrieden. „Ein Treffer beweist nichts über die andere Stelle" (25.10.). Jetzt hängt der Riegel an seiner **Bedingung** |
+| „der `Number.isFinite`-Riegel entfernt" | **zweistufig.** Erst war die Prüfung grün, weil `Number.isFinite` nach dem Auslagern in `alterStundenIC` weiter im Text stand — im **Rumpf der Funktion** statt an der Aufrufstelle. Dann war sie gerechnet und blieb trotzdem grün, weil meine Testwerte den Unterschied nicht ausdrücken konnten: für `NaN` ist `NaN >= 0` falsch **und** `NaN >= -(2/60)` falsch, also fängt der `: null`-Rückfall des Ternärs es von selbst. **Ausgerechnet**, nicht geschlossen: wirksam ist die Sabotage nur bei `-Infinity` als Eröffnung und `+Infinity` als Jetzt. Genau die fehlten |
+
+Der zweite ist die Lehre „ein Testfall, der den Fehler nicht ausdrücken kann,
+beweist nichts" an einem **Grenzwert** — und zugleich die Regel, dass eine
+ausgelagerte Rechnung ihre Prüfung **mitnehmen** muss, sonst trifft der Regex
+aus dem falschen Grund. Über die Aufrufstelle ist der Fall unerreichbar
+(`new Date(x).getTime()` ist endlich oder `NaN`), aber die Funktion ist
+**exportiert** und muss für sich stimmen — dieselbe Begründung wie bei
+`rrBand` (29.10.).
+
+**Und das Messwerkzeug selbst war zu eng.** `mess-null-zweig.js` sucht
+Stellen, an denen `null` still in einen `=== "BUY" ? a : b`-Zweig fällt. Am
+07.11. fand es die zwei echten Capital-Funde und meldete danach „0
+Verdachtsfälle" — bei IC stand derselbe `?? "BUY"` die ganze Zeit da. Die
+Regel hätte ihn getroffen (`p.tradeSide ?? p.direction ?? "BUY"` enthält
+`.direction ?? "BUY"`); sie bekam die **Datei** nur nie zu sehen, weil der
+Kandidatenfilter nur Capital-Namen kannte. Jetzt sind die drei IC-Dateien
+**namentlich Pflicht**, und die alte IC-Form ist eine eigene Gegenprobe.
+
+### Und beim Durchsehen: eine rohe Broker-Zeit in der Geldtabelle (08.11.)
+
+Gefunden, weil ich nach dem IC-Fix **weitergesucht** habe, statt den Fund
+abzuschliessen: `grep` über alle `?? new Date()` im Programm. Elf Treffer,
+neun davon sind unsere **eigene** Zeit (Ausführungszeitpunkt, Verbindungszeit)
+und richtig. Zwei nicht.
+
+#### `app/api/capital-com/sync-journal/route.ts` — zwei Fehler in einer Zeile
+
+```ts
+const dateStr = String(tx.date ?? tx.dateUtc ?? new Date().toISOString()).slice(0, 19).replace("T", " ");
+```
+
+Der Wert geht als **`createdAt` in die `Trade`-Tabelle** — die Geldtabelle, aus
+der `/edge` und `/hebel` rechnen. Die Route hat **zwei echte Aufrufer**
+(`app/page.tsx:515`, `app/trading-journal/page.tsx:1562`), beides Knöpfe im
+Dashboard.
+
+**1. Rohe Broker-Zeit.** Diese Route holt `/history/transactions` mit
+**eigenem `fetch`** und ging damit an der Grenze vorbei, an der jede
+Broker-Zeit umgerechnet wird. Capital.com schickt Ortszeit **ohne Zone**
+(gemessen 22.09.), also landete der Wert um den Zonenversatz verschoben in der
+Tabelle — 1 h im Winter, 2 h im Sommer. Die Regel vom 22.09. lautet wörtlich:
+*„Kein Aufrufer weiter innen darf eine rohe Broker-Zeit sehen."* Und `/hebel`
+gruppiert seit dem 03.11. nach genau diesem Feld und nennt die Dimension
+**„Eröffnungsstunde (UTC)"**.
+
+**2. Erfundene Zeit.** Fehlte die Angabe, wurde **jetzt** eingesetzt — ein
+Trade von vorgestern sah aus, als wäre er eben eröffnet worden. Im Kommentar
+**zehn Zeilen darüber** steht seit dem 24.08., dass der *Markt* nicht mehr
+erfunden wird und leer bleibt. Das Datum wurde dabei übersehen.
+
+Jetzt: `brokerZeitNachUtc(tx.date ?? tx.dateUtc)` — **dieselbe** Funktion, die
+der Client an sieben Stellen benutzt, keine zweite Umsetzung. Fehlt die Zeit,
+nimmt das SQL `NOW()` und **einen Platzhalter weniger**, damit der Code keine
+Broker-Zeit *behauptet*, die es nicht gab; dazu ein Zähler und eine Logzeile
+mit der dealId.
+
+**Und der Zähler hat einen echten Empfänger** — das ist der Unterschied zu
+`richtungUnbekannt: true` in derselben Zeile, das im ganzen Programm **null
+Leser** hat (nachgezählt): `ohneBrokerZeit` geht in `message`, und **beide**
+Aufrufer zeigen `message` an. Ein stummes Feld wäre die Klasse vom 28.10.
+
+**Ausgeführt geprüft**, nicht am Wortlaut: `safety-nets` fährt die **echte**
+`POST` gegen einen gefälschten `fetch` und einen Datenbank-Spion, aber mit dem
+**echten** `brokerZeitNachUtc` — und prüft, was im INSERT **ankommt**:
+
+| Eingabe | erwartet in `createdAt` |
+|---|---|
+| `2026-11-08T07:30:00` (Winter, ohne Zone) | `2026-11-08 06:30:00` |
+| `2026-07-15T07:30:00` (Sommer, ohne Zone) | `2026-07-15 05:30:00` |
+| `2026-11-08T06:30:00Z` (mit Zone) | `2026-11-08 06:30:00` — nur normalisiert |
+| fehlt | `NOW()` im SQL, **5** statt 6 Argumente, gezählt und gemeldet |
+
+Der Sommerfall ist der wichtigste: ein **fester** Versatz von einer Stunde
+wäre im Winter richtig und im Sommer daneben — genau die Falle, die beim
+Broker-Zeitfix am 22.09. vermieden wurde.
+
+**Nicht behoben, eigene Entscheidung:** **bestehende** Zeilen aus diesem Pfad
+tragen weiter eine verschobene Zeit. Das zu korrigieren wäre eine
+**Datenänderung** und nicht umkehrbar — und wie viele Zeilen betroffen sind,
+lässt sich von hier nicht messen.
+
+#### `icmarkets-journal-sync.ts` — eine erfundene Zeit im DATENSATZ
+
+```ts
+closeTime: String(d.closeTime ?? d.closeTimestamp ?? new Date().toISOString()),
+```
+
+Der Wert geht als `notes.icClosedAt` in die Datenbank. Ein Datensatz, der eine
+Zeit **behauptet**, die es nicht gab, ist schlimmer als ein Log, der es tut:
+Logs sind nach Tagen weg, Datensätze liest man Monate später zur
+Rekonstruktion. Heute hat `icClosedAt` **null Leser** — genau deshalb jetzt,
+solange es nichts kostet.
+
+Fehlt die Zeit, wird der **Schlüssel weggelassen** statt ein Wert erfunden —
+dieselbe Regel wie bei `dealId` (30.09.) und `signalQuelle` (30.10.).
+`zeitOderNull` kommt dafür **aus dem Client**, nicht als zweite Fassung.
+
+#### Und die unerreichbare Stelle, die trotzdem weg musste
+
+`capitalGetClosedPositions` trug weiterhin `(details.direction as …) ?? "BUY"`.
+**Nachgezählt, nicht vermutet:** die Funktion wird in
+`capital-trade-tracker.ts:1037` **importiert**, aber im ganzen Programm **nie
+aufgerufen** (0 Treffer auf den Namen mit Klammer), und `ClosedPositionRecord`
+hat ausserhalb dieser Datei **keinen** Nutzer.
+
+Sie bleibt trotzdem nicht stehen: ein importierter, nie gerufener Rumpf mit
+einer bekannt falschen Zeile ist eine Falle für den Nächsten — und der
+`as`-Cast schaltet genau die Warnung ab, die ihn aufhalten würde. **Verengt,
+nicht gelöscht:** verhaltensneutral (es gibt keinen Aufrufer, `tsc` belegt es),
+während ein Löschen ein Eingriff ohne Not wäre.
+
+`safety-nets` hält dazu, **gezählt statt gefunden**: im ganzen Capital-Client
+darf **kein** `?? "BUY"` mehr stehen. Ein Treffer an einer Stelle bewiese
+nichts über die andere (25.10.).
+
+### Was an diesem Tag gemessen und NICHT geändert wurde (08.11.)
+
+Alles hier ist nachgezählt oder ausgeführt, nichts davon vermutet — und jedes
+hat einen Grund, warum es nicht in dieselbe Runde gehört.
+
+| Fund | Warum nicht jetzt |
+|---|---|
+| **Der Capital-Zeit-Exit** (`risk-agent.ts:575`) hat die Zukunfts-Lücke noch: fehlendes Datum → `null` ✓, `NaN` → `null` ✓, **Zukunft → negative Zahl, stumm** | Datei mit erhöhtem Risiko. `ageInMinutes` (22.09.) und `alterStundenIC` (08.11.) haben den Riegel; hier fehlt er. Braucht Plan + ausdrückliches Ja |
+| **Die cTrader-Zeitzone ist ungemessen** | Capital.com schickt Ortszeit ohne Zone (22.09.), für cTrader ist das **nicht** geprüft. Deshalb wird bei IC nichts umgerechnet, nur nichts mehr erfunden — und eine Zukunftszeit meldet sich jetzt namentlich, damit die Frage **aus dem Log** beantwortbar wird |
+| **Bestehende Zeilen** aus `sync-journal` tragen weiter eine verschobene Zeit | Der Schreibpfad ist behoben, die alten Zeilen nicht. Eine Korrektur wäre eine **Datenänderung** und nicht umkehrbar; wie viele Zeilen betroffen sind, lässt sich von hier nicht messen |
+| **`lastConnectedAt` erfindet „gerade eben"** (`instrumentation.ts:228`): `icSess?.connectedAt ?? new Date().toISOString()` | Der Typ ist `string | null` und `SettingsDashboard.tsx:560` behandelt `null` korrekt — der ehrliche Wert wäre `?? null`. Aber es ist eine **Anzeige-Beschriftung**, und die rechtfertigt keinen Eingriff in die Datei mit allen Schleifen, dem Killswitch und dem Python-Lifecycle |
+| **`/api/capital-com/execute` antwortet bei einem Order-Fehlschlag `400`**, `/api/icmarkets/execute` `500` | Ein 400 heisst „deine Anfrage war falsch"; ein gescheiterter Broker-Auftrag ist das nicht — und der 400 des Richtungs-Riegels ist davon für den Aufrufer nicht zu trennen. Aussenwirkung an einem Order-Pfad |
+
+**Und zwei Verdachtsfälle, die belegt KEINE sind.** Das Null-Zweig-Werkzeug
+meldet sie bei jedem Lauf; beide wurden von Hand nachgelesen und stehen jetzt
+**namentlich mit Grund** im Werkzeug, damit ein **dritter** auffällt statt im
+Rauschen zu verschwinden:
+
+- `icmarkets-execution.ts` — `req.direction` ist die geschlossene Union
+  `"BUY" | "SELL"` aus `ExecutionRequest`, und seit heute prüfen **beide**
+  Order-Routen mit `lesbareRichtung`. Ein `null` kann dort nicht ankommen.
+- `icmarkets-trade-manager.ts` — `const isBuy = pos.direction === "BUY"`
+  steht **innerhalb** von `for (const pos of bewirtschaftbar)`, und
+  `bewirtschaftbar` ist der typverengte Filter. `tsc` erzwingt es; das
+  6-Zeilen-Fenster des Werkzeugs reicht nicht 38 Zeilen bis zum Filter zurück.
+
+**Zwei Stellen, die ich benannt und dann WIRKLICH nachgeprüft habe** — beide
+sauber, und das Nachprüfen war der Punkt:
+
+- `capital-trade-tracker.ts:203` ist der dritte Schreiber der `Trade`-Tabelle
+  und schreibt `NOW(), NOW()` — **unsere eigene** Zeit im Moment des
+  Schreibens, keine Broker-Zeit. Richtig, denn der Trade wird gerade eröffnet.
+- `POST /api/trades` hat den Richtungs-Riegel längst (`lesbareRichtung` + 400).
+  Mein Verdacht, der 04.11.-Fix habe nur den `PATCH` gedeckt, war **falsch**.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben

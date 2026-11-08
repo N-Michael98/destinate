@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 359 · Kanten: 888
+Dateien mit internen Abhängigkeiten: 360 · Kanten: 893
 
 
 ## analysis-engine/api
@@ -280,6 +280,7 @@ Dateien mit internen Abhängigkeiten: 359 · Kanten: 888
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/app/api/capital-com/positions/route.ts`
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
@@ -288,6 +289,7 @@ Dateien mit internen Abhängigkeiten: 359 · Kanten: 888
   - → `frontend/lib/capital-com/index.ts`
 - `frontend/app/api/capital-com/sync-journal/route.ts`
   - → `frontend/app/lib/prisma.ts`
+  - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
 - `frontend/app/api/claude-risk/assess/route.ts`
@@ -334,6 +336,7 @@ Dateien mit internen Abhängigkeiten: 359 · Kanten: 888
 - `frontend/app/api/icmarkets/execute/route.ts`
   - → `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/app/api/icmarkets/status/route.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
@@ -902,6 +905,8 @@ Dateien mit internen Abhängigkeiten: 359 · Kanten: 888
   - → `frontend/lib/expectancy/erwartungswert.ts`
   - → `frontend/lib/html-sicher/html-sicher.ts`
   - → `frontend/lib/richtung/richtung.ts`
+- `frontend/lib/icmarkets/icmarkets-client.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
@@ -910,6 +915,7 @@ Dateien mit internen Abhängigkeiten: 359 · Kanten: 888
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/killswitch/killswitch-engine.ts`
@@ -1310,12 +1316,12 @@ Dateien mit internen Abhängigkeiten: 359 · Kanten: 888
 - `frontend/lib/cache/redis-cache.ts` — von 16 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
+- `frontend/lib/capital-com/capital-com-client.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
-- `frontend/lib/capital-com/capital-com-client.ts` — von 13 Dateien
+- `frontend/lib/richtung/richtung.ts` — von 12 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 11 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
-- `frontend/lib/richtung/richtung.ts` — von 8 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 8 Dateien
 - `frontend/lib/auth/auth-store.ts` — von 7 Dateien
 

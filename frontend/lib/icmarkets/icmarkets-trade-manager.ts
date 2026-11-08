@@ -50,6 +50,50 @@ const positionMeta: Map<string, PosMeta> = new Map();
  *  `gerateneGemeldet` im risk-agent). */
 const gerateneGemeldetIC = new Set<string>();
 
+/** Dasselbe fuer ein unbekanntes Positionsalter (08.11.) — EIGENES
+ *  Gedaechtnis, nicht das von `gerateneGemeldetIC`. Teilten sich die zwei
+ *  Lagen einen Eintrag, verdeckte die erste Meldung die andere: ein
+ *  geratener Stil wuerde ein unbekanntes Alter verschweigen und umgekehrt.
+ *  Dieselbe Begruendung wie bei `global.__redis_lage__` je Stelle (01.11.). */
+const alterUnbekanntGemeldetIC = new Set<string>();
+
+/**
+ * Das Alter in Stunden — oder `null` fuer "unbekannt" (08.11.).
+ *
+ * EXPORTIERT und rein, damit `safety-nets` sie RECHNEN kann statt den
+ * Wortlaut zu pruefen ("ein Regex prueft den Wortlaut, nicht das Verhalten",
+ * 30.09.).
+ *
+ * Drei Lagen, und die dritte ist der eigentliche Grund:
+ *
+ *  - **Keine lesbare Zeit** (`NaN`) → `null`. `new Date("Unsinn").getTime()`
+ *    ist `NaN`, und `NaN >= maxHours` ist `false`: ohne `Number.isFinite`
+ *    waere der Zeit-Exit stumm aus. Vierte Wiederholung derselben Falle
+ *    (24.08., 28.10., 29.10., 03.11.).
+ *
+ *  - **Zukunft bis 2 Minuten** → `0`. Echter Uhren-Versatz zwischen zwei
+ *    Rechnern; dieselbe Schranke wie `ageInMinutes` (22.09.).
+ *
+ *  - **Zukunft darueber** → `null`, also UNBEKANNT. Hier haengt mehr dran als
+ *    Sauberkeit: fuer cTrader ist NICHT gemessen, ob eine Zone mitkommt.
+ *    Kommt zonenlose Ortszeit und `new Date` liest sie als UTC, liegt die
+ *    Zeit 1–2 Stunden in der Zukunft. Das Alter waere dann um genau diesen
+ *    Versatz zu klein und der Zeit-Exit feuerte VERSPAETET — stumm. Mit
+ *    `null` wird daraus eine Meldung, und damit ist die offene Zonenfrage
+ *    aus dem Log heraus beantwortbar statt Vermutung.
+ *
+ * Ehrlich zur Richtung: "unbekannt" heisst hier AUSGESETZT, nicht
+ * "geschlossen". Das ist die Entscheidung vom 19.08. (`risk-agent.ts`):
+ * ohne bekannte Eroeffnungszeit wird NICHT geschlossen, denn ein Eingriff
+ * auf einer Annahme kostet echtes Geld. Dafuer wird es laut.
+ */
+export function alterStundenIC(openedMs: number, jetztMs: number): number | null {
+  if (!Number.isFinite(openedMs) || !Number.isFinite(jetztMs)) return null;
+  const stunden = (jetztMs - openedMs) / 3_600_000;
+  if (stunden >= 0) return stunden;
+  return stunden >= -(2 / 60) ? 0 : null;
+}
+
 function getLevel(score: number): { beAt: number; trailDist: number } {
   if (score >= 80) return { beAt: 0.70, trailDist: 0.40 };
   if (score >= 75) return { beAt: 0.55, trailDist: 0.50 };
@@ -63,6 +107,31 @@ export async function runICMarketsTradeManager(): Promise<void> {
   // ── 1. Get all live positions ─────────────────────────────────────────────
   const posResult = await icGetPositions();
   if (!posResult.ok || !posResult.positions?.length) return;
+
+  // ── Ohne lesbare Richtung wird NICHT bewirtschaftet (08.11.) ──────────────
+  //
+  // `pos.direction` ist seit heute dreiwertig (`icmarkets-client.ts`). DIESER
+  // Filter ist der Grund, warum die Verengung dort ueberhaupt sicher ist:
+  // ohne ihn waere `pos.direction === "BUY"` bei `null` schlicht `false`, die
+  // Position gaelte als SELL — der Fix haette das Vorzeichen also nur
+  // UMGEDREHT statt den Fehler zu beheben. Genau das ist mir am 07.11. im
+  // Orchestrator unterlaufen (`6edb2aa`), deshalb steht es hier zuerst.
+  //
+  // Die Typzusage (`p is …`) ist Absicht und kein Schmuck: danach zaehlt
+  // `tsc` jede Stelle auf, die drinnen eine Richtung braucht. Von allein
+  // findet es die NICHT — `null === "BUY"` ist gueltiges TypeScript.
+  //
+  // Gleichzieher mit `active-trade-manager.ts` (Capital.com, 07.11.).
+  const bewirtschaftbar = posResult.positions.filter(
+    (p): p is typeof p & { direction: "BUY" | "SELL" } => p.direction !== null);
+  const ohneRichtung = posResult.positions.length - bewirtschaftbar.length;
+  if (ohneRichtung > 0) {
+    console.warn(`[ic-trade-mgr] ⚠️ ${ohneRichtung} von ${posResult.positions.length} `
+      + `Positionen OHNE lesbare Richtung — fuer die laufen Breakeven, Teilgewinn `
+      + `und Trailing NICHT. Ein Stop auf der falschen Seite ist schlimmer als `
+      + `keiner; die Broker-seitigen SL/TP bleiben unberuehrt.`);
+  }
+  if (!bewirtschaftbar.length) return;
 
   // ── 2. Load DB metadata ───────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -91,7 +160,7 @@ export async function runICMarketsTradeManager(): Promise<void> {
   }
 
   // ── 3. Process each position ──────────────────────────────────────────────
-  for (const pos of posResult.positions) {
+  for (const pos of bewirtschaftbar) {
     const positionId = pos.positionId;
     if (!positionId) continue;
     const entry = pos.openPrice;
@@ -163,8 +232,38 @@ export async function runICMarketsTradeManager(): Promise<void> {
     // ── Zeit-Exit ─────────────────────────────────────────────────────────
     const style = meta.tradingStyle.toUpperCase();
     const maxHours = STYLE_MAX_HOURS[style] ?? STYLE_MAX_HOURS.DAYTRADING;
-    const openedAt = new Date(pos.openTime ?? Date.now());
-    const ageHours = (Date.now() - openedAt.getTime()) / (1000 * 60 * 60);
+    // ── Das Alter ist DREIWERTIG (08.11.) ─────────────────────────────────
+    //
+    // Hier stand `new Date(pos.openTime ?? Date.now())`. Eine fehlende
+    // Broker-Zeit wurde damit zu JETZT: `ageHours ≈ 0`, der Zeit-Exit feuerte
+    // NIE — und zwar stumm, denn auch die "AUSGESETZT"-Zeile unten greift
+    // erst bei `ageHours >= maxHours`. Ein Dauerausfall war von einem
+    // gesunden Lauf nicht zu unterscheiden (Regel 25.10.). Der Client
+    // erfindet seit heute nichts mehr, also darf es der Verbraucher auch
+    // nicht ein zweites Mal tun.
+    //
+    // Und `new Date("Unsinn").getTime()` ist `NaN`, `NaN >= maxHours` ist
+    // `false` — deshalb `Number.isFinite` und kein nackter Vergleich. Zum
+    // wiederholten Mal dieselbe Falle: `checkPriceAvailable` (24.08.),
+    // `ordersRiegel` (28.10.), `rrBand` (29.10.), der ATR (03.11.).
+    const openedMs = pos.openTime === null ? NaN : new Date(pos.openTime).getTime();
+    const ageHours: number | null = alterStundenIC(openedMs, Date.now());
+    if (ageHours === null && !alterUnbekanntGemeldetIC.has(positionId)) {
+      alterUnbekanntGemeldetIC.add(positionId);
+      // Der GRUND gehoert in die Zeile, nicht nur die Lage: "fehlt",
+      // "unlesbar" und "liegt in der Zukunft" fuehren zu drei verschiedenen
+      // naechsten Schritten. Wer den Grund nicht mitschreibt, muss ihn
+      // spaeter raten (22.09.).
+      const grund = pos.openTime === null
+        ? "FEHLT"
+        : !Number.isFinite(openedMs)
+          ? `ist unlesbar (${pos.openTime})`
+          : `liegt in der ZUKUNFT (${pos.openTime}) — pruefe die Zeitzone, die cTrader schickt`;
+      console.warn(`[ic-trade-mgr] ⚠️ ${symbol} pos=${positionId}: Eroeffnungszeit `
+        + `${grund} — das `
+        + `Alter ist unbekannt, der Zeit-Exit ist fuer diese Position AUSGESETZT. `
+        + `Breakeven, Teilgewinn und Trailing laufen weiter (die haengen nicht am Alter).`);
+    }
     // ── KEIN Zeit-Exit auf geratenem Handelsstil (08.09.) ──────────────────
     //
     // Gleichzieher mit dem Capital.com-Pfad, wo derselbe Riegel seit dem
@@ -181,7 +280,11 @@ export async function runICMarketsTradeManager(): Promise<void> {
     // Breakeven, Teilgewinn und Trailing laufen weiter: die prüfen zusätzlich
     // den ECHTEN Stop beim Broker (`alreadyAtBE`, `meta.trailSL ?? liveSL`)
     // und hängen nicht am geratenen Stil.
-    if (ageHours >= maxHours && meta.stilGeraten === true) {
+    // `ageHours !== null` steht ausdruecklich da: ein unbekanntes Alter darf
+    // NICHT in den Zeit-Exit laufen. Ohne den Vergleich waere `null >= 24`
+    // zur Laufzeit `false` — also zufaellig richtig, aber aus dem falschen
+    // Grund, und ein `0` daneben waere sofort wieder die erfundene Messung.
+    if (ageHours !== null && ageHours >= maxHours && meta.stilGeraten === true) {
       if (!gerateneGemeldetIC.has(positionId)) {
         gerateneGemeldetIC.add(positionId);
         console.warn(`[ic-trade-mgr] ⏸ Zeit-Exit AUSGESETZT: ${symbol} ${pos.direction} `
@@ -189,7 +292,7 @@ export async function runICMarketsTradeManager(): Promise<void> {
           + `noch Speicher-Eintrag). Auf ${style} zu schliessen waere ein Eingriff `
           + `auf einer Annahme.`);
       }
-    } else if (ageHours >= maxHours) {
+    } else if (ageHours !== null && ageHours >= maxHours) {
       const closeResult = await icClosePosition(positionId);
       if (closeResult.ok) {
         positionMeta.delete(positionId);
@@ -283,6 +386,12 @@ export async function runICMarketsTradeManager(): Promise<void> {
   // Das Meldungs-Gedaechtnis mit aufraeumen (08.09.) — sonst waechst es mit
   // jeder je gesehenen Position weiter. Genau das Leck, das am 26.08. in der
   // Brute-Force-Karte gefunden wurde: ein Set, das nur waechst.
+  // Das zweite Gedaechtnis muss MIT aufgeraeumt werden, sonst waechst es
+  // unbegrenzt — und eine spaeter neu eroeffnete Position mit derselben
+  // Kennung bliebe stumm, obwohl ihr Alter wieder unbekannt ist.
+  for (const id of alterUnbekanntGemeldetIC) {
+    if (!liveIds.has(id)) alterUnbekanntGemeldetIC.delete(id);
+  }
   for (const id of gerateneGemeldetIC) {
     if (!liveIds.has(id)) gerateneGemeldetIC.delete(id);
   }

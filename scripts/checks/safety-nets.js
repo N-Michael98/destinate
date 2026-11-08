@@ -10484,6 +10484,641 @@ module.exports = async function pruefe() {
       "sie las Dateien nach Namen aus der Anfrage und rief git per exec");
   }
 
+  // ══ DERSELBE FUND BEIM ZWEITEN BROKER (08.11.) ══════════════════════════
+  //
+  // Am 07.11. wurde `capitalGetPositions` von `?? "BUY"` befreit (`2ef93a0`).
+  // IC Markets hatte denselben Rueckfall an ZWEI Stellen, und die Kette zum
+  // Geld ist genauso kurz:
+  //
+  //   icGetPositions          ?? "BUY"
+  //     → icmarkets-trade-manager:131   `const isBuy = pos.direction === "BUY"`
+  //       → :319                        `newTrailSL = isBuy ? kurs - d : kurs + d`
+  //
+  // Der Trailing-Stop einer SELL-Position laege damit UNTER dem Markt, also
+  // auf der falschen Seite. "Ein Fix an einer Stelle beantwortet nicht, wo die
+  // Klasse sonst noch steckt" (25.10.).
+  //
+  // Und in derselben Abbildung stand `openTime: ... ?? new Date()`. Das ist
+  // die Regel vom 22.09. woertlich uebergangen: eine erfundene Eroeffnungszeit
+  // laesst jede Position taufrisch aussehen, damit feuert der Zeit-Exit NIE —
+  // und zwar stumm, denn die "AUSGESETZT"-Warnung greift selbst erst bei
+  // `ageHours >= maxHours`.
+  //
+  // AUSGEFUEHRT, nicht am Wortlaut: `global.fetch` wird ersetzt und die ECHTE
+  // `icGetPositions` muss die Antwort des Brokers abbilden.
+  {
+    const ic = ladeTsModul("lib/icmarkets/icmarkets-client.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+    });
+    const igp = ic.exports?.icGetPositions;
+    if (ic.fehler || typeof igp !== "function") {
+      funde.push(`icmarkets-client nicht ausfuehrbar: ${ic.fehler ?? "icGetPositions fehlt"}`);
+      zusatz++;
+    } else {
+      const echtesFetch = global.fetch;
+      const altSid = global.__icmarkets_mcp_session__;
+      // "active" ueberspringt `mcpInitialize` — sonst liefe der Prüfstand in
+      // einen zweiten, unbeteiligten fetch und messte den falschen Aufruf.
+      const hole = async (roh) => {
+        global.__icmarkets_mcp_session__ = "active";
+        global.fetch = async () => ({
+          ok: true, status: 200,
+          headers: { get: () => "application/json" },
+          json: async () => ({ result: { positions: roh } }),
+          text: async () => JSON.stringify({ result: { positions: roh } }),
+        });
+        try { return await igp(); } finally {
+          global.fetch = echtesFetch;
+          global.__icmarkets_mcp_session__ = altSid;
+        }
+      };
+      const bau = (felder) => ([{
+        positionId: "P1", symbol: "EURUSD", volume: 1, entryPrice: 1.1,
+        ...felder,
+      }]);
+
+      // SELBSTPRUEFUNG zuerst: antwortet der Prüfstand ueberhaupt? Ohne sie
+      // koennte jede Zusicherung unten an einem `undefined` gruen aussehen.
+      const gesund = await hole(bau({ tradeSide: "BUY", openTime: "2026-11-01T10:00:00Z" }));
+      torPruefung("der IC-Prüfstand bekommt keine Position zurueck — jede "
+        + "Zusicherung darunter waere eine Null-Aussage",
+        gesund?.ok === true && gesund.positions?.length === 1,
+        JSON.stringify(gesund).slice(0, 180));
+
+      // 1. FEHLT das Richtungsfeld, darf KEINE Richtung erfunden werden.
+      const ohneDir = await hole(bau({ openTime: "2026-11-01T10:00:00Z" }));
+      torPruefung("der IC-Client erfindet wieder eine Richtung, wenn das Feld "
+        + "fehlt — der Trailing-Stop laege dann auf der falschen Seite",
+        ohneDir?.positions?.[0]?.direction === null,
+        JSON.stringify(ohneDir?.positions?.[0] ?? ohneDir).slice(0, 180));
+
+      // 2. Ein UNSINNIGER Wert ebenso.
+      const quatschDir = await hole(bau({ tradeSide: "LEFT", openTime: "2026-11-01T10:00:00Z" }));
+      torPruefung("ein unlesbarer IC-Richtungswert wird zu einer Richtung",
+        quatschDir?.positions?.[0]?.direction === null,
+        String(quatschDir?.positions?.[0]?.direction));
+
+      // 3. GEGENPROBE: echte Werte muessen ankommen — sonst waere der Riegel
+      //    "alles null" und es wuerde GAR KEINE Position bewirtschaftet.
+      //    LONG gehoert dazu: nur so laeuft die gemeinsame Lesart wirklich.
+      const dBuy = await hole(bau({ tradeSide: "BUY" }));
+      const dSell = await hole(bau({ tradeSide: "SELL" }));
+      const dKlein = await hole(bau({ tradeSide: "sell" }));
+      const dLong = await hole(bau({ tradeSide: "LONG" }));
+      const dAlt = await hole(bau({ direction: "SHORT" }));
+      torPruefung("der IC-Riegel ist zu streng — echte Richtungen kommen nicht "
+        + "mehr an, und dann wird GAR KEINE Position mehr bewirtschaftet",
+        dBuy?.positions?.[0]?.direction === "BUY"
+        && dSell?.positions?.[0]?.direction === "SELL"
+        && dKlein?.positions?.[0]?.direction === "SELL"
+        && dLong?.positions?.[0]?.direction === "BUY"
+        && dAlt?.positions?.[0]?.direction === "SELL",
+        JSON.stringify([dBuy, dSell, dKlein, dLong, dAlt]
+          .map((r) => r?.positions?.[0]?.direction ?? "?")));
+
+      // 4. FEHLT die Eroeffnungszeit, darf KEINE erfunden werden.
+      const ohneZeit = await hole(bau({ tradeSide: "BUY" }));
+      torPruefung("der IC-Client erfindet wieder eine Eroeffnungszeit — dann "
+        + "ist jede Position taufrisch und der Zeit-Exit feuert NIE (22.09.)",
+        ohneZeit?.positions?.[0]?.openTime === null,
+        String(ohneZeit?.positions?.[0]?.openTime));
+
+      // 5. Eine LEERE Zeichenkette ist auch keine Zeit.
+      const leereZeit = await hole(bau({ tradeSide: "BUY", openTime: "   " }));
+      torPruefung("eine leere Eroeffnungszeit gilt als Zeit",
+        leereZeit?.positions?.[0]?.openTime === null,
+        JSON.stringify(leereZeit?.positions?.[0]?.openTime));
+
+      // 6. GEGENPROBE: eine echte Zeit muss unveraendert ankommen — ein
+      //    Riegel, der jede Zeit verschluckt, setzte den Zeit-Exit fuer ALLE
+      //    Positionen aus und waere schlimmer als der Fund.
+      const mitZeit = await hole(bau({ tradeSide: "BUY", openTime: "2026-11-01T10:00:00Z" }));
+      const altFeld = await hole(bau({ tradeSide: "BUY", createTime: "2026-11-02T08:30:00Z" }));
+      torPruefung("der Zeit-Riegel ist zu streng — er verschluckt echte "
+        + "Eroeffnungszeiten, und dann ist der Zeit-Exit UEBERALL aus",
+        mitZeit?.positions?.[0]?.openTime === "2026-11-01T10:00:00Z"
+        && altFeld?.positions?.[0]?.openTime === "2026-11-02T08:30:00Z",
+        JSON.stringify([mitZeit?.positions?.[0]?.openTime,
+          altFeld?.positions?.[0]?.openTime]));
+
+      // 7. Und die alten Rueckfaelle duerfen nicht zurueckkommen.
+      const icQ = read("frontend/lib/icmarkets/icmarkets-client.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      torPruefung("ein Rueckfall `?? \"BUY\"` oder `?? new Date()` steht wieder "
+        + "in icGetPositions",
+        !/\?\?\s*"BUY"/.test(icQ)
+        && !/openTime[^\n]*new Date\(\)/.test(icQ)
+        && /direction: lesbareRichtung\(p\.tradeSide \?\? p\.direction\)/.test(icQ)
+        && /openTime: zeitOderNull\(p\.openTime \?\? p\.createTime\)/.test(icQ),
+        (icQ.match(/(direction|openTime): [^\n,]*/g) || ["(keine Zeile)"]).slice(0, 4).join(" | "));
+
+      // 8. DREIWERTIG IM TYP. Wird `| null` entfernt, erzwingt `tsc` den
+      //    Filter im Trade-Manager nicht mehr, und eine Position ohne
+      //    Richtung laeuft wieder bis in die Stop-Rechnung.
+      torPruefung("ICPosition ist nicht mehr dreiwertig — ohne `| null` "
+        + "erzwingt `tsc` den Filter im Trade-Manager nicht mehr",
+        /direction: "BUY" \| "SELL" \| null;/.test(icQ)
+        && /openTime: string \| null;/.test(icQ),
+        (icQ.match(/(direction|openTime): [^\n;]*;/g) || ["(keine Zeile)"]).slice(0, 4).join(" | "));
+    }
+
+    // ── DER FILTER AM RAND, der aus der Verengung folgt ──────────────────
+    //
+    // OHNE ihn macht die Verengung es SCHLIMMER statt besser: mit `?? "BUY"`
+    // wurde eine fehlende Richtung zu BUY, mit `null` ist
+    // `pos.direction === "BUY"` schlicht `false` — die Position gilt dann als
+    // SELL. Genau dieser Rueckbau ist mir am 07.11. im Orchestrator
+    // unterlaufen (`6edb2aa`), deshalb steht er hier als eigene Zusicherung.
+    const itmQ = read("frontend/lib/icmarkets/icmarkets-trade-manager.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("der IC-Trade-Manager sortiert Positionen ohne Richtung nicht "
+      + "aus, oder laeuft weiter ueber die ungefilterte Liste",
+      /p\.direction !== null/.test(itmQ)
+      && /for \(const pos of bewirtschaftbar\)/.test(itmQ)
+      && !/for \(const pos of posResult\.positions\)/.test(itmQ),
+      (itmQ.match(/for \(const pos of [^\n)]*\)/g) || ["(keine Schleife)"]).join(" | "));
+    // Die AUFRAEUMUNG muss weiter ueber ALLE Positionen laufen: liefe sie
+    // ueber `bewirtschaftbar`, gaelte eine Position ohne Richtung als
+    // geschlossen und ihr Gedaechtnis waere weg.
+    torPruefung("die Aufraeumung laeuft nur noch ueber die gefilterte Liste — "
+      + "eine Position ohne Richtung gaelte dann als geschlossen",
+      /liveIds = new Set\(posResult\.positions\.map/.test(itmQ),
+      (itmQ.match(/liveIds = [^\n;]*/) ?? ["(keine Zeile)"])[0].slice(0, 110));
+    // Und das Aussortieren darf nicht STILL geschehen — als ANWEISUNG
+    // gebunden, nicht am Wortlaut (die Lehre vom 07.11.: `void 0 &&` liess
+    // den Wortlaut stehen und der Pruefer blieb gruen).
+    const icWarn = /^[ \t]*console\.warn\(`\[ic-trade-mgr\] ⚠️ \$\{ohneRichtung\}/m;
+    torPruefung("das IC-Aussortieren geschieht STILL — ein stummes "
+      + "Ueberspringen saehe aus wie ein gesunder Lauf (25.10.)",
+      /OHNE lesbare Richtung/.test(itmQ) && icWarn.test(itmQ),
+      (itmQ.match(/[^\n]*console\.warn\(`\[ic-trade-mgr\] ⚠️ \$\{ohneRichtung\}[^\n]*/) ?? ["(keine Meldung)"])[0].slice(0, 110));
+    torPruefung("das IC-Anweisungs-Muster erkennt eine abgeschaltete Meldung "
+      + "nicht",
+      icWarn.test("    console.warn(`[ic-trade-mgr] ⚠️ ${ohneRichtung} x`)")
+      && !icWarn.test("    void 0 && console.warn(`[ic-trade-mgr] ⚠️ ${ohneRichtung} x`)")
+      && !icWarn.test("    // console.warn(`[ic-trade-mgr] ⚠️ ${ohneRichtung} x`)"),
+      "Selbstpruefung des IC-Anweisungs-Musters");
+
+    // ── DAS ALTER IST DREIWERTIG, und `NaN` ist keine Zahl ───────────────
+    //
+    // `new Date("Unsinn").getTime()` ist `NaN`, und `NaN >= maxHours` ist
+    // `false` — der Zeit-Exit feuerte also auch bei Unsinn nie, stumm.
+    // Vierte Wiederholung derselben Falle (24.08., 28.10., 29.10., 03.11.).
+    //
+    // GEZAEHLT, nicht gefunden (25.10.): es gibt ZWEI Zeit-Exit-Zweige, und
+    // ein Treffer bewiese nichts ueber den anderen.
+    // ── DAS ALTER WIRD GERECHNET, nicht am Wortlaut geprueft (08.11.) ────
+    //
+    // Hier stand `/Number\.isFinite\(openedMs\)/.test(itmQ)`. Nachdem die
+    // Rechnung in `alterStundenIC` gewandert ist, traf der Ausdruck weiter —
+    // aber aus dem FALSCHEN Grund: er fand `Number.isFinite` im Rumpf der
+    // Funktion statt an der Aufrufstelle. Die Pruefung war gruen und bewies
+    // nichts mehr. "Ein Treffer beweist nichts ueber die andere Stelle"
+    // (25.10.), hier an meiner eigenen Pruefung von heute.
+    {
+      const tm = ladeTsModul("lib/icmarkets/icmarkets-trade-manager.ts");
+      const asi = tm.exports?.alterStundenIC;
+      if (tm.fehler || typeof asi !== "function") {
+        funde.push(`icmarkets-trade-manager nicht ausfuehrbar: ${tm.fehler ?? "alterStundenIC fehlt"}`);
+        zusatz++;
+      } else {
+        const JETZT = 1_762_000_000_000;
+        const h = (ms) => JETZT - ms * 3_600_000;
+        const m = (min) => JETZT - min * 60_000;
+        // SELBSTPRUEFUNG: rechnet sie ueberhaupt? Sonst saehe jedes `null`
+        // unten wie ein erfolgreicher Riegel aus.
+        torPruefung("alterStundenIC rechnet nicht — dann saehe jedes `null` "
+          + "unten wie ein greifender Riegel aus",
+          Math.abs((asi(h(3), JETZT) ?? -1) - 3) < 1e-9,
+          `3h ergibt ${asi(h(3), JETZT)}`);
+        // `NaN` ist KEIN Alter — `NaN >= maxHours` ist `false`, der Exit
+        // waere stumm aus. Vierte Wiederholung derselben Falle.
+        // ── DIE TESTDATEN MUSSTEN ES ERST AUSDRUECKEN KOENNEN (08.11.) ──
+        //
+        // Hier stand `asi(NaN, …), asi(…, NaN), asi(Infinity, …)`. Die
+        // Sabotage "Number.isFinite-Riegel entfernen" blieb damit GRUEN, und
+        // zwar nicht aus Zufall: fuer `NaN` ist `NaN >= 0` falsch UND
+        // `NaN >= -(2/60)` falsch, also faengt der `: null`-Rueckfall des
+        // Ternaers es von selbst. Dasselbe fuer `+Infinity` als Eroeffnung.
+        //
+        // AUSGERECHNET, nicht geschlossen: die Sabotage ist in genau ZWEI
+        // Lagen wirksam — `-Infinity` als Eroeffnung und `+Infinity` als
+        // Jetzt geben dann `Infinity` statt `null`. Genau die fehlten.
+        //
+        // Ueber die Aufrufstelle ist das unerreichbar (`new Date(x).getTime()`
+        // ist endlich oder `NaN`, `Date.now()` immer endlich) — aber die
+        // Funktion ist EXPORTIERT und muss fuer sich stimmen. Dieselbe
+        // Begruendung wie bei `rrBand` (29.10.).
+        torPruefung("ein `NaN` oder eine unendliche Zahl gilt wieder als "
+          + "Alter — der Zeit-Exit waere dann stumm aus "
+          + "(24.08., 28.10., 29.10., 03.11.)",
+          asi(NaN, JETZT) === null && asi(h(3), NaN) === null
+          && asi(Infinity, JETZT) === null && asi(-Infinity, JETZT) === null
+          && asi(JETZT, Infinity) === null && asi(JETZT, -Infinity) === null,
+          `NaN=${asi(NaN, JETZT)} jetztNaN=${asi(h(3), NaN)} `
+          + `+Inf=${asi(Infinity, JETZT)} -Inf=${asi(-Infinity, JETZT)} `
+          + `jetzt+Inf=${asi(JETZT, Infinity)} jetzt-Inf=${asi(JETZT, -Infinity)}`);
+        // Eine ZUKUNFT bis 2 Minuten ist Uhren-Versatz, darueber unbekannt —
+        // dieselbe Schranke wie `ageInMinutes` (22.09.). BEIDE Seiten der
+        // Grenze, sonst koennte ein Testfall den Fehler nicht ausdruecken.
+        torPruefung("eine kleine Zukunft (Uhren-Versatz) wird nicht zu 0",
+          asi(m(-1), JETZT) === 0 && asi(m(-2), JETZT) === 0
+          && asi(JETZT, JETZT) === 0,
+          `-1min=${asi(m(-1), JETZT)} -2min=${asi(m(-2), JETZT)} 0=${asi(JETZT, JETZT)}`);
+        torPruefung("eine GROSSE Zukunft gilt als Alter statt als unbekannt — "
+          + "dann feuert der Zeit-Exit verspaetet und sagt es nicht",
+          asi(m(-2.1), JETZT) === null && asi(m(-5), JETZT) === null
+          && asi(h(-2), JETZT) === null,
+          `-2.1min=${asi(m(-2.1), JETZT)} -5min=${asi(m(-5), JETZT)} -2h=${asi(h(-2), JETZT)}`);
+        // GEGENPROBE: ein Riegel, der ALLES auf null zieht, setzte den
+        // Zeit-Exit ueberall aus und waere schlimmer als der Fund.
+        torPruefung("alterStundenIC ist zu streng — echte Alter werden zu "
+          + "`null`, und dann ist der Zeit-Exit UEBERALL aus",
+          typeof asi(h(0.5), JETZT) === "number"
+          && typeof asi(h(25), JETZT) === "number"
+          && typeof asi(h(200), JETZT) === "number",
+          `0.5h=${asi(h(0.5), JETZT)} 25h=${asi(h(25), JETZT)} 200h=${asi(h(200), JETZT)}`);
+      }
+      // UND DIE AUFRUFSTELLE. Eine gerechnete Funktion beweist nichts ueber
+      // ihre Verdrahtung — die Lehre vom 30.09.
+      torPruefung("die Aufrufstelle rechnet das Alter wieder selbst, statt "
+        + "`alterStundenIC` zu benutzen",
+        /const openedMs = pos\.openTime === null \? NaN : new Date\(pos\.openTime\)\.getTime\(\);/.test(itmQ)
+        && /const ageHours: number \| null = alterStundenIC\(openedMs, Date\.now\(\)\);/.test(itmQ)
+        && !/new Date\(pos\.openTime \?\? Date\.now\(\)\)/.test(itmQ),
+        (itmQ.match(/const (openedMs|ageHours)[^\n]*/g) || ["(keine Zeile)"]).join(" | ").slice(0, 150));
+      // Und der GRUND gehoert in die Meldung — drei Lagen, drei naechste
+      // Schritte. GEZAEHLT, nicht gefunden.
+      torPruefung("die Alters-Meldung nennt den Grund nicht — `fehlt`, "
+        + "`unlesbar` und `Zukunft` fuehren zu drei verschiedenen Schritten",
+        /"FEHLT"/.test(itmQ) && /ist unlesbar \(\$\{pos\.openTime\}\)/.test(itmQ)
+        && /liegt in der ZUKUNFT/.test(itmQ) && /Zeitzone/.test(itmQ),
+        `FEHLT=${/"FEHLT"/.test(itmQ)} unlesbar=${/ist unlesbar/.test(itmQ)} Zukunft=${/liegt in der ZUKUNFT/.test(itmQ)}`);
+    }
+    torPruefung("ein unbekanntes Alter laeuft in den Zeit-Exit — es gibt ZWEI "
+      + "Zweige, beide brauchen den Riegel",
+      (itmQ.match(/ageHours !== null && ageHours >= maxHours/g) || []).length === 2,
+      `${(itmQ.match(/ageHours !== null && ageHours >= maxHours/g) || []).length} von 2 Zweigen gesichert`);
+    // Ein unbekanntes Alter muss gemeldet werden, und zwar mit EIGENEM
+    // Gedaechtnis: teilte es sich den Eintrag mit dem geratenen Stil,
+    // verdeckte die erste Meldung die andere Lage (Regel 01.11.).
+    // AN DEN RIEGEL SELBST GEBUNDEN, nicht an den Namen irgendwo (08.11.).
+    //
+    // Hier stand `/alterUnbekanntGemeldetIC/.test(itmQ)` — "steht der Name
+    // IRGENDWO in der Datei". Die Sabotage S14 tauschte nur den `.has`-Riegel
+    // gegen `gerateneGemeldetIC.has(...)`: Deklaration, `.add`, `.delete` und
+    // die Meldung blieben stehen, der Ausdruck war zufrieden, der Pruefer
+    // GRUEN. Woertlich "ein Treffer beweist nichts ueber die andere Stelle"
+    // (25.10.).
+    //
+    // Und die Sabotage ist wirksam, nicht harmlos: der Riegel liest dann das
+    // falsche Gedaechtnis. Steckt die Position schon in `gerateneGemeldetIC`
+    // (geratener Stil), bleibt die Alters-Meldung STUMM; steckt sie nicht
+    // drin, wiederholt sie sich bei JEDEM Zyklus, weil `.add` den Riegel
+    // nicht mehr beruehrt. Beides sind echte Fehler.
+    //
+    // Deshalb haengen jetzt alle DREI Stellen namentlich am richtigen
+    // Gedaechtnis, und der `.has`-Riegel zusaetzlich an seiner Bedingung.
+    const icAlterRiegel = /if \(ageHours === null && !alterUnbekanntGemeldetIC\.has\(positionId\)\) \{/;
+    torPruefung("ein unbekanntes IC-Positionsalter bleibt stumm, oder teilt "
+      + "sich das Gedaechtnis mit dem geratenen Stil",
+      icAlterRiegel.test(itmQ)
+      && /alterUnbekanntGemeldetIC\.add\(positionId\);/.test(itmQ)
+      && /alterUnbekanntGemeldetIC\.delete\(id\)/.test(itmQ)
+      && /^[ \t]*console\.warn\(`\[ic-trade-mgr\] ⚠️ \$\{symbol\} pos=\$\{positionId\}: Eroeffnungszeit/m.test(itmQ),
+      (itmQ.match(/if \(ageHours === null[^\n]*/) ?? ["(kein Riegel)"])[0].slice(0, 110));
+    // SELBSTPRUEFUNG an GEBAUTEN Zeichenketten, in beide Richtungen — am
+    // Dateiinhalt haenge sie an einer Formulierung.
+    torPruefung("das Muster erkennt ein geteiltes Gedaechtnis nicht — dann "
+      + "bewiese die Zeile darueber nichts",
+      icAlterRiegel.test('if (ageHours === null && !alterUnbekanntGemeldetIC.has(positionId)) {')
+      && !icAlterRiegel.test('if (ageHours === null && !gerateneGemeldetIC.has(positionId)) {'),
+      "Selbstpruefung des Gedaechtnis-Musters");
+
+    // ── DER JOURNAL-SYNC ────────────────────────────────────────────────
+    //
+    // Ehrlich zur Reichweite, im Code nachgezaehlt: dieser Wert landet NICHT
+    // in der `Trade`-Tabelle (das UPDATE setzt status/result/profitLoss/
+    // closePrice/updatedAt/notes). Die erfundene Richtung ging allein in eine
+    // LOGZEILE — kein Geld, aber ein Log ist das Werkzeug, mit dem man die
+    // naechste Ursache sucht.
+    const ijQ = read("frontend/lib/icmarkets/icmarkets-journal-sync.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("der IC-Journal-Sync erfindet wieder eine Richtung",
+      !/\?\?\s*"BUY"/.test(ijQ)
+      && /direction: lesbareRichtung\(d\.tradeSide \?\? d\.direction\)/.test(ijQ)
+      && /direction: string \| null;/.test(ijQ),
+      (ijQ.match(/direction[^\n,;]*/g) || ["(keine Zeile)"]).slice(0, 3).join(" | "));
+    torPruefung("die IC-Logzeile schreibt die rohe Richtung — eine fehlende "
+      + "waere dort wieder unsichtbar",
+      /richtungAnzeige\(deal\.direction\)/.test(ijQ),
+      (ijQ.match(/console\.log\(`\[ic-journal-sync\][^\n]*/) ?? ["(keine Zeile)"])[0].slice(0, 110));
+
+    // ── DIE UNGEPRUEFTE GRENZE: die zwei Execute-Routen (08.11.) ─────────
+    //
+    // `request.json()` ist `any`, und `as Partial<ExecutionRequest>` prueft
+    // NICHTS — `!body.direction` wies nur leere Werte ab. `{"direction":
+    // "LONG"}` kam durch, weiter innen ist `req.direction === "BUY"` dann
+    // `false` (als SELL gerechnet) und "LONG" ginge ausserdem ins Journal
+    // bzw. als `tradeSide` an den Broker.
+    //
+    // Wortgleiche Klasse wie `PATCH /api/trades/[id]` (04.11., `c0e0f49`) —
+    // der Fix dort deckte die LESER und den PATCH, diese zwei Routen nicht.
+    //
+    // GEZAEHLT, nicht gefunden: BEIDE Routen, sonst bewiese ein Treffer
+    // nichts ueber die andere (25.10.).
+    {
+      const routen = [
+        "frontend/app/api/capital-com/execute/route.ts",
+        "frontend/app/api/icmarkets/execute/route.ts",
+      ];
+      let gesichert = 0;
+      const lage = [];
+      for (const r of routen) {
+        const q = read(r).replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+        const ok = /const richtung = lesbareRichtung\(body\.direction\);/.test(q)
+          && /if \(!richtung\) \{/.test(q)
+          && /status: 400/.test(q)
+          && /direction: richtung,/.test(q)
+          && !/direction: body\.direction,/.test(q);
+        if (ok) gesichert++;
+        lage.push(`${r.split("/").slice(-3, -1).join("/")}=${ok ? "ok" : "OFFEN"}`);
+      }
+      torPruefung("eine Order-Route nimmt eine ungepruefte Richtung an — "
+        + "`{\"direction\":\"LONG\"}` wuerde als SELL gerechnet",
+        gesichert === 2, `${gesichert} von 2 gesichert (${lage.join(", ")})`);
+      // SELBSTPRUEFUNG: erkennt das Muster den alten Zustand ueberhaupt?
+      const altErkannt = /direction: body\.direction,/.test("      direction: body.direction,");
+      torPruefung("das Muster erkennt die ungepruefte Durchreichung nicht — "
+        + "dann bewiese die Zeile darueber nichts",
+        altErkannt === true, "Selbstpruefung des Routen-Musters");
+    }
+
+    // ── EINE DATEI OHNE TYPPRUEFUNG BEWEIST NICHTS UEBER SICH (08.11.) ───
+    //
+    // `/api/forward-testing/route.ts` trug `ts-nocheck`. Damit konnte `tsc`
+    // zu dieser Datei nichts sagen — auch nicht zum Richtungs-Fix vom 04.11.,
+    // der dort steht. Die Deklaration log an vier Stellen; `accountSize`
+    // FEHLTE ganz, obwohl die Datei es liest.
+    //
+    // Die Route ist LIVE: `app/page.tsx` und `ForwardTestingCenter.tsx`
+    // rufen sie (die `.next/types`-Treffer sind generiert und zaehlen nicht,
+    // Regel 15.09.).
+    {
+      const ftRoh = read("frontend/app/api/forward-testing/route.ts");
+      const nocheck = /@ts-nocheck/;
+      torPruefung("die Typpruefung ist in /api/forward-testing wieder "
+        + "abgeschaltet — dann sagt `tsc` zu dieser Datei NICHTS",
+        !nocheck.test(ftRoh),
+        (ftRoh.match(/[^\n]*@ts-nocheck[^\n]*/g) || ["(kein Treffer)"]).join(" | "));
+      torPruefung("das ts-nocheck-Muster erkennt die Direktive nicht",
+        nocheck.test("// @ts-nocheck") === true,
+        "Selbstpruefung des ts-nocheck-Musters");
+      // Und die Spalte, die gefehlt hat, muss im Zeilentyp stehen — sonst
+      // waere `t.accountSize` wieder ein Feldname aus dem Gedaechtnis.
+      const ftQ = ftRoh.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      torPruefung("der Zeilentyp in /api/forward-testing kennt `accountSize` "
+        + "nicht, obwohl die Datei es liest (Fehlerklasse 30.09.)",
+        /accountSize: number;/.test(ftQ) && /t\.accountSize/.test(ftQ),
+        `Typ=${/accountSize: number;/.test(ftQ)} Leser=${/t\.accountSize/.test(ftQ)}`);
+    }
+  }
+
+  // ══ EINE ROHE BROKER-ZEIT IN DER GELDTABELLE (08.11.) ═══════════════════
+  //
+  // `/api/capital-com/sync-journal` holt `/history/transactions` mit EIGENEM
+  // `fetch` und ging damit an der Grenze vorbei, an der jede Broker-Zeit
+  // umgerechnet wird. Zwei Fehler in einer Zeile:
+  //
+  //   String(tx.date ?? tx.dateUtc ?? new Date().toISOString())
+  //
+  //  1. Capital.com schickt Ortszeit OHNE Zone (gemessen 22.09.) — der Wert
+  //     landete als `createdAt` in der `Trade`-Tabelle, um den Zonenversatz
+  //     verschoben. `/hebel` gruppiert seit dem 03.11. nach genau diesem Feld
+  //     und nennt die Dimension "Eroeffnungsstunde (UTC)".
+  //  2. Fehlte die Angabe, wurde JETZT erfunden.
+  //
+  // AUSGEFUEHRT, nicht am Wortlaut: die ECHTE `POST` laeuft gegen einen
+  // gefaelschten `fetch` und einen Datenbank-SPION, aber mit dem ECHTEN
+  // `brokerZeitNachUtc`. Geprueft wird, was im INSERT ANKOMMT.
+  {
+    const ccEcht = ladeTsModul("lib/capital-com/capital-com-client.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+    });
+    const NR = { json: (body, init) => ({ __body: body, status: init?.status ?? 200 }) };
+    const geschrieben = [];
+    const sj = ladeTsModul("app/api/capital-com/sync-journal/route.ts", {
+      "next/server": { NextResponse: NR },
+      "capital-com/capital-com-session": {
+        isCapitalConnected: () => true,
+        getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s", balance: 2000 }),
+      },
+      "lib/prisma": {
+        getPrisma: () => ({
+          $queryRawUnsafe: async () => [],
+          $executeRawUnsafe: async (sql, ...args) => { geschrieben.push({ sql, args }); return 1; },
+        }),
+      },
+      // DAS ECHTE Modul — sonst messe ich einen Stellvertreter statt der
+      // Zonen-Umrechnung. Genau diese Falle hat am 31.10. einen Pruefstand
+      // wertlos gemacht.
+      "capital-com/capital-com-client": ccEcht.exports,
+      "capital-com/capital-trade-tracker": { notizenNachSync: () => "{}" },
+    });
+    if (sj.fehler || typeof sj.exports?.POST !== "function") {
+      funde.push(`sync-journal-Route nicht ausfuehrbar: ${sj.fehler ?? "POST fehlt"}`);
+      zusatz++;
+    } else {
+      const echtesFetch = global.fetch;
+      const fahre = async (txListe) => {
+        geschrieben.length = 0;
+        global.fetch = async (url) => {
+          const u = String(url);
+          const leib = u.includes("/history/transactions")
+            ? { transactions: txListe }
+            : { positions: [] };
+          return { ok: true, status: 200, json: async () => leib, text: async () => JSON.stringify(leib) };
+        };
+        try {
+          const r = await sj.exports.POST({ json: async () => ({}) });
+          return { antwort: r, zeilen: geschrieben.slice() };
+        } finally { global.fetch = echtesFetch; }
+      };
+      const tx = (felder) => ({
+        transactionType: "TRADE", dealId: "D1", instrumentName: "EURUSD",
+        size: "12.50", ...felder,
+      });
+      // Der INSERT ist die Zeile mit `INSERT INTO "Trade"`.
+      const insertVon = (zeilen) => zeilen.find((z) => /INSERT INTO "Trade"/.test(String(z.sql)));
+
+      // SELBSTPRUEFUNG: legt der Pruefstand ueberhaupt eine Zeile an? Ohne das
+      // waere jede Zusicherung darunter eine Null-Aussage.
+      const gesund = await fahre([tx({ date: "2026-11-08T07:30:00" })]);
+      const ins = insertVon(gesund.zeilen);
+      torPruefung("der sync-journal-Pruefstand legt keine Zeile an — jede "
+        + "Zusicherung darunter waere eine Null-Aussage",
+        gesund.antwort?.__body?.ok === true && ins !== undefined
+        && gesund.antwort.__body.neuAngelegt === 1,
+        JSON.stringify(gesund.antwort?.__body ?? gesund.antwort).slice(0, 200));
+
+      if (ins) {
+        // 1. DIE ZONE. 07:30 Ortszeit (Winter, Europe/Zurich = UTC+1) muss als
+        //    06:30 UTC ankommen. Roh durchgereicht waeren es 07:30 — genau der
+        //    Fehler, und genau um diese EINE Stunde waere /hebel daneben.
+        const datum = ins.args[ins.args.length - 1];
+        torPruefung("die Broker-Zeit wird NICHT mehr an der Grenze umgerechnet "
+          + "— `createdAt` traegt dann Ortszeit, und /hebel nennt sie UTC",
+          String(datum) === "2026-11-08 06:30:00",
+          `createdAt=${JSON.stringify(datum)} (erwartet 2026-11-08 06:30:00)`);
+        // 2. Der Platzhalter muss dann auch benutzt werden.
+        torPruefung("bei bekannter Zeit fehlt der Zeit-Platzhalter im INSERT",
+          /\$5,\$6::timestamp,NOW\(\)\)/.test(String(ins.sql).replace(/\s+/g, "")),
+          String(ins.sql).slice(-120));
+      }
+
+      // 3. SOMMERZEIT: dieselbe Ortszeit im Juli ist UTC+2 → 05:30 UTC. Ein
+      //    FESTER Versatz von einer Stunde waere bis zum 29.03. unauffaellig —
+      //    genau die Falle, die beim Broker-Zeitfix am 22.09. vermieden wurde.
+      const sommer = await fahre([tx({ dealId: "D2", date: "2026-07-15T07:30:00" })]);
+      const insS = insertVon(sommer.zeilen);
+      torPruefung("die Umrechnung benutzt einen FESTEN Versatz statt der "
+        + "Zeitzone — im Sommer ist sie dann eine Stunde daneben",
+        insS !== undefined
+        && String(insS.args[insS.args.length - 1]) === "2026-07-15 05:30:00",
+        `Sommer createdAt=${JSON.stringify(insS?.args?.[insS.args.length - 1])} `
+        + `(erwartet 2026-07-15 05:30:00)`);
+
+      // 4. Eine Zeit MIT Zone wird nur normalisiert, nicht ein zweites Mal
+      //    verschoben. Gegenprobe zur Umrechnung.
+      const mitZone = await fahre([tx({ dealId: "D3", date: "2026-11-08T06:30:00Z" })]);
+      const insZ = insertVon(mitZone.zeilen);
+      torPruefung("eine Broker-Zeit MIT Zone wird ein zweites Mal verschoben",
+        insZ !== undefined
+        && String(insZ.args[insZ.args.length - 1]) === "2026-11-08 06:30:00",
+        `createdAt=${JSON.stringify(insZ?.args?.[insZ.args.length - 1])}`);
+
+      // 5. FEHLT die Zeit, darf KEINE erfunden werden: der INSERT nimmt dann
+      //    `NOW()` und ein Argument WENIGER, und die Zahl wird gemeldet.
+      const ohne = await fahre([tx({ dealId: "D4" })]);
+      const insO = insertVon(ohne.zeilen);
+      const sqlO = String(insO?.sql ?? "").replace(/\s+/g, "");
+      torPruefung("eine fehlende Broker-Zeit wird wieder erfunden — die Zeile "
+        + "saehe aus, als waere sie gerade eben eroeffnet worden",
+        insO !== undefined && /\$5,NOW\(\),NOW\(\)\)/.test(sqlO)
+        && insO.args.length === 5,
+        `args=${insO?.args?.length} sql=${sqlO.slice(-60)}`);
+      torPruefung("die fehlende Broker-Zeit wird nicht GEZAEHLT und nicht "
+        + "gemeldet — ein stummer Ausfall saehe wie ein gesunder Lauf aus",
+        ohne.antwort?.__body?.ohneBrokerZeit === 1
+        && /OHNE Broker-Zeit/.test(String(ohne.antwort?.__body?.message ?? "")),
+        JSON.stringify(ohne.antwort?.__body ?? {}).slice(0, 220));
+      // 6. GEGENPROBE: bei BEKANNTER Zeit darf die Meldung NICHT anschlagen —
+      //    sonst waere sie nur "immer rot" (Lehre vom 15.09.).
+      torPruefung("die Meldung schlaegt auch bei bekannter Zeit an",
+        gesund.antwort?.__body?.ohneBrokerZeit === 0
+        && !/OHNE Broker-Zeit/.test(String(gesund.antwort?.__body?.message ?? "")),
+        JSON.stringify(gesund.antwort?.__body?.message ?? "").slice(0, 160));
+    }
+
+    // Und strukturell: der Import der Grenze muss da sein, die Erfindung weg.
+    const sjQ = read("frontend/app/api/capital-com/sync-journal/route.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die sync-journal-Route holt die Broker-Zeit nicht mehr ueber "
+      + "`brokerZeitNachUtc`, oder erfindet wieder eine",
+      /import \{ brokerZeitNachUtc \}/.test(sjQ)
+      && /brokerZeitNachUtc\(tx\.date \?\? tx\.dateUtc\)/.test(sjQ)
+      && !/new Date\(\)\.toISOString\(\)\)\.slice\(0, 19\)/.test(sjQ),
+      (sjQ.match(/const (utcIso|dateStr)[^\n]*/g) || ["(keine Zeile)"]).join(" | ").slice(0, 150));
+  }
+
+  // ══ DER IC-JOURNAL-SYNC ERFINDET AUCH KEINE SCHLUSSZEIT MEHR (08.11.) ═══
+  //
+  // `closeTime` ging als `notes.icClosedAt` in die DATENBANK. Ein Datensatz,
+  // der eine Zeit behauptet, die es nicht gab, ist schlimmer als ein Log, der
+  // es tut: Logs sind nach Tagen weg, Datensaetze liest man Monate spaeter.
+  // Fehlt die Zeit, wird der SCHLUESSEL weggelassen — wie bei `dealId`.
+  {
+    const ijQ2 = read("frontend/lib/icmarkets/icmarkets-journal-sync.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("der IC-Journal-Sync erfindet wieder eine Schlusszeit",
+      /closeTime: zeitOderNull\(d\.closeTime \?\? d\.closeTimestamp\)/.test(ijQ2)
+      && /closeTime: string \| null;/.test(ijQ2)
+      && !/closeTime[^\n]*new Date\(\)\.toISOString\(\)/.test(ijQ2),
+      (ijQ2.match(/closeTime[^\n,;]*/g) || ["(keine Zeile)"]).slice(0, 3).join(" | "));
+    torPruefung("bei fehlender Schlusszeit wird der Schluessel `icClosedAt` "
+      + "trotzdem geschrieben — dann steht eine erfundene Zeit im Datensatz",
+      /\.\.\.\(deal\.closeTime === null \? \{\} : \{ icClosedAt: deal\.closeTime \}\)/.test(ijQ2),
+      (ijQ2.match(/icClosedAt[^\n,]*/g) || ["(keine Zeile)"]).join(" | "));
+    // EINE Umsetzung, nicht zwei: `zeitOderNull` kommt aus dem Client.
+    torPruefung("`zeitOderNull` ist zweimal umgesetzt statt einmal importiert",
+      /import \{ icGetDeals, zeitOderNull \} from "\.\/icmarkets-client"/.test(ijQ2)
+      && !/function zeitOderNull/.test(ijQ2),
+      (ijQ2.match(/import \{[^\n]*icmarkets-client[^\n]*/) ?? ["(kein Import)"])[0]);
+  }
+
+  // ══ UND DIE UNERREICHBARE STELLE IM CAPITAL-CLIENT (08.11.) ═════════════
+  //
+  // `capitalGetClosedPositions` trug weiter `?? "BUY"`. Nachgezaehlt, nicht
+  // vermutet: importiert in `capital-trade-tracker.ts`, aber im ganzen
+  // Programm NIE aufgerufen. Ein nie gerufener Rumpf mit einer bekannt
+  // falschen Zeile ist eine Falle fuer den Naechsten — und der `as`-Cast
+  // schaltet genau die Warnung ab, die ihn aufhalten wuerde.
+  {
+    const ccQ3 = read("frontend/lib/capital-com/capital-com-client.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("`capitalGetClosedPositions` erfindet wieder eine Richtung",
+      /direction: lesbareRichtung\(details\.direction\)/.test(ccQ3)
+      && !/\(details\.direction as "BUY" \| "SELL"\) \?\? "BUY"/.test(ccQ3),
+      (ccQ3.match(/direction: [^\n,]*details\.direction[^\n,]*/g) || ["(keine Zeile)"]).join(" | "));
+    // ── AN DEN AUSGESCHNITTENEN RUMPF GEBUNDEN (08.11.) ────────────────
+    //
+    // Hier stand `/direction: "BUY" \| "SELL" \| null;/.test(ccQ3)` — also
+    // "steht das IRGENDWO in der Datei". `OpenPosition.direction` ist seit
+    // dem 07.11. GENAUSO deklariert: nimmt man die Dreiwertigkeit aus
+    // `ClosedPositionRecord`, bleibt die andere stehen und der Ausdruck ist
+    // zufrieden. Die Sabotage S35 blieb damit GRUEN — zum dritten Mal an
+    // einem Tag "ein Treffer beweist nichts ueber die andere Stelle"
+    // (25.10.), diesmal in meiner eigenen neuen Pruefung.
+    //
+    // `tsc` faengt den Rueckbau zwar (TS2322, genau wie beim Einbau) — aber
+    // eine Pruefung, die etwas ueber DIESEN Typ behauptet, muss es halten.
+    const rumpfVon = (quelle, name) => {
+      const i = quelle.indexOf(`export interface ${name} {`);
+      if (i < 0) return null;
+      let tiefe = 0;
+      for (let j = quelle.indexOf("{", i); j < quelle.length; j++) {
+        if (quelle[j] === "{") tiefe++;
+        else if (quelle[j] === "}") { tiefe--; if (tiefe === 0) return quelle.slice(i, j + 1); }
+      }
+      return null;
+    };
+    const rumpfClosed = rumpfVon(ccQ3, "ClosedPositionRecord");
+    const rumpfOpen = rumpfVon(ccQ3, "OpenPosition");
+    // SELBSTPRUEFUNG des Schnitts: jeder Rumpf muss sein EIGENES Feld
+    // enthalten und das des anderen NICHT. Ohne das koennte der Schnitt
+    // beide Rumpfe umfassen und die Zeile darunter bewiese wieder nichts.
+    torPruefung("der Interface-Schnitt im Capital-Client trifft nicht die "
+      + "richtigen Rumpfe — dann beweist die Dreiwertigkeits-Pruefung nichts",
+      rumpfClosed !== null && rumpfOpen !== null
+      && /closeLevel/.test(rumpfClosed) && !/stopLevel/.test(rumpfClosed)
+      && /stopLevel/.test(rumpfOpen) && !/closeLevel/.test(rumpfOpen),
+      `closed=${rumpfClosed ? rumpfClosed.length : "?"} open=${rumpfOpen ? rumpfOpen.length : "?"}`);
+    torPruefung("`ClosedPositionRecord.direction` ist nicht mehr dreiwertig",
+      rumpfClosed !== null && /direction: "BUY" \| "SELL" \| null;/.test(rumpfClosed),
+      (rumpfClosed ?? "").match(/direction[^\n;]*;/)?.[0] ?? "(kein Rumpf)");
+    // UND die Schwester, damit der Fix vom 07.11. nicht still zurueckgebaut
+    // wird. GEZAEHLT ueber zwei getrennte Rumpfe statt einmal gefunden.
+    torPruefung("`OpenPosition.direction` ist nicht mehr dreiwertig — der "
+      + "Fix vom 07.11. waere damit still zurueckgebaut",
+      rumpfOpen !== null && /direction: "BUY" \| "SELL" \| null;/.test(rumpfOpen),
+      (rumpfOpen ?? "").match(/direction[^\n;]*;/)?.[0] ?? "(kein Rumpf)");
+    // GEZAEHLT, nicht gefunden: im ganzen Client darf KEIN `?? "BUY"` mehr
+    // stehen. Ein Treffer an einer Stelle bewiese nichts ueber die andere.
+    torPruefung("irgendwo im Capital-Client steht wieder ein `?? \"BUY\"`",
+      (ccQ3.match(/\?\?\s*"BUY"/g) || []).length === 0,
+      `${(ccQ3.match(/\?\?\s*"BUY"/g) || []).length} Vorkommen`);
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getPrisma } from "../../lib/prisma";
@@ -8,8 +7,23 @@ export async function GET() {
   try {
     const db = getPrisma();
 
-    const trades = await db.$queryRawUnsafe<Array<{
-      id: string;
+    // Die Spalten stehen HIER, an der Quelle (prisma/schema.prisma, model
+    // Trade) abgelesen — nicht aus dem Gedaechtnis. Bis zum 08.11. trug die
+    // Datei die ts-nocheck-Direktive, und die Deklaration log an vier
+    // Stellen: `id` ist `Int` (nicht String), `accountSize` FEHLTE ganz,
+    // obwohl `pnlPercent` unten es liest, `notes` ist `String?` und die
+    // zwei Zeitstempel sind
+    // `DateTime`. Ohne Laufzeitfolge — `SELECT *` bringt jede Spalte —, aber
+    // `tsc` konnte zu dieser Datei NICHTS sagen, auch nicht zum Richtungs-Fix
+    // vom 04.11. Fehlerklasse 30.09.: ein Feldname aus dem Gedaechtnis.
+    //
+    // Die Zeitstempel sind absichtlich `Date | string`: Prisma gibt bei
+    // `$queryRawUnsafe` fuer `timestamp` ein `Date` zurueck, und `JSON`
+    // macht daraus denselben ISO-Text wie bisher. Ein `.toISOString()` hier
+    // waere eine Verhaltensaenderung auf eine VERMUTUNG hin — die Form der
+    // Antwort bleibt Zeichen fuer Zeichen die von vorher.
+    type TradeZeile = {
+      id: number;
       market: string;
       direction: string;
       strategy: string;
@@ -19,14 +33,22 @@ export async function GET() {
       status: string;
       result: string;
       profitLoss: number;
+      accountSize: number;
       riskPercent: number;
       riskAmount: number;
       riskReward: number;
       positionSize: number;
-      notes: string;
-      createdAt: string;
-      updatedAt: string;
-    }>>(`SELECT * FROM "Trade" ORDER BY "createdAt" DESC LIMIT 200`);
+      notes: string | null;
+      createdAt: Date | string;
+      updatedAt: Date | string;
+    };
+
+    // KEIN Typargument an `$queryRawUnsafe`: der Prisma-Client ist
+    // programmweit `any` (belegt am 26.10.), und ein `any`-Aufruf nimmt
+    // keine Typargumente (TS2347). Die Zusage steht deshalb am Ergebnis.
+    const trades = (await db.$queryRawUnsafe(
+      `SELECT * FROM "Trade" ORDER BY "createdAt" DESC LIMIT 200`,
+    )) as TradeZeile[];
 
     const closed = trades.filter((t) => t.status === "CLOSED");
     const open = trades.filter((t) => t.status === "OPEN");
@@ -55,7 +77,13 @@ export async function GET() {
       const outcome = t.status === "OPEN" ? "PENDING"
         : (t.profitLoss > 0 ? "WIN" : t.profitLoss < 0 ? "LOSS" : "BREAKEVEN");
       return {
-        resultId: t.id,
+        // `Trade.id` ist `Int`, die Komponente deklariert `resultId: string`
+        // (`ForwardTestingCenter.tsx:9`). Beide Seiten logen bisher, und weil
+        // die Antwort ueber `any` kommt, haette `tsc` das auch ohne
+        // abgeschaltete Typpruefung nie verbunden. React stringifiziert einen Key
+        // und rendert `3` wie `"3"` — die Anzeige aendert sich NICHT, nur die
+        // Zusage stimmt jetzt.
+        resultId: String(t.id),
         symbol: t.market,
         // Ein CAST, DER LUEGT, war hier das Problem (04.11.): `t.direction`
         // kommt aus der Trade-Spalte (Schema: nur `String`) und enthaelt
