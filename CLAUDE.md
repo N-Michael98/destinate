@@ -3705,6 +3705,114 @@ sauber, und das Nachprüfen war der Punkt:
 - `POST /api/trades` hat den Richtungs-Riegel längst (`lesbareRichtung` + 400).
   Mein Verdacht, der 04.11.-Fix habe nur den `PATCH` gedeckt, war **falsch**.
 
+## Eine Zukunft ist kein Alter — und die Rechnung gehört einmal hin (08.11.)
+
+Zweite Runde desselben Tages, und sie räumt eine Dopplung weg, die ich in der
+**ersten** angelegt habe.
+
+### Was dastand
+
+`risk-agent.ts:575` rechnete das Positionsalter offen, mit **zwei** der drei
+Riegel:
+
+```ts
+const eroeffnet = pos.createdDate ? new Date(pos.createdDate) : null;
+const ageHours = eroeffnet && !Number.isNaN(eroeffnet.getTime())
+  ? (Date.now() - eroeffnet.getTime()) / 3_600_000
+  : null;
+```
+
+| Eingabe | vorher |
+|---|---|
+| fehlendes Datum | `null` ✓ (Riegel vom 19.08.) |
+| `NaN` | `null` ✓ |
+| **Zukunft** | **negative Zahl — kein Riegel** |
+
+### Zwei Folgen, und die zweite ist die teurere
+
+**1. Der Zeit-Exit feuerte verspätet** um den Versatz (`:624`) — **nicht nie**.
+Das korrigiert meine eigene frühere Aussage: „nie" gilt nur für eine *in jedem
+Zyklus neu erfundene* Zeit (so war es bei IC), nicht für einen festen
+Zeitstempel in der Zukunft. Der wächst mit, er ist nur verschoben.
+
+**2. Die Zahl geht in den KI-Prompt** (`:426`):
+
+```ts
+Position offen seit: ${lage.ageHours == null ? "unbekannt" : `${lage.ageHours.toFixed(1)} Stunden`}
+```
+
+Also **„Position offen seit -1.5 Stunden"** — an genau die KI, die über
+Breakeven, Teilgewinn und Trailing entscheidet. Das ist die Fehlerklasse „ein
+Rückfallwert an einer Stelle, die über Geld entscheidet" (07.09.), nur dass
+der Wert hier nicht erfunden, sondern **absurd** ist.
+
+### Die Rechnung liegt jetzt einmal da
+
+`lib/alter/alter.ts` — rein, ohne Importe, ohne Seiteneffekte, wie `htmlSicher`
+(31.10.) und `redisLageMelden` (01.11.). **Beide** Zeit-Exits benutzen sie:
+
+```ts
+export function alterStunden(openedMs: number, jetztMs: number): number | null
+export function alterGrund(roh, openedMs, jetztMs): string | null
+```
+
+Damit **entfällt** `alterStundenIC`, das ich am Morgen desselben Tages angelegt
+hatte. Zwei Fassungen desselben Rechenwegs können auseinanderlaufen — und dann
+entscheidet ein Broker anders als der andere über denselben Sachverhalt.
+
+**Nachgezählt, nicht vermutet: es gibt vier Alters-Rechnungen im Programm, und
+nur zwei davon waren Dopplungen.** Die anderen bleiben eigenständig, mit Grund:
+
+| Stelle | warum eigenständig |
+|---|---|
+| `ageInMinutes` (`orchestrator-agent.ts`, 22.09.) | rechnet in **Minuten** und misst das Alter eines **Kurses**, nicht einer Position |
+| `alterStunden` (`positionen-lage.ts`, 07.11.) | arbeitet auf einer ISO-Zeichenkette und verlangt eine **Zonenangabe**, weil sie für die **Anzeige** rechnet |
+| `stundenSeit` (`broker-status.ts`) | misst `connectedAt`, also **unsere eigene** Zeit — eine Zukunft ist dort nicht erreichbar (nachgesehen: alle Setzer sind `new Date().toISOString()`) |
+
+Die 2-Minuten-Schranke ist **dieselbe** wie in `ageInMinutes`, damit die Grenze
+nicht je Broker eine andere ist.
+
+### Und die Meldung log
+
+Vorher stand bei **jedem** unbekannten Alter „Broker liefert keine
+Eroeffnungszeit". Bei einer Zukunftszeit ist das **falsch** — er liefert eine,
+nur unbrauchbare. Jetzt nennt `alterGrund` die Lage: **fehlt**, **unlesbar**
+oder **liegt in der Zukunft** — drei Lagen, drei verschiedene nächste Schritte.
+Der cTrader-Hinweis bleibt broker-spezifisch und hängt am Zukunfts-Fall.
+
+### Ehrlich zur Reichweite
+
+Dass eine Zukunft im **Betrieb auftritt**, ist von hier **nicht beweisbar** —
+Broker und Produktionsdatenbank sind nicht befragbar. Belegt ist: der Riegel
+fehlte, die Zahl erreichte den Prompt, und **alle drei Schwesterfunktionen
+haben ihn**. Uhrenversatz zwischen zwei Rechnern ist die normale Ursache; genau
+dafür gibt es seit dem 22.09. das 2-Minuten-Fenster.
+
+### Was es NICHT tut
+
+Keine Schwelle, keine Grösse, kein Stop, kein Limit, keine Filterkette.
+`STYLE_MAX_HOURS` unverändert. **Die zwei Entscheidungszeilen stehen Zeichen
+für Zeichen unverändert da** — `if (ageHours == null) {` und
+`} else if (ageHours >= maxHours) {`; der Prüfer hält sie namentlich.
+**Snapshot 299 Werte unverändert.**
+
+### Absicherung
+
+`safety-nets` **rechnet** `alterStunden` an elf Lagen und `alterGrund` an
+sieben (1241 → **1250**), und bindet **beide** Aufrufstellen einzeln — eine
+gerechnete Funktion beweist nichts über ihre Aufrufstelle (30.09.). Dazu die
+Zahl **im Prompt**: ein unbekanntes Alter muss dort „unbekannt" ergeben.
+
+`lifecycle-rueckkehr` hing am **Wortlaut** der alten offenen Rechnung und wurde
+zu Recht rot. Es ist jetzt an die neue, **strengere** Form gebunden — plus eine
+Gegenprobe, dass die offene Rechnung nicht zurückkommt (`3_600_000` darf im
+RiskAgent **nicht mehr vorkommen**).
+
+**Und eine Sabotage war ein Doppelgänger.** `R6` („der IC-Pfad bekommt wieder
+eine eigene Fassung") hatte nach dem Umbau **denselben Anker** wie `S11` und
+dieselbe Wirkung. Sie als zweiten Fall zu zählen wäre ein Messfehler gewesen —
+entfernt, nicht mitgezählt.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben

@@ -11,6 +11,11 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { agentBus } from "./agent-bus";
+// Rein, ohne Importe, ohne Seiteneffekte — und DIESELBE Rechnung, die auch
+// der IC-Zeit-Exit benutzt. Zwei Fassungen desselben Rechenwegs koennten
+// auseinanderlaufen, und dann entscheidet ein Broker anders als der andere
+// ueber denselben Sachverhalt (08.11.).
+import { alterStunden, alterGrund } from "../alter/alter";
 import { meldeAIEntscheidung } from "./ai-manager-status";
 import {
   capitalUpdatePosition,
@@ -572,10 +577,29 @@ async function processPosition(
   // Zeit-Exit unten laesst die Position dann ausdruecklich in Ruhe, statt sie
   // auf einer erfundenen Zahl zu schliessen oder stillschweigend laufen zu
   // lassen.
-  const eroeffnet = pos.createdDate ? new Date(pos.createdDate) : null;
-  const ageHours = eroeffnet && !Number.isNaN(eroeffnet.getTime())
-    ? (Date.now() - eroeffnet.getTime()) / 3_600_000
-    : null;
+  // ── EINE ZUKUNFT IST KEIN ALTER (08.11.) ────────────────────────────────
+  //
+  // Hier stand die Rechnung offen, und sie hatte ZWEI der drei Riegel:
+  // fehlendes Datum -> null (19.08.), `NaN` -> null. Eine Broker-Zeit in der
+  // ZUKUNFT ergab eine NEGATIVE Zahl, ohne Riegel. Zwei Folgen, beide
+  // gemessen:
+  //
+  //  1. Der Zeit-Exit unten feuerte um den Versatz VERSPAETET (nicht nie —
+  //     der Zeitstempel ist fest, das Alter waechst, es ist nur verschoben).
+  //  2. Die Zahl geht in den KI-PROMPT: "Position offen seit -1.5 Stunden"
+  //     (siehe `promptMarktlage`). Das ist eine absurde Eingabe an genau die
+  //     KI, die ueber Breakeven, Teilgewinn und Trailing entscheidet — die
+  //     Fehlerklasse "ein Rueckfallwert an einer Stelle, die ueber Geld
+  //     entscheidet".
+  //
+  // `alterStunden` ist DIESELBE Funktion, die der IC-Zeit-Exit benutzt: bis
+  // 2 Minuten Zukunft -> 0 (Uhren-Versatz zwischen zwei Rechnern, dieselbe
+  // Schranke wie `ageInMinutes` vom 22.09.), darueber -> null = UNBEKANNT.
+  //
+  // Unbekannt heisst AUSGESETZT, nicht "geschlossen" — die Entscheidung vom
+  // 19.08. bleibt unberuehrt. Dafuer nennt die Meldung unten den GRUND.
+  const openedMs = pos.createdDate ? new Date(pos.createdDate).getTime() : NaN;
+  const ageHours = alterStunden(openedMs, Date.now());
 
   // Marktlage für den AI Manager (03.08.). Rein aus bereits berechneten Werten
   // zusammengesetzt — kein zusätzlicher Abruf, keine neue Fehlerquelle.
@@ -594,9 +618,18 @@ async function processPosition(
     // nicht mehr verschwiegen (19.08.). Einmal je Position, über denselben
     // Merker wie der geratene Stil.
     if (geratenerStilMelden(`alter:${dealId}`, false, false)) {
-      console.warn(`[risk-agent] ⚠️ ${symbol} deal=${dealId}: Broker liefert keine `
-        + `Eroeffnungszeit — der Zeit-Exit (${maxHours} h) kann fuer diese Position `
-        + `NICHT greifen. Sie laeuft ohne Haltedauer-Grenze.`);
+      // DER GRUND GEHOERT IN DIE ZEILE (08.11.). Vorher stand hier bei JEDEM
+      // unbekannten Alter "Broker liefert keine Eroeffnungszeit" — bei einer
+      // Zukunftszeit ist das FALSCH: er liefert eine, nur unbrauchbare. Eine
+      // Meldung, die etwas behauptet, das der Code nicht tut, ist die
+      // Fehlerklasse von `market-health.ts` und den zwei falschen
+      // Killswitch-Texten (27.09.). Und drei Lagen fuehren zu drei
+      // verschiedenen naechsten Schritten.
+      const grund = alterGrund(pos.createdDate, openedMs, Date.now())
+        ?? "ist nicht brauchbar";
+      console.warn(`[risk-agent] ⚠️ ${symbol} deal=${dealId}: die Eroeffnungszeit `
+        + `vom Broker ${grund} — der Zeit-Exit (${maxHours} h) kann fuer diese `
+        + `Position NICHT greifen. Sie laeuft ohne Haltedauer-Grenze.`);
     }
   } else if (meta.stilGeraten === true) {
     // KEIN Zeit-Exit auf geratenem Handelsstil (19.08.).

@@ -1196,10 +1196,30 @@ module.exports = async function pruefe() {
     "genau drei Stellen: Feld, Zuweisung, Zeit-Exit — sonst ist mehr gesperrt "
     + "als beabsichtigt");
 
+  // ── AN DIE GEMEINSAME RECHNUNG GEBUNDEN (08.11.) ──────────────────────────
+  //
+  // Hier stand `/const ageHours = eroeffnet && !Number\.isNaN/` — der WORTLAUT
+  // der offenen Rechnung. Die ist am 08.11. nach `lib/alter/alter.ts` gewandert,
+  // weil `risk-agent.ts` denselben Rechenweg hatte wie der IC-Zeit-Exit, nur
+  // OHNE den Zukunfts-Riegel: eine Broker-Zeit in der Zukunft ergab eine
+  // negative Zahl, der Zeit-Exit feuerte um den Versatz verspaetet, und die
+  // Zahl ging als „Position offen seit -1.5 Stunden" in den KI-Prompt.
+  //
+  // Die neue Form ist STRENGER, nicht lockerer: `alterStunden` traegt alle drei
+  // Riegel (fehlend, unlesbar, Zukunft) und wird von `safety-nets` an elf Lagen
+  // GERECHNET. Hier wird die Verdrahtung gebunden — eine gerechnete Funktion
+  // beweist nichts ueber ihre Aufrufstelle (30.09.).
   pruefe1("der RiskAgent behandelt ein unbekanntes Alter nicht gesondert",
-    /const ageHours = eroeffnet && !Number\.isNaN/.test(ohneKommentare(riskRoh))
+    /const ageHours = alterStunden\(openedMs, Date\.now\(\)\)/.test(ohneKommentare(riskRoh))
+    && /import \{ alterStunden, alterGrund \} from "\.\.\/alter\/alter"/.test(ohneKommentare(riskRoh))
     && /if \(ageHours == null\)/.test(ohneKommentare(riskRoh)),
     "sonst gilt eine Position ohne Datum als gerade eröffnet");
+  // Und die offene Rechnung darf NICHT zurueckkommen — sonst steht wieder eine
+  // zweite Fassung da, der der Zukunfts-Riegel fehlt.
+  pruefe1("die offene Alters-Rechnung steht wieder im RiskAgent",
+    !/\(Date\.now\(\) - eroeffnet\.getTime\(\)\) \/ 3_600_000/.test(ohneKommentare(riskRoh))
+    && !/3_600_000/.test(ohneKommentare(riskRoh)),
+    "zwei Fassungen desselben Rechenwegs koennen auseinanderlaufen");
 
   // ── Teil 8: ein Datenbank-Ausfall darf nicht alles anhalten (19.08.) ────
   //

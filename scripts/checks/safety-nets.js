@@ -10676,10 +10676,17 @@ module.exports = async function pruefe() {
     // nichts mehr. "Ein Treffer beweist nichts ueber die andere Stelle"
     // (25.10.), hier an meiner eigenen Pruefung von heute.
     {
-      const tm = ladeTsModul("lib/icmarkets/icmarkets-trade-manager.ts");
-      const asi = tm.exports?.alterStundenIC;
-      if (tm.fehler || typeof asi !== "function") {
-        funde.push(`icmarkets-trade-manager nicht ausfuehrbar: ${tm.fehler ?? "alterStundenIC fehlt"}`);
+      // DIE RECHNUNG LIEGT IN EINEM EIGENEN MODUL (08.11., zweite Runde).
+      // Sie stand erst in `icmarkets-trade-manager.ts` — und `risk-agent.ts`
+      // hatte dieselbe Rechnung OHNE den Zukunfts-Riegel. Zwei Fassungen
+      // desselben Rechenwegs koennten auseinanderlaufen, und dann entscheidet
+      // ein Broker anders als der andere ueber denselben Sachverhalt. Jetzt
+      // EINE Umsetzung, von beiden benutzt — und der Pruefer rechnet sie.
+      const am = ladeTsModul("lib/alter/alter.ts");
+      const asi = am.exports?.alterStunden;
+      const agr = am.exports?.alterGrund;
+      if (am.fehler || typeof asi !== "function" || typeof agr !== "function") {
+        funde.push(`lib/alter/alter.ts nicht ausfuehrbar: ${am.fehler ?? "alterStunden/alterGrund fehlt"}`);
         zusatz++;
       } else {
         const JETZT = 1_762_000_000_000;
@@ -10687,7 +10694,7 @@ module.exports = async function pruefe() {
         const m = (min) => JETZT - min * 60_000;
         // SELBSTPRUEFUNG: rechnet sie ueberhaupt? Sonst saehe jedes `null`
         // unten wie ein erfolgreicher Riegel aus.
-        torPruefung("alterStundenIC rechnet nicht — dann saehe jedes `null` "
+        torPruefung("alterStunden rechnet nicht — dann saehe jedes `null` "
           + "unten wie ein greifender Riegel aus",
           Math.abs((asi(h(3), JETZT) ?? -1) - 3) < 1e-9,
           `3h ergibt ${asi(h(3), JETZT)}`);
@@ -10732,28 +10739,119 @@ module.exports = async function pruefe() {
           `-2.1min=${asi(m(-2.1), JETZT)} -5min=${asi(m(-5), JETZT)} -2h=${asi(h(-2), JETZT)}`);
         // GEGENPROBE: ein Riegel, der ALLES auf null zieht, setzte den
         // Zeit-Exit ueberall aus und waere schlimmer als der Fund.
-        torPruefung("alterStundenIC ist zu streng — echte Alter werden zu "
+        torPruefung("alterStunden ist zu streng — echte Alter werden zu "
           + "`null`, und dann ist der Zeit-Exit UEBERALL aus",
           typeof asi(h(0.5), JETZT) === "number"
           && typeof asi(h(25), JETZT) === "number"
           && typeof asi(h(200), JETZT) === "number",
           `0.5h=${asi(h(0.5), JETZT)} 25h=${asi(h(25), JETZT)} 200h=${asi(h(200), JETZT)}`);
+        // ── DER GRUND WIRD AUCH GERECHNET ──────────────────────────────
+        //
+        // Drei Lagen, drei verschiedene naechste Schritte: eine FEHLENDE Zeit
+        // ist ein Broker, der sie nicht liefert; eine UNLESBARE ist ein
+        // Formatproblem; eine ZUKUNFT ist ein Zonen- oder Uhrenproblem — und
+        // nur die letzte hat eine Ursache, die man suchen kann. "Wer den
+        // Grund nicht mitschreibt, muss ihn spaeter raten" (22.09.).
+        torPruefung("alterGrund nennt die drei Lagen nicht auseinander",
+          agr("", NaN, JETZT) === "FEHLT"
+          && agr(null, NaN, JETZT) === "FEHLT"
+          && agr("   ", NaN, JETZT) === "FEHLT"
+          && String(agr("Unsinn", NaN, JETZT)).startsWith("ist unlesbar")
+          && String(agr("x", JETZT + 3 * 3_600_000, JETZT)).startsWith("liegt in der ZUKUNFT"),
+          `leer=${agr("", NaN, JETZT)} unsinn=${agr("Unsinn", NaN, JETZT)} `
+          + `zukunft=${agr("x", JETZT + 3 * 3_600_000, JETZT)}`);
+        // GEGENPROBE: bei BEKANNTEM Alter gibt es nichts zu melden — sonst
+        // waere die Meldung nur "immer da" (Lehre vom 15.09.).
+        torPruefung("alterGrund meldet auch bei bekanntem Alter etwas",
+          agr("2026-11-01T10:00:00Z", h(5), JETZT) === null
+          && agr("x", m(-1), JETZT) === null,
+          `5h=${agr("x", h(5), JETZT)} minus1min=${agr("x", m(-1), JETZT)}`);
+
+        // ══ UND DIE ZWEITE AUFRUFSTELLE: DER CAPITAL-ZEIT-EXIT ══════════
+        //
+        // `risk-agent.ts` hatte dieselbe Rechnung OHNE den Zukunfts-Riegel.
+        // Zwei Folgen, beide gemessen: der Zeit-Exit feuerte um den Versatz
+        // VERSPAETET, und die Zahl ging als "Position offen seit -1.5
+        // Stunden" in den KI-PROMPT des AI Managers — also an genau die
+        // Entscheidung ueber Breakeven, Teilgewinn und Trailing.
+        //
+        // Eine gerechnete Funktion beweist nichts ueber ihre Aufrufstelle
+        // (30.09.), also wird die Verdrahtung einzeln gebunden.
+        const raQ3 = read("frontend/lib/agents/risk-agent.ts")
+          .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+        torPruefung("der Capital-Zeit-Exit rechnet das Alter wieder selbst, "
+          + "statt `alterStunden` zu benutzen — dann fehlt ihm der "
+          + "Zukunfts-Riegel und die KI bekommt ein negatives Alter",
+          /import \{ alterStunden, alterGrund \} from "\.\.\/alter\/alter";/.test(raQ3)
+          && /const openedMs = pos\.createdDate \? new Date\(pos\.createdDate\)\.getTime\(\) : NaN;/.test(raQ3)
+          && /const ageHours = alterStunden\(openedMs, Date\.now\(\)\);/.test(raQ3)
+          && !/\(Date\.now\(\) - eroeffnet\.getTime\(\)\) \/ 3_600_000/.test(raQ3),
+          (raQ3.match(/const (openedMs|ageHours) [^\n]*/g) || ["(keine Zeile)"]).join(" | ").slice(0, 150));
+        // Die zwei ENTSCHEIDUNGSZEILEN muessen unveraendert dastehen: ein
+        // unbekanntes Alter darf NICHT in den Exit laufen, und der Riegel vom
+        // 19.08. (ohne Zeit wird NICHT geschlossen) bleibt.
+        torPruefung("im Capital-Zeit-Exit fehlt der `== null`-Riegel oder der "
+          + "Vergleich — ein unbekanntes Alter wuerde dann schliessen",
+          /if \(ageHours == null\) \{/.test(raQ3)
+          && /\} else if \(ageHours >= maxHours\) \{/.test(raQ3),
+          (raQ3.match(/(if \(ageHours[^\n]*)/g) || ["(keine Zeile)"]).join(" | "));
+        // UND DIE ZAHL IM PROMPT. Das ist die zweite Folge, und sie ist die
+        // teurere: ein negatives Alter in einem Prompt, der ueber Geld
+        // entscheidet. Ein unbekanntes Alter MUSS dort "unbekannt" heissen.
+        torPruefung("der KI-Prompt gibt ein unbekanntes Alter nicht als "
+          + "`unbekannt` aus — dann steht dort eine erfundene Zahl",
+          /Position offen seit: \$\{lage\.ageHours == null \? "unbekannt"/.test(raQ3),
+          (raQ3.match(/Position offen seit[^\n]*/) ?? ["(keine Zeile)"])[0].slice(0, 120));
+        // Und der GRUND in der Meldung: vorher behauptete sie bei JEDEM
+        // unbekannten Alter "Broker liefert keine Eroeffnungszeit" — bei
+        // einer Zukunftszeit ist das falsch, er liefert eine.
+        torPruefung("die Capital-Meldung nennt den Grund nicht — sie "
+          + "behauptete bei JEDEM unbekannten Alter, der Broker liefere keine",
+          /alterGrund\(pos\.createdDate, openedMs, Date\.now\(\)\)/.test(raQ3)
+          && !/Broker liefert keine `\n?\s*\+ `Eroeffnungszeit/.test(raQ3),
+          (raQ3.match(/die Eroeffnungszeit[^\n]*/) ?? ["(keine Zeile)"])[0].slice(0, 100));
+        // KEINE ZWEITE FASSUNG mehr: `alterStundenIC` darf im Programm nicht
+        // zurueckkommen. GEZAEHLT, nicht gefunden.
+        torPruefung("es gibt wieder eine zweite Fassung der Alters-Rechnung",
+          (itmQ.match(/alterStundenIC/g) || []).length === 0
+          && (raQ3.match(/3_600_000/g) || []).length === 0,
+          `IC=${(itmQ.match(/alterStundenIC/g) || []).length} `
+          + `risk-agent=${(raQ3.match(/3_600_000/g) || []).length}`);
       }
       // UND DIE AUFRUFSTELLE. Eine gerechnete Funktion beweist nichts ueber
       // ihre Verdrahtung — die Lehre vom 30.09.
       torPruefung("die Aufrufstelle rechnet das Alter wieder selbst, statt "
-        + "`alterStundenIC` zu benutzen",
+        + "`alterStunden` aus `lib/alter` zu benutzen",
         /const openedMs = pos\.openTime === null \? NaN : new Date\(pos\.openTime\)\.getTime\(\);/.test(itmQ)
-        && /const ageHours: number \| null = alterStundenIC\(openedMs, Date\.now\(\)\);/.test(itmQ)
+        && /const ageHours: number \| null = alterStunden\(openedMs, Date\.now\(\)\);/.test(itmQ)
         && !/new Date\(pos\.openTime \?\? Date\.now\(\)\)/.test(itmQ),
         (itmQ.match(/const (openedMs|ageHours)[^\n]*/g) || ["(keine Zeile)"]).join(" | ").slice(0, 150));
       // Und der GRUND gehoert in die Meldung — drei Lagen, drei naechste
       // Schritte. GEZAEHLT, nicht gefunden.
-      torPruefung("die Alters-Meldung nennt den Grund nicht — `fehlt`, "
-        + "`unlesbar` und `Zukunft` fuehren zu drei verschiedenen Schritten",
-        /"FEHLT"/.test(itmQ) && /ist unlesbar \(\$\{pos\.openTime\}\)/.test(itmQ)
-        && /liegt in der ZUKUNFT/.test(itmQ) && /Zeitzone/.test(itmQ),
-        `FEHLT=${/"FEHLT"/.test(itmQ)} unlesbar=${/ist unlesbar/.test(itmQ)} Zukunft=${/liegt in der ZUKUNFT/.test(itmQ)}`);
+      // ── DIE WORTE LIEGEN JETZT IM GEMEINSAMEN MODUL (08.11., 2. Runde) ──
+      //
+      // Hier stand `/"FEHLT"/.test(itmQ) && /ist unlesbar \(\$\{pos\.openTime\}\)/…`
+      // — also die Worte als Literale in der IC-DATEI. Seit die Rechnung in
+      // `lib/alter/alter.ts` liegt, stehen sie dort, und die Pruefung wurde
+      // zu Recht rot. Die Worte selbst werden oben GERECHNET (`alterGrund` an
+      // fuenf Lagen); hier wird nur noch die VERDRAHTUNG gebunden: die
+      // IC-Datei muss `alterGrund` rufen und ihren broker-spezifischen
+      // Hinweis anhaengen.
+      //
+      // Der Hinweis ist nicht Schmuck: fuer cTrader ist NICHT gemessen, ob
+      // eine Zone mitkommt (Capital.com schickt keine, 22.09.) — genau
+      // deshalb macht diese Zeile die offene Frage aus dem Log heraus
+      // beantwortbar.
+      torPruefung("der IC-Zeit-Exit holt den Grund nicht aus `alterGrund`, "
+        + "oder der cTrader-Hinweis fehlt — `fehlt`, `unlesbar` und `Zukunft` "
+        + "fuehren zu drei verschiedenen naechsten Schritten",
+        /alterGrund\(pos\.openTime, openedMs, Date\.now\(\)\)/.test(itmQ)
+        && /grund\.startsWith\("liegt in der ZUKUNFT"\)/.test(itmQ)
+        && /Zeitzone, die cTrader schickt/.test(itmQ)
+        && /\$\{grund\}\$\{hinweis\}/.test(itmQ),
+        `alterGrund=${/alterGrund\(pos\.openTime/.test(itmQ)} `
+        + `Hinweis=${/Zeitzone, die cTrader schickt/.test(itmQ)} `
+        + `verdrahtet=${/\$\{grund\}\$\{hinweis\}/.test(itmQ)}`);
     }
     torPruefung("ein unbekanntes Alter laeuft in den Zeit-Exit — es gibt ZWEI "
       + "Zweige, beide brauchen den Riegel",

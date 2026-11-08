@@ -16,6 +16,11 @@
 
 import { getPrisma } from "../../app/lib/prisma";
 import { icGetPositions, icUpdatePosition, icClosePosition, icClosePartial, icGetPrice } from "./icmarkets-client";
+// DIESELBE Rechnung, die auch der Capital-Zeit-Exit benutzt (08.11.). Sie
+// stand hier bis heute als eigene Fassung — zwei Fassungen desselben
+// Rechenwegs koennten auseinanderlaufen, und dann entscheidet ein Broker
+// anders als der andere ueber denselben Sachverhalt.
+import { alterStunden, alterGrund } from "../alter/alter";
 import { isICMarketsConnected } from "./icmarkets-session";
 
 const DEFAULT_SL_RANGE: Record<string, number> = {
@@ -57,42 +62,6 @@ const gerateneGemeldetIC = new Set<string>();
  *  Dieselbe Begruendung wie bei `global.__redis_lage__` je Stelle (01.11.). */
 const alterUnbekanntGemeldetIC = new Set<string>();
 
-/**
- * Das Alter in Stunden — oder `null` fuer "unbekannt" (08.11.).
- *
- * EXPORTIERT und rein, damit `safety-nets` sie RECHNEN kann statt den
- * Wortlaut zu pruefen ("ein Regex prueft den Wortlaut, nicht das Verhalten",
- * 30.09.).
- *
- * Drei Lagen, und die dritte ist der eigentliche Grund:
- *
- *  - **Keine lesbare Zeit** (`NaN`) → `null`. `new Date("Unsinn").getTime()`
- *    ist `NaN`, und `NaN >= maxHours` ist `false`: ohne `Number.isFinite`
- *    waere der Zeit-Exit stumm aus. Vierte Wiederholung derselben Falle
- *    (24.08., 28.10., 29.10., 03.11.).
- *
- *  - **Zukunft bis 2 Minuten** → `0`. Echter Uhren-Versatz zwischen zwei
- *    Rechnern; dieselbe Schranke wie `ageInMinutes` (22.09.).
- *
- *  - **Zukunft darueber** → `null`, also UNBEKANNT. Hier haengt mehr dran als
- *    Sauberkeit: fuer cTrader ist NICHT gemessen, ob eine Zone mitkommt.
- *    Kommt zonenlose Ortszeit und `new Date` liest sie als UTC, liegt die
- *    Zeit 1–2 Stunden in der Zukunft. Das Alter waere dann um genau diesen
- *    Versatz zu klein und der Zeit-Exit feuerte VERSPAETET — stumm. Mit
- *    `null` wird daraus eine Meldung, und damit ist die offene Zonenfrage
- *    aus dem Log heraus beantwortbar statt Vermutung.
- *
- * Ehrlich zur Richtung: "unbekannt" heisst hier AUSGESETZT, nicht
- * "geschlossen". Das ist die Entscheidung vom 19.08. (`risk-agent.ts`):
- * ohne bekannte Eroeffnungszeit wird NICHT geschlossen, denn ein Eingriff
- * auf einer Annahme kostet echtes Geld. Dafuer wird es laut.
- */
-export function alterStundenIC(openedMs: number, jetztMs: number): number | null {
-  if (!Number.isFinite(openedMs) || !Number.isFinite(jetztMs)) return null;
-  const stunden = (jetztMs - openedMs) / 3_600_000;
-  if (stunden >= 0) return stunden;
-  return stunden >= -(2 / 60) ? 0 : null;
-}
 
 function getLevel(score: number): { beAt: number; trailDist: number } {
   if (score >= 80) return { beAt: 0.70, trailDist: 0.40 };
@@ -247,20 +216,24 @@ export async function runICMarketsTradeManager(): Promise<void> {
     // wiederholten Mal dieselbe Falle: `checkPriceAvailable` (24.08.),
     // `ordersRiegel` (28.10.), `rrBand` (29.10.), der ATR (03.11.).
     const openedMs = pos.openTime === null ? NaN : new Date(pos.openTime).getTime();
-    const ageHours: number | null = alterStundenIC(openedMs, Date.now());
+    const ageHours: number | null = alterStunden(openedMs, Date.now());
     if (ageHours === null && !alterUnbekanntGemeldetIC.has(positionId)) {
       alterUnbekanntGemeldetIC.add(positionId);
       // Der GRUND gehoert in die Zeile, nicht nur die Lage: "fehlt",
       // "unlesbar" und "liegt in der Zukunft" fuehren zu drei verschiedenen
       // naechsten Schritten. Wer den Grund nicht mitschreibt, muss ihn
       // spaeter raten (22.09.).
-      const grund = pos.openTime === null
-        ? "FEHLT"
-        : !Number.isFinite(openedMs)
-          ? `ist unlesbar (${pos.openTime})`
-          : `liegt in der ZUKUNFT (${pos.openTime}) — pruefe die Zeitzone, die cTrader schickt`;
+      // Der Grund kommt aus `alterGrund` (eine Umsetzung, nicht zwei); der
+      // cTrader-Hinweis bleibt broker-spezifisch und haengt am Zukunfts-Fall.
+      // Fuer cTrader ist NICHT gemessen, ob eine Zone mitkommt (Capital.com
+      // schickt keine, 22.09.) — genau deshalb ist diese Meldung nuetzlich:
+      // sie macht die offene Frage aus dem Log heraus beantwortbar.
+      const grund = alterGrund(pos.openTime, openedMs, Date.now())
+        ?? "ist nicht brauchbar";
+      const hinweis = grund.startsWith("liegt in der ZUKUNFT")
+        ? " — pruefe die Zeitzone, die cTrader schickt" : "";
       console.warn(`[ic-trade-mgr] ⚠️ ${symbol} pos=${positionId}: Eroeffnungszeit `
-        + `${grund} — das `
+        + `${grund}${hinweis} — das `
         + `Alter ist unbekannt, der Zeit-Exit ist fuer diese Position AUSGESETZT. `
         + `Breakeven, Teilgewinn und Trailing laufen weiter (die haengen nicht am Alter).`);
     }
