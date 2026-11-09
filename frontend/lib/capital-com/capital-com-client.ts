@@ -4,6 +4,9 @@
 // Importe und ohne Seiteneffekte — der Modulgraph dieser Datei waechst
 // dadurch nicht. Eine eigene Abbildung hier waere die vierte im Programm.
 import { lesbareRichtung } from "../richtung/richtung";
+// Die Messung liegt seit dem 08.11. gemeinsam da: BEIDE Broker brauchen sie,
+// und ein `[capital-com]` ueber cTrader-Daten waere eine luegende Logzeile.
+import { zeitstempelMessen } from "../zeitmessung/zeitmessung";
 
 const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
 const LIVE_BASE = "https://api-capital.backend-capital.com/api/v1";
@@ -29,7 +32,6 @@ const LIVE_BASE = "https://api-capital.backend-capital.com/api/v1";
 // Reine Ausgabe: an keinem zurueckgegebenen Wert aendert sich etwas.
 declare global {
   // eslint-disable-next-line no-var
-  var __zeitstempel_gemessen__: { positionen: boolean; kurse: boolean } | undefined;
 }
 // ── DIE BROKER-ZEIT IST ORTSZEIT — EINMAL HIER UMRECHNEN (22.09.) ────────────
 //
@@ -138,27 +140,6 @@ function zeitzonenSelbstpruefung(zeiten: string[]): void {
   } catch { /* eine Selbstpruefung darf nichts stoeren */ }
 }
 
-export function zeitstempelMessen(art: "positionen" | "kurse", felder: Record<string, unknown>): void {
-  try {
-    const z = (global.__zeitstempel_gemessen__ ??= { positionen: false, kurse: false });
-    if (z[art]) return;
-    z[art] = true;
-    const jetzt = Date.now();
-    const gelesen: Record<string, number> = {};
-    const teile = Object.entries(felder).map(([k, v]) => {
-      const s = v == null ? "" : String(v);
-      const t = s ? Date.parse(s) : NaN;
-      if (Number.isFinite(t)) gelesen[k] = t;
-      const diff = Number.isFinite(t) ? `${((t - jetzt) / 60000).toFixed(1)} min` : "nicht lesbar";
-      return `${k}=${s ? `"${s}"` : "FEHLT"} (als UTC gelesen: ${diff} gegen jetzt)`;
-    });
-    const namen = Object.keys(gelesen);
-    const versatz = namen.length === 2
-      ? ` | Versatz ${namen[0]} − ${namen[1]} = ${((gelesen[namen[0]] - gelesen[namen[1]]) / 60000).toFixed(1)} min`
-      : "";
-    console.log(`[capital-com] 🕐 Zeitstempel roh (${art}, einmal je Prozess): ${teile.join(" | ")}${versatz}`);
-  } catch { /* eine Messung darf nichts stoeren */ }
-}
 
 export interface SessionResult {
   ok: boolean;
@@ -395,7 +376,7 @@ export async function capitalGetTopMarkets(
             drops.push(`${symbol}(${epic}): bid=${bid} status=${String(snap.marketStatus ?? "?")}`);
           }
           const meta = INSTRUMENT_META[symbol] ?? { name: symbol, type: "CURRENCIES" };
-          zeitstempelMessen("kurse", { updateTime: snap.updateTime, updateTimeUTC: snap.updateTimeUTC });
+          zeitstempelMessen("capital-com", "kurse", { updateTime: snap.updateTime, updateTimeUTC: snap.updateTimeUTC });
           return {
             epic,
             instrumentName: meta.name,
@@ -970,7 +951,7 @@ const positions: OpenPosition[] = (data.positions ?? []).map((p) => {
       const pos = (p.position ?? {}) as Record<string, unknown>;
       const market = (p.market ?? {}) as Record<string, unknown>;
       const epic = String(market.epic ?? "");
-      zeitstempelMessen("positionen", { createdDate: pos.createdDate, createdDateUTC: pos.createdDateUTC });
+      zeitstempelMessen("capital-com", "positionen", { createdDate: pos.createdDate, createdDateUTC: pos.createdDateUTC });
       return {
         dealId: String(pos.dealId ?? ""),
         epic,

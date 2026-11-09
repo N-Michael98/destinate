@@ -92,7 +92,8 @@ module.exports = function pruefe() {
     && /return \{ ok: false, error: reason \}/.test(client));
 
   // ── B) Mindest-Stop-Abstand: die echten Funktionen rechnen ────────────────
-  const geladen = ladeTsModul("lib/capital-com/capital-com-client.ts");
+  const geladen = ladeTsModul("lib/capital-com/capital-com-client.ts",
+    { "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
   if (geladen.fehler) {
     funde.push(geladen.fehler);
     return { titel: "Order-Bestätigung (nicht ausführbar)", funde };

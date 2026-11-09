@@ -5,6 +5,13 @@
  */
 
 import { lesbareRichtung } from "../richtung/richtung";
+// Einmal je Prozess den ROHEN Zeitstempel ins Log (08.11.). Fuer cTrader ist
+// NICHT gemessen, ob eine Zone mitkommt — und die Luecke ist nicht
+// symmetrisch: eine Zone VOR UTC laesst die Position in der Zukunft liegen
+// und meldet sich laut; eine Zone HINTER UTC laesst sie AELTER aussehen, der
+// Zeit-Exit feuert dann zu FRUEH und zwar STUMM. Diese Zeile nennt das
+// FORMAT, nicht nur das Vorzeichen.
+import { zeitstempelMessen } from "../zeitmessung/zeitmessung";
 
 const MCP_URL = process.env.ICMARKETS_MCP_URL ?? "https://mcp.ctrader.com/trading/mcp";
 const MCP_TOKEN = process.env.ICMARKETS_MCP_TOKEN ?? "";
@@ -295,6 +302,13 @@ export async function icGetPositions(): Promise<{ ok: boolean; positions?: ICPos
     const result = await mcpCall("get_positions");
     console.log("[IC Markets MCP] get_positions raw:", JSON.stringify(result).slice(0, 500));
     const raw = Array.isArray(result.positions) ? result.positions as Record<string, unknown>[] : [];
+    // Einmal je Prozess, am ERSTEN Eintrag: der rohe Zeitstempel samt der
+    // Frage, ob er eine Zone traegt. Ohne Positionen gibt es nichts zu
+    // messen — dann bleibt die Zeile aus statt eine leere zu drucken.
+    if (raw.length > 0) {
+      zeitstempelMessen("icmarkets", "positionen",
+        { openTime: raw[0].openTime, createTime: raw[0].createTime });
+    }
     const positions: ICPosition[] = raw.map((p) => ({
       positionId: String(p.positionId ?? p.id ?? ""),
       symbol: String(p.symbol ?? p.symbolName ?? ""),
@@ -544,6 +558,16 @@ export async function icGetDeals(fromTimestamp?: number): Promise<{ ok: boolean;
           : null;
         if (deals !== null) {
           console.log(`[IC Markets MCP] icGetDeals: tool="${toolName}" count=${deals.length}`);
+          // ZWEITE cTrader-Zeitquelle (08.11.): `closeTime` geht ueber den
+          // Journal-Sync als `notes.icClosedAt` in die DATENBANK. Auch hier ist
+          // die Zone ungemessen, und auch hier ist die Luecke einseitig —
+          // deshalb ein EIGENER Merker ("geschaefte"), damit die
+          // Positions-Messung ihn nicht verdeckt.
+          if (deals.length > 0) {
+            const d0 = deals[0] as Record<string, unknown>;
+            zeitstempelMessen("icmarkets", "geschaefte",
+              { closeTime: d0.closeTime, closeTimestamp: d0.closeTimestamp });
+          }
           return { ok: true, deals: deals as Record<string, unknown>[], toolUsed: toolName };
         }
       } catch { /* try next */ }

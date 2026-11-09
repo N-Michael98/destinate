@@ -743,7 +743,8 @@ module.exports = async function pruefe() {
         // Der Zustand liegt auf `global` — zwischen den Faellen zuruecksetzen,
         // sonst traegt der zweite die Sitzung des ersten.
         global.__icmarkets_mcp_session__ = null;
-        const modul = ladeTsModul("lib/icmarkets/icmarkets-client.ts", {});
+        const modul = ladeTsModul("lib/icmarkets/icmarkets-client.ts",
+          { "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
         return { modul, zaehler, aufraeumen: () => { global.fetch = echtesFetch; } };
       };
 
@@ -3384,7 +3385,8 @@ module.exports = async function pruefe() {
       // laeuft auf Modulebene ueber `Object.entries(EPIC_MAP)` (Zeile 160) —
       // mit einem leeren Ersatz wirft das Modul beim Laden. Und eine
       // nachgebaute Karte pruefte gegen die eigene Annahme.
-      const klient = ladeTsModul("lib/capital-com/capital-com-client.ts");
+      const klient = ladeTsModul("lib/capital-com/capital-com-client.ts",
+        { "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
       const ex = klient.fehler ? klient
         : ladeTsModul("lib/capital-com/capital-com-execution.ts", {
           "killswitch": { isKillswitchActive: () => false },
@@ -6882,7 +6884,8 @@ module.exports = async function pruefe() {
   // wann eine Position geschlossen wird. Sie wird deshalb GERECHNET, mit genau
   // den gemessenen Zeichenketten.
   {
-    const cm = ladeTsModul("lib/capital-com/capital-com-client.ts");
+    const cm = ladeTsModul("lib/capital-com/capital-com-client.ts",
+      { "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
     const bz = cm.exports?.brokerZeitNachUtc;
     if (cm.fehler || typeof bz !== "function") {
       funde.push(`brokerZeitNachUtc nicht ausfuehrbar: ${cm.fehler ?? "nicht exportiert"}`);
@@ -6957,18 +6960,31 @@ module.exports = async function pruefe() {
     const altLog = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      const c1 = ladeTsModul("lib/capital-com/capital-com-client.ts");
-      const c2 = ladeTsModul("lib/capital-com/capital-com-client.ts");
+      // DIE MESSUNG LIEGT GEMEINSAM DA (08.11.): beide Broker brauchen sie,
+      // und die QUELLE ist ein Argument — ein `[capital-com]` ueber
+      // cTrader-Daten waere eine luegende Logzeile, die Fehlerklasse von
+      // `market-health.ts` und den zwei falschen Killswitch-Texten (27.09.).
+      //
+      // ZWEIMAL geladen, wie vorher: der Merker liegt auf `global`, und zwei
+      // Modulkopien duerfen die Zeile nicht zweimal drucken (Regel 28.07.).
+      const c1 = ladeTsModul("lib/zeitmessung/zeitmessung.ts");
+      const c2 = ladeTsModul("lib/zeitmessung/zeitmessung.ts");
       const zm1 = c1.exports?.zeitstempelMessen, zm2 = c2.exports?.zeitstempelMessen;
-      if (c1.fehler || typeof zm1 !== "function" || typeof zm2 !== "function") {
+      const hz = c1.exports?.hatZone;
+      if (c1.fehler || typeof zm1 !== "function" || typeof zm2 !== "function"
+          || typeof hz !== "function") {
         console.log = altLog;
-        funde.push(`zeitstempelMessen nicht ausfuehrbar: ${c1.fehler ?? "nicht exportiert"}`);
+        funde.push(`zeitmessung nicht ausfuehrbar: ${c1.fehler ?? "nicht exportiert"}`);
         zusatz++;
       } else {
         // Die echten Zeiten vom 22.09.: Ortszeit ohne Zone, UTC daneben.
-        zm1("positionen", { createdDate: "2026-09-22T12:14:41.813", createdDateUTC: "2026-09-22T10:14:41.813" });
-        zm2("positionen", { createdDate: "2026-09-22T12:14:41.813", createdDateUTC: "2026-09-22T10:14:41.813" });
-        zm1("kurse", { updateTime: "2026-09-22T12:15:00", updateTimeUTC: undefined });
+        zm1("capital-com", "positionen", { createdDate: "2026-09-22T12:14:41.813", createdDateUTC: "2026-09-22T10:14:41.813" });
+        zm2("capital-com", "positionen", { createdDate: "2026-09-22T12:14:41.813", createdDateUTC: "2026-09-22T10:14:41.813" });
+        zm1("capital-com", "kurse", { updateTime: "2026-09-22T12:15:00", updateTimeUTC: undefined });
+        // UND eine cTrader-Lage: andere Quelle, EIGENER Merker — sonst
+        // verdeckt die Capital-Messung die IC-Messung.
+        zm1("icmarkets", "positionen", { openTime: "2026-11-08T07:30:00", createTime: undefined });
+        zm1("icmarkets", "geschaefte", { closeTime: "2026-11-08T06:30:00Z", closeTimestamp: undefined });
         // Unsinn NACH einem Zuruecksetzen der Sperre — sonst kehrt die Funktion
         // vorher zurueck und der Test prueft gar nichts (erste Fassung: die
         // Sabotage "Fehler durchreichen" blieb gruen). Ein Wert, dessen
@@ -6977,12 +6993,16 @@ module.exports = async function pruefe() {
         delete global.__zeitstempel_gemessen__;
         let geworfen = false;
         try {
-          zm1("kurse", { updateTime: { toString() { throw new Error("kaputt"); } } });
+          zm1("capital-com", "kurse", { updateTime: { toString() { throw new Error("kaputt"); } } });
         } catch { geworfen = true; }
         global.__zeitstempel_gemessen__ = merk;
         console.log = altLog;
-        const pos = logs.filter((l) => l.includes("(positionen,"));
-        const kurse = logs.filter((l) => l.includes("(kurse,"));
+        // JE QUELLE gezaehlt (08.11.): seit die Messung beiden Brokern
+        // dient, gibt es ZWEI `(positionen,`-Zeilen — eine je Broker.
+        // Zusammengezaehlt waere die Zusicherung "einmal je Prozess"
+        // zwangslaeufig rot, und zwar aus dem falschen Grund.
+        const pos = logs.filter((l) => l.includes("[capital-com]") && l.includes("(positionen,"));
+        const kurse = logs.filter((l) => l.includes("[capital-com]") && l.includes("(kurse,"));
         torPruefung("die Zeitstempel-Messung rechnet den Versatz falsch",
           pos.length >= 1 && /Versatz createdDate − createdDateUTC = 120\.0 min/.test(pos[0]),
           pos[0] ? pos[0].slice(0, 160) : "keine Ausgabe");
@@ -6993,12 +7013,104 @@ module.exports = async function pruefe() {
           kurse.length === 1 && /updateTimeUTC=FEHLT/.test(kurse[0]),
           kurse[0] ? kurse[0].slice(0, 160) : "keine Ausgabe");
         torPruefung("die Zeitstempel-Messung wirft bei unsinnigen Werten", !geworfen);
+        // ── DAS PRAEFIX MUSS DIE QUELLE NENNEN ──────────────────────────
+        //
+        // Sonst steht `[capital-com]` ueber cTrader-Daten, und wer das Log
+        // liest, sucht die Ursache beim falschen Broker.
+        const icPos = logs.filter((l) => l.includes("[icmarkets]") && l.includes("(positionen,"));
+        const icGes = logs.filter((l) => l.includes("[icmarkets]") && l.includes("(geschaefte,"));
+        const capPos = logs.filter((l) => l.includes("[capital-com]") && l.includes("(positionen,"));
+        torPruefung("das Log-Praefix nennt die Quelle nicht — dann steht "
+          + "`[capital-com]` ueber cTrader-Daten",
+          capPos.length === 1 && icPos.length === 1,
+          `capital=${capPos.length} icmarkets=${icPos.length}, erwartet je 1`);
+        // Eigener Merker je QUELLE und je ART: vier Schluessel, vier Zeilen.
+        torPruefung("die Merker verdecken sich — eine Quelle oder Art bleibt "
+          + "dann stumm",
+          icGes.length === 1,
+          `geschaefte=${icGes.length}, erwartet 1`);
+        // ── UND DIE ANGABE, AUF DIE ES ANKOMMT: traegt der Wert eine ZONE? ──
+        //
+        // Das ist der Grund fuer diese Runde. Fuer cTrader ist nicht gemessen,
+        // ob eine Zone mitkommt, und die Luecke ist NICHT symmetrisch: eine
+        // Zone VOR UTC laesst die Position in der Zukunft liegen (laut, der
+        // Zeit-Exit meldet sich), eine Zone HINTER UTC laesst sie AELTER
+        // aussehen — dann feuert der Zeit-Exit zu FRUEH und zwar STUMM.
+        torPruefung("die Messung nennt nicht, ob der Wert eine Zone traegt — "
+          + "dann bleibt genau die Frage offen, fuer die sie gebaut ist",
+          icPos.length === 1 && /openTime="2026-11-08T07:30:00" \(zone=NEIN/.test(icPos[0])
+          && icGes.length === 1 && /closeTime="2026-11-08T06:30:00Z" \(zone=JA/.test(icGes[0]),
+          `${(icPos[0] ?? "").slice(0, 110)} || ${(icGes[0] ?? "").slice(0, 110)}`);
+        // `hatZone` GERECHNET, in beide Richtungen — sonst koennte die Zeile
+        // darueber an einem Werkzeug haengen, das immer dasselbe sagt.
+        torPruefung("hatZone erkennt eine Zonenangabe nicht zuverlaessig",
+          hz("2026-11-08T06:30:00Z") === true
+          && hz("2026-11-08T06:30:00+02:00") === true
+          && hz("2026-11-08T06:30:00+0200") === true
+          && hz("2026-11-08T06:30:00-05:00") === true
+          && hz("2026-11-08T06:30:00") === false
+          && hz("2026-11-08 06:30:00") === false
+          && hz("") === false && hz(null) === false && hz(42) === false,
+          `Z=${hz("2026-11-08T06:30:00Z")} ohne=${hz("2026-11-08T06:30:00")} `
+          + `plus=${hz("2026-11-08T06:30:00+02:00")} minus=${hz("2026-11-08T06:30:00-05:00")}`);
       }
+      // ── VIER STELLEN, GEZAEHLT statt gefunden (08.11.) ────────────────
+      //
+      // Zwei bei Capital (Kurse, Positionen) und zwei bei cTrader
+      // (Positionen, Geschaefte — `closeTime` geht ueber den Journal-Sync in
+      // die DATENBANK). Ein Treffer bewiese nichts ueber die anderen drei
+      // (25.10.).
       const cq = read("frontend/lib/capital-com/capital-com-client.ts");
-      torPruefung("die Zeitstempel-Messung ist nicht an Positionen UND Kursen angeschlossen",
-        /zeitstempelMessen\("positionen", \{ createdDate: pos\.createdDate, createdDateUTC: pos\.createdDateUTC \}\)/.test(cq)
-        && /zeitstempelMessen\("kurse", \{ updateTime: snap\.updateTime, updateTimeUTC: snap\.updateTimeUTC \}\)/.test(cq),
-        "sonst misst sie nur eine der beiden Fragen");
+      const icq = read("frontend/lib/icmarkets/icmarkets-client.ts");
+      // ── ALS ANWEISUNG GEBUNDEN, nicht am Wortlaut (08.11.) ────────────
+      //
+      // Erste Fassung suchte nur `zeitstempelMessen\("icmarkets", …` irgendwo.
+      // Die Sabotagen Z6/Z7 setzten `void 0 && ` DAVOR — der Wortlaut bleibt
+      // vollstaendig stehen, die Messung ist tot, und der Pruefer blieb
+      // GRUEN. Zum vierten Mal an einem Tag "ein Regex prueft den Wortlaut,
+      // nicht das Verhalten" (30.09.), und zwar genau der Trick, der am
+      // 07.11. schon einmal durchgegangen ist.
+      //
+      // Jetzt muss der Aufruf eine ANWEISUNG beginnen: am Zeilenanfang, nur
+      // Leerzeichen davor. `void 0 &&`, `false &&` und `//` fallen damit auf.
+      const anweisung = (quelle, art) => new RegExp(
+        String.raw`^[ \t]*zeitstempelMessen\("` + quelle + String.raw`", "` + art + String.raw`",`, "m");
+      const stellen = [
+        ["capital kurse", cq, anweisung("capital-com", "kurse"),
+          /\{ updateTime: snap\.updateTime, updateTimeUTC: snap\.updateTimeUTC \}/],
+        ["capital positionen", cq, anweisung("capital-com", "positionen"),
+          /\{ createdDate: pos\.createdDate, createdDateUTC: pos\.createdDateUTC \}/],
+        ["icmarkets positionen", icq, anweisung("icmarkets", "positionen"),
+          /openTime: raw\[0\]\.openTime, createTime: raw\[0\]\.createTime/],
+        ["icmarkets geschaefte", icq, anweisung("icmarkets", "geschaefte"),
+          /closeTime: d0\.closeTime, closeTimestamp: d0\.closeTimestamp/],
+      ];
+      // SELBSTPRUEFUNG an GEBAUTEN Zeichenketten, in beide Richtungen — am
+      // Dateiinhalt haenge sie an einer Formulierung.
+      const aProbe = anweisung("icmarkets", "positionen");
+      torPruefung("das Anweisungs-Muster erkennt eine abgeklemmte Messung "
+        + "nicht — dann beweist die Zeile darunter nichts",
+        aProbe.test('      zeitstempelMessen("icmarkets", "positionen",')
+        && !aProbe.test('      void 0 && zeitstempelMessen("icmarkets", "positionen",')
+        && !aProbe.test('      false && zeitstempelMessen("icmarkets", "positionen",')
+        && !aProbe.test('      // zeitstempelMessen("icmarkets", "positionen",'),
+        "Selbstpruefung des Anweisungs-Musters");
+      // BEIDE Muster: die Anweisung UND die Felder. Nur eines von beiden
+      // waere wieder eine halbe Zusicherung.
+      const fehlend = stellen
+        .filter(([, q, anw, felder]) => !anw.test(q) || !felder.test(q))
+        .map(([n]) => n);
+      torPruefung("eine der VIER Zeitstempel-Messungen ist nicht angeschlossen "
+        + "— dann bleibt eine Zeitquelle ungemessen",
+        fehlend.length === 0, fehlend.join(", ") || "4 von 4 verdrahtet");
+      // Und die lokale Fassung darf im Capital-Client NICHT zurueckkommen.
+      torPruefung("der Capital-Client hat wieder eine EIGENE Fassung der "
+        + "Messung — dann koennen die zwei auseinanderlaufen",
+        !/export function zeitstempelMessen\(/.test(cq)
+        && /import \{ zeitstempelMessen \} from "\.\.\/zeitmessung\/zeitmessung"/.test(cq)
+        && /import \{ zeitstempelMessen \} from "\.\.\/zeitmessung\/zeitmessung"/.test(icq),
+        `eigene=${/export function zeitstempelMessen\(/.test(cq)} `
+        + `cc-import=${/zeitmessung\/zeitmessung/.test(cq)} ic-import=${/zeitmessung\/zeitmessung/.test(icq)}`);
     } finally {
       console.log = altLog;
       if (altZs === undefined) delete global.__zeitstempel_gemessen__; else global.__zeitstempel_gemessen__ = altZs;
@@ -9142,6 +9254,7 @@ module.exports = async function pruefe() {
   {
     const cc = ladeTsModul("lib/capital-com/capital-com-client.ts", {
       "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+      "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false },
     });
     const gp = cc.exports?.capitalGetPositions;
     if (cc.fehler || typeof gp !== "function") {
@@ -10509,6 +10622,7 @@ module.exports = async function pruefe() {
   {
     const ic = ladeTsModul("lib/icmarkets/icmarkets-client.ts", {
       "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+      "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false },
     });
     const igp = ic.exports?.icGetPositions;
     if (ic.fehler || typeof igp !== "function") {
@@ -11002,6 +11116,7 @@ module.exports = async function pruefe() {
   {
     const ccEcht = ladeTsModul("lib/capital-com/capital-com-client.ts", {
       "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+      "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false },
     });
     const NR = { json: (body, init) => ({ __body: body, status: init?.status ?? 200 }) };
     const geschrieben = [];

@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 360 · Kanten: 895
+Dateien mit internen Abhängigkeiten: 360 · Kanten: 897
 
 
 ## analysis-engine/api
@@ -751,6 +751,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 895
   - → `frontend/lib/settings/settings-store.ts`
 - `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/richtung/richtung.ts`
+  - → `frontend/lib/zeitmessung/zeitmessung.ts`
 - `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
@@ -908,6 +909,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 895
   - → `frontend/lib/richtung/richtung.ts`
 - `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/richtung/richtung.ts`
+  - → `frontend/lib/zeitmessung/zeitmessung.ts`
 - `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`

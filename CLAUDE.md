@@ -3813,6 +3813,107 @@ eine eigene Fassung") hatte nach dem Umbau **denselben Anker** wie `S11` und
 dieselbe Wirkung. Sie als zweiten Fall zu zählen wäre ein Messfehler gewesen —
 entfernt, nicht mitgezählt.
 
+## Die cTrader-Zeitzone war ungemessen — jetzt ist sie messbar (08.11.)
+
+Dritte Runde desselben Tages, und sie beantwortet die Frage **nicht** — sie
+macht sie beantwortbar. Das ist der Unterschied, auf den es hier ankommt.
+
+### Was ungemessen war
+
+Bei Capital.com ist belegt: Ortszeit **ohne Zone**, **kein** UTC-Feld (22.09.,
+gemessen). Für **cTrader** ist das **nicht** geprüft — und zwar wörtlich: im
+ganzen Repository gibt es **keinen einzigen echten cTrader-Zeitstempel**
+(nachgezählt, nicht vermutet). Es gibt also nichts, woraus man die Zone
+ableiten könnte.
+
+Eine Zone zu **annehmen** wäre genau der Fehler vom 22.09. in neuer
+Verpackung. Also wird nichts umgerechnet — sondern gemessen.
+
+### Die Lücke ist NICHT symmetrisch, und das ist der Punkt
+
+| cTrader schickt | Wirkung, wenn als UTC gelesen |
+|---|---|
+| Zone **mit** Marker (`Z`, `±hh:mm`) | richtig, kein Problem |
+| zonenlose Zeit **vor** UTC (z. B. Zürich) | die Position liegt in der **Zukunft** → `alterStunden` gibt `null`, der Zeit-Exit meldet sich mit „liegt in der ZUKUNFT". **Laut.** |
+| zonenlose Zeit **hinter** UTC (z. B. ein US-Server) | die Position sieht **älter** aus → der Zeit-Exit feuert **zu früh**, und zwar **stumm** |
+
+Die Meldung von heute Morgen deckt nur die **erste** Richtung ab. Die zweite
+war unsichtbar — und sie ist die teurere, weil sie Positionen **schliesst**.
+
+### Also: die Messung, die bei Capital die Ursache gefunden hat
+
+`zeitstempelMessen` schreibt **einmal je Prozess** den rohen Wert neben
+„jetzt". Genau diese Zeile hat am 22.09. den Zwei-Stunden-Fehler sichtbar
+gemacht. Sie liegt jetzt in `lib/zeitmessung/zeitmessung.ts` — rein,
+ohne Importe ausser der Konsolenausgabe — und dient **beiden** Brokern:
+
+```
+[icmarkets] 🕐 Zeitstempel roh (positionen, einmal je Prozess):
+  openTime="2026-11-08T07:30:00" (zone=NEIN, als UTC gelesen: 42.3 min gegen jetzt)
+```
+
+**Neu gegenüber Capital's Fassung: `zone=JA/NEIN`.** Das ist die Angabe, auf
+die es ankommt — sie nennt das **Format**, nicht nur das Vorzeichen der
+Abweichung, und beantwortet damit auch die stille Richtung.
+
+**Und die Quelle ist ein Argument.** Ein `[capital-com]` über cTrader-Daten
+wäre eine lügende Logzeile — die Fehlerklasse von `market-health.ts` und den
+zwei falschen Killswitch-Texten (27.09.). Wer das Log liest, würde die Ursache
+beim falschen Broker suchen.
+
+### Vier Messstellen, gezählt statt gefunden
+
+| Stelle | Felder |
+|---|---|
+| Capital Kurse | `updateTime`, `updateTimeUTC` |
+| Capital Positionen | `createdDate`, `createdDateUTC` |
+| cTrader Positionen | `openTime`, `createTime` |
+| cTrader **Geschäfte** | `closeTime`, `closeTimestamp` |
+
+Die vierte ist keine Zugabe: `closeTime` geht über den Journal-Sync als
+`notes.icClosedAt` in die **Datenbank**. Ein Treffer bewiese nichts über die
+anderen drei (25.10.), deshalb wird **gezählt**.
+
+Jede Quelle und jede Art hat ihren **eigenen** Merker (`quelle:art`) — teilten
+sie einen, verdeckte die Capital-Messung die cTrader-Messung, und genau die
+Frage, für die das gebaut ist, bliebe offen.
+
+### Ehrlich: was das NICHT leistet
+
+Es rechnet **nichts** um und entscheidet **nichts**. Die Antwort kommt erst,
+wenn IC im Betrieb verbunden ist und die Zeile im Railway-Log steht — ob
+`ICMARKETS_MCP_TOKEN` dort gesetzt ist, lässt sich von hier **nicht**
+feststellen. Ist IC nie verbunden, erscheint die Zeile nie: **null Kosten,
+null Rauschen.** Was sie liefert, sind die Belege, aus denen die Entscheidung
+dann getroffen werden kann — statt sie zu raten.
+
+### Absicherung
+
+`safety-nets` **rechnet** die Messung aus (1250 → **1255**), zweimal geladen
+(zwei Modulkopien dürfen die Zeile nicht doppeln, Regel 28.07.), mit den
+**echten** Werten vom 22.09. als Testfall — und `hatZone` an neun Lagen
+(`Z`, `+02:00`, `+0200`, `-05:00`, ohne Marker, mit Leerzeichen, leer, `null`,
+eine Zahl), in **beide** Richtungen. Dazu: das Präfix muss die Quelle nennen,
+die Merker dürfen sich nicht verdecken, und **alle vier** Aufrufstellen werden
+gezählt.
+
+**Ein Prüfer wurde dabei zu Recht rot, und ich hätte es fast falsch repariert.**
+Die alte Zusicherung „meldet sich je Modulkopie erneut" zählte **alle**
+`(positionen,`-Zeilen — seit die Messung beiden Brokern dient, sind das
+zwangsläufig **zwei**. Sie zählt jetzt **je Quelle**. Die Zahl zu erhöhen wäre
+die bequeme und falsche Antwort gewesen.
+
+### Und elf Befunde durch einen vergessenen Ersatz
+
+Der erste Prüferlauf nach dem Umbau ergab **11 Befunde** — alle in den
+IC-Prüfständen, und alle aus einer Ursache: `icGetPositions` ruft jetzt
+`zeitstempelMessen`, und in einem Prüfstand ohne Ersatz ist ein Import ein
+**Stellvertreter, der beim Aufruf wirft**. Die echte Funktion fiel in ihr
+`catch`, die Positionen kamen als `undefined` zurück.
+
+Das ist die Falle vom 01.11., wörtlich: **ein neuer Aufruf braucht seinen
+Ersatz überall.** Sieben Stellen in zwei Prüfern mussten nachgezogen werden.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben
