@@ -230,7 +230,11 @@ async function executeFullRestart(name: string): Promise<string[]> {
     if (restored) {
       const { updateBrokerConnection } = await import("@/lib/settings/settings-store");
       const sess = getICMarketsSession();
-      await updateBrokerConnection({ brokerKey: "IC_MARKETS", connected: true, accountId: sess?.accountId ?? "IC-MCP", accountMode: "DEMO" });
+      // Keine erfundene Kontonummer (09.11.): hier stand `?? "IC-MCP"`.
+      // Dieselbe Stelle gab es in `instrumentation.ts` — ein Fix an einer
+      // Stelle beantwortet nicht, wo die Klasse sonst noch steckt.
+      // `||` statt `??`, damit auch ein LEERER String als unbekannt gilt.
+      await updateBrokerConnection({ brokerKey: "IC_MARKETS", connected: true, accountId: sess?.accountId || null, accountMode: "DEMO" });
       log.push("IC Markets: Verbunden (Token aus Redis wiederhergestellt)");
     } else {
       log.push("IC Markets: Token nicht in Redis — bitte manuell verbinden");

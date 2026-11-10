@@ -296,18 +296,40 @@ export async function updateBrokerConnection(patch: Partial<BrokerConnection> & 
   await set({ ...s, connections: s.connections.map((c) => c.brokerKey === patch.brokerKey ? { ...c, ...patch } : c), updatedAt: new Date().toISOString() });
 }
 
+/**
+ * Vermerkt eine Verbindung, die der AUFRUFER bereits beim Broker bestaetigt
+ * hat — sie spricht selbst keinen Broker an. Der Name sagt genau das.
+ *
+ * `accountId` kommt seit dem 09.11. vom Aufrufer. Bis dahin wurde hier eine
+ * ZUFALLSZAHL erzeugt und als Kontonummer gespeichert. Die stand dann im
+ * Dashboard als "Account ID: CAP-DEMO-847301" — direkt neben den ECHTEN
+ * Kontostaenden vom Broker. Eine erfundene Zahl, die sich als Messung
+ * ausgibt: die Fehlerklasse von `market-health.ts` ("TradingView verbunden,
+ * 20 ms") und der zwei falschen Killswitch-Texte (27.09.).
+ *
+ * Besonders aergerlich: die echte Nummer war DA. `/api/capital-com` gibt
+ * `accountId: session?.accountId ?? null`, `/api/icmarkets/connect` gibt
+ * `accountId: account.accountId` — die Oberflaeche ruft genau diese Routen
+ * VORHER auf und hatte die Nummer in der Hand. Sie hat sie nur nicht
+ * weitergegeben.
+ *
+ * Fehlt sie, bleibt das Feld `null`. Die Anzeige laesst die Zeile dann weg
+ * (`c?.connected && c.accountId && …`) statt eine Nummer zu behaupten.
+ */
 export async function simulateBrokerConnect(
   brokerKey: BrokerConnection["brokerKey"],
   apiKey: string,
-  accountMode: BrokerConnection["accountMode"]
+  accountMode: BrokerConnection["accountMode"],
+  accountId: string | null = null,
 ): Promise<{ ok: boolean; accountId: string | null; error: string | null }> {
   if (!apiKey || apiKey.length < 8) {
     await updateBrokerConnection({ brokerKey, connected: false, error: "Invalid API key (minimum 8 characters)" });
     return { ok: false, accountId: null, error: "Invalid API key" };
   }
-  const fakeId = `${brokerKey.slice(0, 3)}-DEMO-${Math.floor(Math.random() * 900000 + 100000)}`;
-  await updateBrokerConnection({ brokerKey, connected: true, accountId: fakeId, accountMode, lastConnectedAt: new Date().toISOString(), error: null });
-  return { ok: true, accountId: fakeId, error: null };
+  const echteId = typeof accountId === "string" && accountId.trim() !== ""
+    ? accountId.trim() : null;
+  await updateBrokerConnection({ brokerKey, connected: true, accountId: echteId, accountMode, lastConnectedAt: new Date().toISOString(), error: null });
+  return { ok: true, accountId: echteId, error: null };
 }
 
 export async function simulateBrokerDisconnect(brokerKey: BrokerConnection["brokerKey"]): Promise<void> {

@@ -388,7 +388,10 @@ export default function SettingsDashboard() {
         setCapitalLiveStatus({ connected: true, accountId: d.accountId, accountType: d.accountType, balance: d.accounts?.[0]?.balance, currency: d.accounts?.[0]?.currency });
         setCapitalError(null);
         // Sync to settings store for status display
-        await postAction({ action: "broker_connect", brokerKey: key, apiKey: form.apiKey, accountMode: "DEMO" });
+        // Die ECHTE Kontonummer mitgeben (09.11.): bis dahin erzeugte der
+        // Store eine Zufallszahl, obwohl `d.accountId` hier vorliegt — sie
+        // stand dann im Dashboard als "Account ID" neben echten Bestaenden.
+        await postAction({ action: "broker_connect", brokerKey: key, apiKey: form.apiKey, accountMode: "DEMO", accountId: d.accountId ?? null });
         const balance = d.accounts?.[0]?.balance;
         const balanceStr = balance != null ? ` · Balance: ${d.accounts[0].currency} ${balance.toFixed(2)}` : "";
         setForms((f) => ({ ...f, [key]: { ...f[key], loading: false, error: null, success: `Connected ✓ — ${d.accountId}${balanceStr}` } }));
@@ -400,7 +403,8 @@ export default function SettingsDashboard() {
       const r = await fetch("/api/icmarkets/connect", { method: "POST" }).catch(() => null);
       const d = r ? await r.json().catch(() => ({ ok: false, error: "Parse error" })) : { ok: false, error: "Network error" };
       if (d.ok) {
-        await postAction({ action: "broker_connect", brokerKey: key, accountMode: "DEMO" });
+        // Dieselbe echte Nummer, hier aus /api/icmarkets/connect.
+        await postAction({ action: "broker_connect", brokerKey: key, accountMode: "DEMO", accountId: d.accountId ?? null });
         const balStr = d.balance != null ? ` · Balance: ${d.currency} ${Number(d.balance).toFixed(2)}` : "";
         setForms((f) => ({
           ...f,

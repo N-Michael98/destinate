@@ -223,9 +223,24 @@ export async function register() {
           await updateBrokerConnection({
             brokerKey: "IC_MARKETS",
             connected: true,
-            accountId: icSess?.accountId || "IC-MCP",
+            // Und die KONTONUMMER wird nicht erfunden (09.11.): hier stand
+            // `|| "IC-MCP"` — eine Konstante, die das Dashboard als
+            // "Account ID: IC-MCP" ausgab, direkt neben echten Bestaenden.
+            // Nachgezaehlt: diese Zeichenkette hatte zwei Schreiber und
+            // NULL Leser, ein Austausch kann also keine Logik brechen.
+            // `||` statt `??`, weil die Sitzung einen LEEREN String tragen
+            // kann (`icmarkets-session.ts:116` setzt `?? ""`) — leer ist so
+            // unbekannt wie fehlend.
+            accountId: icSess?.accountId || null,
             accountMode: "DEMO",
-            lastConnectedAt: icSess?.connectedAt ?? new Date().toISOString(),
+            // `?? null`, nicht `?? new Date()` (09.11.): die Sitzung wurde
+            // gerade aus REDIS wiederhergestellt. Fehlt dort `connectedAt`,
+            // behauptete die Anzeige "Connected: <jetzt>" — also eine
+            // Verbindung, die gerade eben entstanden sei, obwohl sie aus
+            // einem gespeicherten Zustand kommt. Der Typ ist `string | null`,
+            // und `SettingsDashboard.tsx` behandelt `null` korrekt: die Zeile
+            // faellt dann weg.
+            lastConnectedAt: icSess?.connectedAt ?? null,
             error: null,
           }).catch(() => {});
         }

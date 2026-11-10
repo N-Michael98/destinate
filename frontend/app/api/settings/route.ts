@@ -51,14 +51,26 @@ async function bearbeite(request: Request) {
     // IC Markets uses MCP token (no apiKey needed) — mark as connected directly
     if (body.brokerKey === "IC_MARKETS") {
       const { updateBrokerConnection } = await import("@/lib/settings/settings-store");
-      const fakeId = `IC-MCP-${Math.floor(Math.random() * 900000 + 100000)}`;
-      await updateBrokerConnection({ brokerKey: "IC_MARKETS", connected: true, accountId: fakeId, accountMode: "DEMO", lastConnectedAt: new Date().toISOString(), error: null });
-      return NextResponse.json({ ok: true, accountId: fakeId, error: null, settings: await getSettings() });
+      // ── KEINE ERFUNDENE KONTONUMMER MEHR (09.11.) ────────────────────
+      //
+      // Hier stand eine Zufallszahl, die das Dashboard als "Account ID"
+      // ausgab — direkt neben den ECHTEN Kontostaenden. Die echte Nummer war
+      // da: `/api/icmarkets/connect` gibt `accountId: account.accountId`, und
+      // die Oberflaeche ruft genau die Route VORHER auf.
+      //
+      // Fehlt sie, bleibt das Feld `null` und die Anzeige laesst die Zeile
+      // weg, statt eine Nummer zu behaupten.
+      const roh = typeof body.accountId === "string" ? body.accountId.trim() : "";
+      const echteId = roh === "" ? null : roh;
+      await updateBrokerConnection({ brokerKey: "IC_MARKETS", connected: true, accountId: echteId, accountMode: "DEMO", lastConnectedAt: new Date().toISOString(), error: null });
+      return NextResponse.json({ ok: true, accountId: echteId, error: null, settings: await getSettings() });
     }
     const result = await simulateBrokerConnect(
       body.brokerKey,
       body.apiKey ?? "",
-      body.accountMode ?? "DEMO"
+      body.accountMode ?? "DEMO",
+      // Die ECHTE Nummer vom Broker, die der Aufrufer schon hat.
+      typeof body.accountId === "string" ? body.accountId : null,
     );
     return NextResponse.json({ ok: result.ok, accountId: result.accountId, error: result.error, settings: await getSettings() });
   }

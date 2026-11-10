@@ -9058,20 +9058,49 @@ module.exports = async function pruefe() {
             /beim zweiten Versuch erreicht/.test(r1.log),
             "sonst steht oben '1/1 analysiert' und niemand weiss vom Ausfall");
 
+          // ── EINE ZAHL ALLEIN ERKLAERT EINEN FEHLSCHLAG NICHT (09./10.11.) ──
+          //
+          // Am 09.11. wurde diese Zusicherung in EINEM Lauf rot: "1 Anfragen
+          // (erwartet genau 2)". Der Befund nannte nur die Zahl — und damit
+          // war nicht entscheidbar, ob der Rueckfall FEHLT oder ob der erste
+          // Versuch den lokalen Server gar nicht erreicht hat (Netzfehler,
+          // `status: null`, was auch 1 ergibt, obwohl der Rueckfall korrekt
+          // gefeuert hat).
+          //
+          // NACHGEMESSEN, nicht vermutet: 19 Prueferlaeufe und 40 isolierte
+          // Laeufe dieses Prüfstands ergaben ausnahmslos 2 Anfragen; das
+          // Zeitbudget kann es nicht sein (der Rueckfall entfaellt erst, wenn
+          // der erste Versuch 48s verbraucht hat — gerechnet aus
+          // BUDGET 60000 − PAUSE 2000 ≥ REST 10000). Die Ursache ist damit
+          // NICHT bestimmt, und sie wird hier auch nicht erfunden.
+          //
+          // Geschlossen wird das Loch in der DIAGNOSE: der Befund traegt
+          // jetzt die entscheidenden Logzeilen, denn `fetchStrategySignals`
+          // nennt den Grund selbst ("KEINE Wiederholung (…)" bzw. den Status
+          // des ersten Versuchs). Die Zusicherung wird dabei NICHT gelockert
+          // — ein entfernter Rueckfall ergibt weiter 1 Anfrage und wird rot.
+          // "Eine Diagnose darf im interessanten Fall nicht schweigen."
+          const warum = (r) => {
+            const wichtig = r.log.split("\n")
+              .filter((z) => /Wiederholung|Versuch|Strategies|Strategien|WIRFT/.test(z))
+              .map((z) => z.trim()).slice(-3).join(" | ");
+            return wichtig || `(keine erklaerende Logzeile) ${r.log.slice(-160)}`;
+          };
+
           const r2 = await fallLauf([{ status: 502, koerper: "Bad Gateway" }]);
           torPruefung("nach dem zweiten Fehlschlag wird weiter nachgefragt",
             r2.anfragen === 2 && r2.groesse === 0,
-            `${r2.anfragen} Anfragen (erwartet genau 2)`);
+            `${r2.anfragen} Anfragen (erwartet genau 2) — ${warum(r2)}`);
 
           const r3 = await fallLauf([{ status: 401, koerper: '{"error":"unauthorized"}' }]);
           torPruefung("ein 401 wird sinnlos wiederholt",
-            r3.anfragen === 1, `${r3.anfragen} Anfragen (erwartet genau 1)`);
+            r3.anfragen === 1, `${r3.anfragen} Anfragen (erwartet genau 1) — ${warum(r3)}`);
           torPruefung("der Grund eines 401 fehlt im Log", r3.log.includes("unauthorized"));
 
           const r4 = await fallLauf([{ status: 200 }]);
           torPruefung("auch ein Erfolg loest einen zweiten Versuch aus",
             r4.anfragen === 1 && r4.groesse === 1,
-            `${r4.anfragen} Anfragen, ${r4.groesse} Symbole`);
+            `${r4.anfragen} Anfragen, ${r4.groesse} Symbole — ${warum(r4)}`);
         }
       }
 
@@ -11330,6 +11359,299 @@ module.exports = async function pruefe() {
     torPruefung("irgendwo im Capital-Client steht wieder ein `?? \"BUY\"`",
       (ccQ3.match(/\?\?\s*"BUY"/g) || []).length === 0,
       `${(ccQ3.match(/\?\?\s*"BUY"/g) || []).length} Vorkommen`);
+  }
+
+  // ══ KEINE ERFUNDENE KONTONUMMER IM DASHBOARD (09.11.) ═══════════════════
+  //
+  // `simulateBrokerConnect` und der IC-Zweig von `/api/settings` erzeugten
+  // eine ZUFALLSZAHL und speicherten sie als Kontonummer:
+  //
+  //   const fakeId = `${brokerKey.slice(0, 3)}-DEMO-${Math.random()…}`;
+  //
+  // Das Dashboard gab sie als "Account ID: CAP-DEMO-847301" aus — direkt
+  // neben den ECHTEN Kontostaenden vom Broker. Eine erfundene Zahl, die sich
+  // als Messung ausgibt: die Fehlerklasse von `market-health.ts`
+  // ("TradingView verbunden, 20 ms") und der zwei falschen Killswitch-Texte
+  // (27.09.).
+  //
+  // EHRLICH EINGEORDNET, gemessen statt vermutet: `connected: true` war KEINE
+  // Luege. Die Oberflaeche ruft zuerst den ECHTEN Connect
+  // (`/api/capital-com/connect` bzw. `/api/icmarkets/connect`) und `postAction`
+  // nur bei `d.ok`. Und KEIN Handelspfad liest `settings.connections` — die
+  // Schleifen benutzen `isCapitalConnected()` / `isICMarketsConnected()`
+  // (nachgezaehlt: die einzigen Leser sind die Anzeige und der Store selbst).
+  // Falsch war allein die NUMMER.
+  //
+  // Und die echte war DA: beide Routen geben `accountId` zurueck, die
+  // Oberflaeche hatte sie in der Hand und gab sie nur nicht weiter.
+  //
+  // AUSGEFUEHRT, nicht am Wortlaut: `simulateBrokerConnect` wird mit und ohne
+  // Nummer gerufen. Geprueft wird der RUECKGABEWERT — und das ist ehrlich
+  // benannt: der Store ruft `updateBrokerConnection` INTERN, nicht ueber
+  // `exports`, ein Spion dort waere also wirkungslos. Der Rueckgabewert und
+  // der gespeicherte Wert stammen aus derselben Variablen (`echteId`), eine
+  // Abweichung ist damit ausgeschlossen.
+  {
+    const st = ladeTsModul("lib/settings/settings-store.ts", {
+      // GEMESSEN, nicht geraten: der Store laedt beides DYNAMISCH
+      // (`await import("../../app/lib/prisma")`), und schreibt per
+      // `$executeRawUnsafe`.
+      "lib/prisma": {
+        getPrisma: () => ({
+          $queryRaw: async () => [],
+          $executeRawUnsafe: async () => 1,
+        }),
+      },
+      "telegram-notifications/telegram-sender": { sendTelegram: async () => true },
+    });
+    const sbc = st.exports?.simulateBrokerConnect;
+    if (st.fehler || typeof sbc !== "function") {
+      funde.push(`settings-store nicht ausfuehrbar: ${st.fehler ?? "simulateBrokerConnect fehlt"}`);
+      zusatz++;
+    } else {
+      const mitNummer = await sbc("CAPITAL_COM", "12345678", "DEMO", "EX-4711-REAL");
+      const ohneNummer = await sbc("CAPITAL_COM", "12345678", "DEMO", null);
+      const leer = await sbc("CAPITAL_COM", "12345678", "DEMO", "   ");
+      const ohneArgument = await sbc("CAPITAL_COM", "12345678", "DEMO");
+      const kurzerKey = await sbc("CAPITAL_COM", "kurz", "DEMO", "EX-4711-REAL");
+
+      // SELBSTPRUEFUNG: antwortet der Prüfstand ueberhaupt? Sonst saehe jedes
+      // `null` unten wie ein greifender Riegel aus.
+      torPruefung("der settings-store-Prüfstand antwortet nicht — jede "
+        + "Zusicherung darunter waere eine Null-Aussage",
+        mitNummer != null && typeof mitNummer.ok === "boolean",
+        JSON.stringify(mitNummer));
+
+      torPruefung("der Store erfindet wieder eine Kontonummer — eine "
+        + "Zufallszahl stuende dann als `Account ID` neben echten Bestaenden",
+        ohneNummer?.accountId === null && leer?.accountId === null
+        && ohneArgument?.accountId === null,
+        `ohne=${JSON.stringify(ohneNummer?.accountId)} `
+        + `leer=${JSON.stringify(leer?.accountId)} `
+        + `ohneArg=${JSON.stringify(ohneArgument?.accountId)}`);
+      // GEGENPROBE: die ECHTE Nummer muss ankommen — ein Riegel, der alles
+      // auf null zieht, loeschte die Anzeige und waere schlimmer als der Fund.
+      torPruefung("die echte Kontonummer kommt nicht mehr an — dann zeigt das "
+        + "Dashboard gar keine mehr",
+        mitNummer?.accountId === "EX-4711-REAL" && mitNummer?.ok === true,
+        JSON.stringify(mitNummer));
+      // Und der bestehende Riegel bleibt: ein zu kurzer Schluessel verbindet
+      // nicht, auch nicht mit einer Nummer.
+      torPruefung("ein zu kurzer API-Schluessel verbindet trotzdem",
+        kurzerKey?.ok === false && kurzerKey?.accountId === null,
+        JSON.stringify(kurzerKey));
+    }
+
+    // Strukturell: nirgends mehr `Math.random` als Kontonummer, und die
+    // Oberflaeche reicht die echte durch. GEZAEHLT, nicht gefunden (25.10.):
+    // drei Stellen gehoeren zusammen, ein Treffer bewiese nichts.
+    //
+    // KOMMENTARBEREINIGT, weil die neuen Begruendungen die alte Zeile
+    // ZITIEREN — ein Wort im Kommentar ist keine Verwendung. Genau daran ist
+    // meine erste Zusicherung heute gescheitert.
+    const ohneK = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const stQ = ohneK(read("frontend/lib/settings/settings-store.ts"));
+    const roQ = ohneK(read("frontend/app/api/settings/route.ts"));
+    const uiQ = ohneK(read("frontend/components/SettingsDashboard.tsx"));
+    const erfunden = [["settings-store", stQ], ["settings-route", roQ]]
+      .filter(([, q]) => /fakeId|Math\.random/.test(q)).map(([n]) => n);
+    torPruefung("eine der beiden Stellen erfindet wieder eine Kontonummer",
+      erfunden.length === 0, erfunden.join(", ") || "beide sauber");
+    // SELBSTPRUEFUNG der Bereinigung: sie darf den Code NICHT verschlucken
+    // und den Kommentar NICHT stehenlassen.
+    torPruefung("die Kommentar-Bereinigung arbeitet nicht richtig — dann "
+      + "beweist die Zeile darueber nichts",
+      !/fakeId/.test(ohneK('// const fakeId = "x";'))
+      && /fakeId/.test(ohneK('const fakeId = "x";')),
+      "Selbstpruefung der Bereinigung");
+    torPruefung("die Oberflaeche reicht die ECHTE Kontonummer nicht durch — "
+      + "dann bleibt das Feld leer, obwohl die Nummer vorliegt",
+      (uiQ.match(/accountId: d\.accountId \?\? null/g) || []).length === 2,
+      `${(uiQ.match(/accountId: d\.accountId \?\? null/g) || []).length} von 2 Zweigen`);
+    torPruefung("die Route nimmt die Nummer nicht an, oder gibt sie nicht "
+      + "weiter an den Store",
+      /typeof body\.accountId === "string" \? body\.accountId\.trim\(\) : ""/.test(roQ)
+      && /typeof body\.accountId === "string" \? body\.accountId : null/.test(roQ),
+      (roQ.match(/body\.accountId[^\n]*/g) || ["(keine Zeile)"]).join(" | ").slice(0, 150));
+
+    // ── UND DIE ERFUNDENE VERBINDUNGSZEIT (09.11.) ───────────────────────
+    //
+    // `instrumentation.ts` setzte bei einer aus REDIS wiederhergestellten
+    // Sitzung `lastConnectedAt: … ?? new Date().toISOString()` — die Anzeige
+    // behauptete damit "Connected: <jetzt>", also eine Verbindung, die gerade
+    // eben entstanden sei, obwohl sie aus einem gespeicherten Zustand kommt.
+    const insQ2 = ohneK(read("frontend/instrumentation.ts"));
+    torPruefung("die Verbindungszeit wird wieder erfunden, wenn Redis keine "
+      + "mitliefert — die Anzeige behauptet dann `gerade eben verbunden`",
+      /lastConnectedAt: icSess\?\.connectedAt \?\? null,/.test(insQ2)
+      && !/lastConnectedAt: icSess\?\.connectedAt \?\? new Date\(\)/.test(insQ2),
+      (insQ2.match(/lastConnectedAt[^\n]*/g) || ["(keine Zeile)"]).join(" | ").slice(0, 120));
+    // Und die Anzeige MUSS `null` vertragen — sonst stuende dort
+    // "Invalid Date", der Fehler vom 28.10.
+    torPruefung("die Anzeige prueft `lastConnectedAt` nicht mehr, bevor sie "
+      + "ein Datum daraus baut — dann steht dort `Invalid Date` (28.10.)",
+      /\{c\.lastConnectedAt && \(/.test(uiQ)
+      && /new Date\(c\.lastConnectedAt\)\.toLocaleString\(\)/.test(uiQ),
+      (uiQ.match(/c\.lastConnectedAt[^\n]*/g) || ["(keine Zeile)"]).slice(0, 2).join(" | "));
+
+    // ── UND DIE KETTE END-TO-END DURCH DIE ECHTE ROUTE (10.11.) ──────────
+    //
+    // Alles bisher Gepruefte sagt: die Funktion rechnet richtig, und die
+    // Feldnamen stehen auf beiden Seiten. Was es NICHT sagt: ob der Wert
+    // durch `POST /api/settings` wirklich bis in die Einstellungen kommt.
+    // Genau das ist die Fehlerklasse vom 30.09. — "eine gepruefte Funktion,
+    // die nie echte Werte bekommt" bzw. "eine Prüfung, die eine Funktion
+    // rechnet, beweist nichts ueber ihre Aufrufstelle".
+    //
+    // Deshalb laeuft hier die ECHTE `POST`-Funktion, und geprueft wird, was
+    // `getSettings()` DANACH liefert — also der Wert, den das Dashboard
+    // anzeigt. Eine Zusicherung auf den Rueckgabewert allein bewiese nichts
+    // ueber den gespeicherten Zustand.
+    //
+    // GEMESSEN, nicht geraten: die Route importiert STATISCH aus
+    // `"../../../lib/settings"` (Index: `export * from "./settings-store"`)
+    // und DYNAMISCH aus `"@/lib/settings/settings-store"`. Beide Schluessel
+    // muessen gestellt werden — mein erster Entwurf kannte nur den zweiten,
+    // und der statische Import bekam den Stellvertreter, der beim Aufruf
+    // wirft: zehn Zusicherungen rot, obwohl der Code stimmte.
+    {
+      const prismaErsatz = {
+        getPrisma: () => ({ $queryRaw: async () => [], $executeRawUnsafe: async () => 1 }),
+      };
+      const tgErsatz = { sendTelegram: async () => true };
+      const stM = ladeTsModul("lib/settings/settings-store.ts", {
+        "lib/prisma": prismaErsatz,
+        "telegram-notifications/telegram-sender": tgErsatz,
+      });
+      const roM = stM.fehler ? { fehler: stM.fehler } : ladeTsModul("app/api/settings/route.ts", {
+        // Der Store wird ECHT hereingereicht — er ist Teil des Prueflings.
+        "settings/settings-store": stM.exports,
+        "lib/settings": stM.exports,
+        "lib/prisma": prismaErsatz,
+        "telegram-notifications/telegram-sender": tgErsatz,
+        "cache/redis-cache": { cacheSet: async () => true, cacheDel: async () => true },
+        "next/server": {
+          NextResponse: { json: (k, i) => ({ koerper: k, status: (i && i.status) || 200 }) },
+        },
+      });
+      if (roM.fehler || typeof roM.exports?.POST !== "function") {
+        funde.push(`settings-Route nicht ausfuehrbar: ${roM.fehler ?? "POST fehlt"}`);
+        zusatz++;
+      } else {
+        const verbinde = async (rumpf) => {
+          const a = await roM.exports.POST({ json: async () => rumpf });
+          const s = await stM.exports.getSettings();
+          return {
+            antwort: a.koerper,
+            c: (s.connections || []).find((x) => x.brokerKey === rumpf.brokerKey),
+          };
+        };
+        const e1 = await verbinde({ action: "broker_connect", brokerKey: "CAPITAL_COM",
+          apiKey: "pruefstand-key", accountMode: "DEMO", accountId: "EX-4711-REAL" });
+        // SELBSTPRUEFUNG: antwortet die Route ueberhaupt? Sonst saehe jedes
+        // `null` unten wie ein greifender Riegel aus.
+        torPruefung("die settings-Route antwortet nicht brauchbar — jede "
+          + "Zusicherung darunter waere eine Null-Aussage",
+          e1.antwort?.ok === true && e1.c != null,
+          JSON.stringify(e1.antwort).slice(0, 140));
+        torPruefung("die echte Kontonummer kommt NICHT bis in die "
+          + "Einstellungen — das Dashboard zeigte dann keine",
+          e1.antwort?.accountId === "EX-4711-REAL"
+          && e1.c?.accountId === "EX-4711-REAL" && e1.c?.connected === true,
+          `Antwort ${JSON.stringify(e1.antwort?.accountId)}, gespeichert ${JSON.stringify(e1.c?.accountId)}`);
+
+        const e2 = await verbinde({ action: "broker_connect", brokerKey: "CAPITAL_COM",
+          apiKey: "pruefstand-key", accountMode: "DEMO" });
+        torPruefung("ohne Nummer wird eine erfunden statt `null` gespeichert",
+          e2.antwort?.accountId === null && e2.c?.accountId === null,
+          `Antwort ${JSON.stringify(e2.antwort?.accountId)}, gespeichert ${JSON.stringify(e2.c?.accountId)}`);
+
+        const e3 = await verbinde({ action: "broker_connect", brokerKey: "CAPITAL_COM",
+          apiKey: "pruefstand-key", accountMode: "DEMO", accountId: 4711 });
+        torPruefung("eine ZAHL als Kontonummer wandert in die Einstellungen",
+          e3.antwort?.accountId === null && e3.c?.accountId === null,
+          `Antwort ${JSON.stringify(e3.antwort?.accountId)}, gespeichert ${JSON.stringify(e3.c?.accountId)}`);
+
+        // Der IC-Zweig ist ein EIGENER Codepfad (er ruft
+        // `updateBrokerConnection` direkt, nicht `simulateBrokerConnect`) —
+        // ein Treffer dort bewiese nichts ueber ihn (25.10.).
+        const e4 = await verbinde({ action: "broker_connect", brokerKey: "IC_MARKETS",
+          accountId: "IC-REAL-99" });
+        torPruefung("der IC-Zweig reicht die echte Nummer nicht durch",
+          e4.antwort?.accountId === "IC-REAL-99" && e4.c?.accountId === "IC-REAL-99",
+          `Antwort ${JSON.stringify(e4.antwort?.accountId)}, gespeichert ${JSON.stringify(e4.c?.accountId)}`);
+        const e5 = await verbinde({ action: "broker_connect", brokerKey: "IC_MARKETS" });
+        torPruefung("der IC-Zweig erfindet ohne Nummer wieder einen Wert",
+          e5.antwort?.accountId === null && e5.c?.accountId === null,
+          `Antwort ${JSON.stringify(e5.antwort?.accountId)}, gespeichert ${JSON.stringify(e5.c?.accountId)}`);
+
+        // Der bestehende Riegel muss halten: ein zu kurzer Schluessel
+        // verbindet nicht, auch nicht mit einer Nummer.
+        const e6 = await verbinde({ action: "broker_connect", brokerKey: "CAPITAL_COM",
+          apiKey: "kurz", accountMode: "DEMO", accountId: "EX-4711-REAL" });
+        torPruefung("ein zu kurzer API-Schluessel verbindet ueber die Route",
+          e6.antwort?.ok === false && e6.antwort?.accountId === null
+          && e6.c?.connected === false,
+          `${JSON.stringify(e6.antwort)} | ${JSON.stringify(e6.c)}`.slice(0, 160));
+
+        // GEGENPROBE ueber ALLE Antworten: nirgends eine erfundene Nummer.
+        const alleAntw = [e1, e2, e3, e4, e5, e6].map((x) => JSON.stringify(x.antwort)).join(" ");
+        torPruefung("eine Antwort traegt wieder eine erfundene Kontonummer",
+          !/"accountId":"[A-Z]{3}-DEMO-\d+"/.test(alleAntw)
+          && !/"accountId":"IC-MCP"/.test(alleAntw),
+          alleAntw.slice(0, 200));
+      }
+    }
+
+    // ── UND DIE ERFUNDENE KONTONUMMER "IC-MCP" (09.11.) ──────────────────
+    //
+    // Gefunden, weil ich nach dem MUSTER weitergesucht habe statt den Fund
+    // abzuschliessen: `instrumentation.ts` und der Telegram-Webhook setzten
+    // `accountId: … ?? "IC-MCP"` bzw. `|| "IC-MCP"` — eine Konstante, die das
+    // Dashboard als "Account ID: IC-MCP" ausgab. Dieselbe Klasse wie die
+    // Zufallszahl oben, nur mit einem festen Wert.
+    //
+    // NACHGEZAEHLT vor der Aenderung: zwei Schreiber, NULL Leser — niemand
+    // vergleicht gegen die Zeichenkette, ein Austausch konnte also keine
+    // Logik brechen. Und `accountId` ist in `BrokerConnection` als
+    // `string | null` deklariert; `null` ist der ehrliche Wert, nicht ein
+    // Notbehelf.
+    //
+    // GEZAEHLT UEBER DAS GANZE PROGRAMM, nicht an einer Datei gefunden: es
+    // waren ZWEI Stellen, und ein Treffer bewiese nichts ueber die andere
+    // (25.10.). Kommt eine dritte dazu, wird der Prüfer rot.
+    {
+      const codeDateien = sourceFiles([".ts", ".tsx"])
+        .filter((f) => f.startsWith("frontend/")
+          && !f.includes("/node_modules/") && !f.includes("/.next/"));
+      const stellen = [];
+      for (const f of codeDateien) {
+        if (/IC-MCP/.test(ohneK(read(f)))) stellen.push(f);
+      }
+      torPruefung("eine Kontonummer wird wieder als Konstante erfunden "
+        + "(`IC-MCP`) — das Dashboard gaebe sie als `Account ID` aus",
+        stellen.length === 0,
+        stellen.join(", ") || `${codeDateien.length} Dateien, keine Stelle`);
+      // SELBSTPRUEFUNG: der Scan muss ueberhaupt Dateien gesehen haben.
+      // Null geprueft ist kein sauberes Ergebnis, sondern ein kaputtes
+      // Werkzeug — die Lehre vom 22.10.
+      torPruefung("der IC-MCP-Scan hat keine Dateien gelesen — jedes "
+        + "`keine Stelle` waere eine Null-Aussage",
+        codeDateien.length > 300, `${codeDateien.length} Dateien`);
+      // Und die beiden Stellen muessen ihren EHRLICHEN Wert tragen. Ohne das
+      // bliebe der Scan oben auch gruen, wenn dort ein ANDERER erfundener
+      // Wert stuende.
+      torPruefung("`instrumentation.ts` traegt nicht mehr `|| null` bei der "
+        + "Kontonummer — dann wird dort wieder ein Wert behauptet",
+        /accountId: icSess\?\.accountId \|\| null,/.test(insQ2),
+        (insQ2.match(/accountId: icSess[^\n]*/g) || ["(keine Zeile)"]).join(" | "));
+      const whQ = ohneK(read("frontend/app/api/telegram/webhook/route.ts"));
+      torPruefung("der Telegram-Webhook traegt nicht mehr `|| null` bei der "
+        + "Kontonummer",
+        /accountId: sess\?\.accountId \|\| null,/.test(whQ),
+        (whQ.match(/accountId: sess\?\.accountId[^\n]*/g) || ["(keine Zeile)"]).join(" | "));
+    }
   }
 
   return {

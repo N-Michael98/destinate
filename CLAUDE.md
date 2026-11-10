@@ -3914,6 +3914,282 @@ IC-Prüfständen, und alle aus einer Ursache: `icGetPositions` ruft jetzt
 Das ist die Falle vom 01.11., wörtlich: **ein neuer Aufruf braucht seinen
 Ersatz überall.** Sieben Stellen in zwei Prüfern mussten nachgezogen werden.
 
+## Eine erfundene Kontonummer stand neben echten Beständen (09.11.)
+
+Anlass war der benannte offene Punkt `lastConnectedAt` — gefunden wurde beim
+Lesen derselben Datei etwas Schwereres.
+
+`simulateBrokerConnect` (`settings-store.ts`) und der IC-Zweig von
+`POST /api/settings` erzeugten eine **Zufallszahl** und speicherten sie als
+Kontonummer:
+
+```ts
+const fakeId = `${brokerKey.slice(0, 3)}-DEMO-${Math.floor(Math.random() * 900000 + 100000)}`;
+await updateBrokerConnection({ brokerKey, connected: true, accountId: fakeId, … });
+```
+
+Das Dashboard gab sie aus als **„Account ID: CAP-DEMO-847301"** — direkt neben
+den **echten** Kontoständen vom Broker. Die Fehlerklasse von
+`market-health.ts` („TradingView verbunden, 20 ms") und der zwei falschen
+Killswitch-Texte (27.09.): etwas Erfundenes gibt sich als Messung aus. Eine
+Zufallszahl ist dabei die unangenehmste Form, weil sie **wie eine echte
+Kontonummer aussieht**.
+
+**Und die echte Nummer war die ganze Zeit da.** `/api/capital-com` antwortet
+mit `accountId: session?.accountId ?? null`, `/api/icmarkets/connect` mit
+`accountId: account.accountId` — und die Oberfläche ruft genau diese Routen
+**vorher** auf (`postAction` läuft nur bei `d.ok`). Sie hatte die Nummer in der
+Hand und hat sie nur nicht weitergegeben.
+
+### Ehrlich eingeordnet: `connected: true` war KEINE Lüge
+
+Der Name `simulateBrokerConnect` legt nahe, die ganze Verbindung sei
+simuliert. **Nachgezählt, nicht vermutet:** sie ist es nicht. Die Funktion
+spricht keinen Broker an, aber sie **vermerkt** eine Verbindung, die der
+Aufrufer zuvor **echt** hergestellt hat.
+
+Und **kein Handelspfad liest `settings.connections`**: die Schleifen fragen
+`isCapitalConnected()` / `isICMarketsConnected()`. Die einzigen Leser von
+`accountId` sind drei Zeilen in `SettingsDashboard.tsx` — also die Anzeige.
+Falsch war allein die **Nummer**; eine Order ist davon nie betroffen gewesen.
+
+Das gehört dazu: der Fund wäre sonst grösser erzählt, als er ist. Eine
+übertriebene Einordnung ist dieselbe Unehrlichkeit wie eine verharmlosende.
+
+### Fehlt sie, bleibt sie `null` — nicht „irgendwas"
+
+`accountId` ist in `BrokerConnection` als `string | null` deklariert; `null`
+ist der ehrliche Wert, kein Notbehelf. Ein leerer oder nur aus Leerzeichen
+bestehender Wert gilt ebenfalls als **fehlend** (`trim()`), und die Anzeige
+lässt die Zeile dann weg (`c?.connected && c.accountId && …`) statt eine
+Nummer zu behaupten. Dieselbe Regel wie bei `dealId` (30.09.) und
+`signalQuelle` (30.10.): **fehlt die Angabe, wird der Schlüssel weggelassen.**
+
+### Und die Verbindungszeit wurde erfunden (der benannte Punkt)
+
+`instrumentation.ts:228` stellt die IC-Sitzung beim Start aus **Redis** wieder
+her und schrieb dabei:
+
+```ts
+lastConnectedAt: icSess?.connectedAt ?? new Date().toISOString(),
+```
+
+Fehlt `connectedAt` im gespeicherten Zustand, behauptete die Anzeige damit
+**„gerade eben verbunden"** — für eine Verbindung, die aus einem Speicher
+kommt und beliebig alt sein kann. Der Typ ist `string | null`, und
+`SettingsDashboard.tsx:558` behandelt `null` **korrekt** (die Zeile fällt
+weg); der ehrliche Wert war also immer verfügbar.
+
+**Der Diff in der Hochrisiko-Datei ist ein Token** plus Kommentar — keine
+Schleife, kein Riegel, keine Schwelle. Vorher lief die Pflicht-Impact-Analyse.
+
+### Dieselbe Klasse zwei Zeilen höher: `"IC-MCP"`
+
+**Gefunden, weil ich nach dem MUSTER weitergesucht habe** statt den Fund
+abzuschliessen — ein `grep` über alle erfundenen Werte statt über eine Datei.
+Zwei weitere Stellen setzten eine **Konstante** als Kontonummer:
+
+| Stelle | stand dort |
+|---|---|
+| `instrumentation.ts:226` | `accountId: icSess?.accountId \|\| "IC-MCP"` |
+| `webhook/route.ts:233` | `accountId: sess?.accountId ?? "IC-MCP"` |
+
+Das Dashboard gab „Account ID: **IC-MCP**" aus. Weniger täuschend als eine
+Zufallszahl, aber dieselbe Behauptung: es gibt eine Nummer, und das ist sie.
+
+**Vor der Änderung nachgezählt:** die Zeichenkette hatte **zwei Schreiber und
+null Leser** — niemand vergleicht gegen sie, ein Austausch konnte also keine
+Logik brechen. Und `||` statt `??` mit Absicht: `icmarkets-session.ts:116`
+setzt `accountId: account.accountId ?? ""`, die Sitzung kann also einen
+**leeren** String tragen, und leer ist so unbekannt wie fehlend.
+
+### Absicherung
+
+`safety-nets` **rechnet** das (1256 → **1270**): `simulateBrokerConnect` wird
+mit Nummer, mit `null`, mit Leerzeichen, **ohne Argument** und mit zu kurzem
+Schlüssel ausgeführt. Geprüft wird der **Rückgabewert** — und das ist ehrlich
+benannt: der Store ruft `updateBrokerConnection` **intern**, ein Spion am
+`exports` wäre wirkungslos. Rückgabe und gespeicherter Wert stammen aus
+derselben Variablen, eine Abweichung ist damit ausgeschlossen.
+
+Dazu die **Gegenprobe**, dass die echte Nummer **ankommt**: ein Riegel, der
+alles auf `null` zieht, löschte die Anzeige und wäre schlimmer als der Fund.
+Und die Kette **gezählt** statt gefunden (25.10.) — Store, Route und **beide**
+Zweige der Oberfläche; einer allein bewiese nichts über den anderen.
+
+**Und der Prüfer ist hier der einzige Schutz.** `const body = await
+request.json().catch(() => ({}))` ergibt `any` — `tsc` sagt zu `body.accountId`
+**nichts**, ein Tippfehler wäre still (die Klasse vom 08.11. und der
+programmweite `any`-Prisma-Client). Deshalb hält `safety-nets` **beide Seiten
+der Leitung** namentlich: benennt die Oberfläche das Feld um, wird er rot;
+benennt die Route es um, auch. Ein `typeof … === "string"` steht davor, damit
+eine Zahl oder ein Objekt zu `null` wird statt in die Einstellungen zu
+wandern.
+
+**19 von 19 Sabotagen** plus drei Gegenproben. Die lehrreichste ist nicht der
+Fund selbst, sondern **B3**: ein *anderer* erfundener Wert (`"UNBEKANNT"`)
+lässt den `IC-MCP`-Scan grün — nur die Zusicherung am **ehrlichen Wert** fängt
+ihn. Ohne sie wäre jeder neue Platzhalter unsichtbar gewesen.
+
+### Und die Kette end-to-end durch die echte Route (10.11.)
+
+Alles oben sagt: die Funktion rechnet richtig, und die Feldnamen stehen auf
+beiden Seiten. Was es **nicht** sagt: ob der Wert durch
+`POST /api/settings` wirklich **bis in die Einstellungen** kommt. Genau die
+Fehlerklasse vom 30.09. — *„eine geprüfte Funktion, die nie echte Werte
+bekommt"*.
+
+Deshalb läuft jetzt die **echte `POST`-Funktion** im Prüfstand, und geprüft
+wird, was `getSettings()` **danach** liefert — also der Wert, den das
+Dashboard anzeigt. Sieben Lagen: echte Nummer, keine Nummer, eine **Zahl**
+statt einer Zeichenkette, der **IC-Zweig** mit und ohne Nummer (ein eigener
+Codepfad, er ruft `updateBrokerConnection` direkt), der kurze Schlüssel, und
+die Gegenprobe über alle Antworten.
+
+**Die entscheidende Sabotage ist C1**, und sie beweist, dass dieser Prüfstand
+etwas leistet, was keine andere Zusicherung leistet:
+
+```ts
+await updateBrokerConnection({ … accountId: null … });   // GESPEICHERT: null
+return { ok: true, accountId: echteId, error: null };    // ZURUECK: die echte
+```
+
+Kein `Math.random`, kein geänderter Feldname — die Struktur-Prüfung bleibt
+grün, und die **ausgeführte Store-Prüfung bleibt grün**, weil sie den
+*Rückgabewert* liest. Nur die neue Zeile fängt es: *„die echte Kontonummer
+kommt NICHT bis in die Einstellungen."*
+
+**Zwei eigene Fehler beim Bau, beide benannt:**
+
+| Fehler | Folge |
+|---|---|
+| mein Ersatz kannte nur `"settings/settings-store"` | die Route importiert **statisch** aus `"../../../lib/settings"` (Index: `export * from "./settings-store"`). Der statische Import bekam den Stellvertreter, der beim Aufruf **wirft** — **zehn** Zusicherungen rot, obwohl der Code stimmte. Beide Schlüssel sind jetzt gestellt, gemessen an den echten Importzeilen |
+| mein erster Store-Vorlauf prüfte nur den **Rückgabewert** | dass der Store überhaupt **persistiert**, war nie geprüft — genau das Loch, das C1 jetzt schliesst |
+
+Und ein Messfehler, der dazugehört: ich habe die Ausgabe mit `tail -20`
+abgeschnitten und dann über eine Zeile gerätselt, die der Schnitt entfernt
+hatte. **Erst die ganze Ausgabe lesen, dann urteilen.**
+
+`safety-nets` 1270 → **1278**.
+
+### Vier eigene Werkzeugfehler auf dem Weg — alle benannt
+
+| Fehler | Folge |
+|---|---|
+| mein Rückstell-Tor verglich gegen **HEAD** statt gegen die Sicherung | die vier Dateien sind in dieser Runde absichtlich geändert — das Tor brach bei **jedem** Fall ab und sah nach einem Fund aus |
+| mein Befund-Parser suchte einen Spiegelstrich | run-all stellt jeden Befund mit `→` voran; der Parser meldete **„0 Befunde"** für neun rote Läufe. Ein Werkzeug, das nichts findet, meldet „kein Grund" statt „kaputt" |
+| der Sabotage-Anker A5 hing an `} else {` | dort steht `const balance = …`; der Anker griff nicht. Jetzt an `apiKey: form.apiKey` gebunden, das **nur** im Capital-Zweig vorkommt |
+| mein erster Prüfstands-Entwurf hatte einen **toten Spion** und ungemessene Ersatz-Schlüssel | `geschrieben` wurde nie gelesen, und `"cache/redis-cache"` gibt es im Store gar nicht. Gemessen: er lädt `lib/prisma` und den Telegram-Sender, beide **dynamisch** |
+
+Der erste und der zweite sind dieselbe Lehre in zwei Formen: **ein Tor, das
+aus einem Protokoll liest, prüft die Formatierung.** Beide wurden gefunden,
+weil das Tor **verweigerte** — nicht weil eines durchliess.
+
+Und das Rückstell-Tor trägt jetzt eine **Selbstprüfung**: es muss eine
+künstlich erzeugte Abweichung wirklich bemerken. Ohne sie wäre „sauber" von
+„kaputtes Tor" nicht zu unterscheiden.
+
+### Was das NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette. **Snapshot 299 Werte unverändert**, Karte **897 Kanten**
+unverändert, `tsc` 0 Fehler, Build *Compiled successfully* ohne Warnung.
+
+**Nicht geändert, eigene Entscheidung:** der Name `simulateBrokerConnect`
+bleibt. Er ist irreführend — die Funktion simuliert nichts, sie vermerkt —,
+aber eine Umbenennung ist ein Eingriff ohne Not; stattdessen sagt jetzt ein
+Kommentar über der Funktion, was sie wirklich tut.
+
+### Gemessen und NICHT geändert — beim dritten Gegenlesen gefunden
+
+| Fund | Warum nicht jetzt |
+|---|---|
+| `instrumentation.ts:238` hängt `.catch(() => {})` an `updateBrokerConnection` — ein gescheiterter Schreibvorgang ist **stumm** | dieselbe Klasse wie der Journal-Sync (25.10.) und `reply()` (26.10.), aber eine Ebene harmloser: es geht um die **Anzeige** der Verbindung, nicht um Geld. Eine Meldung dort einzubauen heisst eine Drossel (sonst alle zwei Minuten eine Zeile) und damit einen echten Eingriff in die Datei mit allen Schleifen. Braucht Plan + Ja |
+| die Erfolgsmeldung lautet `Connected ✓ — ${d.accountId}`; ohne Nummer liest sie **„Connected ✓ — null"** | bestand vorher und ist **keine Erfindung** — sie zeigt die Abwesenheit nur unschön. Eine Sache auf einmal |
+
+Gemessen, nicht erinnert: `/api/capital-com` antwortet mit
+`accountId: session?.accountId ?? null` (Zeile 39), `/api/icmarkets/connect`
+mit `accountId: account.accountId` (Zeile 49) — das kann `undefined` sein, und
+genau dafür steht `?? null` in der Oberfläche.
+
+### Ein abgebrochener Sabotage-Lauf liess eine Hochrisiko-Datei sabotiert (10.11.)
+
+Der schwerste Fund dieser Runde ist ein **Prozess**-Fund, kein Codefehler.
+
+Ein Einzellauf von `sabotage-richtung-broker.js` wurde **unterbrochen**
+(Exit 4, keine Ausgabe) — und liess `capital-com-client.ts` mit der Sabotage
+**S2** im Arbeitsbaum stehen:
+
+```ts
+- direction: lesbareRichtung(pos.direction),
++ direction: (String(pos.direction ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY"),
+```
+
+Also genau die erfundene Richtung, die am 07.11. entfernt wurde — in einer
+Datei mit erhöhtem Risiko. **Und danach wurde kein `git status` gelesen.**
+Gefunden beim Wiederaufnehmen, als erste Handlung.
+
+**Das Netz hätte es gefangen, und das ist gemessen, nicht gehofft:** mit S2 im
+Baum meldet das **volle** `npm run check` Exit 1 und **drei** Befunde (die
+gerechnete Abbildung, der unlesbare Wert, und der Rückfall in der
+Typdeklaration). Dazu läuft `.git/hooks/pre-commit` und bricht den Commit ab.
+Eine zurückgebliebene Sabotage kann also keinen Commit erreichen — solange die
+Pflichtprüfung läuft.
+
+**Die Lehre ist trotzdem bitter nötig:** ein Werkzeug, das echte Dateien
+verändert, muss **bei jedem Ausgang** zurückstellen — auch beim Abbruch. Die
+Suiten tun das pro Fall; wird der Prozess dazwischen beendet, hilft nur noch
+der Blick auf `git status`. Der Gruppenlauf hat dafür jetzt ein Tor, das beim
+Beenden jede Datei nennt, die beim Start nicht geändert war, samt dem
+`git checkout --`-Befehl — es stellt **nichts** automatisch zurück, denn ein
+Werkzeug, das ungefragt Arbeit verwirft, wäre schlimmer als der Fund.
+
+**Und ein eigener Fehlalarm gehört dazu:** mein erster Blick zählte
+`?? "BUY"` **3×** im Capital-Client und sah nach einem zweiten Fund aus. Alle
+drei stehen in **Kommentaren** (Zeilen 206, 209, 1242), die den alten Stand
+dokumentieren — der Prüfer ist kommentarbereinigt und zu Recht grün. „Ein Wort
+im Kommentar ist keine Verwendung", diesmal in meinem eigenen rohen `grep`.
+Ein zweiter Fehlalarm im selben Atemzug: ein `cat` auf das Protokoll gab
+nichts zurück, und ich schloss daraus „die Datei ist leer" — sie hatte 1254
+Bytes. **Erst die Dateigrösse messen, dann urteilen.**
+
+### Ein einzelnes Rot, das sich nicht reproduzieren liess (10.11.)
+
+Im Gruppenlauf wurde die **Gegenprobe** G1 der Broker-Richtung-Suite rot
+(„nur ein Kommentar — muss GRÜN bleiben"), mit dem Befund
+*„nach dem zweiten Fehlschlag wird weiter nachgefragt — 1 Anfragen (erwartet
+genau 2)"*. Das ist der `fetchStrategySignals`-Prüfstand vom 22.09., der einen
+**echten HTTP-Server** auf 127.0.0.1 fährt und Anfragen zählt.
+
+**Nachgemessen, nicht gedeutet:**
+
+| Messung | Ergebnis |
+|---|---|
+| G1 allein, zweimal | **grün** |
+| `safety-nets` auf sauberem Baum, 5× | **grün**, je 1270 |
+| `safety-nets` 12× hintereinander (Last wie im Gruppenlauf) | **grün** |
+| nur dieser HTTP-Prüfstand, 40× isoliert | **40× genau 2 Anfragen** |
+
+**59 Messungen ohne einen einzigen Fehlschlag.** Zwei Hypothesen von mir sind
+dabei **widerlegt**: das Zeitbudget kann es nicht sein (der Rückfall entfällt
+erst, wenn der erste Versuch **48 s** verbraucht hat — gerechnet aus
+`BUDGET 60000 − PAUSE 2000 ≥ REST 10000`, und gemessen braucht er **7 ms** bei
+**57993 ms** Restbudget), und ein verpasster erster Versuch trat in 40 Läufen
+nie auf.
+
+**Die Ursache ist damit NICHT bestimmt — und sie wird nicht erfunden.** Was
+geschlossen wurde, ist das Loch in der **Diagnose**: der Befund nannte nur die
+Zahl, und damit war „der Rückfall fehlt" von „der erste Versuch kam nie an"
+(beides ergibt 1) nicht zu unterscheiden. Jetzt trägt er die entscheidenden
+Logzeilen, die `fetchStrategySignals` ohnehin schreibt.
+
+**Die Zusicherung ist dabei nicht gelockert** — ein entfernter Rückfall ergibt
+weiter 1 Anfrage und wird rot. Und die Diagnose ist **feuern gesehen**, nicht
+behauptet: die Gegenprobe macht die Zusicherung künstlich unerfüllbar
+(`=== 2` → `=== 3`) und verlangt, dass der Grund im Befund steht. Eine
+Diagnose, die man nie ausgelöst hat, ist unbewiesen — die Regel vom 15.09. in
+der Spielart „ein Prüfer, der nie grün wird".
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben
