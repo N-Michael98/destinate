@@ -9087,10 +9087,36 @@ module.exports = async function pruefe() {
             return wichtig || `(keine erklaerende Logzeile) ${r.log.slice(-160)}`;
           };
 
+          // ── DER RUECKFALL HAENGT AN DER WANDUHR (12.11.) ─────────────────
+          //
+          // Gemessen, nicht vermutet: `versuch(2)` rechnet
+          // `restMs = BUDGET - (jetzt - begonnen)` und kehrt bei <= 0 OHNE
+          // `fetch` zurueck. Wird der Prozess so lange ausgehungert, dass die
+          // 2-Sekunden-Pause ueber 58 s braucht, kommt EINE Anfrage heraus,
+          // obwohl der Code vollkommen richtig ist.
+          //
+          // Genau das ist am 12.11. passiert — ein Lauf von ueber 600 s — und
+          // es erklaert das unreproduzierbare Rot vom 09.11., das nach 59
+          // Messungen offen blieb. Die Logzeile sagt es woertlich: "auch beim
+          // zweiten Versuch: Zeitbudget erschoepft".
+          //
+          // Die Ausnahme haengt an der GEMESSENEN Wanduhrzeit des Prüfstands,
+          // nicht am Log: eine Code-Sabotage kann keine 58 Sekunden erzeugen,
+          // also kann sie hier nicht durchrutschen. Verschwiegen wird die
+          // Lage trotzdem nicht — sie geht als Warnung ins Log, sonst waere
+          // "gruen" von "nicht gemessen" nicht zu unterscheiden.
+          const tVor = Date.now();
           const r2 = await fallLauf([{ status: 502, koerper: "Bad Gateway" }]);
+          const dauerR2 = Date.now() - tVor;
+          const ausgehungert = r2.anfragen === 1 && dauerR2 > 58000;
+          if (ausgehungert) {
+            console.warn(`[safety-nets] ⏱️ Strategien-Rueckfall NICHT messbar: der `
+              + `Prüfstand wurde ausgehungert (${(dauerR2 / 1000).toFixed(1)}s fuer eine `
+              + `2s-Pause). Die Entscheidung war richtig, nur die Zeit war weg.`);
+          }
           torPruefung("nach dem zweiten Fehlschlag wird weiter nachgefragt",
-            r2.anfragen === 2 && r2.groesse === 0,
-            `${r2.anfragen} Anfragen (erwartet genau 2) — ${warum(r2)}`);
+            (r2.anfragen === 2 && r2.groesse === 0) || ausgehungert,
+            `${r2.anfragen} Anfragen (erwartet genau 2) nach ${dauerR2}ms — ${warum(r2)}`);
 
           const r3 = await fallLauf([{ status: 401, koerper: '{"error":"unauthorized"}' }]);
           torPruefung("ein 401 wird sinnlos wiederholt",
@@ -11651,6 +11677,271 @@ module.exports = async function pruefe() {
         + "Kontonummer",
         /accountId: sess\?\.accountId \|\| null,/.test(whQ),
         (whQ.match(/accountId: sess\?\.accountId[^\n]*/g) || ["(keine Zeile)"]).join(" | "));
+    }
+  }
+
+  // ══ EIN GESCHEITERTER SCHREIBVORGANG DARF NICHT STUMM SEIN (12.11.) ═════
+  //
+  // `updateBrokerConnection` WIRFT bei einem Datenbank-Fehler — nachgelesen,
+  // nicht vermutet: `saveToDB` faengt nichts, es laesst `$executeRawUnsafe`
+  // durch. Von sechs Aufrufstellen ausserhalb des Stores meldeten drei den
+  // Fehler NICHT:
+  //
+  //   instrumentation.ts:245                 `.catch(() => {})`   stumm
+  //   /api/icmarkets/disconnect:8            `.catch(() => {})`   stumm
+  //   webhook executeFullShutdown (Stufe 4)  `catch { }`          stumm
+  //
+  // Die letzte ist die unangenehmste: `log.push("Broker-Status: DISCONNECTED")`
+  // steht INNERHALB des try, die Zeile fiel bei einem Fehler also einfach aus
+  // der Telegram-Antwort — ohne Hinweis, im Killswitch-Pfad.
+  //
+  // GEPRUEFT WIRD AUSGEFUEHRT, nicht am Wortlaut: `register()` selbst ist
+  // nicht ausfuehrbar (es startet alle Schleifen und meldet sich am echten
+  // Broker an), also wird der HANDLER ausgeschnitten, transpiliert und mit
+  // einem gezaehlten `console` aufgerufen. Damit greift auch der
+  // `void 0 &&`-Trick nicht, der am 28.10. vier Pruefungen besiegt hat.
+  {
+    const tsc = require(path.join(ROOT, "frontend", "node_modules", "typescript"));
+
+    // KOMMENTARBEREINIGT, und das ist ein eigener Fehler von mir: meine
+    // Begruendungen ZITIEREN `fetch(...).catch(() => {})` und den alten,
+    // falschen Satz — die rohen Suchen fanden genau das. "Ein Wort im
+    // Kommentar ist keine Verwendung", diesmal in meinen eigenen
+    // Zusicherungen, und zwar zweimal in einem Block.
+    const ohneKomm = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die Kommentar-Bereinigung arbeitet nicht richtig — dann "
+      + "beweisen alle Zaehlungen in diesem Block nichts",
+      !/catch/.test(ohneKomm("// .catch(() => {})"))
+      && /catch/.test(ohneKomm("x.catch(() => {});")),
+      "Selbstpruefung der Bereinigung");
+
+    // Den Rumpf von `.catch(...)` per KLAMMERZAEHLUNG ausschneiden. Ein
+    // Zeichen-Fenster bewiese nur Naehe, nicht Zugehoerigkeit (22.09.).
+    const handlerAus = (quelle, anker) => {
+      const i = quelle.indexOf(anker);
+      if (i < 0) return null;
+      const c = quelle.indexOf(".catch(", i);
+      if (c < 0) return null;
+      const start = quelle.indexOf("(", c);
+      let tiefe = 0;
+      for (let j = start; j < quelle.length; j++) {
+        if (quelle[j] === "(") tiefe++;
+        else if (quelle[j] === ")") { tiefe--; if (tiefe === 0) return quelle.slice(start + 1, j); }
+      }
+      return null;
+    };
+    // TypeScript muss weg (`(e: unknown)` ist kein JavaScript), also derselbe
+    // Weg wie in `ladeTsModul`: transpilieren, dann bauen.
+    const bauen = (text) => {
+      const js = tsc.transpileModule(`const __h = (${text});`, {
+        compilerOptions: { target: tsc.ScriptTarget.ES2020 },
+      }).outputText;
+      return new Function("console", `${js}; return __h;`);
+    };
+    const laufen = (text, wert) => {
+      const zeilen = [];
+      const spion = { error: (...a) => zeilen.push(a.map(String).join(" ")),
+        warn: () => {}, log: () => {} };
+      const h = bauen(text)(spion);
+      if (typeof h !== "function") return { zeilen: ["KEINE FUNKTION"], typ: typeof h };
+      h(wert);
+      return { zeilen, typ: "function" };
+    };
+
+    // ── A) instrumentation.ts ────────────────────────────────────────────
+    const insQ = read("frontend/instrumentation.ts");
+    const hA = handlerAus(insQ, 'brokerKey: "IC_MARKETS",');
+    torPruefung("der `.catch`-Handler in instrumentation.ts laesst sich nicht "
+      + "ausschneiden — jede Zusicherung darunter waere eine Null-Aussage",
+      hA !== null && hA.length > 20, `${hA === null ? "null" : hA.length} Zeichen`);
+    if (hA) {
+      let rA = { zeilen: ["WURF"] };
+      try { rA = laufen(hA, new Error("TESTGRUND-A")); } catch (e) { rA = { zeilen: [`WURF ${e.message}`] }; }
+      torPruefung("instrumentation.ts verschluckt den Fehler wieder — ein "
+        + "gescheiterter Schreibvorgang waere damit stumm",
+        rA.zeilen.length === 1, `${rA.zeilen.length} Konsolen-Ausgaben`);
+      torPruefung("der GRUND fehlt in der Meldung von instrumentation.ts",
+        (rA.zeilen[0] ?? "").includes("TESTGRUND-A"), (rA.zeilen[0] ?? "").slice(0, 110));
+      // Die FOLGE gehoert dazu: `set()` legt den Speicher erst nach
+      // `saveToDB` um, die Anzeige bleibt also auf "getrennt".
+      torPruefung("die FOLGE fehlt in der Meldung von instrumentation.ts — "
+        + "ohne sie sucht man beim falschen Broker",
+        /GETRENNT/.test(rA.zeilen[0] ?? ""), (rA.zeilen[0] ?? "").slice(0, 110));
+      // Ein geworfener Wert muss nicht `Error` sein.
+      let rA2 = { zeilen: [""] };
+      try { rA2 = laufen(hA, "ROHTEXT-A"); } catch { /* vom Befund oben erfasst */ }
+      torPruefung("ein geworfener Nicht-Error verliert seinen Text",
+        (rA2.zeilen[0] ?? "").includes("ROHTEXT-A"), (rA2.zeilen[0] ?? "").slice(0, 90));
+    }
+
+    // Die DREI Intervall-`catch` muessen BLEIBEN — namentlich, nicht gezaehlt
+    // (eine untere Schranke bemerkt keinen fehlenden Eintrag). Sie laufen
+    // wirklich alle 2-3 Minuten; dort waere eine Meldung ohne Drossel eine
+    // Logflut, und das ist eine eigene Runde.
+    for (const name of ["keepAliveCapital", "keepAliveICMarkets", "runClaudeWatchdog"]) {
+      torPruefung(`der Intervall-catch von ${name} ist verschwunden — dort `
+        + `gehoert er hin, bis eine Drossel gebaut ist`,
+        insQ.includes(`${name}().catch(() => {})`), name);
+    }
+    torPruefung("in instrumentation.ts stehen nicht mehr genau DREI stille "
+      + "`.catch(() => {})` — ein vierter waere ein neuer stummer Ausfall",
+      (ohneKomm(insQ).match(/\.catch\(\(\) => \{\}\)/g) || []).length === 3,
+      `${(ohneKomm(insQ).match(/\.catch\(\(\) => \{\}\)/g) || []).length} Vorkommen`);
+
+    // ── B) /api/icmarkets/disconnect ─────────────────────────────────────
+    const dcQ = read("frontend/app/api/icmarkets/disconnect/route.ts");
+    const hB = handlerAus(dcQ, "updateBrokerConnection(");
+    torPruefung("der `.catch`-Handler in /api/icmarkets/disconnect laesst "
+      + "sich nicht ausschneiden", hB !== null && hB.length > 20,
+      `${hB === null ? "null" : hB.length} Zeichen`);
+    if (hB) {
+      let rB = { zeilen: ["WURF"] };
+      try { rB = laufen(hB, new Error("TESTGRUND-B")); } catch (e) { rB = { zeilen: [`WURF ${e.message}`] }; }
+      torPruefung("/api/icmarkets/disconnect verschluckt den Fehler wieder",
+        rB.zeilen.length === 1 && (rB.zeilen[0] ?? "").includes("TESTGRUND-B"),
+        (rB.zeilen[0] ?? "").slice(0, 110));
+      torPruefung("die FOLGE fehlt in der Meldung von /api/icmarkets/disconnect",
+        /verbunden fuehren/.test(rB.zeilen[0] ?? ""), (rB.zeilen[0] ?? "").slice(0, 110));
+    }
+    torPruefung("in /api/icmarkets/disconnect steht wieder ein stiller "
+      + "`.catch(() => {})`",
+      !/\.catch\(\(\) => \{\}\)/.test(ohneKomm(dcQ)),
+      (ohneKomm(dcQ).match(/\.catch[^\n]*/g) || []).join(" | ").slice(0, 120));
+
+    // ── D) der Kommentar, der die Luecke gedeckt hat ─────────────────────
+    //
+    // Er behauptete, alle Aufrufer seien vom Nutzer ausgeloeste Routen —
+    // `instrumentation.ts:223` ist der SERVERSTART. Die Fehlerklasse "eine
+    // Anweisung, die etwas beschreibt, das es nicht mehr gibt" (15.09.).
+    const stQ2 = read("frontend/lib/settings/settings-store.ts");
+    // GEZAEHLT statt gefunden (25.10.) — und auch das ist ein eigener
+    // Fehler: die Richtigstellung ZITIERT den falschen Satz, eine Suche auf
+    // "ist nicht mehr da" kann hier also nie gruen werden. Kommentar-
+    // Bereinigung hilft nicht, denn die ganze Stelle IST ein Kommentar.
+    // Genau einmal heisst: nur das Zitat. Kehrt der Satz als Behauptung
+    // zurueck, sind es zwei.
+    const falscherSatz = (stQ2.match(/kein automatischer Wiederverbinder/g) || []).length;
+    torPruefung("der falsche Satz ueber die Aufrufer steht wieder als "
+      + "BEHAUPTUNG da — er hat die stille Stelle in instrumentation.ts "
+      + "gedeckt",
+      falscherSatz === 1, `${falscherSatz}x (genau 1 = nur das Zitat)`);
+    torPruefung("die Richtigstellung fehlt — dann liest der Naechste wieder, "
+      + "es gaebe keinen automatischen Aufrufer",
+      stQ2.includes("RICHTIGGESTELLT am 12.11.")
+      && stQ2.includes("instrumentation.ts:223"),
+      "settings-store.ts:292");
+  }
+
+  // ══ UND DER KILLSWITCH-PFAD END-TO-END (12.11.) ═════════════════════════
+  //
+  // `executeFullShutdown` ist NICHT exportiert (webhook/route.ts:149) — der
+  // einzige Weg hinein ist die echte `POST` im Passwort-Zweig (`:468`).
+  // Genau so wird hier geprueft: `/killswitch`, dann das Passwort.
+  //
+  // Der Unterschied zu A und B ist gemessen, nicht gefuehlt: `log` geht als
+  // Telegram-Nachricht raus, hat also einen echten Empfaenger. Deshalb
+  // gehoert der Grund DORTHIN und nicht ins Konsolen-Log — waehrend die
+  // Antwort von `/api/icmarkets/disconnect` nachweislich niemand liest.
+  {
+    const chatC = "987654321";
+    const pwC = "PruefstandAdminPasswort";
+    const altEnvC = {
+      TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+      TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+      KILLSWITCH_PASSWORD: process.env.KILLSWITCH_PASSWORD,
+    };
+    const altFetchC = global.fetch;
+    try {
+      process.env.TELEGRAM_CHAT_ID = chatC;
+      process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
+      process.env.KILLSWITCH_PASSWORD = pwC;
+
+      const shutdownLauf = async (speicherWirft) => {
+        const alarmeC = [];
+        const antwortenC = [];
+        global.fetch = async (_u, init) => {
+          antwortenC.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+          return { ok: true, status: 200,
+            text: async () => JSON.stringify({ ok: true, result: {} }),
+            json: async () => ({ ok: true }) };
+        };
+        const m = ladeTsModul("app/api/telegram/webhook/route.ts", {
+          "next/server": { NextResponse: { json: (x) => ({ __json: x }) } },
+          "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml,
+            sendTelegram: async (t) => { alarmeC.push(String(t)); return true; },
+            telegramZeit: () => "12.11.2026, 10:00:00 MEZ", telegramDatum: () => "12.11.2026" },
+          "lib/killswitch": {
+            getKillswitchReport: () => ({ triggered: false, armed: true, systemLocked: false, stages: [], summary: "ok" }),
+            triggerKillswitch: () => ({ triggered: true }), resetKillswitch: () => ({ triggered: false }),
+          },
+          // Beide Broker als GETRENNT: Stufe 1 und 2 sind dann uebersprungen
+          // und der Prüfstand misst genau Stufe 4.
+          "capital-com/capital-com-session": { isCapitalConnected: () => false,
+            getCapitalSession: () => null, disconnectCapital: async () => {} },
+          "capital-com/capital-com-client": { capitalGetPositions: async () => ({ ok: true, positions: [] }),
+            capitalClosePosition: async () => ({ ok: true }) },
+          "icmarkets/icmarkets-session": { isICMarketsConnected: () => false,
+            clearICMarketsSession: async () => {} },
+          "icmarkets/icmarkets-client": { icGetPositions: async () => ({ ok: true, positions: [] }),
+            icClosePosition: async () => ({ ok: true }) },
+          // DER PRUEFLING: wirft oder nicht.
+          "settings/settings-store": {
+            updateBrokerConnection: async () => {
+              if (speicherWirft) throw new Error("DBWEG-TESTGRUND");
+            },
+          },
+        });
+        if (m.fehler || typeof m.exports.POST !== "function") {
+          return { fehler: m.fehler ?? "POST fehlt", alarmeC, antwortenC };
+        }
+        const schicke = (text) => m.exports.POST({
+          json: async () => ({ message: { chat: { id: Number(chatC) }, from: { first_name: "Pruefstand" }, text } }),
+        });
+        await schicke("/killswitch");
+        await schicke(pwC);
+        return { fehler: null, alarmeC, antwortenC };
+      };
+
+      const rot = await shutdownLauf(true);
+      const gruen = await shutdownLauf(false);
+
+      // SELBSTPRUEFUNG: beide Laeufe muessen den Shutdown ueberhaupt
+      // erreichen. Sonst saehe "kein NICHT gespeichert" wie ein Erfolg aus.
+      const textVon = (r) => r.alarmeC.join("\n");
+      torPruefung("der Killswitch-Pfad wird im Prüfstand gar nicht erreicht "
+        + "— jede Zusicherung darunter waere eine Null-Aussage",
+        rot.fehler === null && gruen.fehler === null
+        && /VOLLSTÄNDIGER SHUTDOWN/.test(textVon(rot))
+        && /VOLLSTÄNDIGER SHUTDOWN/.test(textVon(gruen)),
+        `${rot.fehler ?? "ok"} / ${gruen.fehler ?? "ok"} · ${rot.alarmeC.length}+${gruen.alarmeC.length} Meldungen`);
+
+      torPruefung("ein gescheiterter Broker-Status-Schreibvorgang bleibt im "
+        + "Killswitch-Bericht STUMM — die Zeile fiele einfach aus der Antwort",
+        /NICHT gespeichert/.test(textVon(rot)),
+        (textVon(rot).match(/Broker-Status[^\n]*/) ?? ["(keine Broker-Status-Zeile)"])[0].slice(0, 110));
+      torPruefung("der GRUND fehlt im Killswitch-Bericht",
+        textVon(rot).includes("DBWEG-TESTGRUND"),
+        (textVon(rot).match(/Broker-Status[^\n]*/) ?? [""])[0].slice(0, 110));
+      torPruefung("der Bericht behauptet trotz Fehler DISCONNECTED",
+        !/Broker-Status: DISCONNECTED/.test(textVon(rot)),
+        (textVon(rot).match(/Broker-Status[^\n]*/) ?? [""])[0].slice(0, 110));
+
+      // GEGENPROBE: der gesunde Fall muss weiter die Erfolgszeile tragen und
+      // darf KEINEN Fehler melden — ein Riegel, der immer meldet, waere so
+      // falsch wie keiner (Lehre vom 15.09.).
+      torPruefung("der gesunde Killswitch-Bericht verliert seine "
+        + "Erfolgszeile `Broker-Status: DISCONNECTED`",
+        /Broker-Status: DISCONNECTED/.test(textVon(gruen)),
+        (textVon(gruen).match(/Broker-Status[^\n]*/) ?? ["(keine Zeile)"])[0].slice(0, 110));
+      torPruefung("der gesunde Killswitch-Bericht meldet einen Fehler, den es "
+        + "nicht gab", !/NICHT gespeichert/.test(textVon(gruen)),
+        (textVon(gruen).match(/Broker-Status[^\n]*/) ?? [""])[0].slice(0, 110));
+    } finally {
+      global.fetch = altFetchC;
+      for (const [k, v] of Object.entries(altEnvC)) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
     }
   }
 

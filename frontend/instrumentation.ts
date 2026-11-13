@@ -242,7 +242,25 @@ export async function register() {
             // faellt dann weg.
             lastConnectedAt: icSess?.connectedAt ?? null,
             error: null,
-          }).catch(() => {});
+            // Der `catch` BLEIBT (12.11.) — und das ist gemessen, nicht
+            // bequem: direkt danach laeuft der Capital-Reconnect (:248-260)
+            // und ab :264 werden die Keep-Alive-Intervalle registriert. Ohne
+            // den catch brach ein Datenbank-Fehler den RESTLICHEN Start ab.
+            //
+            // Stumm darf er trotzdem nicht sein. `set()` legt
+            // `global.__system_settings__` erst NACH `saveToDB` um — faellt
+            // das Schreiben aus, bleibt die Anzeige auf dem alten Wert und
+            // fuehrt IC als GETRENNT, obwohl die Sitzung aus Redis steht.
+            // Genau diese Folge nennt die Meldung, damit niemand beim
+            // falschen Broker sucht.
+            //
+            // KEINE Drossel, und das korrigiert meine eigene Notiz vom
+            // 09.11.: gemessen liegt dieser Aufruf in KEINEM `setInterval`,
+            // er laeuft genau EINMAL je Prozessstart.
+          }).catch((e: unknown) => console.error(
+            `[instrumentation] IC-Verbindungsstand NICHT gespeichert: `
+            + `${e instanceof Error ? e.message : String(e)} — die Sitzung steht, `
+            + `aber die Anzeige fuehrt IC weiter als GETRENNT.`));
         }
 
         const { autoReconnectCapital, isCapitalConnected } = await import("./lib/capital-com/capital-com-session");

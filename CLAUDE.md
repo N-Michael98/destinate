@@ -4104,7 +4104,7 @@ Kommentar über der Funktion, was sie wirklich tut.
 
 | Fund | Warum nicht jetzt |
 |---|---|
-| `instrumentation.ts:238` hängt `.catch(() => {})` an `updateBrokerConnection` — ein gescheiterter Schreibvorgang ist **stumm** | dieselbe Klasse wie der Journal-Sync (25.10.) und `reply()` (26.10.), aber eine Ebene harmloser: es geht um die **Anzeige** der Verbindung, nicht um Geld. Eine Meldung dort einzubauen heisst eine Drossel (sonst alle zwei Minuten eine Zeile) und damit einen echten Eingriff in die Datei mit allen Schleifen. Braucht Plan + Ja |
+| `instrumentation.ts:238` hängt `.catch(() => {})` an `updateBrokerConnection` — ein gescheiterter Schreibvorgang ist **stumm** | **ERLEDIGT am 12./13.11.** — siehe „Drei stille Schreibvorgänge am Verbindungsstand". Und meine Begründung hier war **falsch**: ich schrieb „braucht eine Drossel, sonst alle zwei Minuten eine Zeile". Gemessen liegt der Aufruf in **keinem** `setInterval`, er läuft genau **einmal** je Prozessstart. Es waren ausserdem **drei** Stellen, nicht eine |
 | die Erfolgsmeldung lautet `Connected ✓ — ${d.accountId}`; ohne Nummer liest sie **„Connected ✓ — null"** | bestand vorher und ist **keine Erfindung** — sie zeigt die Abwesenheit nur unschön. Eine Sache auf einmal |
 
 Gemessen, nicht erinnert: `/api/capital-com` antwortet mit
@@ -4189,6 +4189,151 @@ behauptet: die Gegenprobe macht die Zusicherung künstlich unerfüllbar
 (`=== 2` → `=== 3`) und verlangt, dass der Grund im Befund steht. Eine
 Diagnose, die man nie ausgelöst hat, ist unbewiesen — die Regel vom 15.09. in
 der Spielart „ein Prüfer, der nie grün wird".
+
+## Drei stille Schreibvorgänge am Verbindungsstand (12./13.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+
+Anlass war der benannte offene Punkt: `.catch(() => {})` an
+`updateBrokerConnection` in `instrumentation.ts`. **Beim Nachmessen wurden es
+drei Stellen** — und meine eigene Notiz vom 09.11. war an zwei Punkten falsch.
+
+### Dass es überhaupt etwas zu verschlucken gibt, ist gemessen
+
+`updateBrokerConnection` **wirft** bei einem Datenbank-Fehler. Nachgelesen,
+nicht vermutet: `saveToDB` fängt nichts, es lässt `$executeRawUnsafe` durch,
+und `set()` legt `global.__system_settings__` erst **nach** dem Schreiben um.
+Fällt das Schreiben aus, bleibt also auch die Anzeige auf dem alten Wert.
+
+Von **sechs** Aufrufstellen ausserhalb des Stores meldeten **drei** nichts:
+
+| Stelle | vorher | jetzt |
+|---|---|---|
+| `instrumentation.ts:245` (Serverstart) | `.catch(() => {})` | Grund **und Folge** ins Konsolen-Log |
+| `/api/icmarkets/disconnect:8` | `.catch(() => {})` | Grund ins Konsolen-Log |
+| `webhook` → `executeFullShutdown` Stufe 4 | `catch { /* non-fatal */ }` | Grund **in die Telegram-Antwort** |
+| `/api/settings:65` | Log + HTTP 503 | unverändert ✓ |
+| `webhook` → `executeFullRestart` | Grund in die Antwort | unverändert ✓ |
+
+**Die dritte war die unangenehmste:** `log.push("Broker-Status: DISCONNECTED")`
+steht **innerhalb** des `try`. Bei einem Fehler fiel die Zeile einfach aus dem
+Killswitch-Bericht — ohne Hinweis, im Notaus-Pfad.
+
+### Warum der `catch` BLEIBT — und warum das keine Bequemlichkeit ist
+
+Gemessen: direkt nach der Stelle in `instrumentation.ts` laufen der
+Capital-Reconnect (`:248–260`) und ab `:264` die Registrierung der
+Keep-Alive-Intervalle. **Ohne** den `catch` bräche ein Datenbank-Fehler den
+restlichen Start ab — das wäre schlimmer als der Fund. Geändert wurde also
+nicht der Kontrollfluss, sondern das Schweigen.
+
+### Zwei eigene Fehler in meiner Notiz vom 09.11.
+
+| Notiz | gemessen |
+|---|---|
+| „braucht eine Drossel, sonst alle zwei Minuten eine Zeile" | **falsch.** Der Aufruf liegt in **keinem** `setInterval` — er läuft genau **einmal** je Prozessstart. Die Drossel war der Grund, es nicht anzufassen; der Grund existierte nicht |
+| „eine Stelle" | **drei.** `/api/icmarkets/disconnect` und der Killswitch-Pfad standen nicht in der Notiz |
+
+### Und der Grund geht nicht überall an dieselbe Stelle
+
+Das ist **gemessen**, nicht Geschmack: `/api/icmarkets/disconnect` hat genau
+**einen** Aufrufer, `SettingsDashboard.tsx:448`, und der lautet
+`fetch(...).catch(() => {})` — er liest die Antwort **nie**. Ein Grund in
+`message` wäre ein **stummes Feld** (Klasse 28.10.), also geht er ins
+Konsolen-Log. Im Killswitch-Pfad ist es umgekehrt: `log` **ist** die
+Telegram-Nachricht, hat also einen echten Empfänger — dort gehört er hinein,
+genau wie `executeFullRestart` es schon macht.
+
+### Der Kommentar, der die Lücke gedeckt hat
+
+`settings-store.ts:292` behauptete:
+
+> „nachgeprüft, alle Aufrufer sind vom Nutzer ausgelöste Routen — kein
+> automatischer Wiederverbinder. Ein lautes Scheitern ist deshalb richtig und
+> bricht nichts, was von selbst läuft."
+
+**`instrumentation.ts:223` ist der Serverstart, also automatisch.** Der Satz
+war nicht nur falsch — er hat die stille Stelle begründet statt sie zu zeigen.
+Dieselbe Fehlerklasse wie „eine Anweisung, die etwas beschreibt, das es nicht
+mehr gibt" (15.09.), diesmal in einem Code-Kommentar an genau der Funktion,
+deren Aufrufer er falsch beschreibt.
+
+### Absicherung — ausgeführt, nicht am Wortlaut
+
+`register()` selbst ist **nicht** ausführbar (es startet alle Schleifen und
+meldet sich am echten Broker an). Deshalb wird der **Handler ausgeschnitten**
+(Klammerzählung), mit TypeScripts Transpiler gebaut und mit einem
+**gezählten** `console` sowie einem Testfehler aufgerufen. Verlangt wird genau
+**eine** Ausgabe, mit **Grund** und **Folge**, und ein geworfener Nicht-`Error`
+darf seinen Text nicht verlieren.
+
+Der Killswitch-Pfad läuft **end-to-end**: `executeFullShutdown` ist nicht
+exportiert, also geht es über die echte `POST` — `/killswitch`, dann das
+Passwort, mit einem `updateBrokerConnection`, das **wirft**. Dazu die
+Gegenprobe mit einem funktionierenden Store: dort muss
+`Broker-Status: DISCONNECTED` stehen und **kein** Fehler gemeldet werden.
+
+`safety-nets` 1278 → **1300**, **12 von 12 Sabotagen** plus Gegenprobe.
+
+**Die wichtigste ist A2:** `console.error` → `void 0 && console.error`. Der
+**Wortlaut bleibt vollständig stehen** — genau der Trick, der am 28.10. vier
+Prüfungen besiegt hat. Nur der ausgeführte Aufruf fängt ihn (0 statt 1
+Ausgabe). Und **A5** ist die Gegenprobe in die andere Richtung: die drei
+Intervall-`catch` (Keep-Alive ×2, Watchdog) müssen **bleiben** — sie laufen
+wirklich alle 2–3 Minuten, dort wäre eine Meldung ohne Drossel eine Logflut.
+Das ist eine eigene Runde.
+
+### Zwei meiner eigenen Prüfungen suchten im eigenen Kommentar
+
+Der erste Lauf war **rot mit zwei Befunden**, beide hausgemacht und beide
+dieselbe Fehlerklasse:
+
+| Prüfung | Fehler |
+|---|---|
+| „steht wieder ein stiller `.catch(() => {})`" | mein **eigener Kommentar** zitiert `fetch(...).catch(() => {})` — die rohe Suche fand genau das. Jetzt kommentarbereinigt, mit Selbstprüfung |
+| „der falsche Satz ist wieder da" | meine **Richtigstellung** zitiert den alten Satz. Eine Suche auf „nicht mehr vorhanden" kann dort **nie** grün werden, und Kommentar-Bereinigung hilft nicht, weil die ganze Stelle ein Kommentar ist. Jetzt **gezählt**: genau **einmal** heisst „nur das Zitat", zweimal heisst „als Behauptung zurück" |
+
+„Ein Wort im Kommentar ist keine Verwendung" — zum wiederholten Mal, und
+diesmal zweifach in **einem** Block.
+
+### Und das offene Rot vom 09.11. ist erklärt (13.11.)
+
+Hier stand: *„Die Ursache ist damit NICHT bestimmt."* Jetzt ist sie es — und
+zwar durch die Diagnose, die am 10.11. genau dafür eingebaut wurde.
+
+Ein Prüferlauf dauerte **über 600 Sekunden** (normal: ~10). In diesem Lauf
+wurde die Zusicherung rot, und die Logzeile nannte den Grund wörtlich:
+
+```
+⛔ Strategien-Backend nach 9ms: HTTP 502 … zweiter Versuch in 2000ms (57991ms Restbudget)
+⛔ Strategien-Backend auch beim zweiten Versuch: Zeitbudget erschoepft
+```
+
+**Der zweite Versuch wurde ausgelöst und fiel dann am Zeitbudget aus.**
+`versuch(2)` rechnet `restMs = BUDGET − (jetzt − begonnen)` und kehrt bei
+`<= 0` **ohne** `fetch` zurück. Wird der Prozess so lange ausgehungert, dass
+die 2-Sekunden-Pause über 58 Sekunden braucht, kommt **eine** Anfrage heraus —
+obwohl der Code vollkommen richtig ist.
+
+Das ist dieselbe Lehre wie am 27.10. bei `process.uptime()`: **eine Prüfung,
+die an der Wanduhr hängt statt am Verhalten.**
+
+**Die Ausnahme hängt an der gemessenen Wanduhrzeit des Prüfstands**, nicht am
+Log — eine Code-Sabotage kann keine 58 Sekunden erzeugen, also kann sie hier
+nicht durchrutschen. Und die Lage wird **nicht verschwiegen**: sie geht als
+Warnung ins Log, sonst wäre „grün" von „nicht gemessen" nicht zu
+unterscheiden.
+
+**Warum der eine Lauf so langsam war, ist weiterhin nicht bestimmt** — der
+unmittelbar folgende Lauf derselben Datei brauchte **9.5 s**. Das wird nicht
+erfunden; gemessen ist die *Wirkung*, und die ist jetzt abgefangen.
+
+### Was das NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife, kein Killswitch-Riegel. Der Kontrollfluss ist
+unverändert — alle drei `catch` **bleiben**, sie melden nur. **Snapshot 299
+Werte unverändert**, `tsc` 0 Fehler, Build *Compiled successfully*.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

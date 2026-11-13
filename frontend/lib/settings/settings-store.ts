@@ -289,9 +289,20 @@ export async function updateRiskSettings(patch: Partial<RiskSettings>): Promise<
 }
 
 export async function updateBrokerConnection(patch: Partial<BrokerConnection> & { brokerKey: BrokerConnection["brokerKey"] }): Promise<void> {
-  // Auch hier der Riegel (06.09.): nachgeprüft, alle Aufrufer sind vom Nutzer
-  // ausgelöste Routen — kein automatischer Wiederverbinder. Ein lautes
-  // Scheitern ist deshalb richtig und bricht nichts, was von selbst läuft.
+  // Der Riegel (06.09.): ein lautes Scheitern ist richtig — der Aufrufer
+  // muss erfahren, dass NICHTS gespeichert wurde.
+  //
+  // RICHTIGGESTELLT am 12.11. Hier stand: "alle Aufrufer sind vom Nutzer
+  // ausgeloeste Routen — kein automatischer Wiederverbinder". Das war
+  // falsch, und der Satz hat eine Luecke gedeckt statt sie zu zeigen:
+  // nachgezaehlt ruft `instrumentation.ts:223` diese Funktion beim
+  // SERVERSTART, also automatisch — und genau dort stand bis zum 12.11.
+  // ein stiller `.catch(() => {})`.
+  //
+  // Alle sechs Aufrufstellen melden den Fehler jetzt: `/api/settings`
+  // (Konsolen-Log + HTTP 503), `instrumentation.ts` und
+  // `/api/icmarkets/disconnect` (Konsolen-Log, weil ihre Antwort keinen
+  // Leser hat), und der Telegram-Webhook zweimal (Grund in die Antwort).
   const s = await basisFuerAenderung();
   await set({ ...s, connections: s.connections.map((c) => c.brokerKey === patch.brokerKey ? { ...c, ...patch } : c), updatedAt: new Date().toISOString() });
 }

@@ -207,7 +207,17 @@ async function executeFullShutdown(name: string): Promise<string[]> {
     await updateBrokerConnection({ brokerKey: "CAPITAL_COM", connected: false });
     await updateBrokerConnection({ brokerKey: "IC_MARKETS", connected: false });
     log.push("Broker-Status: DISCONNECTED");
-  } catch { /* non-fatal */ }
+  } catch (e) {
+    // Der Grund gehoert in die ANTWORT, nicht nur ins Log (12.11.): `log`
+    // geht als Telegram-Nachricht raus, hat also einen echten Empfaenger —
+    // genau so macht es `executeFullRestart` schon.
+    //
+    // Vorher stand hier `catch { /* non-fatal */ }`. Und weil
+    // `log.push("Broker-Status: …")` INNERHALB des try steht, fiel die
+    // Zeile bei einem Fehler einfach aus der Antwort — ohne jeden Hinweis,
+    // im Killswitch-Pfad.
+    log.push(`Broker-Status: NICHT gespeichert — ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   // Stage 5: Trigger system killswitch (locks execution)
   triggerKillswitch("MANUAL", `Telegram Admin: ${name}`);
