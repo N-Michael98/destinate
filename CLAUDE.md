@@ -4466,6 +4466,201 @@ der gemessene Hebel bleibt das R/R (27.10.: realisiert 0.43 gegen nötige 1.20,
 `WIN/ZIEL` 0 von 121). Das ist eine eigene Entscheidung an Schwellen, die Geld
 bewegen.
 
+## Entschärftes Markup stand als Text in der Antwort (13.11.)
+
+Gefunden in der **echten** `/hebel 60`-Antwort, nicht im Prüfer. Die Dimension
+„Richtung" zeigte wörtlich:
+
+```
+<i>LONG/SHORT werden auf BUY/SELL abgebildet … mit <code>?</code>, statt …</i>
+```
+
+Die Tags standen als **Text** da. Ursache ist eine Zeile in `hebel.ts`:
+
+```ts
+z.push(`<i>${htmlSicher(d.hinweis)}</i>`);
+```
+
+Der Hinweis wird **gewickelt und entschärft** — und genau dieser eine Hinweis
+brachte **eigenes** Markup mit. Aus `<i>` wurde `&lt;i&gt;`.
+
+**Das ist die Gegenrichtung der Fehlerklasse vom 02.11.** Dort fehlte das
+Entschärfen und Telegram lehnte die ganze Antwort ab; hier war es doppelt. Der
+bestehende Riegel kann es **nicht** sehen: `&lt;i&gt;` enthält kein rohes `<`.
+Ein Fix an einer Stelle beantwortet nicht, wo die Klasse sonst noch steckt
+(25.10.).
+
+**Gemessen, nicht geschätzt:** von **12** Texten in `hebel.ts` (5 Hinweise, 7
+Titel) trug **genau einer** eigenes Markup. Und programmweit gibt es **vier**
+Stellen, die einen entschärften Wert in ein Tag wickeln — drei lesen
+Laufzeitdaten (korrekt), eine war dieser Hinweis.
+
+**Der Hinweis war auch inhaltlich ungenau.** `richtungGruppe()` hängt das
+Fragezeichen an den **rohen** Wert an (`LONG?`), es ist nicht allein das
+Zeichen. An der Quelle nachgesehen, nicht erinnert.
+
+### Zwei Befunde, die KEINE sind — nachgemessen statt behauptet
+
+- **Die Breakeven-Aufschlüsselung fehlte in `/edge`** — zu Recht: sie hängt an
+  `BE_ANTEIL_WARNUNG = 20`, und 9 von 133 sind 6.8 %.
+- **Drei Trades mit geplantem R/R unter 1.5**, obwohl das Tor ≥ 1.5 verlangt:
+  der Tracker rechnet `|TP−entry| / |entry−SL|` am **echten Fill** nach
+  (`capital-trade-tracker.ts:199`). Ein schlechterer Fill drückt das Verhältnis
+  unter die Schwelle, die das Signal erfüllt hatte. `sync-journal` schreibt hart
+  `riskReward = 0` → eigene Gruppe „ohne Angabe", nicht „< 1.5".
+
+### Und eine Fehllesung von mir, die die Messung widerlegt hat
+
+Ich hielt die Kürzung auf **eine** Gruppe je Dimension für den schwereren
+Befund und wollte die Reihenfolge in `hebelText()` tauschen (erst Hinweise
+weglassen, dann Gruppen kürzen). **Beides war falsch:**
+
+1. Der Kommentar dort sagt „Ein Schnitt verliert ZAHLEN, diese Stufe nur
+   ERKLÄRUNG" — gemeint ist der **harte `slice`** gegen das Weglassen der
+   Hinweise, nicht das Gruppen-Kürzen. Ich hatte ihn als Widerspruch gelesen.
+2. **Das Urteil überlebt die Kürzung.** `befundVon()` rechnet über **alle**
+   Gruppen: in der Live-Antwort steht trotz einer gezeigten Gruppe
+   „beste ≥ 3.0 EW −1.21 (45) · schlechteste 2.0–2.99 EW −4.79 (30)".
+   Verloren gehen nur die Mittelgruppen.
+
+A/B gemessen (dasselbe Modul zweimal geladen, einmal mit getauschter
+Schleife, **beide** mit demselben Bericht, Gruppenzahlen 7/7 gleich der
+Live-Antwort): der Tausch brächte **+16 Gruppenzeilen** — und kostete **alle**
+Hinweise. Die aber verhindern genau die Fehllesungen, die hier schon passiert
+sind („Beste Eröffnungsstunde 00 UTC", 03.11.). **Also nicht getauscht.**
+
+Der Prüfstand hat dabei einen eigenen Mangel gemeldet: `Eröffnungsstunde` ergab
+**1 statt 22** Gruppen, weil `eroeffnungsStunde()` den Schreibweg
+`"auto-scan"` verlangt und meine Zeilen keinen trugen. Die Messung hätte die
+Live-Länge unterschätzt — ein Prüfstand, der die Lage nicht nachbildet, misst
+nichts.
+
+### Absicherung
+
+`safety-nets` 1312 → **1316**. Zwei Ebenen, weil eine nicht reicht:
+
+- **Laufzeit:** die echte Antwort darf kein `&lt;tag&gt;` enthalten — mit
+  Selbstprüfung der Erkennung an selbst gebauten Texten (`&lt;i&gt;` = 1,
+  `&lt; 1.5` = 0, `<i>echt</i>` = 0) und der **Gegenprobe**, dass unsere
+  eigenen `<b>`/`<i>` ankommen. Ein Riegel, der alles entschärft, wäre so
+  falsch wie keiner.
+- **Struktur an der Quelle:** kein `hinweis:`/`titel:` in `hebel.ts` trägt
+  eigenes Markup, kommentarbereinigt, mit synthetischer Selbstprüfung in beide
+  Richtungen.
+
+**5 von 5 Sabotagen** plus Gegenprobe (ein eingefügter Kommentar bleibt grün).
+Die erste stellt den Fund exakt wieder her.
+
+**Eine eigene Begründung war dabei zu viel behauptet:** ich schrieb, die
+Struktur-Prüfung fange eine Dimension, die der Prüfstand nicht füllt.
+Nachgemessen am Markt-Titel schlagen **beide** Riegel an — dort ist sie
+Gürtel-und-Hosenträger. Ihr **eigener** Fall ist die Kürzung: reisst die
+Antwort die Telegram-Grenze, lässt `hebelText` die Hinweise ganz weg, und dann
+erreicht kein Hinweis die Antwort. Der Kommentar sagt das jetzt so.
+
+### Was das NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife. Der Diff an `hebel.ts` ist **ein Hinweistext**
+plus Kommentar. **Snapshot 299 Werte unverändert**, Karte **899 Kanten
+unverändert**, `tsc` 0 Fehler, Build *Compiled successfully* ohne Warnung.
+### Welche Schraube hebt das R/R? Gemessen (13.11.)
+
+Auf zwei Wegen beantwortet — Code und Live-Daten.
+
+**Der Mechanismus ist `exitThresholdsRelativeToStop`** (`settings-store.ts:51`,
+steht auf `false`, im Snapshot bestätigt). Gerechnet mit der **echten**
+`wirksameSchwellen()`, DAYTRADING:
+
+| Markt | Stop % | **heute** BE / Teil / Trail | **mit AN** |
+|---|---|---|---|
+| UKOIL | 8.47 % | **0.06R / 0.12R / 0.18R** | 1.00 / 1.50 / 1.00 |
+| BTCUSD | 3.21 % | 0.16R / 0.31R / 0.47R | 1.00 / 1.50 / 1.00 |
+| EURGBP | 0.48 % | **1.04R / 2.08R / 3.13R** | 1.00 / 1.50 / 1.00 |
+
+Heute entscheidet **der Markt**, nicht die Einstellung — Faktor 17.6. Mit dem
+Schalter greift jede Stufe genau bei ihrem R-Wert, marktunabhängig. Der
+Trailing-**Abstand** (`atrFactor`) bleibt unberührt.
+
+**Keine willkürliche Toleranz im Nachweis:** die dokumentierten Stop-Anteile
+haben zwei Dezimalstellen, der dokumentierte R-Wert ebenfalls — die Spanne wird
+**ausgerechnet**, und eine erfundene Zahl (0.60 statt 0.06) fällt durch sie
+hindurch. Ohne diese Gegenprobe wäre die Spanne nur bequem.
+
+**Zu bedenken, bevor jemand den Schalter umlegt:** der Einstieg verlangt
+R/R ≥ 1.5 und `partialAtR` ist 1.5 — der Teilgewinn fiele also praktisch **ans
+Ziel**. Abschalten lässt er sich gar nicht (keine Einstellung), und Positionen
+unter 2 Einheiten bekommen ohnehin keinen (`rawSize >= 2 ? … : 0`).
+
+**Die Live-Daten** (`/edge 60`, `/hebel 60`), 13 Zahlen gegengerechnet:
+
+| | |
+|---|---|
+| gewertet | 133 (57 W / 67 L / 9 BE) |
+| Trefferquote (entschieden) | **46.0 %** |
+| R/R | **0.45** · nötig **1.17** (Faktor 2.6) |
+| `WIN/ZIEL` | **0 von 124** — unverändert seit 27.10. |
+
+Ein Gewinner bringt 3.05, ein voller Stop kostet 8.16 — **0.37 R**, in Geld
+gerechnet, ohne Geometrie-Annahme. **Die schärfste Zahl steht bei der
+Richtung:** BUY hat **54 % Trefferquote** und verliert trotzdem 1.40 je Trade,
+weil das R/R 0.42 statt nötiger 0.85 ist. **Die Trefferquote ist nicht das
+Problem.**
+
+**Die Messlücke:** `ausstiegsgrund()` kennt nur `ZIEL`/`STOP`/`DAZWISCHEN`,
+abgeleitet **allein aus dem Schlusskurs**. Kein Feld hält fest, welche
+**Mechanik** geschlossen hat. Der RiskAgent kennt sie und schreibt sie ins
+Konsolen-Log (`:569` mit `profit=X% (Y.YYR)`, `:707`, `:745`, `:815`, `:667`) —
+aber nicht in die Trade-Zeile. Die RISK-Bus-Ereignisse **haben** einen
+Empfänger (`diagnostics-agent.ts:433`); nachgezählt, „Sender ohne Empfänger"
+wäre falsch gewesen.
+
+### `WIN/STOP` mit negativem Weg — die Ursache (13.11.)
+
+`/edge 60` zeigte `WIN/STOP: 13 · Ø 2.31 · Weg −4.1 %`. Ein Gewinner, der
+**jenseits** des Stops schliesst, ist arithmetisch widersprüchlich. Sechs
+Code-Fakten, alle nachgelesen:
+
+1. Es gibt **kein** `UPDATE "Trade" SET "stopLoss"` — ein gespeicherter Stop
+   wird nie nachkorrigiert.
+2. Beide `ausstiegsgrund()`-Aufrufstellen nehmen `trade.stopLoss` aus der Zeile.
+3. `result_str` entsteht **allein aus dem Vorzeichen** von `profitLoss`
+   (±0.01), unabhängig vom Kurs (`:1287`).
+4. Der **Rekonstruktionspfad** speichert `stopLoss: Number(p.stopLevel ?? 0)` —
+   den **laufenden** Stop der Broker-Position (`:940`).
+5. `/edge` meldet **31 von 133** Zeilen als rekonstruiert.
+6. `ausstiegsgrund()` dreht sich für SELL korrekt mit (negative Spanne).
+
+**Die einzige in sich stimmige Lesart** — als Lesart, nicht als Beweis: wurde
+eine Zeile rekonstruiert, **nachdem** der Stop ins Plus nachgezogen war, steht
+der **nachgezogene** Stop als „0 % = am Stop" in der Zeile. Ein Ausstieg dort
+ist rechnerisch `STOP`, bringt aber Gewinn, und Schlupf macht den Weg leicht
+negativ. Das erklärt **Ø +2.31 bei Weg −4.1 %** exakt. **Zum Beweis fehlen die
+`notes` dieser 13 Zeilen** — die Produktionsdatenbank ist von hier nicht
+befragbar, und das wird nicht erfunden.
+
+Das Etikett ist ohnehin **Altbestand**: es endet am **2026-09-28**, der neueste
+Trade mit Ergebnis ist der **2026-11-11**.
+
+#### Dabei gefunden, NICHT behoben: der P&L-Abgleich führt nicht zusammen
+
+`pnlByEpicOpen.set(…)` und `closeByEpicOpen.set(…)` **überschreiben statt zu
+summieren** (`:1210`), gefiltert wird nur auf `type === "POSITION"` — **ohne**
+Unterscheidung zwischen Teil- und Vollschliessung. Hat ein Trade mehr als eine
+Schliess-Aktivität unter demselben `epic|openPrice` — und genau das erzeugt ein
+Teilgewinn —, landet **eine beliebige** davon als „der" P&L in der Geldtabelle.
+Welche, entscheidet die Reihenfolge der Broker-Antwort, die unser Code
+**nirgends** festlegt.
+
+Dazu, nachgezählt: `partialDone` verlässt `risk-agent.ts` **nie** — der
+Abgleich weiss nicht einmal, dass ein Teilgewinn stattfand. `erwartungswert.ts`
+und `hebel.ts` lesen es ebenfalls nicht, und **kein Prüfer** fasst
+`pnlByEpicOpen`/`pnlByDealId` an.
+
+Betroffen sind damit genau die Zahlen, auf die man handeln würde: `/edge`,
+`/hebel` und der Lernzyklus. **Nicht in dieser Runde angefasst** — es verändert
+aufgezeichnetes Geld und braucht Plan und ausdrückliche Zustimmung.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben

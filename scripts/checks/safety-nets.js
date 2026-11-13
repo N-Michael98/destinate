@@ -3030,6 +3030,94 @@ module.exports = async function pruefe() {
             torPruefung("das Band \"< 1.5\" fehlt in den Testdaten — dann beweist die Escaping-Pruefung nichts",
               /&lt; 1\.5/.test(aH),
               aH.includes("1.5") ? "1.5 kommt vor, aber nicht entschaerft" : "kein 1.5-Band");
+            // ── GEGENRICHTUNG: UNSER EIGENES MARKUP DARF NICHT
+            //    ENTSCHAERFT WERDEN (13.11.) ─────────────────────────
+            //
+            // DER FUND, live gesehen: der Richtungs-Hinweis trug SELBST
+            // `<i>` und `<code>?</code>`. Die Ausgabe wickelt jeden
+            // Hinweis in `<i>` UND schickt ihn durch htmlSicher — aus
+            // den eigenen Tags wurde `&lt;i&gt;`, und sie standen als
+            // TEXT in der Telegram-Antwort.
+            //
+            // DIE PRUEFUNG OBEN KANN DAS NICHT SEHEN: `&lt;i&gt;`
+            // enthaelt kein rohes `<`. Es ist die Gegenrichtung
+            // derselben Fehlerklasse und braucht eine eigene
+            // Zusicherung — ein Fix an einer Stelle beantwortet nicht,
+            // wo die Klasse sonst noch steckt (25.10.).
+            const escapteTags = (t) =>
+              (t.match(/&lt;\/?(b|i|u|s|code|pre|a)&gt;/g) || []).length;
+            // SELBSTPRUEFUNG an selbst gebauten Texten, nicht am Inhalt:
+            // am Inhalt haengt sie an einer Formulierung und wird nach
+            // dem Fix wertlos.
+            if (escapteTags("x &lt;i&gt; y") !== 1
+              || escapteTags("R/R &lt; 1.5") !== 0
+              || escapteTags("<i>echt</i>") !== 0) {
+              torPruefung("die Erkennung entschaerfter Tags ist kaputt", false,
+                `${escapteTags("x &lt;i&gt; y")} / ${escapteTags("R/R &lt; 1.5")}`
+                + ` / ${escapteTags("<i>echt</i>")} (erwartet 1/0/0)`);
+            }
+            const eStelle = aH.search(/&lt;\/?(b|i|u|s|code|pre|a)&gt;/);
+            torPruefung("/hebel zeigt ENTSCHAERFTE Tags als TEXT — ein Hinweis "
+              + "oder Name traegt eigenes Markup, das htmlSicher unlesbar macht",
+              escapteTags(aH) === 0,
+              `${escapteTags(aH)} entschaerfte Tags, z.B. ...`
+              + (eStelle < 0 ? "" : aH.slice(Math.max(0, eStelle - 40), eStelle + 50)
+                .replace(/\n/g, " | ")));
+            // GEGENPROBE: unsere eigenen Tags MUESSEN ankommen. Ein
+            // Riegel, der alles entschaerft, waere so falsch wie keiner.
+            torPruefung("/hebel sendet gar kein eigenes Markup mehr — dann "
+              + "prueft die Zeile darueber an Daten, die nichts ausdruecken",
+              /<b>/.test(aH) && /<i>/.test(aH),
+              `<b> ${/<b>/.test(aH)} · <i> ${/<i>/.test(aH)}`);
+
+            // ── UND STRUKTURELL AN DER QUELLE, GEZAEHLT ──────────────
+            //
+            // GEMESSEN, NICHT BEHAUPTET (13.11.): fuer eine GEFUELLTE
+            // Dimension schlagen BEIDE Riegel an — nachgerechnet am
+            // Markt-Titel, beide Befunde standen da. Dort ist dieser hier
+            // Guertel-und-Hosentraeger, nicht das einzige Netz. Hier stand
+            // vorher, eine neue Dimension bliebe unsichtbar, solange ihre
+            // Gruppen leer sind — das war zu viel behauptet.
+            //
+            // SEIN EIGENER FALL ist die KUERZUNG: reisst die Antwort die
+            // Telegram-Grenze, laesst hebelText die Hinweise ganz weg
+            // (mitHinweisen=false, gemessen). Dann erreicht KEIN Hinweis
+            // die Antwort, und die Laufzeit-Pruefung sieht nichts mehr.
+            {
+              const ohneK = (s) => s.replace(/\/\*[\s\S]*?\*\//g, " ")
+                .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+              const texteMit = (quelle, feld) => {
+                const re = new RegExp(feld + ':\\s*((?:"(?:[^"\\\\]|\\\\.)*"\\s*\\+?\\s*)+)', "g");
+                const raus = [];
+                let m;
+                while ((m = re.exec(quelle))) {
+                  raus.push((m[1].match(/"(?:[^"\\]|\\.)*"/g) || [])
+                    .map((s) => JSON.parse(s)).join(""));
+                }
+                return raus;
+              };
+              // SELBSTPRUEFUNG: synthetisch, in BEIDE Richtungen.
+              const pQ = 'const a = { hinweis: "<i>x</i>" };\nconst b = { hinweis: "rein" };';
+              const p = texteMit(pQ, "hinweis");
+              if (p.length !== 2 || !/<[^>]+>/.test(p[0] ?? "") || /<[^>]+>/.test(p[1] ?? "")) {
+                torPruefung("die Text-Erkennung fuer hinweis/titel ist kaputt", false,
+                  `${p.length} Texte gefunden (erwartet 2): ${JSON.stringify(p).slice(0, 120)}`);
+              }
+              const hQ = ohneK(read("frontend/lib/hebel/hebel.ts"));
+              const hinweise = texteMit(hQ, "hinweis");
+              const titelT = texteMit(hQ, "titel");
+              // Ohne Fund beweist die Zeile darunter nichts — eine untere
+              // Schranke, die bei 0 gruen waere, ist kein Riegel (31.10.).
+              torPruefung("die Text-Erkennung findet in hebel.ts keine Hinweise "
+                + "oder Titel mehr — dann prueft der Riegel darunter ins Leere",
+                hinweise.length >= 5 && titelT.length >= 7,
+                `${hinweise.length} Hinweise / ${titelT.length} Titel (erwartet >=5 / >=7)`);
+              const mitMarkup = [...hinweise, ...titelT].filter((t) => /<[^>]+>/.test(t));
+              torPruefung("ein Hinweis oder Titel in hebel.ts traegt EIGENES Markup "
+                + "— htmlSicher macht daraus sichtbaren Text in der Antwort",
+                mitMarkup.length === 0,
+                mitMarkup.map((t) => t.slice(0, 70)).join(" | "));
+            }
             // AN DIE ZAHLEN GEBUNDEN, nicht an den Namen: 40 Gewinner zu
             // je 12 ergeben EW 12.00, 40 Verlierer zu je -8 ergeben -8.00.
             // Ein blosses /EURUSD/ koennte auch aus einer anderen

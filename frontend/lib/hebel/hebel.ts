@@ -366,10 +366,20 @@ export function hebelBericht(
   // Fehler, der am 03.11. behoben wurde, eine Datei weiter.
   dims.push({
     titel: "Richtung",
-    hinweis: "<i>LONG/SHORT werden auf BUY/SELL abgebildet — dieselbe Lesart "
+    // KEIN MARKUP IM HINWEIS (13.11.). Hier stand <i>…<code>?</code>…</i>.
+    // Die Ausgabe wickelt den Hinweis selbst in <i> und entschaerft ihn mit
+    // htmlSicher — die eigenen Tags wurden damit zu &lt;i&gt; und standen als
+    // TEXT in der Telegram-Antwort. Gegenrichtung der Fehlerklasse vom
+    // 02.11.: dort fehlte das Entschaerfen, hier war es doppelt. Gemessen:
+    // 1 von 12 Texten in dieser Datei trug eigenes Markup, dieser.
+    //
+    // Und der Gruppenname ist AN DER QUELLE nachgesehen: richtungGruppe()
+    // haengt das Fragezeichen an den ROHEN Wert an (`LONG?`), es ist nicht
+    // allein das Zeichen. Der alte Text behauptete mehr, als der Code tut.
+    hinweis: "LONG/SHORT werden auf BUY/SELL abgebildet — dieselbe Lesart "
       + "wie im Journal und im Lernzyklus. Ein unlesbarer Wert bekommt eine "
-      + "eigene Gruppe mit <code>?</code>, statt still auf eine Seite zu "
-      + "zählen.</i>",
+      + "eigene Gruppe mit angehängtem Fragezeichen, statt still auf eine "
+      + "Seite zu zählen.",
     gruppen: gruppiere(zeilen, (z) => richtungGruppe(z.direction), fenster),
     befund: "",
   });
