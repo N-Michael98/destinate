@@ -1,4 +1,5 @@
 import { htmlSicher } from "../html-sicher/html-sicher";
+import { lageMelden } from "../redis-lage/redis-lage";
 import Anthropic from "@anthropic-ai/sdk";
 import { leseSicherheitsereignisse, entferneAnalysierte } from "./security-event-logger";
 import { blockIP } from "./ip-blocklist";
@@ -125,6 +126,13 @@ async function koordiniertVergessen(): Promise<void> {
   await cacheDel(KOORDINIERT_SCHLUESSEL).catch(() => {});
 }
 
+/**
+ * Name der Stelle fuer die Drossel — EINMAL geschrieben, von beiden
+ * Aufrufen benutzt. Zwei Schreibweisen waeren zwei Zustaende, und dann
+ * verdeckte die eine die andere.
+ */
+const WD_STELLE = "Sicherheits-Watchdog";
+
 export async function runClaudeWatchdog(): Promise<WatchdogLauf> {
   const jetzt = Date.now();
   const darf = watchdogDarfStarten(global.__watchdog_laeuft_seit__, jetzt);
@@ -139,7 +147,49 @@ export async function runClaudeWatchdog(): Promise<WatchdogLauf> {
   const kennung = jetzt;
   global.__watchdog_laeuft_seit__ = kennung;
   try {
-    return await watchdogZyklus();
+    const ergebnis = await watchdogZyklus();
+    // Die RUECKKEHR gehoert gemeldet (Regel vom 01.11.), sonst bliebe
+    // offen, ob der Ausfall vorbei ist. `lageMelden` gibt nur bei einem
+    // WECHSEL true zurueck — ein gesunder Dauerzustand schweigt, und ein
+    // gesunder Start ist keine Nachricht (ausgerechnet: der erste Blick
+    // auf eine Stelle meldet nur, wenn sie `aus` ist).
+    //
+    // Und dieser Aufruf ist NICHT nur Kosmetik: ohne ihn bliebe der
+    // Zustand auf `aus`, und ein ZWEITER Ausfall innerhalb von 30 Minuten
+    // waere gedrosselt — also stumm.
+    if (lageMelden(WD_STELLE, "ok")) {
+      console.log("[watchdog] \u2705 Lauf wieder erfolgreich — die "
+        + "Sicherheitsereignisse werden wieder geprueft.");
+    }
+    return ergebnis;
+  } catch (e) {
+    // ── HIER GAB ES KEINEN CATCH (13.11.) ───────────────────────────────
+    //
+    // `try { … } finally { … }` ohne `catch`: jeder Wurf aus
+    // `watchdogZyklus()` propagierte nach aussen, und dort stand
+    // `instrumentation.ts:885` mit `.catch(() => {})`. Der
+    // Sicherheits-Watchdog konnte also alle 3 Minuten scheitern, ohne eine
+    // einzige Zeile zu hinterlassen.
+    //
+    // Und der Wurf ist erreichbar, nicht theoretisch: `watchdogZyklus`
+    // beginnt mit `await leseSicherheitsereignisse()` AUSSERHALB jedes
+    // try — ein Redis-Aussetzer genuegt.
+    //
+    // Gedrosselt, weil der Lauf alle 3 Minuten feuert: ein Dauerausfall
+    // waeren sonst 480 Zeilen am Tag. Die Drossel ist die BESTEHENDE
+    // (`lageMelden`), keine zweite Fassung — und sie liegt auf `global`,
+    // also teilen Schleife und Route denselben Zustand (Regel 28.07.).
+    const grund = e instanceof Error ? e.message : String(e);
+    if (lageMelden(WD_STELLE, "aus")) {
+      console.error(`[watchdog] \u26d4 Lauf ABGEBROCHEN: ${grund} — solange das `
+        + `so ist, prueft NIEMAND die Sicherheitsereignisse: kein `
+        + `ATTACK-Alarm, keine IP-Sperre, kein Killswitch aus dieser Quelle.`);
+    }
+    // `uebersprungen` ist die BESTEHENDE Form fuer "hat nicht gelaufen"
+    // (`WatchdogLauf` kennt sie), der Rueckgabetyp aendert sich also nicht.
+    // Ein Wurf nach aussen waere die Alternative — dann waere der Fehler
+    // wieder nur so sichtbar, wie der Aufrufer ihn behandelt.
+    return { uebersprungen: true, grund: `Fehler: ${grund}` };
   } finally {
     if (global.__watchdog_laeuft_seit__ === kennung) global.__watchdog_laeuft_seit__ = null;
   }

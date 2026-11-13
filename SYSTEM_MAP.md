@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 360 · Kanten: 897
+Dateien mit internen Abhängigkeiten: 360 · Kanten: 899
 
 
 ## analysis-engine/api
@@ -761,6 +761,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 897
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/killswitch/killswitch-engine.ts`
   - → `frontend/lib/paper-trading/paper-singleton.ts`
+  - → `frontend/lib/redis-lage/redis-lage.ts`
 - `frontend/lib/capital-com/capital-trade-tracker.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/risk-agent.ts`
@@ -1155,6 +1156,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 897
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/html-sicher/html-sicher.ts`
   - → `frontend/lib/killswitch/index.ts`
+  - → `frontend/lib/redis-lage/redis-lage.ts`
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/security-watchdog/security-event-logger.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`

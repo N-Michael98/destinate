@@ -2,6 +2,7 @@
 import crypto from "crypto";
 import { paperManagerCapital } from "../paper-trading/paper-singleton";
 import { isKillswitchActive } from "../killswitch/killswitch-engine";
+import { lageMelden } from "../redis-lage/redis-lage";
 import {
   capitalCreateSession,
   capitalGetAccounts,
@@ -489,6 +490,9 @@ export function reconnectMelden(
     + "Ohne Sitzung werden keine Journal-Zeilen abgeglichen und nicht gehandelt.";
 }
 
+/** Name der Stelle fuer die Drossel — einmal geschrieben, zweimal benutzt. */
+const KA_STELLE = "Capital keep-alive";
+
 export async function keepAliveCapital(): Promise<void> {
   if (isKillswitchActive()) return; // Killswitch aktiv — keine Verbindung halten/aufbauen
   const session = global.__capital_session__;
@@ -536,10 +540,30 @@ export async function keepAliveCapital(): Promise<void> {
       }
       console.log(`[capital-com] keep-alive ✅ balance=${result.accounts?.[0]?.balance}`);
     }
-  } catch {
-    // Network error — clear session so reconnect happens next time
+    // Der Erfolgsfall setzt die Lage zurueck (13.11.). Ohne das bliebe sie
+    // nach einem Ausfall auf `aus`, und ein ZWEITER Ausfall innerhalb von
+    // 30 Minuten waere gedrosselt — also stumm.
+    if (lageMelden(KA_STELLE, "ok")) {
+      console.log("[capital-com] keep-alive wieder erfolgreich.");
+    }
+  } catch (e) {
+    // ── DER GRUND WURDE VERWORFEN (13.11.) ──────────────────────────────
+    //
+    // Hier stand `} catch {` — ohne Parameter, ohne Zeile. Ein Netzfehler
+    // LOESCHTE die Sitzung und verschwand dabei vollstaendig. Der naechste
+    // Zyklus meldet ueber `reconnectMelden` nur, DASS ein Reconnect lief —
+    // nicht, warum die Sitzung weg war.
+    //
+    // Gedrosselt, weil der Keep-Alive alle 2 Minuten feuert (sonst 720
+    // Zeilen am Tag), und mit der BESTEHENDEN Drossel statt einer zweiten
+    // Fassung.
     global.__capital_session__ = null;
     global.__capital_last_attempt__ = 0;
+    const grund = e instanceof Error ? e.message : String(e);
+    if (lageMelden(KA_STELLE, "aus")) {
+      console.warn(`[capital-com] keep-alive ABGEBROCHEN: ${grund} — die `
+        + `Sitzung wurde geleert, der naechste Zyklus verbindet neu.`);
+    }
   }
 }
 

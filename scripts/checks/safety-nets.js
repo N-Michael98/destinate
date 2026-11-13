@@ -11945,6 +11945,193 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DER SICHERHEITS-WATCHDOG KONNTE STUMM STERBEN (13.11.) ══════════════
+  //
+  // `runClaudeWatchdog` hatte `try { return await watchdogZyklus(); } finally
+  // { … }` — OHNE `catch`. Jeder Wurf propagierte nach aussen, und dort stand
+  // `instrumentation.ts:885` mit `.catch(() => {})`. Der Watchdog konnte also
+  // alle 3 Minuten scheitern, ohne eine einzige Zeile zu hinterlassen — und
+  // er ist das Modul, das den ATTACK-Alarm, die IP-Sperre und den Killswitch
+  // aus dieser Quelle auslöst.
+  //
+  // Der Wurf ist ERREICHBAR, nicht theoretisch: `watchdogZyklus` beginnt mit
+  // `await leseSicherheitsereignisse()` ausserhalb jedes try.
+  //
+  // GEPRUEFT WIRD AUSGEFUEHRT: `leseSicherheitsereignisse` ist ein Import,
+  // also ersetzbar — der Prüfstand laesst ihn werfen und fährt die ECHTE
+  // `runClaudeWatchdog` mit der ECHTEN Drossel.
+  {
+    const wdErsatz = (leseFn) => ({
+      "security-event-logger": {
+        leseSicherheitsereignisse: leseFn,
+        entferneAnalysierte: async () => {},
+      },
+      // Die Drossel ist der Prüfling, nicht die Aussenwelt — sie kommt ECHT.
+      "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+      "html-sicher/html-sicher": htmlSicherEcht,
+      "cache/redis-cache": { cacheGet: async () => null, cacheSet: async () => true,
+        cacheDel: async () => true },
+      "telegram-notifications/telegram-sender": { sendTelegram: async () => true,
+        telegramZeit: () => "13.11.2026, 10:00:00 MEZ" },
+      "lib/killswitch": { triggerKillswitch: () => ({ triggered: true }) },
+      "ip-blocklist": { blockIP: async () => true },
+      "ai-gate/ai-gate-alert": { meldeAIGateAusfall: async () => {} },
+    });
+
+    const wdLauf = async (leseFn) => {
+      const m = ladeTsModul("lib/security-watchdog/claude-watchdog.ts", wdErsatz(leseFn));
+      if (m.fehler || typeof m.exports.runClaudeWatchdog !== "function") {
+        return { fehler: m.fehler ?? "runClaudeWatchdog fehlt" };
+      }
+      return { fehler: null, fn: m.exports.runClaudeWatchdog };
+    };
+
+    const wirft = async () => { throw new Error("REDIS-WEG-TESTGRUND"); };
+    const leer = async () => ({ ereignisse: [], roh: [] });
+
+    // Zustaende SAUBER setzen: sowohl die Anmeldesperre als auch die Drossel
+    // liegen auf `global`. Ohne das Zuruecksetzen truege ein Fall das
+    // Ergebnis des vorigen — und meine Zusicherungen wuerden luegen.
+    const vorWd = global.__watchdog_laeuft_seit__;
+    const vorLage = global.__redis_lage__;
+    const fangen = async (fn) => {
+      const zeilen = [];
+      const [l, w, f] = [console.log, console.warn, console.error];
+      console.log = console.warn = console.error = (...a) => zeilen.push(a.map(String).join(" "));
+      let erg;
+      try { erg = await fn(); } catch (e) { zeilen.push(`WURF ${e && e.message}`); } finally {
+        console.log = l; console.warn = w; console.error = f;
+      }
+      return { erg, zeilen };
+    };
+
+    try {
+      // ── 1) Ein Wurf: Rueckgabe, EINE Meldung, Sperre frei ──────────────
+      global.__watchdog_laeuft_seit__ = null;
+      global.__redis_lage__ = new Map();
+      const a = await wdLauf(wirft);
+      if (a.fehler) {
+        funde.push(`claude-watchdog nicht ausfuehrbar: ${a.fehler}`);
+        zusatz++;
+      } else {
+        const r1 = await fangen(() => a.fn());
+        torPruefung("der Watchdog wirft weiter nach aussen statt ehrlich "
+          + "zurueckzukehren — dort verschluckt `.catch(() => {})` alles",
+          r1.erg != null && r1.erg.uebersprungen === true
+          && String(r1.erg.grund ?? "").includes("REDIS-WEG-TESTGRUND"),
+          // JSON.stringify(undefined) ergibt UNDEFINED, keinen String — ein
+          // .slice darauf stuerzt den Prüfer ab. Genau das ist im
+          // Sabotage-Lauf passiert (W1: der Fehler propagiert wieder nach
+          // aussen, also ist das Ergebnis undefined), und ein ABSTURZ ist
+          // KEINE gefangene Sabotage: W1 als "rot" zu zaehlen waere ein
+          // Messfehler gewesen, wie das NaN am 31.10. Erst die Gegenprobe
+          // hat es gezeigt — sie verlangt den GRUND, nicht nur Exit 1.
+          String(JSON.stringify(r1.erg ?? null)).slice(0, 120));
+        const fehlerZeilen = r1.zeilen.filter((z) => /ABGEBROCHEN/.test(z));
+        torPruefung("der Abbruch des Watchdogs bleibt stumm oder meldet "
+          + "mehrfach", fehlerZeilen.length === 1,
+          `${fehlerZeilen.length} Meldungen, ${r1.zeilen.length} Zeilen gesamt`);
+        torPruefung("der GRUND fehlt in der Watchdog-Meldung",
+          (fehlerZeilen[0] ?? "").includes("REDIS-WEG-TESTGRUND"),
+          (fehlerZeilen[0] ?? "").slice(0, 120));
+        torPruefung("die FOLGE fehlt in der Watchdog-Meldung — ohne sie "
+          + "liest niemand, dass der Sicherheitsalarm ausfaellt",
+          /prueft NIEMAND die Sicherheitsereignisse/.test(fehlerZeilen[0] ?? ""),
+          (fehlerZeilen[0] ?? "").slice(0, 120));
+        // Das `finally` MUSS weiter greifen: bleibt die Sperre gesetzt, ist
+        // der Watchdog ab dem ersten Fehler fuer immer blockiert.
+        torPruefung("die Anmeldesperre bleibt nach einem Fehler gesetzt — der "
+          + "Watchdog waere ab dem ersten Abbruch fuer immer blockiert",
+          global.__watchdog_laeuft_seit__ === null,
+          String(global.__watchdog_laeuft_seit__));
+
+        // ── 2) Die DROSSEL: ein zweiter Abbruch sofort danach schweigt ──
+        global.__watchdog_laeuft_seit__ = null;
+        const r2 = await fangen(() => a.fn());
+        torPruefung("ein Dauerausfall meldet bei JEDEM Lauf — alle 3 Minuten "
+          + "eine Zeile waeren 480 am Tag",
+          r2.zeilen.filter((z) => /ABGEBROCHEN/.test(z)).length === 0,
+          `${r2.zeilen.filter((z) => /ABGEBROCHEN/.test(z)).length} Meldungen`);
+
+        // ── 3) Die RUECKKEHR wird gemeldet ─────────────────────────────
+        global.__watchdog_laeuft_seit__ = null;
+        const b = await wdLauf(leer);
+        const r3 = b.fehler ? { zeilen: [`FEHLER ${b.fehler}`], erg: null }
+          : await fangen(() => b.fn());
+        torPruefung("die Rueckkehr des Watchdogs wird nicht gemeldet — dann "
+          + "bleibt offen, ob der Ausfall vorbei ist",
+          r3.zeilen.some((z) => /wieder erfolgreich/.test(z)),
+          r3.zeilen.join(" | ").slice(0, 140));
+
+        // ── 4) GEGENPROBE: ein gesunder START schweigt ──────────────────
+        global.__watchdog_laeuft_seit__ = null;
+        global.__redis_lage__ = new Map();
+        const c = await wdLauf(leer);
+        const r4 = c.fehler ? { zeilen: [`FEHLER ${c.fehler}`] } : await fangen(() => c.fn());
+        torPruefung("ein gesunder START meldet etwas — ein Riegel, der immer "
+          + "redet, ist so falsch wie keiner",
+          !r4.zeilen.some((z) => /wieder erfolgreich|ABGEBROCHEN/.test(z)),
+          r4.zeilen.join(" | ").slice(0, 140));
+      }
+    } finally {
+      global.__watchdog_laeuft_seit__ = vorWd;
+      global.__redis_lage__ = vorLage;
+    }
+
+    // ── UND DER INNERE CATCH DES CAPITAL-KEEP-ALIVE (13.11.) ─────────────
+    //
+    // Dort stand `} catch {` — ohne Parameter, ohne Zeile. Ein Netzfehler
+    // LOESCHTE die Sitzung und verschwand vollstaendig; der naechste Zyklus
+    // meldete nur, DASS ein Reconnect lief, nicht warum die Sitzung weg war.
+    {
+      const kaErsatz = (accFn) => ({
+        "killswitch/killswitch-engine": { isKillswitchActive: () => false },
+        "capital-com-client": { capitalGetAccounts: accFn },
+        "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+        "cache/redis-cache": { cacheGet: async () => null, cacheSet: async () => true,
+          cacheDel: async () => true },
+        "paper-trading/paper-singleton": { paperManagerCapital: {} },
+      });
+      const vorSess = global.__capital_session__;
+      const vorLage2 = global.__redis_lage__;
+      try {
+        global.__redis_lage__ = new Map();
+        const sitzung = () => { global.__capital_session__ = { apiKey: "k", cst: "c", securityToken: "s", balance: 1 }; };
+        const m = ladeTsModul("lib/capital-com/capital-com-session.ts",
+          kaErsatz(async () => { throw new Error("NETZ-WEG-TESTGRUND"); }));
+        if (m.fehler || typeof m.exports.keepAliveCapital !== "function") {
+          funde.push(`capital-com-session nicht ausfuehrbar: ${m.fehler ?? "keepAliveCapital fehlt"}`);
+          zusatz++;
+        } else {
+          sitzung();
+          const k1 = await fangen(() => m.exports.keepAliveCapital());
+          const abg = k1.zeilen.filter((z) => /keep-alive ABGEBROCHEN/.test(z));
+          torPruefung("der Netzfehler im Capital-Keep-Alive wird wieder "
+            + "verworfen — die Sitzung verschwindet dann ohne Grund",
+            abg.length === 1 && abg[0].includes("NETZ-WEG-TESTGRUND"),
+            `${abg.length} Meldungen: ${(abg[0] ?? "").slice(0, 100)}`);
+          torPruefung("die FOLGE fehlt — ohne sie ist nicht klar, dass die "
+            + "Sitzung geleert wurde",
+            /Sitzung wurde geleert/.test(abg[0] ?? ""), (abg[0] ?? "").slice(0, 120));
+          torPruefung("die Sitzung wird nicht mehr geleert — der Reconnect "
+            + "des naechsten Zyklus bliebe aus",
+            global.__capital_session__ === null,
+            JSON.stringify(global.__capital_session__));
+          // Drossel: zweiter Fehlschlag sofort danach schweigt.
+          sitzung();
+          const k2 = await fangen(() => m.exports.keepAliveCapital());
+          torPruefung("ein Dauerausfall des Keep-Alive meldet bei JEDEM Lauf "
+            + "— alle 2 Minuten waeren 720 Zeilen am Tag",
+            k2.zeilen.filter((z) => /keep-alive ABGEBROCHEN/.test(z)).length === 0,
+            `${k2.zeilen.filter((z) => /keep-alive ABGEBROCHEN/.test(z)).length} Meldungen`);
+        }
+      } finally {
+        global.__capital_session__ = vorSess;
+        global.__redis_lage__ = vorLage2;
+      }
+    }
+  }
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

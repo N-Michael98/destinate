@@ -4281,7 +4281,7 @@ Prüfungen besiegt hat. Nur der ausgeführte Aufruf fängt ihn (0 statt 1
 Ausgabe). Und **A5** ist die Gegenprobe in die andere Richtung: die drei
 Intervall-`catch` (Keep-Alive ×2, Watchdog) müssen **bleiben** — sie laufen
 wirklich alle 2–3 Minuten, dort wäre eine Meldung ohne Drossel eine Logflut.
-Das ist eine eigene Runde.
+**ERLEDIGT am 13.11.** — siehe „Der Sicherheits-Watchdog konnte stumm sterben“. Und die Formulierung hier war zu breit: von den drei ist nur **einer** erreichbar, die zwei Keep-Alive-`catch` sind nachweislich unerreichbar und bleiben stehen.
 
 ### Zwei meiner eigenen Prüfungen suchten im eigenen Kommentar
 
@@ -4334,6 +4334,137 @@ Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
 Filterkette, keine Schleife, kein Killswitch-Riegel. Der Kontrollfluss ist
 unverändert — alle drei `catch` **bleiben**, sie melden nur. **Snapshot 299
 Werte unverändert**, `tsc` 0 Fehler, Build *Compiled successfully*.
+
+## Der Sicherheits-Watchdog konnte stumm sterben (13.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+
+Anlass war mein eigener offener Punkt „die drei Intervall-`catch` in
+`instrumentation.ts`". **Die Messung hat ihn widerlegt:** von den drei ist
+genau **einer** erreichbar — und der Fix gehört in eine **andere** Datei.
+
+### Was gemessen ist — und warum zwei der drei NICHT angefasst wurden
+
+| Funktion | kann sie werfen? | Beleg |
+|---|---|---|
+| `keepAliveICMarkets` | **nein** (praktisch) | nach `isKillswitchActive()` liegt der **ganze** Rumpf in `try { … } catch (e) { console.warn(…) }` — der innere Fang **meldet** schon (Fix vom 25.10.) |
+| `keepAliveCapital` | **nein** (praktisch) | ebenso; `autoReconnectCapital()` hat einen eigenen `.catch`, `reconnectMelden()` meldet |
+| `runClaudeWatchdog` | **JA** | `try { return await watchdogZyklus(); } finally { … }` — **kein `catch`** |
+
+`isKillswitchActive()` ist `getState().triggered === true` — kein
+realistischer Wurf. Die zwei Keep-Alive-`catch` sind damit **nachweislich
+unerreichbar**; dort etwas zu bauen wäre Arbeit auf Verdacht (Regel vom
+26.10.), und eine Meldung alle zwei Minuten wäre eine Logflut.
+
+**`instrumentation.ts` wurde deshalb GAR NICHT angefasst** — die Datei mit
+allen Schleifen, dem Killswitch und dem Python-Lifecycle bleibt Zeichen für
+Zeichen unverändert. Der dortige `.catch(() => {})` wird zum echten
+Gürtel-und-Hosenträger.
+
+### Der Fund: `try/finally` ohne `catch`
+
+```ts
+  try {
+    return await watchdogZyklus();
+  } finally {
+    if (global.__watchdog_laeuft_seit__ === kennung) global.__watchdog_laeuft_seit__ = null;
+  }
+```
+
+Jeder Wurf aus `watchdogZyklus()` propagierte nach aussen — und dort stand
+`instrumentation.ts:885` mit `.catch(() => {})`. **Der Sicherheits-Watchdog
+konnte also alle 3 Minuten scheitern, ohne eine einzige Zeile zu
+hinterlassen.** Er ist das Modul, das den ATTACK-Alarm, die IP-Sperre und den
+Killswitch aus dieser Quelle auslöst.
+
+**Und der Wurf ist erreichbar, nicht theoretisch:** `watchdogZyklus` beginnt
+mit `await leseSicherheitsereignisse()` **ausserhalb** jedes `try` — ein
+Redis-Aussetzer genügt. (Die Funktion hat zwar `try`/`catch` weiter unten,
+aber nicht um ihre ersten Anweisungen.)
+
+Jetzt: ein `catch`, der den Grund **und die Folge** nennt und ehrlich
+zurückkehrt — `{ uebersprungen: true, grund: "Fehler: …" }` ist die
+**bestehende** Form für „hat nicht gelaufen" (`WatchdogLauf` kennt sie), der
+Rückgabetyp ändert sich also nicht.
+
+### Ein zweiter Fund, den mein offener Punkt nicht kannte
+
+Der **innere** Fang des Capital-Keep-Alive:
+
+```ts
+  } catch {                       // kein Parameter, keine Zeile
+    global.__capital_session__ = null;
+    global.__capital_last_attempt__ = 0;
+  }
+```
+
+Ein Netzfehler **löschte die Sitzung** und verschwand dabei vollständig. Der
+nächste Zyklus meldet über `reconnectMelden` nur, **dass** ein Reconnect
+lief — nicht, **warum** die Sitzung weg war. Jetzt `catch (e)` mit Grund und
+Folge.
+
+### Gedrosselt mit der BESTEHENDEN Drossel
+
+Beide Stellen feuern aus einer Schleife (3 bzw. 2 Minuten) — ein Dauerausfall
+wären 480 bzw. 720 Zeilen am Tag. Also `lageMelden` aus
+`lib/redis-lage/redis-lage.ts`: **eine Umsetzung, nicht zwei**, auf `global`
+(Regel vom 28.07.), je Stelle ein eigener Zustand.
+
+**Gemessen, nicht angenommen** — `lageMelden` meldet:
+- jeden **Wechsel**, auch die Rückkehr zu `ok`;
+- einen **Dauerausfall** alle 30 Minuten erneut;
+- beim **ersten** Blick auf eine Stelle nur, wenn sie `aus` ist → **ein
+  gesunder Start schweigt**.
+
+**Und der `"ok"`-Aufruf auf dem Erfolgspfad ist nicht Kosmetik:** ohne ihn
+bliebe der Zustand auf `aus`, und ein **zweiter** Ausfall innerhalb von 30
+Minuten wäre gedrosselt — also stumm. Der Name der Stelle steht **einmal** als
+Konstante; zwei Schreibweisen wären zwei Zustände, und dann verdeckte der eine
+den anderen.
+
+### Absicherung — ausgeführt
+
+`leseSicherheitsereignisse` ist ein **Import**, also ersetzbar: der Prüfstand
+lässt ihn **werfen** und fährt die **echte** `runClaudeWatchdog` mit der
+**echten** Drossel. Geprüft wird die Rückgabe, **genau eine** Meldung mit
+Grund und Folge, die **freigegebene Anmeldesperre** (das `finally` muss weiter
+greifen — sonst wäre der Watchdog ab dem ersten Fehler für immer blockiert),
+die **Drossel** (zweiter Abbruch schweigt), die **Rückkehr** (wird gemeldet)
+und die Gegenprobe, dass ein **gesunder Start** schweigt.
+
+Dasselbe für den Keep-Alive: `capitalGetAccounts` wirft, dann genau eine
+gedrosselte Zeile mit Grund, und die Sitzung **ist** geleert.
+
+`safety-nets` 1300 → **1312**, Karte 897 → **899** Kanten (zwei neue
+`lageMelden`-Importe, bewusst mitgezogen). **14 von 14 Sabotagen** plus
+Gegenprobe.
+
+### Drei eigene Fehler auf dem Weg — alle benannt
+
+| Fehler | Diagnose |
+|---|---|
+| zwei Ersatz-Schlüssel **geraten** statt gemessen | die Importe heissen `./security-event-logger` und `./capital-com-client` — meine Schlüssel `"security-watchdog/…"` und `"capital-com/…"` trafen **nicht**. Fünf Zusicherungen rot mit *„keine Aussenwelt im Prüfstand"*, obwohl der Code stimmte. **Wörtlich der Fehler vom 10.11.**, den ich dort gemessen und hier geraten habe |
+| ein Anker aus dem Gedächtnis | `capital-com-session.ts` importiert `isKillswitchActive` aus `"../killswitch/killswitch-engine"`, nicht `"@/lib/killswitch"`. Das Patch-Skript hätte abgebrochen — gemessen, bevor es lief |
+| **W1 war kein gefangener Fall, sondern ein Absturz** | `JSON.stringify(undefined)` ergibt `undefined`, kein String — ein `.slice` darauf wirft. Der Prüfer meldete *„PRÜFER ABGESTÜRZT"*, Exit 1. Als „rot" zu zählen wäre ein **Messfehler** gewesen, wie das `NaN` am 31.10. Erst die Gegenprobe, die den **Grund** verlangt und nicht nur Exit 1, hat es gezeigt |
+
+Dazu zum wiederholten Mal die Backtick-Falle: ein `python -c` mit Backticks im
+Kommentar, und die Shell führte sie als Befehl aus — zwei Kommentar-Fragmente
+kamen verstümmelt an, der Code blieb heil. Repariert mit dem Write-Werkzeug,
+ohne Shell.
+
+### Was das NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife. Der Kontrollfluss des Watchdogs ändert sich nur
+darin, dass ein Fehler **nicht mehr nach aussen geworfen** wird — die
+Anmeldesperre wird weiter im `finally` freigegeben, und `uebersprungen` ist
+die bestehende Rückgabeform. **`instrumentation.ts` unverändert. Snapshot 299
+Werte unverändert**, `tsc` 0 Fehler, Build *Compiled successfully*.
+
+**Und es ist Diagnose, keine Rendite.** Am Erwartungswert ändert das nichts;
+der gemessene Hebel bleibt das R/R (27.10.: realisiert 0.43 gegen nötige 1.20,
+`WIN/ZIEL` 0 von 121). Das ist eine eigene Entscheidung an Schwellen, die Geld
+bewegen.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
