@@ -30,6 +30,18 @@
 const fs = require("fs");
 const path = require("path");
 const { ROOT, ladeTsModul, read } = require("./_lib");
+// DER TRACKER IMPORTIERT SEIT DEM 13.11. ZWEI REINE MODULE.
+// Ohne Ersatz ist jeder Import ein Stellvertreter, der beim AUFRUF wirft —
+// und `ergaenzeFehlendeJournalZeilen` faellt dann in sein catch und gibt
+// eine LEERE Bilanz zurueck. Genau so sind 10 Zusicherungen rot geworden,
+// obwohl der Code stimmte. Die Lehre steht seit dem 01.11. im Projekt:
+// ein neuer Aufruf braucht seinen Ersatz UEBERALL, nicht nur dort, wo es
+// gerade auffaellt. Beide Module sind rein, also wird das ECHTE geladen —
+// ein Stummel koennte sich anders verhalten als der Betrieb.
+const TRACKER_ERSATZ = {
+  "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+  "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+};
 
 function ladeRiskAgent(funde) {
   const tsPfad = path.join(ROOT, "frontend", "node_modules", "typescript");
@@ -872,7 +884,7 @@ module.exports = async function pruefe() {
   // RECHNEND: eine Drossel ist mit einem Regex nicht ehrlich prueffbar — sie
   // haengt an Zustand und Zeit, nicht am Wortlaut.
   {
-    const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+    const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
     const f = tr.exports?.syncAussetzerMelden;
     const ABSTAND = tr.exports?.SYNC_MELDE_ABSTAND_MS;
     if (tr.fehler || typeof f !== "function") {
@@ -1000,7 +1012,7 @@ module.exports = async function pruefe() {
 
         // BEIDE DROSSELN MUESSEN GETRENNT ZAEHLEN: sonst verdeckt die eine
         // Lage die andere, und genau das waere wieder ein stummer Ausfall.
-        const tr2 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+        const tr2 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
         const sync = tr2.exports?.syncAussetzerMelden;
         if (typeof sync === "function") {
           const altSync = global.__journal_sync_lage__;
@@ -1077,7 +1089,7 @@ module.exports = async function pruefe() {
   // greifen ineinander; ein umgedrehter Vergleich bliebe strukturell
   // voellig unauffaellig.
   {
-    const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+    const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
     const f = tr.exports?.zeileBrauchtZuordnung;
     if (tr.fehler || typeof f !== "function") {
       pruefe1("zeileBrauchtZuordnung ist nicht ausfuehrbar",
@@ -1258,7 +1270,7 @@ module.exports = async function pruefe() {
   // ist blind und Python kann nicht nachregistrieren. Bis zum 20.08. stand
   // dort nur ein console.error: ein Aussetzer von Sekunden kostete die Zeile
   // DAUERHAFT.
-  const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+  const tr = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
   if (tr.fehler) {
     funde.push(tr.fehler);
   } else {
@@ -1309,7 +1321,7 @@ module.exports = async function pruefe() {
       // ALLE Prüfungen oben laufen in EINER Instanz und blieben grün. Deshalb
       // hier: Modul ZWEIMAL laden, über die eine schreiben, über die andere
       // lesen. Eine Struktur-Prüfung sieht diesen Fehler nicht.
-      const tr2 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+      const tr2 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
       pruefe1("zweite Modul-Instanz lässt sich nicht laden", !tr2.fehler, tr2.fehler);
       if (!tr2.fehler && typeof tr2.exports.ausstehendeAnzahl === "function") {
         merkeAusstehendeZeile({ symbol: "XAUUSD", direction: "BUY", dealReference: "o_1" });
@@ -1419,7 +1431,7 @@ module.exports = async function pruefe() {
       const geschrieben = [];
       return {
         geschrieben,
-        modul: ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+        modul: ladeTsModul("lib/capital-com/capital-trade-tracker.ts", { ...TRACKER_ERSATZ,
           prisma: {
             getPrisma: () => ({
               $queryRawUnsafe: async (q, ...a) => {
@@ -1611,7 +1623,7 @@ module.exports = async function pruefe() {
             dealId: "POSITION-NEU", symbol: "XRPUSD", epic: "XRPUSD",
             direction: "BUY", openLevel: 0.5,
           }];
-          const tr3 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+          const tr3 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", { ...TRACKER_ERSATZ,
             prisma: {
               getPrisma: () => ({
                 $queryRawUnsafe: async (q) => (/FROM "Trade"/.test(q) ? ZEILEN : []),
@@ -1647,7 +1659,7 @@ module.exports = async function pruefe() {
             // passieren — sonst wuerde eine ALTE Zeile einer NEUEN Position
             // zugeschlagen und truege deren Stil.
             const geschrieben2 = [];
-            const tr4 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+            const tr4 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", { ...TRACKER_ERSATZ,
               prisma: {
                 getPrisma: () => ({
                   $queryRawUnsafe: async (q) => (/FROM "Trade"/.test(q) ? ZEILEN : []),
@@ -1688,7 +1700,7 @@ module.exports = async function pruefe() {
                 dealIdVersuche: 5, ohnePositionZyklen: 2,
               }),
             }];
-            const tr5 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", {
+            const tr5 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", { ...TRACKER_ERSATZ,
               prisma: {
                 getPrisma: () => ({
                   $queryRawUnsafe: async (q) => (/FROM "Trade"/.test(q) ? ZEILEN3 : []),

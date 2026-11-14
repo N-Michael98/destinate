@@ -10,6 +10,18 @@
 const fs = require("fs");
 const path = require("path");
 const { read, ladeTsModul, objectBlock, ROOT, sourceFiles } = require("./_lib");
+// DER TRACKER IMPORTIERT SEIT DEM 13.11. ZWEI REINE MODULE.
+// Ohne Ersatz ist jeder Import ein Stellvertreter, der beim AUFRUF wirft —
+// und `ergaenzeFehlendeJournalZeilen` faellt dann in sein catch und gibt
+// eine LEERE Bilanz zurueck. Genau so sind 10 Zusicherungen rot geworden,
+// obwohl der Code stimmte. Die Lehre steht seit dem 01.11. im Projekt:
+// ein neuer Aufruf braucht seinen Ersatz UEBERALL, nicht nur dort, wo es
+// gerade auffaellt. Beide Module sind rein, also wird das ECHTE geladen —
+// ein Stummel koennte sich anders verhalten als der Betrieb.
+const TRACKER_ERSATZ = {
+  "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+  "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+};
 
 // Seit dem 02.11. faellt `reply()` bei kaputtem HTML auf reinen Text
 // zurueck und braucht dafuer `htmlAbgelehnt`. JEDER Webhook-Pruefstand
@@ -2183,7 +2195,7 @@ module.exports = async function pruefe() {
             antw.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
             return { ok: true, status: 200, text: async () => '{"ok":true}' };
           };
-          const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+          const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
           const ewE = trE.fehler ? trE : ladeTsModul("lib/expectancy/erwartungswert.ts",
             { "capital-trade-tracker": trE.exports });
           const lzE = ladeTsModul("lib/laufzeit/laufzeit-stand.ts");
@@ -3753,7 +3765,7 @@ module.exports = async function pruefe() {
         // WIRFT — der Pruefer lief nur gruen, weil seine Testdaten den
         // Ausschlusspfad nie betraten. Die Zusicherung "dieselbe Zahl
         // wie /edge" war damit OHNE Ausschluesse geprueft.
-        const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+        const trE = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
         const ewMod = ladeTsModul("lib/expectancy/erwartungswert.ts",
           { "capital-trade-tracker": trE.exports });
         const hb = ladeTsModul("lib/hebel/hebel.ts", { "html-sicher/html-sicher": htmlSicherEcht,
@@ -7918,7 +7930,7 @@ module.exports = async function pruefe() {
           // Die ECHTE Etiketten-Liste durchreichen, keine Kopie: sonst
           // pruefte der Test gegen seine eigene Annahme, und eine Aenderung
           // an `ETIKETTEN_OHNE_ERGEBNIS` bliebe hier gruen.
-          const trEtik = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+          const trEtik = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
           const ew = trEtik.fehler ? trEtik : ladeTsModul("lib/expectancy/erwartungswert.ts", {
             "capital-trade-tracker": trEtik.exports,
           });
@@ -12217,6 +12229,195 @@ module.exports = async function pruefe() {
         global.__capital_session__ = vorSess;
         global.__redis_lage__ = vorLage2;
       }
+    }
+  }
+
+  // ══ STUFE 1: MEHRFACHER SCHLUSS UND GEGENPOSITION (13.11.) ════════════
+  //
+  // Beide Funktionen sind REIN und exportiert — als Ausdruck in der Schleife
+  // waeren sie nur strukturell pruefbar, und "ein Regex prueft den Wortlaut,
+  // nicht das Verhalten" (30.09.). Hier werden sie AUSGEFUEHRT.
+  {
+    const trS1 = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
+    const mehrfachBeine = trS1.exports?.mehrfachBeine;
+    const gegenPositionen = trS1.exports?.gegenPositionen;
+    if (trS1.fehler || typeof mehrfachBeine !== "function"
+      || typeof gegenPositionen !== "function") {
+      torPruefung("mehrfachBeine/gegenPositionen sind nicht ausfuehrbar", false,
+        trS1.fehler ?? "nicht exportiert");
+    } else {
+      // ── mehrfachBeine: GEGENPROBE ZUERST ────────────────────────────
+      // Ein gesunder Fall muss SCHWEIGEN. Ein Riegel, der immer meldet,
+      // waere so wertlos wie keiner (Lehre 15.09.).
+      torPruefung("mehrfachBeine meldet bei leerer Eingabe etwas",
+        Array.isArray(mehrfachBeine([])) && mehrfachBeine([]).length === 0,
+        JSON.stringify(mehrfachBeine([])));
+      torPruefung("mehrfachBeine wirft bei undefined statt leer zu liefern",
+        (() => { try { return mehrfachBeine(undefined).length === 0; } catch { return false; } })(),
+        "undefined");
+      const einzeln = mehrfachBeine([
+        { schluessel: "A|1.00000", pnl: 5, closeLevel: 10 },
+        { schluessel: "B|2.00000", pnl: -3, closeLevel: 20 },
+      ]);
+      torPruefung("ein EINZELNES Bein je Schluessel wird faelschlich gemeldet "
+        + "— dann meldete der Riegel bei jedem gesunden Zyklus",
+        einzeln.length === 0, JSON.stringify(einzeln));
+
+      // ── der eigentliche Fall ────────────────────────────────────────
+      const zwei = mehrfachBeine([
+        { schluessel: "A|1.00000", pnl: 4.5, closeLevel: 10 },
+        { schluessel: "B|2.00000", pnl: -3, closeLevel: 20 },
+        { schluessel: "A|1.00000", pnl: -1.25, closeLevel: 11 },
+      ]);
+      torPruefung("zwei Beine auf demselben Schluessel werden nicht erkannt "
+        + "— genau der Fall, fuer den Stufe 1 gebaut ist",
+        zwei.length === 1 && zwei[0].schluessel === "A|1.00000" && zwei[0].anzahl === 2,
+        JSON.stringify(zwei));
+      torPruefung("die Summe der Beine stimmt nicht — sie ist die Zahl, die "
+        + "in der Geldtabelle FEHLT",
+        zwei.length === 1 && zwei[0].summe === 3.25,
+        zwei.length === 1 ? String(zwei[0].summe) : "kein Befund");
+      torPruefung("die einzelnen P&L-Werte fehlen im Befund — ohne sie ist "
+        + "spaeter nicht bestimmbar, WELCHES Bein in der Tabelle steht",
+        zwei.length === 1 && JSON.stringify(zwei[0].pnls) === JSON.stringify([4.5, -1.25]),
+        zwei.length === 1 ? JSON.stringify(zwei[0].pnls) : "kein Befund");
+      torPruefung("die Schlusskurse fehlen im Befund",
+        zwei.length === 1 && JSON.stringify(zwei[0].closeLevels) === JSON.stringify([10, 11]),
+        zwei.length === 1 ? JSON.stringify(zwei[0].closeLevels) : "kein Befund");
+
+      // ── unlesbare Zahlen: aus "unbekannt" darf keine Messung werden ──
+      const unlesbar = mehrfachBeine([
+        { schluessel: "A|1.00000", pnl: 4.5, closeLevel: 10 },
+        { schluessel: "A|1.00000", pnl: Number.NaN, closeLevel: 11 },
+      ]);
+      torPruefung("ein unlesbarer P&L ergibt trotzdem eine Summe — aus "
+        + "\"unbekannt\" wuerde damit eine Messung (Regel 22.09.)",
+        unlesbar.length === 1 && unlesbar[0].summe === null,
+        unlesbar.length === 1 ? String(unlesbar[0].summe) : "kein Befund");
+      // `Number(null)` ist 0 UND endlich — ein fehlender Schlusskurs wuerde
+      // ohne eigenen Riegel zu "am Kurs 0 geschlossen".
+      const ohneKurs = mehrfachBeine([
+        { schluessel: "A|1.00000", pnl: 1, closeLevel: null },
+        { schluessel: "A|1.00000", pnl: 2, closeLevel: 12 },
+      ]);
+      torPruefung("ein FEHLENDER Schlusskurs wird zu 0 statt zu null — "
+        + "Number(null) ist 0 und endlich, die Falle vom 24.08.",
+        ohneKurs.length === 1
+        && JSON.stringify(ohneKurs[0].closeLevels) === JSON.stringify([null, 12]),
+        ohneKurs.length === 1 ? JSON.stringify(ohneKurs[0].closeLevels) : "kein Befund");
+
+      // ── Sortierung: der teuerste Fall zuerst ────────────────────────
+      const sortiert = mehrfachBeine([
+        { schluessel: "KLEIN", pnl: 1, closeLevel: 1 },
+        { schluessel: "KLEIN", pnl: 1, closeLevel: 1 },
+        { schluessel: "GROSS", pnl: -60, closeLevel: 1 },
+        { schluessel: "GROSS", pnl: -40, closeLevel: 1 },
+      ]);
+      torPruefung("die Befunde sind nicht nach Hoehe sortiert — dann faellt "
+        + "der teuerste Fall hinter die Anzeigegrenze",
+        sortiert.length === 2 && sortiert[0].schluessel === "GROSS",
+        JSON.stringify(sortiert.map((x) => x.schluessel)));
+      // Ein leerer Schluessel ist kein Schluessel.
+      torPruefung("ein LEERER Schluessel wird mitgezaehlt",
+        mehrfachBeine([
+          { schluessel: "", pnl: 1, closeLevel: 1 },
+          { schluessel: "", pnl: 2, closeLevel: 2 },
+        ]).length === 0, "leerer Schluessel");
+
+      // ── gegenPositionen ─────────────────────────────────────────────
+      torPruefung("gegenPositionen meldet ohne Gegenrichtung etwas",
+        gegenPositionen([
+          { symbol: "EURUSD", direction: "BUY" },
+          { symbol: "EURUSD", direction: "BUY" },
+          { symbol: "GOLD", direction: "SELL" },
+        ]).length === 0, "nur gleiche Richtungen");
+      const hedge = gegenPositionen([
+        { symbol: "EURUSD", direction: "BUY" },
+        { symbol: "EURUSD", direction: "SELL" },
+        { symbol: "GOLD", direction: "BUY" },
+      ]);
+      torPruefung("eine Gegenposition auf demselben Markt wird nicht erkannt "
+        + "— das ist die Hedge-Signatur von capitalClosePartial",
+        hedge.length === 1 && hedge[0].symbol === "EURUSD"
+        && hedge[0].buy === 1 && hedge[0].sell === 1,
+        JSON.stringify(hedge));
+      // DIE LESART (04.11.): LONG/SHORT muessen abgebildet werden. Ein
+      // eigenes `=== "BUY"` waere die dritte Sprache im Programm.
+      torPruefung("LONG/SHORT werden nicht als Gegenrichtung erkannt — dann "
+        + "haette die Funktion ihre eigene Lesart (Fehler vom 03.11.)",
+        gegenPositionen([
+          { symbol: "EURUSD", direction: "LONG" },
+          { symbol: "EURUSD", direction: "SHORT" },
+        ]).length === 1, "LONG/SHORT");
+      // Ein kaputter Wert darf KEINEN Hedge erfinden.
+      torPruefung("ein UNLESBARER Richtungswert gilt als Gegenrichtung — "
+        + "dann meldete ein kaputter Wert einen Hedge, den es nicht gibt",
+        gegenPositionen([
+          { symbol: "EURUSD", direction: "BUY" },
+          { symbol: "EURUSD", direction: "KAPUTT" },
+        ]).length === 0, "KAPUTT");
+      torPruefung("ein leeres Symbol wird mitgezaehlt",
+        gegenPositionen([
+          { symbol: "", direction: "BUY" },
+          { symbol: "  ", direction: "SELL" },
+        ]).length === 0, "leeres Symbol");
+      torPruefung("Leerzeichen am Symbol verhindern den Treffer",
+        gegenPositionen([
+          { symbol: " EURUSD ", direction: "BUY" },
+          { symbol: "EURUSD", direction: "SELL" },
+        ]).length === 1, "getrimmtes Symbol");
+      torPruefung("gegenPositionen wirft bei undefined statt leer zu liefern",
+        (() => { try { return gegenPositionen(undefined).length === 0; } catch { return false; } })(),
+        "undefined");
+
+      // ── VERDRAHTUNG. Eine gerechnete Funktion beweist nichts ueber ihre
+      //    Aufrufstelle (30.09.). Ausfuehren geht hier nicht — der Pfad
+      //    braucht eine Broker-Sitzung —, also strukturell und GEZAEHLT.
+      const trQ = read("frontend/lib/capital-com/capital-trade-tracker.ts");
+      const trOhneK = trQ.replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      torPruefung("der Tracker ruft mehrfachBeine gar nicht auf — die "
+        + "Messung liefe dann ins Leere",
+        /mehrfachBeine\(beine\)/.test(trOhneK), "mehrfachBeine(beine)");
+      torPruefung("der Tracker ruft gegenPositionen nicht mit den echten "
+        + "Positionen auf",
+        /gegenPositionen\(positionen\)/.test(trOhneK), "gegenPositionen(positionen)");
+      torPruefung("die Beine werden nicht eingesammelt — ohne beine.push ist "
+        + "die Liste immer leer und der Riegel stumm",
+        (trOhneK.match(/beine\.push\(/g) || []).length === 1,
+        `${(trOhneK.match(/beine\.push\(/g) || []).length}x beine.push`);
+      // Die Drossel-Namen stehen EINMAL als Konstante. Zwei Schreibweisen
+      // waeren zwei Zustaende, und dann verdeckte der eine den anderen.
+      torPruefung("eine Drossel-Stelle steht als Zeichenkette statt als "
+        + "Konstante — zwei Schreibweisen waeren zwei Zustaende",
+        !/lageMelden\(\s*"/.test(trOhneK), "lageMelden mit Literal");
+      // BEIDE Lagen, beide Stellen: ohne den ok-Zweig bliebe der Zustand
+      // auf `aus`, und ein ZWEITER Fall innerhalb von 30 Minuten waere stumm.
+      for (const [stelle, name] of [["MEHRFACH_STELLE", "mehrfacher Schluss"],
+        ["HEDGE_STELLE", "Gegenposition"]]) {
+        torPruefung(`der ok-Zweig fuer ${name} fehlt — ein ZWEITER Fall `
+          + "innerhalb der Drosselzeit waere dann stumm",
+          new RegExp(`lageMelden\\(${stelle},\\s*"ok"\\)`).test(trOhneK),
+          `${stelle} ok`);
+        torPruefung(`der aus-Zweig fuer ${name} fehlt — der Fall wird gar `
+          + "nicht gemeldet",
+          new RegExp(`lageMelden\\(${stelle},\\s*"aus"\\)`).test(trOhneK),
+          `${stelle} aus`);
+      }
+      // Die beiden Stellen duerfen sich NICHT denselben Zustand teilen.
+      torPruefung("beide Drossel-Stellen tragen denselben Namen — dann "
+        + "verdeckt die eine Lage die andere",
+        /MEHRFACH_STELLE = "(.*?)"/.exec(trOhneK)?.[1]
+        !== /HEDGE_STELLE = "(.*?)"/.exec(trOhneK)?.[1],
+        `${/MEHRFACH_STELLE = "(.*?)"/.exec(trOhneK)?.[1]} / `
+        + `${/HEDGE_STELLE = "(.*?)"/.exec(trOhneK)?.[1]}`);
+      // STUFE 1 AENDERT NICHTS. Die Maps muessen weiter UEBERSCHREIBEN —
+      // wird hier summiert, ist das Stufe 2 und gehoert mit eigener
+      // Zustimmung und eigener Kollisionssicherung gebaut.
+      torPruefung("die P&L-Map summiert jetzt — das waere Stufe 2 und "
+        + "braucht eine eigene Entscheidung samt Kollisionssicherung",
+        /pnlByEpicOpen\.set\(schluessel, pnl\);/.test(trOhneK),
+        "pnlByEpicOpen.set(schluessel, pnl)");
     }
   }
 

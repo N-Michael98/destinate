@@ -29,6 +29,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { read, ladeTsModul } = require("./_lib");
+// DER TRACKER IMPORTIERT SEIT DEM 13.11. ZWEI REINE MODULE.
+// Ohne Ersatz ist jeder Import ein Stellvertreter, der beim AUFRUF wirft —
+// und `ergaenzeFehlendeJournalZeilen` faellt dann in sein catch und gibt
+// eine LEERE Bilanz zurueck. Genau so sind 10 Zusicherungen rot geworden,
+// obwohl der Code stimmte. Die Lehre steht seit dem 01.11. im Projekt:
+// ein neuer Aufruf braucht seinen Ersatz UEBERALL, nicht nur dort, wo es
+// gerade auffaellt. Beide Module sind rein, also wird das ECHTE geladen —
+// ein Stummel koennte sich anders verhalten als der Betrieb.
+const TRACKER_ERSATZ = {
+  "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+  "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+};
 
 /**
  * Entfernt NUR Kommentare, lässt Zeichenketten stehen (03.09.).
@@ -299,7 +311,7 @@ module.exports = function pruefe() {
   //   Ergebnis), ohne P&L und ohne Grund. Damit war der Trade dem Tracker
   //   entzogen, denn der sieht nur status = 'OPEN'. Der P&L-Nachtrag holte
   //   Ergebnis und P&L spaeter nach — den Grund aber nie.
-  const geladenT = ladeTsModul("lib/capital-com/capital-trade-tracker.ts");
+  const geladenT = ladeTsModul("lib/capital-com/capital-trade-tracker.ts", TRACKER_ERSATZ);
   if (geladenT.fehler) {
     funde.push(geladenT.fehler);
   } else {

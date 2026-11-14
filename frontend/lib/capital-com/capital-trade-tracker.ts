@@ -2,6 +2,14 @@
 // Saves executed trades to DB, monitors positions for SL/TP hit, updates Journal
 
 import { getPrisma } from "../../app/lib/prisma";
+// STUFE 1 (13.11.): NUR MESSEN, nichts umbauen.
+// Die Drossel ist die BESTEHENDE — eine Umsetzung, nicht zwei (01.11.),
+// auf `global`, je Stelle ein eigener Zustand, damit sich die beiden
+// Lagen nicht gegenseitig verdecken.
+import { lageMelden } from "../redis-lage/redis-lage";
+// DIE Lesart fuer eine Richtung (04.11.). Ein eigenes `=== "BUY"` waere
+// die dritte Sprache im Programm — der Fehler vom 03.11.
+import { lesbareRichtung } from "../richtung/richtung";
 
 export interface TradeRecord {
   /** Die ECHTE Positions-ID des Brokers. Leer, solange sie unbekannt ist —
@@ -857,6 +865,135 @@ export function rekonstruktionsLage(
   };
 }
 
+/**
+ * STUFE 1 (13.11.): welche Schluessel haben MEHR ALS EIN Schliess-Bein?
+ *
+ * WOZU. `pnlByEpicOpen` und `closeByEpicOpen` werden mit `.set()` gefuellt —
+ * sie UEBERSCHREIBEN, sie summieren nicht, und gefiltert wird nur auf
+ * `type === "POSITION"`, also OHNE Unterscheidung zwischen Teil- und
+ * Vollschliessung. Im Projekt bewiesen (26.07.): Capital vergibt beim
+ * Schliessen eine ANDERE dealId als beim Oeffnen, jede Schliessung ist also
+ * eine eigene Transaktion — und alle Schliessungen derselben Position fallen
+ * auf DENSELBEN `epic|openPrice`-Schluessel. Hat ein Trade mehr als ein Bein,
+ * landet EIN beliebiges davon als "der" P&L in der Geldtabelle. Welches,
+ * entscheidet die Reihenfolge der Broker-Antwort, und die legt unser Code
+ * nirgends fest.
+ *
+ * DIESE STUFE AENDERT NICHTS DARAN. Sie macht den Fall nur sichtbar, damit
+ * die Frage "kommt das ueberhaupt vor?" aus dem Log beantwortbar wird statt
+ * geraten zu werden. Zu summieren waere hier Arbeit auf Verdacht (Regel
+ * 26.10.) — und bei einer Schluessel-Kollision (zwei Trades, gleicher Markt,
+ * gleicher Eroeffnungskurs auf fuenf Stellen) sogar SCHLECHTER als heute.
+ *
+ * ALS REINE, EXPORTIERTE FUNKTION, nicht als Ausdruck in der Schleife: ein
+ * Ausdruck waere nur strukturell pruefbar, und "ein Regex prueft den
+ * Wortlaut, nicht das Verhalten" (30.09.).
+ */
+export type SchlussBein = {
+  schluessel: string;
+  pnl: number;
+  closeLevel: number | null;
+};
+
+export type MehrfachBefund = {
+  schluessel: string;
+  anzahl: number;
+  /** Summe aller Beine — `null`, sobald auch nur EINES unlesbar ist. Eine
+   *  erfundene 0 machte aus "unbekannt" eine Messung (Regel 22.09.). */
+  summe: number | null;
+  pnls: number[];
+  closeLevels: Array<number | null>;
+};
+
+export function mehrfachBeine(
+  beine: ReadonlyArray<SchlussBein>,
+): MehrfachBefund[] {
+  const nach = new Map<string, SchlussBein[]>();
+  for (const b of beine ?? []) {
+    const schluessel = typeof b?.schluessel === "string" ? b.schluessel : "";
+    if (schluessel === "") continue;
+    const liste = nach.get(schluessel);
+    if (liste) liste.push(b);
+    else nach.set(schluessel, [b]);
+  }
+  const raus: MehrfachBefund[] = [];
+  for (const [schluessel, liste] of nach) {
+    if (liste.length < 2) continue;
+    const pnls = liste.map((b) => Number(b.pnl));
+    const alleEndlich = pnls.every((p) => Number.isFinite(p));
+    raus.push({
+      schluessel,
+      anzahl: liste.length,
+      summe: alleEndlich
+        ? Number(pnls.reduce((a, b) => a + b, 0).toFixed(2))
+        : null,
+      pnls,
+      // `Number(null)` ist 0 und ENDLICH — ein fehlender Schlusskurs wuerde
+      // damit zu "am Kurs 0 geschlossen". Deshalb erst auf Abwesenheit
+      // pruefen. Vierte Spielart derselben Falle (24.08., 28.10., 29.10.).
+      closeLevels: liste.map((b) =>
+        b.closeLevel === null || b.closeLevel === undefined
+          || !Number.isFinite(Number(b.closeLevel))
+          ? null
+          : Number(b.closeLevel)),
+    });
+  }
+  // Der teuerste Fall zuerst — wer hinsieht, will den zuerst.
+  raus.sort((a, b) => Math.abs(b.summe ?? 0) - Math.abs(a.summe ?? 0));
+  return raus;
+}
+
+/**
+ * STUFE 1 (13.11.): zwei offene Positionen auf DEMSELBEN Markt in
+ * GEGENRICHTUNG — die Hedge-Signatur.
+ *
+ * WOZU. `capitalClosePartial` schliesst nichts: es sendet `POST /positions`
+ * mit der GEGENRICHTUNG und etikettiert das Ergebnis selbst als
+ * "PARTIAL_CLOSE". Verrechnet das Konto, schrumpft die Position; hedgt es,
+ * entsteht eine ZWEITE Position mit eigenem Eroeffnungskurs — und damit eine
+ * eigene, REKONSTRUIERTE Journal-Zeile mit `tradingStyle: "UNBEKANNT"`, also
+ * ohne Zeit-Exit. Welche Einstellung gilt, wird im ganzen Programm nirgends
+ * gelesen, und von hier aus ist sie nicht feststellbar.
+ *
+ * Der Orchestrator schliesst Gegenpositionen ausdruecklich aus ("kein
+ * Hedging") — erzeugt werden sie trotzdem, nur an einer anderen Stelle.
+ *
+ * DIESE STUFE AENDERT NICHTS. Sie macht die Lage sichtbar.
+ *
+ * Die Richtung wird mit `lesbareRichtung` gelesen — DIE Lesart (04.11.). Ein
+ * eigenes `=== "BUY"` waere die dritte Sprache im Programm und genau der
+ * Fehler vom 03.11.
+ */
+export function gegenPositionen(
+  positionen: ReadonlyArray<{ symbol?: string | null; direction?: string | null }>,
+): Array<{ symbol: string; buy: number; sell: number }> {
+  const nach = new Map<string, { buy: number; sell: number }>();
+  for (const p of positionen ?? []) {
+    const symbol = typeof p?.symbol === "string" ? p.symbol.trim() : "";
+    if (symbol === "") continue;
+    const r = lesbareRichtung(p?.direction);
+    // Eine UNLESBARE Richtung zaehlt NICHT als Gegenrichtung — sonst meldete
+    // ein kaputter Wert einen Hedge, den es gar nicht gibt.
+    if (r !== "BUY" && r !== "SELL") continue;
+    const e = nach.get(symbol) ?? { buy: 0, sell: 0 };
+    if (r === "BUY") e.buy += 1;
+    else e.sell += 1;
+    nach.set(symbol, e);
+  }
+  const raus: Array<{ symbol: string; buy: number; sell: number }> = [];
+  for (const [symbol, z] of nach) {
+    if (z.buy > 0 && z.sell > 0) raus.push({ symbol, buy: z.buy, sell: z.sell });
+  }
+  raus.sort((a, b) => (b.buy + b.sell) - (a.buy + a.sell));
+  return raus;
+}
+
+/** Die Namen der beiden Drossel-Stellen stehen EINMAL. Zwei Schreibweisen
+ *  waeren zwei Zustaende, und dann verdeckte der eine den anderen — die
+ *  Lehre vom 13.11. aus dem Watchdog. */
+export const MEHRFACH_STELLE = "P&L mehrfacher Schluss";
+export const HEDGE_STELLE = "Gegenposition (Hedge)";
+
 export async function ergaenzeFehlendeJournalZeilen(
   positionen: Array<{
     dealId?: string | null; symbol?: string | null; direction?: string | null;
@@ -879,6 +1016,22 @@ export async function ergaenzeFehlendeJournalZeilen(
   };
   try {
     if (!positionen.length) return bilanz;
+    // STUFE 1 (13.11.): die Hedge-Signatur sichtbar machen. Eigene
+    // Drossel-Stelle, damit sie die Mehrfachschluss-Lage nicht verdeckt.
+    const gegen = gegenPositionen(positionen);
+    if (gegen.length > 0) {
+      if (lageMelden(HEDGE_STELLE, "aus")) {
+        const wo = gegen.map((g) => `${g.symbol} ${g.buy}xBUY/${g.sell}xSELL`).join(", ");
+        console.warn(`[trade-tracker] \u26a0\ufe0f GEGENPOSITION: ${wo} \u2014 auf demselben `
+          + `Markt stehen Positionen in BEIDE Richtungen. Der Orchestrator `
+          + `schliesst das aus ("kein Hedging"); capitalClosePartial sendet `
+          + `statt einer Schliessung eine GEGEN-Order. Die zweite Position `
+          + `bekommt eine eigene, REKONSTRUIERTE Zeile mit tradingStyle `
+          + `UNBEKANNT \u2014 also ohne Zeit-Exit.`);
+      }
+    } else if (lageMelden(HEDGE_STELLE, "ok")) {
+      console.log(`[trade-tracker] \u2705 keine Gegenpositionen mehr offen.`);
+    }
     const db = getPrisma();
     const rows = await (db.$queryRawUnsafe as (q: string) => Promise<Array<{
       notes: string | null;
@@ -1186,6 +1339,9 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // bei 66,7 % Treffern trotzdem Verlust macht.
     // KEIN zusaetzlicher HTTP-Aufruf: dieselbe Schleife, dasselbe details-Objekt.
     const closeByEpicOpen = new Map<string, number>();
+    // STUFE 1 (13.11.): jedes Bein MITSCHREIBEN. Die beiden Maps bleiben
+    // unveraendert — hier wird ausschliesslich gemessen.
+    const beine: SchlussBein[] = [];
     try {
       const from = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 19);
       const to = new Date().toISOString().slice(0, 19);
@@ -1210,10 +1366,33 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
             pnlByEpicOpen.set(schluessel, pnl);
             const closeLevel = Number(details.closeLevel ?? details.level ?? 0);
             if (closeLevel > 0) closeByEpicOpen.set(schluessel, closeLevel);
+            beine.push({ schluessel, pnl, closeLevel: closeLevel > 0 ? closeLevel : null });
           }
         }
       }
       console.log(`[trade-tracker] P&L-Map: ${pnlByDealId.size} tx, ${pnlByEpicOpen.size} epic|openPrice, ${closeByEpicOpen.size} mit Schlusskurs`);
+      // STUFE 1 (13.11.): gedrosselt melden, wenn ein Schluessel mehr als
+      // einmal geschrieben wurde. Das Fenster ist 24 h — ohne Drossel waeren
+      // das bei einem 2-Minuten-Zyklus 720 Zeilen am Tag fuer denselben Fall.
+      const mehrfach = mehrfachBeine(beine);
+      if (mehrfach.length > 0) {
+        if (lageMelden(MEHRFACH_STELLE, "aus")) {
+          const liste = mehrfach.slice(0, 5).map((m) =>
+            `${m.schluessel} ${m.anzahl}x P&L=[${m.pnls.join(", ")}]`
+            + ` Summe=${m.summe === null ? "unlesbar" : m.summe}`
+            + ` Schlusskurse=[${m.closeLevels.map((c) => c === null ? "?" : c).join(", ")}]`
+          ).join(" | ");
+          console.warn(`[trade-tracker] \u26a0\ufe0f MEHRFACHER SCHLUSS: ${mehrfach.length} `
+            + `Position(en) haben mehr als ein Schliess-Bein. Die Map UEBERSCHREIBT, `
+            + `sie summiert nicht — in der Geldtabelle steht nur EIN Bein. Das `
+            + `betrifft /edge, /hebel und den Lernzyklus. ${liste}`
+            + (mehrfach.length > 5 ? ` (+${mehrfach.length - 5} weitere)` : ""));
+        }
+      } else if (lageMelden(MEHRFACH_STELLE, "ok")) {
+        // Die Rueckkehr gehoert gemeldet — ohne sie bliebe die Lage auf
+        // `aus`, und ein ZWEITER Fall innerhalb von 30 Minuten waere stumm.
+        console.log(`[trade-tracker] \u2705 kein mehrfacher Schluss mehr \u2014 jede Position hat genau ein Bein.`);
+      }
     } catch (e) {
       console.warn(`[trade-tracker] Activity-Fetch fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
     }

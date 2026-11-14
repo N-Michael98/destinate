@@ -627,6 +627,35 @@ lesen und dann `git add -A`. Seit dem 27.09. fängt `.gitignore` jede `.env`
 in jedem Verzeichnis, und der Prüfer `secrets` erzwingt das; davor war genau
 das die Lücke.
 
+### Und `git checkout --` schreibt die Zeilenenden um (14.11.)
+
+Nach einem abgebrochenen Suitenlauf (Exit 4, extern beendet) stand eine
+Sabotage in `frontend/lib/hebel/hebel.ts` — `endeText` gab `""` statt
+`" · ohne Datum"`. Zurückgestellt mit `git checkout -- <datei>`, und genau
+das hatte eine Nebenwirkung:
+
+**`core.autocrlf=true` materialisiert die Datei beim Auschecken mit CRLF,
+während das Repository LF speichert.** Die Datei war vorher rein LF (so
+geschrieben), danach rein CRLF. Git warnt sogar davor:
+*„LF will be replaced by CRLF the next time Git touches it."*
+
+**Für das Programm ist das folgenlos** — gemessen, nicht angenommen: `git
+status` zeigt **keinen** Diff, und `npm run check` bleibt grün, weil die 23
+Prüfer zeilenende-unabhängig arbeiten.
+
+**Für Werkzeuge mit festen `\n`-Ankern ist es tödlich.** Die
+Sabotage-Suite traf ihren Anker nicht mehr, meldete `ANKER 0x`, übersprang
+**zwei** Fälle — und gab trotzdem *„10 von 10 wie erwartet"* aus. Nach der
+Normalisierung (`crlf ? alt.replace(/\r?\n/g, "\r\n") : …`): **12 von 12**.
+
+**Regel:** nach jedem `git checkout -- <datei>` die Zeilenenden **messen**,
+und jeden mehrzeiligen Anker an die Zieldatei anpassen statt `\n`
+festzuschreiben. Mein eigenes Patch-Skript für genau diesen Fix lief zuerst
+in dieselbe Falle.
+
+**Und ein übersprungener Fall ist kein bestandener.** Die Suite zählt ihn
+jetzt mit, nennt ihn in der Schlusszeile und endet mit Code 1.
+
 ## Dateien mit erhöhtem Risiko
 
 Änderungen hier können Geld kosten. Nicht ohne ausdrückliche Zustimmung anfassen,
@@ -4660,6 +4689,103 @@ und `hebel.ts` lesen es ebenfalls nicht, und **kein Prüfer** fasst
 Betroffen sind damit genau die Zahlen, auf die man handeln würde: `/edge`,
 `/hebel` und der Lernzyklus. **Nicht in dieser Runde angefasst** — es verändert
 aufgezeichnetes Geld und braucht Plan und ausdrückliche Zustimmung.
+
+## Der P&L-Abgleich führt Teilschliessungen nicht zusammen — Stufe 1 (13./14.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+Diese Stufe **misst nur** — kein aufgezeichnetes Geld wird angefasst.
+
+### Neun Code-Fakten, alle nachgelesen
+
+| # | Befund | Beleg |
+|---|---|---|
+| 1 | `pnlByEpicOpen.set()` / `closeByEpicOpen.set()` **überschreiben**; im ganzen Pfad gibt es **keine** Summierung | `:1210` |
+| 2 | Gefiltert wird nur auf `type === "POSITION"` — **keine** Teil-/Voll-Unterscheidung | `:1201` |
+| 3 | Jede Schliessung ist eine **eigene** Transaktion mit eigener dealId — im Projekt bewiesen (26.07.) | `:1176` |
+| 4 | Alle Schliessungen einer Position fallen auf **denselben** `epic\|openPrice`-Schlüssel | `:1209` |
+| 5 | **`capitalClosePartial` schliesst nichts** — es sendet `POST /positions` mit der **Gegenrichtung** und etikettiert selbst `"PARTIAL_CLOSE"` | `capital-com-client.ts:1027` |
+| 6 | Ein echter Schliess-Endpunkt **existiert** und wird dort nicht benutzt | `capitalClosePosition`, `:1054` |
+| 7 | Nach dem Teilgewinn wird **nie geprüft**, ob die Grösse sank | `risk-agent.ts:700` |
+| 8 | Der Orchestrator **lehnt Gegenpositionen ab** („kein Hedging"), der RiskAgent legt genau so eine an | `orchestrator-agent.ts:1339` |
+| 9 | Hedging/Netting wird **nirgends** gelesen oder gesetzt | programmweit 0 Treffer |
+
+**Was folgt, hängt an der Kontoeinstellung** — und welche gilt, ist von hier
+**nicht** feststellbar: verrechnet das Konto, schrumpft die Position und es
+entstehen zwei Schliess-Beine (Befund 1 greift, in der Geldtabelle steht **ein
+Bein statt der Summe**); hedgt es, entsteht eine **zweite Position** mit eigenem
+Eröffnungskurs, eigenem Map-Schlüssel und einer eigenen **rekonstruierten**
+Journal-Zeile mit `tradingStyle: "UNBEKANNT"` — also ohne Zeit-Exit.
+
+### Was Stufe 1 tut
+
+Zwei **reine, exportierte** Funktionen — als Ausdruck in der Schleife wären sie
+nur strukturell prüfbar (Regel 30.09.):
+
+- **`mehrfachBeine()`** nennt jeden `epic|openPrice`-Schlüssel mit mehr als
+  einem Schliess-Bein, mit **allen** Einzelwerten, der **Summe** und den
+  Schlusskursen. Ist auch nur ein P&L unlesbar, ist die Summe **`null`** — eine
+  erfundene 0 machte aus „unbekannt" eine Messung (22.09.). Und ein fehlender
+  Schlusskurs bleibt `null`: `Number(null)` ist **0 und endlich**, die Falle
+  vom 24.08. in ihrer vierten Spielart.
+- **`gegenPositionen()`** nennt jeden Markt mit offenen Positionen in **beide**
+  Richtungen — die Hedge-Signatur. Gelesen wird mit `lesbareRichtung`, **der**
+  Lesart (04.11.); ein eigenes `=== "BUY"` wäre die dritte Sprache im Programm.
+  Eine **unlesbare** Richtung zählt **nicht** als Gegenrichtung, sonst meldete
+  ein kaputter Wert einen Hedge, den es nicht gibt.
+
+Gedrosselt über die **bestehende** `lageMelden` — eine Umsetzung, nicht zwei —,
+auf `global`, **je Stelle ein eigener Zustand**, sonst verdeckte die eine Lage
+die andere. Beide haben ihren `"ok"`-Zweig: ohne ihn bliebe der Zustand auf
+`aus`, und ein **zweiter** Fall innerhalb der Drosselzeit wäre stumm.
+
+### Was Stufe 1 NICHT tut
+
+**Kein `profitLoss` wird verändert, kein `UPDATE` neu geschrieben.** Die beiden
+Maps verhalten sich Zeichen für Zeichen wie vorher — `safety-nets` hält das
+ausdrücklich fest: summiert dort jemand, wird er **rot**, denn das wäre Stufe 2
+und braucht eine eigene Entscheidung. Keine Order, keine Grösse, kein Stop, kein
+Limit, keine Schwelle, keine Filterkette. `capitalClosePartial` unberührt.
+**Snapshot 299 Werte unverändert.**
+
+**Warum nicht gleich summiert wird:** eine Mechanik auf Verdacht zu bauen wäre
+Arbeit auf Verdacht (26.10.) — und bei einer **Schlüssel-Kollision** (zwei
+Trades, gleicher Markt, gleicher Eröffnungskurs auf fünf Stellen) wäre das
+Summieren **schlechter** als der heutige Zustand. Erst muss aus dem Log
+hervorgehen, ob der Fall überhaupt auftritt.
+
+### Absicherung
+
+`safety-nets` 1316 → **1344**, **11 von 11 Sabotagen** plus Gegenprobe. Beide
+Funktionen werden **ausgeführt**: leere Eingabe, `undefined`, Einzelbein
+(muss schweigen), zwei Beine, unlesbarer P&L, fehlender Schlusskurs,
+Sortierung, leerer Schlüssel; LONG/SHORT, unlesbare Richtung, leeres Symbol,
+Leerzeichen. Dazu die **Verdrahtung** gezählt statt gefunden: `beine.push`
+genau einmal, beide Drossel-Zweige je Stelle, kein Zeichenketten-Literal in
+`lageMelden`, und die zwei Stellennamen müssen **verschieden** sein.
+
+### Mein Fehler dabei — und warum er gefangen wurde
+
+Ich hatte gemessen, dass **kein** Prüfer `syncCapitalTrades` ausführt, und
+daraus geschlossen, der neue Import sei ungefährlich. **Ich hatte nicht
+geprüft, ob einer `ergaenzeFehlendeJournalZeilen` ausführt** —
+`lifecycle-rueckkehr` tut es. Der Stellvertreter warf, die Funktion fiel in ihr
+`catch`, und **zehn** Zusicherungen wurden rot, obwohl der Code stimmte. Genau
+die Falle vom 01.11., und ich bin halb hineingelaufen.
+
+Der Ersatz liegt jetzt an **allen 13** Ladestellen in drei Prüfern, nicht nur
+an der roten — „ein Treffer beweist nichts über die andere Stelle" (25.10.).
+Dazu **zwei eigene Werkzeugfehler**: mein Ersetzer suchte `OHNE + ")"`, also
+`…ts"))` — der Ausdruck endet aber **selbst** schon auf `)`; neun Stellen
+blieben unverändert und zwei Prüfer hätten eine **unbenutzte** Konstante
+behalten. Zurückgerollt und mit einer Gegenprobe versehen, die abbricht, wenn
+in einer Datei **keine** Ladestelle getroffen wird.
+
+### Was als Nächstes kommt — und was es braucht
+
+- **Stufe 2** (summieren, Schlusskurs vom letzten Bein, Zahl der Beine in die
+  Notizen): erst wenn die Logzeile belegt, dass der Fall auftritt, und mit
+  einer Kollisionssicherung.
+- **Stufe 3** (`capitalClosePartial`): Hochrisiko-Datei, eigene Runde.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
