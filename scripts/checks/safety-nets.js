@@ -11287,11 +11287,17 @@ module.exports = async function pruefe() {
     });
     const NR = { json: (body, init) => ({ __body: body, status: init?.status ?? 200 }) };
     const geschrieben = [];
+    // VERAENDERLICH, damit derselbe Pruefstand auch den Ausfall fahren kann
+    // (0 / NaN / negativ). Standard 2000 — die Zeit-Zusicherungen darunter
+    // bleiben damit Zeichen fuer Zeichen unberuehrt.
+    let sitzungsStand = 2000;
     const sj = ladeTsModul("app/api/capital-com/sync-journal/route.ts", {
       "next/server": { NextResponse: NR },
       "capital-com/capital-com-session": {
         isCapitalConnected: () => true,
-        getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s", balance: 2000 }),
+        getCapitalSession: () => ({
+          apiKey: "k", cst: "c", securityToken: "s", balance: sitzungsStand,
+        }),
       },
       "lib/prisma": {
         getPrisma: () => ({
@@ -11398,6 +11404,112 @@ module.exports = async function pruefe() {
         gesund.antwort?.__body?.ohneBrokerZeit === 0
         && !/OHNE Broker-Zeit/.test(String(gesund.antwort?.__body?.message ?? "")),
         JSON.stringify(gesund.antwort?.__body?.message ?? "").slice(0, 160));
+
+      // ══ EIN ERFUNDENER KONTOSTAND IN DER GELDTABELLE (14.11.) ══════════
+      //
+      // Hier stand `session.balance > 0 ? session.balance : 10000`. Der Wert
+      // geht als `accountSize` in die `Trade`-Tabelle und wird DIREKT
+      // angezeigt (`app/trading-journal/page.tsx`, gespeist aus
+      // `GET /api/trades`, das ungefiltert alle Zeilen liefert) — die
+      // Erfindung war sichtbar, nicht theoretisch.
+      //
+      // Die SCHWESTERSTELLE im Tracker schreibt fuer denselben Fall `: 0`;
+      // diese Datei war der einzige Ausreisser. Beide Schreibwege werden
+      // unten gegeneinander gehalten, damit sie nicht auseinanderlaufen.
+      //
+      // GERECHNET, nicht am Wortlaut: `args[3]` ist `accountSize` — die
+      // Reihenfolge ist epic, result, profitLoss, accountSize, notes
+      // [, datum]. Ein Regex pruefte den Wortlaut, nicht das Verhalten
+      // (30.09.), und genau diese Zeile war vorher strukturell unauffaellig.
+      // `String(...)` in den Befund-Texten unten, NICHT `JSON.stringify`:
+      // letzteres macht aus NaN und Infinity beides `null`, und dann nennt
+      // der Befund im interessanten Fall den Wert nicht. Im ersten
+      // Sabotage-Lauf stand genau so "accountSize=null" fuer ein Infinity —
+      // dieselbe Falle wie im Produktionscode, hier im Pruefer.
+      const kontoVon = (zeilen) => {
+        const i = insertVon(zeilen);
+        return i ? i.args[3] : undefined;
+      };
+
+      // 7. GEGENPROBE ZUERST: ein ECHTER Stand muss ankommen. Ein Riegel, der
+      //    alles auf 0 zieht, loeschte die Angabe fuer JEDE Zeile und waere
+      //    schlimmer als der Fund.
+      torPruefung("ein ECHTER Kontostand kommt nicht mehr in der Zeile an — "
+        + "der Riegel zieht alles auf 0 und loescht eine gueltige Angabe",
+        kontoVon(gesund.zeilen) === 2000
+        && gesund.antwort?.__body?.ohneKontostand === 0
+        && !/OHNE Kontostand/.test(String(gesund.antwort?.__body?.message ?? "")),
+        `accountSize=${String(kontoVon(gesund.zeilen))} `
+        + `ohneKontostand=${gesund.antwort?.__body?.ohneKontostand}`);
+
+      // 8. KEIN Stand ⇒ 0 ("nicht erfasst"), niemals eine erfundene Zahl.
+      sitzungsStand = 0;
+      const ohneStand = await fahre([tx({ dealId: "D5", date: "2026-11-08T07:30:00" })]);
+      torPruefung("ein fehlender Kontostand wird wieder ERFUNDEN — die Zeile "
+        + "behauptet eine Kontogroesse, die das Journal direkt anzeigt",
+        kontoVon(ohneStand.zeilen) === 0,
+        `accountSize=${String(kontoVon(ohneStand.zeilen))} (erwartet 0)`);
+      torPruefung("der fehlende Kontostand wird nicht GEZAEHLT und nicht "
+        + "gemeldet — ein stummer Ausfall saehe wie ein gesunder Lauf aus",
+        ohneStand.antwort?.__body?.ohneKontostand === 1
+        && /OHNE Kontostand/.test(String(ohneStand.antwort?.__body?.message ?? "")),
+        JSON.stringify(ohneStand.antwort?.__body ?? {}).slice(0, 240));
+
+      // 9. Ein NaN ist kein Stand. `NaN > 0` ist FALSCH — der alte Ausdruck
+      //    haette hier die erfundene Zahl geliefert, und ohne
+      //    `Number.isFinite` liefe ein NaN heute STUMM als 0 durch, statt
+      //    gemeldet zu werden. Vierte Wiederholung dieser Falle im Projekt.
+      sitzungsStand = Number.NaN;
+      const nanStand = await fahre([tx({ dealId: "D6", date: "2026-11-08T07:30:00" })]);
+      torPruefung("ein NaN-Kontostand landet in der Geldtabelle oder wird "
+        + "nicht gemeldet — der Number.isFinite-Riegel fehlt",
+        kontoVon(nanStand.zeilen) === 0
+        && nanStand.antwort?.__body?.ohneKontostand === 1,
+        `accountSize=${String(kontoVon(nanStand.zeilen))} `
+        + `ohneKontostand=${nanStand.antwort?.__body?.ohneKontostand}`);
+
+      // 9b. UND DER FALL, DER DEN RIEGEL ERST AUSDRUECKT: `+Infinity`.
+      //     Ausgerechnet, nicht angenommen: bei NaN ist `NaN > 0` schon
+      //     FALSCH, der else-Zweig faengt es also auch OHNE
+      //     `Number.isFinite` — Fall 9 allein kann den Riegel nicht
+      //     beweisen. Nur bei `+Infinity` ist `b > 0` WAHR, und ohne den
+      //     Riegel landete `Infinity` als Kontogroesse in der Geldtabelle.
+      //     "Ein Testfall, der den Fehler nicht ausdruecken kann, beweist
+      //     nichts" — hier an meiner eigenen neuen Zusicherung.
+      sitzungsStand = Number.POSITIVE_INFINITY;
+      const infStand = await fahre([tx({ dealId: "D8", date: "2026-11-08T07:30:00" })]);
+      torPruefung("ein unendlicher Kontostand landet in der Geldtabelle — "
+        + "der Number.isFinite-Riegel fehlt (NaN allein zeigt das NICHT)",
+        kontoVon(infStand.zeilen) === 0
+        && infStand.antwort?.__body?.ohneKontostand === 1,
+        `accountSize=${String(kontoVon(infStand.zeilen))} `
+        + `ohneKontostand=${infStand.antwort?.__body?.ohneKontostand}`);
+      // Und die Gegenprobe zur Begruendung selbst, gerechnet: ohne den
+      // Riegel waere der Wert durchgelaufen.
+      torPruefung("die Begruendung des isFinite-Riegels stimmt nicht — dann "
+        + "prueft Fall 9b etwas anderes als gedacht",
+        (Number.NaN > 0) === false && (Number.POSITIVE_INFINITY > 0) === true
+        && Number.isFinite(Number.POSITIVE_INFINITY) === false,
+        `NaN>0=${Number.NaN > 0} Inf>0=${Number.POSITIVE_INFINITY > 0} `
+        + `isFinite(Inf)=${Number.isFinite(Number.POSITIVE_INFINITY)}`);
+
+      // 10. Ein NEGATIVER Stand ebenso — kein handelbares Konto.
+      sitzungsStand = -500;
+      const negStand = await fahre([tx({ dealId: "D7", date: "2026-11-08T07:30:00" })]);
+      torPruefung("ein negativer Kontostand wird uebernommen statt als "
+        + "unbekannt gemeldet",
+        kontoVon(negStand.zeilen) === 0
+        && negStand.antwort?.__body?.ohneKontostand === 1,
+        `accountSize=${String(kontoVon(negStand.zeilen))} `
+        + `ohneKontostand=${negStand.antwort?.__body?.ohneKontostand}`);
+
+      // 11. Und die ZEIT bleibt davon unberuehrt — sonst haette der neue
+      //     Riegel einen bestehenden mitgerissen, ohne dass es auffaellt.
+      torPruefung("der Kontostand-Riegel hat die Zeit-Umrechnung mitgerissen",
+        String(insertVon(negStand.zeilen)?.args?.slice(-1)[0]) === "2026-11-08 06:30:00",
+        `createdAt=${JSON.stringify(insertVon(negStand.zeilen)?.args?.slice(-1)[0])}`);
+
+      sitzungsStand = 2000;   // zuruecksetzen, damit nichts davon erbt
     }
 
     // Und strukturell: der Import der Grenze muss da sein, die Erfindung weg.
@@ -11409,6 +11521,64 @@ module.exports = async function pruefe() {
       && /brokerZeitNachUtc\(tx\.date \?\? tx\.dateUtc\)/.test(sjQ)
       && !/new Date\(\)\.toISOString\(\)\)\.slice\(0, 19\)/.test(sjQ),
       (sjQ.match(/const (utcIso|dateStr)[^\n]*/g) || ["(keine Zeile)"]).join(" | ").slice(0, 150));
+
+    // Die erfundene Zahl darf nicht zurueckkommen — KOMMENTARBEREINIGT,
+    // weil die Begruendung in der Datei sie zitiert ("ein Wort im Kommentar
+    // ist keine Verwendung"). Gemessen: roh 2 Treffer, bereinigt 0.
+    torPruefung("in sync-journal steht wieder eine erfundene Kontogroesse im "
+      + "CODE (nicht nur im Kommentar)",
+      !/10000/.test(sjQ)
+      && /Number\.isFinite\(session\.balance\) && session\.balance > 0/.test(sjQ),
+      (sjQ.match(/[^\n]*(10000|const kontostand)[^\n]*/g) || ["(kein Treffer)"])
+        .join(" | ").slice(0, 170));
+    // SELBSTPRUEFUNG DER BEREINIGUNG, in BEIDE Richtungen — nicht des
+    // Regex-Literals. Streift sie nichts ab, waere die Zusicherung darueber
+    // wegen der Begruendung im Kommentar fuer immer rot; frisst sie zu viel,
+    // waere sie fuer immer gruen. Beides macht sie wertlos.
+    {
+      const probe = "// kommentiert 10000\nconst x = 20000;"
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+      torPruefung("die Kommentar-Bereinigung von sjQ arbeitet nicht wie "
+        + "erwartet — dann sagt die Zusicherung darueber nichts",
+        !/10000/.test(probe) && /20000/.test(probe),
+        JSON.stringify(probe));
+    }
+
+    // Die Meldung muss einen KAPUTTEN Wert von KEINEM Wert unterscheiden.
+    // Ausgerechnet, nicht behauptet: `JSON.stringify` macht aus NaN und
+    // Infinity beides `null` — damit waere "balance=null" die Antwort auf
+    // drei verschiedene Lagen, und die Diagnose schwiege ausgerechnet im
+    // interessanten Fall. `String` nennt sie beim Namen.
+    torPruefung("die Kontostand-Meldung kann einen kaputten Wert nicht von "
+      + "einem fehlenden unterscheiden (JSON.stringify macht NaN zu null)",
+      JSON.stringify(Number.NaN) === "null" && String(Number.NaN) === "NaN"
+      && /balance=\$\{String\(session\.balance\)\}/.test(sjQ),
+      `JSON.stringify(NaN)=${JSON.stringify(Number.NaN)} `
+      + `String(NaN)=${String(Number.NaN)} · `
+      + (sjQ.match(/balance=[^\n]{0,40}/) ?? ["(keine Zeile)"])[0]);
+
+    // Und die SCHWESTERSTELLE muss dieselbe Konvention behalten: sonst
+    // laufen die zwei Schreibwege der Geldtabelle auseinander, und der eine
+    // erfindet wieder, waehrend der andere ehrlich bleibt. "Ein Treffer
+    // beweist nichts ueber die andere Stelle" (25.10.).
+    const trkQ3 = read("frontend/lib/capital-com/capital-trade-tracker.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die Rekonstruktion im Tracker erfindet wieder einen "
+      + "Kontostand — die zwei Schreibwege laufen auseinander",
+      /session\.balance > 0 \? session\.balance : 0/.test(trkQ3),
+      (trkQ3.match(/ergaenzeFehlendeJournalZeilen\([^;]*/g) || ["(kein Treffer)"])
+        .join(" | ").replace(/\s+/g, " ").slice(0, 170));
+
+    // Und die ANZEIGE darf die 0 nicht als Kontostand lesen — sonst haette
+    // der Fix die erfundene 10000 nur gegen eine behauptete 0 getauscht.
+    const tjQ3 = read("frontend/app/trading-journal/page.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    torPruefung("die Journal-Anzeige zeigt `accountSize` ungeprueft — eine 0 "
+      + "liest sich dort als Kontostand von null",
+      /Number\.isFinite\(trade\.accountSize\) && trade\.accountSize > 0/.test(tjQ3)
+      && !/trade\.accountSize \?\? 30000/.test(tjQ3.replace(/setEditAccountSize[^\n]*/g, " ")),
+      (tjQ3.match(/[^\n]*trade\.accountSize[^\n]*/g) || ["(kein Treffer)"])
+        .join(" | ").replace(/\s+/g, " ").slice(0, 200));
   }
 
   // ══ DER IC-JOURNAL-SYNC ERFINDET AUCH KEINE SCHLUSSZEIT MEHR (08.11.) ═══

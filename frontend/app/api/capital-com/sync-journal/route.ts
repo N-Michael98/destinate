@@ -78,6 +78,28 @@ export async function POST(request: Request) {
   // in derselben Zeile: null Leser im ganzen Programm).
   let ohneBrokerZeit = 0;
 
+  // ── Zeilen ohne verwertbaren Kontostand (14.11.) ────────────────────────
+  //
+  // Hier stand `: 10000` — eine ERFUNDENE Kontogroesse, und zwar in der
+  // `Trade`-Tabelle, nicht in einem Log. Sie wird direkt ANGEZEIGT
+  // (`app/trading-journal/page.tsx`, Spalte neben dem echten P&L, gespeist
+  // aus `GET /api/trades`, das ungefiltert alle Zeilen liefert) — die
+  // Erfindung war also sichtbar, nicht theoretisch.
+  //
+  // Die SCHWESTERSTELLE macht es seit jeher ehrlich: `capital-trade-tracker`
+  // uebergibt der Rekonstruktion `session.balance > 0 ? session.balance : 0`.
+  // Diese Datei war der einzige Ausreisser — jetzt dieselbe Konvention, keine
+  // zweite Lesart.
+  //
+  // 0 heisst "nicht erfasst" und ist nicht mit einer Messung zu verwechseln:
+  // ein Kontostand von 0 ist kein handelbarer Wert — anders als bei
+  // `profitLoss`, wo 0 "Breakeven" heissen KANN (26.10.).
+  //
+  // `Number.isFinite` steht davor, weil `NaN > 0` FALSCH ist: ein NaN waere
+  // sonst stumm als 10000 durchgelaufen. Vierte Wiederholung dieser Falle im
+  // Projekt (24.08., 28.10., 29.10., 03.11.).
+  let ohneKontostand = 0;
+
   // ── Step 1: Get currently OPEN positions from Capital.com ──────────────────
   const posRes = await fetch(`${DEMO_BASE}/positions`, { headers: h });
   const openDealIds = new Set<string>();
@@ -283,9 +305,25 @@ export async function POST(request: Request) {
         // Konstante aus DIESER Datei, keine Eingabe — und die Argumente stehen
         // nur EINMAL da, damit die zwei Faelle nicht auseinanderlaufen.
         const zeitFeld = dateStr === null ? "NOW()" : "$6::timestamp";
+        // KEIN erfundener Kontostand (14.11.) — Begruendung oben am Zaehler.
+        const kontostand = Number.isFinite(session.balance) && session.balance > 0
+          ? session.balance
+          : 0;
+        if (kontostand === 0) {
+          ohneKontostand++;
+          console.warn(`[sync-journal] ⚠️ deal=${dealId} ${epic || "(ohne Markt)"}: die `
+            + `Sitzung liefert KEINEN verwertbaren Kontostand `
+            // `String(...)` und NICHT `JSON.stringify(...)`: letzteres macht aus
+            // NaN und Infinity beides `null`, und dann ist "kaputter Wert" von
+            // "kein Wert" nicht zu unterscheiden — ausgerechnet im
+            // interessanten Fall. `String` nennt sie beim Namen.
+            + `(balance=${String(session.balance)}). P&L und Ergebnis sind ECHT, `
+            + `aber accountSize bleibt 0 = NICHT ERFASST — die Zeile taugt NICHT fuer `
+            + `eine Prozentrechnung auf das Konto.`);
+        }
         const argumente: unknown[] = [
           epic, result_str, profitLoss,
-          session.balance > 0 ? session.balance : 10000,
+          kontostand,
           JSON.stringify({ dealId, broker: "Capital.com DEMO", source: "tx-sync",
                           richtungUnbekannt: true }),
         ];
@@ -313,6 +351,7 @@ export async function POST(request: Request) {
     neuAngelegt,
     uebersprungen,
     ohneBrokerZeit,
+    ohneKontostand,
     txStatus: txRes.status,
     txTotal: txCount,
     txTrades: txTradeCount,
@@ -320,5 +359,9 @@ export async function POST(request: Request) {
       + `${neuAngelegt} neu angelegt, ${uebersprungen} ohne P&L übersprungen`
       // Nur wenn > 0 — wie `Stil` und `ohne Stop/Ziel` in der Zyklus-Zeile.
       + `${ohneBrokerZeit > 0 ? `, ${ohneBrokerZeit} OHNE Broker-Zeit (createdAt = jetzt)` : ""}`
+      // Nur wenn > 0, wie die Zeile darueber. `message` hat ZWEI gemessene
+      // Empfaenger: `app/page.tsx` (setSyncMsg) und
+      // `app/trading-journal/page.tsx` (alert) — kein stummes Feld (28.10.).
+      + `${ohneKontostand > 0 ? `, ${ohneKontostand} OHNE Kontostand (accountSize = 0 = nicht erfasst)` : ""}`
   });
 }

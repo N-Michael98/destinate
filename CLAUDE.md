@@ -4997,6 +4997,138 @@ feststellbar** — `maxPositionsPerSymbol`/`pyramidingEnabled` sagen nur, was
 `GEGENPOSITION`. Erst wenn diese Zeile im Railway-Log steht, ist der Umbau
 belegt statt vermutet — und dann gehört er als eigene Runde gemacht.
 
+## Eine erfundene Kontogrösse stand in der Geldtabelle (14.11.)
+
+**Geändert auf ausdrückliche Anweisung.** Gefunden bei der Generalkontrolle
+desselben Tages, als einer von vier Befunden — und es ist der einzige, dessen
+Erfindung **sichtbar** war.
+
+`app/api/capital-com/sync-journal/route.ts` schrieb:
+
+```ts
+session.balance > 0 ? session.balance : 10000,   // → Spalte "accountSize"
+```
+
+Der Wert geht in die **`Trade`-Tabelle**, nicht in ein Log. Und er wird
+**direkt angezeigt**: `app/trading-journal/page.tsx` rendert ihn in der
+Spalte neben dem echten P&L, gespeist aus `GET /api/trades`, das
+**ungefiltert** alle Zeilen liefert (nachgesehen, nicht vermutet). Die Zeile
+behauptete also eine Kontogrösse von 10000 — neben einer echten Gewinnzahl.
+
+### Die Konvention existierte schon — diese Datei war der Ausreisser
+
+Das ist der Kern des Funds. `capital-trade-tracker.ts` übergibt der
+Rekonstruktion für **denselben** unbekannten Stand:
+
+```ts
+await ergaenzeFehlendeJournalZeilen(posResult.positions ?? [],
+  session.balance > 0 ? session.balance : 0);        // ← ehrlich, seit jeher
+```
+
+**`: 0`, nicht `: 10000`.** Zwei Schreibwege in dieselbe Tabelle, zwei
+Lesarten für dieselbe Lage. Jetzt dieselbe — und `safety-nets` hält **beide**
+gegeneinander, damit sie nicht wieder auseinanderlaufen („ein Treffer beweist
+nichts über die andere Stelle", 25.10.).
+
+**Warum `0` und nicht `null`:** `accountSize` ist `Float @default(30000)` und
+**NOT NULL**. Die Spalte weglassen ergäbe **30000** — schlimmer als 10000.
+Eine 0 ist hier nicht mit einer Messung zu verwechseln: ein Kontostand von 0
+ist kein handelbarer Wert, anders als bei `profitLoss`, wo 0 „Breakeven"
+heissen **kann** (26.10.).
+
+### Und die 0 darf sich nicht als Messung lesen
+
+`trading-journal/page.tsx` zeigte `{trade.accountSize ?? 30000}`. Mit der
+Korrektur stünde dort „0" — eine Behauptung statt einer Abwesenheit. Jetzt
+steht dort **„—"**, wenn der Wert keine positive endliche Zahl ist. Das
+`?? 30000` war ohnehin tot: die Spalte ist NOT NULL und im Zeilentyp dieser
+Datei `number`.
+
+Ohne diesen zweiten Teil hätte der Fix die erfundene 10000 nur gegen eine
+behauptete 0 getauscht.
+
+### Der Ausfall ist nicht stumm
+
+`ohneKontostand` wird gezählt und geht in `message` — dieselbe Mechanik wie
+`ohneBrokerZeit` zehn Zeilen darüber, und **mit gemessenen Empfängern**:
+`app/page.tsx` (`setSyncMsg`) und `app/trading-journal/page.tsx` (`alert`)
+zeigen `message` an. Ein stummer Zähler wäre ein Feld ohne Empfänger
+(Klasse 28.10.).
+
+**Und die Meldung nennt den Wert beim Namen.** Zuerst stand dort
+`JSON.stringify(session.balance)` — das macht aus **NaN und Infinity beides
+`null`**, womit „kaputter Wert" von „kein Wert" nicht zu unterscheiden war,
+ausgerechnet im interessanten Fall. Jetzt `String(...)`: `balance=NaN`,
+`balance=Infinity`, `balance=-500`. Im Sabotage-Lauf stand dieselbe Falle
+auch in der **Diagnose meines eigenen Prüfers** (`accountSize=null` für ein
+Infinity) — dort ebenfalls behoben.
+
+### Zwei Korrekturen an meinem eigenen Plan, vor dem Bauen
+
+Beide gefunden, weil ich die **Leserseite** gemessen habe, statt sie zu
+annehmen:
+
+| Planpunkt | Messung | Konsequenz |
+|---|---|---|
+| „der Leser rendert einen Geldbetrag als Prozent" | **falsch.** `ForwardTestingCenter.tsx:254` zeigt `pnlPercent` **nur** bei `profitLoss === 0` — dann ergeben **alle drei** Zweige 0 | das geplante Modul `pnl-prozent.ts` und die Komponenten-Änderung sind **entfallen**: „eine Mechanik, die nachweislich nie greift, wäre Arbeit auf Verdacht" (26.10.) |
+| wo ist die Erfindung sichtbar? | **nicht** über `pnlPercent`, sondern über die **direkte** Anzeige in der Journal-Tabelle | die Anzeige-Korrektur kam dazu, die forward-testing-Kette bleibt unberührt |
+
+Dazu ein dritter Grund, sie unberührt zu lassen: `safety-nets` **verlangt**
+dort `t.accountSize` als Leser (Zusage vom 08.11.) — die Kette anzufassen
+hätte einen bestehenden Riegel gebrochen.
+
+**Ebenfalls gemessen und NICHT geändert:** `metrics.totalPnlPercent` ist die
+**absolute** P&L-Summe (`forward-testing/route.ts:142`), unabhängig von
+`accountSize` — das Haupt-Dashboard war nie betroffen. Der Name lügt, die
+Verwendung in `app/page.tsx` (`totalPnL: m.totalPnlPercent`) ist richtig.
+Eine Umbenennung ist eine eigene Entscheidung.
+
+### Absicherung — ausgeführt, nicht am Wortlaut
+
+Der Prüfstand **existierte schon**: seit dem 08.11. fährt `safety-nets` die
+echte `POST` dieser Route gegen einen gefälschten `fetch` und einen
+Datenbank-Spion. Er wurde **erweitert, nicht neu gebaut** — kein neues Modul,
+kein neuer Import, die Karte bleibt bei **902 Kanten**.
+
+Geprüft wird, was im INSERT **ankommt** (`args[3]`): echter Stand 2000, Stand
+0, **NaN**, **+Infinity**, negativ — und dass die Zeit-Umrechnung davon
+unberührt bleibt, sonst hätte der neue Riegel einen bestehenden mitgerissen.
+
+**Ein Fehler in meiner eigenen neuen Zusicherung, vom Rechnen gefunden:**
+`Number.isFinite` macht bei **NaN keinen Unterschied** — `NaN > 0` ist schon
+falsch, der else-Zweig fängt es ohnehin. Der Riegel wirkt **nur bei
+`+Infinity`**, wo `b > 0` wahr ist. Mein erster Testfall (NaN) konnte den
+Fehler also **nicht ausdrücken**; der Infinity-Fall steht jetzt drin, samt
+einer Rechnung, die die Begründung selbst belegt
+(`NaN>0=false · Inf>0=true · isFinite(Inf)=false`).
+
+**9 von 9 Sabotagen** plus Gegenprobe: die 10000 zurück, der `isFinite`-Riegel
+entfernt, der Zähler weg, die Zahl aus `message`, die Meldung feuert auch bei
+gesundem Stand, `JSON.stringify` zurück, der INSERT umgeht die Entscheidung,
+die Schwesterstelle erfindet wieder, die Anzeige liest die 0 als Kontostand —
+und eine nachweislich wirkungslose Änderung bleibt **grün** (Lehre vom 15.09.).
+
+### Was es NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife, kein Killswitch. **Keine der acht Dateien mit
+erhöhtem Risiko** ist angefasst. `riskAmount`, `riskPercent` und
+`positionSize` im INSERT bleiben Zeichen für Zeichen.
+
+**Bestehende Zeilen werden nicht angefasst** — kein UPDATE, keine Migration;
+die Korrektur wirkt ab jetzt. Wie viele alte Zeilen eine erfundene 10000
+tragen, lässt sich von hier **nicht** messen (die Produktionsdatenbank ist
+nicht befragbar), und eine Korrektur wäre eine nicht umkehrbare
+Datenänderung.
+
+`/edge` und `/hebel` lesen `accountSize` **0×** — die Erwartungswerte sind
+unberührt. **Snapshot 299 Werte unverändert**, `tsc` 0 Fehler, Build
+*Compiled successfully* ohne Warnung.
+
+**Benannt, nicht geändert:** `/api/trades:14` `?? 30000` ist
+**Formulareingabe** des Nutzers, eine andere Klasse; die übrigen `30000` in
+der Journal-Seite sind Formular-Standardwerte und Platzhalter.
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben

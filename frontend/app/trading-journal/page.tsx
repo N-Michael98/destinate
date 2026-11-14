@@ -4072,7 +4072,12 @@ export default function TradingJournal() {
                     </div>
                     <button onClick={() => startEditTrade(trade)} className="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-sm">Edit</button>
                     <button onClick={() => deleteTrade(trade.id, trade.status)} className="bg-red-900 hover:bg-red-950 px-3 py-2 rounded text-sm">Löschen</button>
-                    <div>{trade.accountSize ?? 30000}</div>
+                    {/* 0 heisst "nicht erfasst" (sync-journal, 14.11.) und
+                        darf sich nicht als Kontostand lesen. Das `?? 30000`
+                        war ohnehin tot: `accountSize` ist im Zeilentyp dieser
+                        Datei `number` und in der DB NOT NULL. */}
+                    <div>{Number.isFinite(trade.accountSize) && trade.accountSize > 0
+                      ? trade.accountSize : "—"}</div>
                     <div>{trade.riskPercent ?? 1}%</div>
                   </div>
                 ))}
