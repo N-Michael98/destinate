@@ -29,6 +29,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { read, ladeTsModul } = require("./_lib");
+// DER CAPITAL-CLIENT IMPORTIERT SEIT DEM 14.11. AUCH `lageMelden`.
+// Ohne Ersatz ist der Import ein Stellvertreter, der beim AUFRUF wirft —
+// heute harmlos, weil keine Ladestelle `capitalClosePartial` ruft, aber
+// genau so sind am 13.11. zehn Zusicherungen rot geworden. Die Regel vom
+// 01.11. gilt: ein neuer Aufruf braucht seinen Ersatz UEBERALL.
+//
+// Als SPREAD an den Anfang gesetzt: spaetere Schluessel ueberschreiben
+// ihn, das bisherige Verhalten jeder Ladestelle bleibt damit unveraendert.
+const KLIENT_ERSATZ = {
+  "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+  "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+};
 // DER TRACKER IMPORTIERT SEIT DEM 13.11. ZWEI REINE MODULE.
 // Ohne Ersatz ist jeder Import ein Stellvertreter, der beim AUFRUF wirft —
 // und `ergaenzeFehlendeJournalZeilen` faellt dann in sein catch und gibt
@@ -105,7 +117,7 @@ module.exports = function pruefe() {
 
   // ── B) Mindest-Stop-Abstand: die echten Funktionen rechnen ────────────────
   const geladen = ladeTsModul("lib/capital-com/capital-com-client.ts",
-    { "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
+    { ...KLIENT_ERSATZ, "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
   if (geladen.fehler) {
     funde.push(geladen.fehler);
     return { titel: "Order-Bestätigung (nicht ausführbar)", funde };

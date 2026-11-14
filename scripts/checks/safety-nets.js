@@ -10,6 +10,18 @@
 const fs = require("fs");
 const path = require("path");
 const { read, ladeTsModul, objectBlock, ROOT, sourceFiles } = require("./_lib");
+// DER CAPITAL-CLIENT IMPORTIERT SEIT DEM 14.11. AUCH `lageMelden`.
+// Ohne Ersatz ist der Import ein Stellvertreter, der beim AUFRUF wirft —
+// heute harmlos, weil keine Ladestelle `capitalClosePartial` ruft, aber
+// genau so sind am 13.11. zehn Zusicherungen rot geworden. Die Regel vom
+// 01.11. gilt: ein neuer Aufruf braucht seinen Ersatz UEBERALL.
+//
+// Als SPREAD an den Anfang gesetzt: spaetere Schluessel ueberschreiben
+// ihn, das bisherige Verhalten jeder Ladestelle bleibt damit unveraendert.
+const KLIENT_ERSATZ = {
+  "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+  "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+};
 // DER TRACKER IMPORTIERT SEIT DEM 13.11. ZWEI REINE MODULE.
 // Ohne Ersatz ist jeder Import ein Stellvertreter, der beim AUFRUF wirft —
 // und `ergaenzeFehlendeJournalZeilen` faellt dann in sein catch und gibt
@@ -3486,7 +3498,7 @@ module.exports = async function pruefe() {
       // mit einem leeren Ersatz wirft das Modul beim Laden. Und eine
       // nachgebaute Karte pruefte gegen die eigene Annahme.
       const klient = ladeTsModul("lib/capital-com/capital-com-client.ts",
-        { "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
+        { ...KLIENT_ERSATZ, "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
       const ex = klient.fehler ? klient
         : ladeTsModul("lib/capital-com/capital-com-execution.ts", {
           "killswitch": { isKillswitchActive: () => false },
@@ -6985,7 +6997,7 @@ module.exports = async function pruefe() {
   // den gemessenen Zeichenketten.
   {
     const cm = ladeTsModul("lib/capital-com/capital-com-client.ts",
-      { "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
+      { ...KLIENT_ERSATZ, "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
     const bz = cm.exports?.brokerZeitNachUtc;
     if (cm.fehler || typeof bz !== "function") {
       funde.push(`brokerZeitNachUtc nicht ausfuehrbar: ${cm.fehler ?? "nicht exportiert"}`);
@@ -9407,7 +9419,7 @@ module.exports = async function pruefe() {
   // AUSGEFUEHRT, nicht am Wortlaut: `global.fetch` wird ersetzt, und die
   // ECHTE Funktion muss die Antwort des Brokers abbilden.
   {
-    const cc = ladeTsModul("lib/capital-com/capital-com-client.ts", {
+    const cc = ladeTsModul("lib/capital-com/capital-com-client.ts", { ...KLIENT_ERSATZ,
       "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
       "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false },
     });
@@ -11269,7 +11281,7 @@ module.exports = async function pruefe() {
   // gefaelschten `fetch` und einen Datenbank-SPION, aber mit dem ECHTEN
   // `brokerZeitNachUtc`. Geprueft wird, was im INSERT ANKOMMT.
   {
-    const ccEcht = ladeTsModul("lib/capital-com/capital-com-client.ts", {
+    const ccEcht = ladeTsModul("lib/capital-com/capital-com-client.ts", { ...KLIENT_ERSATZ,
       "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
       "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false },
     });
@@ -12585,6 +12597,203 @@ module.exports = async function pruefe() {
           `${(trOhneK.match(/\.beinPnls = /g) || []).length}x beinPnls`);
       }
 
+    }
+  }
+
+  // ══ STUFE 3: DER TEILGEWINN WIRD BESTAETIGT (14.11.) ══════════════════
+  //
+  // DER FUND: `capitalClosePartial` gab `ok: true` zurueck, sobald der POST
+  // mit 2xx beantwortet wurde. Der Aufrufer schreibt darauf ein
+  // PERSISTIERTES `partialDone: true`, und `!meta.partialDone` sperrt danach
+  // JEDEN weiteren Teilgewinn fuer diese Position. Eine Ablehnung des
+  // Brokers hat den Teilgewinn also dauerhaft und STUMM abgeschaltet.
+  //
+  // Geprueft wird AUSGEFUEHRT, gegen einen GEZAEHLTEN fetch — ein Regex
+  // prueft den Wortlaut, nicht das Verhalten (30.09.).
+  {
+    const kl3 = ladeTsModul("lib/capital-com/capital-com-client.ts", { ...KLIENT_ERSATZ,
+      "zeitmessung/zeitmessung": { zeitstempelMessen: () => {}, hatZone: () => false } });
+    const closePartial = kl3.exports?.capitalClosePartial;
+    const teilgewinnStelle = kl3.exports?.teilgewinnStelle;
+    if (kl3.fehler || typeof closePartial !== "function"
+      || typeof teilgewinnStelle !== "function") {
+      torPruefung("capitalClosePartial/teilgewinnStelle sind nicht ausfuehrbar",
+        false, kl3.fehler ?? "nicht exportiert");
+    } else {
+      const echtesFetch = global.fetch;
+      const vorLage3 = global.__redis_lage__;
+      const fahre = async (antworten, epic = "GOLD", richtung = "BUY") => {
+        const anfragen = [];
+        global.fetch = async (url, opt) => {
+          anfragen.push({ url: String(url), opt });
+          const a = antworten[anfragen.length - 1];
+          if (!a) throw new Error(`unerwartete Anfrage ${anfragen.length}`);
+          if (a.wirft) throw new Error(a.wirft);
+          return {
+            ok: a.ok !== false,
+            status: a.status ?? 200,
+            json: async () => a.body ?? {},
+          };
+        };
+        const zeilen = [];
+        const aW = console.warn, aL = console.log;
+        console.warn = (...x) => zeilen.push(String(x[0]));
+        console.log = (...x) => zeilen.push(String(x[0]));
+        try {
+          const r = await closePartial("k", "c", "s", epic, richtung, 2);
+          return { r, anfragen, zeilen };
+        } finally {
+          global.fetch = echtesFetch;
+          console.warn = aW; console.log = aL;
+        }
+      };
+      const frisch = () => { global.__redis_lage__ = undefined; };
+
+      try {
+        // ── 1) HTTP-Fehler beim POST: ok false, EINE Anfrage, gemeldet ──
+        frisch();
+        const f1 = await fahre([{ ok: false, status: 403, body: { errorCode: "error.not-enough" } }]);
+        torPruefung("ein HTTP-Fehler beim Teilgewinn ergibt kein ok:false",
+          f1.r.ok === false && String(f1.r.error).includes("error.not-enough"),
+          JSON.stringify(f1.r));
+        torPruefung("ein fehlgeschlagener Teilgewinn ist STUMM — genau der "
+          + "Fund: der RiskAgent hat dafuer keinen else-Zweig",
+          f1.zeilen.filter((z) => /Teilgewinn .* FEHLGESCHLAGEN/.test(z)).length === 1,
+          JSON.stringify(f1.zeilen));
+        torPruefung("ein fehlgeschlagener POST fragt trotzdem nach einer Bestaetigung",
+          f1.anfragen.length === 1, `${f1.anfragen.length} Anfragen`);
+
+        // ── 2) DIE GEGENRICHTUNG: ein BUY wird mit SELL geschlossen ──────
+        frisch();
+        const f2 = await fahre([
+          { body: { dealReference: "r1" } },
+          { body: { status: "OPENED" } },
+        ], "GOLD", "BUY");
+        const leib = JSON.parse(String(f2.anfragen[0]?.opt?.body ?? "{}"));
+        torPruefung("der Teilschluss sendet NICHT die Gegenrichtung — eine "
+          + "Order auf derselben Seite wuerde die Position VERGROESSERN",
+          leib.direction === "SELL" && leib.epic === "GOLD" && leib.size === 2,
+          JSON.stringify(leib));
+        torPruefung("ein bestaetigter Teilgewinn ergibt kein ok:true",
+          f2.r.ok === true && f2.r.unbestaetigt === undefined
+          && f2.r.status === "PARTIAL_CLOSE",
+          JSON.stringify(f2.r));
+        // GEGENPROBE: ein GELUNGENER Teilgewinn darf KEINEN Fehlschlag melden.
+        torPruefung("ein gelungener Teilgewinn meldet einen Fehlschlag — dann "
+          + "schlaegt der Riegel bei jedem gesunden Lauf Alarm",
+          f2.zeilen.filter((z) => /FEHLGESCHLAGEN|ABGELEHNT|NICHT bestaetigt/.test(z)).length === 0,
+          JSON.stringify(f2.zeilen));
+        torPruefung("der Teilschluss bestaetigt nicht — dann ist eine "
+          + "Ablehnung von einem Erfolg nicht zu unterscheiden",
+          f2.anfragen.length === 2 && /\/confirms\/r1$/.test(f2.anfragen[1].url),
+          `${f2.anfragen.length} Anfragen: ${f2.anfragen.map((a) => a.url).join(" | ")}`);
+        // Und die Gegenrichtung in die andere Richtung.
+        frisch();
+        const f2b = await fahre([
+          { body: { dealReference: "r1" } }, { body: { status: "OPENED" } },
+        ], "GOLD", "SELL");
+        torPruefung("ein SELL wird nicht mit BUY geschlossen",
+          JSON.parse(String(f2b.anfragen[0]?.opt?.body ?? "{}")).direction === "BUY",
+          String(f2b.anfragen[0]?.opt?.body));
+
+        // ── 3) ABGELEHNT: ok MUSS false werden ──────────────────────────
+        for (const status of ["REJECTED", "DELETED"]) {
+          frisch();
+          const f3 = await fahre([
+            { body: { dealReference: "r2" } },
+            { body: { status, reason: "INSUFFICIENT_FUNDS" } },
+          ]);
+          torPruefung(`eine ${status}-Bestaetigung ergibt weiter ok:true — dann `
+            + "schreibt der Aufrufer partialDone und die Position bekommt NIE "
+            + "wieder einen Teilgewinn",
+            f3.r.ok === false && String(f3.r.error).includes("INSUFFICIENT_FUNDS"),
+            JSON.stringify(f3.r));
+          torPruefung(`eine ${status}-Ablehnung wird nicht gemeldet`,
+            f3.zeilen.filter((z) => /ABGELEHNT/.test(z)).length === 1,
+            JSON.stringify(f3.zeilen));
+        }
+
+        // ── 4) NICHT BESTAETIGBAR: ok bleibt true, aber markiert ────────
+        for (const [name, zweite] of [
+          ["HTTP-Fehler", { ok: false, status: 500 }],
+          ["Netzfehler", { wirft: "ECONNRESET" }],
+        ]) {
+          frisch();
+          const f4 = await fahre([{ body: { dealReference: "r3" } }, zweite]);
+          torPruefung(`eine unlesbare Bestaetigung (${name}) gilt als Fehlschlag — `
+            + "dann naehme der naechste Zyklus einen ZWEITEN Teilgewinn",
+            f4.r.ok === true && f4.r.unbestaetigt === true,
+            JSON.stringify(f4.r));
+          torPruefung(`die Unsicherheit (${name}) wird verschwiegen`,
+            f4.zeilen.filter((z) => /NICHT bestaetigt/.test(z)).length === 1,
+            JSON.stringify(f4.zeilen));
+        }
+
+        // ── 5) OHNE dealReference wird gar nicht bestaetigt ─────────────
+        frisch();
+        const f5 = await fahre([{ body: {} }]);
+        torPruefung("ohne dealReference wird trotzdem eine Bestaetigung geholt",
+          f5.anfragen.length === 1 && f5.r.ok === true && f5.r.unbestaetigt === true,
+          `${f5.anfragen.length} Anfragen, ${JSON.stringify(f5.r)}`);
+
+        // ── 6) DROSSEL: zweite Ablehnung schweigt ───────────────────────
+        frisch();
+        await fahre([{ ok: false, status: 403, body: { errorCode: "E1" } }]);
+        const f6 = await fahre([{ ok: false, status: 403, body: { errorCode: "E1" } }]);
+        torPruefung("ein Dauerausfall meldet bei JEDEM Lauf — im 2-Minuten-"
+          + "Zyklus waeren das 720 Zeilen am Tag",
+          f6.zeilen.filter((z) => /FEHLGESCHLAGEN/.test(z)).length === 0,
+          JSON.stringify(f6.zeilen));
+        // ── und die Stellen sind JE EPIC getrennt ───────────────────────
+        const f6b = await fahre([{ ok: false, status: 403, body: { errorCode: "E1" } }], "BTCUSD");
+        torPruefung("zwei Maerkte teilen sich eine Drossel-Stelle — dann "
+          + "verdeckt der eine Ausfall den anderen",
+          f6b.zeilen.filter((z) => /FEHLGESCHLAGEN/.test(z)).length === 1,
+          JSON.stringify(f6b.zeilen));
+        torPruefung("teilgewinnStelle unterscheidet die Maerkte nicht",
+          teilgewinnStelle("GOLD") !== teilgewinnStelle("BTCUSD")
+          && teilgewinnStelle("") === teilgewinnStelle("   "),
+          `${teilgewinnStelle("GOLD")} / ${teilgewinnStelle("BTCUSD")} / ${teilgewinnStelle("")}`);
+      } finally {
+        global.fetch = echtesFetch;
+        global.__redis_lage__ = vorLage3;
+      }
+
+      // ── VERDRAHTUNG: beide Aufrufer bleiben UNANGETASTET ──────────────
+      // Die Zusicherung gehoert an die Stelle, an der sie gilt (28.10.) —
+      // deshalb sitzt sie im Client und nicht in den zwei Hochrisiko-Dateien.
+      // KOMMENTARBEREINIGT (14.11.). Die rohe Suche schlug an, weil
+      // `risk-agent.ts:1060` das Wort `/confirms/{ref}` in einem KOMMENTAR
+      // nennt — "ein Wort im Kommentar ist keine Verwendung", diesmal in
+      // meiner eigenen Pruefung. Mit Selbstpruefung, damit die Bereinigung
+      // nicht ihrerseits zu viel oder zu wenig frisst.
+      const ohneK3 = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      if (ohneK3("a // weg\nb") !== "a \nb" || ohneK3("x /* weg */ y") !== "x   y"
+        || ohneK3('const u = "http://a";') !== 'const u = "http://a";') {
+        torPruefung("die Kommentar-Bereinigung in Stufe 3 ist kaputt", false,
+          JSON.stringify([ohneK3("a // weg\nb"), ohneK3("x /* weg */ y"),
+            ohneK3('const u = "http://a";')]));
+      }
+      const raQ = ohneK3(read("frontend/lib/agents/risk-agent.ts"));
+      const inQ = ohneK3(read("frontend/instrumentation.ts"));
+      torPruefung("ein Aufrufer bestaetigt jetzt selbst — die Zusicherung "
+        + "gehoert in den Client, sonst deckt sie nur einen der beiden",
+        !/confirms\//.test(raQ) && !/confirms\//.test(inQ),
+        `risk-agent ${/confirms\//.test(raQ)} · instrumentation ${/confirms\//.test(inQ)}`);
+      torPruefung("der Teilgewinn wird nicht mehr von beiden Stellen gerufen "
+        + "— dann deckt der Riegel nur die halbe Wahrheit ab",
+        /capitalClosePartial\(/.test(raQ) && /capitalClosePartial\(/.test(inQ),
+        `risk-agent ${/capitalClosePartial\(/.test(raQ)} · instrumentation ${/capitalClosePartial\(/.test(inQ)}`);
+      // `capitalConfirmDeal` wird hier BEWUSST nicht benutzt: es verlangt am
+      // Ende eine dealId, und eine Schliess-Bestaetigung muss keine tragen.
+      const ccQ3 = read("frontend/lib/capital-com/capital-com-client.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const block3 = ccQ3.slice(ccQ3.indexOf("export async function capitalClosePartial"));
+      torPruefung("capitalClosePartial benutzt capitalConfirmDeal — das "
+        + "verlangt eine dealId und meldete einen GELUNGENEN Teilschluss "
+        + "als Fehlschlag",
+        !/capitalConfirmDeal\(/.test(block3.slice(0, 4000)), "capitalConfirmDeal");
     }
   }
 

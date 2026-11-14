@@ -4788,8 +4788,10 @@ in einer Datei **keine** Ladestelle getroffen wird.
   — es gibt keine Ordnung. Bei zwei Beinen bleibt er deshalb **leer**.
   Die Kollisionssicherung ist die gemessene Schranke von **zwei** Beinen je
   Position.
-- **Stufe 3** (`capitalClosePartial`): Hochrisiko-Datei, eigene Runde.
-  **Weiterhin offen.**
+- **Stufe 3 ist am 14.11. gebaut** — der Teilgewinn wird jetzt beim Broker
+  **bestätigt**; siehe den Abschnitt weiter unten. **Offen bleibt nur noch
+  der Gegen-Order-Mechanismus selbst**, und zwar bewusst: ob das Konto
+  verrechnet oder hedgt, ist von hier nicht feststellbar — Stufe 1 meldet es.
 
 ### Stufe 2: die Beine werden zusammengeführt (14.11.)
 
@@ -4894,6 +4896,106 @@ Stellen, beide im 24-Stunden-Fenster, mit zusammen genau zwei Beinen — die
 wären nicht unterscheidbar und würden summiert. Die Schranke oben macht das
 unwahrscheinlich, **beweist** es aber nicht aus. Drei Beine fangen genau diesen
 Fall ab, zwei nicht.
+
+### Stufe 3: der Teilgewinn wird bestätigt (14.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+`capital-com-client.ts` steht auf der Liste der **Dateien mit erhöhtem
+Risiko** — der Diff betrifft **ausschliesslich** `capitalClosePartial` plus
+einen Import.
+
+#### Der Fund
+
+`capitalClosePartial` gab **`ok: true` zurück, sobald der POST mit 2xx
+beantwortet war**. Ein `dealReference` heisst aber nicht, dass der Broker den
+Teilschluss ausgeführt hat — unser eigenes `capitalConfirmDeal` kennt
+`REJECTED`/`DELETED`. Und der Aufrufer schreibt auf `ok: true` ein
+**persistiertes** `partialDone: true` (`risk-agent.ts:700`), das über
+`!meta.partialDone` (`:673`) danach **jeden** weiteren Teilgewinn für diese
+Position sperrt.
+
+**Eine Ablehnung des Brokers hat den Teilgewinn also dauerhaft und STUMM
+abgeschaltet.** Stumm deshalb, weil `if (result.ok)` im RiskAgent **keinen
+else-Zweig** hat — ein Fehlschlag erzeugte nicht eine einzige Logzeile.
+
+#### Was sich ändert
+
+| Lage | vorher | jetzt |
+|---|---|---|
+| POST scheitert | `ok: false`, **stumm** | `ok: false` + **gedrosselte** Meldung |
+| Bestätigung `REJECTED`/`DELETED` | **`ok: true`** → `partialDone` | **`ok: false`** mit Grund → erneuter Versuch |
+| Bestätigung in Ordnung | `ok: true` | `ok: true` — unverändert |
+| Bestätigung unlesbar | gab es nicht | `ok: true`, als `unbestaetigt` markiert, gemeldet |
+
+**„Nicht bestätigbar" ist KEIN Fehlschlag.** `ok` bleibt dann `true`, und das
+ist dieselbe Entscheidung wie beim Öffnen (13.08.): meldeten wir Fehlschlag,
+nähme der nächste Zyklus einen **zweiten** Teilgewinn auf derselben Position.
+Nur eine **bewiesene** Ablehnung ändert das Ergebnis.
+
+**Beide Aufrufer bleiben unangetastet** — `risk-agent.ts:690` und
+`instrumentation.ts:769`, beides Hochrisiko-Dateien. Die Zusicherung sitzt im
+Client, wo sie gilt (Regel 28.10.), und deckt damit beide **und jeden
+künftigen** Aufrufer.
+
+#### Zwei Korrekturen an meinem eigenen Plan
+
+1. **Ich hatte behauptet, weder `capitalPlaceOrder` noch `capitalClosePartial`
+   bestätige.** Das war **falsch** — mein Grep-Fenster war zu klein (45 Zeilen,
+   die Funktion ist länger). `capitalPlaceOrder` bestätigt seit dem 13.08.,
+   inklusive des Feldes `unbestaetigt` mit **exakt** der Begründung, die ich
+   im Plan hergeleitet hatte. Jetzt wird dieses Muster **gespiegelt**, nicht
+   ein zweites erfunden.
+2. **`capitalConfirmDeal` wird bewusst NICHT wiederverwendet.** Es verlangt am
+   Ende eine `dealId` — eine **Schliess**-Bestätigung muss keine tragen, und
+   die Funktion meldete einen **gelungenen** Teilschluss als Fehlschlag. Die
+   Entscheidungen unterscheiden sich, deshalb zwei Stellen; der Prüfer hält
+   fest, dass hier nicht darauf zurückgegriffen wird.
+
+#### Absicherung
+
+`safety-nets` 1365 → **1388**, **11 von 11 Sabotagen** plus Gegenprobe. Die
+echte Funktion läuft gegen einen **gezählten** `fetch`: HTTP-Fehler ⇒
+`ok: false` und **genau eine** Meldung; `REJECTED` und `DELETED` einzeln ⇒
+`ok: false`; normale Bestätigung ⇒ `ok: true`, **zwei** Anfragen, die zweite
+auf `/confirms/{ref}`; unlesbare Bestätigung (HTTP **und** Netzfehler) ⇒
+`ok: true` + `unbestaetigt`; ohne `dealReference` ⇒ **eine** Anfrage.
+
+**Die wichtigste ist die Gegenprobe:** ein **gelungener** Teilgewinn darf
+**keinen** Fehlschlag melden — sonst schlüge der Riegel bei jedem gesunden
+Lauf Alarm. Und **D7** ist die gefährlichste Sabotage: die Gegenrichtung zur
+gleichen Richtung zu machen würde die Position **vergrössern** statt
+verkleinern; der Prüfer liest dafür den **echten Anfrage-Rumpf**.
+
+Die Drossel hat **je Epic** einen eigenen Zustand — zwei Märkte dürfen sich
+nicht verdecken (eigene Sabotage D9).
+
+#### Zwei Werkzeugfehler, beide meine
+
+- Meine Prüfung „kein Aufrufer bestätigt selbst" schlug an, weil
+  `risk-agent.ts:1060` das Wort `/confirms/{ref}` in einem **Kommentar**
+  nennt. „Ein Wort im Kommentar ist keine Verwendung" — in meiner eigenen
+  Prüfung. Jetzt kommentarbereinigt, **mit Selbstprüfung der Bereinigung**.
+- **Drei Sabotage-Anker trafen 2×**, weil ich das Bestätigungsmuster
+  gespiegelt habe und die kurzen Anker auf **beide** Funktionen passten. Die
+  Suite hat korrekt **verweigert** statt falsch zu zählen; eindeutig gemacht
+  über die Folgezeile (`const grund` statt `const reason`).
+
+#### Was es NICHT tut — und was offen bleibt
+
+Keine Grösse, kein Stop, keine Schwelle, kein Limit, keine Filterkette, keine
+Schleife, keine Epic-Tabelle. **Snapshot 299 Werte unverändert**, Karte
+901 → **902** (ein gewollter Import). `epic-tables` und `watchlist-sync` —
+die zwei weiteren Prüfer dieser Datei — bleiben grün.
+
+**Der Gegen-Order-Mechanismus bleibt.** `capitalClosePartial` schliesst
+weiterhin nichts, sondern sendet `POST /positions` in der Gegenrichtung —
+**ohne Stop, und damit an `ordersRiegel` vorbei**. Verrechnet das Konto, ist
+das harmlos: die Order schliesst, sie eröffnet nichts. Hedgt es, entsteht eine
+Position ohne Stop. **Welches von beidem gilt, ist von hier nicht
+feststellbar** — `maxPositionsPerSymbol`/`pyramidingEnabled` sagen nur, was
+*unser* Code annimmt, nicht was das Konto tut. Genau dafür meldet Stufe 1
+`GEGENPOSITION`. Erst wenn diese Zeile im Railway-Log steht, ist der Umbau
+belegt statt vermutet — und dann gehört er als eigene Runde gemacht.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

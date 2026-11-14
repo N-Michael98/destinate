@@ -7,6 +7,11 @@ import { lesbareRichtung } from "../richtung/richtung";
 // Die Messung liegt seit dem 08.11. gemeinsam da: BEIDE Broker brauchen sie,
 // und ein `[capital-com]` ueber cTrader-Daten waere eine luegende Logzeile.
 import { zeitstempelMessen } from "../zeitmessung/zeitmessung";
+// STUFE 3 (14.11.): ein fehlgeschlagener Teilgewinn war STUMM. Gedrosselt
+// ueber die BESTEHENDE Drossel — eine Umsetzung, nicht zwei (01.11.), auf
+// `global`, und JE EPIC ein eigener Zustand, damit zwei Maerkte sich nicht
+// gegenseitig verdecken.
+import { lageMelden } from "../redis-lage/redis-lage";
 
 const DEMO_BASE = "https://demo-api-capital.backend-capital.com/api/v1";
 const LIVE_BASE = "https://api-capital.backend-capital.com/api/v1";
@@ -1015,6 +1020,11 @@ export async function capitalUpdatePosition(
 }
 
 // Partially close a position: opens opposite order for partialSize
+/** Die Drossel-Stelle JE EPIC — zwei Maerkte duerfen sich nicht verdecken. */
+export function teilgewinnStelle(epic: string): string {
+  return `Capital Teilgewinn ${String(epic ?? "").trim() || "ohne Epic"}`;
+}
+
 export async function capitalClosePartial(
   apiKey: string,
   cst: string,
@@ -1023,6 +1033,30 @@ export async function capitalClosePartial(
   direction: "BUY" | "SELL",
   partialSize: number,
 ): Promise<OrderResult> {
+  // ── STUFE 3 (14.11.): BESTAETIGEN STATT HTTP 200 GLAUBEN ──────────────
+  //
+  // DER FUND. Bis heute gab diese Funktion `ok: true` zurueck, sobald der
+  // POST mit 2xx beantwortet wurde. Ein `dealReference` heisst aber nicht,
+  // dass der Broker den Teilschluss AUSGEFUEHRT hat — unser eigenes
+  // `capitalConfirmDeal` kennt `REJECTED`/`DELETED`. Und der Aufrufer
+  // (`risk-agent.ts:700`) schreibt auf `ok: true` ein PERSISTIERTES
+  // `partialDone: true`, und `!meta.partialDone` sperrt danach JEDEN
+  // weiteren Teilgewinn fuer diese Position. Eine Ablehnung hat den
+  // Teilgewinn also DAUERHAFT und STUMM abgeschaltet.
+  //
+  // `capitalPlaceOrder` macht es seit dem 13.08. richtig. Hier wird genau
+  // dieses Muster gespiegelt — kein zweites erfunden.
+  //
+  // DER UNTERSCHIED ZUM OEFFNEN: eine Schliess-Bestaetigung muss KEINE
+  // `dealId` tragen, denn es entsteht keine Position. Deshalb wird sie hier
+  // auch nicht verlangt — `capitalConfirmDeal` taete das und meldete einen
+  // GELUNGENEN Teilschluss als Fehlschlag.
+  //
+  // UND "NICHT BESTAETIGBAR" IST KEIN FEHLSCHLAG. ok bleibt dann true, wie
+  // beim Oeffnen und aus demselben Grund: meldeten wir Fehlschlag, naehme
+  // der naechste Zyklus einen ZWEITEN Teilgewinn auf derselben Position.
+  // Nur eine BEWIESENE Ablehnung aendert das Ergebnis.
+  const stelle = teilgewinnStelle(epic);
   try {
     const oppositeDir = direction === "BUY" ? "SELL" : "BUY";
     const res = await fetch(`${DEMO_BASE}/positions`, {
@@ -1033,12 +1067,69 @@ export async function capitalClosePartial(
     });
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
-      return { ok: false, error: (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}` };
+      const grund = (errBody as Record<string, string>).errorCode ?? `HTTP ${res.status}`;
+      if (lageMelden(stelle, "aus")) {
+        console.warn(`[capital] Teilgewinn ${epic} FEHLGESCHLAGEN: ${grund} — `
+          + `die Position behaelt ihre volle Groesse, der naechste Zyklus `
+          + `versucht es erneut.`);
+      }
+      return { ok: false, error: grund };
     }
     const data = (await res.json()) as Record<string, unknown>;
-    return { ok: true, dealReference: String(data.dealReference ?? ""), status: "PARTIAL_CLOSE" };
+    const dealReference = String(data.dealReference ?? "");
+
+    let bestaetigungsFehler = "";
+    if (dealReference) {
+      await new Promise((r) => setTimeout(r, 800)); // wie beim Oeffnen
+      try {
+        const confirmRes = await fetch(`${DEMO_BASE}/confirms/${dealReference}`, {
+          headers: authHeaders(apiKey, cst, securityToken),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!confirmRes.ok) {
+          bestaetigungsFehler = `HTTP ${confirmRes.status}`;
+        } else {
+          const confirm = (await confirmRes.json()) as Record<string, unknown>;
+          const status = String(confirm.status ?? "");
+          if (status === "REJECTED" || status === "DELETED") {
+            const grund = String(confirm.reason ?? confirm.rejectReason
+              ?? "Teilgewinn vom Broker abgelehnt");
+            if (lageMelden(stelle, "aus")) {
+              console.warn(`[capital] Teilgewinn ${epic} ABGELEHNT (${status}): ${grund} — `
+                + `es wird KEIN partialDone geschrieben, der naechste Zyklus `
+                + `versucht es erneut.`);
+            }
+            return { ok: false, error: grund };
+          }
+          if (lageMelden(stelle, "ok")) {
+            console.log(`[capital] Teilgewinn ${epic} wieder erfolgreich.`);
+          }
+          return { ok: true, dealReference, status: "PARTIAL_CLOSE" };
+        }
+      } catch (e) {
+        bestaetigungsFehler = e instanceof Error ? e.message : String(e);
+      }
+    }
+
+    // NICHT BESTAETIGBAR — ok bleibt true (siehe oben). Die Unsicherheit wird
+    // gemeldet, nicht ein erfundenes Ergebnis. Ungedrosselt wie beim Oeffnen:
+    // auf diesem Pfad war der POST erfolgreich, der Aufrufer setzt also
+    // partialDone und versucht es NICHT erneut.
+    console.warn(`[capital] Teilgewinn ${epic} NICHT bestaetigt`
+      + `${bestaetigungsFehler ? ` (${bestaetigungsFehler})` : ""} — Status `
+      + `unbekannt. Der Teilschluss kann ausgefuehrt sein; nicht erneut senden.`);
+    if (lageMelden(stelle, "ok")) {
+      console.log(`[capital] Teilgewinn ${epic} wieder abgeschickt.`);
+    }
+    return { ok: true, dealReference, status: "PARTIAL_CLOSE", unbestaetigt: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Network error" };
+    const grund = err instanceof Error ? err.message : "Network error";
+    if (lageMelden(stelle, "aus")) {
+      console.warn(`[capital] Teilgewinn ${epic} FEHLGESCHLAGEN: ${grund} — `
+        + `die Position behaelt ihre volle Groesse, der naechste Zyklus `
+        + `versucht es erneut.`);
+    }
+    return { ok: false, error: grund };
   }
 }
 
