@@ -11581,6 +11581,335 @@ module.exports = async function pruefe() {
         .join(" | ").replace(/\s+/g, " ").slice(0, 200));
   }
 
+  // ══ EIN KONTOSTAND — EINE LESART (14.11.) ═══════════════════════════════
+  //
+  // Zwei Order-Routen, zwei Lesarten fuer dieselbe Eingabe. Gemessen mit dem
+  // echten `orderBody`, das `MarketScannerPanel` an BEIDE Routen schickt:
+  //
+  //   Eingabe    Capital                       IC Markets
+  //   fehlt      400                           `?? 10000` → echte Groesse
+  //   0          400 (`!0` ist wahr)           durch → Volumen MIN_UNITS
+  //   NaN        400                           durch → Volumen NaN
+  //   Infinity   durch, von MAX_SIZE geklemmt  durch → Volumen Infinity
+  //   -500       durch, auf MIN_SIZE geklemmt  durch → MIN_UNITS
+  //   "abc"      DURCH (`!"abc"` ist falsch)   durch → NaN
+  //
+  // Ein geleertes Eingabefeld ist dabei nicht theoretisch: die Komponente
+  // liest `Number(e.target.value)`, und `Number("")` ist 0.
+  //
+  // GERECHNET und AUSGEFUEHRT, nicht am Wortlaut: ein Regex prueft den
+  // Wortlaut, nicht das Verhalten (30.09.).
+  {
+    const ks = ladeTsModul("lib/kontostand/kontostand.ts");
+    if (ks.fehler || typeof ks.exports?.lesbarerKontostand !== "function") {
+      funde.push(`kontostand-Modul nicht ladbar: ${ks.fehler ?? "Funktion fehlt"}`);
+      zusatz++;
+    } else {
+      const { lesbarerKontostand, kontostandGrund } = ks.exports;
+
+      // ── 1) Die Lesart selbst, an zwoelf Lagen ──────────────────────────
+      const lagen = [
+        ["echte Zahl 2000", 2000, 2000],
+        ["kleine Zahl 0.5", 0.5, 0.5],
+        ["Null", 0, null],
+        ["negativ", -500, null],
+        ["NaN", Number.NaN, null],
+        ["+Infinity", Number.POSITIVE_INFINITY, null],
+        ["-Infinity", Number.NEGATIVE_INFINITY, null],
+        ["Zahl als Zeichenkette", "5000", null],
+        ["Text", "abc", null],
+        ["leere Zeichenkette", "", null],
+        ["null", null, null],
+        ["undefined", undefined, null],
+        ["Objekt", {}, null],
+      ];
+      for (const [name, ein, soll] of lagen) {
+        const ist = lesbarerKontostand(ein);
+        torPruefung(`lesbarerKontostand liest "${name}" falsch — ein `
+          + `erfundener oder unbrauchbarer Stand entscheidet dann ueber die `
+          + `POSITIONSGROESSE`,
+          ist === soll,
+          `Eingabe=${String(ein)} → ${String(ist)} (erwartet ${String(soll)})`);
+      }
+
+      // ── 2) Der GRUND muss die Lagen unterscheiden ──────────────────────
+      //     "ungueltig" allein sagt dem Aufrufer nicht, ob er das Feld
+      //     vergessen, eine Zeichenkette geschickt oder ein leeres Formular
+      //     abgesendet hat. Drei Lagen, drei naechste Schritte.
+      const gruende = [undefined, "abc", Number.NaN, Number.POSITIVE_INFINITY, 0, -5]
+        .map((v) => kontostandGrund(v));
+      torPruefung("kontostandGrund nennt verschiedene Lagen gleich — dann "
+        + "schweigt die Diagnose im interessanten Fall",
+        new Set(gruende).size === gruende.length && gruende.every((g) => typeof g === "string"),
+        gruende.map((g, i) => `${i}:${String(g)}`).join(" · "));
+      torPruefung("kontostandGrund meldet einen BRAUCHBAREN Stand als Fehler "
+        + "— dann waere die Meldung nur 'immer rot'",
+        kontostandGrund(2000) === null && kontostandGrund(0.5) === null,
+        `2000→${String(kontostandGrund(2000))} 0.5→${String(kontostandGrund(0.5))}`);
+
+      // ── 3) BEIDE ROUTEN AUSGEFUEHRT ────────────────────────────────────
+      //     Eine gerechnete Funktion beweist nichts ueber ihre Aufrufstelle
+      //     (30.09.). Gezaehlt wird, wie oft die AUSFUEHRUNG gerufen wird —
+      //     bei einer Ablehnung muss das NULL sein.
+      const NR2 = { json: (body, init) => ({ __body: body, status: init?.status ?? 200 }) };
+      let icAufrufe = 0, capAufrufe = 0;
+      let icStand = 0;              // Sitzungsstand, veraenderlich
+      let icFrei = true;            // icMarketsExecutionEnabled
+      let einstLesbar = true;
+
+      const icRoute = ladeTsModul("app/api/icmarkets/execute/route.ts", {
+        "next/server": { NextResponse: NR2 },
+        "icmarkets/icmarkets-execution": {
+          executeICMarketsOrder: async () => { icAufrufe++; return { ok: true, volume: 1000 }; },
+        },
+        "icmarkets/icmarkets-session": {
+          isICMarketsConnected: () => true,
+          getICMarketsSession: () => ({ balance: icStand }),
+        },
+        "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+        "kontostand/kontostand": ks.exports,
+        "settings/settings-store": {
+          getSettings: async () => {
+            if (!einstLesbar) throw new Error("DB weg");
+            return { botSettings: { icMarketsExecutionEnabled: icFrei } };
+          },
+        },
+      });
+      const capRoute = ladeTsModul("app/api/capital-com/execute/route.ts", {
+        "next/server": { NextResponse: NR2 },
+        "capital-com/capital-com-execution": {
+          executeCapitalDemoOrder: async () => { capAufrufe++; return { ok: true, dealId: "D1", size: 1 }; },
+        },
+        "capital-com/capital-com-session": { isCapitalConnected: () => true },
+        "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+        "kontostand/kontostand": ks.exports,
+        "capital-com/capital-trade-tracker": { saveCapitalTradeToJournal: async () => {} },
+      });
+
+      if (icRoute.fehler || typeof icRoute.exports?.POST !== "function"
+        || capRoute.fehler || typeof capRoute.exports?.POST !== "function") {
+        funde.push(`Order-Route nicht ausfuehrbar: IC=${icRoute.fehler ?? "ok"} `
+          + `CAP=${capRoute.fehler ?? "ok"}`);
+        zusatz++;
+      } else {
+        const fahre = async (welche, koerper) => {
+          icAufrufe = 0; capAufrufe = 0;
+          const POST = welche === "ic" ? icRoute.exports.POST : capRoute.exports.POST;
+          const r = await POST({ json: async () => koerper });
+          return { status: r?.status, leib: r?.__body, ic: icAufrufe, cap: capAufrufe };
+        };
+        const gueltig = { symbol: "EURUSD", direction: "BUY", accountBalance: 2000,
+                          stopLossPrice: 1.05, takeProfitPrice: 1.12 };
+
+        // SELBSTPRUEFUNG ZUERST: der gesunde Fall MUSS durchgehen, sonst ist
+        // jede Ablehnung darunter eine Null-Aussage.
+        const icOk = await fahre("ic", gueltig);
+        const capOk = await fahre("cap", gueltig);
+        torPruefung("der Order-Pruefstand laesst den GESUNDEN Fall nicht "
+          + "durch — jede Zusicherung darunter waere eine Null-Aussage",
+          icOk.status === 200 && icOk.ic === 1 && capOk.status === 200 && capOk.cap === 1,
+          `IC status=${icOk.status} Aufrufe=${icOk.ic} · CAP status=${capOk.status} `
+          + `Aufrufe=${capOk.cap} · IC-Fehler=${String(icOk.leib?.error)} `
+          + `CAP-Fehler=${String(capOk.leib?.error)}`);
+
+        // Jede unbrauchbare Eingabe: 400 UND null Ausfuehrungen, auf BEIDEN
+        // Routen. Ein Treffer bewiese nichts ueber die andere Stelle (25.10.).
+        for (const [name, wert] of [["fehlt", undefined], ["Null", 0],
+                                    ["NaN", Number.NaN], ["Infinity", Number.POSITIVE_INFINITY],
+                                    ["negativ", -500], ["Text", "abc"]]) {
+          const koerper = { ...gueltig };
+          if (wert === undefined) delete koerper.accountBalance;
+          else koerper.accountBalance = wert;
+          const a = await fahre("ic", koerper);
+          const b = await fahre("cap", koerper);
+          torPruefung(`accountBalance "${name}" wird von einer Order-Route `
+            + `AKZEPTIERT oder nicht begruendet — die Positionsgroesse haengt daran`,
+            a.status === 400 && a.ic === 0 && /accountBalance unbrauchbar/.test(String(a.leib?.error))
+            && b.status === 400 && b.cap === 0 && /accountBalance unbrauchbar/.test(String(b.leib?.error)),
+            `IC status=${a.status} Aufrufe=${a.ic} "${String(a.leib?.error).slice(0, 70)}" · `
+            + `CAP status=${b.status} Aufrufe=${b.cap} "${String(b.leib?.error).slice(0, 70)}"`);
+        }
+
+        // Fehlt der Stand in der Anfrage, darf der SITZUNGSSTAND einspringen
+        // — aber nur ein brauchbarer. Gegenprobe zum Riegel.
+        icStand = 1500;
+        const ohneAnfrage = { ...gueltig };
+        delete ohneAnfrage.accountBalance;
+        const mitSitzung = await fahre("ic", ohneAnfrage);
+        torPruefung("ein brauchbarer SITZUNGSSTAND springt nicht mehr ein — "
+          + "dann waere der Riegel zu streng und IC handelt nie",
+          mitSitzung.status === 200 && mitSitzung.ic === 1,
+          `status=${mitSitzung.status} Aufrufe=${mitSitzung.ic} `
+          + `Fehler=${String(mitSitzung.leib?.error)}`);
+        icStand = 0;
+
+        // ── 4) DER AUSFUEHRUNGS-RIEGEL (14.11.) ──────────────────────────
+        //     Gemessen: der Schalter wurde an ZWEI Stellen geprueft, in
+        //     dieser Route NICHT — und die Komponente ruft sie zusammen mit
+        //     der Capital-Route BEDINGUNGSLOS.
+        icFrei = false;
+        const aus = await fahre("ic", gueltig);
+        torPruefung("die IC-Route platziert eine Order, obwohl "
+          + "`icMarketsExecutionEnabled` AUS ist — IC ist der ungeschuetzte Pfad",
+          aus.status === 403 && aus.ic === 0 && /abgeschaltet/.test(String(aus.leib?.error)),
+          `status=${aus.status} Aufrufe=${aus.ic} "${String(aus.leib?.error).slice(0, 80)}"`);
+        icFrei = true;
+
+        // FAIL CLOSED, aber mit EIGENEM Grund: "nicht lesbar" darf nicht
+        // dasselbe sagen wie "abgeschaltet" (Regel 22.09.).
+        einstLesbar = false;
+        const unlesbar = await fahre("ic", gueltig);
+        torPruefung("ein unlesbarer Einstellungs-Lesepfad laesst die Order "
+          + "durch oder sagt dasselbe wie 'abgeschaltet'",
+          unlesbar.status === 503 && unlesbar.ic === 0
+          && /nicht lesbar/.test(String(unlesbar.leib?.error))
+          && !/abgeschaltet/.test(String(unlesbar.leib?.error)),
+          `status=${unlesbar.status} Aufrufe=${unlesbar.ic} `
+          + `"${String(unlesbar.leib?.error).slice(0, 80)}"`);
+        einstLesbar = true;
+
+        // Und die CAPITAL-Route darf davon NICHT betroffen sein — sonst
+        // haette der IC-Riegel den gesunden Broker mitstillgelegt.
+        icFrei = false;
+        const capWeiter = await fahre("cap", gueltig);
+        torPruefung("der IC-Ausfuehrungs-Riegel hat die CAPITAL-Route "
+          + "mitstillgelegt", capWeiter.status === 200 && capWeiter.cap === 1,
+          `status=${capWeiter.status} Aufrufe=${capWeiter.cap}`);
+        icFrei = true;
+      }
+
+      // ── 5) OHNE ENDLICHES VOLUMEN KEINE ORDER ──────────────────────────
+      //     `Math.max(NaN, step)` ist NaN und `Math.max(Infinity, step)` ist
+      //     Infinity — die Klemme wirkt nur nach UNTEN. Gerechnet, nicht
+      //     behauptet.
+      torPruefung("die Begruendung des Volumen-Riegels stimmt nicht — dann "
+        + "prueft der Fall darunter etwas anderes als gedacht",
+        Number.isNaN(Math.max(Number.NaN, 1000))
+        && Math.max(Number.POSITIVE_INFINITY, 1000) === Number.POSITIVE_INFINITY,
+        `max(NaN,1000)=${String(Math.max(Number.NaN, 1000))} `
+        + `max(Inf,1000)=${String(Math.max(Number.POSITIVE_INFINITY, 1000))}`);
+
+      let orderAufrufe = 0, letztesVolumen = null;
+      let sitzStand = 2000;
+      // DIE SCHLUESSEL SIND AN DEN IMPORTZEILEN GEMESSEN, nicht aus der
+      // Ordnerstruktur getippt (Lehre 13.11., hier wiederholt): dieses Modul
+      // importiert `"./icmarkets-client"` und `"./icmarkets-session"` —
+      // `_lib.js` vergleicht mit `includes`, und `"icmarkets/icmarkets-client"`
+      // ist KEINE Teilkette von `"./icmarkets-client"`. Der Stellvertreter
+      // warf dann beim Aufruf, und der Pruefer stuerzte ab.
+      const icExec = ladeTsModul("lib/icmarkets/icmarkets-execution.ts", {
+        "icmarkets-client": {
+          icPlaceOrder: async (_s, _d, vol) => {
+            orderAufrufe++; letztesVolumen = vol;
+            return { ok: true, positionId: "P1" };
+          },
+          isICMarketsConfigured: () => true,
+          icGetPrice: async () => ({ ok: false }),
+        },
+        "icmarkets-session": { getICMarketsSession: () => ({ balance: sitzStand }) },
+        "killswitch/killswitch-engine": { isKillswitchActive: () => false },
+        "kontostand/kontostand": ks.exports,
+      });
+      if (icExec.fehler || typeof icExec.exports?.executeICMarketsOrder !== "function") {
+        funde.push(`icmarkets-execution nicht ausfuehrbar: ${icExec.fehler ?? "Funktion fehlt"}`);
+        zusatz++;
+      } else {
+        const fahreOrder = async (stand, risk) => {
+          orderAufrufe = 0; letztesVolumen = null;
+          sitzStand = stand;
+          const r = await icExec.exports.executeICMarketsOrder({
+            symbol: "EURUSD", direction: "BUY", riskPercent: risk,
+            accountBalance: stand, stopLossPrice: 1.05, takeProfitPrice: 1.12,
+          });
+          return { r, aufrufe: orderAufrufe, vol: letztesVolumen };
+        };
+
+        // SELBSTPRUEFUNG: der gesunde Fall MUSS eine Order platzieren.
+        const gesundO = await fahreOrder(2000, 1);
+        torPruefung("der IC-Ausfuehrungs-Pruefstand platziert im gesunden "
+          + "Fall keine Order — jede Zusicherung darunter waere leer",
+          gesundO.r?.ok === true && gesundO.aufrufe === 1
+          && Number.isFinite(gesundO.vol) && gesundO.vol > 0,
+          `ok=${String(gesundO.r?.ok)} Aufrufe=${gesundO.aufrufe} `
+          + `vol=${String(gesundO.vol)} Fehler=${String(gesundO.r?.error)}`);
+
+        // Ein NaN-Risiko ergibt ein NaN-Volumen — und darf KEINE Order
+        // auslaesen. `riskPercent` kommt aus `body.riskPercent ?? 1.0`, und
+        // `??` faengt kein NaN: die Ursache liegt NEBEN dem Kontostand.
+        const nanRisk = await fahreOrder(2000, Number.NaN);
+        torPruefung("ein nicht berechenbares Volumen geht trotzdem an den "
+          + "Broker — `Math.max(NaN, step)` ist NaN, es gibt keine obere Klemme",
+          nanRisk.r?.ok === false && nanRisk.aufrufe === 0
+          && /nicht berechenbar/.test(String(nanRisk.r?.error)),
+          `ok=${String(nanRisk.r?.ok)} Aufrufe=${nanRisk.aufrufe} `
+          + `"${String(nanRisk.r?.error).slice(0, 80)}"`);
+
+        const infRisk = await fahreOrder(2000, Number.POSITIVE_INFINITY);
+        torPruefung("ein unendliches Volumen geht an den Broker",
+          infRisk.r?.ok === false && infRisk.aufrufe === 0,
+          `ok=${String(infRisk.r?.ok)} Aufrufe=${infRisk.aufrufe} `
+          + `vol=${String(infRisk.vol)}`);
+
+        // Und ein unbrauchbarer SITZUNGSSTAND: vorher liess
+        // `session.balance > 0` ein Infinity durch.
+        const infStandO = await fahreOrder(Number.POSITIVE_INFINITY, 1);
+        torPruefung("ein unendlicher Sitzungsstand wird uebernommen — "
+          + "`session.balance > 0` ist fuer Infinity WAHR",
+          infStandO.r?.ok === false && infStandO.aufrufe === 0
+          && /Kontostand/.test(String(infStandO.r?.error)),
+          `ok=${String(infStandO.r?.ok)} Aufrufe=${infStandO.aufrufe} `
+          + `"${String(infStandO.r?.error).slice(0, 80)}"`);
+      }
+    }
+
+    // ── 6) STRUKTURELL: die Erfindung darf nicht zurueckkommen ───────────
+    //     Kommentarbereinigt, weil die Begruendung in beiden Routen die alte
+    //     Zeile zitiert ("ein Wort im Kommentar ist keine Verwendung").
+    const strippe = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+    const probeS = strippe("// 10000 im Kommentar\nconst x = 20000;");
+    torPruefung("die Kommentar-Bereinigung der Order-Routen arbeitet nicht "
+      + "wie erwartet — dann sagen die Zusicherungen darunter nichts",
+      !/10000/.test(probeS) && /20000/.test(probeS), JSON.stringify(probeS));
+
+    const icQ = strippe(read("frontend/app/api/icmarkets/execute/route.ts"));
+    const capQ = strippe(read("frontend/app/api/capital-com/execute/route.ts"));
+    torPruefung("die IC-Route erfindet wieder einen Kontostand oder umgeht "
+      + "die gemeinsame Lesart",
+      !/\?\?\s*10000/.test(icQ)
+      && /lesbarerKontostand\(body\.accountBalance\)/.test(icQ)
+      && /accountBalance: kontostand/.test(icQ),
+      (icQ.match(/[^\n]*accountBalance[^\n]*/g) || ["(kein Treffer)"])
+        .join(" | ").replace(/\s+/g, " ").slice(0, 180));
+    torPruefung("die CAPITAL-Route prueft den Kontostand wieder mit `!…` — "
+      + "das laesst negativ, Infinity und Zeichenketten durch",
+      !/!body\.accountBalance/.test(capQ)
+      && /lesbarerKontostand\(body\.accountBalance\)/.test(capQ)
+      && /accountBalance: kontostand/.test(capQ),
+      (capQ.match(/[^\n]*accountBalance[^\n]*/g) || ["(kein Treffer)"])
+        .join(" | ").replace(/\s+/g, " ").slice(0, 180));
+    // EINE Umsetzung, nicht drei: alle drei Stellen importieren dieselbe.
+    const execQ = strippe(read("frontend/lib/icmarkets/icmarkets-execution.ts"));
+    let importe = 0;
+    for (const q of [icQ, capQ, execQ]) {
+      if (/import \{ lesbarerKontostand, kontostandGrund \} from/.test(q)) importe++;
+    }
+    torPruefung("nicht alle drei Stellen holen die Lesart aus dem einen "
+      + "Modul — zwei Fassungen laufen auseinander (Lehre 08.11.)",
+      importe === 3, `Importe gefunden: ${importe} von 3`);
+    torPruefung("die IC-Ausfuehrung benutzt wieder `session.balance > 0` "
+      + "statt der gemeinsamen Lesart",
+      !/session\.balance > 0 \? session\.balance/.test(execQ)
+      && /lesbarerKontostand\(session\.balance\)/.test(execQ),
+      (execQ.match(/[^\n]*session\.balance[^\n]*/g) || ["(kein Treffer)"])
+        .join(" | ").replace(/\s+/g, " ").slice(0, 180));
+    torPruefung("der Ausfuehrungs-Riegel ist aus der IC-Route verschwunden",
+      /icMarketsExecutionEnabled !== true/.test(icQ)
+      && /status: 403/.test(icQ) && /status: 503/.test(icQ),
+      (icQ.match(/[^\n]*icMarketsExecutionEnabled[^\n]*/g) || ["(kein Treffer)"])
+        .join(" | ").replace(/\s+/g, " ").slice(0, 160));
+  }
+
   // ══ DER IC-JOURNAL-SYNC ERFINDET AUCH KEINE SCHLUSSZEIT MEHR (08.11.) ═══
   //
   // `closeTime` ging als `notes.icClosedAt` in die DATENBANK. Ein Datensatz,

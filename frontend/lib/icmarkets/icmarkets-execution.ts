@@ -8,6 +8,11 @@
 import { icPlaceOrder, isICMarketsConfigured, icGetPrice } from "./icmarkets-client";
 import { getICMarketsSession } from "./icmarkets-session";
 import { isKillswitchActive } from "../killswitch/killswitch-engine";
+// EINE Lesart fuer den Kontostand — dieselbe Funktion, die beide
+// Order-Routen benutzen. Eine zweite Fassung hier waere eine zweite
+// Wahrheit, und genau diese Dopplung hat am 08.11. bei Capital und IC drei
+// Erfindungen nebeneinander stehen lassen.
+import { lesbarerKontostand, kontostandGrund } from "../kontostand/kontostand";
 
 // cTrader symbol mapping: our internal symbol → exact cTrader symbolName
 // Verified via /api/icmarkets/symbols endpoint (351 symbols)
@@ -94,7 +99,7 @@ function calcICPositionSize(
   accountBalance: number,
   riskPercent: number,
   stopDistance: number, // actual price distance (|entry - SL|)
-): number {
+): number | null {
   const riskAmount = accountBalance * (riskPercent / 100);
   const priceVal = PRICE_VALUE[ctraderSymbol] ?? 0.01;
   const stop = stopDistance > 0 ? stopDistance : (DEFAULT_STOP[ctraderSymbol] ?? 0.002);
@@ -102,7 +107,23 @@ function calcICPositionSize(
   const step = MIN_UNITS[ctraderSymbol] ?? 1000;
   // Volume muss Vielfaches des volume step sein (cTrader Pflicht)
   const snapped = Math.floor(rawUnits / step) * step;
-  return Math.max(snapped, step);
+  const volume = Math.max(snapped, step);
+  // ── EIN NICHT ENDLICHES VOLUMEN IST KEINE GROESSE (14.11.) ────────────
+  //
+  // Ausgerechnet, nicht angenommen: `Math.max` ist hier KEIN Schutz.
+  // `Math.max(NaN, step)` ist NaN und `Math.max(Infinity, step)` ist
+  // Infinity — die Klemme wirkt nur nach UNTEN. Capital rettet sich an
+  // dieser Stelle ueber `Math.min(max, …)`; hier gibt es keine obere
+  // Klemme, also ging ein NaN-Volumen ungeprueft an `icPlaceOrder`.
+  //
+  // Die Ursache kann auch NEBEN dem Kontostand liegen: `riskPercent` kommt
+  // in der Route aus `body.riskPercent ?? 1.0`, und `??` faengt kein NaN.
+  // Deshalb wird hier das ERGEBNIS geprueft und nicht jede Ursache
+  // aufgezaehlt — ein Riegel, der am Ergebnis haengt, kann nicht veralten.
+  //
+  // `null` statt einer Ersatzgroesse: eine erfundene Groesse an einer
+  // Stelle, die Geld bewegt, ist die Fehlerklasse vom 07.09.
+  return Number.isFinite(volume) && volume > 0 ? volume : null;
 }
 
 export interface ICExecutionResult {
@@ -157,8 +178,31 @@ export async function executeICMarketsOrder(req: {
   }
 
   const ctraderSymbol = SYMBOL_MAP[req.symbol] ?? req.symbol;
-  // Always use live balance from session (updated by keep-alive every 2min)
-  const balance = session.balance > 0 ? session.balance : req.accountBalance;
+  // ── EINE LESART FUER DEN KONTOSTAND, AUCH HIER (14.11.) ───────────────
+  //
+  // Vorher: `session.balance > 0 ? session.balance : req.accountBalance`.
+  // Die VORRANGIGKEIT bleibt unveraendert (Sitzung zuerst, dann die
+  // Anfrage) — gepruefft wird jetzt zusaetzlich, dass der Wert brauchbar
+  // ist. `session.balance > 0` liess `Infinity` durch, und
+  // `Math.max(Infinity, step)` in der Groessenrechnung ist wieder Infinity.
+  //
+  // Die Zusicherung gehoert hierher und nicht nur in die Route: diese
+  // Funktion hat ZWEI Aufrufer (`/api/icmarkets/execute` und
+  // `execution-agent.ts`, der `icSession?.balance ?? req.accountBalance`
+  // weiterreicht) und muss FUER SICH stimmen — dieselbe Begruendung wie bei
+  // `checkPriceAvailable` (24.08.).
+  const balance = lesbarerKontostand(session.balance)
+    ?? lesbarerKontostand(req.accountBalance);
+  if (balance === null) {
+    return {
+      ok: false, broker: "IC_MARKETS", symbol: req.symbol, ctraderSymbol,
+      direction: req.direction, volume: 0,
+      error: `kein brauchbarer Kontostand (Sitzung: ${kontostandGrund(session.balance)}, `
+        + `Anfrage: ${kontostandGrund(req.accountBalance)}) — ohne Kontostand keine `
+        + `Positionsgroesse, KEINE Order platziert`,
+      executedAt: ts,
+    };
+  }
 
   // ── Get live price to calculate actual stop distance ───────────────────────
   let stopDistance = DEFAULT_STOP[ctraderSymbol] ?? 0.002;
@@ -176,6 +220,24 @@ export async function executeICMarketsOrder(req: {
   } catch { /* use default */ }
 
   const volume = calcICPositionSize(ctraderSymbol, balance, req.riskPercent, stopDistance);
+  // OHNE endliches Volumen KEINE Order (14.11.) — Begruendung in
+  // `calcICPositionSize`. `String(...)` und nicht `JSON.stringify(...)`:
+  // letzteres macht aus NaN und Infinity beides `null`, und dann nennt die
+  // Meldung im interessanten Fall den Wert nicht.
+  if (volume === null) {
+    console.error(`[IC Markets] ⛔ ${ctraderSymbol}: Volumen nicht berechenbar `
+      + `(balance=${String(balance)} risk=${String(req.riskPercent)} `
+      + `stop=${String(stopDistance)}) — KEINE Order platziert.`);
+    return {
+      ok: false, broker: "IC_MARKETS", symbol: req.symbol, ctraderSymbol,
+      direction: req.direction, volume: 0,
+      error: `Volumen nicht berechenbar (balance=${String(balance)} `
+        + `risk=${String(req.riskPercent)} stop=${String(stopDistance)}) `
+        + `— KEINE Order platziert`,
+      stopDistance,
+      executedAt: ts,
+    };
+  }
 
   console.log(`[IC Markets] ${req.symbol}→${ctraderSymbol} ${req.direction} vol=${volume} balance=${balance} risk=${req.riskPercent}% stop=${stopDistance.toFixed(5)}`);
 

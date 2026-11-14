@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { executeCapitalDemoOrder, type ExecutionRequest } from "../../../../lib/capital-com/capital-com-execution";
 import { isCapitalConnected } from "../../../../lib/capital-com/capital-com-session";
 import { lesbareRichtung } from "../../../../lib/richtung/richtung";
+import { lesbarerKontostand, kontostandGrund } from "../../../../lib/kontostand/kontostand";
 
 export async function POST(request: Request) {
   try {
@@ -12,8 +13,31 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as Partial<ExecutionRequest>;
 
-    if (!body.symbol || !body.direction || !body.accountBalance) {
-      return NextResponse.json({ ok: false, error: "symbol, direction und accountBalance erforderlich" }, { status: 400 });
+    if (!body.symbol || !body.direction) {
+      return NextResponse.json({ ok: false, error: "symbol und direction erforderlich" }, { status: 400 });
+    }
+
+    // ── EINE LESART FUER DEN KONTOSTAND (14.11.) ─────────────────────────
+    //
+    // Hier stand `!body.accountBalance` im gemeinsamen Riegel. Das faengt
+    // `undefined`, `0` und `NaN` — aber NICHT:
+    //
+    //   * negativ  (`!(-500)` ist falsch)   → Groesse auf MIN_SIZE geklemmt
+    //   * Infinity (`!Infinity` ist falsch) → von MAX_SIZE geklemmt
+    //   * "abc"    (`!"abc"` ist falsch)    → `"abc" * x` = NaN → Groesse NaN
+    //
+    // Der `as Partial<ExecutionRequest>`-Cast darueber prueft nichts, und
+    // `tsc` sagt deshalb zu keinem dieser Werte etwas. Diese Route war damit
+    // NICHT der Goldstandard, fuer den ich sie gehalten hatte — beide
+    // Order-Routen bekommen dieselbe Lesart, sonst ist die Asymmetrie nur
+    // verschoben statt behoben (Lehre 25.10.).
+    const kontostand = lesbarerKontostand(body.accountBalance);
+    if (kontostand === null) {
+      return NextResponse.json({
+        ok: false,
+        error: `accountBalance unbrauchbar (${kontostandGrund(body.accountBalance)}) `
+          + `— ohne Kontostand keine Positionsgroesse`,
+      }, { status: 400 });
     }
 
     // ── Der Cast prueft NICHTS (08.11.) ──────────────────────────────────────
@@ -50,7 +74,7 @@ export async function POST(request: Request) {
       symbol: body.symbol,
       direction: richtung,
       riskPercent: body.riskPercent ?? 1.0,
-      accountBalance: body.accountBalance,
+      accountBalance: kontostand,
       stopLossPrice: body.stopLossPrice,
       takeProfitPrice: body.takeProfitPrice,
       stopLossPips: body.stopLossPips,

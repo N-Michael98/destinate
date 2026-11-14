@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 360 · Kanten: 902
+Dateien mit internen Abhängigkeiten: 360 · Kanten: 906
 
 
 ## analysis-engine/api
@@ -280,6 +280,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 902
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/lib/kontostand/kontostand.ts`
   - → `frontend/lib/richtung/richtung.ts`
 - `frontend/app/api/capital-com/positions/route.ts`
   - → `frontend/lib/capital-com/capital-com-execution.ts`
@@ -336,7 +337,9 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 902
 - `frontend/app/api/icmarkets/execute/route.ts`
   - → `frontend/lib/icmarkets/icmarkets-execution.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
+  - → `frontend/lib/kontostand/kontostand.ts`
   - → `frontend/lib/richtung/richtung.ts`
+  - → `frontend/lib/settings/settings-store.ts`
 - `frontend/app/api/icmarkets/status/route.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
@@ -918,6 +921,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 902
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/killswitch/killswitch-engine.ts`
+  - → `frontend/lib/kontostand/kontostand.ts`
 - `frontend/lib/icmarkets/icmarkets-journal-sync.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
@@ -1328,7 +1332,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 902
 - `frontend/lib/capital-com/capital-com-client.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
 - `frontend/lib/richtung/richtung.ts` — von 13 Dateien
-- `frontend/lib/settings/settings-store.ts` — von 11 Dateien
+- `frontend/lib/settings/settings-store.ts` — von 12 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 8 Dateien

@@ -3,9 +3,45 @@ import { NextResponse } from "next/server";
 import { executeICMarketsOrder } from "../../../../lib/icmarkets/icmarkets-execution";
 import { isICMarketsConnected, getICMarketsSession } from "../../../../lib/icmarkets/icmarkets-session";
 import { lesbareRichtung } from "../../../../lib/richtung/richtung";
+import { lesbarerKontostand, kontostandGrund } from "../../../../lib/kontostand/kontostand";
+import { getSettings } from "../../../../lib/settings/settings-store";
 
 export async function POST(request: Request) {
   try {
+    // ── AUSFUEHRUNG AUF IC MUSS FREIGEGEBEN SEIN (14.11.) ────────────────
+    //
+    // Gemessen, nicht vermutet: `icMarketsExecutionEnabled` wurde an ZWEI
+    // Stellen geprueft — `execution-agent.ts:266` und
+    // `orchestrator-agent.ts:1177` — in dieser Route NICHT.
+    // `MarketScannerPanel.tsx:175` ruft sie aber zusammen mit der
+    // Capital-Route BEDINGUNGSLOS in einem `Promise.all`: der GO-Knopf
+    // platzierte damit eine IC-Order, egal wie der Schalter stand. Was heute
+    // schuetzte, war allein `isICMarketsConnected()` — eine leere Sitzung,
+    // kein Riegel.
+    //
+    // Der Grund steht in `execution-agent.ts:255`: IC ist der UNGESCHUETZTE
+    // Pfad. Eigener Kontostand (dort gemessen 12.7x), und KEINE der sieben
+    // Schutzschichten sieht dieses Konto.
+    //
+    // FAIL CLOSED, aber HOERBAR: laesst sich die Einstellung nicht lesen,
+    // bleibt IC gesperrt — mit EIGENEM Grund, damit "abgeschaltet" von
+    // "nicht lesbar" zu unterscheiden ist. Ein stilles Gleichsetzen waere
+    // die Fehlerklasse vom 22.09.
+    const einstellungen = await getSettings().catch(() => null);
+    if (einstellungen === null) {
+      return NextResponse.json({
+        ok: false,
+        error: "Einstellungen nicht lesbar — IC-Ausfuehrung bleibt gesperrt",
+      }, { status: 503 });
+    }
+    if (einstellungen.botSettings?.icMarketsExecutionEnabled !== true) {
+      return NextResponse.json({
+        ok: false,
+        error: "IC-Markets-Ausfuehrung ist abgeschaltet "
+          + "(Einstellungen → IC-Markets-Ausfuehrung)",
+      }, { status: 403 });
+    }
+
     if (!isICMarketsConnected()) {
       return NextResponse.json({ ok: false, error: "IC Markets nicht verbunden" }, { status: 401 });
     }
@@ -41,14 +77,40 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // ── KEIN ERFUNDENER KONTOSTAND (14.11.) ──────────────────────────────
+    //
+    // Hier stand `body.accountBalance ?? session?.balance ?? 10000`. Zwei
+    // Fehler in einer Zeile:
+    //
+    // 1. Die ERFINDUNG. 10000 an einer Stelle, die ueber die
+    //    POSITIONSGROESSE entscheidet (`calcICPositionSize`), macht aus
+    //    "unbekannt" eine Messung — die Fehlerklasse vom 07.09.
+    // 2. `??` faengt `null`/`undefined`, aber NICHT `0` und NICHT `NaN`.
+    //    `MarketScannerPanel` liest `Number(e.target.value)`, und
+    //    `Number("")` ist 0: ein geleertes Eingabefeld lief hier durch bis
+    //    `Math.max(snapped, step)` = MIN_UNITS, also eine Order mit der
+    //    Mindestgroesse — waehrend Capital DIESELBE Nachricht mit 400 abwies.
+    //
+    // `lesbarerKontostand` ist EINE Lesart fuer beide Order-Routen; die
+    // ausfuehrliche Begruendung steht im Modul. Die Reihenfolge bleibt wie
+    // bisher: Anfrage zuerst, dann der Sitzungsstand.
     const session = getICMarketsSession();
-    const accountBalance = body.accountBalance ?? session?.balance ?? 10000;
+    const kontostand = lesbarerKontostand(body.accountBalance)
+      ?? lesbarerKontostand(session?.balance);
+    if (kontostand === null) {
+      return NextResponse.json({
+        ok: false,
+        error: `accountBalance unbrauchbar (${kontostandGrund(body.accountBalance)}) `
+          + `und der Sitzungsstand ebenso (${kontostandGrund(session?.balance)}) `
+          + `— ohne Kontostand keine Positionsgroesse`,
+      }, { status: 400 });
+    }
 
     const result = await executeICMarketsOrder({
       symbol: body.symbol,
       direction: richtung,
       riskPercent: body.riskPercent ?? 1.0,
-      accountBalance,
+      accountBalance: kontostand,
       stopLossPrice: body.stopLossPrice,
       takeProfitPrice: body.takeProfitPrice,
       confidence: body.confidence ?? 70,

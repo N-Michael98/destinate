@@ -499,9 +499,18 @@ selbst neu an, sodass der Aufruf gelingt. Damit greift die Wiederherstellung
 nie, und die Zeile `[IC Markets] keep-alive ✅` erscheint trotzdem, während
 die Anwendung IC als getrennt führt.
 
-**Heute ohne Handelsfolge:** `icMarketsExecutionEnabled` steht auf `false`
-(`settings-store.ts:19`, im Snapshot gesichert), und `/api/icmarkets/execute`
-ruft nur ein Knopf im Dashboard.
+**Heute ohne Handelsfolge** — aber die Begründung war bis zum 14.11. zur
+Hälfte falsch und ist korrigiert. `icMarketsExecutionEnabled` steht auf
+`false` (`settings-store.ts:19`, im Snapshot gesichert), **aber der Schalter
+wurde nur in `execution-agent.ts:266` und `orchestrator-agent.ts:1177`
+geprüft — NICHT in `/api/icmarkets/execute`**. Und `MarketScannerPanel.tsx:175`
+ruft diese Route zusammen mit der Capital-Route **bedingungslos** in einem
+`Promise.all`: der GO-Knopf hätte eine IC-Order platziert, egal wie der
+Schalter stand. Was wirklich schützte, war allein `isICMarketsConnected()`
+(leere Sitzung, siehe oben).
+
+**Seit dem 14.11. hat die Route ihren eigenen Riegel** (403 bei AUS, 503 bei
+unlesbaren Einstellungen) — siehe „Ein Kontostand — eine Lesart (14.11.)".
 
 **Der Widerspruch im Log ist am 25.10. behoben.** Die Ursache war eine Klammer:
 die `✅`-Zeile stand **ausserhalb** von `if (global.__icmarkets_session__)`.
@@ -5128,6 +5137,153 @@ unberührt. **Snapshot 299 Werte unverändert**, `tsc` 0 Fehler, Build
 **Benannt, nicht geändert:** `/api/trades:14` `?? 30000` ist
 **Formulareingabe** des Nutzers, eine andere Klasse; die übrigen `30000` in
 der Journal-Seite sind Formular-Standardwerte und Platzhalter.
+
+## Ein Kontostand — eine Lesart (14.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+Befund Nr. 2 der Generalkontrolle — und beim Messen wurde er **grösser** als
+die Notiz, mit der er angelegt war.
+
+### Was dastand
+
+`/api/icmarkets/execute:45` — `body.accountBalance ?? session?.balance ?? 10000`.
+
+`MarketScannerPanel.tsx:175` schickt **dasselbe** `orderBody` in einem
+`Promise.all` an **beide** Order-Routen. Gemessen, was daraus wurde:
+
+| Eingabe | Capital | IC Markets |
+|---|---|---|
+| fehlt | **400** | `?? 10000` → echte Grösse |
+| **0** (Feld geleert) | **400** (`!0` ist wahr) | durch → Volumen **MIN_UNITS**, Order platziert |
+| `NaN` | **400** | durch → Volumen **NaN** an den Broker |
+| `Infinity` | durch, von `MAX_SIZE` geklemmt | durch → Volumen **Infinity** |
+| `-500` | durch, auf `MIN_SIZE` geklemmt | durch → `MIN_UNITS` |
+| `"abc"` | **durch** (`!"abc"` ist falsch) | durch → **NaN** |
+
+**Die 0 ist nicht theoretisch.** `MarketScannerPanel:79` hat als Startwert
+`useState(10000)`, und Zeile 275 ist ein Eingabefeld mit
+`Number(e.target.value)` — ein **geleertes Feld** ergibt `Number("")` = **0**.
+Dieselbe Nachricht, zwei Ergebnisse: Capital wies ab, IC platzierte eine
+Order mit der Mindestgrösse.
+
+### Drei Dinge, die ich beim Messen an meiner eigenen Einordnung korrigiert habe
+
+**1. Capital war NICHT der Goldstandard**, für den ich es im Bericht gehalten
+hatte. `!body.accountBalance` fängt `undefined`, `0` und `NaN` — aber nicht
+negativ, nicht `Infinity`, und nicht eine **Zeichenkette**. Der
+`as Partial<ExecutionRequest>`-Cast darüber prüft nichts, also sagt `tsc` zu
+keinem dieser Werte etwas.
+
+**2. `Math.max` ist in der IC-Grössenrechnung kein Schutz.**
+`calcICPositionSize` endet mit `Math.max(snapped, step)` — **ausgerechnet**:
+`Math.max(NaN, step)` ist `NaN`, `Math.max(Infinity, step)` ist `Infinity`.
+Die Klemme wirkt nur nach **unten**. Capital rettet sich an derselben Stelle
+über `Math.min(max, …)`; **IC hat keine obere Klemme**, also ging ein
+NaN-Volumen ungeprüft an `icPlaceOrder`.
+
+**3. `icMarketsExecutionEnabled` schützt diese Route nicht.** Nachgezählt: der
+Schalter wird in `execution-agent.ts:266` und `orchestrator-agent.ts:1177`
+geprüft — **nicht in der Route**. Was heute schützte, war allein
+`isICMarketsConnected()` (`global.__icmarkets_session__ !== null`, und die
+Sitzung ist leer, 27.09.). **Damit war der Satz „heute ohne Handelsfolge,
+weil `icMarketsExecutionEnabled` auf `false` steht" für diesen Pfad falsch** —
+er gilt für den Agenten- und den Orchestrator-Pfad, nicht für den GO-Knopf.
+
+### Was jetzt da ist
+
+`lib/kontostand/kontostand.ts` — rein, ohne Importe, nach dem Muster von
+`lesbareRichtung` (03.11.), `htmlSicher` (31.10.) und `alterStunden` (08.11.).
+Gültig ist **ausschliesslich eine endliche Zahl > 0**.
+
+**Eine Zeichenkette wird abgewiesen, nicht gelesen.** Bei der Richtung ist die
+kanonische Form eine Zeichenkette, hier ist sie eine **Zahl**: `"5000"` heisst,
+dass der Aufrufer den falschen Typ schickt. Das zu übersetzen würde seinen
+Fehler verdecken, und `"5 000"` / `"5,000"` öffnete eine Parser-Frage, die
+niemand gestellt hat.
+
+**`kontostandGrund()` nennt die Lage**, nicht nur „ungültig": *fehlt*, *keine
+Zahl (typ)*, *NaN*, *unendlich*, *0*, *nicht grösser als 0*. Sechs Lagen,
+sechs verschiedene nächste Schritte — und es gibt `null` zurück, wenn der Wert
+**brauchbar** ist, damit die Route beides aus einer Quelle liest.
+
+**Drei Stellen, eine Umsetzung:** beide Order-Routen **und**
+`icmarkets-execution.ts`. Die dritte ist kein Schmuck — die Funktion hat
+**zwei** Aufrufer (die Route und `execution-agent.ts`, der
+`icSession?.balance ?? req.accountBalance` weiterreicht) und muss **für sich**
+stimmen; dieselbe Begründung wie bei `checkPriceAvailable` (24.08.). Dort
+stand vorher `session.balance > 0 ? session.balance : req.accountBalance`, und
+`session.balance > 0` ist für `Infinity` **wahr**.
+
+**Und ohne endliches Volumen keine Order.** Der Riegel hängt am **Ergebnis**,
+nicht an einer Liste von Ursachen — `riskPercent` kommt in der Route aus
+`body.riskPercent ?? 1.0`, und `??` fängt kein `NaN`. Ein Riegel am Ergebnis
+kann nicht veralten.
+
+### Der Ausführungs-Riegel in der Route
+
+`icMarketsExecutionEnabled !== true` ⇒ **403** mit Grund. **Fail closed, aber
+hörbar:** lässt sich die Einstellung nicht lesen, bleibt IC gesperrt — mit
+**eigenem** Grund und **503**, damit „abgeschaltet" von „nicht lesbar" zu
+unterscheiden ist. Ein stilles Gleichsetzen wäre die Fehlerklasse vom 22.09.
+
+Die Begründung steht in `execution-agent.ts:255`: IC ist der **ungeschützte**
+Pfad — eigener Kontostand (dort gemessen 12.7×), und **keine** der sieben
+Schutzschichten sieht dieses Konto.
+
+### Absicherung
+
+`safety-nets` **rechnet und führt aus** (1401 → **1438**):
+
+- `lesbarerKontostand()` an **dreizehn** Lagen, `kontostandGrund()` auf
+  **Unterscheidbarkeit** — plus die Gegenprobe, dass ein brauchbarer Stand
+  **nicht** als Fehler gilt.
+- **Beide Routen echt gefahren**: jede unbrauchbare Eingabe ⇒ 400 mit Grund
+  **und null Ausführungen**, auf **beiden** Routen einzeln geprüft (ein
+  Treffer bewiese nichts über die andere Stelle, 25.10.). Dazu die
+  Selbstprüfung, dass der **gesunde** Fall durchgeht, und die Gegenprobe, dass
+  ein brauchbarer **Sitzungsstand** weiter einspringt.
+- Der **Ausführungs-Riegel** ausgeführt: 403 bei AUS, 503 bei unlesbar, und
+  dass die **Capital**-Route davon unberührt bleibt — sonst hätte der
+  IC-Riegel den gesunden Broker mitstillgelegt.
+- `executeICMarketsOrder` gegen einen **gezählten** `icPlaceOrder`: NaN-Risiko,
+  unendliches Risiko und unendlicher Sitzungsstand ⇒ **null** Order-Aufrufe.
+- Die Begründung selbst gerechnet: `Math.max(NaN,1000)` ist `NaN`,
+  `Math.max(Infinity,1000)` ist `Infinity`.
+
+**13 von 13 Sabotagen** plus Gegenprobe (**14 von 14 wie erwartet**), darunter
+der Fund exakt wiederhergestellt, die Lesart auf „alles ablehnen" verkürzt
+(dann stünde der Handel still), und eine nachweislich wirkungslose Änderung,
+die **grün** bleibt.
+
+### Mein Fehler beim Bau — zum zweiten Mal derselbe
+
+Der erste Prüferlauf meldete **„PRÜFER ABGESTÜRZT: keine Aussenwelt im
+Prüfstand"**. Ursache: ich hatte die Ersatz-Schlüssel aus der **Ordnerstruktur
+getippt** (`"icmarkets/icmarkets-client"`), während das Modul
+`"./icmarkets-client"` importiert — und `_lib.js:134` vergleicht mit
+`includes`, also traf der Schlüssel **nicht**. Wörtlich mein Fehler vom
+13.11. Erst der **Stapel** zeigte die Stelle; die Sammelmeldung nennt sie
+nicht. Die Schlüssel sind jetzt **an den Importzeilen gemessen**, und der
+Grund steht als Kommentar daneben.
+
+### Was es NICHT tut
+
+Kein Stop, kein Limit, keine Schwelle, keine Filterkette, keine Epic-Tabelle,
+keine Schleife, kein Killswitch. **Keine der acht Dateien mit erhöhtem
+Risiko** — `capital-com-execution.ts` ist **nicht** angefasst, die
+Capital-Grössenrechnung bleibt Zeichen für Zeichen. Der automatische Pfad ist
+unberührt: `GPTMarketAnalysis` ist getypt, und `execution-agent.ts` reicht
+weiter wie bisher.
+
+**Snapshot 299 Werte unverändert**, Karte 902 → **906** (vier gewollte
+Kanten: die Lesart an drei Stellen, `settings-store` für den Riegel), `tsc`
+**0 Fehler**, Build *Compiled successfully* ohne Warnung.
+
+**Benannt, nicht geändert:** der UI-Startwert `useState(10000)` in
+`MarketScannerPanel` — er wird aus `/api/capital-com` überschrieben, und ein
+Formular-Standardwert ist Nutzereingabe, dieselbe Klasse wie `/api/trades`
+`?? 30000`. Und das **400 gegen 500** bei einem Order-**Fehlschlag** bleibt
+der eigene offene Punkt vom 08.11.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
