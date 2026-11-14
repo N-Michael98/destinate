@@ -12411,13 +12411,180 @@ module.exports = async function pruefe() {
         !== /HEDGE_STELLE = "(.*?)"/.exec(trOhneK)?.[1],
         `${/MEHRFACH_STELLE = "(.*?)"/.exec(trOhneK)?.[1]} / `
         + `${/HEDGE_STELLE = "(.*?)"/.exec(trOhneK)?.[1]}`);
-      // STUFE 1 AENDERT NICHTS. Die Maps muessen weiter UEBERSCHREIBEN —
-      // wird hier summiert, ist das Stufe 2 und gehoert mit eigener
-      // Zustimmung und eigener Kollisionssicherung gebaut.
-      torPruefung("die P&L-Map summiert jetzt — das waere Stufe 2 und "
-        + "braucht eine eigene Entscheidung samt Kollisionssicherung",
-        /pnlByEpicOpen\.set\(schluessel, pnl\);/.test(trOhneK),
-        "pnlByEpicOpen.set(schluessel, pnl)");
+      // ── STUFE 2: DIE BEINE WERDEN ZUSAMMENGEFUEHRT (14.11.) ─────────
+      //
+      // Hier stand bis heute der Stufe-1-Riegel, der ein Summieren ROT
+      // werden liess ("das waere Stufe 2"). Er hat seinen Zweck erfuellt:
+      // der Umbau konnte nicht unbemerkt passieren. Jetzt tritt die
+      // gerechnete Zusicherung an seine Stelle.
+      const beineZusammenfuehren = trS1.exports?.beineZusammenfuehren;
+      const MAX_BEINE = trS1.exports?.MAX_BEINE_JE_POSITION;
+      if (typeof beineZusammenfuehren !== "function") {
+        torPruefung("beineZusammenfuehren ist nicht ausfuehrbar", false,
+          String(typeof beineZusammenfuehren));
+      } else {
+        const B = (schluessel, pnl, closeLevel, dealId) =>
+          ({ schluessel, pnl, closeLevel, dealId });
+
+        torPruefung("MAX_BEINE_JE_POSITION ist nicht 2 — die Schranke ist "
+          + "gemessen: maxPositionsPerSymbol 1, pyramiding aus, Teilgewinn "
+          + "hoechstens einmal je Position",
+          MAX_BEINE === 2, String(MAX_BEINE));
+
+        // ── GEGENPROBE ZUERST: EIN Bein muss sich verhalten wie bisher ──
+        // Das ist der Normalfall. Veraendert er sich, ist Stufe 2 kein
+        // Korrektiv mehr, sondern ein Umbau.
+        const eins = beineZusammenfuehren([B("A|1.00000", 7.5, 123.45, "d1")]);
+        torPruefung("ein EINZELNES Bein wird nicht mehr wie bisher "
+          + "geschrieben — Stufe 2 waere dann ein Umbau statt einer Korrektur",
+          eins.pnl.get("A|1.00000") === 7.5
+          && eins.close.get("A|1.00000") === 123.45
+          && eins.summiert.length === 0 && eins.nichtGeschrieben.length === 0,
+          `pnl=${eins.pnl.get("A|1.00000")} close=${eins.close.get("A|1.00000")}`
+          + ` summiert=${eins.summiert.length} nicht=${eins.nichtGeschrieben.length}`);
+        const einsOhne = beineZusammenfuehren([B("A|1.00000", 7.5, null, "d1")]);
+        torPruefung("ein fehlender Schlusskurs wird bei EINEM Bein trotzdem "
+          + "gesetzt — dann stuende dort ein erfundener Kurs",
+          einsOhne.pnl.get("A|1.00000") === 7.5
+          && !einsOhne.close.has("A|1.00000"),
+          `close gesetzt=${einsOhne.close.has("A|1.00000")}`);
+
+        // ── ZWEI BEINE: Summe, und KEIN Schlusskurs ─────────────────────
+        const zwei = beineZusammenfuehren([
+          B("A|1.00000", 12.5, 110, "d1"),
+          B("A|1.00000", -4.25, 108, "d2"),
+        ]);
+        torPruefung("zwei Beine werden nicht summiert — dann steht weiter "
+          + "EIN beliebiges Bein als Ergebnis in der Geldtabelle",
+          zwei.pnl.get("A|1.00000") === 8.25,
+          String(zwei.pnl.get("A|1.00000")));
+        torPruefung("bei zwei Beinen wird ein Schlusskurs gesetzt — es gibt "
+          + "aber KEINE Ordnung (die Aktivitaet traegt keinen Zeitstempel), "
+          + "also waere es ein beliebiger",
+          !zwei.close.has("A|1.00000"), `close=${zwei.close.get("A|1.00000")}`);
+        torPruefung("der Beleg der Zusammenfuehrung fehlt — ohne pnls und "
+          + "dealIds ist eine Summe spaeter nicht nachpruefbar",
+          zwei.summiert.length === 1
+          && JSON.stringify(zwei.summiert[0].pnls) === JSON.stringify([12.5, -4.25])
+          && JSON.stringify(zwei.summiert[0].dealIds) === JSON.stringify(["d1", "d2"])
+          && zwei.summiert[0].anzahl === 2,
+          JSON.stringify(zwei.summiert));
+        // Die REIHENFOLGE darf das Ergebnis nicht aendern — genau das war
+        // der Fehler, den Stufe 2 behebt.
+        const gedreht = beineZusammenfuehren([
+          B("A|1.00000", -4.25, 108, "d2"),
+          B("A|1.00000", 12.5, 110, "d1"),
+        ]);
+        torPruefung("die Summe haengt an der REIHENFOLGE der Beine — genau "
+          + "das war der Fehler",
+          gedreht.pnl.get("A|1.00000") === zwei.pnl.get("A|1.00000"),
+          `${gedreht.pnl.get("A|1.00000")} vs ${zwei.pnl.get("A|1.00000")}`);
+
+        // ── DREI BEINE: Kollision, es wird NICHTS geschrieben ───────────
+        const drei = beineZusammenfuehren([
+          B("A|1.00000", 1, 100, "d1"),
+          B("A|1.00000", 2, 101, "d2"),
+          B("A|1.00000", 3, 102, "d3"),
+        ]);
+        torPruefung("drei Beine werden trotzdem geschrieben — mehr Beine als "
+          + "eine Position haben kann heisst KOLLISION, und eine Summe aus "
+          + "zwei fremden Trades waere schlimmer als der alte Zustand",
+          !drei.pnl.has("A|1.00000") && !drei.close.has("A|1.00000")
+          && drei.nichtGeschrieben.length === 1
+          && drei.nichtGeschrieben[0].grund === "kollision"
+          && drei.nichtGeschrieben[0].anzahl === 3,
+          JSON.stringify(drei.nichtGeschrieben));
+        torPruefung("die Kollision nennt ihre dealIds nicht — dann ist sie "
+          + "im Log nicht nachverfolgbar",
+          drei.nichtGeschrieben.length === 1
+          && JSON.stringify(drei.nichtGeschrieben[0].dealIds) === JSON.stringify(["d1", "d2", "d3"]),
+          JSON.stringify(drei.nichtGeschrieben[0]?.dealIds));
+
+        // ── UNLESBAR: keine erfundene Zahl, in BEIDEN Mengen ────────────
+        const unlesbar2 = beineZusammenfuehren([
+          B("A|1.00000", 5, 100, "d1"),
+          B("A|1.00000", Number.NaN, 101, "d2"),
+        ]);
+        torPruefung("ein unlesbarer P&L wird bei zwei Beinen trotzdem "
+          + "summiert — aus \"unbekannt\" wuerde eine Messung (22.09.)",
+          !unlesbar2.pnl.has("A|1.00000")
+          && unlesbar2.nichtGeschrieben.length === 1
+          && unlesbar2.nichtGeschrieben[0].grund === "unlesbar",
+          JSON.stringify(unlesbar2.nichtGeschrieben));
+        const unlesbar1 = beineZusammenfuehren([B("A|1.00000", Number.NaN, 100, "d1")]);
+        torPruefung("ein unlesbarer P&L wird bei EINEM Bein geschrieben — "
+          + "auch der Einzelfall darf keine erfundene Zahl bekommen",
+          !unlesbar1.pnl.has("A|1.00000")
+          && unlesbar1.nichtGeschrieben.length === 1,
+          JSON.stringify(unlesbar1.nichtGeschrieben));
+
+        // ── mehrere Schluessel sind unabhaengig ─────────────────────────
+        const gemischt = beineZusammenfuehren([
+          B("A|1.00000", 1, 100, "d1"),
+          B("B|2.00000", 2, 200, "d2"),
+          B("B|2.00000", 3, 201, "d3"),
+          B("C|3.00000", 4, 300, "d4"),
+          B("C|3.00000", 5, 301, "d5"),
+          B("C|3.00000", 6, 302, "d6"),
+        ]);
+        torPruefung("die Schluessel werden nicht unabhaengig behandelt — "
+          + "eine Kollision darf einen gesunden Schluessel nicht mitreissen",
+          gemischt.pnl.get("A|1.00000") === 1
+          && gemischt.pnl.get("B|2.00000") === 5
+          && !gemischt.pnl.has("C|3.00000")
+          && gemischt.summiert.length === 1
+          && gemischt.nichtGeschrieben.length === 1,
+          `A=${gemischt.pnl.get("A|1.00000")} B=${gemischt.pnl.get("B|2.00000")}`
+          + ` C=${gemischt.pnl.has("C|3.00000")}`);
+        torPruefung("beineZusammenfuehren wirft bei undefined",
+          (() => { try { return beineZusammenfuehren(undefined).pnl.size === 0; } catch { return false; } })(),
+          "undefined");
+        // Sortierung: der teuerste Fall zuerst.
+        const sortiert = beineZusammenfuehren([
+          B("KLEIN", 1, 1, "a"), B("KLEIN", 1, 1, "b"),
+          B("GROSS", -60, 1, "c"), B("GROSS", -40, 1, "d"),
+        ]);
+        torPruefung("die Summen-Belege sind nicht nach Hoehe sortiert",
+          sortiert.summiert.length === 2 && sortiert.summiert[0].schluessel === "GROSS",
+          JSON.stringify(sortiert.summiert.map((x) => x.schluessel)));
+
+        // ── VERDRAHTUNG, gezaehlt statt gefunden ────────────────────────
+        torPruefung("die Schleife schreibt die P&L-Map wieder direkt — "
+          + "genau das Ueberschreiben, das Stufe 2 behebt",
+          !/pnlByEpicOpen\.set\(schluessel/.test(trOhneK)
+          && !/closeByEpicOpen\.set\(schluessel/.test(trOhneK),
+          "set(schluessel, …) in der Schleife");
+        torPruefung("die Maps werden nicht aus beineZusammenfuehren gefuellt",
+          /for \(const \[k, v\] of zusammenfuehrung\.pnl\) pnlByEpicOpen\.set\(k, v\);/.test(trOhneK)
+          && /for \(const \[k, v\] of zusammenfuehrung\.close\) closeByEpicOpen\.set\(k, v\);/.test(trOhneK),
+          "Fuellung nach der Schleife");
+        torPruefung("das Bein traegt seine dealId nicht — dann ist eine "
+          + "Summe spaeter nicht nachpruefbar",
+          /dealId: actDealId/.test(trOhneK), "dealId: actDealId");
+        torPruefung("beide Leser benutzen nicht DIESELBE Gruppierung — zwei "
+          + "Fassungen koennten auseinanderlaufen",
+          (trOhneK.match(/nachSchluessel\(beine\)/g) || []).length === 2,
+          `${(trOhneK.match(/nachSchluessel\(beine\)/g) || []).length}x nachSchluessel(beine)`);
+        for (const lage of ["aus", "ok"]) {
+          torPruefung(`der ${lage}-Zweig der Kollisions-Drossel fehlt`,
+            new RegExp(`lageMelden\\(KOLLISION_STELLE,\\s*"${lage}"\\)`).test(trOhneK),
+            `KOLLISION_STELLE ${lage}`);
+        }
+        torPruefung("die Kollisions-Drossel teilt sich den Namen mit der "
+          + "Mehrfach-Drossel — dann verdeckt die eine Lage die andere",
+          /MEHRFACH_STELLE = "(.*?)"/.exec(trOhneK)?.[1]
+          !== /KOLLISION_STELLE = "(.*?)"/.exec(trOhneK)?.[1],
+          `${/MEHRFACH_STELLE = "(.*?)"/.exec(trOhneK)?.[1]} / `
+          + `${/KOLLISION_STELLE = "(.*?)"/.exec(trOhneK)?.[1]}`);
+        // Die Belege muessen in BEIDE Schreibpfade — einer allein liesse die
+        // Haelfte der Zeilen ohne Nachweis (25.10.: zaehlen statt finden).
+        torPruefung("die Belege der Zusammenfuehrung stehen nicht in BEIDEN "
+          + "Schreibpfaden — dann traegt die Haelfte der Zeilen keinen Nachweis",
+          (trOhneK.match(/\.beinPnls = /g) || []).length === 2
+          && (trOhneK.match(/\.beinDealIds = /g) || []).length === 2,
+          `${(trOhneK.match(/\.beinPnls = /g) || []).length}x beinPnls`);
+      }
+
     }
   }
 

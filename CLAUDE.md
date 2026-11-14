@@ -4782,10 +4782,118 @@ in einer Datei **keine** Ladestelle getroffen wird.
 
 ### Was als Nächstes kommt — und was es braucht
 
-- **Stufe 2** (summieren, Schlusskurs vom letzten Bein, Zahl der Beine in die
-  Notizen): erst wenn die Logzeile belegt, dass der Fall auftritt, und mit
-  einer Kollisionssicherung.
+- **Stufe 2 ist am 14.11. gebaut** — siehe den Abschnitt direkt darunter.
+  **Eine Annahme dieser Liste war falsch:** „Schlusskurs vom letzten Bein"
+  geht nicht, weil der Code aus einer Aktivität **keinen Zeitstempel** liest
+  — es gibt keine Ordnung. Bei zwei Beinen bleibt er deshalb **leer**.
+  Die Kollisionssicherung ist die gemessene Schranke von **zwei** Beinen je
+  Position.
 - **Stufe 3** (`capitalClosePartial`): Hochrisiko-Datei, eigene Runde.
+  **Weiterhin offen.**
+
+### Stufe 2: die Beine werden zusammengeführt (14.11.)
+
+**Geändert auf ausdrückliche Anweisung.** Stufe 1 hat gemessen, Stufe 2
+korrigiert — und zwar **nur** den Fall, den Stufe 1 sichtbar gemacht hat.
+
+**Die Schranke, auf der alles ruht — gemessen, nicht angenommen:**
+
+| Messung | Beleg |
+|---|---|
+| `maxPositionsPerSymbol: 1`, `pyramidingEnabled: false`, beide im **Snapshot** | `settings-store.ts:22–23` |
+| `if (!pyrOn \|\| maxPerSym <= 1)` blockt jede zweite Position je Symbol | `orchestrator-agent.ts:1328` |
+| Der Teilgewinn feuert **höchstens einmal** je Position, und `partialDone` wird in die Notizen **persistiert** | `risk-agent.ts:673`, `:700` |
+
+**Also kann eine Position höchstens ZWEI Schliess-Beine haben** — den
+Teilgewinn und den Schluss. **Drei oder mehr sind damit kein Teilgewinn,
+sondern eine Kollision**: zwei verschiedene Trades mit gleichem Markt und
+gleichem Eröffnungskurs auf fünf Stellen. Das ist unterscheidbar, ohne etwas
+zu raten.
+
+`beineZusammenfuehren()` — rein, exportiert, **ausgeführt** geprüft — füllt
+die beiden Maps jetzt **nach** der Schleife:
+
+| Lage | P&L | Schlusskurs |
+|---|---|---|
+| **1 Bein** | wie bisher | wie bisher — **unverändert** |
+| **2 Beine** | **Summe** | **leer** |
+| **≥ 3 Beine** | **nichts geschrieben** | — Kollision, gedrosselt gemeldet |
+| ein unlesbarer P&L | **nichts geschrieben** | — auch im Einzelfall |
+
+**Warum der Schlusskurs bei zwei Beinen leer bleibt:** der Code liest aus
+einer Aktivität **keinen Zeitstempel** (nur `type`, `dealId`,
+`details.openPrice`, `epic`, `closeLevel`) — es gibt also **keine Ordnung**,
+und „der letzte Kurs" wäre ein beliebiger. `ausstiegsgrund()` liefert dann
+ehrlich `KEIN_SCHLUSSKURS` statt eines erfundenen Urteils. Das **verändert die
+Etiketten in `/edge`** für solche Zeilen — gewollt, und hier benannt, damit es
+später nicht wie ein neuer Fehler aussieht.
+
+**Warum bei drei Beinen gar nichts geschrieben wird:** eine Summe aus zwei
+fremden Trades wäre **schlimmer** als der alte Zustand (ein beliebiges Bein).
+Die Zeile bleibt OPEN, wird erneut versucht und der Fall geht mit allen
+dealIds ins Log.
+
+**Die Belege gehen in die Zeile** (`beine`, `beinPnls`, `beinDealIds`), und
+zwar in **beide** Schreibpfade — einer allein liesse die Hälfte der Zeilen
+ohne Nachweis. Fehlt der Beleg, wird **kein Schlüssel gesetzt** (Regel
+`dealId`, 30.09.).
+
+**Eine Gruppierung, nicht zwei:** `mehrfachBeine` und `beineZusammenfuehren`
+benutzen denselben Helfer `nachSchluessel`. Zwei Fassungen könnten
+auseinanderlaufen — dann meldete die Diagnose etwas anderes, als die
+Entscheidung rechnet.
+
+#### Der Stufe-1-Riegel hat genau das getan, wofür er gebaut war
+
+Beim Umbau wurde **M10** rot: *„die P&L-Map summiert jetzt — das wäre Stufe 2
+und braucht eine eigene Entscheidung samt Kollisionssicherung."* Stufe 2
+konnte also nicht unbemerkt passieren. Er ist jetzt der **Rückbau-Wächter**:
+schreibt die Schleife die Map wieder direkt, wird er rot.
+
+#### Absicherung
+
+`safety-nets` 1344 → **1365**, **12 von 12 Sabotagen** plus Gegenprobe.
+Die wichtigste ist **Z6**: der **Ein-Bein-Zweig** muss sich verhalten wie
+bisher — verändert er sich, ist Stufe 2 kein Korrektiv mehr, sondern ein
+Umbau. Dazu die **Reihenfolge-Unabhängigkeit** (dieselben Beine gedreht müssen
+dieselbe Summe ergeben — genau das war der Fehler), die Kollisionsschranke in
+beide Richtungen, und die Verdrahtung **gezählt**: kein `.set` mehr in der
+Schleife, die Füllung aus der Funktion, `dealId: actDealId`, beide
+Drossel-Zweige, verschiedene Stellennamen, Belege in **beiden** Pfaden.
+
+#### Vier Werkzeuglücken, alle still geblieben wären
+
+- **M7**s Anker traf nicht mehr (Stufe 2 hat `beine.push` mehrzeilig gemacht).
+  Die Suite hat **verweigert** statt falsch zu zählen — die Stufe-1-Änderung
+  von heute.
+- Die beiden neuen Suiten standen **nicht** im Gruppenlauf und wären
+  vergessen worden. Jetzt sind sie drin: **elf** statt neun.
+- Sie druckten nicht die Zeile, die der Läufer sucht — ein blosses Eintragen
+  hätte *„KEINE Schlusszeile — Suite abgestürzt?"* ergeben. Gemessen, bevor es
+  passierte.
+- Der Läufer startete **jede** Suite mit `node`; eine `.py`-Suite wäre an
+  einem Syntaxfehler gestorben und hätte wie ein Befund ausgesehen.
+
+Und zwei fest verdrahtete Zahlen im Läufer selbst sagten nach dem Nachtragen
+weiter *„9 Suiten"*, während **elf** liefen — dieselbe Fehlerklasse, in meinem
+eigenen Werkzeug. Beide kommen jetzt aus `len(SUITEN)`.
+
+#### Was es NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife. **Bestehende Zeilen werden nicht angefasst** —
+die Korrektur wirkt ab jetzt, nicht rückwirkend. `capitalClosePartial` bleibt
+unberührt (**Stufe 3**, Hochrisiko-Datei, eigene Runde). **Snapshot 299 Werte
+unverändert**, Karte **901 Kanten unverändert** — Stufe 2 brauchte keinen
+neuen Import.
+
+#### Ehrlich zum Restrisiko
+
+Zwei Trades **nacheinander**, gleicher Markt, gleicher Eröffnungskurs auf fünf
+Stellen, beide im 24-Stunden-Fenster, mit zusammen genau zwei Beinen — die
+wären nicht unterscheidbar und würden summiert. Die Schranke oben macht das
+unwahrscheinlich, **beweist** es aber nicht aus. Drei Beine fangen genau diesen
+Fall ab, zwei nicht.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

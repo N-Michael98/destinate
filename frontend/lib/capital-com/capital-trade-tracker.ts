@@ -893,6 +893,10 @@ export type SchlussBein = {
   schluessel: string;
   pnl: number;
   closeLevel: number | null;
+  /** Die Transaktions-dealId DIESES Beins (STUFE 2, 14.11.). Sie ist der
+   *  einzige Beleg dafuer, welche Transaktionen zusammengefuehrt wurden —
+   *  ohne sie liesse sich eine Summe spaeter nicht mehr nachpruefen. */
+  dealId: string;
 };
 
 export type MehrfachBefund = {
@@ -905,9 +909,41 @@ export type MehrfachBefund = {
   closeLevels: Array<number | null>;
 };
 
-export function mehrfachBeine(
+/**
+ * STUFE 2 (14.11.): die Beine eines Schluessels ZUSAMMENFUEHREN.
+ *
+ * WOZU. Bis Stufe 1 haben `pnlByEpicOpen` und `closeByEpicOpen` mit `.set()`
+ * UEBERSCHRIEBEN: hatte ein Trade mehr als ein Schliess-Bein, landete EIN
+ * beliebiges davon als "der" P&L in der Geldtabelle. Welches, entschied die
+ * Reihenfolge der Broker-Antwort — und die legt unser Code nirgends fest.
+ *
+ * DIE SCHRANKE, AUF DER DAS RUHT — gemessen, nicht angenommen:
+ *   - `maxPositionsPerSymbol` ist 1 und `pyramidingEnabled` false (beide im
+ *     Snapshot), und `orchestrator-agent.ts:1328` blockt bei
+ *     `!pyrOn || maxPerSym <= 1` jede zweite Position je Symbol.
+ *   - Der Teilgewinn feuert hoechstens EINMAL je Position
+ *     (`risk-agent.ts:673`, `!meta.partialDone`), und `partialDone` wird in
+ *     die Notizen persistiert.
+ *
+ * Eine Position kann also hoechstens ZWEI Schliess-Beine haben: den
+ * Teilgewinn und den Schluss. DREI ODER MEHR sind damit kein Teilgewinn,
+ * sondern eine KOLLISION — zwei verschiedene Trades mit gleichem Markt und
+ * gleichem Eroeffnungskurs auf fuenf Stellen. Dann wird NICHTS geschrieben
+ * und der Fall gemeldet: eine Summe aus zwei fremden Trades waere schlimmer
+ * als der heutige Zustand.
+ *
+ * DER SCHLUSSKURS BLEIBT BEI ZWEI BEINEN LEER. Der Code liest aus einer
+ * Aktivitaet KEINEN Zeitstempel (nur `type`, `dealId`, `details.openPrice`,
+ * `epic`, `closeLevel`) — es gibt also keine Ordnung, und "der letzte Kurs"
+ * waere ein beliebiger. `ausstiegsgrund()` liefert dann ehrlich
+ * `KEIN_SCHLUSSKURS` statt eines erfundenen Urteils.
+ */
+export const MAX_BEINE_JE_POSITION = 2;
+
+/** Nach Schluessel gruppieren — EINE Umsetzung fuer beide Leser. */
+function nachSchluessel(
   beine: ReadonlyArray<SchlussBein>,
-): MehrfachBefund[] {
+): Map<string, SchlussBein[]> {
   const nach = new Map<string, SchlussBein[]>();
   for (const b of beine ?? []) {
     const schluessel = typeof b?.schluessel === "string" ? b.schluessel : "";
@@ -916,6 +952,94 @@ export function mehrfachBeine(
     if (liste) liste.push(b);
     else nach.set(schluessel, [b]);
   }
+  return nach;
+}
+
+export type SummenBeleg = {
+  schluessel: string;
+  anzahl: number;
+  summe: number;
+  pnls: number[];
+  dealIds: string[];
+};
+
+export type NichtGeschrieben = {
+  schluessel: string;
+  anzahl: number;
+  /** `kollision` = mehr Beine als eine Position haben kann;
+   *  `unlesbar` = mindestens ein P&L ist keine endliche Zahl. */
+  grund: "kollision" | "unlesbar";
+  pnls: number[];
+  dealIds: string[];
+};
+
+export type Zusammenfuehrung = {
+  pnl: Map<string, number>;
+  close: Map<string, number>;
+  summiert: SummenBeleg[];
+  nichtGeschrieben: NichtGeschrieben[];
+};
+
+export function beineZusammenfuehren(
+  beine: ReadonlyArray<SchlussBein>,
+): Zusammenfuehrung {
+  const pnl = new Map<string, number>();
+  const close = new Map<string, number>();
+  const summiert: SummenBeleg[] = [];
+  const nichtGeschrieben: NichtGeschrieben[] = [];
+
+  for (const [schluessel, liste] of nachSchluessel(beine)) {
+    const pnls = liste.map((b) => Number(b.pnl));
+    const dealIds = liste.map((b) => (typeof b.dealId === "string" ? b.dealId : ""));
+
+    // Ein unlesbarer Wert macht die SUMME unlesbar. Aus "unbekannt" darf
+    // keine Messung werden (Regel 22.09.) — also lieber gar nichts
+    // schreiben, dann bleibt die Zeile OPEN und wird erneut versucht.
+    if (!pnls.every((p) => Number.isFinite(p))) {
+      nichtGeschrieben.push({ schluessel, anzahl: liste.length, grund: "unlesbar", pnls, dealIds });
+      continue;
+    }
+
+    if (liste.length === 1) {
+      // EIN BEIN: exakt wie bisher. Dieser Zweig ist der Normalfall, und er
+      // darf sich nicht veraendern — sonst waere Stufe 2 keine Korrektur,
+      // sondern ein Umbau.
+      pnl.set(schluessel, pnls[0]);
+      const c = liste[0].closeLevel;
+      if (c !== null && c !== undefined && Number.isFinite(Number(c)) && Number(c) > 0) {
+        close.set(schluessel, Number(c));
+      }
+      continue;
+    }
+
+    if (liste.length > MAX_BEINE_JE_POSITION) {
+      nichtGeschrieben.push({ schluessel, anzahl: liste.length, grund: "kollision", pnls, dealIds });
+      continue;
+    }
+
+    // GENAU ZWEI BEINE: Teilgewinn + Schluss. Die Summe ist das echte
+    // Ergebnis des Trades. Der Schlusskurs bleibt bewusst LEER (siehe oben).
+    const summe = Number(pnls.reduce((a, b) => a + b, 0).toFixed(2));
+    pnl.set(schluessel, summe);
+    summiert.push({ schluessel, anzahl: liste.length, summe, pnls, dealIds });
+  }
+
+  // Der groesste Fall zuerst — wer hinsieht, will den teuersten zuerst.
+  summiert.sort((a, b) => Math.abs(b.summe) - Math.abs(a.summe));
+  nichtGeschrieben.sort((a, b) => b.anzahl - a.anzahl);
+  return { pnl, close, summiert, nichtGeschrieben };
+}
+
+/** Der Name steht EINMAL — zwei Schreibweisen waeren zwei Zustaende. */
+export const KOLLISION_STELLE = "P&L Beine nicht zusammenfuehrbar";
+
+export function mehrfachBeine(
+  beine: ReadonlyArray<SchlussBein>,
+): MehrfachBefund[] {
+  // STUFE 2 (14.11.): dieselbe Gruppierung wie `beineZusammenfuehren`, aus
+  // EINEM Helfer. Zwei Fassungen koennten auseinanderlaufen, und dann
+  // meldete die Diagnose etwas anderes, als die Entscheidung rechnet.
+  const nach = nachSchluessel(beine);
   const raus: MehrfachBefund[] = [];
   for (const [schluessel, liste] of nach) {
     if (liste.length < 2) continue;
@@ -1342,6 +1466,9 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
     // STUFE 1 (13.11.): jedes Bein MITSCHREIBEN. Die beiden Maps bleiben
     // unveraendert — hier wird ausschliesslich gemessen.
     const beine: SchlussBein[] = [];
+    // STUFE 2 (14.11.): die Belege der Zusammenfuehrung werden weiter unten
+    // in die Notizen geschrieben, also muessen sie den try-Block ueberleben.
+    let zusammenfuehrung: Zusammenfuehrung | null = null;
     try {
       const from = new Date(Date.now() - 86400 * 1000).toISOString().slice(0, 19);
       const to = new Date().toISOString().slice(0, 19);
@@ -1363,10 +1490,15 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           const epic = String(a.epic ?? details.epic ?? "");
           if (openPrice > 0 && epic) {
             const schluessel = `${epic}|${openPrice.toFixed(5)}`;
-            pnlByEpicOpen.set(schluessel, pnl);
             const closeLevel = Number(details.closeLevel ?? details.level ?? 0);
-            if (closeLevel > 0) closeByEpicOpen.set(schluessel, closeLevel);
-            beine.push({ schluessel, pnl, closeLevel: closeLevel > 0 ? closeLevel : null });
+            // STUFE 2 (14.11.): die Schleife SAMMELT nur noch. Gefuellt werden
+            // die beiden Maps nach der Schleife durch `beineZusammenfuehren` —
+            // ein `.set` hier waere wieder das Ueberschreiben, das Stufe 2
+            // behebt.
+            beine.push({
+              schluessel, pnl, dealId: actDealId,
+              closeLevel: closeLevel > 0 ? closeLevel : null,
+            });
           }
         }
       }
@@ -1374,6 +1506,36 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       // STUFE 1 (13.11.): gedrosselt melden, wenn ein Schluessel mehr als
       // einmal geschrieben wurde. Das Fenster ist 24 h — ohne Drossel waeren
       // das bei einem 2-Minuten-Zyklus 720 Zeilen am Tag fuer denselben Fall.
+      // STUFE 2 (14.11.): JETZT die Maps fuellen — aus der reinen Funktion,
+      // nicht aus der Schleife. Ein Bein bleibt exakt wie bisher, zwei Beine
+      // werden summiert (Schlusskurs bleibt leer, es gibt keine Ordnung),
+      // und alles darueber wird NICHT geschrieben, sondern gemeldet.
+      zusammenfuehrung = beineZusammenfuehren(beine);
+      for (const [k, v] of zusammenfuehrung.pnl) pnlByEpicOpen.set(k, v);
+      for (const [k, v] of zusammenfuehrung.close) closeByEpicOpen.set(k, v);
+      if (zusammenfuehrung.summiert.length > 0) {
+        const l = zusammenfuehrung.summiert.slice(0, 5).map((x) =>
+          `${x.schluessel} ${x.anzahl}x [${x.pnls.join(", ")}] = ${x.summe}`
+          + ` (deals ${x.dealIds.join(", ")})`).join(" | ");
+        console.log(`[trade-tracker] \u2795 ${zusammenfuehrung.summiert.length} `
+          + `Position(en) mit zwei Schliess-Beinen ZUSAMMENGEFUEHRT: ${l}`
+          + (zusammenfuehrung.summiert.length > 5
+            ? ` (+${zusammenfuehrung.summiert.length - 5} weitere)` : ""));
+      }
+      if (zusammenfuehrung.nichtGeschrieben.length > 0) {
+        if (lageMelden(KOLLISION_STELLE, "aus")) {
+          const l = zusammenfuehrung.nichtGeschrieben.slice(0, 5).map((x) =>
+            `${x.schluessel} ${x.anzahl}x ${x.grund} [${x.pnls.join(", ")}]`
+            + ` (deals ${x.dealIds.join(", ")})`).join(" | ");
+          console.warn(`[trade-tracker] \u26a0\ufe0f ${zusammenfuehrung.nichtGeschrieben.length} `
+            + `Schluessel NICHT zusammenfuehrbar — es wurde KEIN P&L geschrieben, `
+            + `die Zeile bleibt OPEN und wird erneut versucht. `
+            + `"kollision" heisst: mehr Beine als eine Position haben kann `
+            + `(zwei Trades, gleicher Markt, gleicher Eroeffnungskurs). ${l}`);
+        }
+      } else if (lageMelden(KOLLISION_STELLE, "ok")) {
+        console.log(`[trade-tracker] \u2705 alle Schliess-Beine wieder zusammenfuehrbar.`);
+      }
       const mehrfach = mehrfachBeine(beine);
       if (mehrfach.length > 0) {
         if (lageMelden(MEHRFACH_STELLE, "aus")) {
@@ -1483,6 +1645,16 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       const schlusskurs = closeByEpicOpen.get(openKey) ?? null;
       const { exitPosition, exitReason } = ausstiegsgrund(
         schlusskurs, Number(trade.stopLoss), Number(trade.takeProfit));
+      // STUFE 2 (14.11.): WURDE HIER ZUSAMMENGEFUEHRT? Die Belege gehoeren in
+      // die Zeile, sonst ist eine Summe spaeter nicht mehr nachpruefbar —
+      // und `/edge` kann diese Trades nicht von Ein-Bein-Trades trennen.
+      // Fehlt der Beleg, wird KEIN Schluessel gesetzt (Regel dealId, 30.09.).
+      const belegHaupt = zusammenfuehrung?.summiert.find((x) => x.schluessel === openKey) ?? null;
+      if (belegHaupt) {
+        updatedMeta.beine = belegHaupt.anzahl;
+        updatedMeta.beinPnls = belegHaupt.pnls;
+        updatedMeta.beinDealIds = belegHaupt.dealIds;
+      }
       updatedMeta.closeLevel = schlusskurs ?? 0;
       updatedMeta.exitPosition = exitPosition;
       updatedMeta.exitReason = exitReason;
@@ -1562,6 +1734,16 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           if (!notizen.exitReason || etikettWiderlegt(notizen.exitReason)) {
             const schluss = closeByEpicOpen.get(key) ?? null;
             const grund = ausstiegsgrund(schluss, Number(t.stopLoss), Number(t.takeProfit));
+            // STUFE 2 (14.11.): WURDE HIER ZUSAMMENGEFUEHRT? Die Belege gehoeren in
+            // die Zeile, sonst ist eine Summe spaeter nicht mehr nachpruefbar —
+            // und `/edge` kann diese Trades nicht von Ein-Bein-Trades trennen.
+            // Fehlt der Beleg, wird KEIN Schluessel gesetzt (Regel dealId, 30.09.).
+            const belegNach = zusammenfuehrung?.summiert.find((x) => x.schluessel === key) ?? null;
+            if (belegNach) {
+              notizen.beine = belegNach.anzahl;
+              notizen.beinPnls = belegNach.pnls;
+              notizen.beinDealIds = belegNach.dealIds;
+            }
             notizen.closeLevel = schluss ?? 0;
             notizen.exitPosition = grund.exitPosition;
             notizen.exitReason = grund.exitReason;
