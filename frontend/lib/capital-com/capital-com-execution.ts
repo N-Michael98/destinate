@@ -14,6 +14,9 @@ import { isKillswitchActive } from "../killswitch/killswitch-engine";
 // Order-Routen und die IC-Ausfuehrung benutzen (14.11.). Eine zweite
 // Fassung waere eine zweite Wahrheit.
 import { lesbarerKontostand } from "../kontostand/kontostand";
+// Und dieselbe fuer den Risikosatz (15.11.) — der Ausdruck stand hier
+// inline, und derselbe Ausdruck an zwei Stellen ist eine zweite Wahrheit.
+import { lesbaresRisiko } from "../risiko/risiko";
 
 export interface ExecutionRequest {
   symbol: string;
@@ -208,7 +211,7 @@ function calcPositionSize(
   // saubere Langform — sie beruehrt aber die drei bestehenden Aufrufstellen
   // und ist deshalb eine eigene Entscheidung.
   if (lesbarerKontostand(accountBalance) === null) return null;
-  if (!Number.isFinite(riskPercent) || riskPercent <= 0) return null;
+  if (lesbaresRisiko(riskPercent) === null) return null;
 
   const riskAmount = accountBalance * (riskPercent / 100);
   const pipVal = PIP_VALUE_PER_UNIT[epic] ?? 1;

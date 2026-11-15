@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 360 · Kanten: 907
+Dateien mit internen Abhängigkeiten: 360 · Kanten: 910
 
 
 ## analysis-engine/api
@@ -282,6 +282,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 907
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
   - → `frontend/lib/kontostand/kontostand.ts`
   - → `frontend/lib/richtung/richtung.ts`
+  - → `frontend/lib/risiko/risiko.ts`
 - `frontend/app/api/capital-com/positions/route.ts`
   - → `frontend/lib/capital-com/capital-com-execution.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
@@ -339,6 +340,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 907
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/kontostand/kontostand.ts`
   - → `frontend/lib/richtung/richtung.ts`
+  - → `frontend/lib/risiko/risiko.ts`
   - → `frontend/lib/settings/settings-store.ts`
 - `frontend/app/api/icmarkets/status/route.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
@@ -761,6 +763,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 907
   - → `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/lib/killswitch/killswitch-engine.ts`
   - → `frontend/lib/kontostand/kontostand.ts`
+  - → `frontend/lib/risiko/risiko.ts`
 - `frontend/lib/capital-com/capital-com-session.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`

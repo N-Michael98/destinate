@@ -4,6 +4,7 @@ import { executeICMarketsOrder } from "../../../../lib/icmarkets/icmarkets-execu
 import { isICMarketsConnected, getICMarketsSession } from "../../../../lib/icmarkets/icmarkets-session";
 import { lesbareRichtung } from "../../../../lib/richtung/richtung";
 import { lesbarerKontostand, kontostandGrund } from "../../../../lib/kontostand/kontostand";
+import { lesbaresRisiko, risikoGrund } from "../../../../lib/risiko/risiko";
 import { getSettings } from "../../../../lib/settings/settings-store";
 
 export async function POST(request: Request) {
@@ -106,10 +107,24 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // ── EINE LESART FUER DEN RISIKOSATZ (15.11.) ─────────────────────────
+    // Dieselbe Lesart und dieselbe Antwort wie in
+    // `/api/capital-com/execute` — die Begruendung steht dort ausfuehrlich.
+    // Beide Routen auf einmal, weil ein Fix an EINER Stelle die Frage nicht
+    // beantwortet, wo die Klasse sonst noch steckt (Lehre 25.10.).
+    const risiko = lesbaresRisiko(body.riskPercent);
+    if (risiko === null) {
+      return NextResponse.json({
+        ok: false,
+        error: `riskPercent unbrauchbar (${risikoGrund(body.riskPercent)}) `
+          + `— ohne Risikosatz keine Positionsgroesse`,
+      }, { status: 400 });
+    }
+
     const result = await executeICMarketsOrder({
       symbol: body.symbol,
       direction: richtung,
-      riskPercent: body.riskPercent ?? 1.0,
+      riskPercent: risiko,
       accountBalance: kontostand,
       stopLossPrice: body.stopLossPrice,
       takeProfitPrice: body.takeProfitPrice,

@@ -4,6 +4,7 @@ import { executeCapitalDemoOrder, type ExecutionRequest } from "../../../../lib/
 import { isCapitalConnected } from "../../../../lib/capital-com/capital-com-session";
 import { lesbareRichtung } from "../../../../lib/richtung/richtung";
 import { lesbarerKontostand, kontostandGrund } from "../../../../lib/kontostand/kontostand";
+import { lesbaresRisiko, risikoGrund } from "../../../../lib/risiko/risiko";
 
 export async function POST(request: Request) {
   try {
@@ -40,6 +41,35 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    // ── EINE LESART FUER DEN RISIKOSATZ (15.11.) ─────────────────────────
+    //
+    // Hier stand `body.riskPercent ?? 1.0`. Zwei Fehler in einer Zeile:
+    //
+    // 1. `??` faengt `null`/`undefined` — und sonst nichts. Gemessen durch
+    //    die echte `executeCapitalDemoOrder` gegen einen gezaehlten
+    //    `capitalPlaceOrder`: `NaN` und `"abc"` ergaben eine Groesse von
+    //    NaN AN DEN BROKER (mit `ok: true`), `Infinity` und `1e6` die
+    //    GROESSTE erlaubte Position, `0` und negativ eine Mindest-Order.
+    //    Seit dem 15.11. haelt `calcPositionSize` das ab — aber ein 400 mit
+    //    Grund an der Grenze ist besser als ein Abbruch zwei Schichten
+    //    weiter innen, weil nur hier der Aufrufer erfaehrt, WAS er falsch
+    //    geschickt hat.
+    //
+    // 2. Die `1.0` war eine ZWEITE Quelle fuer den Standard-Risikosatz
+    //    neben `maxRiskPerTradePct` in den Einstellungen. Ein Aufrufer, der
+    //    nicht sagt, wieviel er riskieren will, bekommt jetzt keine stille
+    //    Entscheidung mehr. Gemessen, dass das keinen echten Aufrufer
+    //    bricht: einziger Aufrufer beider Order-Routen ist
+    //    `MarketScannerPanel.tsx:161`, und der sendet `riskPercent` immer.
+    const risiko = lesbaresRisiko(body.riskPercent);
+    if (risiko === null) {
+      return NextResponse.json({
+        ok: false,
+        error: `riskPercent unbrauchbar (${risikoGrund(body.riskPercent)}) `
+          + `— ohne Risikosatz keine Positionsgroesse`,
+      }, { status: 400 });
+    }
+
     // ── Der Cast prueft NICHTS (08.11.) ──────────────────────────────────────
     //
     // `request.json()` ist `any`, und `as Partial<ExecutionRequest>` behauptet
@@ -73,7 +103,7 @@ export async function POST(request: Request) {
     const req: ExecutionRequest = {
       symbol: body.symbol,
       direction: richtung,
-      riskPercent: body.riskPercent ?? 1.0,
+      riskPercent: risiko,
       accountBalance: kontostand,
       stopLossPrice: body.stopLossPrice,
       takeProfitPrice: body.takeProfitPrice,

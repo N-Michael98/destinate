@@ -5461,12 +5461,122 @@ Schleife, kein Killswitch. `ordersRiegel` unberührt. Die
 mehr mit einer `null`-Grösse. `tsc` **0 Fehler**, Build *Compiled
 successfully*, Karte 906 → **907** (ein gewollter Import).
 
-**Benannt, nicht geändert** — beide wären eine eigene Runde mit eigenem
-Plan, und der Riegel an der Geldstelle macht sie **ungefährlich**, bevor sie
-behoben sind:
+**Der erste offene Punkt ist am selben Tag erledigt** — `riskPercent` wird
+an **beiden** Order-Routen validiert; siehe den Unterabschnitt direkt
+darunter. **Weiterhin offen:** `parsed.maxRiskPercent ?? 1.0` in
+`ai-analysis-engine.ts` — dieselbe Klasse, aber eine Hochrisiko-Datei und
+eine eigene Runde. Der Riegel an der Geldstelle macht sie **ungefährlich**:
+ein nicht-numerischer Wert von Claude führt dort zu **keiner Order** statt
+zu einer NaN-Grösse.
 
-- `riskPercent` an den **beiden Order-Routen** validieren (eine Lesart),
-- `parsed.maxRiskPercent ?? 1.0` in `ai-analysis-engine.ts` (Hochrisiko).
+### Ein Risikosatz — eine Lesart (15.11.)
+
+**Geändert auf ausdrückliche Anweisung.** Der offene Punkt aus dem Abschnitt
+darüber, und damit ist die Kette vom Eingang bis zur Grösse geschlossen.
+
+Beide Order-Routen hatten `riskPercent: body.riskPercent ?? 1.0`. **Zwei
+Fehler in einer Zeile:**
+
+**1. `??` fängt `null`/`undefined` — und sonst nichts.** Die Messung von
+oben gilt unverändert: `NaN` und `"abc"` ergaben eine Grösse von **NaN an
+den Broker**, `Infinity` und `1e6` die **grösste erlaubte Position**, `0`
+und negativ eine **Mindest-Order**. Seit dem Riegel in `calcPositionSize`
+wird das abgehalten — aber **ein 400 mit Grund an der Grenze ist besser als
+ein Abbruch zwei Schichten weiter innen**, weil nur dort der Aufrufer
+erfährt, *was* er falsch geschickt hat.
+
+**2. Die `1.0` war eine ZWEITE Quelle** für den Standard-Risikosatz neben
+`maxRiskPerTradePct` in den Einstellungen. Ein Aufrufer, der nicht sagt,
+wieviel er riskieren will, bekommt jetzt **keine stille Entscheidung** mehr.
+
+**Gemessen, dass das Pflichtmachen keinen echten Aufrufer bricht:** einziger
+Aufrufer **beider** Routen ist `MarketScannerPanel.tsx:161`, und der sendet
+`riskPercent` immer. Liefert Claude dort eine **Zeichenkette**, gibt es
+jetzt ein 400 mit Grund statt einer stillen NaN-Grösse.
+
+### Drei Stellen, eine Umsetzung
+
+`lib/risiko/risiko.ts` — rein, ohne Importe, Muster `lesbarerKontostand`:
+`lesbaresRisiko(roh): number | null` (nur eine endliche Zahl > 0) und
+`risikoGrund(roh)`, der die Lage nennt (*fehlt*, *keine Zahl (typ)*, *NaN*,
+*unendlich*, *0 — das hiesse nicht handeln*, *nicht grösser als 0*).
+
+Benutzt wird sie an **drei** Stellen: beide Order-Routen **und**
+`calcPositionSize` — dort stand der Ausdruck am 15.11. zuerst **inline**,
+und derselbe Ausdruck an zwei Stellen ist eine zweite Wahrheit. Der Prüfer
+hält das jetzt in **beide** Richtungen: die gemeinsame Lesart muss da sein,
+**und** die inline-Form darf nicht zurückkommen.
+
+**Warum nicht `lesbarerKontostand` mitbenutzen:** das Prädikat ist dasselbe
+(endliche Zahl > 0), die **Sache** ist es nicht. Ein Prozentsatz ist kein
+Kontostand, und eine Funktion, die zwei Dinge heisst, macht beim nächsten
+Lesen Arbeit. Zwei kleine, ehrlich benannte Lesarten sind besser als eine
+unscharfe.
+
+**Keine Obergrenze in der Lesart.** `1e6` bleibt eine endliche Zahl > 0 und
+wird von `MAX_SIZE` geklemmt — dort gehört die Grenze hin. Was ein „zu
+grosser" Prozentsatz ist, steht in `maxRiskPerTradePct`, und der
+Orchestrator klemmt bereits dagegen. Eine zweite, erfundene Obergrenze in
+dieser Datei wäre eine Policy-Entscheidung an der falschen Stelle.
+
+### Absicherung
+
+`safety-nets` 1457 → **1469**: jede unbrauchbare Eingabe (*fehlt*, `0`,
+negativ, `NaN`, `+Infinity`, Text, **Zahl als Text**) ⇒ **400 mit Grund und
+null Ausführungen**, auf **beiden** Routen einzeln geprüft (ein Treffer
+bewiese nichts über die andere Stelle, 25.10.). Dazu die **Gegenprobe**,
+dass 0.5 / 1.0 / 2.5 weiter durchgehen — sonst stünden beide Broker still —
+und dass die sechs Gründe **unterscheidbar** sind.
+
+**10 von 10 Sabotagen** plus Gegenprobe (**11 von 11 wie erwartet**).
+
+### Die zwei Sabotagen, die zuerst wirkungslos waren
+
+Mein erster Entwurf von R1/R2 tauschte **nur** die Durchreiche-Zeile
+(`riskPercent: risiko` → `body.riskPercent ?? 1.0`) und blieb **grün** — zu
+Recht, und das ist ausgerechnet, nicht geraten: nach
+`if (risiko === null) return 400` ist `risiko` eine endliche Zahl > 0, und
+`lesbaresRisiko` gibt `roh` **unverändert** zurück (`return roh;`). Damit
+ist `body.riskPercent ?? 1.0` an dieser Stelle **beweisbar identisch** mit
+`risiko`.
+
+Sie als „entwischt" zu zählen wäre ein **Messfehler** gewesen (Lehre vom
+29./31.10.). Der Fund war der Zustand **ohne** Riegel — genau den stellen
+die beiden Fälle jetzt wieder her: Riegel weg **und** `?? 1.0` zurück.
+
+### Und vier Befunde aus den eigenen Prüfständen — alle richtig
+
+Der erste Lauf nach der Änderung war **rot mit vier Befunden**, und keiner
+davon war ein Defekt:
+
+| Befund | Ursache |
+|---|---|
+| 3× „der gesunde Fall geht nicht durch" | die **Testdaten von gestern** trugen kein `riskPercent` — die Routen antworten jetzt zu Recht mit 400. Eine Verhaltensänderung muss **durch** die Testdaten gehen, nicht um sie herum |
+| 1× „der Riegel an den Eingaben ist weg" | meine **Struktur-Prüfung von heute Morgen** verlangte den inline-Ausdruck, den ich gerade durch die gemeinsame Lesart ersetzt hatte |
+
+**Und das Anker-Tor hat zweimal verweigert**, beide Male ohne zu schreiben:
+ein Anker mit **acht** Leerzeichen traf **drei** Stellen — die dritte war
+der IC-**Ausführungs**-Prüfstand, und `icmarkets-execution.ts` importiert
+`risiko` gar nicht. Die erwartete Zahl anzupassen wäre die bequeme und
+falsche Antwort gewesen; jetzt hängt die Eindeutigkeit an einem
+**Zeilenpaar** (`richtung` direkt vor `kontostand`), denn der dritte hat
+`killswitch` davor.
+
+### Was es NICHT tut
+
+Keine Grössen-, Stop- oder Pip-Tabelle angefasst — **Snapshot 299 Werte
+unverändert**. Keine Schwelle, kein Limit, keine Filterkette, keine
+Schleife, kein Killswitch. `ordersRiegel` und der Richtungs-Riegel
+unberührt. Der automatische Pfad geht **nicht** über diese Routen; dort
+klemmt weiterhin `Math.min(claude.maxRiskPercent, maxRiskPerTradePct)` und
+dahinter der Riegel in `calcPositionSize`. `tsc` **0 Fehler**, Build
+*Compiled successfully*, Karte 907 → **910** (drei gewollte Importe).
+
+**Weiterhin offen, bewusst:** `parsed.maxRiskPercent ?? 1.0` in
+`ai-analysis-engine.ts` — dieselbe Klasse, aber eine Hochrisiko-Datei und
+eine eigene Runde. Der Riegel in `calcPositionSize` macht sie
+**ungefährlich**: ein nicht-numerischer Wert von Claude führt dort zu
+**keiner Order** statt zu einer NaN-Grösse.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

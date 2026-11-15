@@ -3507,6 +3507,7 @@ module.exports = async function pruefe() {
           // Pruefer stuerzt ab — die Falle vom 01./13./14.11. Das ECHTE
           // Modul, damit der Riegel gemessen wird und nicht ein Stub.
           "kontostand/kontostand": ladeTsModul("lib/kontostand/kontostand.ts").exports,
+          "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
           "capital-com-session": { getCapitalSession: () => null },
           "capital-com-client": klient.exports,
         });
@@ -5695,6 +5696,7 @@ module.exports = async function pruefe() {
             "killswitch": { isKillswitchActive: () => false },
             // NEU (15.11.) — Begruendung an der Schwesterstelle oben.
             "kontostand/kontostand": ladeTsModul("lib/kontostand/kontostand.ts").exports,
+            "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
             "capital-com-session": {
               getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s" }),
             },
@@ -5859,11 +5861,22 @@ module.exports = async function pruefe() {
             torPruefung("der Riegel am ERGEBNIS der Groessenrechnung ist weg",
               /Number\.isFinite\(groesse\) && groesse > 0 \? groesse : null/.test(exQ),
               (exQ.match(/return Number\.isFinite\(groesse\)[^\n]*/) ?? ["(kein Treffer)"])[0]);
+            // Beide Eingabe-Riegel gehen jetzt ueber die GEMEINSAMEN Lesarten
+            // (15.11.) — der `riskPercent`-Ausdruck stand zuerst inline, und
+            // derselbe Ausdruck an zwei Stellen ist eine zweite Wahrheit. Die
+            // Gegenprobe gehoert dazu: kehrt der inline Ausdruck zurueck,
+            // wird das hier rot, auch wenn die Lesart daneben stehen bleibt.
             torPruefung("der Riegel an den EINGABEN ist weg — dann maximiert "
               + "ein Infinity wieder auf MAX_SIZE",
               /lesbarerKontostand\(accountBalance\) === null/.test(exQ)
-              && /!Number\.isFinite\(riskPercent\) \|\| riskPercent <= 0/.test(exQ),
-              (exQ.match(/[^\n]*(lesbarerKontostand\(accountBalance\)|isFinite\(riskPercent\))[^\n]*/g)
+              && /lesbaresRisiko\(riskPercent\) === null/.test(exQ),
+              (exQ.match(/[^\n]*(lesbarerKontostand\(accountBalance\)|lesbaresRisiko\(riskPercent\))[^\n]*/g)
+                ?? ["(kein Treffer)"]).join(" | ").replace(/\s+/g, " ").slice(0, 170));
+            torPruefung("der Risiko-Ausdruck steht wieder INLINE statt in der "
+              + "gemeinsamen Lesart — zwei Wahrheiten fuer dasselbe Praedikat",
+              !/!Number\.isFinite\(riskPercent\)/.test(exQ)
+              && /import \{ lesbaresRisiko \} from "\.\.\/risiko\/risiko"/.test(exQ),
+              (exQ.match(/[^\n]*(isFinite\(riskPercent\)|risiko\/risiko)[^\n]*/g)
                 ?? ["(kein Treffer)"]).join(" | ").replace(/\s+/g, " ").slice(0, 170));
             torPruefung("die Ausfuehrung platziert wieder eine Order ohne "
               + "berechnete Groesse",
@@ -11820,6 +11833,7 @@ module.exports = async function pruefe() {
         },
         "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
         "kontostand/kontostand": ks.exports,
+        "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
         "settings/settings-store": {
           getSettings: async () => {
             if (!einstLesbar) throw new Error("DB weg");
@@ -11835,6 +11849,7 @@ module.exports = async function pruefe() {
         "capital-com/capital-com-session": { isCapitalConnected: () => true },
         "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
         "kontostand/kontostand": ks.exports,
+        "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
         "capital-com/capital-trade-tracker": { saveCapitalTradeToJournal: async () => {} },
       });
 
@@ -11850,7 +11865,13 @@ module.exports = async function pruefe() {
           const r = await POST({ json: async () => koerper });
           return { status: r?.status, leib: r?.__body, ic: icAufrufe, cap: capAufrufe };
         };
+        // `riskPercent` GEHOERT IN DIE TESTDATEN (15.11.): seit heute ist er
+        // Pflicht, und ohne ihn antworten beide Routen mit 400. Die alten
+        // Daten liessen ihn weg — der Pruefstand hat das sofort gemeldet,
+        // und genau so gehoert es: eine Verhaltensaenderung muss durch die
+        // Testdaten gehen, nicht um sie herum.
         const gueltig = { symbol: "EURUSD", direction: "BUY", accountBalance: 2000,
+                          riskPercent: 1.0,
                           stopLossPrice: 1.05, takeProfitPrice: 1.12 };
 
         // SELBSTPRUEFUNG ZUERST: der gesunde Fall MUSS durchgehen, sonst ist
@@ -11880,6 +11901,65 @@ module.exports = async function pruefe() {
             && b.status === 400 && b.cap === 0 && /accountBalance unbrauchbar/.test(String(b.leib?.error)),
             `IC status=${a.status} Aufrufe=${a.ic} "${String(a.leib?.error).slice(0, 70)}" · `
             + `CAP status=${b.status} Aufrufe=${b.cap} "${String(b.leib?.error).slice(0, 70)}"`);
+        }
+
+        // ── riskPercent IST PFLICHT UND WIRD GELESEN (15.11.) ────────────
+        //
+        // Vorher stand in beiden Routen `body.riskPercent ?? 1.0`. Das `??`
+        // faengt `null`/`undefined` — und sonst nichts. Gemessen: `NaN` und
+        // `"abc"` ergaben eine Groesse von NaN AN DEN BROKER, `Infinity` und
+        // `1e6` die groesste erlaubte Position, `0` und negativ eine
+        // Mindest-Order. Die `1.0` war ausserdem eine ZWEITE Quelle fuer den
+        // Standard-Risikosatz neben `maxRiskPerTradePct`.
+        //
+        // Auf BEIDEN Routen einzeln geprueft — ein Treffer bewiese nichts
+        // ueber die andere Stelle (25.10.).
+        for (const [rname, rwert] of [["fehlt", undefined], ["0", 0],
+                                      ["negativ", -5], ["NaN", Number.NaN],
+                                      ["+Infinity", Number.POSITIVE_INFINITY],
+                                      ["Text", "abc"], ["Zahl als Text", "1.0"]]) {
+          const rk = { ...gueltig };
+          if (rwert === undefined) delete rk.riskPercent;
+          else rk.riskPercent = rwert;
+          const ra = await fahre("ic", rk);
+          const rb = await fahre("cap", rk);
+          torPruefung(`riskPercent "${rname}" wird von einer Order-Route `
+            + `AKZEPTIERT oder nicht begruendet — die Positionsgroesse haengt daran`,
+            ra.status === 400 && ra.ic === 0
+            && /riskPercent unbrauchbar/.test(String(ra.leib?.error))
+            && rb.status === 400 && rb.cap === 0
+            && /riskPercent unbrauchbar/.test(String(rb.leib?.error)),
+            `IC status=${ra.status} Aufrufe=${ra.ic} "${String(ra.leib?.error).slice(0, 60)}" · `
+            + `CAP status=${rb.status} Aufrufe=${rb.cap} "${String(rb.leib?.error).slice(0, 60)}"`);
+        }
+
+        // GEGENPROBE: ein GUELTIGER Risikosatz muss durchgehen — sonst waere
+        // der Riegel zu streng und beide Broker stuenden still.
+        for (const rwert of [0.5, 1.0, 2.5]) {
+          const ra = await fahre("ic", { ...gueltig, riskPercent: rwert });
+          const rb = await fahre("cap", { ...gueltig, riskPercent: rwert });
+          torPruefung(`ein gueltiger riskPercent ${rwert} wird abgewiesen — `
+            + `der echte Handel stuende still`,
+            ra.status === 200 && ra.ic === 1 && rb.status === 200 && rb.cap === 1,
+            `IC status=${ra.status}/${ra.ic} CAP status=${rb.status}/${rb.cap}`);
+        }
+
+        // Und der GRUND muss die Lagen unterscheiden — "ungueltig" allein
+        // sagt dem Aufrufer nicht, was er falsch geschickt hat.
+        {
+          const gruende = [];
+          for (const rwert of [undefined, 0, -5, Number.NaN,
+                               Number.POSITIVE_INFINITY, "abc"]) {
+            const rk = { ...gueltig };
+            if (rwert === undefined) delete rk.riskPercent;
+            else rk.riskPercent = rwert;
+            const r = await fahre("cap", rk);
+            gruende.push(String(r.leib?.error ?? ""));
+          }
+          torPruefung("die riskPercent-Meldung nennt verschiedene Lagen gleich "
+            + "— dann schweigt die Diagnose im interessanten Fall",
+            new Set(gruende).size === gruende.length,
+            gruende.map((g, i) => `${i}:${g.slice(21, 48)}`).join(" · "));
         }
 
         // Fehlt der Stand in der Anfrage, darf der SITZUNGSSTAND einspringen
