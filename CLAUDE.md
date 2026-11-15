@@ -5285,6 +5285,189 @@ Formular-Standardwert ist Nutzereingabe, dieselbe Klasse wie `/api/trades`
 `?? 30000`. Und das **400 gegen 500** bei einem Order-**Fehlschlag** bleibt
 der eigene offene Punkt vom 08.11.
 
+## Ohne endliche Grösse keine Order (15.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+`capital-com-execution.ts` steht auf der Liste der **Dateien mit erhöhtem
+Risiko** — der Diff betrifft `calcPositionSize`, seine Aufrufstelle und einen
+Import.
+
+Gefunden nicht durch Suchen, sondern durch die **systematische Frage nach dem
+Fund vom 14.11.**: wo steht sonst noch ein `??` mit einem Literal auf einem
+geldrelevanten Feld? Der Sweep ergab 13 Stellen, und zwei davon sind die
+direkte Fortsetzung:
+
+```
+app/api/capital-com/execute/route.ts:76   riskPercent: body.riskPercent ?? 1.0
+app/api/icmarkets/execute/route.ts:112    riskPercent: body.riskPercent ?? 1.0
+```
+
+**Das hatte ich am 14.11. selbst benannt** — *„`riskPercent` kommt in der
+Route aus `body.riskPercent ?? 1.0`, und `??` fängt kein `NaN`"* — und mich
+auf den Volumen-Riegel verlassen, den ich **nur bei IC** gebaut habe.
+
+### Was gemessen ist — ausgeführt, nicht geschlossen
+
+Die echte `executeCapitalDemoOrder` gegen einen **gezählten**
+`capitalPlaceOrder`, Arbeitspunkt **ungeklemmt** (Grösse 400, strikt zwischen
+`MIN_SIZE` 100 und `MAX_SIZE` 5000):
+
+| `riskPercent` | `size` | an den Broker | `ok` |
+|---|---|---|---|
+| 0.05 (gesund) | 400 | 400 | true |
+| 0 | 100 = `MIN_SIZE` | 100 | **true** |
+| −5 | 100 = `MIN_SIZE` | 100 | **true** |
+| **NaN** | **NaN** | **NaN** | **true** |
+| **+Infinity** | **5000 = `MAX_SIZE`** | 5000 | true |
+| **`"abc"`** | **NaN** | **NaN** | true |
+| **undefined** | **NaN** | **NaN** | true |
+| **1e6 (eine Million %)** | **5000 = `MAX_SIZE`** | 5000 | true |
+
+Zwei Dinge sind schwerer als beim Fund vom 14.11.: ein **NaN geht als
+`size` an den Broker**, und die Funktion meldet dabei **`ok: true`**. Und
+ein unsinnig **grosser** Wert scheitert nicht, er **maximiert die
+Position**.
+
+### Und der automatische Pfad ist erreichbar — Glied für Glied
+
+```
+Claude-Antwort  "maxRiskPercent": "abc"  (oder ein Objekt)
+  → parsed.maxRiskPercent ?? 1.0        ·  ?? fängt nur null/undefined
+  → Math.min("abc", 2) = NaN            ·  orchestrator-agent.ts:1406
+  → getVolatilityAdjustedRisk(…) = NaN  ·  trade-filters trägt es WEITER
+  → calcPositionSize(…) = NaN           ·  capital-com-execution.ts
+  → capitalPlaceOrder({ size: NaN })
+```
+
+Jedes Glied ist **ausgeführt** gemessen, keines geschlossen. `Math.min`
+klemmt gegen **grosse** Werte (`Math.min(1e6, 2) = 2`), aber **nicht gegen
+NaN**. Und die Vola-Skalierung macht aus `-5` und `0` ein **0.1 %** — dort
+ist also ein Boden, kein Riegel.
+
+### ZWEI Riegel, und der zweite ist nicht Kosmetik
+
+Mein Plan sagte: *„der Riegel hängt am Ergebnis, nicht an einer Liste von
+Ursachen"*. **Die Messung hat das widerlegt** — mit dem Ergebnis-Riegel
+allein ergab `+Infinity` weiter `MAX_SIZE`:
+
+```ts
+Math.max(min, Infinity) = Infinity
+Math.min(max, Infinity) = max        // ← ENDLICH
+```
+
+Die Klemme macht aus dem Unsinn eine gültig aussehende Zahl, und
+`Number.isFinite` ist damit zufrieden. Deshalb jetzt **beides**:
+
+| | |
+|---|---|
+| **am Ergebnis** | `Number.isFinite(groesse) && groesse > 0 ? groesse : null` — fängt jedes `NaN`, egal aus welcher Ursache. Ein Riegel am Ergebnis kann nicht veralten, wenn morgen eine vierte Ursache dazukommt |
+| **an den Eingaben** | `lesbarerKontostand(accountBalance) === null` ⇒ `null`, und `!Number.isFinite(riskPercent) \|\| riskPercent <= 0` ⇒ `null` — **vor** der Klemme, damit `Infinity` nicht maximiert und eine `0` keine Mindest-Order erzeugt |
+
+**`lesbarerKontostand` ist die EINE Lesart** (14.11.) — dieselbe Funktion,
+die beide Order-Routen und die IC-Ausführung benutzen. Für `riskPercent`
+steht die Prüfung ausgeschrieben: ein Prozentsatz ist kein Kontostand, und
+dieselbe Funktion dafür zu benutzen wäre ein Namensbruch. Eine gemeinsame
+„endliche Zahl > 0"-Lesart wäre die saubere Langform — sie berührt aber die
+drei bestehenden Aufrufstellen und ist deshalb eine eigene Entscheidung.
+
+**Die Zusicherung sitzt dort, wo sie gilt:** `calcPositionSize` hat **drei**
+direkte Aufrufer (Order-Route, Positions-Route, ExecutionAgent) und erreicht
+über zwei Ecken `instrumentation.ts`. Ein Riegel hier deckt alle **und jeden
+künftigen** — Regel `checkPriceAvailable` (24.08.), und genau so wurde es
+bei IC am 14.11. gemacht.
+
+### `tsc` hat die erste Form abgelehnt — zu Recht
+
+`let size = calcPositionSize(...)` wäre `number | null`, und weil `size` in
+der `size.minvalue`-Wiederholschleife **neu zugewiesen** wird, weitet
+TypeScript den Typ nach dem frühen Rücksprung wieder aus: **eine Verengung
+hält nur bis zur nächsten Zuweisung.** Sechs Fehler (TS2322, TS7022,
+TS18047). Jetzt zweiteilig — `const berechneteGroesse`, prüfen, dann
+`let size: number = berechneteGroesse` — und damit erzwingt `tsc` die
+Prüfung **vor** der Zuweisung.
+
+Dieselbe Lehre wie am 27.10. und 30.10.: `ladeTsModul` transpiliert ohne
+Typprüfung, deshalb müssen **beide** laufen.
+
+### Zwei Verhaltensänderungen, benannt statt verschwiegen
+
+- **Eine Zeichenkette wird jetzt abgewiesen.** `"0.05"` ergab vorher 400
+  (JS-Umwandlung), jetzt keine Order. Konsistent mit der Entscheidung vom
+  14.11. — und **nachgezählt sendet kein echter Aufrufer eine
+  Zeichenkette**: `maxRiskPercent` ist `number`, `riskPct` kommt aus der
+  Vola-Skalierung.
+- **`riskPercent: 0` und negativ ergeben keine Order mehr** (vorher
+  `MIN_SIZE`). Der automatische Pfad kann das nicht senden: die
+  Vola-Skalierung hat einen Boden bei 0.1.
+
+**`1e6` ergibt weiterhin `MAX_SIZE`** — das ist die Klemme, die genau dafür
+existiert, und eine *Risiko*-Obergrenze an dieser Schicht wäre eine
+Policy-Entscheidung. Gemessen und bewusst gelassen.
+
+### Absicherung
+
+`safety-nets` 1438 → **1457**, im **bestehenden** Prüfstand vom 28.10.
+erweitert (gezählter `capitalPlaceOrder`) — kein neuer gebaut.
+
+**Die wichtigste Zusicherung ist eine Selbstprüfung:** der Prüfstand sucht
+sich einen **ungeklemmten** Arbeitspunkt und erkennt ihn am **Verhalten** —
+doppeltes Risiko muss eine grössere Grösse ergeben, halbes eine kleinere.
+Findet er keinen, wird er rot. **Genau dieser Fehler ist der Messung zuerst
+passiert:** `riskPercent 1` ergab `MAX_SIZE` 5000, und damit war „geklemmt"
+von „gerechnet" nicht zu unterscheiden — `Infinity → 5000` hätte nichts
+bewiesen.
+
+**9 von 9 Sabotagen** plus Gegenprobe (**10 von 10 wie erwartet**). Zwei
+verdienen die Erwähnung:
+
+| Sabotage | gefangen von |
+|---|---|
+| `if (berechneteGroesse === null)` → `if (false)` — der **Wortlaut bleibt vollständig stehen** | **nur** dem ausgeführten Aufruf (`size=null` ging an den Broker). Genau der Trick, der am 28.10. vier Prüfungen besiegt hat |
+| `let size: number = 1` — die berechnete Grösse ignoriert | der **Arbeitspunkt-Selbstprüfung**: ohne monotone Antwort findet sie keinen ungeklemmten Punkt. Die Zusicherung, die aus meinem eigenen Messfehler entstand, hat sich sofort bezahlt |
+
+### Mein Fehler beim Bau — zum vierten Mal derselbe
+
+Der Prüfer **stürzte ab** („keine Aussenwelt im Prüfstand"): `calcPositionSize`
+ruft jetzt `lesbarerKontostand`, und in einem Prüfstand ohne Ersatz ist ein
+Import ein **Stellvertreter, der beim Aufruf wirft**. Erst der **Stapel**
+zeigte die Stelle. Der Ersatz liegt jetzt an **beiden** gemessenen
+Ladestellen, nicht nur an der roten — „ein Treffer beweist nichts über die
+andere Stelle" (25.10.).
+
+**Und zwei Werkzeugfehler, beide vom Tor gefangen, nicht von mir:**
+
+- Mein Anker mit **zehn** Leerzeichen ist eine **Teilzeichenkette** der
+  Zeile mit **zwölf** (ab Position 2 passt er) — das Tor meldete „2x" und
+  schrieb **nichts**. Jetzt am Zeilenanfang gebunden (`\r\n` davor).
+- Beim Schreiben des Patch-Skripts ist mir ein **kyrillisches U+0430**
+  statt eines ASCII-`a` untergelaufen — im Wort „traegt", an der Stelle des
+  ersten `a`. Das hätte **niemand** gesehen: es stand in einem Kommentar,
+  und `tsc` wie jeder Prüfer schweigen dazu. Gefangen von einer
+  Homoglyphen-Prüfung, die seitdem auf jeder geänderten Datei läuft, mit
+  Selbstprüfung an einem künstlichen U+0430.
+
+  **Und dieser Absatz enthält das Zeichen bewusst NICHT.** Der erste
+  Entwurf zeigte es zur Illustration — damit meldete die Prüfung auf
+  `CLAUDE.md` dauerhaft einen bekannten Treffer, und eine Prüfung, die
+  immer dasselbe meldet, erzieht zum Wegsehen. Ein Zeichen, das man nicht
+  sehen kann, wird **benannt**, nicht eingebaut.
+
+### Was es NICHT tut
+
+Keine Grössen-, Stop- oder Pip-Tabelle ist angefasst — **Snapshot 299 Werte
+unverändert**. Keine Schwelle, kein Limit, keine Filterkette, keine
+Schleife, kein Killswitch. `ordersRiegel` unberührt. Die
+`size.minvalue`-Wiederholschleife behält ihre Logik; sie läuft nur nicht
+mehr mit einer `null`-Grösse. `tsc` **0 Fehler**, Build *Compiled
+successfully*, Karte 906 → **907** (ein gewollter Import).
+
+**Benannt, nicht geändert** — beide wären eine eigene Runde mit eigenem
+Plan, und der Riegel an der Geldstelle macht sie **ungefährlich**, bevor sie
+behoben sind:
+
+- `riskPercent` an den **beiden Order-Routen** validieren (eine Lesart),
+- `parsed.maxRiskPercent ?? 1.0` in `ai-analysis-engine.ts` (Hochrisiko).
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben

@@ -3502,6 +3502,11 @@ module.exports = async function pruefe() {
       const ex = klient.fehler ? klient
         : ladeTsModul("lib/capital-com/capital-com-execution.ts", {
           "killswitch": { isKillswitchActive: () => false },
+          // NEU (15.11.): `calcPositionSize` ruft `lesbarerKontostand`.
+          // Ohne Ersatz wirft der Stellvertreter beim AUFRUF und der
+          // Pruefer stuerzt ab — die Falle vom 01./13./14.11. Das ECHTE
+          // Modul, damit der Riegel gemessen wird und nicht ein Stub.
+          "kontostand/kontostand": ladeTsModul("lib/kontostand/kontostand.ts").exports,
           "capital-com-session": { getCapitalSession: () => null },
           "capital-com-client": klient.exports,
         });
@@ -5688,6 +5693,8 @@ module.exports = async function pruefe() {
         const ex2 = klient.fehler ? klient
           : ladeTsModul("lib/capital-com/capital-com-execution.ts", {
             "killswitch": { isKillswitchActive: () => false },
+            // NEU (15.11.) — Begruendung an der Schwesterstelle oben.
+            "kontostand/kontostand": ladeTsModul("lib/kontostand/kontostand.ts").exports,
             "capital-com-session": {
               getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s" }),
             },
@@ -5725,6 +5732,151 @@ module.exports = async function pruefe() {
             + "der echte Handel stuende still",
             platziert === 1 && vollstaendig?.ok === true,
             `platziert=${platziert} ok=${vollstaendig?.ok} error=${vollstaendig?.error}`);
+          // ══ OHNE ENDLICHE GROESSE KEINE ORDER (15.11.) ══════════════════
+          //
+          // DER FUND. `calcPositionSize` hatte KEINEN Riegel auf dem
+          // Ergebnis — anders als die IC-Seite seit dem 14.11. Gemessen
+          // durch genau diesen Pruefstand: ein `NaN` ging als `size` AN DEN
+          // BROKER, und die Funktion meldete dabei `ok: true`.
+          //
+          // AUSGERECHNET, nicht vermutet:
+          //   Math.max(100,  NaN) = NaN · Math.min(5000, NaN) = NaN
+          //   Number(NaN.toFixed(2)) = NaN
+          //
+          // UND DER AUTOMATISCHE PFAD IST ERREICHBAR, Glied fuer Glied:
+          //   parsed.maxRiskPercent ?? 1.0       (ai-analysis-engine)
+          //   → Math.min("abc", 2) = NaN         (orchestrator-agent.ts:1406)
+          //   → getVolatilityAdjustedRisk(…) = NaN  (trade-filters traegt es
+          //     weiter — ausgefuehrt geprueft)
+          //   → calcPositionSize → capitalPlaceOrder({ size: NaN }).
+          // `Math.min` klemmt gegen GROSSE Werte, nicht gegen NaN.
+          //
+          // ZWEI RIEGEL, und der zweite ist nicht Kosmetik: der Riegel am
+          // ERGEBNIS allein faengt Infinity NICHT, weil
+          // `Math.min(max, Infinity)` ein ENDLICHES `max` liefert. Gemessen:
+          // `riskPercent = Infinity` ergab vorher `MAX_SIZE` — die GROESSTE
+          // erlaubte Position, mit einem Broker-Aufruf und ohne Meldung.
+          // Deshalb zusaetzlich ein Riegel an den EINGABEN, vor der Klemme.
+          {
+            const vollst = { ...basis, stopLossPrice: 1.0800, takeProfitPrice: 1.0950 };
+            const groesseVon = async (rp) => {
+              platziert = 0;
+              const r = await f({ ...vollst, riskPercent: rp });
+              return { ok: r?.ok, size: r?.size, platziert, error: r?.error };
+            };
+
+            // SELBSTPRUEFUNG ZUERST: einen Arbeitspunkt finden, dessen
+            // Groesse NICHT an einer Klemme liegt. Erkannt wird das am
+            // VERHALTEN, nicht an einer Konstante: doppeltes Risiko muss eine
+            // groessere Groesse ergeben, halbes eine kleinere. Ohne diesen
+            // Punkt ist "geklemmt" von "gerechnet" nicht zu unterscheiden —
+            // genau dieser Fehler ist der Messung am 15.11. zuerst passiert
+            // (riskPercent 1 ergab MAX_SIZE und sah wie ein Ergebnis aus).
+            let punkt = null, pGroesse = null;
+            for (const rp of [0.02, 0.05, 0.1, 0.2, 0.5]) {
+              const mitte = await groesseVon(rp);
+              if (mitte.ok !== true || !Number.isFinite(mitte.size)) continue;
+              const hoch = await groesseVon(rp * 2);
+              const tief = await groesseVon(rp / 2);
+              if (Number.isFinite(hoch.size) && Number.isFinite(tief.size)
+                && hoch.size > mitte.size && tief.size < mitte.size) {
+                punkt = rp; pGroesse = mitte.size; break;
+              }
+            }
+            torPruefung("der Groessen-Pruefstand findet keinen UNGEKLEMMTEN "
+              + "Arbeitspunkt — dann kann er 'geklemmt' nicht von 'gerechnet' "
+              + "unterscheiden und jede Zusicherung darunter ist leer",
+              punkt !== null, `Arbeitspunkt=${String(punkt)} Groesse=${String(pGroesse)}`);
+
+            if (punkt !== null) {
+              // GEGENPROBE: der gesunde Fall MUSS durchgehen. Ein zu strenger
+              // Riegel stellte den echten Handel still — schlimmer als der Fund.
+              const gesund = await groesseVon(punkt);
+              torPruefung("ein GESUNDER Auftrag wird vom Groessen-Riegel "
+                + "geblockt — der echte Handel stuende still",
+                gesund.platziert === 1 && gesund.ok === true
+                && Number.isFinite(gesund.size) && gesund.size > 0,
+                `platziert=${gesund.platziert} ok=${gesund.ok} `
+                + `size=${String(gesund.size)} error=${String(gesund.error)}`);
+
+              // Jede unbrauchbare Eingabe: KEINE Order, Grund genannt.
+              // `String(...)` in den Befunden, nicht `JSON.stringify` — das
+              // macht aus NaN UND Infinity beides `null` (Lehre 14.11.).
+              for (const [name, rp] of [["NaN", Number.NaN],
+                                        ["+Infinity", Number.POSITIVE_INFINITY],
+                                        ["-Infinity", Number.NEGATIVE_INFINITY],
+                                        ["0", 0], ["-5", -5],
+                                        ['"abc"', "abc"], ["undefined", undefined]]) {
+                const r = await groesseVon(rp);
+                torPruefung(`riskPercent "${name}" fuehrt trotzdem zu einer `
+                  + `Order — die Positionsgroesse haengt daran`,
+                  r.platziert === 0 && r.ok === false
+                  && /nicht berechenbar/.test(String(r.error)),
+                  `platziert=${r.platziert} ok=${String(r.ok)} size=${String(r.size)} `
+                  + `"${String(r.error).slice(0, 72)}"`);
+              }
+
+              // Und dieselbe Klasse ueber den KONTOSTAND — eine andere
+              // Ursache, derselbe Riegel. Ein Treffer bewiese nichts ueber
+              // die andere Stelle (25.10.).
+              for (const [name, bal] of [["NaN", Number.NaN], ["0", 0],
+                                         ["-500", -500],
+                                         ["+Infinity", Number.POSITIVE_INFINITY]]) {
+                platziert = 0;
+                const r = await f({ ...vollst, riskPercent: punkt, accountBalance: bal });
+                torPruefung(`accountBalance "${name}" fuehrt trotzdem zu einer Order`,
+                  platziert === 0 && r?.ok === false
+                  && /nicht berechenbar/.test(String(r?.error)),
+                  `platziert=${platziert} ok=${String(r?.ok)} `
+                  + `"${String(r?.error).slice(0, 72)}"`);
+              }
+
+              // DIE BEGRUENDUNG DES ZWEITEN RIEGELS, gerechnet: ohne den
+              // Eingabe-Riegel waere Infinity NICHT gefangen, weil die
+              // Klemme daraus eine endliche Zahl macht. Faellt diese
+              // Rechnung, prueft der Fall oben etwas anderes als gedacht.
+              torPruefung("die Begruendung des Eingabe-Riegels stimmt nicht — "
+                + "dann ist der Infinity-Fall oben kein Nachweis",
+                Number.isFinite(Math.min(5000, Number.POSITIVE_INFINITY))
+                && Math.min(5000, Number.POSITIVE_INFINITY) === 5000
+                && Number.isNaN(Math.max(100, Number.NaN)),
+                `min(5000,Inf)=${String(Math.min(5000, Number.POSITIVE_INFINITY))} `
+                + `max(100,NaN)=${String(Math.max(100, Number.NaN))}`);
+            }
+          }
+
+          // STRUKTURELL: beide Riegel muessen in der Datei stehen, und die
+          // Lesart kommt aus dem EINEN Modul. Kommentarbereinigt, weil die
+          // Begruendung die alten Formen zitiert.
+          {
+            const exQ = read("frontend/lib/capital-com/capital-com-execution.ts")
+              .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+            const probeB = "// 10000 im Kommentar\nconst x = 20000;"
+              .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+            torPruefung("die Kommentar-Bereinigung der Ausfuehrungsdatei "
+              + "arbeitet nicht wie erwartet",
+              !/10000/.test(probeB) && /20000/.test(probeB), JSON.stringify(probeB));
+            torPruefung("der Riegel am ERGEBNIS der Groessenrechnung ist weg",
+              /Number\.isFinite\(groesse\) && groesse > 0 \? groesse : null/.test(exQ),
+              (exQ.match(/return Number\.isFinite\(groesse\)[^\n]*/) ?? ["(kein Treffer)"])[0]);
+            torPruefung("der Riegel an den EINGABEN ist weg — dann maximiert "
+              + "ein Infinity wieder auf MAX_SIZE",
+              /lesbarerKontostand\(accountBalance\) === null/.test(exQ)
+              && /!Number\.isFinite\(riskPercent\) \|\| riskPercent <= 0/.test(exQ),
+              (exQ.match(/[^\n]*(lesbarerKontostand\(accountBalance\)|isFinite\(riskPercent\))[^\n]*/g)
+                ?? ["(kein Treffer)"]).join(" | ").replace(/\s+/g, " ").slice(0, 170));
+            torPruefung("die Ausfuehrung platziert wieder eine Order ohne "
+              + "berechnete Groesse",
+              /if \(berechneteGroesse === null\)/.test(exQ)
+              && /let size: number = berechneteGroesse;/.test(exQ),
+              (exQ.match(/[^\n]*berechneteGroesse[^\n]*/g) ?? ["(kein Treffer)"])
+                .join(" | ").replace(/\s+/g, " ").slice(0, 170));
+            torPruefung("die Groessen-Lesart ist zweimal umgesetzt statt "
+              + "einmal importiert",
+              /import \{ lesbarerKontostand \} from "\.\.\/kontostand\/kontostand"/.test(exQ),
+              (exQ.match(/import[^\n]*kontostand[^\n]*/) ?? ["(kein Import)"])[0]);
+          }
+
         }
       }
     }

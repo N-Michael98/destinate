@@ -10,6 +10,10 @@ import {
 } from "./capital-com-client";
 import { getCapitalSession } from "./capital-com-session";
 import { isKillswitchActive } from "../killswitch/killswitch-engine";
+// EINE Lesart fuer den Kontostand — dieselbe Funktion, die beide
+// Order-Routen und die IC-Ausfuehrung benutzen (14.11.). Eine zweite
+// Fassung waere eine zweite Wahrheit.
+import { lesbarerKontostand } from "../kontostand/kontostand";
 
 export interface ExecutionRequest {
   symbol: string;
@@ -179,7 +183,33 @@ function calcPositionSize(
   tradingStyle: string,
   stopLossPrice?: number,
   currentPrice?: number,
-): number {
+): number | null {
+  // ── EIN UNSINNIGER EINGABEWERT DARF NICHT MAXIMIEREN (15.11.) ─────────
+  //
+  // Der Riegel am Ergebnis unten faengt NaN — aber NICHT Infinity, und das
+  // ist ausgerechnet, nicht vermutet:
+  //
+  //   Math.max(min, Infinity) = Infinity
+  //   Math.min(max, Infinity) = max        ← ENDLICH
+  //
+  // Die Klemme macht aus dem Unsinn eine gueltig aussehende Zahl. Gemessen
+  // durch die echte `executeCapitalDemoOrder`: `riskPercent = Infinity` und
+  // `riskPercent = 1e6` ergaben beide `MAX_SIZE` — die GROESSTE erlaubte
+  // Position, mit einem Broker-Aufruf und ohne eine einzige Meldung. Ein
+  // Ausfall darf sich nicht als Ergebnis ausgeben (07.09.).
+  //
+  // Und `0` bzw. negativ ergab `MIN_SIZE`: eine Order, wo gar keine
+  // gewollt war.
+  //
+  // `lesbarerKontostand` ist die EINE Lesart fuer den Kontostand (14.11.).
+  // Fuer `riskPercent` steht die Pruefung ausgeschrieben: ein Prozentsatz
+  // ist kein Kontostand, und dieselbe Funktion dafuer zu benutzen waere ein
+  // Namensbruch. Eine gemeinsame "endliche Zahl > 0"-Lesart waere die
+  // saubere Langform — sie beruehrt aber die drei bestehenden Aufrufstellen
+  // und ist deshalb eine eigene Entscheidung.
+  if (lesbarerKontostand(accountBalance) === null) return null;
+  if (!Number.isFinite(riskPercent) || riskPercent <= 0) return null;
+
   const riskAmount = accountBalance * (riskPercent / 100);
   const pipVal = PIP_VALUE_PER_UNIT[epic] ?? 1;
 
@@ -201,7 +231,40 @@ function calcPositionSize(
   const min = MIN_SIZE[epic] ?? 0.1;
   const max = MAX_SIZE[epic] ?? raw;
   const rounded = Math.min(max, Math.max(min, Math.floor(raw * 10) / 10));
-  return Number(rounded.toFixed(2));
+  const groesse = Number(rounded.toFixed(2));
+
+  // ── OHNE ENDLICHE GROESSE KEINE ORDER (15.11.) ────────────────────────
+  //
+  // AUSGERECHNET, nicht angenommen: die Klemmen oben sind hier KEIN Schutz.
+  //
+  //   Math.max(100,  NaN)      = NaN
+  //   Math.min(5000, NaN)      = NaN
+  //   Number(NaN.toFixed(2))   = NaN
+  //
+  // Gemessen durch die echte `executeCapitalDemoOrder` gegen einen
+  // gezaehlten `capitalPlaceOrder`: ein NaN ging als `size` AN DEN BROKER,
+  // und die Funktion meldete dabei `ok: true`. Erreichbar ueber
+  // `riskPercent` (die Route hat `body.riskPercent ?? 1.0`, und `??` faengt
+  // kein NaN), ueber `accountBalance` und ueber eine Tabellen-Luecke.
+  //
+  // UND DER AUTOMATISCHE PFAD IST ERREICHBAR, Glied fuer Glied gemessen:
+  //   parsed.maxRiskPercent ?? 1.0        (ai-analysis-engine)
+  //   → Math.min("abc", 2) = NaN          (orchestrator-agent.ts:1406)
+  //   → getVolatilityAdjustedRisk(…) = NaN  (trade-filters traegt es weiter)
+  //   → hierher.
+  // `Math.min` klemmt gegen GROSSE Werte (`Math.min(1e6, 2) = 2`), aber
+  // nicht gegen NaN.
+  //
+  // Der Riegel haengt am ERGEBNIS, nicht an einer Liste von Ursachen — so
+  // kann er nicht veralten, wenn morgen eine vierte Ursache dazukommt.
+  // Dieselbe Entscheidung wie bei IC am 14.11. (`calcICPositionSize`), und
+  // die Zusicherung sitzt dort, wo sie gilt: diese Funktion hat DREI
+  // direkte Aufrufer und erreicht ueber zwei Ecken `instrumentation.ts`
+  // (Regel `checkPriceAvailable`, 24.08.).
+  //
+  // `null` statt einer Ersatzgroesse: eine erfundene Groesse an einer
+  // Stelle, die Geld bewegt, ist die Fehlerklasse vom 07.09.
+  return Number.isFinite(groesse) && groesse > 0 ? groesse : null;
 }
 
 /**
@@ -338,7 +401,15 @@ export async function executeCapitalDemoOrder(
     return { ok: false, broker: "CAPITAL_COM", mode: "DEMO", symbol: req.symbol, direction: req.direction, size: 0, epic: "", error: `Unknown symbol: ${req.symbol}`, executedAt: new Date().toISOString() };
   }
 
-  let size = calcPositionSize(
+  // DIE FORM IST ABSICHTLICH ZWEITEILIG (15.11.).
+  //
+  // `let size = calcPositionSize(...)` waere `number | null`, und weil
+  // `size` in der Wiederhol-Schleife unten NEU ZUGEWIESEN wird, weitet
+  // TypeScript den Typ nach dem fruehen Ruecksprung wieder aus — eine
+  // Verengung haelt nur bis zur naechsten Zuweisung. `tsc` hat das mit
+  // sechs Fehlern gemeldet; so herum erzwingt es die Pruefung VOR der
+  // Zuweisung, und die Schleife rechnet eindeutig mit `number`.
+  const berechneteGroesse = calcPositionSize(
     epic,
     req.accountBalance,
     req.riskPercent,
@@ -347,6 +418,23 @@ export async function executeCapitalDemoOrder(
     req.stopLossPrice,
     req.currentPrice,
   );
+
+  // OHNE endliche Groesse KEINE Order (15.11.) — Begruendung in
+  // `calcPositionSize`. `String(...)` und nicht `JSON.stringify(...)`:
+  // letzteres macht aus NaN UND Infinity beides `null`, und dann nennt die
+  // Meldung im interessanten Fall den Wert nicht (Lehre 14.11.).
+  if (berechneteGroesse === null) {
+    const grund = `Groesse nicht berechenbar (epic=${epic} `
+      + `balance=${String(req.accountBalance)} risk=${String(req.riskPercent)} `
+      + `stopPips=${String(req.stopLossPips ?? 0)} `
+      + `slPreis=${String(req.stopLossPrice)} kurs=${String(req.currentPrice)})`;
+    console.error(`[capital-com] \u26d4 ${grund} \u2014 KEINE Order platziert.`);
+    return { ok: false, broker: "CAPITAL_COM", mode: "DEMO", symbol: req.symbol,
+      direction: req.direction, size: 0, epic,
+      error: `${grund} \u2014 KEINE Order platziert`,
+      executedAt: new Date().toISOString() };
+  }
+  let size: number = berechneteGroesse;
 
   // Retry with escalating size if Capital.com rejects minvalue
   let result: OrderResult = { ok: false, error: "" };
