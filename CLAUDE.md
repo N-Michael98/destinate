@@ -5572,11 +5572,204 @@ klemmt weiterhin `Math.min(claude.maxRiskPercent, maxRiskPerTradePct)` und
 dahinter der Riegel in `calcPositionSize`. `tsc` **0 Fehler**, Build
 *Compiled successfully*, Karte 907 → **910** (drei gewollte Importe).
 
-**Weiterhin offen, bewusst:** `parsed.maxRiskPercent ?? 1.0` in
-`ai-analysis-engine.ts` — dieselbe Klasse, aber eine Hochrisiko-Datei und
-eine eigene Runde. Der Riegel in `calcPositionSize` macht sie
-**ungefährlich**: ein nicht-numerischer Wert von Claude führt dort zu
-**keiner Order** statt zu einer NaN-Grösse.
+**Am selben Tag erledigt:** `parsed.maxRiskPercent ?? 1.0` in
+`ai-analysis-engine.ts` — siehe den Abschnitt direkt darunter. Dabei wurden
+es **drei** ungeprüfte Felder, zwei davon mit einem Wurf, der den ganzen
+Zyklus tötet. Und `maxRiskPercent` geht dort durch **genau diese**
+`lesbaresRisiko`, weil ein Risikosatz ein Risikosatz ist — damit hängt auch
+der KI-Pfad an der einen Lesart.
+
+## Die Felder der KI werden gelesen, nicht übernommen (15.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+`ai-analysis-engine.ts` steht auf der Liste der **Dateien mit erhöhtem
+Risiko** — der Diff dort ist ein Import, ein Aufruf und eine Logzeile.
+
+Anlass war der offene Punkt `parsed.maxRiskPercent ?? 1.0`. **Beim Messen
+wurden es drei Felder, und zwei davon töten den ganzen Zyklus.**
+
+### Was dastand
+
+```ts
+const parsed = parseJSON<Partial<ClaudeRiskAssessment>>(raw, {});
+…
+const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
+claude = {
+  approved: riskScore < 60 && parsedRR >= 1.5,
+  maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
+  reasoning: parsed.reasoning ?? "",
+  rewardRiskRatio: parsedRR,
+  eigenesUrteil: parsed.approved,
+};
+```
+
+`parseJSON` ist ein **reiner Cast** (`JSON.parse(match[0]) as T`, Zeile 544–550)
+— keine Prüfung. Zur Laufzeit steht dort, was das Modell geschickt hat, und
+`??` fängt davon **genau zwei** Werte: `null` und `undefined`. JSON kennt kein
+`NaN`, aber Text, Objekt, Array und `true` — alle vier kommen durch.
+
+**`riskScore` ist seit dem 07.09. korrekt geriegelt** (`typeof === "number" &&
+Number.isFinite`, sonst `simulateClaude`). Die vier Felder daneben waren es
+nicht.
+
+### Ausgerechnet, nicht geschlossen
+
+| Feld | Wert | gemessene Folge |
+|---|---|---|
+| `maxRiskPercent` | `"0.5"` | `Math.min("0.5", 1)` = **0.5** — eine **Zeichenkette** bestimmt die Positionsgrösse |
+| | `true` | `Math.min(true, 1)` = **1** — 1 % Risiko aus einem Boolean |
+| | `{}`/`"abc"`/`0`/`-5` | NaN bzw. ≤ 0 → seit dem Grössen-Riegel **keine Order** |
+| `rewardRiskRatio` | `"5"` | `"5" >= 1.5` ist **true** → **Freigabe auf einer Zeichenkette** |
+| | `"abc"`, `"0.5"`, `{}`, `[]`, `true` | `rrZuKlein` wird true → `.toFixed(2)` **WIRFT** |
+| `reasoning` | `{}`, `true`, Zahlen | `.slice(0, 90)` **WIRFT**; dazu rendert `MarketScannerPanel.tsx:429` den Wert direkt — ein Objekt als React-Kind reisst die Ansicht |
+| `approved` | `"yes"` | stand als `Claude selbst: approved=yes` im Log |
+
+**Die zwei Würfe sind nicht „möglich", sondern zwingend:** bei einem
+nicht-numerischen R/R ist `approved` falsch, also wird der Ablehnungszweig
+betreten — und genau dort steht `.toFixed(2)`.
+
+**Mit Klammerzählung gemessen, nicht geschätzt** (Zähler selbstgeprüft an fünf
+Fällen, darunter `try {` in einer Zeichenkette und in einem Kommentar): alle
+sechs Stellen liegen auf **try-Tiefe 0**. Der Wurf verlässt `analyzeMarkets`,
+`analysis-agent.ts:422` fängt nicht, und erst `instrumentation.ts:854` fängt
+ihn — **der ganze 5-Minuten-Zyklus stirbt**, mit einem gedrosselten
+Telegram-Alarm, dessen Text auf unseren Code zeigt statt auf das Feld des
+Modells.
+
+### Was jetzt da ist
+
+`lib/ki-antwort/ki-antwort.ts` — rein, ohne Seiteneffekte, nach dem Muster von
+`htmlSicher` (31.10.), `alterStunden` (08.11.) und `risiko` (15.11.). **Die
+Entscheidung gehört in eine Funktion**, nicht in eine Objektliteral-Zeile:
+dort wäre sie nur strukturell prüfbar, und „ein Regex prüft den Wortlaut,
+nicht das Verhalten" (30.09.).
+
+| Feld | brauchbar | sonst |
+|---|---|---|
+| `maxRiskPercent` | **`lesbaresRisiko`** — dieselbe EINE Lesart wie beide Order-Routen und `calcPositionSize` | `riskScore > 60 ? 0.5 : 1.0` — **dieselbe Ableitung, die `simulateClaude` schon benutzt** |
+| `rewardRiskRatio` | endliche Zahl **> 0** | `rrGemessen` = `realesChanceRisiko` am echten Einstieg |
+| `reasoning` | Zeichenkette | `""` |
+| `eigenesUrteil` | echtes `boolean` | `undefined` |
+
+**Ein Risikosatz ist ein Risikosatz.** `maxRiskPercent` geht durch
+`lesbaresRisiko` — eine vierte Fassung wäre eine vierte Wahrheit. Damit ist
+der KI-Pfad an **dieselbe** Lesart gebunden wie der Knopf im Scanner und die
+Grössenrechnung.
+
+**Die `1.0` war eine ZWEITE Quelle** für den Standard-Risikosatz neben
+`maxRiskPerTradePct` in den Einstellungen. Jetzt wird aus dem **gemessenen**
+riskScore abgeleitet — abgeleitet statt erfunden.
+
+**`rrGemessen` wird UNVERÄNDERT durchgereicht.** `realesChanceRisiko` ist
+selbst geriegelt (`risiko > 0`, Stop und Ziel auf der richtigen Seite, sonst
+`0`). Es zu klemmen wäre eine Verhaltensänderung an einer Stelle, die nicht
+zur Frage gehört.
+
+### Ein fehlendes Feld meldet sich NICHT — und das ist gemessen
+
+`ersetzt[]` nennt nur Felder, die **vorhanden aber unbrauchbar** waren, mit
+dem Rohwert. Ein weggelassenes Feld ist der Normalfall eines Sprachmodells:
+Claude wird nur für Märkte über der Confidence-Untergrenze gefragt (rund
+sieben je Zyklus), eine Zeile je Auslassung wären also bis zu 2000 Zeilen am
+Tag — und dann schaltet man das Log ab. Dieselbe Begründung wie bei den
+Drosseln.
+
+**Der Rohwert steht in der Meldung**, und zwar mit `String()`, nicht
+`JSON.stringify`: das macht aus `NaN` und `Infinity` beides `null`, womit
+„kaputter Wert" von „kein Wert" nicht zu unterscheiden wäre — ausgerechnet im
+interessanten Fall (Lehre 14.11.).
+
+### Ein Zeichen-Fenster im Prüfer ist zum zweiten Mal geplatzt
+
+`prompt-zahlen` wurde rot, **obwohl der Code stimmte**. Die Zusicherung
+lautete `} else {` + **600 Zeichen** + `source: "CLAUDE_REAL"`, und der neue
+Aufruf samt Begründung liegt dazwischen.
+
+Das Fenster aufzuziehen wäre die bequeme und falsche Antwort — **derselbe
+Prüfer dokumentiert 20 Zeilen weiter, dass ein passendes Fenster auch bei
+GELÖSCHTEM Riegel grün bleibt** (22.09.). Jetzt wird der `else`-Zweig hinter
+dem `if (!risikoBrauchbar)`-Block per **Klammerzählung** ausgeschnitten und
+nur darin gesucht, mit einer **Selbstprüfung** des Ausschnitts: er muss
+`const riskScore = rohRisiko;` enthalten und `claude = simulateClaude` **nicht**.
+
+**Und genau diese Selbstprüfung hat meinen ersten Versuch gefangen.** Ich
+hatte den Block an die Stelle der alten Zusicherung gesetzt (Zeile 184) —
+`ohneKomm` wird aber erst Zeile 227 deklariert. `const` in derselben Funktion
+heisst **temporale Todeszone**: `ReferenceError`, vom `catch` verschluckt,
+Ausschnitt leer, Zusicherung rot. Ohne die Selbstprüfung hätte ich eine
+Zusicherung gehabt, die nie etwas beweist.
+
+### Absicherung
+
+`safety-nets` **rechnet** `kiFelderLesen` an **über dreissig Lagen** durch
+(1469 → **1509**), je Feld: fehlt, `null`, `0`, negativ, Text,
+Zahl-als-Text, Objekt, Array, `true`, `1e6` — und das Modul wird mit dem
+**echten** `risiko/risiko` geladen, nicht mit einem Stellvertreter, sonst
+bewiese der Lauf nichts über die gemeinsame Umsetzung.
+
+**Drei Gegenproben gehören dazu**, sonst wäre der Riegel schlimmer als der
+Fund:
+- **brauchbare Werte gehen unverändert durch** — ein Riegel, der alles
+  ersetzt, wirft die echte Beurteilung weg;
+- **`1e6` bleibt `1e6`** — keine zweite, erfundene Obergrenze; die Grenze
+  gehört in `MAX_SIZE` und `maxRiskPerTradePct`;
+- **ein `false` des Modells bleibt `false`** — sonst verlöre die Diagnose
+  genau die Hälfte der Fälle.
+
+Dazu die **Verdrahtung**, per Klammerzähler auf den `else`-Zweig beschränkt
+(eine gerechnete Funktion beweist nichts über ihre Aufrufstelle, 30.09.): der
+Aufruf muss dort stehen, die vier Felder müssen aus `felder` kommen, die
+Freigabe muss am **gelesenen** Verhältnis hängen, die Meldung muss existieren,
+und keine der vier alten Formen darf zurückkommen — **kommentarbereinigt**,
+weil beide Dateien sie in ihrer Begründung zitieren.
+
+**18 von 18 Sabotagen**, jede gegen das **ganze** Netz (23 Prüfer) statt gegen
+einen einzelnen — `run-all.js` nimmt nur einen Namen, und zwei Fälle zielen
+auf `prompt-zahlen`.
+
+### Vier eigene Fehler auf dem Weg — alle vom eigenen Tor gefangen
+
+| Fehler | Diagnose |
+|---|---|
+| mein Patch-Tor suchte `?? 1.0`, `parsedRR` und `parsed.reasoning ?? ""` im **rohen** Text | alle drei stehen in **Kommentaren** — zwei in meinem neuen, `parsedRR` zusätzlich im historischen Doku-Block von Zeile 1916. „Ein Wort im Kommentar ist keine Verwendung", im Tor selbst. Jetzt kommentarbereinigt, mit Selbstprüfung |
+| mein Tor prüfte „das 600-Zeichen-Fenster ist weg" | mein eigener Kommentar **zitierte** das Muster wörtlich → die Prüfung kann nie grün werden. Gelöst, indem der Kommentar es **beschreibt statt zitiert**; eine Zählung wäre nur eine zweite Stelle, die veraltet (Lehre 13.11.) |
+| der neue Prüfer-Block stand **vor** `ohneKomm` | temporale Todeszone → leerer Ausschnitt. **Von der Selbstprüfung gefangen**, nicht von mir |
+| mein Tor verglich die rohe Klammerbilanz von `safety-nets.js` | gemessen: die **unveränderte** Datei ist 3145/3097, also schon „unbalanciert" (Klammern in Regexen und Zeichenketten) — `node -c` auf ihr ist grün. Eine rohe Zählung ist dort kein Werkzeug, sondern ein Fehlalarm-Erzeuger. Jetzt wird die **Kopie** mit `node --check` übersetzt |
+
+Dazu ein Messfehler, der zur Methode gehört: mein Rückfall-Sweep meldete
+Zeile **1697**, die echte Stelle ist **1993** — er nummeriert die
+kommentarbereinigte Fassung, und Blockkommentare kollabieren Zeilen
+(Messfehler vom 01.11.). Es gilt die Datei, nicht das Werkzeug.
+
+**Und die Datei wurde byteweise aus HEAD zurückgestellt, nicht mit
+`git checkout --`:** `prompt-zahlen.js` ist rein LF, und `core.autocrlf=true`
+hätte sie beim Auschecken auf CRLF gedreht (Regel 14.11.). `git show
+HEAD:<pfad>` liefert die gespeicherten Bytes — danach war die Datei nicht mehr
+im `git status`, also byteidentisch.
+
+### Was es NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife, kein Killswitch. **Der GPT-Prompt ist
+unberührt** — der Snapshot hält seine Prüfsumme (`697f044fbe023124`) und seine
+20 Regelzeilen, und die liegen 100 Zeilen von der geänderten Stelle entfernt.
+`riskScore`, `approved` als **Bedingung**, `source: "CLAUDE_REAL"` und der
+`risikoBrauchbar`-Zweig mit `simulateClaude` stehen Zeichen für Zeichen
+unverändert. `rewardRiskRatio.toFixed(2)` bleibt — `safety-nets:398` verlangt
+es, und nach der Prüfung am Konstruktor sind **beide** Produzenten
+(`simulateClaude` und dieser Zweig) beweisbar numerisch; die Zusicherung sitzt
+dort, wo sie gilt (Regel 24.08.).
+
+**Snapshot 299 Werte unverändert**, Karte 910 → **912** (zwei gewollte
+Kanten), `tsc` **0 Fehler**, Build *Compiled successfully*.
+
+### Gemessen und NICHT geändert
+
+| Fund | Warum nicht jetzt |
+|---|---|
+| `parsed` ist `Partial<ClaudeRiskAssessment>` aus einem **Cast** — auch `symbol` und `riskScore` sind damit zur Laufzeit beliebig | `riskScore` ist geriegelt, `symbol` wird aus `market.symbol` genommen, nicht aus der Antwort. Die übrigen Felder des Typs werden hier gar nicht gelesen |
+| **Die GPT-Antwort geht durch denselben Cast** (`parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>`, Zeile 1454). `gpt.takeProfit` könnte damit `Infinity` sein, und `realesChanceRisiko` gäbe dann `Infinity` zurück | Dieselbe Fehlerklasse eine Stufe davor, aber ein eigener, grösserer Umbau in derselben Hochrisiko-Datei — und `goSignal` verlangt `stopLoss > 0 && takeProfit > 0`, was `Infinity` passiert. **Benannt, nicht behoben**, weil nicht gemessen, ob es im Betrieb auftritt |
+| `prompt-zahlen.js:182` und `:192` benutzen weiter **1800-Zeichen-Fenster** ab `if (raw === null)` | Sie messen den `if`-Zweig, der von dieser Änderung nicht berührt ist, und sind grün. Beide auf Klammerzählung umzubauen ist eine eigene Runde |
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

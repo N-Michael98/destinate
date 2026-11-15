@@ -7,6 +7,10 @@ import type { CapitalMarket } from "../capital-com/capital-com-client";
 import { MIN_SIGNAL_CONFIDENCE } from "../broker-config";
 import { pythonBackendAuthHeader } from "../python-backend/auth-header";
 import type { ScanDaten } from "../zyklus-bilanz/zyklus-bilanz";
+// Die Felder, die Claude liefert, werden GELESEN statt uebernommen
+// (15.11.) — `??` faengt nur `null`/`undefined`, und `parseJSON` ist ein
+// reiner Cast. Begruendung und Messung im Modul.
+import { kiFelderLesen } from "../ki-antwort/ki-antwort";
 
 export interface GPTMarketAnalysis {
   symbol: string;
@@ -1983,18 +1987,41 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
           claude = simulateClaude(gpt, market);
         } else {
           const riskScore = rohRisiko;
+          // ── DIE FELDER WERDEN GELESEN, NICHT UEBERNOMMEN (15.11.) ────────
+          //
+          // Hier stand `parsed.maxRiskPercent ?? 1.0`, `parsed.rewardRiskRatio
+          // ?? rrRatio`, `parsed.reasoning ?? ""` und `parsed.approved`. `??`
+          // faengt aber nur `null`/`undefined`, und `parseJSON` ist ein reiner
+          // Cast. AUSGERECHNET: `maxRiskPercent: "0.5"` ergab ueber
+          // `Math.min("0.5", 1)` eine Positionsgroesse aus einer ZEICHENKETTE,
+          // `rewardRiskRatio: "5"` gab die FREIGABE (`"5" >= 1.5` ist true),
+          // und ein Text oder Objekt liess eine Zeile spaeter `.toFixed(2)`
+          // bzw. `.slice(0, 90)` WERFEN — auf try-Tiefe 0 gemessen, also starb
+          // der ganze 5-Minuten-Zyklus. Messung und Begruendung in
+          // `lib/ki-antwort/ki-antwort.ts`.
+          //
           // `rrRatio` ist am ECHTEN Einstieg gerechnet (realesChanceRisiko) —
-          // eine Messung, kein Rueckfallwert. Sie darf hier stehen bleiben.
-          const parsedRR = parsed.rewardRiskRatio ?? rrRatio;
+          // eine Messung, kein Rueckfallwert. Sie wird unveraendert als
+          // Rueckfall hereingereicht.
+          const felder = kiFelderLesen(parsed, rrRatio, riskScore);
+          if (felder.ersetzt.length > 0) {
+            // Eine Ersetzung ist der BEFUND, kein Normalfall: ein fehlendes
+            // Feld meldet sich absichtlich NICHT (rund sieben Claude-Aufrufe
+            // je Zyklus — eine Zeile je Auslassung waere eine Logflut).
+            console.error(`[ai-engine] ⚠️ ${market.symbol}: Claude hat Felder `
+              + `geschickt, die NICHT lesbar sind — ersetzt: `
+              + `${felder.ersetzt.join(" ; ")}. Der riskScore ${riskScore} ist `
+              + `brauchbar, die Beurteilung bleibt deshalb CLAUDE_REAL.`);
+          }
           claude = {
             symbol: market.symbol,
-            approved: riskScore < 60 && parsedRR >= 1.5,
+            approved: riskScore < 60 && felder.rewardRiskRatio >= 1.5,
             riskScore,
-            maxRiskPercent: parsed.maxRiskPercent ?? 1.0,
-            reasoning: parsed.reasoning ?? "",
-            rewardRiskRatio: parsedRR,
+            maxRiskPercent: felder.maxRiskPercent,
+            reasoning: felder.reasoning,
+            rewardRiskRatio: felder.rewardRiskRatio,
             source: "CLAUDE_REAL",
-            eigenesUrteil: parsed.approved,
+            eigenesUrteil: felder.eigenesUrteil,
           };
         }
       }

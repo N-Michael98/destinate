@@ -181,9 +181,9 @@ module.exports = function pruefe() {
   pruefe1("ein ausgefallener Claude-Aufruf erfindet wieder einen Risiko-Wert",
     /if \(raw === null\)[\s\S]{0,1800}?claude = simulateClaude\(gpt, market\);/.test(quell),
     "`riskScore ?? 50` liess das Risiko-Tor still wegfallen (50 < 60 ist wahr)");
-  pruefe1("ein ausgefallener Claude-Aufruf traegt wieder das Etikett CLAUDE_REAL",
-    /if \(raw === null\)[\s\S]*?\} else \{[\s\S]{0,600}?source: "CLAUDE_REAL"/.test(quell),
-    "dieselbe Luege, die am 01.09. fuer simulateClaude behoben wurde");
+  // Die Zusicherung "ein Ausfall traegt das Etikett CLAUDE_REAL" steht
+  // jetzt WEITER UNTEN, bei `claudeEchtZweig` — sie braucht `ohneKomm`,
+  // und das wird erst nach dieser Stelle deklariert (15.11.).
   // NICHT einfach `/ohneClaude\+\+/` — den Ausdruck gibt es auch im Zweig
   // "kein Claude-Schluessel". Im Sabotage-Lauf vom 07.09. rutschte "Zaehlung
   // entfernt" damit durch: der Pruefer fand die ANDERE Fundstelle. Dieselbe
@@ -272,6 +272,41 @@ module.exports = function pruefe() {
   pruefe1("ein fehlender riskScore fuehrt nicht auf das Ersatzurteil",
     risikoZweig !== "" && /claude = simulateClaude\(gpt, market\)/.test(risikoZweig),
     "sonst traegt eine Nicht-Beurteilung das Etikett CLAUDE_REAL");
+  // ── KLAMMERZAEHLER STATT ZEICHEN-FENSTER (15.11.) ───────────────────────
+  //
+  // Weiter oben stand ein Zeichen-Fenster von 600 Zeichen zwischen dem
+  // else und dem Etikett. Am 15.11. kam in diesen Zweig ein Aufruf samt
+  // Begruendung (`kiFelderLesen`), und das Fenster platzte — der Pruefer
+  // wurde rot, obwohl der Code stimmte.
+  //
+  // Das Fenster aufzuziehen waere die bequeme und FALSCHE Antwort: 20
+  // Zeilen weiter oben steht nachgemessen, dass ein passendes Fenster auch
+  // bei GELOESCHTEM Riegel gruen bleibt (22.09.). Das alte Muster wird hier
+  // ABSICHTLICH NICHT zitiert — ein Zitat macht jede "ist weg"-Pruefung
+  // dauerhaft rot (Lehre 13.11.).
+  //
+  // Der `else`-Zweig wird hinter dem `if (!risikoBrauchbar)`-Block
+  // ausgeschnitten: dessen Inhalt endet genau an seiner schliessenden
+  // Klammer, und dahinter steht das `else`.
+  let claudeEchtZweig = "";
+  try {
+    const hinterIf = ohneKomm.indexOf(risikoZweig) + risikoZweig.length;
+    claudeEchtZweig = objectBlock(ohneKomm.slice(hinterIf), "else");
+  } catch { /* bleibt leer -> rot */ }
+  // SELBSTPRUEFUNG des Ausschnitts: ohne sie koennte er den FALSCHEN Block
+  // erwischen und die Zusicherung darunter bewiese nichts. Genau das ist
+  // beim ersten Versuch passiert (Block vor der Deklaration von
+  // `ohneKomm` -> ReferenceError -> leerer Ausschnitt), und nur diese
+  // Zeile hat es gezeigt. Der echte Zweig MUSS den riskScore uebernehmen
+  // und darf das Ersatzurteil NICHT enthalten — das steht im `if`-Zweig.
+  pruefe1("der ausgeschnittene else-Zweig ist wirklich der Claude-Zweig",
+    claudeEchtZweig !== ""
+    && /const riskScore = rohRisiko;/.test(claudeEchtZweig)
+    && !/claude = simulateClaude/.test(claudeEchtZweig),
+    "sonst prueft die Zeile darunter einen beliebigen Block");
+  pruefe1("ein ausgefallener Claude-Aufruf traegt wieder das Etikett CLAUDE_REAL",
+    claudeEchtZweig !== "" && /source: "CLAUDE_REAL"/.test(claudeEchtZweig),
+    "dieselbe Luege, die am 01.09. fuer simulateClaude behoben wurde");
   // ── DIE DIAGNOSE MUSS IM INTERESSANTEN FALL REDEN (22.09.) ──────────────
   //
   // Am 22.09. 21:18 traf dieser Zweig SPX500 und meldete nur "(undefined)".

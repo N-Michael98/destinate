@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 360 · Kanten: 910
+Dateien mit internen Abhängigkeiten: 361 · Kanten: 912
 
 
 ## analysis-engine/api
@@ -940,6 +940,8 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 910
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
+- `frontend/lib/ki-antwort/ki-antwort.ts`
+  - → `frontend/lib/risiko/risiko.ts`
 - `frontend/lib/killswitch/index.ts`
   - → `frontend/lib/killswitch/killswitch-engine.ts`
   - → `frontend/lib/killswitch/killswitch-types.ts`
@@ -999,6 +1001,7 @@ Dateien mit internen Abhängigkeiten: 360 · Kanten: 910
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/html-sicher/html-sicher.ts`
+  - → `frontend/lib/ki-antwort/ki-antwort.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
   - → `frontend/lib/redis-lage/redis-lage.ts`
   - → `frontend/lib/settings/settings-store.ts`

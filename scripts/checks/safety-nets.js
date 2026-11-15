@@ -13528,6 +13528,206 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ── DIE FELDER DER KI WERDEN GELESEN, NICHT UEBERNOMMEN (15.11.) ─────────
+  //
+  // `parsed` kommt aus `parseJSON<Partial<ClaudeRiskAssessment>>`, und das ist
+  // ein REINER CAST. `??` faengt nur `null`/`undefined`. AUSGERECHNET:
+  //   maxRiskPercent "0.5"  -> Math.min("0.5",1)=0.5  Groesse aus einer Zeichenkette
+  //   rewardRiskRatio "5"   -> "5" >= 1.5 ist TRUE    Freigabe auf einer Zeichenkette
+  //   rewardRiskRatio "abc" -> `.toFixed(2)` WIRFT    try-Tiefe 0 -> der ZYKLUS stirbt
+  //   reasoning {}          -> `.slice(0,90)` WIRFT   dito
+  //
+  // GERECHNET, nicht am Wortlaut: ein Regex prueft den Wortlaut, nicht das
+  // Verhalten (30.09.).
+  {
+    const ki = ladeTsModul("lib/ki-antwort/ki-antwort.ts", {
+      // Die EINE Lesart fuer einen Risikosatz — echt, kein Stellvertreter:
+      // sonst bewiese der Lauf nichts ueber die gemeinsame Umsetzung.
+      "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
+    });
+    if (ki.fehler || typeof ki.exports?.kiFelderLesen !== "function") {
+      funde.push(`kiFelderLesen nicht ausfuehrbar: ${ki.fehler ?? "kein Export"}`);
+      zusatz++;
+    } else {
+      const L = ki.exports.kiFelderLesen;
+
+      // SELBSTPRUEFUNG ZUERST: brauchbare Werte muessen UNVERAENDERT
+      // durchgehen. Ein Riegel, der alles ersetzt, waere schlimmer als der
+      // Fund — er wuerde die echte Beurteilung der KI wegwerfen.
+      const gut = L({ maxRiskPercent: 0.8, rewardRiskRatio: 2.2,
+                      reasoning: "sauber", approved: true }, 1.9, 40);
+      torPruefung("kiFelderLesen veraendert BRAUCHBARE Werte — dann wirft der "
+        + "Riegel die echte Beurteilung weg",
+        gut.maxRiskPercent === 0.8 && gut.rewardRiskRatio === 2.2
+        && gut.reasoning === "sauber" && gut.eigenesUrteil === true
+        && gut.ersetzt.length === 0,
+        `risk=${gut.maxRiskPercent} rr=${gut.rewardRiskRatio} `
+        + `grund=${JSON.stringify(gut.reasoning)} urteil=${String(gut.eigenesUrteil)} `
+        + `ersetzt=${gut.ersetzt.length}`);
+
+      // ── maxRiskPercent ─────────────────────────────────────────────────
+      // Fehlt er, wird aus dem GEMESSENEN riskScore abgeleitet — dieselbe
+      // Ableitung wie in simulateClaude. Die frueheren festen 1.0 waren eine
+      // ZWEITE Quelle fuer den Standard neben `maxRiskPerTradePct`.
+      const fehlt40 = L({}, 1.9, 40);
+      const fehlt70 = L({}, 1.9, 70);
+      torPruefung("ein fehlendes maxRiskPercent wird nicht aus dem riskScore "
+        + "abgeleitet — dann steht wieder eine erfundene 1.0 da",
+        fehlt40.maxRiskPercent === 1.0 && fehlt70.maxRiskPercent === 0.5,
+        `riskScore40=${fehlt40.maxRiskPercent} riskScore70=${fehlt70.maxRiskPercent}`);
+      torPruefung("ein FEHLENDES Feld wird als Befund gemeldet — das ist der "
+        + "Normalfall eines Sprachmodells und waere eine Logflut",
+        fehlt40.ersetzt.length === 0 && L({ maxRiskPercent: null }, 1.9, 40).ersetzt.length === 0,
+        `fehlt=${fehlt40.ersetzt.length} null=${L({ maxRiskPercent: null }, 1.9, 40).ersetzt.length}`);
+
+      const risikoLagen = [
+        ["Zahl als Text", "0.5"], ["Text", "abc"], ["0", 0], ["negativ", -5],
+        ["true", true], ["Objekt", {}], ["Array", []],
+      ];
+      for (const [name, wert] of risikoLagen) {
+        const r = L({ maxRiskPercent: wert }, 1.9, 40);
+        torPruefung(`maxRiskPercent ${name} kommt durch — eine Positionsgroesse `
+          + `aus einem Wert, der keine Zahl ist`,
+          r.maxRiskPercent === 1.0
+          && r.ersetzt.some((e) => e.startsWith("maxRiskPercent=")),
+          `ergab ${JSON.stringify(r.maxRiskPercent)} (${typeof r.maxRiskPercent}) `
+          + `ersetzt=${JSON.stringify(r.ersetzt)}`);
+      }
+      // GEGENPROBE: keine erfundene Obergrenze. 1e6 ist eine endliche Zahl > 0
+      // und wird spaeter von MAX_SIZE geklemmt — dort gehoert die Grenze hin.
+      const gross = L({ maxRiskPercent: 1e6 }, 1.9, 40);
+      torPruefung("eine zweite, erfundene Obergrenze fuer das Risiko wurde "
+        + "eingebaut — die Grenze gehoert in MAX_SIZE und maxRiskPerTradePct",
+        gross.maxRiskPercent === 1e6 && gross.ersetzt.length === 0,
+        `1e6 ergab ${gross.maxRiskPercent}, ersetzt=${gross.ersetzt.length}`);
+
+      // ── rewardRiskRatio: das Feld, das ueber die FREIGABE entscheidet ───
+      const rrLagen = [
+        ["Zahl als Text 5", "5"], ["Text", "abc"], ["0", 0], ["negativ", -1],
+        ["Objekt", {}], ["Array", []], ["true", true],
+      ];
+      for (const [name, wert] of rrLagen) {
+        const r = L({ rewardRiskRatio: wert }, 1.9, 40);
+        torPruefung(`rewardRiskRatio ${name} kommt durch — und dieses Feld `
+          + `entscheidet ueber die FREIGABE`,
+          r.rewardRiskRatio === 1.9
+          && r.ersetzt.some((e) => e.startsWith("rewardRiskRatio=")),
+          `ergab ${JSON.stringify(r.rewardRiskRatio)} `
+          + `(${typeof r.rewardRiskRatio}) ersetzt=${JSON.stringify(r.ersetzt)}`);
+      }
+      torPruefung("ein fehlendes rewardRiskRatio nimmt nicht die GEMESSENE "
+        + "Zahl — `realesChanceRisiko` am echten Einstieg",
+        L({}, 1.9, 40).rewardRiskRatio === 1.9
+        && L({ rewardRiskRatio: 2.5 }, 1.9, 40).rewardRiskRatio === 2.5,
+        `ohne=${L({}, 1.9, 40).rewardRiskRatio} mit=${L({ rewardRiskRatio: 2.5 }, 1.9, 40).rewardRiskRatio}`);
+
+      // ── reasoning: der Wurf-Pfad bei `.slice(0, 90)` ───────────────────
+      for (const [name, wert] of [["Objekt", {}], ["Zahl", 5], ["true", true]]) {
+        const r = L({ reasoning: wert }, 1.9, 40);
+        torPruefung(`reasoning ${name} kommt durch — `.concat("`.slice(0, 90)` ")
+          + `wirft dann eine Zeile spaeter und der ganze Zyklus stirbt`,
+          r.reasoning === "" && typeof r.reasoning === "string"
+          && r.ersetzt.some((e) => e.startsWith("reasoning=")),
+          `ergab ${JSON.stringify(r.reasoning)} (${typeof r.reasoning})`);
+      }
+      torPruefung("ein echter Begruendungstext geht verloren",
+        L({ reasoning: "weil X" }, 1.9, 40).reasoning === "weil X"
+        && L({}, 1.9, 40).reasoning === "",
+        "Text bleibt, fehlend wird leer");
+
+      // ── eigenesUrteil: reine Diagnose, aber keine erfundene ────────────
+      torPruefung("ein `false` des Modells wird zu `unbekannt` — dann verliert "
+        + "die Diagnose genau die Haelfte der Faelle",
+        L({ approved: false }, 1.9, 40).eigenesUrteil === false
+        && L({ approved: true }, 1.9, 40).eigenesUrteil === true,
+        `false->${String(L({ approved: false }, 1.9, 40).eigenesUrteil)} `
+        + `true->${String(L({ approved: true }, 1.9, 40).eigenesUrteil)}`);
+      const urteilText = L({ approved: "yes" }, 1.9, 40);
+      torPruefung('ein `"yes"` des Modells gilt wieder als Urteil — das stand '
+        + "dann als `Claude selbst: approved=yes` im Log",
+        urteilText.eigenesUrteil === undefined
+        && urteilText.ersetzt.some((e) => e.startsWith("approved=")),
+        `ergab ${String(urteilText.eigenesUrteil)} ersetzt=${JSON.stringify(urteilText.ersetzt)}`);
+
+      // ── Die Meldung muss den ROHWERT nennen ───────────────────────────
+      // Sonst steht "maxRiskPercent ersetzt" im Log und man weiss nicht, WAS
+      // das Modell geschickt hat — eine Diagnose, die im interessanten Fall
+      // schweigt.
+      const roh = L({ maxRiskPercent: "0.5", rewardRiskRatio: {},
+                      reasoning: 7, approved: "yes" }, 1.9, 40);
+      torPruefung("die Meldung nennt den Rohwert nicht — dann ist aus dem Log "
+        + "nicht zu erkennen, WAS das Modell geschickt hat",
+        roh.ersetzt.length === 4
+        && roh.ersetzt.join(" ").includes('"0.5"')
+        && roh.ersetzt.join(" ").includes("Objekt")
+        && roh.ersetzt.join(" ").includes("7 (number)")
+        && roh.ersetzt.join(" ").includes('"yes"'),
+        `${roh.ersetzt.length} Eintraege: ${JSON.stringify(roh.ersetzt)}`);
+
+      // ── DIE VERDRAHTUNG (30.09.: eine gerechnete Funktion beweist nichts
+      //    ueber ihre Aufrufstelle) ───────────────────────────────────────
+      const aeQ = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      // Der Aufruf muss IM else-Zweig stehen. Ein Zeichen-Fenster bewiese nur
+      // Naehe (22.09.), deshalb Klammerzaehlung ueber den if-Zweig hinaus.
+      let echtZweig = "";
+      try {
+        const ifBlock = objectBlock(aeQ, "if (!risikoBrauchbar)");
+        echtZweig = objectBlock(aeQ.slice(aeQ.indexOf(ifBlock) + ifBlock.length), "else");
+      } catch { /* bleibt leer -> rot */ }
+      torPruefung("der ausgeschnittene Claude-Zweig ist der falsche Block — "
+        + "dann bewiesen die Zusicherungen darunter nichts",
+        echtZweig !== "" && /const riskScore = rohRisiko;/.test(echtZweig)
+        && !/claude = simulateClaude/.test(echtZweig),
+        `Laenge ${echtZweig.length}`);
+      torPruefung("der Claude-Zweig ruft kiFelderLesen nicht — dann sind die "
+        + "Felder wieder ungeprueft uebernommen",
+        /const felder = kiFelderLesen\(parsed, rrRatio, riskScore\);/.test(echtZweig),
+        "kiFelderLesen(parsed, rrRatio, riskScore)");
+      torPruefung("die FREIGABE haengt nicht am gelesenen Verhaeltnis — ein "
+        + '`"5"` gaebe sie dann wieder',
+        /approved: riskScore < 60 && felder\.rewardRiskRatio >= 1\.5,/.test(echtZweig),
+        "approved: riskScore < 60 && felder.rewardRiskRatio >= 1.5");
+      for (const [name, muster] of [
+        ["maxRiskPercent", /maxRiskPercent: felder\.maxRiskPercent,/],
+        ["reasoning", /reasoning: felder\.reasoning,/],
+        ["rewardRiskRatio", /rewardRiskRatio: felder\.rewardRiskRatio,/],
+        ["eigenesUrteil", /eigenesUrteil: felder\.eigenesUrteil,/],
+      ]) {
+        torPruefung(`das Feld ${name} wird wieder ungeprueft aus der Antwort `
+          + `uebernommen`, muster.test(echtZweig), String(muster));
+      }
+      // Die alten Formen duerfen NICHT zurueckkommen (kommentarbereinigt —
+      // beide Dateien zitieren sie in ihrer Begruendung).
+      for (const [name, text] of [
+        ["parsed.maxRiskPercent ?? 1.0", "parsed.maxRiskPercent ?? 1.0"],
+        ["parsedRR", "parsedRR"],
+        ['parsed.reasoning ?? ""', 'parsed.reasoning ?? ""'],
+        ["eigenesUrteil: parsed.approved", "eigenesUrteil: parsed.approved"],
+      ]) {
+        torPruefung(`die alte Form \`${name}\` ist zurueck — dann faengt wieder `
+          + `nur \`??\` und nur null/undefined`, !aeQ.includes(text), name);
+      }
+      torPruefung("eine Ersetzung wird nicht gemeldet — eine stille "
+        + "Degradierung ist die naechste Luege",
+        /if \(felder\.ersetzt\.length > 0\) \{/.test(echtZweig)
+        && /console\.error\(/.test(echtZweig),
+        "if (felder.ersetzt.length > 0) + console.error");
+      torPruefung('das Etikett `source: "CLAUDE_REAL"` ist aus dem Zweig '
+        + "verschwunden", /source: "CLAUDE_REAL",/.test(echtZweig), "source");
+      // Und `maxRiskPercent` muss durch DIE EINE Lesart gehen, nicht durch
+      // eine vierte Fassung.
+      const kiQ = read("frontend/lib/ki-antwort/ki-antwort.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      torPruefung("ki-antwort baut eine EIGENE Risiko-Lesart statt der "
+        + "gemeinsamen — das waere eine vierte Wahrheit",
+        /import \{ lesbaresRisiko \} from "\.\.\/risiko\/risiko"/.test(kiQ)
+        && /lesbaresRisiko\(roh\.maxRiskPercent\)/.test(kiQ),
+        "import + Aufruf von lesbaresRisiko");
+    }
+  }
+
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
