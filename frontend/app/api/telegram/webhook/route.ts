@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
+import { htmlSicher } from "@/lib/html-sicher/html-sicher";
 import { sendTelegram, telegramZeit, telegramDatum, htmlAbgelehnt } from "@/lib/telegram-notifications/telegram-sender";
 import { triggerKillswitch, resetKillswitch, getKillswitchReport } from "@/lib/killswitch";
 // STATISCH, nicht dynamisch: das Modul ist winzig, rein und ohne
@@ -52,6 +53,7 @@ const SYSTEM_BEFEHLE = [
   "/status — System Status",
   "/edge — Erwartungswert: hat das System einen Edge? (/edge 60 = letzte 60 Tage)",
   "/hebel — was würde etwas ändern? EW je Gruppe (/hebel 60 = letzte 60 Tage)",
+  "/exits — wie weit lief der Kurs? Stop/Ziel nachgerechnet (/exits 60 = letzte 60 Tage)",
   "/help — Alle Befehle",
 ].join("\n");
 
@@ -975,6 +977,120 @@ ${SYSTEM_BEFEHLE}`
       } catch (e) {
         await reply(chatId,
           `❌ <b>/hebel fehlgeschlagen</b>\n\n${e instanceof Error ? e.message : String(e)}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── /exits — wie weit lief der Kurs wirklich? (16.11.) ──────────────
+    //
+    // REINE LESUNG: keine Order, kein Stop, keine Einstellung, KEIN
+    // Schreibzugriff auf die Datenbank. Die Argumentpruefung ist woertlich
+    // die von /edge und /hebel (nur Ziffern, kein Echo der Eingabe).
+    //
+    // Der Lauf braucht einen Kerzen-Abruf JE Trade, nacheinander — das
+    // dauert. Deshalb antwortet der Befehl SOFORT, und die Arbeit laeuft in
+    // `after()` weiter: Telegram bekommt seine 200 gleich und schickt die
+    // Nachricht nicht ein zweites Mal. `after()` ist beim Selbst-Hosting mit
+    // `next start` voll unterstuetzt (Next-Doku 16.2.6, self-hosting.md).
+    // Eine Sperre auf `global` verhindert zwei Laeufe zugleich.
+    if (textLower === "/exits" || textLower.startsWith("/exits ")) {
+      let sperreUebergeben = false;
+      let freigeben: (() => void) | null = null;
+      try {
+        const { exitsSperreNehmen, exitsSperreFreigeben, exitLauf, PAUSE_MS } =
+          await import("@/lib/exit-messung/exit-lauf");
+        const arg = textLower.slice("/exits".length).trim();
+        const tage = arg === "" ? null : (/^\d+$/.test(arg) ? Number(arg) : NaN);
+        if (arg !== "" && (!Number.isFinite(tage) || (tage as number) <= 0)) {
+          await reply(chatId,
+            `⚠️ <b>/exits</b> — das ist keine Anzahl Tage (${arg.length} Zeichen).`
+            + "\n\n<code>/exits</code> rechnet alles, <code>/exits 60</code> nur "
+            + "Trades, die in den letzten 60 Tagen eröffnet wurden.");
+          return NextResponse.json({ ok: true });
+        }
+        const { getCapitalSession } = await import("@/lib/capital-com/capital-com-session");
+        if (!getCapitalSession()) {
+          await reply(chatId,
+            "⚠️ <b>/exits</b> — keine Broker-Sitzung. Die Kursverläufe kommen von "
+            + "Capital.com; ohne Sitzung ist keine Messung möglich.");
+          return NextResponse.json({ ok: true });
+        }
+        const sperre = exitsSperreNehmen(Date.now());
+        if (!sperre.ok) {
+          await reply(chatId,
+            `⏳ <b>/exits</b> läuft schon seit ${telegramZeit(new Date(sperre.seitMs))} — `
+            + "das Ergebnis kommt als eigene Nachricht.");
+          return NextResponse.json({ ok: true });
+        }
+        freigeben = exitsSperreFreigeben;
+
+        const { getPrisma } = await import("@/app/lib/prisma");
+        const { STYLE_MAX_HOURS } = await import("@/lib/agents/risk-agent");
+        const { ETIKETTEN_OHNE_ERGEBNIS } = await import("@/lib/capital-com/capital-trade-tracker");
+        const { EPIC_MAP, capitalGetKerzen } = await import("@/lib/capital-com/capital-com-client");
+        const { auswahl, exitBericht, exitsText } = await import("@/lib/exit-messung/exit-messung");
+
+        const zeilen = await getPrisma().trade.findMany({
+          where: { status: { not: "OPEN" } },
+          // Genau die Spalten, die die Auswahl liest. `createdAt` ist bei
+          // auto-scan-Zeilen der Eroeffnungsmoment (`NOW()` beim Eintrag).
+          select: {
+            id: true, market: true, direction: true, entry: true,
+            stopLoss: true, takeProfit: true, notes: true, createdAt: true,
+          },
+        });
+        const aus = auswahl(zeilen, {
+          haltedauer: STYLE_MAX_HOURS,
+          ohneErgebnis: ETIKETTEN_OHNE_ERGEBNIS,
+          epicMap: EPIC_MAP,
+          jetztMs: Date.now(),
+          tage: tage === null ? null : (tage as number),
+        });
+        const leer = { fensterTage: tage === null ? null : (tage as number), abbruch: null,
+          kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null };
+        if (aus.kandidaten.length === 0) {
+          await reply(chatId, exitsText(exitBericht(aus, [], leer)));
+          return NextResponse.json({ ok: true });
+        }
+
+        await reply(chatId,
+          `📐 <b>/exits</b> läuft: ${aus.kandidaten.length} Trades, je ein Kursabruf `
+          + `nacheinander — mindestens ${Math.ceil((aus.kandidaten.length * PAUSE_MS) / 1000)} s. `
+          + "Das Ergebnis kommt als eigene Nachricht.");
+
+        sperreUebergeben = true;
+        after(async () => {
+          try {
+            const lauf = await exitLauf(aus.kandidaten, {
+              kerzen: async (epic, aufloesung, von, bis, max) => {
+                // Die Sitzung JE Abruf frisch lesen: sie kann sich waehrend
+                // des Laufs erneuern oder wegfallen. Weg heisst abbrechen.
+                const s = getCapitalSession();
+                if (!s) return { ok: false, status: 401, error: "Broker-Sitzung während der Messung weggefallen" };
+                return capitalGetKerzen(s.apiKey, s.cst, s.securityToken, epic, aufloesung, von, bis, max);
+              },
+              warte: (ms) => new Promise((r) => setTimeout(r, ms)),
+              jetzt: () => Date.now(),
+            });
+            await reply(chatId, exitsText(exitBericht(aus, lauf.ergebnisse, {
+              fensterTage: leer.fensterTage, abbruch: lauf.abbruch,
+              kerzenUnbrauchbar: lauf.kerzenUnbrauchbar,
+              versatzMin: lauf.versatzMin, versatzMax: lauf.versatzMax,
+            })));
+          } catch (e) {
+            await reply(chatId,
+              `❌ <b>/exits fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
+          } finally {
+            exitsSperreFreigeben();
+          }
+        });
+      } catch (e) {
+        await reply(chatId,
+          `❌ <b>/exits fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
+      } finally {
+        // Nur freigeben, wenn die Sperre NICHT an `after()` uebergeben wurde —
+        // sonst liefe der naechste /exits neben dem laufenden.
+        if (freigeben !== null && !sperreUebergeben) freigeben();
       }
       return NextResponse.json({ ok: true });
     }

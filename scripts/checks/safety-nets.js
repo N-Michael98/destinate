@@ -13968,6 +13968,587 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ── /exits — WIE WEIT LIEF DER KURS WIRKLICH? (16.11.) ────────────────────
+  //
+  // Reine Lesung: Kerzen von Capital.com, nachgerechnet mit dem
+  // URSPRUENGLICHEN Stop und Ziel. Die Antwort entscheidet ueber
+  // `exitThresholdsRelativeToStop` — eine falsche Zahl hier waere eine
+  // falsche Entscheidung dort. Deshalb GERECHNET (nicht am Wortlaut), END-TO-
+  // END durch die echte POST, und die Annahmen an ihren QUELLEN gebunden.
+  {
+    const bereinigeEx = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    // Selbstpruefung der Bereinigung: Kommentar weg, URL bleibt.
+    torPruefung("exits: die Kommentar-Bereinigung ist kaputt",
+      bereinigeEx('a(); // fetch(\nconst u = "https://x/v1"; /* fetch( */ b();')
+        === 'a(); \nconst u = "https://x/v1";   b();', "Bereinigung");
+
+    // Die ECHTEN Quellen, aus dem Quelltext gelesen — keine zweite Fassung.
+    const raSrc = read("frontend/lib/agents/risk-agent.ts");
+    const mH = raSrc.match(/export const STYLE_MAX_HOURS: Record<string, number> = \{([^}]*)\}/);
+    const haltedauer = {};
+    if (mH) for (const t of mH[1].matchAll(/([A-Z]+):\s*(\d+)/g)) haltedauer[t[1]] = Number(t[2]);
+    const snapH = JSON.parse(read("scripts/checks/snapshots/kritische-werte.json")).werte?.haltedauer ?? {};
+    torPruefung("exits: STYLE_MAX_HOURS ist nicht exportiert — dann braeuchte /exits eine "
+      + "zweite Fassung der Haltedauern (zwei Wahrheiten)", !!mH, "export const STYLE_MAX_HOURS");
+    torPruefung("exits: die Haltedauern weichen vom Snapshot ab",
+      ["SCALPING", "DAYTRADING", "SWING"].every((k) => haltedauer[k] === snapH[k] && Number.isFinite(snapH[k])),
+      `${JSON.stringify(haltedauer)} gegen ${JSON.stringify(snapH)}`);
+    const trSrc = read("frontend/lib/capital-com/capital-trade-tracker.ts");
+    const mE = trSrc.match(/export const ETIKETTEN_OHNE_ERGEBNIS = \[([^\]]*)\]/);
+    const etiketten = mE ? [...mE[1].matchAll(/"([^"]+)"/g)].map((t) => t[1]) : [];
+    torPruefung("exits: ETIKETTEN_OHNE_ERGEBNIS nicht lesbar", etiketten.length >= 2, JSON.stringify(etiketten));
+
+    const EM = ladeTsModul("lib/exit-messung/exit-messung.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+      "html-sicher/html-sicher": htmlSicherEcht,
+    });
+    const ladeLauf = () => ladeTsModul("lib/exit-messung/exit-lauf.ts", { "./exit-messung": EM.exports });
+    const EL = ladeLauf();
+    if (EM.fehler || typeof EM.exports?.nachrechnen !== "function"
+        || EL.fehler || typeof EL.exports?.exitLauf !== "function") {
+      funde.push(`exits: Module nicht ausfuehrbar: ${EM.fehler ?? EL.fehler ?? "Export fehlt"}`);
+      zusatz++;
+    } else {
+      const X = EM.exports;
+      const T0 = Date.UTC(2026, 10, 10, 10, 0, 0);
+
+      // ── utcOhneZone: snapshotTimeUTC traegt KEINE Zone und ist trotzdem UTC.
+      // `brokerZeitNachUtc` laese sie als Zuercher Ortszeit (1–2 h daneben).
+      const soll = Date.UTC(2022, 3, 6, 13, 18, 0);
+      for (const [roh, erw] of [
+        ["2022-04-06T13:18:00", soll], ["2022-04-06T13:18:00Z", soll],
+        ["2022-04-06T15:18:00+02:00", soll], ["2022-04-06 13:18:00", soll],
+        ["", null], [null, null], [5, null], ["Unsinn", null],
+      ]) {
+        torPruefung(`exits: utcOhneZone(${JSON.stringify(roh)}) ist falsch`,
+          X.utcOhneZone(roh) === erw, String(X.utcOhneZone(roh)));
+      }
+
+      // ── aufloesungFuer: die FEINSTE, die in EINEN Abruf passt.
+      for (const [h, erw] of [[4, "MINUTE"], [24, "MINUTE_5"], [168, "MINUTE_15"]]) {
+        const a = X.aufloesungFuer(h);
+        torPruefung(`exits: aufloesungFuer(${h}) ist ${a.name}, erwartet ${erw}`, a.name === erw, a.name);
+      }
+      for (const [stil, h] of Object.entries(haltedauer)) {
+        const a = X.aufloesungFuer(h);
+        torPruefung(`exits: ${stil} (${h} h) passt nicht in einen Abruf`,
+          (h * 60) / a.minuten + 2 <= X.MAX_KERZEN, `${a.name}`);
+      }
+
+      // ── kerzenLesen: unsortiert, eine ohne ask, eine ohne Zeit.
+      const P = (utc, ort, hb, ha, lb, la, cb, ca) => ({ snapshotTimeUTC: utc, snapshotTime: ort,
+        highPrice: { bid: hb, ask: ha }, lowPrice: { bid: lb, ask: la },
+        closePrice: { bid: cb, ask: ca }, openPrice: { bid: cb, ask: ca } });
+      const lesung = X.kerzenLesen({ prices: [
+        P("2026-11-10T10:10:00", "2026-11-10T11:10:00", 2, 2.1, 1, 1.1, 1.5, 1.6),
+        P("2026-11-10T10:05:00", "2026-11-10T11:05:00", 2, 2.1, 1, 1.1, 1.5, 1.6),
+        { ...P("2026-11-10T10:15:00", "x", 2, 2.1, 1, 1.1, 1.5, 1.6), highPrice: { bid: 2 } },
+        P(undefined, "x", 2, 2.1, 1, 1.1, 1.5, 1.6),
+      ] });
+      torPruefung("exits: kerzenLesen liest/sortiert/zaehlt falsch",
+        lesung.kerzen.length === 2 && lesung.unbrauchbar === 2
+        && lesung.kerzen[0].t === Date.UTC(2026, 10, 10, 10, 5) && lesung.kerzen[1].t === Date.UTC(2026, 10, 10, 10, 10)
+        && lesung.versatzMin === 60 && lesung.versatzMax === 60,
+        JSON.stringify({ n: lesung.kerzen.length, u: lesung.unbrauchbar, v: [lesung.versatzMin, lesung.versatzMax] }));
+      torPruefung("exits: kerzenLesen stuerzt bei Unsinn",
+        X.kerzenLesen(null).kerzen.length === 0 && X.kerzenLesen({ prices: "x" }).kerzen.length === 0, "null/x");
+
+      // ── auswahl: JEDER Ausschluss einzeln und NAMENTLICH.
+      const notizen = (n = {}) => JSON.stringify({ broker: "Capital.com DEMO", source: "auto-scan",
+        tradingStyle: "DAYTRADING", exitReason: "DAZWISCHEN", closeLevel: 1.102, ...n });
+      const zeile = (o = {}, n = {}) => ({ id: 1, market: "EURUSD", direction: "BUY", entry: 1.1,
+        stopLoss: 1.095, takeProfit: 1.11, createdAt: new Date(T0), notes: notizen(n), ...o });
+      const opt = { haltedauer, ohneErgebnis: etiketten, epicMap: { EURUSD: "EURUSD", GOLD: "GOLD" },
+        jetztMs: T0 + 5 * 86_400_000, tage: null };
+      const gutA = X.auswahl([zeile()], opt);
+      const g = gutA.kandidaten[0];
+      torPruefung("exits: eine GUTE Zeile wird verworfen — dann misst /exits nichts",
+        gutA.kandidaten.length === 1 && g.richtung === "BUY" && Math.abs(g.risiko - 0.005) < 1e-12
+        && Math.abs(g.rrGeplant - 2) < 1e-9 && g.horizontStunden === 24 && g.istSchluss === 1.102
+        && g.istEtikett === "DAZWISCHEN" && g.eroeffnetMs === T0,
+        JSON.stringify(gutA.ausgeschlossen));
+      torPruefung("exits: AUSSCHLUESSE ist nicht vollstaendig im Zaehlwerk",
+        X.AUSSCHLUESSE.length === 13 && X.AUSSCHLUESSE.every((a) => gutA.ausgeschlossen[a] === 0),
+        JSON.stringify(Object.keys(gutA.ausgeschlossen)));
+      const faelle = [
+        ["notizenUnlesbar", zeile({ notes: "{kaputt" })], ["notizenUnlesbar", zeile({ notes: "[]" })],
+        ["notizenUnlesbar", zeile({ notes: null })],
+        ["nichtCapital", zeile({}, { broker: "IC_MARKETS" })], ["nichtCapital", zeile({}, { broker: undefined })],
+        // DER FALL, DEN DIE ERSTE FASSUNG UEBERSAH (16.11.): broker und source
+        // sehen normal aus, aber der IC-Manager ueberschreibt den Stop.
+        ["mitIcPosition", zeile({}, { icPositionId: "12345" })],
+        ["nichtAutoScan", zeile({}, { source: "rekonstruiert-aus-position" })],
+        ["nichtAutoScan", zeile({}, { source: "tx-sync" })],
+        ...etiketten.map((e) => ["ohneErgebnis", zeile({}, { exitReason: e })]),
+        ["richtungUnlesbar", zeile({ direction: "UNBEKANNT" })],
+        ["preiseUnbrauchbar", zeile({ entry: 0 })], ["preiseUnbrauchbar", zeile({ stopLoss: NaN })],
+        ["preiseUnbrauchbar", zeile({ takeProfit: "1.11" })],
+        ["falscheSeite", zeile({ stopLoss: 1.12 })],
+        ["falscheSeite", zeile({ direction: "SELL" })],
+        ["stilUnbekannt", zeile({}, { tradingStyle: "UNBEKANNT" })],
+        ["stilUnbekannt", zeile({}, { tradingStyle: undefined })],
+        ["stilUnbekannt", zeile({}, { tradingStyle: "toString" })],
+        ["ohneEpic", zeile({ market: "XXX" })], ["ohneEpic", zeile({ market: "toString" })],
+        ["ohneDatum", zeile({ createdAt: null })], ["ohneDatum", zeile({ createdAt: "Unsinn" })],
+      ];
+      for (const [erw, z] of faelle) {
+        const a = X.auswahl([z], opt);
+        torPruefung(`exits: Ausschluss ${erw} greift nicht`,
+          a.kandidaten.length === 0 && a.ausgeschlossen[erw] === 1,
+          JSON.stringify(Object.entries(a.ausgeschlossen).filter(([, n]) => n > 0)));
+      }
+      torPruefung("exits: LONG / kleingeschriebener Stil wird nicht gelesen",
+        X.auswahl([zeile({ direction: "LONG" }, { tradingStyle: " daytrading " })], opt).kandidaten.length === 1, "LONG");
+      torPruefung("exits: das Fenster greift nicht",
+        X.auswahl([zeile()], { ...opt, tage: 3 }).ausgeschlossen.ausserhalbFenster === 1
+        && X.auswahl([zeile()], { ...opt, tage: 10 }).kandidaten.length === 1, "tage 3/10");
+      const viele = Array.from({ length: X.MAX_KANDIDATEN + 3 }, (_v, i) =>
+        zeile({ id: i, createdAt: new Date(T0 + i * 60_000) }));
+      const vA = X.auswahl(viele, opt);
+      torPruefung("exits: die Obergrenze verschweigt den Rest oder nimmt nicht die NEUESTEN",
+        vA.kandidaten.length === X.MAX_KANDIDATEN && vA.ausgeschlossen.ueberObergrenze === 3
+        && vA.kandidaten[0].id === X.MAX_KANDIDATEN + 2 && vA.kandidaten.every((k) => k.id >= 3),
+        `${vA.kandidaten.length}/${vA.ausgeschlossen.ueberObergrenze}/${vA.kandidaten[0]?.id}`);
+
+      // ── nachrechnen: BUY 100/99/102 (rr 2), SELL 100/101/98.
+      const K = (min, bh, bl, bc, ah, al, ac) => ({ t: T0 + min * 60_000,
+        bidHoch: bh, bidTief: bl, bidSchluss: bc, askHoch: ah, askTief: al, askSchluss: ac });
+      const buy = { id: 1, symbol: "X", epic: "X", richtung: "BUY", entry: 100, stop: 99, ziel: 102,
+        risiko: 1, rrGeplant: 2, stil: "DAYTRADING", horizontStunden: 24, eroeffnetMs: T0, istEtikett: null, istSchluss: null };
+      const sell = { ...buy, richtung: "SELL", stop: 101, ziel: 98 };
+      const ende = T0 + 24 * 3_600_000;
+      const n = (k, kz) => X.nachrechnen(k, kz, 5, ende);
+      const fall = (name, r, treffer, maxR, haltenR) => torPruefung(`exits: nachrechnen — ${name}`,
+        r.treffer === treffer && (maxR === undefined || Math.abs(r.maxR - maxR) < 1e-9)
+        && (haltenR === undefined || Math.abs(r.haltenR - haltenR) < 1e-9),
+        JSON.stringify(r));
+      fall("Ziel zuerst", n(buy, [K(5, 101, 99.5, 100.5, 101.1, 99.6, 100.6), K(10, 102.1, 100.5, 102, 102.2, 100.6, 102.1)]), "ZIEL", 2, 2);
+      // Der Lauf der STOP-Kerze zaehlt NICHT (101.8 > 101.5): Reihenfolge unbekannt.
+      fall("Stop zuerst, Lauf der Stop-Kerze ausgeschlossen",
+        n(buy, [K(5, 101.5, 99.6, 100, 101.6, 99.7, 100.1), K(10, 101.8, 98.9, 99, 101.9, 99, 99.1)]), "STOP", 1.5, -1);
+      fall("beide in einer Kerze = BEIDE, als Stop gewertet", n(buy, [K(5, 102.5, 98.5, 100, 102.6, 98.6, 100.1)]), "BEIDE", 0, -1);
+      // EINE KERZE VOR/AM EINSTIEG darf NIE zaehlen — sie traegt Kurse von
+      // vor dem Einstieg. Hier beruehrt sie den Stop.
+      fall("Kerzen vor dem Einstieg werden ignoriert",
+        n(buy, [K(0, 100.2, 98, 99, 100.3, 98.1, 99.1), K(4, 100.2, 98, 99, 100.3, 98.1, 99.1),
+          K(5, 100.5, 99.5, 100, 100.6, 99.6, 100.1), K(10, 102.1, 100, 102, 102.2, 100.1, 102.1)]), "ZIEL", 2, 2);
+      fall("keins bis zum Horizont = OFFEN, Halten am Geldkurs-Schluss",
+        n(buy, [K(5, 101.3, 99.5, 100, 101.4, 99.6, 100.1), K(10, 100.9, 99.8, 100.4, 101, 99.9, 100.5)]), "OFFEN", 1.3, 0.4);
+      fall("eine Kerze NACH dem Horizont zaehlt nicht",
+        n(buy, [K(5, 100.5, 99.5, 100.2, 100.6, 99.6, 100.3), K(24 * 60, 103, 100, 102.5, 103.1, 100.1, 102.6)]), "OFFEN", 0.5, 0.2);
+      fall("ohne Kerzen = KEINE_DATEN", n(buy, []), "KEINE_DATEN");
+      // BUY schliesst zum GELDKURS: der Briefkurs am Ziel ist KEIN Treffer.
+      fall("BUY prueft den Geldkurs, nicht den Briefkurs",
+        n(buy, [K(5, 101.9, 99.5, 100, 102.2, 99.6, 100.1)]), "OFFEN", 1.9);
+      fall("SELL Ziel am Briefkurs", n(sell, [K(5, 100.5, 97.5, 98, 100.6, 97.9, 98.1)]), "ZIEL", 2, 2);
+      fall("SELL Stop am Briefkurs", n(sell, [K(5, 100.9, 99.5, 100, 101.1, 99.6, 100.1)]), "STOP", 0, -1);
+      // SELL schliesst zum BRIEFKURS: ein Geldkurs am Ziel ist KEIN Treffer.
+      fall("SELL prueft den Briefkurs, nicht den Geldkurs",
+        n(sell, [K(5, 100.5, 97, 98.5, 100.6, 98.5, 98.6)]), "OFFEN", 1.5);
+      torPruefung("exits: istR rechnet falsch",
+        X.istR({ ...buy, istSchluss: 101.5 }) === 1.5 && X.istR({ ...sell, istSchluss: 100.5 }) === -0.5
+        && X.istR(buy) === null, "istR");
+
+      // ── exitBericht + exitsText
+      const E = (k, treffer, maxR, haltenR, extra = {}) => ({ kandidat: { ...buy, ...k },
+        nachrechnung: { treffer, maxR, haltenR, kerzenGenutzt: 5 }, datenGrund: null, gekappt: false, ...extra });
+      const erg = [
+        E({ istEtikett: "DAZWISCHEN", istSchluss: 100.3 }, "ZIEL", 2, 2),
+        E({ istEtikett: "STOP", istSchluss: 99 }, "STOP", 0.6, -1),
+        E({ istEtikett: "STOP", istSchluss: 99 }, "OFFEN", 1.1, 0.2),
+        E({ istEtikett: "DAZWISCHEN", istSchluss: null }, "BEIDE", 0, -1),
+        E({}, "KEINE_DATEN", null, null, { datenGrund: "HTTP 400" }),
+        E({}, "KEINE_DATEN", null, null, { datenGrund: "HTTP 400", gekappt: true }),
+      ];
+      const ausB = { gesamt: 9, kandidaten: new Array(6), ausgeschlossen: { ...gutA.ausgeschlossen, nichtAutoScan: 3 } };
+      const B = X.exitBericht(ausB, erg, { fensterTage: 60, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: 60, versatzMax: 60 });
+      torPruefung("exits: exitBericht zaehlt falsch",
+        B.treffer.ZIEL === 1 && B.treffer.STOP === 1 && B.treffer.OFFEN === 1 && B.treffer.BEIDE === 1
+        && B.treffer.KEINE_DATEN === 2 && B.bewertet === 4 && B.ohneDatenGruende[0]?.[0] === "HTTP 400"
+        && B.ohneDatenGruende[0]?.[1] === 2 && B.gekappt === 1
+        && B.lauf.ab05 === 3 && B.lauf.ab10 === 2 && B.lauf.ab15 === 1 && B.lauf.zielErreicht === 1 && B.lauf.mitWert === 4,
+        JSON.stringify({ t: B.treffer, l: B.lauf }));
+      // GEPAART: nur Trades mit BEIDEN Werten — der BEIDE-Fall hat keinen Schlusskurs.
+      torPruefung("exits: der Vergleich Halten/tatsaechlich ist nicht gepaart",
+        B.paar.n === 3 && Math.abs(B.paar.haltenR - (2 - 1 + 0.2) / 3) < 1e-9
+        && Math.abs(B.paar.istR - (0.3 - 1 - 1) / 3) < 1e-9, JSON.stringify(B.paar));
+      torPruefung("exits: 'Ziel zuerst, aber anders ausgestiegen' falsch",
+        B.zielAberVorherRaus.n === 1 && Math.abs(B.zielAberVorherRaus.istRSchnitt - 0.3) < 1e-9,
+        JSON.stringify(B.zielAberVorherRaus));
+      torPruefung("exits: die Kalibrierung zaehlt falsch (STOP-Etikett mit OFFEN darf NICHT passen)",
+        B.kalibrierung.stopEtikett === 2 && B.kalibrierung.davonStopGefunden === 1, JSON.stringify(B.kalibrierung));
+      const tB = X.exitsText(B);
+      torPruefung("exits: der Text nennt die Zahlen nicht",
+        /🎯 Ziel: 1\n/.test(tB) && /🛑 Stop: 1\n/.test(tB) && /keins bis zum Zeit-Exit: 1\n/.test(tB)
+        && /HTTP 400: 2/.test(tB) && /nicht auto-scan[^\n]*: 3/.test(tB) && /≥ 1\.0 R: 2\/4/.test(tB)
+        && /Etikett STOP → Stop auch nachgerechnet: 1\/2/.test(tB) && /60 min/.test(tB)
+        && /Nur 4 bewertete Trades/.test(tB) && /von Hand im Journal/i.test(tB),
+        tB.slice(0, 300));
+      // Die Ausschlusszeilen NAMENTLICH: genau so viele wie Zaehler > 0.
+      const ausZ = (tB.match(/^ {2}• /gm) ?? []).length;
+      torPruefung("exits: Ausschlusszeilen fehlen oder sind zu viele", ausZ === 1, `${ausZ}`);
+      // Gift im Abbruch-Grund (kommt aus dem Antwortkoerper des Brokers).
+      const gift = "<b>x</b>&y" + "z".repeat(400);
+      const voll = X.exitBericht({ ...ausB, ausgeschlossen: Object.fromEntries(X.AUSSCHLUESSE.map((a) => [a, 99999])) },
+        [...Array.from({ length: 10 }, (_v, i) => E({}, "KEINE_DATEN", null, null,
+          { datenGrund: `HTTP ${400 + i} ${"lang".repeat(20)}` })), ...Array.from({ length: 40 }, () => E({}, "OFFEN", 0.4, 0.1))],
+        { fensterTage: 99999, abbruch: gift, kerzenUnbrauchbar: 99999, versatzMin: -999, versatzMax: 999 });
+      const tV = X.exitsText(voll);
+      torPruefung("exits: der Abbruch-Grund geht roh ins HTML",
+        !tV.includes("<b>x</b>&y") && tV.includes("&lt;b&gt;x&lt;/b&gt;&amp;y"), "gift");
+      torPruefung("exits: der Text sprengt die Telegram-Grenze (4096) im Haertefall",
+        tV.length <= 3900, `${tV.length} Zeichen`);
+      torPruefung("exits: ab 30 bewerteten Trades steht trotzdem die Rausch-Warnung",
+        !/bewertete Trades — unter/.test(tV), "40 bewertet");
+
+      // ── exitLauf mit hineingereichten Abhaengigkeiten (kein Netz).
+      const kand = X.auswahl([0, 1, 2].map((i) => zeile({ id: i, createdAt: new Date(T0 + i * 3_600_000) })), opt).kandidaten;
+      // SELBSTPRUEFUNG der Testdaten (16.11.): ohne Kandidaten pruefen die
+      // Lauf-Tests darunter NICHTS. Gefunden im Sabotage-Lauf S18: ohne
+      // Export fehlten die Haltedauern, alle Zeilen fielen raus, und ein
+      // ungeschuetzter Zugriff liess den GANZEN Pruefer abstuerzen — ein
+      // Absturz verschluckt jeden anderen Befund von safety-nets mit.
+      torPruefung("exits: die Lauf-Testdaten ergeben keine 3 Kandidaten — dann beweisen "
+        + "die Lauf-Tests darunter nichts", kand.length === 3, `${kand.length} Kandidaten`);
+      const kerzenFuer = (k) => ({ prices: [P(X.utcParameter(k + 10 * 60_000), X.utcParameter(k + 70 * 60_000),
+        1.1105, 1.1106, 1.099, 1.0991, 1.11, 1.1101)] });
+      const lauf = async (antworten, kListe = kand) => {
+        const aufrufe = []; const pausen = [];
+        let i = 0;
+        const r = await EL.exports.exitLauf(kListe, {
+          kerzen: async (...a) => { aufrufe.push(a); const f = antworten[i++] ?? antworten[antworten.length - 1]; return f(a); },
+          warte: async (ms) => { pausen.push(ms); },
+          jetzt: () => T0 + 30 * 86_400_000,
+        });
+        return { r, aufrufe, pausen };
+      };
+      const ok = (a) => ({ ok: true, daten: kerzenFuer(Date.parse(`${a[2]}Z`)) });
+      {
+        const { r, aufrufe, pausen } = await lauf([ok]);
+        // Rueckfall 0, NICHT NaN: `utcParameter(NaN)` wirft einen RangeError.
+        const k0 = kand[0] ?? { eroeffnetMs: 0 };
+        torPruefung("exits: exitLauf ruft falsch ab (Anzahl, Pause, Parameter)",
+          r.ergebnisse.length === 3 && r.abrufe === 3 && aufrufe.length === 3
+          && pausen.length === 2 && pausen.every((p) => p === EL.exports.PAUSE_MS)
+          && aufrufe[0][0] === "EURUSD" && aufrufe[0][1] === "MINUTE_5"
+          && aufrufe[0][2] === X.utcParameter(k0.eroeffnetMs)
+          && aufrufe[0][3] === X.utcParameter(k0.eroeffnetMs + 24 * 3_600_000 + 5 * 60_000)
+          && aufrufe[0][4] === X.MAX_KERZEN && r.abbruch === null
+          && r.ergebnisse.every((e) => e.nachrechnung.treffer === "ZIEL") && r.versatzMin === 60,
+          JSON.stringify({ n: r.ergebnisse.length, a: aufrufe[0], p: pausen, t: r.ergebnisse.map((e) => e.nachrechnung.treffer) }));
+      }
+      for (const status of [401, 403, 429]) {
+        const { r, aufrufe } = await lauf([ok, () => ({ ok: false, status, error: "nein" })]);
+        torPruefung(`exits: HTTP ${status} bricht nicht ab (oder fragt weiter nach)`,
+          r.abbruch !== null && r.abbruch.includes(`HTTP ${status}`) && aufrufe.length === 2 && r.ergebnisse.length === 1,
+          JSON.stringify({ ab: r.abbruch, n: aufrufe.length }));
+      }
+      {
+        const { r, aufrufe } = await lauf([ok, () => ({ ok: false, status: 400, error: "alt" }), ok]);
+        torPruefung("exits: HTTP 400 bricht ab statt nur diesen Trade auszulassen",
+          r.abbruch === null && aufrufe.length === 3 && r.ergebnisse[1]?.nachrechnung.treffer === "KEINE_DATEN"
+          && r.ergebnisse[1]?.datenGrund === "HTTP 400", JSON.stringify(r.ergebnisse.map((e) => e.datenGrund)));
+      }
+      {
+        const netz = () => ({ ok: false, status: null, error: "ECONNRESET" });
+        const fuenf = X.auswahl([0, 1, 2, 3, 4].map((i) => zeile({ id: i, createdAt: new Date(T0 + i * 3_600_000) })), opt).kandidaten;
+        const { r, aufrufe } = await lauf([netz], fuenf);
+        torPruefung(`exits: ${EL.exports.NETZFEHLER_GRENZE} Netzfehler hintereinander brechen nicht ab`,
+          r.abbruch !== null && aufrufe.length === EL.exports.NETZFEHLER_GRENZE
+          && r.ergebnisse.length === EL.exports.NETZFEHLER_GRENZE
+          && r.ergebnisse.every((e) => e.datenGrund === "Netzfehler"), JSON.stringify({ ab: r.abbruch, n: aufrufe.length }));
+        const { r: r2 } = await lauf([netz, netz, ok, netz, netz], fuenf);
+        torPruefung("exits: ein gelungener Abruf setzt die Netzfehler-Folge nicht zurueck",
+          r2.abbruch === null && r2.ergebnisse.length === 5, String(r2.abbruch));
+      }
+      {
+        const tausend = (a) => ({ ok: true, daten: { prices: Array.from({ length: X.MAX_KERZEN }, (_v, i) =>
+          P(X.utcParameter(Date.parse(`${a[2]}Z`) + (i + 1) * 5 * 60_000), "x", 1.101, 1.1011, 1.0999, 1.1, 1.1, 1.1001)) } });
+        const { r } = await lauf([tausend], kand.slice(0, 1));
+        torPruefung("exits: ein Abruf am Kerzen-Hoechstwert wird nicht als 'gekappt' markiert",
+          r.ergebnisse[0]?.gekappt === true, String(r.ergebnisse[0]?.gekappt));
+      }
+
+      // ── Die Sperre liegt auf `global`: ZWEI Modulkopien, EINE Sperre.
+      {
+        const alt = global.__exits_laeuft_seit__;
+        const altWarn = console.warn;
+        try {
+          delete global.__exits_laeuft_seit__;
+          console.warn = () => {};
+          const A = EL.exports; const Bm = ladeLauf().exports;
+          const s1 = A.exitsSperreNehmen(1000);
+          const s2 = Bm.exitsSperreNehmen(2000);
+          Bm.exitsSperreFreigeben();
+          const s3 = A.exitsSperreNehmen(3000);
+          const s4 = Bm.exitsSperreNehmen(3000 + A.VERFALL_MS - 1);
+          const s5 = Bm.exitsSperreNehmen(3000 + A.VERFALL_MS + 1);
+          torPruefung("exits: die Sperre ist nicht zwischen Modulkopien geteilt (28.07.) oder verfaellt falsch",
+            s1.ok && !s2.ok && s2.seitMs === 1000 && s3.ok && !s4.ok && s5.ok, JSON.stringify([s1, s2, s3, s4, s5]));
+        } finally {
+          console.warn = altWarn;
+          if (alt === undefined) delete global.__exits_laeuft_seit__; else global.__exits_laeuft_seit__ = alt;
+        }
+      }
+
+      // ── capitalGetKerzen AUSGEFUEHRT: ein GET, richtige URL, Status zurueck.
+      {
+        const cl = ladeTsModul("lib/capital-com/capital-com-client.ts", KLIENT_ERSATZ);
+        const f = cl.exports?.capitalGetKerzen;
+        if (typeof f !== "function") {
+          torPruefung("exits: capitalGetKerzen fehlt im Client", false, cl.fehler ?? "kein Export");
+        } else {
+          const altF = global.fetch;
+          try {
+            let url = ""; let init = null;
+            global.fetch = async (u, i) => { url = String(u); init = i;
+              return { ok: true, status: 200, json: async () => ({ prices: [] }), text: async () => "" }; };
+            const r1 = await f("K", "C", "S", "GOLD", "MINUTE_5", "2026-11-10T10:00:00", "2026-11-11T10:05:00", 1000);
+            const q = new URL(url).searchParams;
+            torPruefung("exits: capitalGetKerzen fragt falsch an (Methode, URL, Kopf, Parameter)",
+              r1.ok === true && url.startsWith("https://demo-api-capital.backend-capital.com/api/v1/prices/GOLD?")
+              && (init?.method === undefined || init?.method === "GET")
+              && init?.headers?.["X-CAP-API-KEY"] === "K" && init?.headers?.CST === "C"
+              && init?.headers?.["X-SECURITY-TOKEN"] === "S"
+              && q.get("resolution") === "MINUTE_5" && q.get("max") === "1000"
+              && q.get("from") === "2026-11-10T10:00:00" && q.get("to") === "2026-11-11T10:05:00",
+              `${url} ${init?.method}`);
+            global.fetch = async () => ({ ok: false, status: 429, statusText: "Too Many", text: async () => "limit <x>", json: async () => ({}) });
+            const r2 = await f("K", "C", "S", "GOLD", "MINUTE_5", "a", "b", 10);
+            global.fetch = async () => { throw new Error("weg"); };
+            const r3 = await f("K", "C", "S", "GOLD", "MINUTE_5", "a", "b", 10);
+            torPruefung("exits: capitalGetKerzen gibt Status/Grund nicht zurueck",
+              r2.ok === false && r2.status === 429 && r2.error === "limit <x>"
+              && r3.ok === false && r3.status === null && r3.error === "weg", JSON.stringify([r2, r3]));
+          } finally { global.fetch = altF; }
+        }
+        const cSrc = bereinigeEx(read("frontend/lib/capital-com/capital-com-client.ts"));
+        const iK = cSrc.indexOf("export async function capitalGetKerzen(");
+        const iN = cSrc.indexOf("export async function capitalGetPrices(");
+        const kBlock = iK >= 0 && iN > iK ? cSrc.slice(iK, iN) : "";
+        torPruefung("exits: der Ausschnitt von capitalGetKerzen ist leer (Selbstpruefung)",
+          kBlock.includes("/prices/") && kBlock.includes("authHeaders("), `${iK}/${iN}`);
+        torPruefung("exits: capitalGetKerzen schreibt, ordert oder deutet die Zeit",
+          !/method:\s*"(POST|PUT|DELETE|PATCH)"/.test(kBlock) && !/brokerZeitNachUtc\(/.test(kBlock)
+          && !/capitalPlaceOrder|capitalClose|\/positions/.test(kBlock), "kBlock");
+      }
+
+      // ── Reinheit: keine Aussenwelt in den zwei Modulen.
+      for (const [datei, erlaubt] of [["frontend/lib/exit-messung/exit-messung.ts", 2], ["frontend/lib/exit-messung/exit-lauf.ts", 1]]) {
+        const s = bereinigeEx(read(datei));
+        torPruefung(`exits: ${datei} ist nicht rein`,
+          !/\bfetch\(|getPrisma|\$executeRaw|\$queryRaw|capitalPlaceOrder|brokerZeitNachUtc|Date\.now\(|new Date\(\)/.test(s)
+          && (s.match(/^import /gm) ?? []).length === erlaubt, datei);
+      }
+
+      // ── Die ANNAHMEN an ihren QUELLEN.
+      const trB = bereinigeEx(trSrc);
+      torPruefung("exits: die Notiz-Schluessel stimmen nicht mehr mit dem Tracker ueberein (30.09.)",
+        /broker: "Capital\.com DEMO",/.test(trB)
+        && /source: trade\.rekonstruiert \? "rekonstruiert-aus-position" : "auto-scan",/.test(trB)
+        && /tradingStyle: trade\.tradingStyle,/.test(trB) && /updatedMeta\.closeLevel = /.test(trB)
+        && /updatedMeta\.exitReason = exitReason;/.test(trB) && /icPositionId: trade\.icPositionId/.test(trB),
+        "Tracker-Notizen");
+      const emB = bereinigeEx(read("frontend/lib/exit-messung/exit-messung.ts"));
+      torPruefung("exits: die Auswahl liest andere Schluessel als der Tracker schreibt",
+        /m\.broker\.startsWith\("Capital\.com"\)/.test(emB) && /m\.source !== "auto-scan"/.test(emB)
+        && /m\.tradingStyle/.test(emB) && /m\.closeLevel/.test(emB) && /m\.exitReason/.test(emB)
+        && /m\.icPositionId/.test(emB) && /o\.snapshotTimeUTC/.test(emB), "Auswahl");
+      // WER UEBERSCHREIBT stopLoss? Die Messung haengt daran, dass der Stop
+      // einer Capital-auto-scan-Zeile der URSPRUENGLICHE ist. Heute gibt es
+      // genau ZWEI rohe Schreiber (IC-Manager, an `icPositionId` gebunden)
+      // und den PATCH der Journal-Seite (von Hand, benannte Grenze). Kommt
+      // ein dritter dazu, wird das hier rot.
+      const schreiber = [];
+      const tsDateien = sourceFiles([".ts"]).filter((p) => p.startsWith("frontend/") && !/\/generated\//.test(p));
+      // Selbstpruefung: der Scan sieht die Dateien ueberhaupt (sonst waere
+      // eine leere Liste "kein Schreiber" statt "nichts gelesen").
+      torPruefung("exits: der stopLoss-Scan sieht die Quelldateien nicht",
+        tsDateien.includes("frontend/lib/icmarkets/icmarkets-trade-manager.ts") && tsDateien.length > 100,
+        `${tsDateien.length} Dateien`);
+      for (const f of tsDateien) {
+        const s = bereinigeEx(read(f));
+        const roh = (s.match(/UPDATE "Trade" SET[^`]*"stopLoss"/g) ?? []).length;
+        const pr = /trade\.(update|updateMany|upsert)\(/.test(s) && /stopLoss/.test(s) ? 1 : 0;
+        if (roh + pr > 0) schreiber.push(`${f}:${roh}+${pr}`);
+      }
+      torPruefung("exits: es gibt einen NEUEN Schreiber von stopLoss — dann misst /exits mit einem "
+        + "veraenderten Stop", JSON.stringify(schreiber.sort()) === JSON.stringify([
+          "frontend/app/api/trades/[id]/route.ts:0+1",
+          "frontend/lib/icmarkets/icmarkets-trade-manager.ts:2+0"]), JSON.stringify(schreiber));
+      const imB = bereinigeEx(read("frontend/lib/icmarkets/icmarkets-trade-manager.ts"));
+      torPruefung("exits: der IC-Manager findet seine Zeilen nicht mehr ueber icPositionId",
+        /notes LIKE '%icPositionId%'/.test(imB), "LIKE icPositionId");
+
+      // ── Die Verdrahtung im Webhook: die ECHTEN Quellen gehen hinein.
+      const whSrc = bereinigeEx(read("frontend/app/api/telegram/webhook/route.ts"));
+      const iA = whSrc.indexOf('if (textLower === "/exits" || textLower.startsWith("/exits "))');
+      const iB = whSrc.indexOf('if (textLower === "/help")');
+      const exB = iA >= 0 && iB > iA ? whSrc.slice(iA, iB) : "";
+      torPruefung("exits: der /exits-Zweig fehlt oder steht nach /help (Selbstpruefung)", exB.length > 500, `${iA}/${iB}`);
+      torPruefung("exits: der Webhook reicht nicht die ECHTEN Quellen durch",
+        /haltedauer: STYLE_MAX_HOURS,/.test(exB) && /ohneErgebnis: ETIKETTEN_OHNE_ERGEBNIS,/.test(exB)
+        && /epicMap: EPIC_MAP,/.test(exB) && /from "@\/lib\/agents\/risk-agent"|import\("@\/lib\/agents\/risk-agent"\)/.test(exB)
+        && /import\("@\/lib\/capital-com\/capital-trade-tracker"\)/.test(exB)
+        && /import\("@\/lib\/capital-com\/capital-com-client"\)/.test(exB), "Quellen");
+      torPruefung("exits: der /exits-Zweig schreibt, ordert oder schliesst",
+        !/\$executeRaw|\.update\(|\.create\(|\.delete\(|\.upsert\(|capitalPlaceOrder|capitalClose|triggerKillswitch/.test(exB), "Schreibzugriff");
+      torPruefung("exits: /exits steht nicht in der Hilfe", /"\/exits — /.test(whSrc), "SYSTEM_BEFEHLE");
+
+      // ── END-TO-END durch die echte POST (mit after(), Sperre, Spion).
+      {
+        const chat = "123456789";
+        const altEnv = { TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID, TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN };
+        const altFetch = global.fetch;
+        const altSperre = global.__exits_laeuft_seit__;
+        const antworten = [];
+        try {
+          process.env.TELEGRAM_CHAT_ID = chat;
+          process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
+          delete global.__exits_laeuft_seit__;
+          global.fetch = async (_u, init) => {
+            antworten.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+            return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: {} }), json: async () => ({ ok: true }) };
+          };
+          let sitzung = { apiKey: "k", cst: "c", securityToken: "s" };
+          let zeilenDb = [];
+          let findAufrufe = 0; let findArgs = null;
+          const schreibversuche = [];
+          const kerzenAufrufe = [];
+          let kerzenAntwort = () => ({ ok: true, daten: { prices: [] } });
+          const nachher = [];
+          const tradeSpion = new Proxy({}, { get: (_t, p) => {
+            if (p === "findMany") return async (a) => { findAufrufe++; findArgs = a; return zeilenDb; };
+            if (typeof p === "symbol" || p === "then") return undefined;
+            return async () => { schreibversuche.push(`trade.${String(p)}`); return null; };
+          } });
+          const prismaSpion = new Proxy({}, { get: (_t, p) => {
+            if (p === "trade") return tradeSpion;
+            if (typeof p === "symbol" || p === "then") return undefined;
+            return async () => { schreibversuche.push(String(p)); return null; };
+          } });
+          const wh = ladeTsModul("app/api/telegram/webhook/route.ts", {
+            "next/server": { NextResponse: { json: (x) => ({ __json: x }) }, after: (fn) => { nachher.push(fn); } },
+            "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml, sendTelegram: async () => true,
+              telegramZeit: () => "16.11.2026, 20:00:00 MEZ", telegramDatum: () => "16.11.2026" },
+            "html-sicher/html-sicher": htmlSicherEcht,
+            "app/lib/prisma": { getPrisma: () => prismaSpion },
+            "capital-com/capital-com-session": { getCapitalSession: () => sitzung },
+            "agents/risk-agent": { STYLE_MAX_HOURS: haltedauer },
+            "capital-com/capital-trade-tracker": { ETIKETTEN_OHNE_ERGEBNIS: etiketten },
+            "capital-com/capital-com-client": { EPIC_MAP: { EURUSD: "EURUSD", GOLD: "GOLD" },
+              capitalGetKerzen: async (...a) => { kerzenAufrufe.push(a); return kerzenAntwort(a); } },
+            "exit-messung/exit-messung": EM.exports,
+            "exit-messung/exit-lauf": ladeLauf().exports,
+          });
+          if (wh.fehler || typeof wh.exports?.POST !== "function") {
+            torPruefung("exits: der Webhook ist nicht ausfuehrbar", false, wh.fehler ?? "POST fehlt");
+          } else {
+            const schicke = (text) => wh.exports.POST({ json: async () => ({ message: {
+              chat: { id: Number(chat) }, from: { first_name: "P" }, text } }) });
+            const abarbeiten = async () => { while (nachher.length) await nachher.shift()(); };
+            const letzte = () => antworten.at(-1) ?? "";
+            const jetzt = Date.now();
+            const offen = [jetzt - 3 * 86_400_000, jetzt - 2 * 86_400_000, jetzt - 86_400_000 * 1.5];
+            const dbZeile = (i, o = {}, nn = {}) => zeile({ id: i, createdAt: new Date(offen[i]), ...o }, nn);
+            const dbGut = [
+              dbZeile(0),                                                      // Ziel
+              dbZeile(1),                                                      // Stop
+              dbZeile(2, { market: "GOLD", direction: "SELL", entry: 2000, stopLoss: 2010, takeProfit: 1980 }),
+              dbZeile(0, {}, { broker: "IC_MARKETS" }),                        // ausgeschlossen
+            ];
+            const kerzenJe = (a) => {
+              const von = Date.parse(`${a[5]}Z`); const t = X.utcParameter(von + 10 * 60_000);
+              const i = offen.findIndex((o) => X.utcParameter(o) === a[5]);
+              if (i === 0) return { ok: true, daten: { prices: [P(t, t, 1.1105, 1.1106, 1.0995, 1.0996, 1.11, 1.1101)] } };
+              if (i === 1) return { ok: true, daten: { prices: [P(t, t, 1.101, 1.1011, 1.0949, 1.095, 1.095, 1.0951)] } };
+              return { ok: true, daten: { prices: [P(t, t, 2004, 2005, 1995, 1996, 2000, 2001)] } };
+            };
+
+            // 1) unbrauchbares Argument: abgewiesen, KEIN Echo, nichts gelesen.
+            await schicke("/exits 1e5");
+            torPruefung("exits E2E: ein unbrauchbares Argument wird nicht abgewiesen oder ECHOT",
+              /keine Anzahl Tage/.test(letzte()) && !letzte().includes("1e5") && findAufrufe === 0
+              && nachher.length === 0, letzte().slice(0, 120));
+
+            // 2) ohne Sitzung: sofort ehrlich, KEINE Sperre, KEINE Datenbank.
+            sitzung = null;
+            await schicke("/exits");
+            torPruefung("exits E2E: ohne Sitzung kein ehrlicher Abbruch",
+              /keine Broker-Sitzung/.test(letzte()) && findAufrufe === 0 && nachher.length === 0
+              && (global.__exits_laeuft_seit__ ?? null) === null, letzte().slice(0, 120));
+            sitzung = { apiKey: "k", cst: "c", securityToken: "s" };
+
+            // 3) keine Kandidaten: direkter Bericht, Sperre wieder frei.
+            zeilenDb = [dbGut[3]];
+            await schicke("/exits");
+            torPruefung("exits E2E: ohne Kandidaten kein direkter Bericht oder Sperre haengt",
+              /Auswahl:<\/b> 0 von 1/.test(letzte()) && nachher.length === 0 && kerzenAufrufe.length === 0
+              && (global.__exits_laeuft_seit__ ?? null) === null, letzte().slice(0, 160));
+
+            // 4) der Normalfall: sofortige Antwort, Arbeit in after(), Sperre.
+            zeilenDb = dbGut; kerzenAntwort = kerzenJe;
+            const vorFind = findAufrufe;
+            await schicke("/exits");
+            const start = letzte();
+            const gesperrt = typeof global.__exits_laeuft_seit__ === "number";
+            await schicke("/exits");
+            const zweite = letzte();
+            torPruefung("exits E2E: der Start antwortet nicht SOFORT, oder die Arbeit liegt nicht in after()",
+              /läuft: 3 Trades/.test(start) && nachher.length === 1 && kerzenAufrufe.length === 0 && gesperrt,
+              start.slice(0, 120));
+            torPruefung("exits E2E: ein zweites /exits laeuft NEBEN dem ersten",
+              /läuft schon seit/.test(zweite) && nachher.length === 1 && findAufrufe === vorFind + 1, zweite.slice(0, 120));
+            await abarbeiten();
+            const ergebnis = letzte();
+            torPruefung("exits E2E: das Ergebnis stimmt nicht (Ziel/Stop/OFFEN je 1)",
+              /🎯 Ziel: 1\n/.test(ergebnis) && /🛑 Stop: 1\n/.test(ergebnis)
+              && /keins bis zum Zeit-Exit: 1\n/.test(ergebnis) && /Auswahl:<\/b> 3 von 4/.test(ergebnis)
+              && /nicht Capital\.com: 1/.test(ergebnis) && kerzenAufrufe.length === 3
+              && kerzenAufrufe.every((a) => a[0] === "k" && a[1] === "c" && a[2] === "s"),
+              ergebnis.slice(0, 400));
+            torPruefung("exits E2E: die Sperre wird nach dem Lauf nicht freigegeben",
+              (global.__exits_laeuft_seit__ ?? null) === null, String(global.__exits_laeuft_seit__));
+            const sel = findArgs?.select ?? {};
+            torPruefung("exits E2E: die Abfrage liest falsch (Filter oder Spalten)",
+              findArgs?.where?.status?.not === "OPEN"
+              && JSON.stringify(Object.keys(sel).sort()) === JSON.stringify(
+                ["createdAt", "direction", "entry", "id", "market", "notes", "stopLoss", "takeProfit"]),
+              JSON.stringify(findArgs));
+
+            // 5) Sitzung faellt WAEHREND des Laufs weg: Abbruch MIT Grund.
+            kerzenAufrufe.length = 0;
+            kerzenAntwort = (a) => { sitzung = null; return kerzenJe(a); };
+            await schicke("/exits");
+            await abarbeiten();
+            torPruefung("exits E2E: eine weggefallene Sitzung wird nicht als Abbruch gemeldet",
+              /Abgebrochen:/.test(letzte()) && /weggefallen/.test(letzte()) && kerzenAufrufe.length === 1
+              && (global.__exits_laeuft_seit__ ?? null) === null, letzte().slice(0, 300));
+            sitzung = { apiKey: "k", cst: "c", securityToken: "s" };
+
+            // 6) der Lauf WIRFT: Meldung entschaerft, Sperre trotzdem frei.
+            kerzenAntwort = () => { throw new Error("<b>kaputt</b>"); };
+            await schicke("/exits");
+            await abarbeiten();
+            torPruefung("exits E2E: ein Wurf im Lauf meldet sich nicht (entschaerft) oder haelt die Sperre",
+              /\/exits fehlgeschlagen/.test(letzte()) && letzte().includes("&lt;b&gt;kaputt")
+              && (global.__exits_laeuft_seit__ ?? null) === null, letzte().slice(0, 200));
+
+            torPruefung("exits E2E: /exits hat in die Datenbank GESCHRIEBEN",
+              schreibversuche.length === 0, JSON.stringify(schreibversuche));
+            await schicke("/help");
+            torPruefung("exits E2E: /help nennt /exits nicht", /\/exits — /.test(letzte()), "help");
+          }
+        } finally {
+          global.fetch = altFetch;
+          for (const [k, v] of Object.entries(altEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+          if (altSperre === undefined) delete global.__exits_laeuft_seit__; else global.__exits_laeuft_seit__ = altSperre;
+        }
+      }
+    }
+  }
+
 
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,

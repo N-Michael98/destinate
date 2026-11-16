@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 361 · Kanten: 912
+Dateien mit internen Abhängigkeiten: 363 · Kanten: 920
 
 
 ## analysis-engine/api
@@ -449,14 +449,19 @@ Dateien mit internen Abhängigkeiten: 361 · Kanten: 912
 - `frontend/app/api/telegram/webhook/route.ts`
   - → `frontend/app/lib/prisma.ts`
   - → `frontend/lib/agents/orchestrator-agent.ts`
+  - → `frontend/lib/agents/risk-agent.ts`
   - → `frontend/lib/analysis-engine/overrides-store.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/capital-com/capital-com-client.ts`
   - → `frontend/lib/capital-com/capital-com-session.ts`
+  - → `frontend/lib/capital-com/capital-trade-tracker.ts`
+  - → `frontend/lib/exit-messung/exit-lauf.ts`
+  - → `frontend/lib/exit-messung/exit-messung.ts`
   - → `frontend/lib/expectancy/erwartungswert.ts`
   - → `frontend/lib/handels-lage/handels-lage.ts`
   - → `frontend/lib/handelsfenster/fenster-text.ts`
   - → `frontend/lib/hebel/hebel.ts`
+  - → `frontend/lib/html-sicher/html-sicher.ts`
   - → `frontend/lib/icmarkets/icmarkets-client.ts`
   - → `frontend/lib/icmarkets/icmarkets-session.ts`
   - → `frontend/lib/killswitch/index.ts`
@@ -897,6 +902,11 @@ Dateien mit internen Abhängigkeiten: 361 · Kanten: 912
 - `frontend/lib/execution-queue-position-sync/index.ts`
   - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-engine.ts`
   - → `frontend/lib/execution-queue-position-sync/execution-queue-position-sync-types.ts`
+- `frontend/lib/exit-messung/exit-lauf.ts`
+  - → `frontend/lib/exit-messung/exit-messung.ts`
+- `frontend/lib/exit-messung/exit-messung.ts`
+  - → `frontend/lib/html-sicher/html-sicher.ts`
+  - → `frontend/lib/richtung/richtung.ts`
 - `frontend/lib/expectancy/erwartungswert.ts`
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
 - `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
@@ -1336,9 +1346,9 @@ Dateien mit internen Abhängigkeiten: 361 · Kanten: 912
 - `frontend/lib/cache/redis-cache.ts` — von 16 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
+- `frontend/lib/richtung/richtung.ts` — von 14 Dateien
 - `frontend/lib/capital-com/capital-com-client.ts` — von 14 Dateien
 - `backend/services/market_data.py` — von 13 Dateien
-- `frontend/lib/richtung/richtung.ts` — von 13 Dateien
 - `frontend/lib/settings/settings-store.ts` — von 12 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien

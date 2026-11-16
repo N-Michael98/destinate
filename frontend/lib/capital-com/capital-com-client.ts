@@ -565,6 +565,49 @@ export async function capitalGetAccounts(
   }
 }
 
+/**
+ * KERZEN-HISTORIE fuer `/exits` (16.11.) — REINE LESUNG.
+ *
+ * `GET /prices/{epic}` laut offizieller Doku: `resolution` MINUTE … WEEK,
+ * `max` hoechstens 1000, `from`/`to` im Format YYYY-MM-DDTHH:MM:SS und nach
+ * `snapshotTimeUTC` gefiltert. Ein GET, keine Order, kein Stop.
+ *
+ * Bewusst HIER und nicht in einem eigenen Modul: Basis-URL, Header und die
+ * Epic-Tabelle gibt es genau einmal. Die Antwort wird NICHT gedeutet — das
+ * tut `kerzenLesen()` in `lib/exit-messung/`, wo es rechnend geprueft wird.
+ * `brokerZeitNachUtc()` gehoert hier ausdruecklich NICHT hin: sie liest eine
+ * zonenlose Zeit als Zuercher Ortszeit, `snapshotTimeUTC` ist aber schon UTC.
+ *
+ * Der Status geht mit zurueck, damit der Aufrufer 401/429 (abbrechen) von
+ * 400/404 (dieser eine Trade hat keine Daten) unterscheiden kann.
+ */
+export async function capitalGetKerzen(
+  apiKey: string,
+  cst: string,
+  securityToken: string,
+  epic: string,
+  aufloesung: string,
+  vonUtc: string,
+  bisUtc: string,
+  max: number,
+): Promise<{ ok: true; daten: unknown } | { ok: false; status: number | null; error: string }> {
+  try {
+    const q = new URLSearchParams({ resolution: aufloesung, max: String(max), from: vonUtc, to: bisUtc });
+    const res = await fetch(`${DEMO_BASE}/prices/${encodeURIComponent(epic)}?${q.toString()}`, {
+      headers: authHeaders(apiKey, cst, securityToken),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      // Den Grund NICHT wegwerfen (22.09.): Capital.com nennt ihn im Koerper.
+      const koerper = await res.text().catch(() => "");
+      return { ok: false, status: res.status, error: koerper.slice(0, 200) || res.statusText || "ohne Antworttext" };
+    }
+    return { ok: true, daten: (await res.json()) as unknown };
+  } catch (err) {
+    return { ok: false, status: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function capitalGetPrices(
   apiKey: string,
   cst: string,

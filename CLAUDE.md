@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -5917,6 +5917,142 @@ bezog `ki-antwort` schon), `tsc` **0 Fehler**, Build *Compiled successfully*.
 | **Der IC-Pfad hat den schwächeren Stop-Riegel:** `icmarkets-execution.ts:211` prüft `req.stopLossPrice > 0` statt `ordersRiegel`. Ein String `"1.05"` käme dort durch | Aussenwirkung an einem **Order-Pfad**, und die Regel lautet „eine Sache auf einmal". Heute ohne Folge: Ausführung AUS, Route **403** seit 14.11., leere Sitzung — aber es ist **nicht** derselbe Riegel, und das gehört in eine eigene Runde |
 | `prompt-zahlen.js:182` und `:192` benutzen weiter **1800-Zeichen-Fenster** ab `if (raw === null)` | Sie messen den `if`-Zweig, den diese Runde nicht berührt, und sind grün. Beide auf Klammerzählung umzubauen ist eine eigene Runde |
 | `parseJSON` bleibt ein **Cast** | Ihn in eine prüfende Funktion umzubauen hiesse, jeden seiner Aufrufer anzufassen. Die Riegel sitzen jetzt dort, wo die Werte **gelesen** werden — die Stelle, an der die Zusicherung gilt (Regel 24.08.) |
+
+## Wie weit lief der Kurs wirklich? `/exits` (16.11.)
+
+`/edge` sagt: **0 von 124** Trades erreichen ihr Ziel, ein Gewinner bringt
+0.37 R. Offen blieb die Frage davor: kam der **Kurs** nie dorthin, oder ist
+**unsere Ausstiegslogik** vorher ausgestiegen? Nur die Antwort darauf sagt,
+ob `exitThresholdsRelativeToStop` etwas ändern würde.
+
+`/exits` (bzw. `/exits 60`) läuft für jeden geeigneten Trade die Kerzen von
+Capital.com ab — **mit dem ursprünglichen Stop und Ziel**, bis zum ersten
+Treffer oder bis zum Zeit-Exit des Stils — und nennt: was zuerst berührt
+wurde, wie weit der Kurs vor dem Stop lief (≥ 0.5 / 1 / 1.5 R / Ziel), und
+„bis Stop/Ziel gehalten" gegen tatsächlich realisiert, **gepaart** (nur
+Trades mit beiden Werten — sonst vergliche man zwei Mengen).
+
+**Reine Lesung.** Keine Order, kein Stop, keine Einstellung, **kein
+Schreibzugriff** auf die Datenbank — der Prüfstand fährt die echte `POST`
+gegen einen Datenbank-Spion, der jeden Schreibversuch festhält. Es
+simuliert **nicht** unsere Ausstiegslogik (dafür bräuchte es den ATR zum
+damaligen Zeitpunkt); es misst, was der Kurs tat.
+
+### Warum es vorher nicht rechenbar war
+
+- Der Kursverlauf **während** eines Trades wird nirgends gespeichert —
+  `exitPosition` sagt nur, wo er **endete**.
+- `GET /api/v1/prices/{epic}` (offizielle Doku: MINUTE … WEEK, `max` ≤ 1000,
+  10 Anfragen/s je Nutzer) wurde im Programm **nirgends** benutzt.
+  `capitalGetPrices` holt nur den aktuellen Kurs. Neu: `capitalGetKerzen()`
+  im Client — ein GET, sonst nichts.
+- Die lokalen `dev.db` sind SQLite-Reste aus Mai/Juni (4 Trades); das Schema
+  ist PostgreSQL. Die echten Trades liegen nur auf dem Server — deshalb läuft
+  die Messung **dort**, wo Datenbank und Sitzung schon sind.
+
+### Die Auswahl — jeder Ausschluss gezählt und namentlich
+
+Nur Zeilen, deren 1 R stimmt. Ausgeschlossen und **gezählt**: unlesbare
+Notizen, nicht Capital.com, **mit `icPositionId`**, nicht `auto-scan`,
+`NIE_BESTAETIGT`/`KEIN_PNL`, Richtung unlesbar, Preise unbrauchbar oder auf
+der falschen Seite, Stil unbekannt, Markt ohne Epic, ohne Datum, ausserhalb
+des Fensters, über der Obergrenze (400, die neuesten zuerst).
+
+**Der Fall, den mein erster Entwurf übersah:** wurde ein Trade **auch bei
+IC** ausgeführt, schreibt der Tracker `icPositionId` in **dieselbe** Capital-
+Zeile (`capital-trade-tracker.ts:244`) — und der IC-Manager überschreibt
+dann **ihren** `stopLoss` mit dem IC-Trailing (`icmarkets-trade-manager.ts`,
+`notes LIKE '%icPositionId%'`). `broker` und `source` sehen dabei ganz normal
+aus. Gefunden, weil ich nach **allen** Schreibern von `stopLoss` gesucht
+habe statt nach dem einen, den ich kannte.
+
+**Und eine Grenze, die kein Filter schliesst:** `PATCH /api/trades/[id]`
+(Journal-Seite) ändert Einstieg/Stop/Ziel **ohne** Markierung in den Notizen.
+Eine so geänderte Zeile ist nicht erkennbar — deshalb steht es in der
+Antwort selbst, statt verschwiegen zu werden.
+
+### Zeit — die Falle vom 22.09., diesmal in der Gegenrichtung
+
+`snapshotTimeUTC` trägt **keine** Zonenangabe (Doku-Beispiel
+`"2022-04-06T13:18:00"`) und ist trotzdem UTC. `brokerZeitNachUtc()` wäre
+hier **falsch**: sie liest eine zonenlose Zeit als Zürcher Ortszeit und
+verschöbe jede Kerze um 1–2 Stunden. `utcOhneZone()` liest sie als UTC — und
+der Bericht **misst** in jedem Lauf `snapshotTime − snapshotTimeUTC`. Kommt
+dort nicht 60 bzw. 120 Minuten heraus, stimmt die Annahme nicht.
+
+Der Horizont ist der Zeit-Exit des Stils (`STYLE_MAX_HOURS`, jetzt
+exportiert — eine Kopie wäre eine zweite Wahrheit). Die **echte**
+Schlusszeit wird nicht gebraucht, und das ist Absicht: `closedAt` und
+`updatedAt` halten nur fest, wann **unser** Abgleich den Schluss bemerkt hat.
+
+### Ehrliche Grenzen (stehen auch in der Antwort)
+
+- **Kerzen statt Ticks:** berühren Stop und Ziel dieselbe Kerze, ist die
+  Reihenfolge unbekannt — eigene Zahl, im R **als Stop** gewertet, und ihr
+  Lauf geht nicht in den maximalen Lauf ein.
+- **Die Einstiegskerze fehlt:** die erste Kerze zählt erst eine Kerzenlänge
+  **nach** der Eröffnung. Ob `snapshotTimeUTC` Beginn oder Ende der Kerze ist,
+  sagt die Doku nicht ausdrücklich; so liegt in beiden Lesarten kein Kurs von
+  **vor** dem Einstieg in der Rechnung.
+- **Welcher Kurs löst aus:** BUY gegen den Geldkurs, SELL gegen den
+  Briefkurs — **nicht belegt**. Deshalb die Selbstprüfung im Bericht: bei
+  Trades mit Etikett `STOP` muss die Nachrechnung einen Stop finden.
+- **Kein Schlupf.** Ein Deploy mitten im Lauf bricht die Messung ab.
+
+### Ablauf
+
+Antwortet **sofort** („läuft: N Trades"), die Arbeit läuft in `after()` aus
+`next/server` — laut mitgelieferter Next-16.2.6-Doku beim Selbst-Hosting mit
+`next start` voll unterstützt. Telegram bekommt seine 200 gleich und schickt
+die Nachricht nicht ein zweites Mal. Abrufe **nacheinander**, höchstens 2/s
+(das Kontingent teilen wir mit den Handelsschleifen). 401/403/429 brechen ab
+**mit Grund** und Teilergebnis; 400 lässt nur diesen Trade aus; drei
+Netzfehler hintereinander brechen ab. Die Sitzung wird **je Abruf** frisch
+gelesen — fällt sie weg, ist das ein Abbruch, kein stilles Leerergebnis.
+Eine Sperre auf `global` (Regel 28.07./17.09.) verhindert zwei Läufe; sie
+verfällt nach 30 Minuten, falls ein Neustart sie verwaist zurücklässt.
+
+### Absicherung
+
+`safety-nets` **rechnet** (1568 → **1674**): `utcOhneZone` an acht Lagen, die
+Auflösung je Stil aus den **echten** Haltedauern, `kerzenLesen` an
+unsortierten und kaputten Kerzen, **jeder** Ausschluss einzeln, die
+Nachrechnung an absichtlich unbequemen Kerzen (eine Kerze **vor** dem
+Einstieg berührt den Stop und darf nicht zählen; BUY/SELL gegen die
+**falsche** Kursseite), Bericht und Text samt Gift im Abbruch-Grund und
+Telegram-Länge im Härtefall, der Ablauf mit gezählten Abrufen, die Sperre
+über **zwei** Modulkopien, `capitalGetKerzen` **ausgeführt**, und
+**End-to-End** durch die echte `POST`. Dazu die Annahmen an ihren
+**Quellen**: die Notiz-Schlüssel gegen den Tracker, und **alle** Schreiber
+von `stopLoss` gezählt — kommt ein dritter dazu, wird es rot.
+
+**25 von 25 Sabotagen** plus Gegenprobe — aber erst im **zweiten** Lauf.
+
+Der erste ergab 24 von 25: **S18** (Export vor `STYLE_MAX_HOURS` entfernt)
+wurde rot, aber aus dem **falschen Grund**. Der Prüfer fand dann keine
+Haltedauern, die Auswahl verwarf jede Testzeile, und ein ungeschützter
+Zugriff (`r.ergebnisse[0].gekappt`) liess **den ganzen Prüfer abstürzen**.
+„Rot" stimmte zufällig — aber ein Absturz verschluckt **jeden anderen**
+Befund von `safety-nets` mit, auch fremde. Jetzt prüfen die Testdaten sich
+selbst (ohne drei Kandidaten wird es rot, mit Grund), die abhängigen
+Zugriffe sind abgesichert, und S18 meldet sich als **erster** Befund mit
+seinem eigenen Text. Weil der Prüfer sich geändert hatte, lief die **ganze**
+Suite noch einmal, nicht nur S18.
+
+**Zwei weitere eigene Fehler, beide vor dem ersten Lauf gefangen:** `htmlSicher`
+und `after` waren im Webhook nicht importiert (beim Gegenlesen gesehen), und
+mein stopLoss-Scan rief `sourceFiles` mit falscher Signatur auf — er hätte
+ins Leere gesucht. Er trägt jetzt eine Selbstprüfung, dass er die Quelldateien
+überhaupt sieht.
+
+### Was es NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife. `exitThresholdsRelativeToStop` bleibt **aus**:
+die Messung ist die Grundlage für diese Entscheidung, nicht die
+Entscheidung. Eingriff in zwei Hochrisiko-Dateien, beide rein additiv:
+`capitalGetKerzen()` (neu) und `export` vor `STYLE_MAX_HOURS` (Wert
+unverändert, Snapshot `haltedauer`). **Snapshot 299 Werte unverändert.**
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

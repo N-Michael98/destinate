@@ -103,7 +103,10 @@ const BE_TOLERANCE: Record<string, number> = {
   BTCUSD: 10, ETHUSD: 1,
 };
 
-const STYLE_MAX_HOURS: Record<string, number> = {
+// EXPORTIERT fuer `/exits` (16.11.): die Nachrechnung braucht den Zeit-Exit
+// je Stil als Horizont. Eine Kopie dort waere eine zweite Wahrheit; der Wert
+// selbst ist unveraendert und steht im Snapshot (`haltedauer`).
+export const STYLE_MAX_HOURS: Record<string, number> = {
   SCALPING: 4, DAYTRADING: 24, SWING: 168,
 };
 
