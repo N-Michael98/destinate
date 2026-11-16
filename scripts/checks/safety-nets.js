@@ -14202,6 +14202,75 @@ module.exports = async function pruefe() {
       torPruefung("exits: ab 30 bewerteten Trades steht trotzdem die Rausch-Warnung",
         !/bewertete Trades — unter/.test(tV), "40 bewertet");
 
+      // ── AUFSCHLUESSELUNG je Stil und Richtung (16.11.). ABSICHTLICH gemischt:
+      // drei Stile + ein unbekannter (muss ANS ENDE), beide Richtungen, ein
+      // BEIDE-Fall, ein Trade ohne Schlusskurs (faellt aus dem Paar) und zwei
+      // ohne Kursdaten (duerfen in KEINER Gruppe auftauchen).
+      const ergG = [
+        E({ stil: "SWING", richtung: "SELL", istSchluss: 100.5 }, "STOP", 0.4, -1),
+        E({ stil: "XYZ", richtung: "BUY", istSchluss: 100 }, "OFFEN", 0.2, 0.1),
+        E({ stil: "SCALPING", richtung: "BUY", istSchluss: 101 }, "ZIEL", 2, 2),
+        // istSchluss 100.5 (istR 0.5) ABSICHTLICH ungleich haltenR 0.3 — sonst
+        // waeren „gehalten" und „tatsaechlich" in der Gruppe gleich, und ein
+        // Vertauschen der beiden Werte in der Ausgabe bliebe gruen.
+        E({ stil: "DAYTRADING", richtung: "BUY", istSchluss: 100.5 }, "OFFEN", 1.2, 0.3),
+        E({ stil: "DAYTRADING", richtung: "SELL", istSchluss: null }, "BEIDE", 0, -1),
+        E({ stil: "DAYTRADING", richtung: "BUY", istSchluss: 99 }, "STOP", 1.0, -1),
+        E({ stil: "SWING", richtung: "BUY" }, "KEINE_DATEN", null, null, { datenGrund: "HTTP 400" }),
+        E({ stil: "SCALPING", richtung: "SELL" }, "KEINE_DATEN", null, null, { datenGrund: "leer" }),
+      ];
+      const BG = X.exitBericht(ausB, ergG, { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null });
+      torPruefung("exits: die Stil-Reihenfolge stimmt nicht (bekannte zuerst, unbekannte ans Ende)",
+        JSON.stringify(BG.nachStil.map((g) => g.name)) === JSON.stringify(["SCALPING", "DAYTRADING", "SWING", "XYZ"])
+        && JSON.stringify(BG.nachRichtung.map((g) => g.name)) === JSON.stringify(["BUY", "SELL"]),
+        JSON.stringify([BG.nachStil.map((g) => g.name), BG.nachRichtung.map((g) => g.name)]));
+      // SUMMENPROBE: die Gruppen muessen sich EXAKT zur Gesamtzeile addieren —
+      // je Aufschluesselung einzeln (ein Treffer beweist nichts ueber die
+      // andere Stelle, 25.10.).
+      for (const [art, liste] of [["Stil", BG.nachStil], ["Richtung", BG.nachRichtung]]) {
+        const s = (f) => liste.reduce((a, g) => a + g.k[f], 0);
+        torPruefung(`exits: die Gruppen je ${art} addieren sich nicht zur Gesamtzeile`,
+          s("n") === BG.bewertet && s("ziel") === BG.treffer.ZIEL && s("stop") === BG.treffer.STOP
+          && s("beide") === BG.treffer.BEIDE && s("offen") === BG.treffer.OFFEN
+          && s("ab10") === BG.lauf.ab10 && s("mitWert") === BG.lauf.mitWert && s("paarN") === BG.paar.n
+          && BG.bewertet === 6 && BG.treffer.KEINE_DATEN === 2,
+          JSON.stringify(liste.map((g) => [g.name, g.k.n, g.k.ziel, g.k.stop, g.k.beide, g.k.offen])));
+      }
+      // EINE Rechnung: kennzahlen() ueber ALLE bewerteten = die Gesamtzeile.
+      const alleK = X.kennzahlen(ergG.filter((e) => e.nachrechnung.treffer !== "KEINE_DATEN"));
+      torPruefung("exits: kennzahlen() und die Gesamtzeile sind zwei Wahrheiten",
+        alleK.ab05 === BG.lauf.ab05 && alleK.ab10 === BG.lauf.ab10 && alleK.ab15 === BG.lauf.ab15
+        && alleK.ziel === BG.lauf.zielErreicht && alleK.paarN === BG.paar.n
+        && alleK.haltenR === BG.paar.haltenR && alleK.istR === BG.paar.istR, JSON.stringify(alleK));
+      const dt = BG.nachStil.find((g) => g.name === "DAYTRADING")?.k ?? {};
+      // DAYTRADING: OFFEN(1.2, h 0.3, i 0.5) · BEIDE(0, h -1, ohne Schluss) · STOP(1.0, h -1, i -1)
+      torPruefung("exits: die Kennzahlen einer Gruppe rechnen falsch",
+        dt.n === 3 && dt.ziel === 0 && dt.stop === 1 && dt.beide === 1 && dt.offen === 1
+        && dt.ab10 === 2 && dt.ab15 === 0 && dt.paarN === 2
+        && Math.abs(dt.haltenR - (0.3 - 1) / 2) < 1e-9 && Math.abs(dt.istR - (0.5 - 1) / 2) < 1e-9,
+        JSON.stringify(dt));
+      const tG = X.exitsText(BG);
+      torPruefung("exits: der Text zeigt die Aufschluesselung nicht oder falsch",
+        /<b>Je Stil<\/b>/.test(tG) && /<b>Je Richtung<\/b>/.test(tG)
+        && tG.includes("  SCALPING (1): 🎯1 🛑0 ⏱0 · ≥1R 1/1 · +2.00 → +1.00 R (1) ⚠️ zu wenig")
+        && tG.includes("  DAYTRADING (3): 🎯0 🛑1 ❓1 ⏱1 · ≥1R 2/3 · -0.35 → -0.25 R (2) ⚠️ zu wenig")
+        && /  SWING \(1\): 🎯0 🛑1 ⏱0 /.test(tG) && !/  SWING \(1\)[^\n]*❓/.test(tG),
+        (tG.match(/  (SCALPING|DAYTRADING|SWING) \([^\n]*/g) ?? []).join(" | "));
+      // Ein fremder Gruppenname geht entschaerft ins HTML; KEINE_DATEN in
+      // keiner Gruppe; ab MIN_BEWERTET keine Warnung an der Zeile.
+      const giftE = [E({ stil: "<b>x</b>&", richtung: "BUY" }, "OFFEN", 0.1, 0.1)];
+      const tGift = X.exitsText(X.exitBericht(ausB, giftE, { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }));
+      torPruefung("exits: ein Gruppenname geht roh ins HTML",
+        !tGift.includes("<b>x</b>&") && tGift.includes("&lt;b&gt;x&lt;/b&gt;&amp; (1)"), "gift");
+      const vielE = Array.from({ length: X.MIN_BEWERTET }, () => E({ stil: "SWING", richtung: "SELL" }, "OFFEN", 0.3, 0.1));
+      const tViel = X.exitsText(X.exitBericht(ausB, vielE, { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }));
+      torPruefung("exits: ab MIN_BEWERTET steht an der Gruppe trotzdem 'zu wenig'",
+        new RegExp(`  SWING \\(${X.MIN_BEWERTET}\\):[^\\n]*`).test(tViel)
+        && !new RegExp(`  SWING \\(${X.MIN_BEWERTET}\\):[^\\n]*zu wenig`).test(tViel), "MIN_BEWERTET");
+      torPruefung("exits: ohne bewertete Trades fehlt der ehrliche Leer-Hinweis",
+        (X.exitsText(X.exitBericht(ausB, [], { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }))
+          .match(/\(keine bewerteten Trades\)/g) ?? []).length === 2, "leer");
+
       // ── exitLauf mit hineingereichten Abhaengigkeiten (kein Netz).
       const kand = X.auswahl([0, 1, 2].map((i) => zeile({ id: i, createdAt: new Date(T0 + i * 3_600_000) })), opt).kandidaten;
       // SELBSTPRUEFUNG der Testdaten (16.11.): ohne Kandidaten pruefen die
@@ -14508,6 +14577,12 @@ module.exports = async function pruefe() {
               && /nicht Capital\.com: 1/.test(ergebnis) && kerzenAufrufe.length === 3
               && kerzenAufrufe.every((a) => a[0] === "k" && a[1] === "c" && a[2] === "s"),
               ergebnis.slice(0, 400));
+            // Die Aufschluesselung erreicht die ECHTE Antwort (A BUY Ziel,
+            // B BUY Stop, C SELL keins — alle DAYTRADING).
+            torPruefung("exits E2E: die Aufschluesselung fehlt in der Antwort oder rechnet falsch",
+              ergebnis.includes("  DAYTRADING (3): 🎯1 🛑1 ⏱1 ")
+              && ergebnis.includes("  BUY (2): 🎯1 🛑1 ⏱0 ") && ergebnis.includes("  SELL (1): 🎯0 🛑0 ⏱1 "),
+              (ergebnis.match(/  (DAYTRADING|BUY|SELL) \([^\n]*/g) ?? []).join(" | "));
             torPruefung("exits E2E: die Sperre wird nach dem Lauf nicht freigegeben",
               (global.__exits_laeuft_seit__ ?? null) === null, String(global.__exits_laeuft_seit__));
             const sel = findArgs?.select ?? {};

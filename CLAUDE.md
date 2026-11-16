@@ -6054,6 +6054,95 @@ Entscheidung. Eingriff in zwei Hochrisiko-Dateien, beide rein additiv:
 `capitalGetKerzen()` (neu) und `export` vor `STYLE_MAX_HOURS` (Wert
 unverändert, Snapshot `haltedauer`). **Snapshot 299 Werte unverändert.**
 
+### Das erste Ergebnis: die Ausstiege sind NICHT das Problem (16.11.)
+
+`/exits 60` live, 100 Trades geprüft, 96 mit Kursdaten. Die Summen gehen
+auf (Auswahl 100 + 762 Ausschlüsse = 862; Treffer 8 + 48 + 0 + 40 + 4 =
+100), und **beide** ungeprüften Annahmen sind durch echte Daten belegt:
+
+| Selbstprüfung | Ergebnis | heisst |
+|---|---|---|
+| Etikett STOP → Stop nachgerechnet | **19/19** | BUY gegen Geld-, SELL gegen Briefkurs stimmt |
+| Ortszeit − UTC der Kerzen | **60…120 min** | `snapshotTimeUTC` ist UTC — 120 = Sommerzeit bis 25.10., 60 = Winter |
+
+| Was zuerst berührt wurde | |
+|---|---|
+| Ziel | **8** (8 %) |
+| Stop | **48** (50 %) |
+| keins bis zum Zeit-Exit | 40 |
+| Lauf ≥ 1 R / ≥ 1.5 R vor dem Stop | 22 % / 14 % |
+| bis Stop/Ziel gehalten (gepaart, 96) | **Ø −0.19 R** |
+| tatsächlich realisiert (dieselben 96) | **Ø −0.13 R** |
+
+**Halten wäre SCHLECHTER gewesen.** Unsere Ausstiegslogik kostet nicht den
+Gewinn, sie spart netto — 48 Trades berührten zuerst den Stop, aber nur 19
+endeten tatsächlich dort. Der Hebel, den diese Datei seit dem 26.10.
+beschreibt („das Geld geht an den Ausstiegen verloren"), ist damit **nicht
+gestützt** — aber auch nicht widerlegt: gemessen ist nur EINE Alternative
+(bis zum ursprünglichen Stop/Ziel halten), und die ist schlechter. Ob eine
+ANDERE Ausstiegslogik besser wäre, sagt diese Messung nicht.
+**`exitThresholdsRelativeToStop` wird NICHT umgelegt** — die Stufen
+griffen später, und vor 1 R kommen nur 22 % überhaupt an.
+
+Das Problem liegt **davor**: 50 % berühren zuerst den Stop, 8 % das Ziel.
+
+### Der Einstieg: drei Code-Befunde und ein Hinweis (16.11., nur gelesen)
+
+1. **Geplant wird in Tages-ATR, gehandelt in Stunden.** Die ATR im Prompt
+   ist die des Tageschart (`interval: "1d"`). Stop ≥ 1.5 ATR, Ziel ≥ 1.5×
+   Stop — also **≥ 2.25 Tages-ATR**. Der Prompt nennt die Haltedauer der
+   Stile (4 / 24 / 168 h) **nirgends** und hat keine Regel, wann welcher
+   Stil zu wählen ist. Ein DAYTRADING-Ziel verlangt damit mehr als die
+   doppelte Spanne eines durchschnittlichen Tages — in 24 Stunden.
+2. **Der Prompt widerspricht sich.** „Nie näher als 1.5 ATR" gegen
+   `MAX_SL_ABSTAND` — mit den am 10.08. gemessenen Tages-ATR
+   (`exit-schwellen.js`): EURUSD höchstens **0.71 ATR**, USOIL **0.44**,
+   BTCUSD **0.73**. Beides zugleich ist dort nicht erfüllbar. Für GOLD und
+   NAS100 liegt keine ATR-Messung vor; die Werte sind drei Monate alt.
+3. **Ob GPT sich daran hält, wird bei echten Trades nicht gezählt.**
+   `promptVerstoesse()` loggt nur bei NICHT freigegebenen Signalen, und die
+   1.5-ATR-Regel prüft sie gar nicht.
+4. **Hinweis, kein Befund:** aus den Summen folgt sicher, dass höchstens 21
+   Trades +1 R vor −1 R erreichten und mindestens 35 zuerst −1 R (48
+   Stop-Treffer minus höchstens 13, die vorher +1 R hatten). Bei zufälligem
+   Einstieg wären beide gleich gross — p ≈ 0.06 bei 56 Trades, **nicht
+   belastbar**.
+
+Eine Prompt-Änderung ist eine Hochrisiko-Datei mit Snapshot-Prüfsumme und
+braucht einen eigenen Plan. **Erst messen, wie gross der Effekt je Stil
+ist** — dafür die Aufschlüsselung unten.
+
+### Aufschlüsselung je Stil und Richtung (16.11.)
+
+`/exits` nennt seitdem je Stil und je Richtung eine Zeile:
+
+```
+<STIL> (<n>): 🎯<Ziel> 🛑<Stop> ❓<beide> ⏱<keins> · ≥1R <a>/<b> · <Halten> → <tatsächlich> R (<gepaart>)
+```
+
+(Form, keine Messung — `❓` erscheint nur, wenn es solche Trades gibt.)
+Ziel / Stop / (beide) / keins · ≥ 1 R · Ø Halten → tatsächlich, gepaart.
+Unter 30 Trades steht **„⚠️ zu wenig"** an der Zeile — ein Anteil aus sechs
+Trades ist Rauschen.
+
+**Eine Rechnung, nicht zwei:** `kennzahlen()` rechnet die Gesamtzeile UND
+jede Gruppe. Zwei Fassungen könnten auseinanderlaufen, und dann passte die
+Summe der Gruppen nicht mehr zur Gesamtzeile — die Lehre von `/edge` gegen
+`/hebel` (29.10.). Der Prüfer verlangt die **Summenprobe** je Stil und je
+Richtung einzeln, und dass Trades ohne Kursdaten in **keiner** Gruppe
+auftauchen.
+
+**36 von 36 Sabotagen** (die 25 bisherigen plus 11 neue), 1674 → **1684**
+Prüfungen. Einer davon war zuerst nicht ausdrückbar: in den Testdaten waren
+„gehalten" und „tatsächlich" einer Gruppe **zufällig gleich** (−0.35 und
+−0.35), und ein Vertauschen der beiden in der Ausgabe wäre grün geblieben.
+Gefunden beim Gegenlesen, **bevor** die Suite lief — die Daten sind jetzt
+absichtlich ungleich, und A1 fängt es.
+
+**Was es NICHT tut:** nur das reine Rechenmodul ist geändert; der Webhook,
+der Broker-Client und `risk-agent.ts` sind unberührt. Keine Order, keine
+Schwelle, kein Prompt. **Snapshot 299 Werte unverändert.**
+
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
 > **Dieser Abschnitt beschreibt den Stand VOR der Änderung vom selben

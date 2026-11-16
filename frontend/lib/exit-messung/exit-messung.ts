@@ -397,12 +397,89 @@ export interface ExitBericht {
   kerzenUnbrauchbar: number;
   gekappt: number;
   abbruch: string | null;
+  /** Aufschluesselung (16.11.): aus DERSELBEN Rechnung wie die Gesamtzahlen. */
+  nachStil: GruppenZeile[];
+  nachRichtung: GruppenZeile[];
+}
+
+/** Die Kennzahlen EINER Menge bewerteter Trades. */
+export interface Kennzahlen {
+  n: number;
+  ziel: number;
+  stop: number;
+  beide: number;
+  offen: number;
+  ab05: number;
+  ab10: number;
+  ab15: number;
+  mitWert: number;
+  paarN: number;
+  haltenR: number | null;
+  istR: number | null;
+}
+
+export interface GruppenZeile {
+  name: string;
+  k: Kennzahlen;
 }
 
 function schnitt(werte: number[]): number | null {
   const ok = werte.filter((w) => Number.isFinite(w));
   return ok.length === 0 ? null : ok.reduce((s, w) => s + w, 0) / ok.length;
 }
+
+/**
+ * EINE Rechnung fuer die Gesamtzahlen UND jede Gruppe (16.11.). Zwei
+ * Fassungen koennten auseinanderlaufen — dann passte die Summe der Gruppen
+ * nicht mehr zur Gesamtzeile, und niemand wuesste, welche stimmt (Lehre
+ * /edge gegen /hebel, 29.10.). Erwartet NUR bewertete Trades (ohne
+ * KEINE_DATEN).
+ */
+export function kennzahlen(bewertete: readonly EinzelErgebnis[]): Kennzahlen {
+  const mitWert = bewertete.filter((e) => e.nachrechnung.maxR !== null);
+  const r = (e: EinzelErgebnis) => e.nachrechnung.maxR as number;
+  const paare = bewertete
+    .map((e) => ({ h: e.nachrechnung.haltenR, i: istR(e.kandidat) }))
+    .filter((p): p is { h: number; i: number } => p.h !== null && p.i !== null && Number.isFinite(p.h) && Number.isFinite(p.i));
+  const zaehle = (t: Treffer) => bewertete.filter((e) => e.nachrechnung.treffer === t).length;
+  return {
+    n: bewertete.length,
+    ziel: zaehle("ZIEL"),
+    stop: zaehle("STOP"),
+    beide: zaehle("BEIDE"),
+    offen: zaehle("OFFEN"),
+    ab05: mitWert.filter((e) => r(e) >= 0.5).length,
+    ab10: mitWert.filter((e) => r(e) >= 1.0).length,
+    ab15: mitWert.filter((e) => r(e) >= 1.5).length,
+    mitWert: mitWert.length,
+    paarN: paare.length,
+    haltenR: schnitt(paare.map((p) => p.h)),
+    istR: schnitt(paare.map((p) => p.i)),
+  };
+}
+
+/** Bekannte Namen zuerst in fester Reihenfolge, alles andere alphabetisch danach. */
+function gruppieren(
+  bewertete: readonly EinzelErgebnis[],
+  schluessel: (e: EinzelErgebnis) => string,
+  reihenfolge: readonly string[],
+): GruppenZeile[] {
+  const m = new Map<string, EinzelErgebnis[]>();
+  for (const e of bewertete) {
+    const s = schluessel(e);
+    const liste = m.get(s);
+    if (liste) liste.push(e); else m.set(s, [e]);
+  }
+  const rang = (s: string) => {
+    const i = reihenfolge.indexOf(s);
+    return i < 0 ? reihenfolge.length : i;
+  };
+  return [...m.keys()]
+    .sort((a, b) => rang(a) - rang(b) || a.localeCompare(b))
+    .map((name) => ({ name, k: kennzahlen(m.get(name) ?? []) }));
+}
+
+export const STIL_REIHENFOLGE = ["SCALPING", "DAYTRADING", "SWING"] as const;
 
 export function exitBericht(
   aus: Auswahl,
@@ -424,11 +501,7 @@ export function exitBericht(
       bewertete.push(e);
     }
   }
-  const mitWert = bewertete.filter((e) => e.nachrechnung.maxR !== null);
-  const r = (e: EinzelErgebnis) => e.nachrechnung.maxR as number;
-  const paare = bewertete
-    .map((e) => ({ h: e.nachrechnung.haltenR, i: istR(e.kandidat) }))
-    .filter((p): p is { h: number; i: number } => p.h !== null && p.i !== null && Number.isFinite(p.h) && Number.isFinite(p.i));
+  const gesamtK = kennzahlen(bewertete);
   const vorherRaus = bewertete.filter((e) => e.nachrechnung.treffer === "ZIEL" && e.kandidat.istEtikett !== "ZIEL");
   const stopEtikett = bewertete.filter((e) => e.kandidat.istEtikett === "STOP");
 
@@ -440,17 +513,17 @@ export function exitBericht(
     ohneDatenGruende: [...gruende.entries()].sort((a, b) => b[1] - a[1]),
     bewertet: bewertete.length,
     lauf: {
-      ab05: mitWert.filter((e) => r(e) >= 0.5).length,
-      ab10: mitWert.filter((e) => r(e) >= 1.0).length,
-      ab15: mitWert.filter((e) => r(e) >= 1.5).length,
-      zielErreicht: bewertete.filter((e) => e.nachrechnung.treffer === "ZIEL").length,
-      mitWert: mitWert.length,
+      ab05: gesamtK.ab05,
+      ab10: gesamtK.ab10,
+      ab15: gesamtK.ab15,
+      zielErreicht: gesamtK.ziel,
+      mitWert: gesamtK.mitWert,
     },
     haltenRSchnitt: schnitt(bewertete.map((e) => e.nachrechnung.haltenR as number)),
     paar: {
-      n: paare.length,
-      haltenR: schnitt(paare.map((p) => p.h)),
-      istR: schnitt(paare.map((p) => p.i)),
+      n: gesamtK.paarN,
+      haltenR: gesamtK.haltenR,
+      istR: gesamtK.istR,
     },
     zielAberVorherRaus: {
       n: vorherRaus.length,
@@ -464,7 +537,27 @@ export function exitBericht(
     kerzenUnbrauchbar: zusatz.kerzenUnbrauchbar,
     gekappt,
     abbruch: zusatz.abbruch,
+    nachStil: gruppieren(bewertete, (e) => e.kandidat.stil, STIL_REIHENFOLGE),
+    nachRichtung: gruppieren(bewertete, (e) => e.kandidat.richtung, ["BUY", "SELL"]),
   };
+}
+
+function rKurz(v: number | null): string {
+  return v === null ? "?" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
+}
+
+/**
+ * Eine Gruppen-Zeile. Feste Form, damit Telegram-Laenge begrenzt bleibt:
+ * Ziel / Stop / (beide) / keins · ≥1R · Halten → tatsaechlich (gepaart).
+ * Unter MIN_BEWERTET steht es DABEI — ein Anteil aus 6 Trades ist Rauschen.
+ */
+function gruppenZeile(g: GruppenZeile): string {
+  const k = g.k;
+  return `  ${htmlSicher(g.name)} (${k.n}): 🎯${k.ziel} 🛑${k.stop}`
+    + (k.beide > 0 ? ` ❓${k.beide}` : "")
+    + ` ⏱${k.offen} · ≥1R ${k.ab10}/${k.mitWert}`
+    + ` · ${rKurz(k.haltenR)} → ${rKurz(k.istR)} R (${k.paarN})`
+    + (k.n < MIN_BEWERTET ? " ⚠️ zu wenig" : "");
 }
 
 function anteil(n: number, von: number): string {
@@ -507,6 +600,14 @@ export function exitsText(b: ExitBericht): string {
   z.push(`  bis Stop/Ziel/Zeit-Exit gehalten: Ø ${rText(b.paar.haltenR)}`);
   z.push(`  tatsächlich realisiert: Ø ${rText(b.paar.istR)}`);
   z.push(`  Ziel wäre zuerst gekommen, aber anders ausgestiegen: ${b.zielAberVorherRaus.n} (dort realisiert Ø ${rText(b.zielAberVorherRaus.istRSchnitt)})`);
+
+  // AUFSCHLUESSELUNG (16.11.): dieselbe Rechnung wie oben, je Gruppe.
+  z.push("", "<b>Je Stil</b> <i>(🎯Ziel 🛑Stop ⏱keins · ≥1R · Ø Halten → tatsächlich, gepaart)</i>:");
+  for (const g of b.nachStil) z.push(gruppenZeile(g));
+  if (b.nachStil.length === 0) z.push("  (keine bewerteten Trades)");
+  z.push("<b>Je Richtung</b>:");
+  for (const g of b.nachRichtung) z.push(gruppenZeile(g));
+  if (b.nachRichtung.length === 0) z.push("  (keine bewerteten Trades)");
 
   z.push("", "<b>Selbstprüfung</b>");
   z.push(`  Etikett STOP → Stop auch nachgerechnet: ${anteil(b.kalibrierung.davonStopGefunden, b.kalibrierung.stopEtikett)}`);
