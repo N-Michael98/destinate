@@ -13728,6 +13728,247 @@ module.exports = async function pruefe() {
   }
 
 
+  // ── DIE FUENF GPT-ZAHLEN WERDEN GELESEN (15.11.) ─────────────────────────
+  //
+  // Dieselbe Quelle wie beim Claude-Teil: ein reiner Cast, und `??` faengt nur
+  // null/undefined. GEMESSEN ist dabei dreimal ein gutes Ergebnis — kein
+  // Wurf-Pfad, kein Weg zum Broker (`ordersRiegel`), kein Weg in die
+  // Geldtabelle (`postTradeActions` steht in `if (execResult.ok)`). Was bleibt
+  // ist die DIAGNOSE: `stopLoss: "1.05"` wird als GO gezaehlt und stirbt erst
+  // am ordersRiegel; `Infinity` ergibt ein R/R von Infinity; ein Objekt in
+  // `reasoning` reisst MarketScannerPanel.tsx:419.
+  {
+    const kiG = ladeTsModul("lib/ki-antwort/ki-antwort.ts", {
+      "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
+    });
+    if (kiG.fehler || typeof kiG.exports?.gptFelderLesen !== "function") {
+      funde.push(`gptFelderLesen nicht ausfuehrbar: ${kiG.fehler ?? "kein Export"}`);
+      zusatz++;
+    } else {
+      const G = kiG.exports.gptFelderLesen;
+      const ASK = 1.09;
+
+      // SELBSTPRUEFUNG ZUERST: brauchbare Werte UNVERAENDERT. Ein Riegel, der
+      // alles ersetzt, wuerde jedes Signal toeten — schlimmer als der Fund.
+      const gut = G({ confidence: 82, stopLoss: 1.05, takeProfit: 1.12,
+                      entry: 1.08, reasoning: "sauber" }, ASK);
+      torPruefung("gptFelderLesen veraendert BRAUCHBARE Werte — dann stirbt "
+        + "jedes Signal",
+        gut.confidence === 82 && gut.stopLoss === 1.05 && gut.takeProfit === 1.12
+        && gut.entry === 1.08 && gut.reasoning === "sauber"
+        && gut.ersetzt.length === 0,
+        `conf=${gut.confidence} sl=${gut.stopLoss} tp=${gut.takeProfit} `
+        + `entry=${gut.entry} grund=${JSON.stringify(gut.reasoning)} `
+        + `ersetzt=${gut.ersetzt.length}`);
+
+      // ── FEHLENDE Werte verhalten sich wie VORHER (keine Schwelle bewegt) ──
+      const leer = G({}, ASK);
+      torPruefung("ein FEHLENDES Feld verhaelt sich nicht mehr wie vorher — "
+        + "diese Runde darf keine Schwelle verschieben",
+        leer.confidence === 60 && leer.stopLoss === 0 && leer.takeProfit === 0
+        && leer.entry === ASK && leer.reasoning === "" && leer.ersetzt.length === 0,
+        `conf=${leer.confidence} sl=${leer.stopLoss} tp=${leer.takeProfit} `
+        + `entry=${leer.entry} ersetzt=${leer.ersetzt.length}`);
+
+      // ── GEGENPROBEN: gueltige Randwerte duerfen KEIN Befund sein ─────────
+      const randConf = G({ confidence: 0 }, ASK);
+      const randConf100 = G({ confidence: 100 }, ASK);
+      torPruefung("eine Confidence von 0 oder 100 gilt als unbrauchbar — beide "
+        + "sind gueltige Werte, und 0 ist der bestehende 'kein Signal'-Fall",
+        randConf.confidence === 0 && randConf.ersetzt.length === 0
+        && randConf100.confidence === 100 && randConf100.ersetzt.length === 0,
+        `0->${randConf.confidence}/${randConf.ersetzt.length} `
+        + `100->${randConf100.confidence}/${randConf100.ersetzt.length}`);
+      const randSl = G({ stopLoss: 0, takeProfit: 0 }, ASK);
+      torPruefung("ein Stop von 0 gilt als Befund — 0 heisst 'kein Stop' und "
+        + "ist die bestehende, gezaehlte Stufe ohneStopZiel (20.09.)",
+        randSl.stopLoss === 0 && randSl.takeProfit === 0
+        && randSl.ersetzt.length === 0,
+        `sl=${randSl.stopLoss} tp=${randSl.takeProfit} ersetzt=${JSON.stringify(randSl.ersetzt)}`);
+
+      // ── confidence: unbrauchbar heisst 0 ────────────────────────────────
+      for (const [name, wert] of [["Zahl als Text", "82"], ["Text", "abc"],
+                                  ["Objekt", {}], ["Array", []], ["true", true],
+                                  ["150 (ueber 100)", 150], ["negativ", -5]]) {
+        const r = G({ confidence: wert }, ASK);
+        torPruefung(`confidence ${name} kommt durch — die Schwelle rechnet dann `
+          + `mit einem Wert, der keine Messung ist`,
+          r.confidence === 0 && r.ersetzt.some((e) => e.startsWith("confidence=")),
+          `ergab ${JSON.stringify(r.confidence)} (${typeof r.confidence}) `
+          + `ersetzt=${JSON.stringify(r.ersetzt)}`);
+      }
+
+      // ── stopLoss / takeProfit: unbrauchbar heisst 0 ─────────────────────
+      for (const feld of ["stopLoss", "takeProfit"]) {
+        for (const [name, wert] of [["Zahl als Text", "1.05"], ["Text", "abc"],
+                                    ["Infinity", Infinity], ["negativ", -1],
+                                    ["Objekt", {}], ["true", true]]) {
+          const r = G({ [feld]: wert }, ASK);
+          torPruefung(`${feld} ${name} kommt durch — es passiert goSignal `
+            + `(\`"1.05" > 0\` ist wahr) und stirbt erst am ordersRiegel`,
+            r[feld] === 0 && r.ersetzt.some((e) => e.startsWith(`${feld}=`)),
+            `ergab ${JSON.stringify(r[feld])} (${typeof r[feld]}) `
+            + `ersetzt=${JSON.stringify(r.ersetzt)}`);
+        }
+      }
+
+      // ── entry: unbrauchbar heisst Broker-Kurs ───────────────────────────
+      for (const [name, wert] of [["Zahl als Text", "1.08"], ["Objekt", {}],
+                                  ["negativ", -1], ["Infinity", Infinity]]) {
+        const r = G({ entry: wert }, ASK);
+        torPruefung(`entry ${name} kommt durch — eine erfundene Zahl im `
+          + `Claude-Prompt`,
+          r.entry === ASK && r.ersetzt.some((e) => e.startsWith("entry=")),
+          `ergab ${JSON.stringify(r.entry)} ersetzt=${JSON.stringify(r.ersetzt)}`);
+      }
+
+      // GEGENPROBE: eine exakte 0 ist KEIN Befund (15.11.). Sie ist die
+      // "nicht gesetzt"-Form dieses Programms — der alte Standard war
+      // `?? 0`, und der Trichter prueft `> 0`. Mein erster Entwurf hat sie
+      // gemeldet; damit haette JEDE GPT-WAIT-Antwort eine Logzeile und
+      // einen Zaehler-Schritt erzeugt. Gefunden hat das die Gegenprobe
+      // zwei Bloecke weiter oben, nicht ich.
+      const nullEntry = G({ entry: 0 }, ASK);
+      torPruefung("eine exakte 0 gilt wieder als Befund — dann meldet jede "
+        + "GPT-WAIT-Antwort einen Ausfall und die Bilanz-Zahl ist erfunden",
+        nullEntry.entry === ASK && nullEntry.ersetzt.length === 0,
+        `entry 0 ergab ${nullEntry.entry}, ersetzt=${JSON.stringify(nullEntry.ersetzt)}`);
+      const nullAlle = G({ stopLoss: 0, takeProfit: 0, entry: 0,
+                           confidence: 0 }, ASK);
+      torPruefung("ein vollstaendiges WAIT-Signal (alles 0) wird als "
+        + "Ausfall gemeldet — das ist der Normalfall, nicht der Befund",
+        nullAlle.ersetzt.length === 0,
+        `ersetzt=${JSON.stringify(nullAlle.ersetzt)}`);
+
+      // ── reasoning: der React-Absturzpfad ───────────────────────────────
+      for (const [name, wert] of [["Objekt", {}], ["Zahl", 5], ["true", true]]) {
+        const r = G({ reasoning: wert }, ASK);
+        torPruefung(`reasoning ${name} kommt durch — `
+          + `MarketScannerPanel.tsx:419 rendert den Wert direkt, und ein `
+          + `Objekt als React-Kind reisst die ganze Ansicht`,
+          r.reasoning === "" && typeof r.reasoning === "string"
+          && r.ersetzt.some((e) => e.startsWith("reasoning=")),
+          `ergab ${JSON.stringify(r.reasoning)} (${typeof r.reasoning})`);
+      }
+
+      // ── Die Meldung muss den ROHWERT nennen ────────────────────────────
+      const rohG = G({ confidence: "82", stopLoss: {}, takeProfit: Infinity,
+                       entry: "1.08", reasoning: 7 }, ASK);
+      {
+        const kiQ2 = read("frontend/lib/ki-antwort/ki-antwort.ts")
+          .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+        torPruefung("die Entscheidung 'melden?' steht wieder dreimal "
+          + "ausgeschrieben — dann wird die eine geaendert und die andere nicht",
+          /function meldenswert\(/.test(kiQ2)
+          && (kiQ2.match(/meldenswert\(roh\./g) ?? []).length === 3,
+          `meldenswert-Aufrufe: ${(kiQ2.match(/meldenswert\(roh\./g) ?? []).length}`);
+      }
+      torPruefung("die GPT-Meldung nennt den Rohwert nicht — dann ist aus dem "
+        + "Log nicht zu erkennen, WAS das Modell geschickt hat",
+        rohG.ersetzt.length === 5
+        && rohG.ersetzt.join(" ").includes('"82"')
+        && rohG.ersetzt.join(" ").includes("Objekt")
+        && rohG.ersetzt.join(" ").includes("Infinity")
+        && rohG.ersetzt.join(" ").includes("7 (number)")
+        && rohG.ersetzt.join(" ").includes('"1.08"'),
+        `${rohG.ersetzt.length} Eintraege: ${JSON.stringify(rohG.ersetzt)}`);
+
+      // ── DIE VERDRAHTUNG ────────────────────────────────────────────────
+      const bereinige = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const aeG = bereinige(read("frontend/lib/market-scanner/ai-analysis-engine.ts"));
+      // Der Aufruf muss IM GPT-Zweig stehen. Klammerzaehlung, kein Fenster.
+      let gptZweig = "";
+      try { gptZweig = objectBlock(aeG, "if (hasGPT && gptData?.direction)"); }
+      catch { /* bleibt leer -> rot */ }
+      torPruefung("der ausgeschnittene GPT-Zweig ist der falsche Block — dann "
+        + "bewiesen die Zusicherungen darunter nichts",
+        gptZweig !== "" && /normalisiereStil\(gptData\.tradingStyle\)/.test(gptZweig)
+        && /gptFelderLesen/.test(gptZweig),
+        `Laenge ${gptZweig.length}`);
+      torPruefung("der GPT-Zweig ruft gptFelderLesen nicht",
+        /const gFelder = gptFelderLesen\(gptData, market\.ask\);/.test(gptZweig),
+        "gptFelderLesen(gptData, market.ask)");
+      for (const [name, muster] of [
+        ["confidence", /confidence: gFelder\.confidence,/],
+        ["reasoning", /reasoning: gFelder\.reasoning,/],
+        ["entry", /entry: gFelder\.entry,/],
+        ["stopLoss", /stopLoss: gFelder\.stopLoss,/],
+        ["takeProfit", /takeProfit: gFelder\.takeProfit,/],
+      ]) {
+        torPruefung(`das GPT-Feld ${name} wird wieder ungeprueft uebernommen`,
+          muster.test(gptZweig), String(muster));
+      }
+      torPruefung("die geprueften Felder direction/tradingStyle sind beschaedigt "
+        + "— sie waren seit 16.09./15.09. in Ordnung",
+        /direction: richtung \?\? "WAIT",/.test(gptZweig)
+        && /tradingStyle: stil \?\? "DAYTRADING",/.test(gptZweig),
+        "direction + tradingStyle");
+      for (const [name, text] of [
+        ["confidence ?? 60", "gptData.confidence ?? 60"],
+        ['reasoning ?? ""', 'gptData.reasoning ?? ""'],
+        ["entry ?? market.ask", "gptData.entry ?? market.ask"],
+        ["stopLoss ?? 0", "gptData.stopLoss ?? 0"],
+        ["takeProfit ?? 0", "gptData.takeProfit ?? 0"],
+      ]) {
+        torPruefung(`die alte Form \`${name}\` ist zurueck`,
+          !aeG.includes(text), name);
+      }
+      torPruefung("der Zaehler fehlt oder steht nicht im Melde-Zweig — dann "
+        + "ist ein Ausfall von einem Urteil nicht zu unterscheiden (22.09.)",
+        /if \(gFelder\.ersetzt\.length > 0\) \{[\s\S]{0,400}?gptZahlUnbrauchbarZahl\+\+;/
+          .test(gptZweig)
+        && (aeG.match(/gptZahlUnbrauchbarZahl\+\+/g) ?? []).length === 1,
+        "genau ein ++ im if-Zweig");
+      torPruefung("die Zahl erreicht ScanDaten nicht",
+        /gptZahlUnbrauchbar: gptZahlUnbrauchbarZahl,/.test(aeG), "ScanDaten");
+
+      // Die KETTE: ohne jedes Glied bleibt die Zahl in der Engine stehen.
+      const zbG = bereinige(read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts"));
+      const hlG = bereinige(read("frontend/lib/handels-lage/handels-lage.ts"));
+      const whG = bereinige(read("frontend/app/api/telegram/webhook/route.ts"));
+      const kette = [
+        ["zyklus-bilanz: ScanDaten + Tagessumme",
+         (zbG.match(/gptZahlUnbrauchbar: number;/g) ?? []).length === 2],
+        ["zyklus-bilanz: leere Summe", /gptZahlUnbrauchbar: 0,/.test(zbG)],
+        ["zyklus-bilanz: Addition mit zahl() BEIDSEITIG",
+         /t\.gptZahlUnbrauchbar = zahl\(t\.gptZahlUnbrauchbar\) \+ zahl\(s\.gptZahlUnbrauchbar\);/.test(zbG)],
+        ["zyklus-bilanz: Zyklus-Zeile",
+         /zahl\(s\.gptZahlUnbrauchbar\) > 0/.test(zbG)],
+        // AN DIE FORM GEBUNDEN, NICHT AN DEN AUSDRUCK (15.11.):
+        // `zahl(t.gptZahlUnbrauchbar)` steht ZWEIMAL in der Datei —
+        // in der Addition und in dieser Ausgabezeile. Die erste
+        // Fassung suchte nur den Ausdruck, fand nach dem Entfernen der
+        // Zeile die Addition und blieb gruen (Fall Z2 entwischt).
+        // "Ein Treffer beweist nichts ueber die andere Stelle"
+        // (25.10.). `[^;]*` kann die Grenze nicht ueberschreiten: jede
+        // push-Anweisung endet mit einem Semikolon.
+        ["zyklus-bilanz: Tagesbilanz-Zeile",
+         /zeilen\.push\([^;]*zahl\(t\.gptZahlUnbrauchbar\)/.test(zbG)],
+        ["handels-lage: dreiwertiger Typ",
+         /gptZahlUnbrauchbar: number \| null;/.test(hlG)],
+        ["handels-lage: Trichter-Zeile nennt unbekannt",
+         /const unbrauchbar = zahl\(t\.gptZahlUnbrauchbar\);/.test(hlG)
+         && /unbrauchbar === null \? "unbekannt"/.test(hlG)],
+        ["webhook: Typ", /gptZahlUnbrauchbar\?: number;/.test(whG)],
+        ["webhook: Durchreiche",
+         /gptZahlUnbrauchbar: tagessumme\.gptZahlUnbrauchbar \?\? null,/.test(whG)],
+      ];
+      for (const [name, ok] of kette) {
+        torPruefung(`die Kette ist unterbrochen — ${name}`, ok, name);
+      }
+
+      // Das Phantomfeld in der Oberfläche (15.11.).
+      const msG = bereinige(read("frontend/components/MarketScannerPanel.tsx"));
+      torPruefung("das Phantomfeld `entryPrice` ist auf dem GPT-Typ zurueck — "
+        + "die Engine setzt `entry`, also war es immer undefined",
+        !/^\s*entryPrice\?: number;/m.test(msG)
+        && !msG.includes("opp.gpt.entryPrice"),
+        "entryPrice auf GPTAnalysis");
+    }
+  }
+
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

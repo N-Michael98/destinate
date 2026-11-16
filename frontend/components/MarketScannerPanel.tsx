@@ -6,7 +6,6 @@ interface GPTAnalysis {
   confidence: number;
   reasoning: string;
   entry: number;
-  entryPrice?: number;
   stopLoss: number;
   takeProfit: number;
   tradingStyle: string;
@@ -162,7 +161,13 @@ export default function MarketScannerPanel() {
       accountBalance,
       stopLossPrice: opp.gpt.stopLoss,
       takeProfitPrice: opp.gpt.takeProfit,
-      entryPrice: opp.gpt.entryPrice ?? opp.currentPrice,
+      // Der LIVEKURS beim Klick, nicht GPTs geplanter Einstieg (15.11.).
+      // Hier stand `opp.gpt.entryPrice ?? opp.currentPrice` — ein Feld,
+      // das die Engine nie setzt (sie hat `entry`), also immer der
+      // Rueckfall. Die Route nimmt ohnehin primaer den echten Fill
+      // (`result.openLevel`); als Rueckfall ist der Livekurs naeher am
+      // Fill als ein Plan. Verhaltensneutral, nur ehrlich.
+      entryPrice: opp.currentPrice,
       confidence: opp.gpt.confidence,
       strategy: opp.gpt.tradingStyle,
       tradingStyle: opp.gpt.tradingStyle,

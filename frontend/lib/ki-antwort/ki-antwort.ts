@@ -169,3 +169,166 @@ export function kiFelderLesen(
 
   return { maxRiskPercent, rewardRiskRatio, reasoning, eigenesUrteil, ersetzt };
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * UND DASSELBE FUER GPT (15.11.)
+ *
+ * ANLASS. `ai-analysis-engine.ts:1612` baute das Signal so:
+ *
+ *     confidence: gptData.confidence ?? 60,   reasoning: gptData.reasoning ?? "",
+ *     entry: gptData.entry ?? market.ask,     stopLoss: gptData.stopLoss ?? 0,
+ *     takeProfit: gptData.takeProfit ?? 0,
+ *
+ * Dieselbe Quelle, derselbe reine Cast
+ * (`parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>`), dasselbe
+ * `??`, das nur `null`/`undefined` faengt. `direction` und `tradingStyle` sind
+ * seit dem 16.09. bzw. 15.09. geprueft — diese fuenf waren es nicht.
+ *
+ * EHRLICH EINGEORDNET, weil das der Unterschied zwischen "Loch" und
+ * "Diagnose-Mangel" ist. Drei Dinge sind GEMESSEN und gehen gut aus:
+ *
+ *  - KEIN Wurf-Pfad. Auf keinem der fuenf Felder steht irgendwo ein
+ *    `.toFixed`/`.slice`/`.trim` (ueber alle .ts/.tsx gesucht). Anders als
+ *    beim Claude-Teil kann der GPT-Cast den Zyklus NICHT toeten.
+ *  - KEIN Weg zum Broker. `ordersRiegel` ist streng: `typeof !== "number"`
+ *    und `!Number.isFinite` werden abgewiesen (28.10.).
+ *  - KEIN Weg in die Geldtabelle. `postTradeActions` steht in
+ *    `if (execResult.ok)`; eine abgelehnte Order schreibt nichts.
+ *
+ * WAS BLEIBT, ist die Diagnose — und die ist teuer genug:
+ *
+ *  - `stopLoss: "1.05"` passiert `goSignal` (`"1.05" > 0` ist wahr) und
+ *    `realesChanceRisiko` (JS rechnet mit dem String), wird als GO GEZAEHLT
+ *    und stirbt erst am `ordersRiegel`. Der Trichter sagt GO, die Order
+ *    scheitert, und der Grund liest sich wie ein Codefehler.
+ *  - `stopLoss: Infinity` ergibt `chance/risiko = Infinity`, also ein
+ *    R/R von Infinity — freigegeben, und `- Stop Loss: Infinity` geht in den
+ *    Claude-Prompt.
+ *  - Ein Objekt in `reasoning` wird von `MarketScannerPanel.tsx:419` DIREKT
+ *    gerendert. Ein Objekt als React-Kind beendet die ganze Ansicht.
+ *  - Eine unbrauchbare `confidence` stirbt an der Schwelle und wird als
+ *    "unter der Grenze" gezaehlt — ein Ausfall als Urteil getarnt (22.09.).
+ *
+ * WAS SICH DAMIT AENDERT, und nur das: ein VORHANDENER unbrauchbarer Wert
+ * wird hier zur "kein Signal"-Form (0 bzw. leer), stirbt also FRUEHER und an
+ * der Stufe, die dafuer da ist. Ein FEHLENDER Wert verhaelt sich Zeichen fuer
+ * Zeichen wie vorher (60 / 0 / 0 / market.ask / ""), damit diese Runde keine
+ * Schwelle verschiebt.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export interface GeleseneGptFelder {
+  /** 0–100, endlich. Fehlt der Wert: 60 wie bisher. */
+  confidence: number;
+  /** Endliche Zahl > 0, sonst 0 — und 0 heisst "kein Stop", wie bisher. */
+  stopLoss: number;
+  takeProfit: number;
+  /** Endliche Zahl > 0, sonst der hereingereichte Rueckfall (market.ask). */
+  entry: number;
+  reasoning: string;
+  /** VORHANDENE, aber unbrauchbare Felder mit Rohwert — siehe
+   *  `GeleseneKiFelder.ersetzt`: ein weggelassenes Feld ist der Normalfall
+   *  eines Sprachmodells, ein unbrauchbares ist der Befund. */
+  ersetzt: string[];
+}
+
+/**
+ * Ist dieser Wert MELDENSWERT — also vorhanden, aber unbrauchbar?
+ *
+ * EINE EXAKTE 0 IST KEIN BEFUND (15.11.). Sie ist in diesem Programm die
+ * "nicht gesetzt"-Form: der alte Standard war `?? 0`, und der Trichter
+ * prueft `stopLoss > 0 && takeProfit > 0`. Mein erster Entwurf hat sie
+ * gemeldet — damit haette JEDE GPT-WAIT-Antwort eine Logzeile und einen
+ * Zaehler-Schritt erzeugt: eine Logflut UND eine erfundene Zahl in der
+ * Tagesbilanz. Gefunden von der eigenen Gegenprobe im Pruefer, nicht von
+ * mir.
+ *
+ * Gemeldet wird also: nicht endlich (Text, Objekt, Array, bool, Infinity,
+ * NaN) oder negativ.
+ */
+function meldenswert(v: unknown): boolean {
+  if (v === undefined || v === null) return false;
+  if (v === 0) return false;
+  return true;
+}
+
+/** Eine endliche Zahl groesser als 0 — oder `null`. */
+function zahlUeberNull(v: unknown): number | null {
+  if (typeof v !== "number") return null;
+  if (!Number.isFinite(v)) return null;
+  if (v <= 0) return null;
+  return v;
+}
+
+/**
+ * Die fuenf ungepruefften Felder der GPT-Antwort lesen.
+ *
+ * @param rueckfallEntry `market.ask` — der Rueckfall fuer den Einstieg, wie
+ *        bisher. Er ist UNSER Wert vom Broker, keine Zahl des Modells.
+ */
+export function gptFelderLesen(
+  roh: {
+    confidence?: unknown;
+    stopLoss?: unknown;
+    takeProfit?: unknown;
+    entry?: unknown;
+    reasoning?: unknown;
+  },
+  rueckfallEntry: number,
+): GeleseneGptFelder {
+  const ersetzt: string[] = [];
+
+  // ── confidence ──────────────────────────────────────────────────────────
+  //
+  // Gueltig ist 0..100. Ein Wert DARUEBER wird nicht geklemmt, sondern
+  // abgewiesen: eine Confidence von 150 ist keine Messung, und sie zu
+  // klemmen wuerde aus Unsinn eine gueltig aussehende Zahl machen — genau
+  // der Fehler, den `Math.min(max, Infinity)` beim Groessen-Riegel gezeigt
+  // hat (15.11.). Unbrauchbar heisst 0, also "kein Signal".
+  const cRoh = roh.confidence;
+  const cOk = typeof cRoh === "number" && Number.isFinite(cRoh)
+    && cRoh >= 0 && cRoh <= 100;
+  const confidence = cOk ? (cRoh as number)
+    : cRoh === undefined || cRoh === null ? 60 : 0;
+  if (!cOk && cRoh !== undefined && cRoh !== null) {
+    ersetzt.push(`confidence=${zeige(cRoh)} -> 0 (kein Signal)`);
+  }
+
+  // ── stopLoss / takeProfit ───────────────────────────────────────────────
+  //
+  // 0 heisst "kein Stop" und ist der bestehende, GEZAEHLTE Fall
+  // (`ohneStopZiel`, 20.09.). Ein unbrauchbarer Wert landet damit an der
+  // Stufe, die dafuer da ist, statt spaet am `ordersRiegel`.
+  const slOk = zahlUeberNull(roh.stopLoss);
+  const stopLoss = slOk ?? 0;
+  if (slOk === null && meldenswert(roh.stopLoss)) {
+    ersetzt.push(`stopLoss=${zeige(roh.stopLoss)} -> 0 (kein Stop)`);
+  }
+  const tpOk = zahlUeberNull(roh.takeProfit);
+  const takeProfit = tpOk ?? 0;
+  if (tpOk === null && meldenswert(roh.takeProfit)) {
+    ersetzt.push(`takeProfit=${zeige(roh.takeProfit)} -> 0 (kein Ziel)`);
+  }
+
+  // ── entry ───────────────────────────────────────────────────────────────
+  //
+  // Reine Anzeige und Prompt-Zahl: `realesChanceRisiko` rechnet seit dem
+  // 04.08. mit dem BROKER-Kurs, nicht mit `gpt.entry`. Trotzdem gelesen —
+  // eine erfundene Zahl im Prompt ist eine erfundene Zahl.
+  const eOk = zahlUeberNull(roh.entry);
+  const entry = eOk ?? rueckfallEntry;
+  if (eOk === null && meldenswert(roh.entry)) {
+    ersetzt.push(`entry=${zeige(roh.entry)} -> Broker-Kurs`);
+  }
+
+  // ── reasoning ───────────────────────────────────────────────────────────
+  //
+  // Nur eine Zeichenkette. `MarketScannerPanel.tsx:419` rendert den Wert
+  // direkt; ein Objekt als React-Kind reisst die ganze Ansicht.
+  const rRoh = roh.reasoning;
+  const reasoning = typeof rRoh === "string" ? rRoh : "";
+  if (typeof rRoh !== "string" && rRoh !== undefined && rRoh !== null) {
+    ersetzt.push(`reasoning=${zeige(rRoh)} -> leer`);
+  }
+
+  return { confidence, stopLoss, takeProfit, entry, reasoning, ersetzt };
+}

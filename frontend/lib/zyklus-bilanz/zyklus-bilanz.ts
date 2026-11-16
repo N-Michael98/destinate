@@ -61,6 +61,12 @@ export type ScanDaten = {
   /** Maerkte, fuer die GPT GAR NICHT geantwortet hat (30.10.).
    *  Bis dahin als WAIT gezaehlt — ein Ausfall gab sich als Urteil aus. */
   ohneGptAntwort: number;
+  /** Maerkte, fuer die GPT eine Zahl geschickt hat, die KEINE brauchbare
+   *  ist (15.11.) — Text, Objekt, `Infinity`, Confidence ausserhalb
+   *  0..100. Ohne eigene Zahl stirbt so ein Signal an `ohneStopZiel`
+   *  bzw. an der Confidence-Grenze und ist dort von einem URTEIL nicht
+   *  zu unterscheiden. Dieselbe Fehlerklasse wie `ohneGptAntwort`. */
+  gptZahlUnbrauchbar: number;
   claudeGefragt: number;
   /** GPT-Antworten, die dem eigenen Prompt widersprechen — Anzahl je Art. */
   regelbrueche: Record<string, number>;
@@ -173,6 +179,8 @@ export type Tagessumme = {
   ohneVolleDatenGrund: Record<string, number>;
   /** Siehe ScanDaten.ohneGptAntwort (30.10.). */
   ohneGptAntwort: number;
+  /** Siehe ScanDaten.gptZahlUnbrauchbar (15.11.). */
+  gptZahlUnbrauchbar: number;
   claudeGefragt: number;
   /** Broker-Fehler nach Grund — die Zahl allein sagt nicht, WARUM (20.09.). */
   fehlgeschlagenGruende: Record<string, number>;
@@ -362,6 +370,10 @@ export function bilanzZeile(b: ZyklusBilanz): string {
     // dreissig ausgebliebene Antworten (30.10.). Nur bei > 0, wie bei
     // `stilVerworfen` und `ohneStopZiel` — eine 0 waere nur Rauschen.
     if (zahl(s.ohneGptAntwort) > 0) teile.push(`ohne GPT-Antwort ${s.ohneGptAntwort}`);
+    // Nur bei > 0, wie die Zeile darueber — eine 0 waere Rauschen.
+    if (zahl(s.gptZahlUnbrauchbar) > 0) {
+      teile.push(`GPT-Zahl unbrauchbar ${s.gptZahlUnbrauchbar}`);
+    }
     teile.push(`Veto ${s.vetos}`);
     if (s.stilVerworfen > 0) teile.push(`Stil ${s.stilVerworfen}`);
     // Vor `<Grenze`, weil das Daten-Tor im Trichter VOR der Confidence steht:
@@ -404,7 +416,7 @@ export function leereTagessumme(datum: string): Tagessumme {
     gpt: { WAIT: 0, BUY: 0, SELL: 0 }, vetos: 0, stilVerworfen: 0,
     unterGrenze: 0, confMin: null, confMax: null, go: 0, rrAbgelehnt: 0,
     ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
-    ohneGptAntwort: 0,
+    ohneGptAntwort: 0, gptZahlUnbrauchbar: 0,
     claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
     fehlgeschlagenGruende: {},
     regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
@@ -450,6 +462,10 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     // `zahl()` auch auf den Summanden links: eine Tagessumme aus Redis
     // kann von gestern stammen und dieses Feld noch nicht haben.
     t.ohneGptAntwort = zahl(t.ohneGptAntwort) + zahl(s.ohneGptAntwort);
+    // `zahl()` auf BEIDEN Seiten, aus demselben Grund wie eine Zeile
+    // darueber: eine Tagessumme aus Redis kann von gestern stammen und
+    // dieses Feld noch nicht kennen (15.11.).
+    t.gptZahlUnbrauchbar = zahl(t.gptZahlUnbrauchbar) + zahl(s.gptZahlUnbrauchbar);
     // `t.ohneVolleDatenGrund` kann fehlen, wenn die Tagessumme aus Redis noch
     // von gestern stammt (ohne dieses Feld) — derselbe Fall, den `zahl()` eine
     // Zeile tiefer fuer die Zahlen abfaengt.
@@ -568,6 +584,12 @@ export function tagesbilanzText(t: Tagessumme): string {
     // WAIT sind das die, bei denen GPT gar nicht geantwortet hat.
     zeilen.push(`🤐 davon OHNE GPT-Antwort: ${zahl(t.ohneGptAntwort)} `
       + `(als WAIT gezählt, aber kein Urteil)`);
+    // Dieselbe Klasse eine Stufe weiter: GPT HAT geantwortet, aber mit
+    // einer Zahl, die keine ist (15.11.). Ohne diese Zeile stirbt das
+    // Signal sichtbar an `ohne Stop/Ziel` oder `unter der Grenze` — und
+    // sieht dort wie ein Urteil aus.
+    zeilen.push(`🔢 davon mit UNBRAUCHBARER Zahl: ${zahl(t.gptZahlUnbrauchbar)} `
+      + `(Text/Objekt/Infinity — kein Urteil)`);
     zeilen.push(`🚧 Vetos: ${t.vetos} · Stil verworfen: ${t.stilVerworfen}`);
     const spanne = t.confMin !== null ? ` (Confidence ${t.confMin}–${t.confMax})` : "";
     zeilen.push(`📉 Unter der Untergrenze: ${t.unterGrenze}${spanne}`);

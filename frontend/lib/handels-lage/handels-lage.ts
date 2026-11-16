@@ -126,6 +126,9 @@ export interface TrichterZahlen {
    * Analysen ist das die Frage, mit der man ins Log steigt.
    */
   ohneGptAntwort: number | null;
+  /** Siehe Tagessumme.gptZahlUnbrauchbar (15.11.): GPT hat geantwortet,
+   *  aber mit einer Zahl, die keine ist. `null` heisst UNBEKANNT. */
+  gptZahlUnbrauchbar: number | null;
   vetos: number | null;
   stilVerworfen: number | null;
   ohneVolleDaten: number | null;
@@ -450,6 +453,12 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     zeilen.push(`   • ohne GPT-Antwort: `
       + `${ohneAntwort === null ? "unbekannt" : ohneAntwort}`
       + `${ohneAntwort !== null && ohneAntwort > 0 ? " (als WAIT gezählt, aber kein Urteil)" : ""}`);
+    // Dreiwertig wie alles hier: `null` heisst unbekannt, nicht 0
+    // (15.11.). Eine stille 0 waere die Luege vom 22.09.
+    const unbrauchbar = zahl(t.gptZahlUnbrauchbar);
+    zeilen.push(`   • GPT-Zahl unbrauchbar: `
+      + `${unbrauchbar === null ? "unbekannt" : unbrauchbar}`
+      + `${unbrauchbar !== null && unbrauchbar > 0 ? " (Text/Objekt/Infinity — kein Urteil)" : ""}`);
     zeilen.push(`   • Richtungssignale (BUY/SELL): `
       + `${richt === null ? "unbekannt" : richt}`);
     for (const [name, n] of stufen) {

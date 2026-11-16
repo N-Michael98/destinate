@@ -10,7 +10,7 @@ import type { ScanDaten } from "../zyklus-bilanz/zyklus-bilanz";
 // Die Felder, die Claude liefert, werden GELESEN statt uebernommen
 // (15.11.) — `??` faengt nur `null`/`undefined`, und `parseJSON` ist ein
 // reiner Cast. Begruendung und Messung im Modul.
-import { kiFelderLesen } from "../ki-antwort/ki-antwort";
+import { kiFelderLesen, gptFelderLesen } from "../ki-antwort/ki-antwort";
 
 export interface GPTMarketAnalysis {
   symbol: string;
@@ -1550,6 +1550,14 @@ each market's own data, never from habit or from these examples' direction:
   // Richtungen aus 3210 Analysen war damit nicht feststellbar, ob GPT
   // schweigt oder ablehnt — zwei sehr verschiedene Lagen.
   let ohneGptAntwortZahl = 0;
+  // ── EIN AUSFALL DARF SICH NICHT ALS URTEIL AUSGEBEN (15.11.) ──────
+  //
+  // Maerkte, bei denen GPT eine Zahl geschickt hat, die KEINE brauchbare
+  // ist (Text, Objekt, Infinity, Confidence ausserhalb 0..100). Ohne
+  // eigene Zahl stirbt so ein Signal an `ohneStopZiel` bzw. an der
+  // Confidence-Grenze und ist dort von einem URTEIL nicht zu
+  // unterscheiden — genau die Fehlerklasse vom 22.09.
+  let gptZahlUnbrauchbarZahl = 0;
   const regelbrueche: Record<string, number> = {};
   let vetoZahl = 0;
   let stilVerworfenZahl = 0;
@@ -1609,14 +1617,39 @@ each market's own data, never from habit or from these examples' direction:
       const stil = normalisiereStil(gptData.tradingStyle);
       // Richtung GEPRUEFT statt umgetypt (16.09.) — Begruendung bei normalisiereRichtung().
       const richtung = normalisiereRichtung(gptData.direction);
+      // ── DIE FUENF ZAHLEN WERDEN GELESEN (15.11.) ───────────────────
+      //
+      // Hier stand `gptData.confidence ?? 60`, `?? ""`, `?? market.ask`
+      // und zweimal `?? 0`. `??` faengt nur `null`/`undefined`, und
+      // `parseJSON` ist ein reiner Cast — Text, Objekt, Array und
+      // `Infinity` kamen durch. GEMESSEN: `stopLoss: "1.05"` passiert
+      // `goSignal` (`"1.05" > 0` ist wahr) und wird als GO gezaehlt,
+      // stirbt aber erst am `ordersRiegel`; `Infinity` ergibt ein R/R von
+      // Infinity und geht so in den Claude-Prompt; ein Objekt in
+      // `reasoning` reisst `MarketScannerPanel.tsx:419` (React-Kind).
+      //
+      // Ein FEHLENDER Wert verhaelt sich unveraendert (60 / 0 / 0 /
+      // market.ask / leer) — nur ein VORHANDENER unbrauchbarer wird zur
+      // "kein Signal"-Form und stirbt damit frueher, an der Stufe, die
+      // dafuer da ist. Messung und Begruendung in
+      // `lib/ki-antwort/ki-antwort.ts`.
+      const gFelder = gptFelderLesen(gptData, market.ask);
+      if (gFelder.ersetzt.length > 0) {
+        // Je MARKT gezaehlt, nicht je Feld: der Trichter zaehlt Signale.
+        gptZahlUnbrauchbarZahl++;
+        console.error(`[ai-engine] ⚠️ ${market.symbol}: GPT hat Zahlen `
+          + `geschickt, die NICHT lesbar sind — ersetzt: `
+          + `${gFelder.ersetzt.join(" ; ")}. Das Signal stirbt damit an `
+          + `der Stufe, die dafuer da ist, statt spaet am ordersRiegel.`);
+      }
       gpt = {
         symbol: market.symbol, epic: market.epic,
         direction: richtung ?? "WAIT",
-        confidence: gptData.confidence ?? 60,
-        reasoning: gptData.reasoning ?? "",
-        entry: gptData.entry ?? market.ask,
-        stopLoss: gptData.stopLoss ?? 0,
-        takeProfit: gptData.takeProfit ?? 0,
+        confidence: gFelder.confidence,
+        reasoning: gFelder.reasoning,
+        entry: gFelder.entry,
+        stopLoss: gFelder.stopLoss,
+        takeProfit: gFelder.takeProfit,
         // Nur fuer die Form des Objekts: ist `stil` null, wird das Signal direkt
         // darunter zu WAIT und dieser Wert erreicht keine Entscheidung.
         tradingStyle: stil ?? "DAYTRADING",
@@ -2430,6 +2463,8 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       // Siehe `ohneGptAntwortZahl` oben: eine ausgebliebene Antwort ist
       // kein WAIT-Urteil.
       ohneGptAntwort: ohneGptAntwortZahl,
+      // Siehe den Zaehler oben: eine unbrauchbare Zahl ist kein Urteil.
+      gptZahlUnbrauchbar: gptZahlUnbrauchbarZahl,
       ohneVolleDatenGrund: ohneVolleDatenGruende,
       claudeGefragt,
       regelbrueche,

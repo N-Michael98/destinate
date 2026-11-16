@@ -5768,8 +5768,155 @@ Kanten), `tsc` **0 Fehler**, Build *Compiled successfully*.
 | Fund | Warum nicht jetzt |
 |---|---|
 | `parsed` ist `Partial<ClaudeRiskAssessment>` aus einem **Cast** — auch `symbol` und `riskScore` sind damit zur Laufzeit beliebig | `riskScore` ist geriegelt, `symbol` wird aus `market.symbol` genommen, nicht aus der Antwort. Die übrigen Felder des Typs werden hier gar nicht gelesen |
-| **Die GPT-Antwort geht durch denselben Cast** (`parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>`, Zeile 1454). `gpt.takeProfit` könnte damit `Infinity` sein, und `realesChanceRisiko` gäbe dann `Infinity` zurück | Dieselbe Fehlerklasse eine Stufe davor, aber ein eigener, grösserer Umbau in derselben Hochrisiko-Datei — und `goSignal` verlangt `stopLoss > 0 && takeProfit > 0`, was `Infinity` passiert. **Benannt, nicht behoben**, weil nicht gemessen, ob es im Betrieb auftritt |
+| **Die GPT-Antwort geht durch denselben Cast** (`parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>`, Zeile 1454) | **Am selben Tag behoben** — siehe „Und die fünf GPT-Zahlen (15.11.)" direkt darunter. Dort ist gemessen, dass der GPT-Teil **keinen** Wurf-Pfad und **keinen** Geldpfad hat und der Schaden allein in der Diagnose lag |
 | `prompt-zahlen.js:182` und `:192` benutzen weiter **1800-Zeichen-Fenster** ab `if (raw === null)` | Sie messen den `if`-Zweig, der von dieser Änderung nicht berührt ist, und sind grün. Beide auf Klammerzählung umzubauen ist eine eigene Runde |
+
+## Und die fünf GPT-Zahlen (15.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
+Dieselbe Hochrisiko-Datei, derselbe reine Cast — und diesmal ein Fund, der
+**ehrlich kleiner** ist als der vom Claude-Teil.
+
+```ts
+confidence: gptData.confidence ?? 60,   reasoning: gptData.reasoning ?? "",
+entry: gptData.entry ?? market.ask,     stopLoss: gptData.stopLoss ?? 0,
+takeProfit: gptData.takeProfit ?? 0,
+```
+
+**Zwei Felder waren schon geriegelt:** `direction` über `normalisiereRichtung`
+(16.09.) und `tradingStyle` über `normalisiereStil` (15.09.). Diese fünf nicht.
+
+### Drei gemessene Ergebnisse, die GUT ausgehen — und das gehört zuerst gesagt
+
+| Frage | Messung |
+|---|---|
+| Kann der GPT-Cast den **Zyklus töten**? | **Nein.** Auf keinem der fünf Felder steht irgendwo ein `.toFixed`/`.slice`/`.trim` — über alle `.ts/.tsx` gesucht. Es gibt keinen Wurf-Pfad |
+| Kann ein unbrauchbarer Stop den **Broker** erreichen? | **Nein.** `ordersRiegel` ist streng: `typeof !== "number"` und `!Number.isFinite` werden abgewiesen (28.10.) |
+| Kann er in die **Geldtabelle**? | **Nein.** `postTradeActions` steht in `if (execResult.ok)`; eine abgelehnte Order schreibt nichts |
+
+Den Fund grösser zu erzählen, als er ist, wäre dieselbe Unehrlichkeit wie ihn
+zu verharmlosen.
+
+### Was wirklich bleibt: die Diagnose zeigt auf die falsche Stelle
+
+- **`stopLoss: "1.05"`** passiert `goSignal` (`"1.05" > 0` ist wahr), passiert
+  `realesChanceRisiko` (JS rechnet mit dem String), wird als **GO gezählt** —
+  und stirbt erst am `ordersRiegel`. Der Trichter sagt GO, die Order scheitert,
+  und der Grund liest sich wie ein Codefehler.
+- **`stopLoss: Infinity`** ergibt `chance/risiko = Infinity`, also ein R/R von
+  Infinity — freigegeben, und `- Stop Loss: Infinity` geht **in den
+  Claude-Prompt**.
+- **Ein Objekt in `reasoning`** wird von `MarketScannerPanel.tsx:419` direkt
+  gerendert. Ein Objekt als React-Kind beendet die **ganze Ansicht**.
+- **Eine unbrauchbare `confidence`** stirbt an der Schwelle (sichere Richtung),
+  wird aber als *„unter der Grenze"* gezählt — **ein Ausfall als Urteil
+  getarnt**, genau die Klasse vom 22.09.
+
+### `gptFelderLesen()` — im bestehenden Modul, nicht in einem neuen
+
+`lib/ki-antwort/ki-antwort.ts` heisst „die Antwort der KI ehrlich lesen"; eine
+zweite Datei wäre eine zweite Stelle.
+
+| Feld | brauchbar | sonst |
+|---|---|---|
+| `confidence` | endliche Zahl **0–100** | **0** → stirbt an der bestehenden Confidence-Stufe |
+| `stopLoss` / `takeProfit` | endliche Zahl **> 0** | **0** → `goSignal` falsch, und das zählt die **bestehende** Stufe `ohneStopZiel` (20.09.) |
+| `entry` | endliche Zahl > 0 | der Broker-Kurs (`market.ask`), wie bisher |
+| `reasoning` | Zeichenkette | `""` → der React-Absturzpfad ist zu |
+
+**Eine Confidence über 100 wird abgewiesen, nicht geklemmt.** Eine 150 ist
+keine Messung, und sie zu klemmen würde aus Unsinn eine gültig aussehende Zahl
+machen — genau der Fehler, den `Math.min(max, Infinity)` beim Grössen-Riegel
+am selben Tag gezeigt hat.
+
+**Ein FEHLENDER Wert verhält sich Zeichen für Zeichen wie vorher** (60 / 0 / 0 /
+`market.ask` / leer). Diese Runde verschiebt **keine** Schwelle; nur ein
+**vorhandener unbrauchbarer** Wert wird zur „kein Signal"-Form und stirbt damit
+**früher**, an der Stufe, die dafür da ist.
+
+### Eine exakte 0 ist KEIN Befund — gefunden von der eigenen Gegenprobe
+
+Mein erster Entwurf meldete `stopLoss: 0` als Ersetzung. Das ist falsch: **0
+ist in diesem Programm die „nicht gesetzt"-Form** — der alte Standard war
+`?? 0`, und der Trichter prüft `stopLoss > 0 && takeProfit > 0`. Damit hätte
+**jede GPT-WAIT-Antwort** eine Logzeile und einen Zähler-Schritt erzeugt: eine
+Logflut **und** eine erfundene Zahl in der Tagesbilanz.
+
+Gefunden hat das nicht ich, sondern die Zusicherung, die genau dafür
+geschrieben war: *„ein Stop von 0 gilt als Befund — 0 heisst 'kein Stop' und
+ist die bestehende, gezählte Stufe"*. Jetzt entscheidet `meldenswert()` das
+**einmal** statt dreimal ausgeschrieben, und zwei Gegenproben halten es fest —
+darunter ein vollständiges WAIT-Signal (alles 0), das **nichts** melden darf.
+
+### Die Zahl in der Bilanz ist nicht optional
+
+Eine Zeile, die wegen `"1.05"` stirbt, würde als `ohneStopZiel` gezählt —
+**ununterscheidbar von „GPT gab keinen Stop"**, also ein Datenausfall als
+Urteil. Das ist wörtlich die Regel vom 22.09., deshalb geht
+`gptZahlUnbrauchbar` durch die **ganze** Kette: Engine → `ScanDaten` →
+`Tagessumme` → Zyklus-Zeile → Tagesbilanz → `handelsLage` → `/status`.
+
+**`zahl()` auf beiden Seiten der Addition** — eine Tagessumme aus Redis kann
+von gestern stammen und das Feld noch nicht kennen; ohne das wirft die erste
+Summe nach dem Deploy. Und in `handelsLage` ist der Wert **dreiwertig**: `null`
+heisst *unbekannt*, nicht 0.
+
+### Nebenbefund: ein Phantomfeld in der Oberfläche
+
+`MarketScannerPanel.tsx` deklarierte auf dem GPT-Typ **beides** — `entry:
+number` **und** `entryPrice?: number`. Die Engine setzt nur `entry`. Damit war
+`opp.gpt.entryPrice` **immer `undefined`**, und Zeile 165 fiel stets auf
+`opp.currentPrice` durch: eine Vorliebe, die nie ausgeübt wurde. `tsc` schwieg,
+weil das Feld optional deklariert war — „ein Feldname aus dem Gedächtnis"
+(30.09.).
+
+**Nicht auf `opp.gpt.entry` umgestellt, und das ist der Punkt:** die Route
+nimmt primär den echten Fill (`result.openLevel`), und als Rückfall ist der
+**Livekurs beim Klick** näher am Fill als GPTs **geplanter** Einstieg. Das
+heutige Verhalten war also das richtige — falsch war nur die Behauptung.
+Verhaltensneutral, nur ehrlich.
+
+### Absicherung
+
+`safety-nets` **rechnet** `gptFelderLesen` an über fünfzig Lagen durch
+(1509 → **1568**), je Feld: fehlt, `null`, `0`, negativ, Text, Zahl-als-Text,
+Objekt, Array, `true`, `Infinity`, und für die Confidence zusätzlich `150` und
+die Randwerte `0`/`100`.
+
+**Vier Gegenproben**, sonst wäre der Riegel schlimmer als der Fund:
+- brauchbare Werte gehen **unverändert** durch;
+- ein **fehlendes** Feld verhält sich wie vorher (60 / 0 / 0 / ask / leer) —
+  diese Runde darf keine Schwelle verschieben;
+- `confidence: 0` und `confidence: 100` sind **gültig** und kein Befund;
+- ein vollständiges WAIT-Signal (alles 0) meldet **nichts**.
+
+Dazu die **Verdrahtung**, per Klammerzähler auf den GPT-Zweig beschränkt (eine
+gerechnete Funktion beweist nichts über ihre Aufrufstelle, 30.09.): der Aufruf
+muss dort stehen, die fünf Felder müssen aus `gFelder` kommen, der Zähler genau
+**einmal** im Melde-Zweig, die ScanDaten-Zahl, und `direction`/`tradingStyle`
+müssen **unbeschädigt** bleiben. Die fünf alten Formen dürfen nicht
+zurückkommen — **kommentarbereinigt**, weil beide Dateien sie zitieren. Und
+**neun Glieder der Kette** werden einzeln verlangt; ohne jedes einzelne bliebe
+die Zahl in der Engine stehen.
+
+**21 von 21 Sabotagen**, jede gegen das **ganze** Netz (23 Prüfer).
+
+### Was es NICHT tut
+
+Keine Order, keine Grösse, kein Stop-Abstand, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife, kein Killswitch. `normalisiereRichtung`,
+`normalisiereStil`, `ordersRiegel`, `goSignal` und der GPT-**Prompt**
+(Snapshot-Prüfsumme `697f044fbe023124`) sind unberührt. **Snapshot 299 Werte
+unverändert**, Karte **912 Kanten unverändert** (kein neuer Import — die Engine
+bezog `ki-antwort` schon), `tsc` **0 Fehler**, Build *Compiled successfully*.
+
+### Gemessen und NICHT geändert
+
+| Fund | Warum nicht jetzt |
+|---|---|
+| **Der IC-Pfad hat den schwächeren Stop-Riegel:** `icmarkets-execution.ts:211` prüft `req.stopLossPrice > 0` statt `ordersRiegel`. Ein String `"1.05"` käme dort durch | Aussenwirkung an einem **Order-Pfad**, und die Regel lautet „eine Sache auf einmal". Heute ohne Folge: Ausführung AUS, Route **403** seit 14.11., leere Sitzung — aber es ist **nicht** derselbe Riegel, und das gehört in eine eigene Runde |
+| `prompt-zahlen.js:182` und `:192` benutzen weiter **1800-Zeichen-Fenster** ab `if (raw === null)` | Sie messen den `if`-Zweig, den diese Runde nicht berührt, und sind grün. Beide auf Klammerzählung umzubauen ist eine eigene Runde |
+| `parseJSON` bleibt ein **Cast** | Ihn in eine prüfende Funktion umzubauen hiesse, jeden seiner Aufrufer anzufassen. Die Riegel sitzen jetzt dort, wo die Werte **gelesen** werden — die Stelle, an der die Zusicherung gilt (Regel 24.08.) |
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 
