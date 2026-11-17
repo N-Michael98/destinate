@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST` | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -6086,6 +6086,10 @@ griffen später, und vor 1 R kommen nur 22 % überhaupt an.
 
 Das Problem liegt **davor**: 50 % berühren zuerst den Stop, 8 % das Ziel.
 
+> **Eingeschränkt am 17.11.:** „Halten wäre schlechter" gilt nur für die
+> **Gesamtzahl** — je Stil zeigen die Ausstiege in entgegengesetzte Richtungen
+> (DAYTRADING kostet, SWING rettet). Siehe „Der zweite Lauf" und `/exitsim` unten.
+
 ### Der Einstieg: drei Code-Befunde und ein Hinweis (16.11., nur gelesen)
 
 1. **Geplant wird in Tages-ATR, gehandelt in Stunden.** Die ATR im Prompt
@@ -6142,6 +6146,223 @@ absichtlich ungleich, und A1 fängt es.
 **Was es NICHT tut:** nur das reine Rechenmodul ist geändert; der Webhook,
 der Broker-Client und `risk-agent.ts` sind unberührt. Keine Order, keine
 Schwelle, kein Prompt. **Snapshot 299 Werte unverändert.**
+
+### Der zweite Lauf: die Gesamtzahl verdeckte zwei gegenläufige Effekte (17.11.)
+
+`/exits 60` mit Aufschlüsselung, 98 bewertet:
+
+| | DAYTRADING (51) | SWING (47) |
+|---|---|---|
+| Ziel / Stop / keins | 5 / 12 / 34 | 4 / 36 / 7 |
+| bis Stop/Ziel gehalten | **+0.19 R** | **−0.57 R** |
+| tatsächlich | **−0.05 R** (49 gepaart) | **−0.26 R** |
+
+SCALPING: 0 Trades. BUY (58) und SELL (40) sehen ähnlich aus.
+
+**„Halten wäre SCHLECHTER gewesen" gilt nur für die Gesamtzahl.** Je Stil
+zeigen die Ausstiege in **entgegengesetzte** Richtungen: bei DAYTRADING
+**kostet** die Ausstiegslogik rund 0.24 R je Trade, bei SWING **rettet** sie
+rund 0.31 R. Die Gesamtzahl mittelt beides weg — die Fehlerklasse „zwei
+Regime in einer Zahl" (27.10.), diesmal zwei Stile.
+
+**Daraus folgt noch KEINE Einstellung.** `exitThresholdsRelativeToStop` ist
+ein **globaler** Schalter; ihn umzulegen hiesse, beide Stile zugleich zu
+verändern. Was er je Stil bewirken würde, ist nicht aus `/exits` ablesbar —
+dafür gibt es `/exitsim` (unten).
+
+### Ein Teilgewinn-Bein steht nicht im Schlusskurs — „tatsächlich" korrigiert (17.11.)
+
+Beim Bau von `/exitsim` gefunden, in meinem eigenen `/exits` vom Vortag:
+`istR()` rechnete das tatsächliche Ergebnis aus `closeLevel`. Bei einem Trade
+**mit Teilgewinn** ist das aber nur der Schlusskurs des **Rests** — die Hälfte,
+die vorher im Gewinn geschlossen wurde, fehlt. Das tatsächliche Ergebnis war
+damit für genau diese Trades **zu niedrig**.
+
+Jetzt ist `istR()` bei `partialSize > 0` **`null`** — unbekannt, nicht
+geraten —, die Trades fallen aus dem gepaarten Vergleich, und der Bericht
+nennt ihre Zahl: `ohne „tatsächlich": N mit Teilgewinn`. Die Zahlen oben
+stammen **vom Stand vor dieser Korrektur**; der nächste Lauf rechnet sie neu.
+
+## Was hätte der Schalter je Stil gebracht? `/exitsim` (17.11.)
+
+`/exitsim` (bzw. `/exitsim 60`) rechnet die **Ausstiegslogik selbst** nach —
+nicht „halten oder nicht", sondern Kerze für Kerze, was **beide** Systeme
+getan hätten: einmal mit der Einstellung von heute (V1), einmal mit
+**umgelegtem** `exitThresholdsRelativeToStop` (V2). Je Stil und gesamt, mit
+±2 Standardfehlern.
+
+**Reine Lesung.** Keine Order, kein Stop, keine Einstellung, **kein
+Schreibzugriff** — der Prüfstand fährt die echte `POST` gegen einen
+Datenbank-Spion. Dieselbe Sperre wie `/exits` (`global`), dieselben
+Abruf-Regeln (nacheinander, 2/s, 401/403/429 brechen ab), Arbeit in `after()`.
+
+### Keine zweite Wahrheit — eine Nachbildung, an die Quellen gebunden
+
+Offene Positionen werden alle 2 Minuten von **zwei** Systemen verwaltet
+(`instrumentation.ts`): zuerst der RiskAgent (`processPosition`), danach der
+Python-Lifecycle (`on_price_update`) auf dem **Mittelkurs**. Am Broker gilt
+der **engere** Stop, und es gibt höchstens **einen** Teilgewinn
+(`teilgewinnErlaubt`). Der Schalter ändert **nur** die Schwellen des
+RiskAgent — Python läuft unverändert weiter. Eine Nachbildung nur des
+RiskAgent hätte also eine falsche Antwort gegeben.
+
+- **Die RiskAgent-Funktionen sind die echten** — `getStyleThresholds`,
+  `wirksameSchwellen` und `BE_TOLERANCE` werden hineingereicht.
+  `getStyleThresholds` und `BE_TOLERANCE` sind dafür **exportiert** worden;
+  das ist der einzige Diff in `risk-agent.ts` (zwei Wörter `export`, kein
+  Verhalten).
+- **Was keine Funktion hat, ist Kopie — und gebunden.** `RISK_KONST` (BE-Puffer
+  0.15, Teilanteil 0.5, `rawSize >= 2`, BE-Zone 0.20, Toleranz 0.01,
+  ATR-Rückfall 0.5, `slRange < 0.000001`) wird gegen die Literale in
+  `risk-agent.ts` gehalten, `PY_STUFEN` gegen `get_level` in
+  `trade_lifecycle_manager.py`, dazu die Python-Reihenfolge
+  (Zeit → Teil → BE → Trailing), die Teilgewinn-Menge `size / 2`, der BE auf
+  den Einstieg, und in `instrumentation.ts` „RiskAgent vor Python" und der
+  Mittelkurs. Ändert sich eine Quelle, wird `safety-nets` rot.
+- **Die ATR** ist ATR(14) wie TA-Lib (erster Wert = Mittel von 14, danach
+  Wilder) auf Stundenkerzen ab 100 h vor dem Einstieg; ein Wert gilt erst ab
+  dem **Ende** seiner Kerze — kein Blick in die Zukunft.
+
+### Ein Stop greift erst ab der nächsten Kerze
+
+Je Fünf-Minuten-Kerze: (1) Broker prüft Stop/Ziel, die **zu Beginn** der
+Kerze galten — beides in einer Kerze zählt als Stop; (2) RiskAgent auf dem
+Schlusskurs der Schliess-Seite; (3) Python auf dem Mittelkurs. Ein neuer Stop
+gilt erst in der nächsten Kerze — so greift nie ein Stop aus einem Kurs
+derselben Kerze. BUY gegen den Geld-, SELL gegen den Briefkurs (vom
+`/exits`-Lauf 19/19 bestätigt).
+
+### Die Kalibrierung sagt, ob man V2 glauben darf
+
+Die KI vor jeder Stufe (SKIP/ADJUST) ist **nicht** nachbildbar — angenommen
+wird, dass sie die Regelwerte durchwinkt. Deshalb wird V1 gegen das
+**tatsächliche** Ergebnis gehalten, aber nur auf Trades **ohne**
+KI-Abweichung und **ohne** Teilgewinn-Bein (dort ist „tatsächlich"
+unbekannt, siehe oben). Das Urteil je Gruppe:
+
+| Lage | Urteil |
+|---|---|
+| unter 30 Trades | „zu wenig" |
+| keine Kalibrierung möglich | „V2 nicht belastbar" |
+| \|Kalibrierung\| > \|V2−V1\| | „Nachbildung weicht stärker ab als der Effekt — V2 nicht belastbar" |
+| \|V2−V1\| > 2 SE | „Unterschied ausserhalb ±2 SE" |
+| sonst | „innerhalb des Rauschens" |
+
+**Ein Unterschied ist keine Zusage** — das steht so in der Antwort.
+
+### Ehrliche Grenzen (stehen auch in der Antwort)
+
+Fünf-Minuten-Kerzen statt 2-Minuten-Takt, kein Schlupf, ATR aus Capital-
+statt yfinance-Kerzen, Teilgewinn als echte Halbierung (der
+Gegen-Order-Mechanismus von `capitalClosePartial` ist nicht nachgebildet).
+Dazu, nur hier benannt: Pythons `risiko_unbekannt` (registrierter Stop
+höchstens 2 Pips vom Einstieg → Python untätig) ist **nicht** nachgebildet.
+Ob ein solcher Trade in den Daten vorkommt, ist **nicht gemessen** —
+`stopAbstandGenug` schliesst es nicht aus (ohne belegbare Regel gibt es
+`ok: true`, „nicht geprüft"). Ein Stop von 2 Pips bei Stops aus 1.5 ATR
+wäre allerdings aussergewöhnlich.
+Und der Python-Teilgewinn rechnet mit der Grösse aus der **Registrierung**,
+hier mit `positionSize` aus dem Journal — dieselbe Zahl, solange beide aus
+demselben Auftrag stammen.
+
+### Absicherung
+
+`safety-nets` 1684 → **1746**. Gerechnet wird an **von Hand nachgerechneten**
+Kursverläufen mit den **echten** RiskAgent-Funktionen: Teilgewinn vor BE,
+BE −0.15 R gegen Python-BE auf dem Einstieg, der engere Stop gewinnt, ein
+Python-BE auf dem Einstieg legt den RiskAgent still (`slRange` 0),
+Stop+Ziel in einer Kerze, Ziel, Zeit-Exit, SELL gespiegelt, keine Kerze vor
+dem Einstieg; dazu ATR, Statistik, Urteile, Kalibrierung, Text (Gift,
+Länge ≤ 3900), der seitenweise Abruf, und End-to-End durch die echte `POST`.
+
+**42 von 42 Sabotagen** plus Gegenprobe (43 von 43 wie erwartet, jede mit
+dem **erwarteten** Grund, Baum danach byte-gleich). Darunter: Python ohne
+Mittelkurs, der engere Stop erreicht den Broker nicht, BE-Puffer mit falschem
+Vorzeichen, Python merkt den Teilgewinn erst nach der Freigabe, ATR mit
+Zukunftsblick, V2 nicht umgelegt — und je eine Änderung an **jeder Quelle**
+(Python `get_level`, Python-Teilmenge, RiskAgent-Puffer, RiskAgent-BE-Zone,
+`instrumentation.ts`-Mittelkurs, entfernter Export).
+
+**Drei Fälle konnten zuerst den Fehler nicht ausdrücken** — gefunden beim
+Schreiben der Sabotagen, **bevor** die Suite lief:
+
+| Sabotage | warum die Testdaten blind waren |
+|---|---|
+| Python-Teilgewinn nach dem RiskAgent nicht gesperrt | bei Grösse 4 scheitert Pythons Hälfte (2) schon am Mengen-Riegel (2 ≥ 2 offen). Jetzt Grösse **5**: 2.5 < 3 offen, nur der Sperr-Riegel hält |
+| SELL-Ziel am Geldkurs geprüft | Geld- **und** Briefkurs lagen unter dem Ziel. Jetzt Geld 97.99 / Brief 98.01 gegen Ziel 98 |
+| V2 nicht umgelegt | geprüft war nur die **Beschriftung**. Jetzt ein Verlauf (BE, dann Umkehr), der mit AUS −0.15 und mit AN 0 ergibt |
+
+Dazu ein vierter in einem Nachbarprüfer: die KI-Abweichung war nur mit
+`SKIP` getestet — eine Lesart, die `ADJUST` vergisst, wäre grün geblieben.
+
+### Ein Ausschnitt bis `/help` las fremde Zweige mit — seit gestern
+
+Die **bestehende** `/exits`-Suite lief nach dem Einbau erneut — und **S14**
+(„Haltedauern als zweite Fassung") **entwischte**. Ursache: der Prüfer schnitt
+den `/exits`-Zweig von seinem Anfang **bis `/help`** aus. `/exitsim` steht
+genau dazwischen, also lag der ganze `/exitsim`-Zweig im Ausschnitt, und
+`haltedauer: STYLE_MAX_HOURS,` war schon von dessen Text erfüllt. Wörtlich
+„ein Treffer beweist nichts über die andere Stelle" (25.10.) — von mir selbst
+angelegt.
+
+**Und es war nicht die einzige Stelle.** Mit derselben Frage gesucht: drei
+weitere Prüfungen schnitten bis `/help` — die `/status`-Befehlsliste und
+**zwei** `/hebel`-Spaltenprüfungen. Bei `/hebel` lagen seit dem 16.11.
+`/exits` und heute `/exitsim` im Ausschnitt, und deren `select` enthält
+`createdAt`, `notes`, `market`, `direction` … **Gemessen am sabotierten
+Text:** mit dem alten Ausschnitt wären „/hebel verliert `createdAt`" und
+„/hebel verliert `market`" **grün** geblieben; mit dem neuen werden beide rot,
+mit ihrem eigenen Befund. (Ob der End-to-End-Prüfstand von `/hebel` sie
+trotzdem gefangen hätte, ist nicht gemessen.)
+
+Jetzt endet jeder dieser Ausschnitte am **nächsten Befehls-Zweig**
+(`if (textLower === "/…"` oder `.startsWith("/…`), mit Selbstprüfung, welcher
+Zweig dahinter folgt. Für `/exits` zusätzlich: das Muster muss einen fremden
+Zweig erkennen und darf den eigenen nicht als fremd zählen. **Wer einen neuen
+Telegram-Befehl einbaut, verschiebt damit Ausschnitte anderer Prüfer** — die
+Regel gehört an jede neue Zweig-Prüfung.
+
+Die `/exits`-Suite selbst musste ebenfalls nachgezogen werden: vier ihrer
+Webhook-Anker trafen nun **zweimal** und wurden zu Recht **übersprungen**
+statt an der falschen Stelle sabotiert. Sie sabotiert jetzt nur innerhalb des
+`/exits`-Zweigs.
+
+**Eine Sabotage ist wirkungslos und wird nicht gezählt:** `rawSize >= 2`
+im Teilgewinn des RiskAgent zu entfernen ändert nichts, denn
+`Math.floor(x · 0.5) > 0` gilt genau für x ≥ 2. Als „entwischt" zu zählen
+wäre ein Messfehler.
+
+### Beim Abgleich gefunden, NICHT geändert: `partialDone` geht im Speicher verloren
+
+Die Nachbildung wurde Zeile für Zeile gegen `processPosition` gehalten. Dabei
+fiel im RiskAgent selbst auf — nachgelesen, nicht vermutet:
+
+- Feuern **Teilgewinn und Breakeven** (oder Trailing) **im selben Zyklus**,
+  schreiben BE- und Trailing-Zweig `positionMeta.set(dealId, { ...meta, … })`
+  mit dem `meta` vom **Anfang** der Funktion — dort ist `partialDone` noch
+  `false`. Im Speicher ist der Teilgewinn damit **sicher** vergessen.
+- Gerettet wird er im nächsten Zyklus nur über die Datenbank
+  (`partialDone: dbEntry?.partialDone || mem.partialDone`). Aber `persistMeta`
+  ist **fire-and-forget** (`(async () => {…})()`, nicht abgewartet) und
+  arbeitet nach Lesen → Ändern → Schreiben. Zwei gleichzeitige Aufrufe können
+  sich gegenseitig überschreiben; schlägt der Teilgewinn-Schreibvorgang fehl
+  (nur `console.warn`), ist `partialDone` **beidseitig** weg — und der
+  nächste Zyklus nimmt einen **zweiten Teilgewinn**, Python ebenso
+  (`teilgewinnStand` liest dieselbe Notiz).
+
+**Wie wahrscheinlich, ist nicht gemessen.** Zwischen beiden Schreibvorgängen
+liegen ein KI-Aufruf und ein Broker-Aufruf, der erste landet also fast immer
+zuerst — garantiert ist es nicht. `risk-agent.ts` ist eine Datei mit erhöhtem
+Risiko; der Umbau braucht Plan und Zustimmung. `/exitsim` bildet das
+**gewollte** Verhalten nach (höchstens ein Teilgewinn).
+
+### Was es NICHT tut
+
+Keine Order, keine Grösse, kein Stop, kein Limit, keine Schwelle, keine
+Filterkette, keine Schleife. `exitThresholdsRelativeToStop` bleibt, wie es
+ist — `/exitsim` ist die Grundlage für diese Entscheidung, nicht die
+Entscheidung. **Snapshot 299 Werte unverändert**, Karte 920 → **923**
+(drei gewollte Kanten).
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

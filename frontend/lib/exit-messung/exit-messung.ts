@@ -38,6 +38,8 @@ export interface ExitZeile {
   takeProfit: number | null;
   notes: string | null;
   createdAt: Date | string | null;
+  /** Spalte `positionSize` — fuer `/exitsim` (Teilgewinn erst ab Grösse 2). */
+  positionSize?: number | null;
 }
 
 export type Ausschluss =
@@ -97,6 +99,20 @@ export interface Kandidat {
   istEtikett: string | null;
   /** Der tatsaechliche Schlusskurs aus den Notizen, sonst null. */
   istSchluss: number | null;
+  /**
+   * Ein Teilgewinn wurde genommen (`partialSize > 0` in den Notizen — RiskAgent
+   * ueber `persistMeta`, Python-Lifecycle ueber `merkeTeilgewinn`). Dann fehlt
+   * das Teilgewinn-Bein im Schlusskurs, und `istR` ist NICHT bestimmbar
+   * (Fund 17.11.: bis dahin wurde es aus dem Schlusskurs allein gerechnet und
+   * war bei diesen Trades ZU NIEDRIG — das Teilgewinn-Bein liegt im Gewinn).
+   */
+  teilgewinnGenommen: boolean;
+  /** Die KI hat bei mindestens einer Stufe SKIP oder ADJUST gesagt (`aiZusammenfassung`). */
+  kiAbweichung: boolean;
+  /** Confidence aus den Notizen (die Python-Stufen haengen daran), sonst null. */
+  confidence: number | null;
+  /** Positionsgrösse aus der Spalte, sonst null. */
+  groesse: number | null;
 }
 
 export interface Auswahl {
@@ -198,12 +214,19 @@ export function auswahl(zeilen: readonly ExitZeile[], opt: AuswahlOptionen): Aus
 
     const risiko = Math.abs(entry - stop);
     const istSchluss = zahlUeberNull(m.closeLevel);
+    const partialSize = typeof m.partialSize === "number" && Number.isFinite(m.partialSize) ? m.partialSize : 0;
+    const kiZaehler = (m.aiZusammenfassung !== null && typeof m.aiZusammenfassung === "object"
+      ? m.aiZusammenfassung : {}) as Record<string, unknown>;
     alle.push({
       id: z.id, symbol, epic, richtung, entry, stop, ziel, risiko,
       rrGeplant: Math.abs(ziel - entry) / risiko,
       stil, horizontStunden: horizont, eroeffnetMs,
       istEtikett: typeof m.exitReason === "string" ? m.exitReason : null,
       istSchluss,
+      teilgewinnGenommen: partialSize > 0,
+      kiAbweichung: (Number(kiZaehler.SKIP) || 0) > 0 || (Number(kiZaehler.ADJUST) || 0) > 0,
+      confidence: typeof m.confidence === "number" && Number.isFinite(m.confidence) ? m.confidence : null,
+      groesse: zahlUeberNull(z.positionSize),
     });
   }
 
@@ -367,7 +390,8 @@ export function nachrechnen(k: Kandidat, kerzen: readonly Kerze[], kerzenMinuten
 
 /** Das tatsaechlich realisierte R aus dem Schlusskurs der Notizen, sonst null. */
 export function istR(k: Kandidat): number | null {
-  if (k.istSchluss === null) return null;
+  // Mit Teilgewinn fehlt ein Bein im Schlusskurs — unbekannt, nicht geraten.
+  if (k.istSchluss === null || k.teilgewinnGenommen === true) return null;
   return k.richtung === "BUY" ? (k.istSchluss - k.entry) / k.risiko : (k.entry - k.istSchluss) / k.risiko;
 }
 
@@ -392,6 +416,8 @@ export interface ExitBericht {
   /** Gepaart: nur Trades, fuer die BEIDE Werte da sind — sonst vergliche man zwei Mengen. */
   paar: { n: number; haltenR: number | null; istR: number | null };
   zielAberVorherRaus: { n: number; istRSchnitt: number | null };
+  /** Bewertete Trades mit Teilgewinn — fuer sie ist „tatsaechlich" nicht bestimmbar. */
+  teilgewinnOhneIst: number;
   kalibrierung: { stopEtikett: number; davonStopGefunden: number };
   versatz: { min: number | null; max: number | null };
   kerzenUnbrauchbar: number;
@@ -529,6 +555,7 @@ export function exitBericht(
       n: vorherRaus.length,
       istRSchnitt: schnitt(vorherRaus.map((e) => istR(e.kandidat)).filter((x): x is number => x !== null)),
     },
+    teilgewinnOhneIst: bewertete.filter((e) => e.kandidat.teilgewinnGenommen === true).length,
     kalibrierung: {
       stopEtikett: stopEtikett.length,
       davonStopGefunden: stopEtikett.filter((e) => e.nachrechnung.treffer === "STOP" || e.nachrechnung.treffer === "BEIDE").length,
@@ -600,6 +627,9 @@ export function exitsText(b: ExitBericht): string {
   z.push(`  bis Stop/Ziel/Zeit-Exit gehalten: Ø ${rText(b.paar.haltenR)}`);
   z.push(`  tatsächlich realisiert: Ø ${rText(b.paar.istR)}`);
   z.push(`  Ziel wäre zuerst gekommen, aber anders ausgestiegen: ${b.zielAberVorherRaus.n} (dort realisiert Ø ${rText(b.zielAberVorherRaus.istRSchnitt)})`);
+  if (b.teilgewinnOhneIst > 0) {
+    z.push(`  ohne „tatsächlich": ${b.teilgewinnOhneIst} mit Teilgewinn — das Teilgewinn-Bein steht nicht im Schlusskurs`);
+  }
 
   // AUFSCHLUESSELUNG (16.11.): dieselbe Rechnung wie oben, je Gruppe.
   z.push("", "<b>Je Stil</b> <i>(🎯Ziel 🛑Stop ⏱keins · ≥1R · Ø Halten → tatsächlich, gepaart)</i>:");

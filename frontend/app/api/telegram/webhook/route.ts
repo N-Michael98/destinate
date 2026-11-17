@@ -54,6 +54,7 @@ const SYSTEM_BEFEHLE = [
   "/edge — Erwartungswert: hat das System einen Edge? (/edge 60 = letzte 60 Tage)",
   "/hebel — was würde etwas ändern? EW je Gruppe (/hebel 60 = letzte 60 Tage)",
   "/exits — wie weit lief der Kurs? Stop/Ziel nachgerechnet (/exits 60 = letzte 60 Tage)",
+  "/exitsim — Ausstiegslogik nachgerechnet: heute gegen Schalter umgelegt, je Stil (/exitsim 60)",
   "/help — Alle Befehle",
 ].join("\n");
 
@@ -1018,7 +1019,9 @@ ${SYSTEM_BEFEHLE}`
         const sperre = exitsSperreNehmen(Date.now());
         if (!sperre.ok) {
           await reply(chatId,
-            `⏳ <b>/exits</b> läuft schon seit ${telegramZeit(new Date(sperre.seitMs))} — `
+            // Die Sperre teilen sich /exits und /exitsim (17.11.) — die Meldung
+            // nennt deshalb keinen der beiden, sonst behauptete sie das Falsche.
+            `⏳ Eine Messung (/exits oder /exitsim) läuft schon seit ${telegramZeit(new Date(sperre.seitMs))} — `
             + "das Ergebnis kommt als eigene Nachricht.");
           return NextResponse.json({ ok: true });
         }
@@ -1090,6 +1093,129 @@ ${SYSTEM_BEFEHLE}`
       } finally {
         // Nur freigeben, wenn die Sperre NICHT an `after()` uebergeben wurde —
         // sonst liefe der naechste /exits neben dem laufenden.
+        if (freigeben !== null && !sperreUebergeben) freigeben();
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── /exitsim — die Ausstiegslogik nachgerechnet, je Stil (17.11.) ─────
+    //
+    // REINE LESUNG wie /exits: keine Order, kein Stop, keine Einstellung, KEIN
+    // Schreibzugriff. Rechnet BEIDE Systeme nach (RiskAgent, dann
+    // Python-Lifecycle) — einmal mit der Einstellung von heute, einmal mit
+    // umgelegtem `exitThresholdsRelativeToStop` — und haelt V1 gegen das
+    // tatsaechliche Ergebnis (Kalibrierung). Dieselbe Sperre wie /exits: es
+    // laeuft nie mehr als eine Messung zur Zeit.
+    if (textLower === "/exitsim" || textLower.startsWith("/exitsim ")) {
+      let sperreUebergeben = false;
+      let freigeben: (() => void) | null = null;
+      try {
+        const { exitsSperreNehmen, exitsSperreFreigeben, exitSimLauf, simAbrufeFuer, PAUSE_MS } =
+          await import("@/lib/exit-messung/exit-lauf");
+        const arg = textLower.slice("/exitsim".length).trim();
+        const tage = arg === "" ? null : (/^\d+$/.test(arg) ? Number(arg) : NaN);
+        if (arg !== "" && (!Number.isFinite(tage) || (tage as number) <= 0)) {
+          await reply(chatId,
+            `⚠️ <b>/exitsim</b> — das ist keine Anzahl Tage (${arg.length} Zeichen).`
+            + "\n\n<code>/exitsim</code> rechnet alles, <code>/exitsim 60</code> nur "
+            + "Trades, die in den letzten 60 Tagen eröffnet wurden.");
+          return NextResponse.json({ ok: true });
+        }
+        const { getCapitalSession } = await import("@/lib/capital-com/capital-com-session");
+        if (!getCapitalSession()) {
+          await reply(chatId,
+            "⚠️ <b>/exitsim</b> — keine Broker-Sitzung. Die Kursverläufe kommen von "
+            + "Capital.com; ohne Sitzung ist keine Nachrechnung möglich.");
+          return NextResponse.json({ ok: true });
+        }
+        // Die R-Werte aus DERSELBEN Quelle wie der laufende Handel
+        // (active-trade-manager.ts). Nicht lesbar heisst: kein Lauf — eine
+        // Nachrechnung mit erfundenen Werten waere die Luege vom 07.09.
+        const { getSettings } = await import("@/lib/settings/settings-store");
+        const s = await getSettings();
+        const heute = {
+          exitThresholdsRelativeToStop: s.riskSettings.exitThresholdsRelativeToStop,
+          breakevenAtR: s.riskSettings.breakevenAtR,
+          partialAtR: s.riskSettings.partialAtR,
+          trailAtR: s.riskSettings.trailAtR,
+        };
+        if (typeof heute.exitThresholdsRelativeToStop !== "boolean"
+            || ![heute.breakevenAtR, heute.partialAtR, heute.trailAtR].every((v) => typeof v === "number" && Number.isFinite(v))) {
+          await reply(chatId, "⚠️ <b>/exitsim</b> — die Ausstiegs-Einstellungen sind nicht lesbar; ohne sie gibt es keine ehrliche Nachrechnung.");
+          return NextResponse.json({ ok: true });
+        }
+        const sperre = exitsSperreNehmen(Date.now());
+        if (!sperre.ok) {
+          await reply(chatId,
+            `⏳ Eine Messung (/exits oder /exitsim) läuft schon seit ${telegramZeit(new Date(sperre.seitMs))} — `
+            + "das Ergebnis kommt als eigene Nachricht.");
+          return NextResponse.json({ ok: true });
+        }
+        freigeben = exitsSperreFreigeben;
+
+        const { getPrisma } = await import("@/app/lib/prisma");
+        const { STYLE_MAX_HOURS, getStyleThresholds, wirksameSchwellen, BE_TOLERANCE } =
+          await import("@/lib/agents/risk-agent");
+        const { ETIKETTEN_OHNE_ERGEBNIS } = await import("@/lib/capital-com/capital-trade-tracker");
+        const { EPIC_MAP, capitalGetKerzen } = await import("@/lib/capital-com/capital-com-client");
+        const { auswahl } = await import("@/lib/exit-messung/exit-messung");
+        const { simBerichtAus, simText } = await import("@/lib/exit-messung/exit-simulation");
+
+        const zeilen = await getPrisma().trade.findMany({
+          where: { status: { not: "OPEN" } },
+          select: {
+            id: true, market: true, direction: true, entry: true,
+            stopLoss: true, takeProfit: true, notes: true, createdAt: true,
+            // Der RiskAgent nimmt Teilgewinn erst ab Grösse 2 — ohne die
+            // Spalte waere der Teilgewinn nicht nachbildbar.
+            positionSize: true,
+          },
+        });
+        const aus = auswahl(zeilen, {
+          haltedauer: STYLE_MAX_HOURS,
+          ohneErgebnis: ETIKETTEN_OHNE_ERGEBNIS,
+          epicMap: EPIC_MAP,
+          jetztMs: Date.now(),
+          tage: tage === null ? null : (tage as number),
+        });
+        const fensterTage = tage === null ? null : (tage as number);
+        const abh = { stilSchwellen: getStyleThresholds, wirksameSchwellen, beToleranz: BE_TOLERANCE };
+        if (aus.kandidaten.length === 0) {
+          await reply(chatId, simText(simBerichtAus([], heute, abh,
+            { fensterTage, abbruch: null, kandidaten: 0 })));
+          return NextResponse.json({ ok: true });
+        }
+        const abrufe = aus.kandidaten.reduce((n, k) => n + simAbrufeFuer(k, Date.now()), 0);
+        await reply(chatId,
+          `🧪 <b>/exitsim</b> läuft: ${aus.kandidaten.length} Trades, ${abrufe} Kursabrufe `
+          + `nacheinander — mindestens ${Math.ceil((abrufe * PAUSE_MS) / 1000)} s. `
+          + "Das Ergebnis kommt als eigene Nachricht.");
+
+        sperreUebergeben = true;
+        after(async () => {
+          try {
+            const lauf = await exitSimLauf(aus.kandidaten, {
+              kerzen: async (epic, aufloesung, von, bis, max) => {
+                const sitz = getCapitalSession();
+                if (!sitz) return { ok: false, status: 401, error: "Broker-Sitzung während der Messung weggefallen" };
+                return capitalGetKerzen(sitz.apiKey, sitz.cst, sitz.securityToken, epic, aufloesung, von, bis, max);
+              },
+              warte: (ms) => new Promise((r) => setTimeout(r, ms)),
+              jetzt: () => Date.now(),
+            });
+            await reply(chatId, simText(simBerichtAus(lauf.daten, heute, abh,
+              { fensterTage, abbruch: lauf.abbruch, kandidaten: aus.kandidaten.length })));
+          } catch (e) {
+            await reply(chatId,
+              `❌ <b>/exitsim fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
+          } finally {
+            exitsSperreFreigeben();
+          }
+        });
+      } catch (e) {
+        await reply(chatId,
+          `❌ <b>/exitsim fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
+      } finally {
         if (freigeben !== null && !sperreUebergeben) freigeben();
       }
       return NextResponse.json({ ok: true });

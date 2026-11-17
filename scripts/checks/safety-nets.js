@@ -3281,8 +3281,19 @@ module.exports = async function pruefe() {
         // Liste" blieb dadurch GRUEN. Dasselbe Zeichen-Fenster-Problem wie am
         // selben Tag in prompt-zahlen: ein Fenster beweist Naehe, nicht
         // Zugehoerigkeit.
+        // Endet am NAECHSTEN Befehls-Zweig, nicht an /help (17.11.): bis /help
+        // lagen /edge, /hebel, /exits und /exitsim mit im Ausschnitt.
+        const naechsterZweigS = (q, ab) => {
+          const re = /if \(textLower(?: === "\/|\.startsWith\("\/)/g;
+          re.lastIndex = ab + 1;
+          const m = re.exec(q);
+          return m ? m.index : -1;
+        };
         const statusAb = quell.indexOf('textLower === "/status"');
-        const statusBis = statusAb >= 0 ? quell.indexOf('textLower === "/help"', statusAb) : -1;
+        const statusBis = statusAb >= 0 ? naechsterZweigS(quell, statusAb) : -1;
+        torPruefung("der /status-Ausschnitt reicht in einen fremden Zweig (Selbstpruefung)",
+          statusBis > statusAb && quell.slice(statusBis, statusBis + 40).includes('"/edge"'),
+          quell.slice(statusBis, statusBis + 40));
         const statusText = statusAb >= 0
           ? quell.slice(statusAb, statusBis > statusAb ? statusBis : statusAb + 700)
           : "";
@@ -3986,7 +3997,14 @@ module.exports = async function pruefe() {
               // initialization`) — vom Pruefer selbst gemeldet.
               const whH2 = read("frontend/app/api/telegram/webhook/route.ts");
               const aH2 = whH2.indexOf('textLower === "/hebel"');
-              const eH2 = whH2.indexOf('textLower === "/help"', aH2);
+              // Bis zum NAECHSTEN Zweig (/exits), nicht bis /help (17.11.):
+              // /exits und /exitsim fragen `createdAt` ebenfalls ab.
+              const reH2 = /if \(textLower(?: === "\/|\.startsWith\("\/)/g;
+              reH2.lastIndex = aH2 + 1;
+              const mH2 = aH2 >= 0 ? reH2.exec(whH2) : null;
+              const eH2 = mH2 ? mH2.index : -1;
+              torPruefung("der /hebel-Ausschnitt (createdAt) endet nicht am naechsten Zweig (Selbstpruefung)",
+                eH2 > aH2 && whH2.slice(eH2, eH2 + 40).includes('"/exits"'), whH2.slice(eH2, eH2 + 40));
               // KOMMENTARBEREINIGT. Mein erster Versuch prueffte den ROHEN
               // Block — und `// createdAt: true,` passte weiter, die
               // Sabotage blieb gruen. "Ein Wort im Kommentar ist keine
@@ -4531,8 +4549,17 @@ module.exports = async function pruefe() {
         // haelt die Stelle fest, auch wenn das Modul nicht ladbar ist.
         {
           const aH = whH.indexOf('textLower === "/hebel"');
-          const eH = whH.indexOf('textLower === "/help"', aH);
+          // Bis zum NAECHSTEN Zweig (/exits), nicht bis /help (17.11.):
+          // /exits und /exitsim fragen notes/createdAt/entry/… ebenfalls ab,
+          // und ein Treffer dort bewiese nichts ueber /hebel.
+          const reH = /if \(textLower(?: === "\/|\.startsWith\("\/)/g;
+          reH.lastIndex = aH + 1;
+          const mHz = aH >= 0 ? reH.exec(whH) : null;
+          const eH = mHz ? mHz.index : -1;
           const blockH = aH >= 0 && eH > aH ? whH.slice(aH, eH) : "";
+          torPruefung("der /hebel-Ausschnitt endet nicht am naechsten Zweig (Selbstpruefung)",
+            eH > aH && whH.slice(eH, eH + 40).includes('"/exits"') && !blockH.includes("exitLauf"),
+            whH.slice(eH, eH + 40));
           // SELBSTPRUEFUNG: ein leerer oder zu weiter Ausschnitt
           // bewiese nichts. Er muss /hebel enthalten und /edge NICHT.
           torPruefung("der /hebel-Block liess sich nicht ausschneiden — "
@@ -14452,10 +14479,20 @@ module.exports = async function pruefe() {
 
       // ── Die Verdrahtung im Webhook: die ECHTEN Quellen gehen hinein.
       const whSrc = bereinigeEx(read("frontend/app/api/telegram/webhook/route.ts"));
+      // Der Ausschnitt ENDET am naechsten Befehls-Zweig (/exitsim, 17.11.) —
+      // bis /help gerechnet enthielt er den GANZEN /exitsim-Zweig, und jede
+      // Zusicherung unten war schon von dessen Text erfuellt (Sabotage S14
+      // entwischte genau so). Ein Treffer beweist nichts ueber die andere Stelle.
       const iA = whSrc.indexOf('if (textLower === "/exits" || textLower.startsWith("/exits "))');
-      const iB = whSrc.indexOf('if (textLower === "/help")');
+      const iB = whSrc.indexOf('if (textLower === "/exitsim" || textLower.startsWith("/exitsim "))');
       const exB = iA >= 0 && iB > iA ? whSrc.slice(iA, iB) : "";
-      torPruefung("exits: der /exits-Zweig fehlt oder steht nach /help (Selbstpruefung)", exB.length > 500, `${iA}/${iB}`);
+      torPruefung("exits: der /exits-Zweig fehlt oder steht nicht direkt vor /exitsim (Selbstpruefung)",
+        exB.length > 500 && !/textLower === "\/(?!exits")/.test(exB.slice(10))
+        // Selbstpruefung des Musters: es MUSS einen fremden Zweig erkennen,
+        // und darf den eigenen (/exits) NICHT als fremd zaehlen.
+        && /textLower === "\/(?!exits")/.test('x textLower === "/exitsim" y')
+        && !/textLower === "\/(?!exits")/.test('x textLower === "/exits" y'),
+        `${iA}/${iB}`);
       torPruefung("exits: der Webhook reicht nicht die ECHTEN Quellen durch",
         /haltedauer: STYLE_MAX_HOURS,/.test(exB) && /ohneErgebnis: ETIKETTEN_OHNE_ERGEBNIS,/.test(exB)
         && /epicMap: EPIC_MAP,/.test(exB) && /from "@\/lib\/agents\/risk-agent"|import\("@\/lib\/agents\/risk-agent"\)/.test(exB)
@@ -14614,6 +14651,456 @@ module.exports = async function pruefe() {
               schreibversuche.length === 0, JSON.stringify(schreibversuche));
             await schicke("/help");
             torPruefung("exits E2E: /help nennt /exits nicht", /\/exits — /.test(letzte()), "help");
+          }
+        } finally {
+          global.fetch = altFetch;
+          for (const [k, v] of Object.entries(altEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+          if (altSperre === undefined) delete global.__exits_laeuft_seit__; else global.__exits_laeuft_seit__ = altSperre;
+        }
+      }
+    }
+  }
+
+
+  // ── /exitsim — DIE AUSSTIEGSLOGIK NACHGERECHNET (17.11.) ──────────────────
+  //
+  // Bildet BEIDE Systeme nach, die eine offene Position alle 2 Minuten
+  // verwalten: RiskAgent (`processPosition`), dann Python-Lifecycle
+  // (`on_price_update`). Eine falsche Nachbildung ergaebe eine falsche
+  // Entscheidung ueber `exitThresholdsRelativeToStop` — deshalb an VON HAND
+  // nachgerechneten Kursverlaeufen gerechnet, mit den ECHTEN Funktionen aus
+  // risk-agent.ts, und jede kopierte Zahl an ihre Quelle gebunden.
+  {
+    const bereinigeS = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    const ra = ladeTsModul("lib/agents/risk-agent.ts");
+    const EMs = ladeTsModul("lib/exit-messung/exit-messung.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+      "html-sicher/html-sicher": htmlSicherEcht,
+    });
+    const SIM = ladeTsModul("lib/exit-messung/exit-simulation.ts", {
+      "./exit-messung": EMs.exports, "html-sicher/html-sicher": htmlSicherEcht,
+    });
+    const LAUFs = ladeTsModul("lib/exit-messung/exit-lauf.ts", { "./exit-messung": EMs.exports });
+    const ok = !ra.fehler && typeof ra.exports?.getStyleThresholds === "function"
+      && typeof ra.exports?.wirksameSchwellen === "function" && ra.exports?.BE_TOLERANCE
+      && !SIM.fehler && typeof SIM.exports?.simuliere === "function"
+      && !LAUFs.fehler && typeof LAUFs.exports?.exitSimLauf === "function";
+    if (!ok) {
+      funde.push(`exitsim: Module nicht ausfuehrbar — ${ra.fehler ?? SIM.fehler ?? LAUFs.fehler ?? "Export fehlt (getStyleThresholds/BE_TOLERANCE exportiert?)"}`);
+      zusatz++;
+    } else {
+      const X = SIM.exports;
+      const abh = { stilSchwellen: ra.exports.getStyleThresholds,
+        wirksameSchwellen: ra.exports.wirksameSchwellen, beToleranz: ra.exports.BE_TOLERANCE };
+      const AUS = { exitThresholdsRelativeToStop: false, breakevenAtR: 1.0, partialAtR: 1.5, trailAtR: 1.0 };
+      const AN = { ...AUS, exitThresholdsRelativeToStop: true };
+      const T0 = Date.UTC(2026, 10, 10, 10, 0, 0);
+      // Kerze mit festem Spread 0.02: ask = bid + 0.02, Mittelkurs = bid + 0.01.
+      const K = (min, bh, bl, bc) => ({ t: T0 + min * 60_000,
+        bidHoch: bh, bidTief: bl, bidSchluss: bc, askHoch: bh + 0.02, askTief: bl + 0.02, askSchluss: bc + 0.02 });
+      // BUY 100 / Stop 99 / Ziel 102, DAYTRADING, Symbol OHNE BE_TOLERANCE
+      // (beTol = slRange·0.01), Confidence 70 (Python: BE 0.40, Teil 0.50,
+      // Trail 0.60), Grösse 4. Ohne Stundenkerzen -> ATR-Rueckfall slRange·0.5.
+      const KB = { id: 1, symbol: "XYZTEST", epic: "XYZTEST", richtung: "BUY", entry: 100, stop: 99, ziel: 102,
+        risiko: 1, rrGeplant: 2, stil: "DAYTRADING", horizontStunden: 24, eroeffnetMs: T0,
+        istEtikett: null, istSchluss: null, teilgewinnGenommen: false, kiAbweichung: false, confidence: 70, groesse: 4 };
+      const ende = T0 + 24 * 3_600_000;
+      const sim = (k, kz, einst) => X.simuliere(k, kz, 5, ende, [], einst, abh);
+      const nahe = (a, b) => typeof a === "number" && Math.abs(a - b) < 1e-9;
+      torPruefung("exitsim: BE_TOLERANCE kennt das Testsymbol — dann rechnet der Pruefstand mit einer anderen Toleranz",
+        !Object.prototype.hasOwnProperty.call(ra.exports.BE_TOLERANCE, "XYZTEST"), "XYZTEST");
+
+      // ── A: heute (Schalter AUS). VON HAND:
+      //  +10  bid 100.6  RiskAgent: Gewinn 0.6 % ≥ BE 0.5 % -> Stop 100 − 0.15·1 = 99.85
+      //  +15  bid 101.0  RiskAgent: 1.0 % ≥ Teil 1.0 % -> Grösse 4 -> 2 schliessen @101 (R +1, Anteil 0.5)
+      //                  Python: Weg 0.505 ≥ 0.5 -> Teilgewinn GESPERRT (RiskAgent hat > 0 genommen)
+      //  +20  bid 101.5  RiskAgent: Trailing: ATR 0.15·0.5 = 0.075, ×1.5 = 0.1125 -> Stop 101.3875
+      //                  Python: Weg 0.755 ≥ 0.40 -> eigener BE auf 100 (lockerer, nicht angewendet)
+      //  +25  bid Tief 101.30 ≤ 101.3875 -> Rest 0.5 @101.3875 (R +1.3875)
+      //  R = 0.5·1 + 0.5·1.3875 = 1.19375
+      const kerzenA = [K(5, 100.3, 99.9, 100.2), K(10, 100.6, 100.1, 100.6), K(15, 101.05, 100.5, 101.0),
+        K(20, 101.6, 100.9, 101.5), K(25, 101.45, 101.3, 101.35)];
+      const a1 = sim(KB, kerzenA, AUS);
+      torPruefung("exitsim: Fall A (heute) rechnet falsch — RiskAgent-Teilgewinn, BE −0.15 R, ATR-Trailing",
+        a1 && nahe(a1.r, 1.19375) && a1.ende === "STOP" && a1.teilgewinn === "RISK" && a1.breakeven === true,
+        JSON.stringify(a1));
+      // ── B: dieselben Kerzen, Schalter AN. VON HAND:
+      //  +15  RiskAgent: BE bei 1.0 R = 1 % -> Stop 99.85 (Teil bei 1.5 % noch nicht)
+      //       Python: Weg 0.505 -> Teilgewinn, RiskAgent hat 0 genommen -> ERLAUBT, 2 @101
+      //  +20  RiskAgent: Schwellen jetzt relativ zu 0.15 -> Trailing -> 101.3875
+      //  +25  Stop -> R wieder 1.19375, aber der Teilgewinn kommt von PYTHON
+      const a2 = sim(KB, kerzenA, AN);
+      torPruefung("exitsim: Fall B (Schalter AN) rechnet falsch — der Teilgewinn muss von Python kommen",
+        a2 && nahe(a2.r, 1.19375) && a2.teilgewinn === "PY" && a2.ende === "STOP", JSON.stringify(a2));
+      // ── C: Grösse 1 -> RiskAgent „zu klein zum Halbieren" (merkt erledigt,
+      // schliesst NICHTS) -> Python darf 0.5 nehmen (0.5 < 1).
+      const a3 = sim({ ...KB, groesse: 1 }, kerzenA, AUS);
+      torPruefung("exitsim: Grösse 1 sperrt den Python-Teilgewinn faelschlich oder der RiskAgent schliesst doch",
+        a3 && a3.teilgewinn === "PY", JSON.stringify(a3));
+      // ── C2: Grösse 5 — der Riegel „RiskAgent hat schon genommen" MUSS hier
+      // greifen. Bei Grösse 4 kann er es nicht zeigen: dort ist Pythons Hälfte
+      // (2) nicht kleiner als der Rest (2) und scheitert schon am Mengen-Riegel.
+      // VON HAND: +15 RiskAgent 2 von 5 @101 (Anteil 0.4); Python wollte 2.5 < 3
+      // offen, ist aber GESPERRT. Rest 0.6 @101.3875 -> 0.4 + 0.8325 = 1.2325.
+      const c2 = sim({ ...KB, groesse: 5 }, kerzenA, AUS);
+      torPruefung("exitsim: Fall C2 — nach dem RiskAgent-Teilgewinn nimmt Python einen zweiten",
+        c2 && nahe(c2.r, 1.2325) && c2.teilgewinn === "RISK", JSON.stringify(c2));
+      // ── K: Breakeven, dann Umkehr — und V1 ≠ V2. VON HAND:
+      //  AUS: +10 bid 100.6 = 0.6 % ≥ 0.5 % -> Stop 99.85; +15 Tief 99.8 -> −0.15 R
+      //  AN:  BE erst bei 1 % -> kein Stop; +15 Tief 99.8 > 99 -> Zeit-Exit @100.0 -> 0 R
+      // Die −0.15 haengt am VORZEICHEN des Puffers: 99.85 statt 100.15.
+      const kerzenK = [K(5, 100.3, 99.9, 100.2), K(10, 100.6, 100.1, 100.6), K(15, 100.7, 99.8, 100.0)];
+      const k1 = sim(KB, kerzenK, AUS);
+      const k2 = sim(KB, kerzenK, AN);
+      torPruefung("exitsim: Fall K — der RiskAgent-BE liegt nicht 0.15 R UNTER dem Einstieg",
+        k1 && nahe(k1.r, -0.15) && k1.ende === "STOP" && k1.breakeven === true, JSON.stringify(k1));
+      torPruefung("exitsim: Fall K mit Schalter AN — der BE greift zu frueh",
+        k2 && nahe(k2.r, 0) && k2.ende === "ZEIT" && k2.breakeven === false, JSON.stringify(k2));
+      // ── L: Pythons Teilgewinn ist GESPERRT, und Python verwaltet trotzdem
+      // weiter (BE, Trailing). Im Python-Code steht `trade.partial_done = True`
+      // VOR der Freigabe-Frage — wer es erst nach der Freigabe setzt, sperrt
+      // Python fuer immer im Teilgewinn-Zweig. VON HAND (AUS, Grösse 4):
+      //  +5   bid 101.0: RiskAgent Teil 2 @101 + BE 99.85; Python 0.505 -> Teil gesperrt
+      //  +10  bid 101.2: RiskAgent nichts (1.2 % < Trail 1.5 %); Python 0.605 -> BE 100
+      //  +15  bid 101.4: Python-Trailing 101.41 − 0.6 = 100.81
+      //  +20  Tief 100.7 -> Rest @100.81 -> 0.5 + 0.405 = 0.905
+      const kerzenL = [K(5, 101.05, 99.95, 101.0), K(10, 101.3, 100.9, 101.2), K(15, 101.45, 101.15, 101.4),
+        K(20, 101.2, 100.7, 100.75)];
+      const l1 = sim(KB, kerzenL, AUS);
+      torPruefung("exitsim: Fall L — nach einem gesperrten Teilgewinn verwaltet Python nicht weiter",
+        l1 && nahe(l1.r, 0.905) && l1.ende === "STOP" && l1.teilgewinn === "RISK", JSON.stringify(l1));
+      // ── D: Python setzt den Stop AUF den Einstieg -> slRange 0 -> RiskAgent
+      // untaetig (`if (slRange < 0.000001) return;`). VON HAND (Schalter AN):
+      //  +5   bid 100.85, Mittel 100.86 -> Weg 0.43 ≥ 0.40 -> Python-BE: Stop 100
+      //  +10  bid 101.5 -> RiskAgent haette 1.5 % Teil, ist aber untaetig;
+      //       Python: Weg 0.755 -> Teilgewinn 2 @101.5 (R +1.5)
+      //  +15  Mittel 101.71 -> Python-Trailing 101.71 − 0.6 = 101.11
+      //  +20  bid Tief 101.0 -> Rest @101.11. R = 0.75 + 0.555 = 1.305
+      const kerzenD = [K(5, 100.9, 100.4, 100.85), K(10, 101.6, 100.9, 101.5), K(15, 101.8, 101.4, 101.7),
+        K(20, 101.65, 101.0, 101.1)];
+      const d2 = sim(KB, kerzenD, AN);
+      torPruefung("exitsim: Fall D rechnet falsch — Python-BE auf Einstieg muss den RiskAgent stilllegen",
+        d2 && nahe(d2.r, 1.305) && d2.teilgewinn === "PY", JSON.stringify(d2));
+      // Gegenprobe: heute (AUS) setzt der RiskAgent bei +5 SEINEN BE (99.85),
+      // Python setzt danach 100 (enger) -> dasselbe Ergebnis.
+      const d1 = sim(KB, kerzenD, AUS);
+      torPruefung("exitsim: Fall D heute — der engere Stop gewinnt nicht", d1 && nahe(d1.r, 1.305), JSON.stringify(d1));
+      // ── E: Stop und Ziel in derselben Kerze -> BEIDE, ganze Position am Stop.
+      const e1 = sim(KB, [K(5, 102.5, 98.5, 100)], AUS);
+      torPruefung("exitsim: Stop+Ziel in einer Kerze ist nicht BEIDE/−1 R",
+        e1 && e1.ende === "BEIDE" && nahe(e1.r, -1), JSON.stringify(e1));
+      // ── F: Ziel zuerst -> ganze Position am Ziel (+2 R), nichts gehandelt davor.
+      const f1 = sim(KB, [K(5, 100.2, 99.9, 100.1), K(10, 102.1, 100.1, 102)], AUS);
+      torPruefung("exitsim: Ziel wird nicht am Zielkurs geschlossen", f1 && f1.ende === "ZIEL" && nahe(f1.r, 2), JSON.stringify(f1));
+      // ── G: Zeit-Exit am Schlusskurs der letzten Kerze (Geldkurs bei BUY).
+      const g1 = sim(KB, [K(5, 100.2, 99.9, 100.1), K(10, 100.3, 100.0, 100.2)], AUS);
+      torPruefung("exitsim: Zeit-Exit nicht am letzten Geldkurs", g1 && g1.ende === "ZEIT" && nahe(g1.r, 0.2), JSON.stringify(g1));
+      // ── H: SELL gespiegelt: Einstieg 100, Stop 101, Ziel 98 -> Briefkurs-Seite.
+      //  Kerze ask Tief 97.95 ≤ 98 -> Ziel +2 R.
+      const KS = { ...KB, richtung: "SELL", stop: 101, ziel: 98 };
+      const h1 = sim(KS, [K(5, 99.0, 97.93, 98.5)], AUS);
+      torPruefung("exitsim: SELL prueft das Ziel nicht am Briefkurs", h1 && h1.ende === "ZIEL" && nahe(h1.r, 2), JSON.stringify(h1));
+      // H2: Geldkurs UNTER dem Ziel, Briefkurs DARUEBER — nur so ist „falsche
+      // Seite" ueberhaupt ausdrueckbar (bei h1 liegen beide darunter).
+      //  bid Tief 97.99 / ask Tief 98.01 -> KEIN Ziel. RiskAgent: 1.48 % -> Teil
+      //  2 @98.52 + BE; Python 0.745 -> Teil gesperrt. Zeit-Exit @98.52 -> 1.48 R.
+      const h2 = sim(KS, [K(5, 99.0, 97.99, 98.5)], AUS);
+      torPruefung("exitsim: SELL-Ziel am Geldkurs geprueft (H2)", h2 && h2.ende === "ZEIT" && nahe(h2.r, 1.48), JSON.stringify(h2));
+      // H3: SELL-Stop 101 — bid Hoch 100.99, ask Hoch 101.01 -> Stop (Briefkurs).
+      const h3 = sim(KS, [K(5, 100.99, 99.9, 100.5)], AUS);
+      torPruefung("exitsim: SELL-Stop nicht am Briefkurs (H3)", h3 && h3.ende === "STOP" && nahe(h3.r, -1), JSON.stringify(h3));
+      // ── I: eine Kerze VOR/AN dem Einstieg zaehlt nie (sie beruehrt hier den Stop).
+      const i1 = sim(KB, [K(0, 100.2, 98.5, 100), K(4, 100.2, 98.5, 100), K(5, 102.1, 100.1, 102)], AUS);
+      torPruefung("exitsim: Kerzen vor dem Einstieg zaehlen", i1 && i1.ende === "ZIEL", JSON.stringify(i1));
+      // ── J: ohne Confidence / Grösse / Kerzen keine Nachbildung (null, gezaehlt).
+      torPruefung("exitsim: ohne Confidence, Grösse oder Kerzen wird trotzdem gerechnet",
+        sim({ ...KB, confidence: null }, kerzenA, AUS) === null && sim({ ...KB, groesse: null }, kerzenA, AUS) === null
+        && sim(KB, [], AUS) === null, "null erwartet");
+
+      // ── Python-Stufen, ATR, Statistik
+      torPruefung("exitsim: pyStufe ordnet die Confidence falsch zu",
+        X.pyStufe(80).beAt === 0.70 && X.pyStufe(79).beAt === 0.55 && X.pyStufe(75).beAt === 0.55
+        && X.pyStufe(74).beAt === 0.40 && X.pyStufe(0).trailDist === 0.60, "Stufen");
+      const H = (i, hoch, tief, schluss) => ({ t: T0 + i * 3_600_000, bidHoch: hoch, bidTief: tief, bidSchluss: schluss,
+        askHoch: hoch, askTief: tief, askSchluss: schluss });
+      const flach = Array.from({ length: 16 }, (_v, i) => H(i, 101, 99, 100));   // TR = 2 je Kerze
+      const ar = X.atrReihe(flach);
+      torPruefung("exitsim: atrReihe rechnet nicht wie TA-Lib (erster Wert an Kerze 14, Wilder)",
+        ar.length === 2 && nahe(ar[0].atr, 2) && nahe(ar[1].atr, 2) && ar[0].abMs === T0 + 15 * 3_600_000,
+        JSON.stringify(ar));
+      const sprung = [...flach.slice(0, 15), H(15, 104, 99, 100)];   // TR 5 -> (2·13 + 5)/14
+      torPruefung("exitsim: atrReihe glaettet nicht nach Wilder",
+        nahe(X.atrReihe(sprung)[1].atr, (2 * 13 + 5) / 14), JSON.stringify(X.atrReihe(sprung)));
+      torPruefung("exitsim: atrBei blickt in die Zukunft",
+        X.atrBei(ar, T0 + 15 * 3_600_000 - 1) === null && nahe(X.atrBei(ar, T0 + 15 * 3_600_000), 2), "atrBei");
+      const st = X.statistik([1, 2, 3]);
+      torPruefung("exitsim: statistik rechnet falsch",
+        nahe(st.mittel, 2) && nahe(st.sd, 1) && nahe(st.se, 1 / Math.sqrt(3))
+        && X.statistik([5]).sd === null && X.statistik([]).mittel === null, JSON.stringify(st));
+
+      // ── simBerichtAus: Ausschluesse gezaehlt, V2 = Schalter UMGELEGT, Gruppen.
+      const daten = [
+        { kandidat: KB, kerzen: kerzenA, stunden: [], minuten: 5, endeMs: ende, datenGrund: null },
+        { kandidat: { ...KB, id: 2, confidence: null }, kerzen: kerzenA, stunden: [], minuten: 5, endeMs: ende, datenGrund: null },
+        { kandidat: { ...KB, id: 3, groesse: null }, kerzen: kerzenA, stunden: [], minuten: 5, endeMs: ende, datenGrund: null },
+        { kandidat: { ...KB, id: 4 }, kerzen: [], stunden: [], minuten: 5, endeMs: ende, datenGrund: "HTTP 400" },
+        { kandidat: { ...KB, id: 5, stil: "SWING", horizontStunden: 168, kiAbweichung: true }, kerzen: kerzenA,
+          stunden: [], minuten: 5, endeMs: ende, datenGrund: null },
+      ];
+      const SB = X.simBerichtAus(daten, AUS, abh, { fensterTage: 60, abbruch: null, kandidaten: 5 });
+      torPruefung("exitsim: simBerichtAus zaehlt die Ausschluesse falsch",
+        SB.ohneConfidence === 1 && SB.ohneGroesse === 1 && SB.ohneDaten === 1 && SB.kiAbweichung === 1
+        && SB.heuteRelativ === false, JSON.stringify({ c: SB.ohneConfidence, g: SB.ohneGroesse, d: SB.ohneDaten, k: SB.kiAbweichung }));
+      torPruefung("exitsim: Gruppen fehlen oder in falscher Reihenfolge (Stile, dann gesamt)",
+        JSON.stringify(SB.gruppen.map((g) => [g.name, g.n])) === JSON.stringify([["DAYTRADING", 1], ["SWING", 1], ["gesamt", 2]]),
+        JSON.stringify(SB.gruppen.map((g) => [g.name, g.n])));
+      const SBan = X.simBerichtAus(daten, AN, abh, { fensterTage: 60, abbruch: null, kandidaten: 5 });
+      torPruefung("exitsim: V2 ist nicht die UMGELEGTE Einstellung",
+        SBan.heuteRelativ === true && SB.gruppen[0].n === 1, "heuteRelativ");
+      // Und V2 muss wirklich ANDERS RECHNEN: Fall K ergibt AUS −0.15, AN 0.
+      // `heuteRelativ` allein bewiese nur die Beschriftung.
+      const SBk = X.simBerichtAus([{ kandidat: KB, kerzen: kerzenK, stunden: [], minuten: 5, endeMs: ende, datenGrund: null }],
+        AUS, abh, { fensterTage: null, abbruch: null, kandidaten: 1 });
+      const gK = SBk.gruppen.find((g) => g.name === "gesamt");
+      torPruefung("exitsim: V2 rechnet mit derselben Einstellung wie V1 (Fall K: V1 −0.15, V2 0)",
+        gK && nahe(gK.v1.mittel, -0.15) && nahe(gK.v2.mittel, 0) && nahe(gK.delta.mittel, 0.15),
+        JSON.stringify(gK && [gK.v1.mittel, gK.v2.mittel, gK.delta.mittel]));
+
+      // ── simGruppe: Urteile. Kalibrierung nur ohne KI-Abweichung, mit Ist-R.
+      const F = (v1r, v2r, ist, ki = false) => ({ kandidat: { ...KB, istSchluss: ist === null ? null : 100 + ist,
+        kiAbweichung: ki }, halten: 0, v1: { r: v1r, ende: "ZEIT", teilgewinn: null, breakeven: false },
+        v2: { r: v2r, ende: "ZEIT", teilgewinn: null, breakeven: false } });
+      const viele = (fn) => Array.from({ length: 40 }, (_v, i) => fn(i));
+      const gStark = X.simGruppe("t", viele((i) => F(0, 0.5 + (i % 2) * 0.01, 0)));   // Unterschied +0.5, Kal 0
+      const gAbw = X.simGruppe("t", viele((i) => F(0, 0.2 + (i % 2) * 0.01, -0.6)));  // Kal +0.6 > Unterschied 0.2
+      const gRausch = X.simGruppe("t", viele((i) => F(0, i % 2 ? 1 : -0.98, 0)));     // Unterschied ~0, grosse Streuung
+      torPruefung("exitsim: die Urteile von simGruppe stimmen nicht",
+        /ausserhalb ±2 SE/.test(gStark.urteil) && /weicht stärker ab/.test(gAbw.urteil)
+        && /innerhalb des Rauschens/.test(gRausch.urteil)
+        && /zu wenig/.test(X.simGruppe("t", [F(0, 1, 0)]).urteil),
+        [gStark.urteil, gAbw.urteil, gRausch.urteil].join(" | "));
+      const gKi = X.simGruppe("t", viele(() => F(0, 0.5, null, false)).concat(viele(() => F(0, 0.5, -9, true))));
+      torPruefung("exitsim: die Kalibrierung nimmt Trades MIT KI-Abweichung oder OHNE Ist-R mit",
+        gKi.kalibrierung.n === 0 && /keine Kalibrierung/.test(gKi.urteil), JSON.stringify(gKi.kalibrierung));
+      const gTeil = X.simGruppe("t", [{ ...F(0, 0, 0), kandidat: { ...KB, teilgewinnGenommen: true, istSchluss: 101 } }]);
+      torPruefung("exitsim: ein Trade mit Teilgewinn geht mit Ist-R in die Kalibrierung", gTeil.kalibrierung.n === 0, JSON.stringify(gTeil.kalibrierung));
+
+      // ── Text: Gift im Abbruch und im Gruppennamen, Laenge im Haertefall.
+      const tS = X.simText({ ...SB, abbruch: "<b>x</b>&y" + "z".repeat(300),
+        gruppen: [...SB.gruppen, { ...SB.gruppen[0], name: "<i>GIFT</i>" }] });
+      torPruefung("exitsim: der Text gibt Fremdes roh ins HTML",
+        !tS.includes("<b>x</b>&y") && !tS.includes("<i>GIFT</i>") && tS.includes("&lt;i&gt;GIFT"), "gift");
+      const vollG = Array.from({ length: 6 }, (_v, i) => ({ ...SB.gruppen[0], name: `STIL${"X".repeat(30)}${i}`,
+        urteil: "⚠️ Nachbildung weicht stärker ab als der Effekt — V2 nicht belastbar" }));
+      const tLang = X.simText({ ...SB, fensterTage: 99999, ohneDaten: 99999, ohneConfidence: 99999, ohneGroesse: 99999,
+        teilgewinnOhneIst: 99999, kiAbweichung: 99999, abbruch: "z".repeat(400), gruppen: vollG });
+      torPruefung("exitsim: der Text sprengt die Telegram-Grenze im Haertefall", tLang.length <= 3900, `${tLang.length}`);
+      torPruefung("exitsim: der Text nennt die Grenzen der Nachbildung nicht",
+        /KI vor jeder Stufe ist NICHT nachgebildet/.test(tS) && /5-Minuten-Kerzen/.test(tS) && /Teilgewinn als echte Halbierung/.test(tS), "Grenzen");
+
+      // ── exitSimLauf: seitenweise, Stundenkerzen, Pause, Abbruch.
+      {
+        const kSw = { ...KB, stil: "SWING", horizontStunden: 168 };
+        const jetzt = T0 + 30 * 86_400_000;
+        const aufrufe = []; const pausen = [];
+        const r = await LAUFs.exports.exitSimLauf([KB, kSw], {
+          kerzen: async (...a) => { aufrufe.push(a); return { ok: true, daten: { prices: [] } }; },
+          warte: async (ms) => { pausen.push(ms); }, jetzt: () => jetzt });
+        const erw = LAUFs.exports.simAbrufeFuer(KB, jetzt) + LAUFs.exports.simAbrufeFuer(kSw, jetzt);
+        torPruefung("exitsim: exitSimLauf ruft nicht seitenweise ab (DAY 1+1, SWING 3+1)",
+          LAUFs.exports.simAbrufeFuer(KB, jetzt) === 2 && LAUFs.exports.simAbrufeFuer(kSw, jetzt) === 4
+          && aufrufe.length === erw && r.abrufe === erw && pausen.length === erw - 1
+          && aufrufe.filter((a) => a[1] === "HOUR").length === 2
+          && aufrufe.filter((a) => a[1] === "MINUTE_5").length === 4, JSON.stringify(aufrufe.map((a) => a[1])));
+        const stdAbruf = aufrufe.find((a) => a[1] === "HOUR");
+        torPruefung("exitsim: die Stundenkerzen beginnen nicht 100 h vor dem Einstieg",
+          stdAbruf && stdAbruf[2] === EMs.exports.utcParameter(T0 - 100 * 3_600_000), JSON.stringify(stdAbruf));
+        const r2 = await LAUFs.exports.exitSimLauf([KB, kSw], {
+          kerzen: async () => ({ ok: false, status: 429, error: "limit" }), warte: async () => {}, jetzt: () => jetzt });
+        torPruefung("exitsim: HTTP 429 bricht nicht ab", r2.abbruch !== null && /429/.test(r2.abbruch) && r2.abrufe === 1,
+          JSON.stringify({ a: r2.abbruch, n: r2.abrufe }));
+      }
+
+      // ── /exits-Korrektur (17.11.): mit Teilgewinn ist „tatsaechlich" UNBEKANNT.
+      torPruefung("exits: istR rechnet einen Trade MIT Teilgewinn aus dem Schlusskurs",
+        EMs.exports.istR({ ...KB, istSchluss: 101.5, teilgewinnGenommen: true }) === null
+        && EMs.exports.istR({ ...KB, istSchluss: 101.5, teilgewinnGenommen: false }) === 1.5, "istR");
+      const notizenT = (n) => JSON.stringify({ broker: "Capital.com DEMO", source: "auto-scan", tradingStyle: "DAYTRADING",
+        exitReason: "DAZWISCHEN", closeLevel: 1.102, ...n });
+      const zeileT = (n, o = {}) => ({ id: 1, market: "EURUSD", direction: "BUY", entry: 1.1, stopLoss: 1.095,
+        takeProfit: 1.11, createdAt: new Date(T0), notes: notizenT(n), positionSize: 4, ...o });
+      const optT = { haltedauer: { DAYTRADING: 24 }, ohneErgebnis: [], epicMap: { EURUSD: "EURUSD" }, jetztMs: T0 + 86_400_000, tage: null };
+      const kT = EMs.exports.auswahl([zeileT({ partialSize: 2, confidence: 78, aiZusammenfassung: { APPROVE: 2, SKIP: 1 } })], optT).kandidaten[0];
+      const kT0 = EMs.exports.auswahl([zeileT({ partialSize: 0, aiZusammenfassung: { APPROVE: 3 } }, { positionSize: null })], optT).kandidaten[0];
+      // NUR ADJUST: kT traegt SKIP — eine Lesart, die ADJUST vergaesse, waere dort gruen.
+      const kTa = EMs.exports.auswahl([zeileT({ aiZusammenfassung: { APPROVE: 1, ADJUST: 1 } })], optT).kandidaten[0];
+      torPruefung("exits: auswahl liest Teilgewinn / KI-Abweichung / Confidence / Grösse falsch",
+        kT?.teilgewinnGenommen === true && kT?.kiAbweichung === true && kT?.confidence === 78 && kT?.groesse === 4
+        && kTa?.kiAbweichung === true
+        && kT0?.teilgewinnGenommen === false && kT0?.kiAbweichung === false && kT0?.confidence === null && kT0?.groesse === null,
+        JSON.stringify([kT, kT0].map((k) => k && [k.teilgewinnGenommen, k.kiAbweichung, k.confidence, k.groesse])));
+      const BT = EMs.exports.exitBericht({ gesamt: 1, kandidaten: [kT], ausgeschlossen: {} },
+        [{ kandidat: kT, nachrechnung: { treffer: "OFFEN", maxR: 0.5, haltenR: 0.2, kerzenGenutzt: 3 }, datenGrund: null, gekappt: false }],
+        { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null });
+      torPruefung("exits: der Bericht verschweigt die Trades mit Teilgewinn ohne „tatsaechlich\"",
+        BT.teilgewinnOhneIst === 1 && BT.paar.n === 0 && /ohne „tatsächlich": 1 mit Teilgewinn/.test(EMs.exports.exitsText(BT)),
+        String(BT.teilgewinnOhneIst));
+
+      // ── BINDUNG AN DIE QUELLEN: jede kopierte Zahl.
+      const pySrc = read("backend/services/trade_lifecycle_manager.py");
+      const stufenPy = [...pySrc.matchAll(/return\s*\{"be_at":\s*([\d.]+),\s*"trail_dist":\s*([\d.]+),\s*"partial_at":\s*([\d.]+)\}/g)]
+        .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+      const grenzenPy = [...pySrc.matchAll(/if confidence >= (\d+):/g)].map((m) => Number(m[1]));
+      torPruefung("exitsim: PY_STUFEN weichen von get_level in trade_lifecycle_manager.py ab",
+        JSON.stringify(stufenPy) === JSON.stringify(X.PY_STUFEN.map((s) => [s.beAt, s.trailDist, s.partialAt]))
+        && JSON.stringify(grenzenPy) === JSON.stringify(X.PY_STUFEN.slice(0, -1).map((s) => s.abConfidence)),
+        `${JSON.stringify(stufenPy)} / ${JSON.stringify(grenzenPy)}`);
+      const iZeit = pySrc.indexOf("trade.age_hours >= max_h");
+      const iTeil = pySrc.indexOf('progress >= lvl["partial_at"]');
+      const iBe = pySrc.indexOf('progress >= lvl["be_at"]');
+      const iTrail = pySrc.indexOf('trail_dist  = trade.sl_range * lvl["trail_dist"]');
+      torPruefung("exitsim: die Reihenfolge in on_price_update ist nicht mehr Zeit → Teil → BE → Trailing",
+        iZeit > 0 && iTeil > iZeit && iBe > iTeil && iTrail > iBe, `${iZeit}/${iTeil}/${iBe}/${iTrail}`);
+      torPruefung("exitsim: Python-Teilgewinn / -BE / -Spanne nicht mehr wie nachgebildet",
+        /partial_vol = trade\.size \/ 2/.test(pySrc) && /return \{"action": "UPDATE_SL", "new_sl": trade\.entry\}/.test(pySrc)
+        && /return abs\(self\.entry - self\.stop_loss\)/.test(pySrc), "Python-Regeln");
+      const raB = bereinigeS(read("frontend/lib/agents/risk-agent.ts"));
+      const RK = X.RISK_KONST;
+      torPruefung("exitsim: RISK_KONST weicht vom RiskAgent ab",
+        RK.beBufferAnteil === 0.15 && /adjustedBeBuffer\s*\n?\s*:\s*0\.15;/.test(raB)
+        && RK.teilAnteil === 0.5 && /adjustedPartialRatio\s*\n?\s*:\s*0\.5;/.test(raB)
+        && RK.teilMinGroesse === 2 && /rawSize >= 2 \? Math\.floor\(rawSize \* anteil\) : 0/.test(raB)
+        && RK.beZoneAnteil === 0.2 && /Math\.max\(beTol, slRange \* 0\.20\)/.test(raB)
+        && RK.beTolRueckfall === 0.01 && /BE_TOLERANCE\[symbol\] \?\? slRange \* 0\.01/.test(raB)
+        && RK.atrRueckfall === 0.5 && /\?\? slRange \* 0\.5;/.test(raB)
+        && RK.minSlRange === 0.000001 && /if \(slRange < 0\.000001\) return;/.test(raB),
+        "RiskAgent-Konstanten");
+      torPruefung("exitsim: der RiskAgent-BE schreibt nicht mehr `entry - beBuffer` / das Trailing nicht mehr `max(peak − d, entry)`",
+        /const newSL = isBuy \? entry - beBuffer : entry \+ beBuffer;/.test(raB)
+        && /Math\.max\(newPeak - distanz, entry\)/.test(raB) && /beSet: trailSL >= entry/.test(raB), "RiskAgent-Regeln");
+      const instB = bereinigeS(read("frontend/instrumentation.ts"));
+      const iRisk = instB.indexOf("await runActiveTradeManager();");
+      const iPy = instB.indexOf("pyLifecycleTrades");
+      torPruefung("exitsim: im Positions-Zyklus laeuft der RiskAgent nicht mehr VOR dem Python-Lifecycle, oder Python bekommt nicht den Mittelkurs",
+        iRisk > 0 && iPy > iRisk && /priceMap\.set\(p\.symbol, \(p\.bid \+ p\.ask\) \/ 2\)/.test(instB), `${iRisk}/${iPy}`);
+      torPruefung("exitsim: getStyleThresholds / BE_TOLERANCE sind nicht exportiert — dann braeuchte die Nachbildung Kopien",
+        /export function getStyleThresholds\(/.test(raB) && /export const BE_TOLERANCE:/.test(raB), "exports");
+      const simB = bereinigeS(read("frontend/lib/exit-messung/exit-simulation.ts"));
+      torPruefung("exitsim: das Rechenmodul ist nicht rein (Aussenwelt, Uhr, eigene Schwellen-Tabelle)",
+        !/\bfetch\(|getPrisma|\$executeRaw|Date\.now\(|new Date\(\)|bePct:\s*0\.0/.test(simB)
+        && (simB.match(/^import /gm) ?? []).length === 2, "rein");
+      const whS = bereinigeS(read("frontend/app/api/telegram/webhook/route.ts"));
+      const iS = whS.indexOf('if (textLower === "/exitsim" || textLower.startsWith("/exitsim "))');
+      const iH = whS.indexOf('if (textLower === "/help")');
+      const simZweig = iS >= 0 && iH > iS ? whS.slice(iS, iH) : "";
+      torPruefung("exitsim: der Webhook-Zweig fehlt (Selbstpruefung)", simZweig.length > 500, `${iS}/${iH}`);
+      torPruefung("exitsim: der Webhook reicht nicht die ECHTEN Funktionen und Einstellungen durch",
+        /stilSchwellen: getStyleThresholds, wirksameSchwellen, beToleranz: BE_TOLERANCE/.test(simZweig)
+        && /positionSize: true/.test(simZweig) && /s\.riskSettings\.exitThresholdsRelativeToStop/.test(simZweig)
+        && /s\.riskSettings\.breakevenAtR/.test(simZweig) && /s\.riskSettings\.partialAtR/.test(simZweig)
+        && /s\.riskSettings\.trailAtR/.test(simZweig) && /haltedauer: STYLE_MAX_HOURS,/.test(simZweig), "Quellen");
+      torPruefung("exitsim: der /exitsim-Zweig schreibt, ordert oder schliesst",
+        !/\$executeRaw|\.update\(|\.create\(|\.delete\(|\.upsert\(|capitalPlaceOrder|capitalClose|triggerKillswitch|updateBrokerConnection/.test(simZweig),
+        "Schreibzugriff");
+      torPruefung("exitsim: /exitsim steht nicht in der Hilfe", /"\/exitsim — /.test(whS), "SYSTEM_BEFEHLE");
+
+      // ── END-TO-END durch die echte POST.
+      {
+        const chat = "123456789";
+        const altEnv = { TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID, TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN };
+        const altFetch = global.fetch;
+        const altSperre = global.__exits_laeuft_seit__;
+        const antworten = [];
+        try {
+          process.env.TELEGRAM_CHAT_ID = chat;
+          process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
+          delete global.__exits_laeuft_seit__;
+          global.fetch = async (_u, init) => {
+            antworten.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+            return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: {} }), json: async () => ({ ok: true }) };
+          };
+          let einst = { riskSettings: { exitThresholdsRelativeToStop: false, breakevenAtR: 1, partialAtR: 1.5, trailAtR: 1 } };
+          let findAufrufe = 0; let findArgs = null;
+          const schreib = [];
+          const abrufe = [];
+          const nachher = [];
+          const trade = new Proxy({}, { get: (_t, p) => {
+            if (p === "findMany") return async (a) => { findAufrufe++; findArgs = a; return dbZeilen; };
+            if (typeof p === "symbol" || p === "then") return undefined;
+            return async () => { schreib.push(`trade.${String(p)}`); return null; };
+          } });
+          const prisma = new Proxy({}, { get: (_t, p) => {
+            if (p === "trade") return trade;
+            if (typeof p === "symbol" || p === "then") return undefined;
+            return async () => { schreib.push(String(p)); return null; };
+          } });
+          const jetzt = Date.now();
+          const offen = [jetzt - 3 * 86_400_000, jetzt - 2 * 86_400_000];
+          const notizenE = JSON.stringify({ broker: "Capital.com DEMO", source: "auto-scan", tradingStyle: "DAYTRADING",
+            exitReason: "STOP", closeLevel: 99, confidence: 70 });
+          const dbZeilen = offen.map((o, i) => ({ id: i + 1, market: "EURUSD", direction: "BUY", entry: 100, stopLoss: 99,
+            takeProfit: 102, notes: notizenE, createdAt: new Date(o), positionSize: 4 }));
+          const P = (tMs, bh, bl, bc) => ({ snapshotTimeUTC: EMs.exports.utcParameter(tMs), snapshotTime: EMs.exports.utcParameter(tMs),
+            highPrice: { bid: bh, ask: bh + 0.02 }, lowPrice: { bid: bl, ask: bl + 0.02 }, closePrice: { bid: bc, ask: bc + 0.02 } });
+          const wh = ladeTsModul("app/api/telegram/webhook/route.ts", {
+            "next/server": { NextResponse: { json: (x) => ({ __json: x }) }, after: (fn) => { nachher.push(fn); } },
+            "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml, sendTelegram: async () => true,
+              telegramZeit: () => "17.11.2026, 20:00:00 MEZ", telegramDatum: () => "17.11.2026" },
+            "html-sicher/html-sicher": htmlSicherEcht,
+            "app/lib/prisma": { getPrisma: () => prisma },
+            "capital-com/capital-com-session": { getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s" }) },
+            "settings/settings-store": { getSettings: async () => einst },
+            "agents/risk-agent": { STYLE_MAX_HOURS: { SCALPING: 4, DAYTRADING: 24, SWING: 168 },
+              getStyleThresholds: ra.exports.getStyleThresholds, wirksameSchwellen: ra.exports.wirksameSchwellen,
+              BE_TOLERANCE: ra.exports.BE_TOLERANCE },
+            "capital-com/capital-trade-tracker": { ETIKETTEN_OHNE_ERGEBNIS: ["NIE_BESTAETIGT", "KEIN_PNL"] },
+            "capital-com/capital-com-client": { EPIC_MAP: { EURUSD: "EURUSD" },
+              capitalGetKerzen: async (...a) => {
+                abrufe.push(a);
+                const von = Date.parse(`${a[5]}Z`);
+                if (a[4] === "HOUR") return { ok: true, daten: { prices: Array.from({ length: 20 }, (_v, i) =>
+                  P(von + i * 3_600_000, 100.5, 99.5, 100)) } };
+                return { ok: true, daten: { prices: [P(von + 10 * 60_000, 100.2, 98.9, 99)] } };   // Stop
+              } },
+            "exit-messung/exit-messung": EMs.exports,
+            "exit-messung/exit-lauf": LAUFs.exports,
+            "exit-messung/exit-simulation": SIM.exports,
+          });
+          if (wh.fehler || typeof wh.exports?.POST !== "function") {
+            torPruefung("exitsim E2E: Webhook nicht ausfuehrbar", false, wh.fehler ?? "POST fehlt");
+          } else {
+            const schicke = (text) => wh.exports.POST({ json: async () => ({ message: {
+              chat: { id: Number(chat) }, from: { first_name: "P" }, text } }) });
+            const letzte = () => antworten.at(-1) ?? "";
+            await schicke("/exitsim 0x10");
+            torPruefung("exitsim E2E: unbrauchbares Argument nicht abgewiesen oder ECHOT",
+              /keine Anzahl Tage/.test(letzte()) && !letzte().includes("0x10") && findAufrufe === 0, letzte().slice(0, 100));
+            einst = { riskSettings: { exitThresholdsRelativeToStop: "ja", breakevenAtR: 1, partialAtR: 1.5, trailAtR: 1 } };
+            await schicke("/exitsim");
+            torPruefung("exitsim E2E: unlesbare Einstellungen fuehren trotzdem zu einem Lauf",
+              /nicht lesbar/.test(letzte()) && findAufrufe === 0 && nachher.length === 0
+              && (global.__exits_laeuft_seit__ ?? null) === null, letzte().slice(0, 120));
+            einst = { riskSettings: { exitThresholdsRelativeToStop: false, breakevenAtR: 1, partialAtR: 1.5, trailAtR: 1 } };
+            await schicke("/exitsim");
+            const start = letzte();
+            await schicke("/exits");
+            const zweite = letzte();
+            torPruefung("exitsim E2E: Start nicht sofort / nicht in after() / Sperre nicht geteilt mit /exits",
+              /\/exitsim<\/b> läuft: 2 Trades, 4 Kursabrufe/.test(start) && nachher.length === 1 && abrufe.length === 0
+              && /läuft schon seit/.test(zweite), `${start.slice(0, 120)} | ${zweite.slice(0, 80)}`);
+            while (nachher.length) await nachher.shift()();
+            const erg = letzte();
+            torPruefung("exitsim E2E: das Ergebnis fehlt oder rechnet falsch (beide am Stop: V1 = V2 = −1 R)",
+              /DAYTRADING<\/b> \(2\): halten -1\.00/.test(erg) && /V1 -1\.00/.test(erg) && /V2 -1\.00/.test(erg)
+              && /gesamt<\/b> \(2\)/.test(erg) && abrufe.length === 4
+              && abrufe.filter((a) => a[4] === "HOUR").length === 2, erg.slice(0, 500));
+            torPruefung("exitsim E2E: die Abfrage liest die Positionsgrösse nicht",
+              findArgs?.select?.positionSize === true && findArgs?.where?.status?.not === "OPEN", JSON.stringify(findArgs));
+            torPruefung("exitsim E2E: die Sperre bleibt nach dem Lauf stehen",
+              (global.__exits_laeuft_seit__ ?? null) === null, String(global.__exits_laeuft_seit__));
+            torPruefung("exitsim E2E: /exitsim hat in die Datenbank GESCHRIEBEN", schreib.length === 0, JSON.stringify(schreib));
+            await schicke("/help");
+            torPruefung("exitsim E2E: /help nennt /exitsim nicht", /\/exitsim — /.test(letzte()), "help");
           }
         } finally {
           global.fetch = altFetch;

@@ -93,7 +93,9 @@ const DEFAULT_SL_RANGE: Record<string, number> = {
   BTCUSD: 500, ETHUSD: 30,
 };
 
-const BE_TOLERANCE: Record<string, number> = {
+// EXPORTIERT fuer `/exitsim` (17.11.): die Nachrechnung braucht dieselbe
+// Toleranz fuer Breakeven-Zone und Trailing-Schritt. Wert unveraendert.
+export const BE_TOLERANCE: Record<string, number> = {
   XAUUSD: 0.5,   XAGUSD: 0.02,
   EURUSD: 0.0002, GBPUSD: 0.0002, USDJPY: 0.02, AUDUSD: 0.0002,
   USDCAD: 0.0002, USDCHF: 0.0002, GBPJPY: 0.02, EURJPY: 0.02,
@@ -111,7 +113,9 @@ export const STYLE_MAX_HOURS: Record<string, number> = {
 };
 
 // Profit-%-Schwellen + ATR-Faktor nach Trading-Style
-function getStyleThresholds(style: string): {
+// EXPORTIERT fuer `/exitsim` (17.11.): die Nachrechnung rechnet mit DIESER
+// Funktion, nicht mit einer Kopie (zwei Fassungen koennten auseinanderlaufen).
+export function getStyleThresholds(style: string): {
   bePct: number; partialPct: number; trailPct: number; atrFactor: number;
 } {
   switch (style.toUpperCase()) {

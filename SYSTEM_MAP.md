@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 363 · Kanten: 920
+Dateien mit internen Abhängigkeiten: 364 · Kanten: 923
 
 
 ## analysis-engine/api
@@ -457,6 +457,7 @@ Dateien mit internen Abhängigkeiten: 363 · Kanten: 920
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
   - → `frontend/lib/exit-messung/exit-lauf.ts`
   - → `frontend/lib/exit-messung/exit-messung.ts`
+  - → `frontend/lib/exit-messung/exit-simulation.ts`
   - → `frontend/lib/expectancy/erwartungswert.ts`
   - → `frontend/lib/handels-lage/handels-lage.ts`
   - → `frontend/lib/handelsfenster/fenster-text.ts`
@@ -907,6 +908,9 @@ Dateien mit internen Abhängigkeiten: 363 · Kanten: 920
 - `frontend/lib/exit-messung/exit-messung.ts`
   - → `frontend/lib/html-sicher/html-sicher.ts`
   - → `frontend/lib/richtung/richtung.ts`
+- `frontend/lib/exit-messung/exit-simulation.ts`
+  - → `frontend/lib/exit-messung/exit-messung.ts`
+  - → `frontend/lib/html-sicher/html-sicher.ts`
 - `frontend/lib/expectancy/erwartungswert.ts`
   - → `frontend/lib/capital-com/capital-trade-tracker.ts`
 - `frontend/lib/gpt-analyst-engine/gpt-analyst-manager.ts`
@@ -1353,5 +1357,5 @@ Dateien mit internen Abhängigkeiten: 363 · Kanten: 920
 - `frontend/lib/python-backend/auth-header.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 8 Dateien
-- `frontend/lib/auth/auth-store.ts` — von 7 Dateien
+- `frontend/lib/html-sicher/html-sicher.ts` — von 8 Dateien
 
