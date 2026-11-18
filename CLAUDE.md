@@ -54,10 +54,10 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `kurs-riegel` | `checkPriceAvailable()` | 24.08. |
 | `lern-quelle` | `echteGeschlosseneTrades()`, `runLearningCycle()` | 24.08. |
 | `preis-cache` | `preiseUebernehmen()`, `priceCache`, `marketHealth` | 26.08. |
-| `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall | 01.09. |
+| `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST` | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()` | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -1555,6 +1555,9 @@ Die Kette dazu steht vollständig im Code, jeder Schritt belegt:
 | Der Gegenschalter `exitThresholdsRelativeToStop` ist **AUS** | `settings-store.ts:51` **und** im Snapshot |
 
 Die R-Werte (`partialAtR: 1.5`) sind konfiguriert und werden **nicht benutzt**.
+
+> **Korrektur 18.11.:** „AUS“ ist der **Standard**. Live ist der Schalter **AN**
+> (gemessen per `/exitsim`, siehe dort); seit wann, ist nicht feststellbar.
 
 **Das ist eine Erklärung, keine Messung.** Deshalb schlüsselt `/edge` jetzt
 auch die **Gewinner und Verlierer** nach `result/exitReason` auf — **mit Ø
@@ -4607,7 +4610,8 @@ unverändert**, `tsc` 0 Fehler, Build *Compiled successfully* ohne Warnung.
 Auf zwei Wegen beantwortet — Code und Live-Daten.
 
 **Der Mechanismus ist `exitThresholdsRelativeToStop`** (`settings-store.ts:51`,
-steht auf `false`, im Snapshot bestätigt). Gerechnet mit der **echten**
+steht auf `false`, im Snapshot bestätigt — das ist der **Standard**; live ist
+er AN, gemessen am 18.11., siehe `/exitsim`). Gerechnet mit der **echten**
 `wirksameSchwellen()`, DAYTRADING:
 
 | Markt | Stop % | **heute** BE / Teil / Trail | **mit AN** |
@@ -6363,6 +6367,157 @@ Filterkette, keine Schleife. `exitThresholdsRelativeToStop` bleibt, wie es
 ist — `/exitsim` ist die Grundlage für diese Entscheidung, nicht die
 Entscheidung. **Snapshot 299 Werte unverändert**, Karte 920 → **923**
 (drei gewollte Kanten).
+
+### Der erste Lauf: der Schalter ist live AN — und nicht der Hebel (18.11.)
+
+`/exitsim 60` auf `41ea967`, 97 von 104 Trades nachgerechnet:
+
+| | V2 − V1 | Kalibrierung V1 − tats. | Teilgewinn getroffen |
+|---|---|---|---|
+| DAYTRADING (52) | −0.03 ±0.13 | +0.25 ±0.39 (38) | 36/52 |
+| SWING (45) | +0.03 ±0.16 | −0.10 ±0.20 (29) | 33/45 |
+| gesamt (97) | −0.00 ±0.10 | +0.09 ±0.24 (67) | 69/97 |
+
+**Die Kopfzeile sagte „V1 = heute (Schalter AN)“.** Der Wert kommt aus
+`getSettings()`; der Standard ist AUS (`settings-store.ts:51`), also stammt AN
+aus der Datenbank — umgelegt im Dashboard (`SettingsDashboard.tsx:1244`).
+**Seit wann, ist nicht feststellbar.** Alle früheren Sätze dieser Datei, der
+Schalter sei „AUS“, beschrieben den **Standard**, nicht den Live-Wert —
+dieselbe Verwechslung wie bei `allowMeasuredConsensus` (30.10.) und
+`blockOverfitMarkets` (02.11.). Der Snapshot hält nur Standards; eine Aussage
+über einen Live-Schalter braucht einen Live-Beleg.
+
+**Der Schalter ist nicht der Hebel:** der Unterschied V2 − V1 liegt in jeder
+Gruppe weit im Rauschen. Das Urteil „Nachbildung weicht stärker ab“ folgt aus
+der Regel, die zwei Punktschätzer ohne Streuung vergleicht — die Kalibrierung
+liegt selbst im Rauschen. Eine Schwäche der Urteilsregel, benannt, nicht
+geändert.
+
+**Bei DAYTRADING liegt der Verlust woanders:** halten +0.29, V1 +0.22 — die
+Regeln kosten nach der Nachrechnung ~0.07 R, `/exits` sah ~0.24 R, und die
+Nachrechnung ist um 0.25 R besser als die Wirklichkeit. Den grösseren Teil
+bildet die Nachbildung **nicht** ab; in 28 von 97 Trades sind sich
+Nachrechnung und Wirklichkeit nicht einmal einig, ob ein Teilgewinn genommen
+wurde. Ursache offen (Kandidaten: Schalter-Historie im Fenster,
+Gegen-Order-Teilschluss, 5- statt 2-Minuten-Kerzen, Schlupf, Python-Neustarts,
+ATR-Quelle) — eine Liste, keine Diagnose.
+
+## Der Meta-KI-Rückfall prüft die Regeln selbst (18.11.)
+
+**Geändert auf ausdrückliche Anweisung.** Anlass: das Anthropic-Guthaben war
+aufgebraucht, und `/status` zeigte **„Meta-KI: ja 259 · Rückfall 238“**.
+
+### Was der Rückfall bis heute tat
+
+Fiel Claude aus, setzte `runMetaAnalysis` für **jeden** Kandidaten
+`approve: true` — die Gegenprüfung entfiel vollständig. So gebaut und
+dokumentiert seit dem 08.09. (`ai-gate-alert.ts`), aber nie hinterfragt:
+**die Regeln, die die Meta-KI prüft, sind vollständig deterministisch.** Sie
+stehen wörtlich in ihrer Anfrage (`analysis-agent.ts`, seit 16.09. an den
+GPT-Prompt gebunden):
+
+- BUY bei RSI > 70, SELL bei RSI < 30 (Überdehnung)
+- BUY, obwohl weder 1D-Trend BULLISH noch TA-Signal BUY/STRONG_BUY
+- SELL gespiegelt
+- „Ein Wert null heisst nicht gemessen und ist KEIN Ablehnungsgrund.“
+
+**Gemessen am 18.11.:** solange Claude antwortete, lehnte es **37 von 58**
+Kandidaten ab (Rückfall wird nur bei Freigaben gezählt: 259 − 238 = 21 echte
+Freigaben). Danach ging jeder Kandidat ungeprüft durch dieses Tor.
+
+### Was jetzt geschieht
+
+`metaRegelVerstoss()` prüft im Ausfall **dieselben drei Regeln** im Code. Ein
+Verstoss heisst Ablehnung mit Grund („Rueckfall ohne KI: RSI 75 bei BUY über
+70 — Überdehnung“), sonst Freigabe. **Dieselbe Zusammenfassung** geht in die
+Anfrage an Claude und in den Rückfall (`metaZusammenfassung()`) — zwei
+Fassungen könnten auseinanderlaufen.
+
+- **`UNKNOWN` zählt wie `null`.** Das Backend liefert `trend` als `BULLISH`,
+  `BEARISH`, `NEUTRAL` oder `UNKNOWN` (`talib_analysis.py:87–90`, „nicht
+  berechenbar“). Die Trend-Regel verlangt deshalb **beide** Werte gemessen —
+  fehlt einer, liesse sich nicht ausschliessen, dass er zur Richtung passt.
+- **Keine Senkung der Confidence.** Die Anfrage erlaubt sie nur „für einen
+  konkreten Grund“, und den nennt nur die KI.
+- **Es bleibt ein Rückfall und heisst so.** Zustimmung **und** Ablehnung aus
+  den Regeln gehen als `fallback` in die Bilanz (Definition `agent-bus.ts`:
+  das Tor hat nicht geurteilt). „Rückfall N“ in `/status` zählt damit ab
+  heute **beide** Seiten, nicht nur Freigaben.
+- **`c.claude?.riskScore`** — die Zusammenfassung läuft jetzt auch im `catch`.
+  Würfe sie dort, bräche der ganze Zyklus ab; vorher griff der Rückfall auf
+  `claude` gar nicht zu.
+
+**Was es NICHT tut:** antwortet Claude, entscheidet weiter Claude — die
+Regeln überstimmen kein echtes Urteil (Gegenprobe im Prüfstand). Keine
+Schwelle, Grösse, Stop oder Limit; die Rückfälle von Orchestrator-,
+Ausführungs- und RiskAgent-KI bleiben unverändert. **Es ist ein
+Sicherheits-Fix, keine belegte Renditesteigerung** — ob das Tor den
+Erwartungswert verbessert, misst erst die Zeile unten.
+
+### Gemessen statt behauptet: wer hat geprüft? (18.11.)
+
+Jedes freigegebene Signal trägt jetzt `metaPruefung: "KI" | "REGELN"`, der
+Orchestrator reicht es wie `signalQuelle` (30.10.) ins Journal, und `/edge`
+zeigt **eine** Zeile:
+
+```
+🧪 Meta-Gegenprüfung (seit 18.11.): KI <n> · EW <x> | REGELN <n> · zu wenig | ohne Angabe <n>
+```
+
+(Form, keine Messung.) Gerechnet mit **derselben** `erwartungswert()` wie
+`/edge` und `/hebel`, mit demselben Fenster; unter 30 Trades „zu wenig“.
+
+**Warum nicht in `/hebel`, wo es hingehörte — gemessen, nicht geschätzt:**
+an 600 live-nahen Zeilen ist `/hebel` mit sieben Dimensionen bei **3749 von
+3900** Zeichen. Eine achte Dimension — auch ohne eigenen Hinweis — liess die
+Kürzung **alle** Hinweise streichen (3813 bzw. 3859, kein `<i>` mehr). Die
+Hinweise verhindern genau die Fehllesungen, die es schon gab. `/edge` hat an
+der Obergrenze rund 950 Zeichen Luft (01.11.). Ein Feld ohne Leser wäre die
+Klasse vom 28.10. gewesen — deshalb kein Weglassen, sondern ein anderer Ort.
+
+### Und der Verbindungstest sagte „Connected“ (18.11.)
+
+`testAnthropicConnection` wertete **jeden HTTP 400 als verbunden** — und genau
+so meldet Anthropic ein leeres Guthaben (`invalid_request_error`, „Your credit
+balance is too low …“; mehrere Quellen, offizielle Doku nicht gefunden). Das
+Dashboard und Mission Control zeigten dann „Connected ✓“. Jetzt wird bei 400
+der Körper gelesen, und **nur** dieser Fall wird FAILED mit Grund; jeder
+andere 400 verhält sich wie bisher (Gegenprobe im Prüfer).
+
+### Absicherung
+
+`safety-nets` 1746 → **1768**, `einstellungen-ausfall` 31 → **33**.
+Gerechnet: `metaRegelVerstoss` an 27 Grenzfällen (RSI genau 70/30, `NaN`,
+Text, `UNKNOWN`, Gross/Klein, Leerraum, unlesbare Richtung); die **echte**
+`runAnalysisAgent` mit einem Claude-Client, der **genau den 400 des leeren
+Guthabens** wirft — Freigaben, Ablehnungen, Gründe, `fallback` auf beiden
+Seiten, Alarm, unveränderte Confidence, kein Absturz ohne `claude`-Feld; eine
+unlesbare Antwort geht denselben Weg; ein **antwortendes** Claude entscheidet
+selbst. Dazu `metaPruefungZeile` gegen `erwartungswert()` mit Fenster, die
+`/edge`-Zeile end-to-end, und der Verbindungstest samt **gespeichertem**
+Status.
+
+**30 von 30 Sabotagen** plus Gegenproben (26 Meta/Messung, 4 Verbindungstest).
+
+**Eine entwischte zuerst — wieder die Testdaten:** „Gross/Klein nicht
+vereinheitlicht“ (M7). Mein einziger Kleinschreib-Fall war `" bearish "` bei
+BUY — der ist **auch ohne** Vereinheitlichung ein Verstoss. Der Fehler zeigt
+sich nur, wo ein klein geschriebener Wert die Regel **erfüllt** (`"bullish"`,
+`"unknown"`, `" strong_buy "`). Diese Fälle fehlten und stehen jetzt drin.
+
+**Und drei eigene Fehler im Prüfstand**, alle vor dem Commit gefangen: eine
+naive Kommentar-Entfernung (`//` ohne `(^|[^:])`, von einem Meta-Prüfer
+gemeldet), eine Prüfung „der alte Rückfall ist zurück“, die meinen **eigenen
+erklärenden Kommentar** fand, und eine falsche Erwartung (unlesbare Notizen
+zählt `erwartungswert()` als `unlesbar`, nicht als gewertet — die Zeile folgt
+derselben Zählung).
+
+### Nebenbei gemessen, NICHT geändert
+
+`gptRegelbrueche()` (`ai-analysis-engine.ts`, reine Messung für die Bilanz)
+behandelt `UNKNOWN` als **gemessenen** Trend — ein BUY bei `UNKNOWN`/`NEUTRAL`
+zählt dort als Regelbruch, in der Meta-Regel nicht. Ohne Handelsfolge (nur ein
+Zähler), Hochrisiko-Datei, eigene Entscheidung.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

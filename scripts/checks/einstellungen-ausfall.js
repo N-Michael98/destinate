@@ -349,6 +349,42 @@ module.exports = async function pruefe() {
         a4.openai.temperature === 0.5, String(a4.openai.temperature));
       pruefe1("beim Speichern geht das Modell verloren",
         a4.openai.model === "gpt-4o", a4.openai.model);
+
+      // (e) LEERES GUTHABEN IST KEIN „VERBUNDEN" (18.11.). Anthropic meldet es
+      //     als HTTP 400 invalid_request_error; ein 400 galt bis heute immer
+      //     als verbunden. Geprueft wird die Rueckgabe UND der gespeicherte
+      //     Status — die Anzeige liest den Speicher, nicht die Rueckgabe.
+      const { testAnthropicConnection } = mAI.exports;
+      if (typeof testAnthropicConnection !== "function") {
+        pruefe1("testAnthropicConnection wird nicht exportiert", false);
+      } else {
+        const altFetch = global.fetch;
+        const antworte = (status, koerper) => { global.fetch = async () => ({
+          ok: status >= 200 && status < 300, status, text: async () => koerper, json: async () => JSON.parse(koerper) }); };
+        const KEY = "sk-ant-" + "x".repeat(30);
+        try {
+          aiLiest = true; aiSchreibt = true;
+          antworte(400, '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}');
+          const t1 = await testAnthropicConnection(KEY, "claude-haiku-4-5");
+          const s1 = await getAISettings();
+          pruefe1("leeres Anthropic-Guthaben gilt im Verbindungstest als VERBUNDEN",
+            t1.ok === false && /Guthaben aufgebraucht/.test(String(t1.error))
+            && s1.anthropic.testStatus === "FAILED" && s1.anthropic.connected === false,
+            JSON.stringify([t1, s1.anthropic.testStatus, s1.anthropic.connected]));
+          // GEGENPROBEN: ein ANDERER 400 bleibt wie bisher, ein 200 ist verbunden,
+          // ein 401 ist ein Fehler — sonst haette der Riegel mehr geaendert.
+          antworte(400, '{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too small"}}');
+          const t2 = await testAnthropicConnection(KEY, "claude-haiku-4-5");
+          antworte(200, '{"content":[{"type":"text","text":"pong"}]}');
+          const t3 = await testAnthropicConnection(KEY, "claude-haiku-4-5");
+          const s3 = await getAISettings();
+          antworte(401, '{"type":"error"}');
+          const t4 = await testAnthropicConnection(KEY, "claude-haiku-4-5");
+          pruefe1("der Guthaben-Riegel aendert auch andere Antworten (anderer 400 / 200 / 401)",
+            t2.ok === true && t3.ok === true && s3.anthropic.connected === true && t4.ok === false,
+            JSON.stringify([t2.ok, t3.ok, s3.anthropic.connected, t4.ok]));
+        } finally { global.fetch = altFetch; }
+      }
     }
     } finally {
       console.error = aiEchtesError;

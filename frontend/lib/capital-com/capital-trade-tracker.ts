@@ -59,6 +59,13 @@ export interface TradeRecord {
    * zeigt dann „ohne Angabe" statt einer erfundenen Quelle.
    */
   signalQuelle?: string;
+  /**
+   * Wer die Meta-Gegenpruefung machte (18.11.): `KI` (Claude urteilte) oder
+   * `REGELN` (Claude fiel aus, die Regeln der Anfrage wurden im Code
+   * geprueft). Nur der automatische Weg durchlaeuft die Meta-KI; fehlt die
+   * Angabe, wird der Schluessel WEGGELASSEN — wie bei `signalQuelle`.
+   */
+  metaPruefung?: string;
 }
 
 // ── Journal-Zeilen, die noch nicht geschrieben werden konnten (20.08.) ───────
@@ -240,6 +247,8 @@ async function versucheJournalZeile(
         // NICHT dasselbe wie `source` darueber: das ist der Schreibweg,
         // dies die SIGNALQUELLE (30.10.). Weggelassen, wenn unbekannt.
         ...(trade.signalQuelle ? { signalQuelle: trade.signalQuelle } : {}),
+        // Wer die Meta-Gegenpruefung machte (18.11.). Weggelassen, wenn unbekannt.
+        ...(trade.metaPruefung ? { metaPruefung: trade.metaPruefung } : {}),
         ...(trade.rekonstruiert ? { rekonstruiert: true } : {}),
         ...(trade.icPositionId ? { icPositionId: trade.icPositionId } : {}),
         ...(trade.entryContext ? { entryContext: trade.entryContext } : {}),

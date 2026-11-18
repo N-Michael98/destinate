@@ -32,6 +32,9 @@ interface MetaAnalysisDecision {
   adjustedConfidence: number;
   concern: string;
   priority: "HIGH" | "MEDIUM" | "LOW";
+  /** true = Claude hat NICHT geurteilt, die Regeln des Prompts wurden im Code
+   *  geprueft (Rueckfall, 18.11.). Geht als `fallback` in die Bilanz. */
+  regelbasiert?: boolean;
 }
 
 /** Einheitlicher Schlüssel für die Zuordnung Modellantwort → Kandidat (09.09.).
@@ -196,6 +199,92 @@ export function metaTokenBudget(anzahlKandidaten: number): number {
   return Math.min(4000, Math.max(500, 100 + 60 * n));
 }
 
+/**
+ * Was die Meta-KI je Kandidat zu sehen bekommt — EINE Stelle (18.11.).
+ *
+ * Dieselbe Zusammenfassung geht in die Anfrage an Claude UND in den
+ * Rueckfall `metaRegelVerstoss()`. Zwei Fassungen koennten auseinanderlaufen,
+ * und dann pruefte der Rueckfall andere Werte als die KI.
+ *
+ * FEHLENDE WERTE BLEIBEN FEHLEND (16.09.). Hier stand `rsi: … ?? 0` — ein
+ * fehlender RSI kam als "RSI 0" an, also extrem ueberverkauft, und die Regel
+ * nennt genau das einen Grund, ein SELL abzulehnen. Dieselbe Fehlerklasse wie
+ * `riskScore ?? 50`.
+ */
+export function metaZusammenfassung(candidates: ScannerOpportunity[]) {
+  return candidates.map(c => ({
+    symbol: c.symbol,
+    direction: c.gpt.direction,
+    confidence: c.gpt.confidence,
+    taSignal: c.taSignals?.signal ?? null,
+    rsi: typeof c.taSignals?.rsi === "number" ? c.taSignals.rsi : null,
+    trend1D: c.taSignals?.trend ?? null,
+    // `?.` mit Absicht: diese Funktion laeuft auch im RUECKFALL, also im
+    // `catch`. Wuerfe sie dort, verliesse der Fehler runMetaAnalysis und
+    // braeche den ganzen Zyklus ab. Fehlt der Wert, heisst er null.
+    riskScore: c.claude?.riskScore ?? null,
+  }));
+}
+
+/** Die RSI-Grenzen der Meta-Regel — dieselben Zahlen wie in der Anfrage unten. */
+export const META_RSI_GRENZE = { buyUeber: 70, sellUnter: 30 } as const;
+
+/**
+ * Die drei Regeln der Meta-Anfrage, im Code geprueft (18.11.).
+ *
+ * ANLASS: am 18.11. war das Anthropic-Guthaben leer. Der Rueckfall gab bis
+ * heute ALLE Kandidaten frei — 238 von 259 Freigaben des Tages waren keine
+ * Pruefung. Solange Claude noch antwortete, lehnte es 37 von 58 ab. Die
+ * Regeln, die es dabei anwendet, stehen woertlich in der Anfrage und sind
+ * vollstaendig deterministisch; ohne KI wegzufallen brauchen sie nicht.
+ *
+ * Woertlich aus der Anfrage, und NUR das:
+ *   - BUY bei rsi > 70, oder SELL bei rsi < 30
+ *   - BUY, obwohl weder trend1D=BULLISH noch taSignal=BUY/STRONG_BUY
+ *   - SELL, obwohl weder trend1D=BEARISH noch taSignal=SELL/STRONG_SELL
+ *   - "Ein Wert null heisst nicht gemessen und ist KEIN Ablehnungsgrund."
+ *
+ * Deshalb verlangt die Trend-Regel BEIDE Werte gemessen: fehlt einer, liesse
+ * sich nicht ausschliessen, dass er zur Richtung passt. `UNKNOWN` ist der
+ * Wert des Backends fuer "nicht berechenbar" (talib_analysis.py) und zaehlt
+ * wie null.
+ *
+ * Eine SENKUNG der Confidence gibt es hier nicht: die Anfrage erlaubt sie nur
+ * "fuer einen konkreten Grund", und den nennt nur die KI.
+ *
+ * Gibt den Grund zurueck oder null (kein Verstoss).
+ */
+export function metaRegelVerstoss(k: {
+  direction: unknown; rsi: unknown; trend1D: unknown; taSignal: unknown;
+}): string | null {
+  const r = typeof k.direction === "string" ? k.direction.trim().toUpperCase() : "";
+  if (r !== "BUY" && r !== "SELL") return `Richtung unlesbar (${String(k.direction)})`;
+  const rsi = typeof k.rsi === "number" && Number.isFinite(k.rsi) ? k.rsi : null;
+  const gemessen = (v: unknown) => {
+    if (typeof v !== "string") return null;
+    const s = v.trim().toUpperCase();
+    return s === "" || s === "UNKNOWN" ? null : s;
+  };
+  const trend = gemessen(k.trend1D);
+  const ta = gemessen(k.taSignal);
+  if (r === "BUY") {
+    if (rsi !== null && rsi > META_RSI_GRENZE.buyUeber) {
+      return `RSI ${rsi} bei BUY über ${META_RSI_GRENZE.buyUeber} — Überdehnung`;
+    }
+    if (trend !== null && ta !== null && trend !== "BULLISH" && ta !== "BUY" && ta !== "STRONG_BUY") {
+      return `BUY ohne bullishen 1D-Trend (${trend}) und ohne BUY-Signal (${ta})`;
+    }
+  } else {
+    if (rsi !== null && rsi < META_RSI_GRENZE.sellUnter) {
+      return `RSI ${rsi} bei SELL unter ${META_RSI_GRENZE.sellUnter} — Überdehnung`;
+    }
+    if (trend !== null && ta !== null && trend !== "BEARISH" && ta !== "SELL" && ta !== "STRONG_SELL") {
+      return `SELL ohne bearishen 1D-Trend (${trend}) und ohne SELL-Signal (${ta})`;
+    }
+  }
+  return null;
+}
+
 async function runMetaAnalysis(candidates: ScannerOpportunity[]): Promise<Map<string, MetaAnalysisDecision>> {
   const decisions = new Map<string, MetaAnalysisDecision>();
   if (!candidates.length) return decisions;
@@ -203,20 +292,9 @@ async function runMetaAnalysis(candidates: ScannerOpportunity[]): Promise<Map<st
   try {
     const ai = getAI();
 
-    // Alle Top-Kandidaten in einem einzigen AI-Call bewerten (günstiger)
-    // FEHLENDE WERTE BLEIBEN FEHLEND (16.09.). Hier stand `rsi: … ?? 0` —
-    // ein fehlender RSI kam als "RSI 0" an, also extrem ueberverkauft, und die
-    // Regel darunter nennt genau das einen Grund, ein SELL abzulehnen. Dieselbe
-    // Fehlerklasse wie `riskScore ?? 50`.
-    const candidateSummary = candidates.map(c => ({
-      symbol: c.symbol,
-      direction: c.gpt.direction,
-      confidence: c.gpt.confidence,
-      taSignal: c.taSignals?.signal ?? null,
-      rsi: typeof c.taSignals?.rsi === "number" ? c.taSignals.rsi : null,
-      trend1D: c.taSignals?.trend ?? null,
-      riskScore: c.claude.riskScore,
-    }));
+    // Alle Top-Kandidaten in einem einzigen AI-Call bewerten (günstiger).
+    // Die Werte kommen aus metaZusammenfassung() — dieselbe Quelle wie der Rueckfall.
+    const candidateSummary = metaZusammenfassung(candidates);
 
     // ── DIE REGELN SIND DIE DES ANALYSTEN (16.09.) ─────────────────────────
     //
@@ -316,28 +394,38 @@ Antworte NUR mit JSON Array, ein Eintrag je Symbol:
       }
     }
   } catch (err) {
-    console.warn(`[analysis-agent] Meta-AI Fehler — alle Kandidaten approved (${err})`);
-    // MELDEN, nicht nur loggen (08.09.).
+    // ── DER RUECKFALL PRUEFT DIE REGELN SELBST (18.11.) ─────────────────────
     //
-    // Dieser Rückfall öffnet das Tor GANZ: jeder Kandidat gilt als freigegeben,
-    // die Gegenprüfung auf RSI-Extreme und TA-Widerspruch entfällt vollständig.
-    // Am 08.09. lief genau das den ganzen Tag (leeres Anthropic-Guthaben) und
-    // stand NUR in der Serverkonsole — über Telegram meldete sich allein der
-    // Orchestrator, dessen Text zudem behauptete, die anderen Schichten seien
-    // aktiv. `void` mit Absicht: die Meldung darf die Analyse nicht aufhalten
-    // und nie mitreissen.
+    // Bis heute: "Fallback: alle approven" — das Tor stand im Ausfall GANZ
+    // offen, die Gegenpruefung auf RSI-Extreme und Trend/TA entfiel. Die
+    // Regeln sind aber die der Anfrage und deterministisch, siehe
+    // metaRegelVerstoss(). Jetzt gilt: ohne KI dieselben Regeln, im Code.
+    //
+    // Es bleibt ein RUECKFALL und heisst so: `regelbasiert` geht als
+    // `fallback` in die Bilanz — bei Zustimmung UND Ablehnung, denn in beiden
+    // Faellen hat Claude nicht geurteilt (Definition in agent-bus.ts).
+    //
+    // MELDEN, nicht nur loggen (08.09.). `void` mit Absicht: die Meldung darf
+    // die Analyse nicht aufhalten und nie mitreissen.
     void import("../ai-gate/ai-gate-alert")
       .then(({ meldeAIGateAusfall }) => meldeAIGateAusfall("Meta-KI", err))
       .catch(() => {});
-    // Fallback: alle approven
-    for (const c of candidates) {
-      decisions.set(schluessel(c.symbol), {
-        approve: true,
-        adjustedConfidence: c.gpt.confidence,
-        concern: "fallback",
+    let abgelehnt = 0;
+    for (const k of metaZusammenfassung(candidates)) {
+      const verstoss = metaRegelVerstoss(k);
+      if (verstoss !== null) abgelehnt++;
+      decisions.set(schluessel(k.symbol), {
+        approve: verstoss === null,
+        adjustedConfidence: k.confidence,
+        concern: verstoss === null
+          ? "Rueckfall ohne KI: Regeln erfuellt"
+          : `Rueckfall ohne KI: ${verstoss}`,
         priority: "MEDIUM",
+        regelbasiert: true,
       });
     }
+    console.warn(`[analysis-agent] Meta-AI Fehler — Rueckfall auf die Regeln der Anfrage: `
+      + `${abgelehnt} von ${candidates.length} Kandidaten abgelehnt (${err})`);
   }
 
   return decisions;
@@ -345,9 +433,15 @@ Antworte NUR mit JSON Array, ein Eintrag je Symbol:
 
 // ── Ergebnis-Typ ──────────────────────────────────────────────────────────────
 
+/** Wer die Gegenpruefung gemacht hat (18.11.): Claude oder — im Ausfall —
+ *  die Regeln im Code. Geht ins Journal, damit /hebel an ECHTEN Trades zeigen
+ *  kann, ob das Tor den Erwartungswert veraendert. */
+export type MetaPruefung = "KI" | "REGELN";
+export type FreigegebenesSignal = ScannerOpportunity & { metaPruefung: MetaPruefung };
+
 export interface AnalysisAgentResult {
   opportunities: ScannerOpportunity[];       // alle gescannten
-  approved: ScannerOpportunity[];            // bereit für ExecutionAgent
+  approved: FreigegebenesSignal[];           // bereit für ExecutionAgent
   rejected: Array<{ symbol: string; reason: string }>;
   metaDecisions: Map<string, MetaAnalysisDecision>;
   scannedAt: string;
@@ -443,7 +537,7 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
   const metaDecisions = await runMetaAnalysis(goSignals);
 
   // ── Schritt 4: Filter anwenden ─────────────────────────────────────────────
-  const approved: ScannerOpportunity[] = [];
+  const approved: FreigegebenesSignal[] = [];
   const rejected: Array<{ symbol: string; reason: string }> = [];
 
   for (const opp of goSignals) {
@@ -457,6 +551,8 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
       meldeTorEntscheidung(AGENT_ID, {
         gate: "Meta-KI", symbol: opp.symbol, direction: opp.gpt.direction,
         approve: false, reason: meta ? String(reason) : "keine Beurteilung fuer dieses Symbol",
+        // Eine Regel-Ablehnung im Rueckfall ist KEIN Urteil der KI (18.11.).
+        fallback: meta?.regelbasiert === true,
         confidence: opp.gpt.confidence,
       });
 
@@ -509,8 +605,10 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
       });
       continue;
     }
-    const enriched: ScannerOpportunity = {
+    const enriched: FreigegebenesSignal = {
       ...opp,
+      // Am selben Kriterium wie das `fallback` der Bilanz darunter — eine Quelle.
+      metaPruefung: meta.regelbasiert === true ? "REGELN" : "KI",
       gpt: { ...opp.gpt, confidence: angepasst },
       // Skala korrigiert (16.09.): hier stand `angepasst / 100`. finalScore
       // liegt bei ~50–110, die Confidence bei 0–100 — geteilt durch 100
@@ -522,8 +620,9 @@ export async function runAnalysisAgent(markets: CapitalMarket[]): Promise<Analys
     meldeTorEntscheidung(AGENT_ID, {
       gate: "Meta-KI", symbol: opp.symbol, direction: opp.gpt.direction,
       approve: true, reason: String(meta.concern ?? ""),
-      // Ein KI-Ausfall gibt ALLE frei — das ist kein Urteil und heisst so.
-      fallback: meta.concern === "fallback",
+      // Im KI-Ausfall prueft der Rueckfall die Regeln im Code (18.11.) — eine
+      // Zustimmung daraus ist trotzdem kein Urteil der KI und heisst so.
+      fallback: meta.regelbasiert === true,
       confidence: angepasst,
     });
 

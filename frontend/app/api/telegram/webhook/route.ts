@@ -912,7 +912,7 @@ ${SYSTEM_BEFEHLE}`
           return NextResponse.json({ ok: true });
         }
         const { getPrisma } = await import("@/app/lib/prisma");
-        const { erwartungswert, erwartungswertText } =
+        const { erwartungswert, erwartungswertText, metaPruefungZeile } =
           await import("@/lib/expectancy/erwartungswert");
         const zeilen = await getPrisma().trade.findMany({
           where: { status: { not: "OPEN" } },
@@ -924,8 +924,11 @@ ${SYSTEM_BEFEHLE}`
           // wird ein Etikett HEUTE noch erzeugt, oder ist es Altbestand?
           select: { profitLoss: true, notes: true, result: true, updatedAt: true },
         });
+        // Dazu EINE Zeile: EW je Meta-Gegenpruefung (18.11.) — dieselben
+        // Zeilen, dasselbe Fenster, dieselbe Rechnung.
         await reply(chatId, erwartungswertText(
-          erwartungswert(zeilen, tage === null ? null : { tage })));
+          erwartungswert(zeilen, tage === null ? null : { tage }))
+          + "\n\n" + metaPruefungZeile(zeilen, tage === null ? null : { tage }));
       } catch (e) {
         // Der Grund gehoert in die Antwort — sonst steht man vor einem
         // stummen Befehl und raet ("wer den Grund nicht mitschreibt …").

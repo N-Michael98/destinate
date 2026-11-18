@@ -601,3 +601,49 @@ export function erwartungswertText(e: EwErgebnis): string {
   }
   return z.join("\n");
 }
+
+/** Die Werte, die `notes.metaPruefung` tragen kann (analysis-agent.ts, 18.11.). */
+export const META_PRUEFUNG_WERTE = ["KI", "REGELN"] as const;
+
+/**
+ * Erwartungswert JE META-GEGENPRUEFUNG — eine Zeile fuer /edge (18.11.).
+ *
+ * DIE FRAGE: veraendert die Gegenpruefung den Erwartungswert, und macht es
+ * einen Unterschied, ob Claude urteilt (`KI`) oder im Ausfall die Regeln im
+ * Code (`REGELN`)? Seit dem 18.11. steht das je Trade in den Notizen.
+ *
+ * WARUM NICHT IN /hebel, wo es hingehoerte: gemessen am 18.11. an 600
+ * live-nahen Zeilen ist /hebel mit sieben Dimensionen bei 3749 von 3900
+ * Zeichen — eine achte (auch ohne Hinweis) liess die Kuerzung ALLE
+ * Hinweise streichen, die genau die Fehllesungen verhindern, die es schon
+ * gab. /edge hat an der Obergrenze ~950 Zeichen Luft (01.11.).
+ *
+ * Gerechnet mit DERSELBEN Funktion wie /edge und /hebel — keine zweite
+ * Wahrheit. Unter MIN_TRADES steht „zu wenig" statt einer Zahl.
+ */
+export function metaPruefungZeile(
+  zeilen: ReadonlyArray<TradeZeile> | null | undefined,
+  fenster?: EwFenster | null,
+): string {
+  const alle = Array.isArray(zeilen) ? zeilen : [];
+  const lies = (z: TradeZeile): string | null => {
+    if (!z?.notes) return null;
+    try {
+      const m = JSON.parse(z.notes) as unknown;
+      if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+      const w = (m as Record<string, unknown>).metaPruefung;
+      return typeof w === "string" ? w : null;
+    } catch { return null; }
+  };
+  const bekannt = new Set<string>(META_PRUEFUNG_WERTE);
+  const teile = META_PRUEFUNG_WERTE.map((w) => {
+    const e = erwartungswert(alle.filter((z) => lies(z) === w), fenster);
+    return `${w} ${e.gewertet}`
+      + (e.belastbar && e.erwartungswert !== null ? ` · EW <b>${e.erwartungswert}</b>` : " · zu wenig");
+  });
+  // „ohne Angabe" = vor dem 18.11., oder ueber den GO-Knopf (der die Meta-KI
+  // nicht durchlaeuft). Ein UNBEKANNTER Wert zaehlt hier mit — er ist keine
+  // der beiden Messungen und darf keiner zugeschlagen werden.
+  const ohne = erwartungswert(alle.filter((z) => { const w = lies(z); return w === null || !bekannt.has(w); }), fenster);
+  return `🧪 <b>Meta-Gegenprüfung</b> (seit 18.11.): ${teile.join(" | ")} | ohne Angabe ${ohne.gewertet}`;
+}

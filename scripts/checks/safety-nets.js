@@ -2460,11 +2460,20 @@ module.exports = async function pruefe() {
               abfragen.at(-1)?.where?.status?.not === "OPEN",
               JSON.stringify(abfragen.at(-1)?.where ?? null));
 
+            // Die Meta-Zeile (18.11.) bekommt DASSELBE Fenster: die Testzeilen
+            // tragen kein `metaPruefung`, also muss „ohne Angabe" genau die
+            // gewertete Zahl sein — 40 im Fenster, 80 ohne Fenster.
+            torPruefung("/edge 60: die Meta-Zeile fehlt oder rechnet ohne das Fenster",
+              /Meta-Gegenprüfung<\/b> \(seit 18\.11\.\): KI 0 · zu wenig \| REGELN 0 · zu wenig \| ohne Angabe 40/.test(mitF),
+              (mitF.match(/Meta-Gegenprüfung[^\n]*/) ?? ["(keine Meta-Zeile)"])[0]);
             await edge("/edge");
             torPruefung("/edge ohne Angabe rechnet nicht mehr alles",
               /Zeitraum: <b>alles<\/b>/.test(antw.at(-1) ?? "")
               && /Gewertet: <b>80<\/b>/.test(antw.at(-1) ?? ""),
               (antw.at(-1) ?? "").replace(/\n/g, " ").slice(0, 140));
+            torPruefung("/edge: die Meta-Zeile rechnet ohne Fenster nicht alles",
+              /ohne Angabe 80$/m.test(antw.at(-1) ?? ""),
+              ((antw.at(-1) ?? "").match(/Meta-Gegenprüfung[^\n]*/) ?? ["(keine Meta-Zeile)"])[0]);
 
             // DER KERN dieser Runde: eine unbrauchbare Angabe darf NICHT
             // still zu "alles" werden — sonst sieht die Antwort nach Fenster
@@ -14661,6 +14670,217 @@ module.exports = async function pruefe() {
     }
   }
 
+
+  // ── DER META-KI-RUECKFALL PRUEFT DIE REGELN SELBST (18.11.) ───────────────
+  //
+  // ANLASS: leeres Anthropic-Guthaben am 18.11. — "Meta-KI: ja 259, Rueckfall
+  // 238". Der Rueckfall gab bis heute ALLE Kandidaten frei. Jetzt prueft er die
+  // drei Regeln der Anfrage im Code (metaRegelVerstoss). Geprueft wird das
+  // AUSGEFUEHRT: die echte runAnalysisAgent, ein Claude-Client, der genau den
+  // Fehler des leeren Guthabens wirft (HTTP 400 invalid_request_error), und
+  // die Gegenprobe, dass ein ANTWORTENDES Claude weiter selbst entscheidet.
+  {
+    const bcfg = ladeTsModul("lib/broker-config/broker-config-types.ts");
+    const MIN = bcfg.exports?.MIN_SIGNAL_CONFIDENCE;
+    const torEv = []; const alarme = [];
+    let claudeModus = "leer";   // "leer" | "antwortet" | "unlesbar"
+    let claudeAufrufe = 0;
+    class FakeAnthropic {
+      constructor() {
+        this.messages = { create: async () => {
+          claudeAufrufe++;
+          if (claudeModus === "leer") {
+            const e = new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}');
+            e.status = 400;
+            throw e;
+          }
+          if (claudeModus === "unlesbar") return { content: [{ type: "text", text: "Entschuldigung, keine Antwort." }] };
+          // Claude gibt ALLES frei, auch den RSI-Verstoss: so zeigt die
+          // Gegenprobe, dass die Regeln ein ECHTES Urteil nicht ueberstimmen.
+          return { content: [{ type: "text", text: JSON.stringify(aktuelleKandidaten.map((c) => ({
+            symbol: c.symbol, approve: true, adjustedConfidence: c.gpt.confidence, concern: "ok", priority: "HIGH" }))) }] };
+        } };
+      }
+    }
+    let aktuelleKandidaten = [];
+    const opp = (symbol, direction, rsi, trend, signal, extra = {}) => ({
+      symbol, goSignal: true, finalScore: 80,
+      gpt: { direction, confidence: 80 },
+      taSignals: { rsi: rsi ?? undefined, trend: trend ?? undefined, signal: signal ?? undefined },
+      claude: { riskScore: 30 },
+      ...extra,
+    });
+    const AA = ladeTsModul("lib/agents/analysis-agent.ts", {
+      "@anthropic-ai/sdk": { __esModule: true, default: FakeAnthropic },
+      "./agent-bus": { agentBus: { publish: () => {} }, meldeTorEntscheidung: (_a, e) => { torEv.push(e); } },
+      "../market-scanner/ai-analysis-engine": { analyzeMarkets: async () => aktuelleKandidaten, scanDatenVon: () => null },
+      "../broker-config": { MIN_SIGNAL_CONFIDENCE: MIN },
+      "../ai-gate/ai-gate-alert": { meldeAIGateAusfall: async (gate, err) => { alarme.push([gate, String(err?.message ?? err)]); } },
+    });
+    const X = AA.exports;
+    if (AA.fehler || typeof X?.metaRegelVerstoss !== "function" || typeof X?.runAnalysisAgent !== "function"
+        || typeof MIN !== "number") {
+      funde.push(`meta-rueckfall: nicht ausfuehrbar — ${AA.fehler ?? bcfg.fehler ?? "Export fehlt"}`);
+      zusatz++;
+    } else {
+      const v = (direction, rsi, trend1D, taSignal) => X.metaRegelVerstoss({ direction, rsi, trend1D, taSignal });
+      // ── Die Regeln an ihren Grenzen. Jede Zeile: [Eingabe, Verstoss erwartet?]
+      const faelle = [
+        [["BUY", 70, "BULLISH", "BUY"], false, "RSI genau 70 ist KEIN Verstoss (> 70)"],
+        [["BUY", 70.01, "BULLISH", "BUY"], true, "RSI 70.01 bei BUY"],
+        [["SELL", 30, "BEARISH", "SELL"], false, "RSI genau 30 ist KEIN Verstoss (< 30)"],
+        [["SELL", 29.99, "BEARISH", "SELL"], true, "RSI 29.99 bei SELL"],
+        [["BUY", null, "BULLISH", "BUY"], false, "RSI null = nicht gemessen"],
+        [["BUY", NaN, "BULLISH", "BUY"], false, "RSI NaN = nicht gemessen"],
+        [["BUY", "80", "BULLISH", "BUY"], false, "RSI als Text ist keine Messung"],
+        [["SELL", 80, "BEARISH", "SELL"], false, "hoher RSI bei SELL ist keine Ueberdehnung"],
+        [["BUY", 50, "BEARISH", "NEUTRAL"], true, "BUY ohne bullishen Trend und ohne BUY-Signal"],
+        [["BUY", 50, "NEUTRAL", "NEUTRAL"], true, "BUY bei NEUTRAL/NEUTRAL"],
+        [["BUY", 50, "BEARISH", "BUY"], false, "BUY-Signal genuegt"],
+        [["BUY", 50, "BEARISH", "STRONG_BUY"], false, "STRONG_BUY genuegt"],
+        [["BUY", 50, "BULLISH", "SELL"], false, "bullisher Trend genuegt"],
+        [["BUY", 50, "UNKNOWN", "NEUTRAL"], false, "Trend UNKNOWN = nicht gemessen"],
+        [["BUY", 50, null, "NEUTRAL"], false, "Trend null = nicht gemessen"],
+        [["BUY", 50, "BEARISH", null], false, "Signal null = nicht gemessen"],
+        [["BUY", 50, " bearish ", "neutral"], true, "Gross/Klein und Leerraum zaehlen nicht"],
+        // Die Faelle, an denen eine FEHLENDE Vereinheitlichung auffaellt: ein
+        // klein geschriebener Wert, der die Regel ERFUELLT. " bearish " oben ist
+        // auch ohne Vereinheitlichung ein Verstoss — er konnte den Fehler nicht
+        // ausdruecken (Sabotage M7 entwischte genau daran).
+        [["BUY", 50, "bullish", "neutral"], false, "klein geschriebenes bullish erfuellt die Regel"],
+        [["SELL", 50, " bearish ", "NEUTRAL"], false, "bearish mit Leerraum erfuellt die Regel"],
+        [["BUY", 50, "unknown", "NEUTRAL"], false, "klein geschriebenes unknown = nicht gemessen"],
+        [["BUY", 50, "BEARISH", " strong_buy "], false, "strong_buy klein mit Leerraum erfuellt die Regel"],
+        [["buy", 50, "BULLISH", "BUY"], false, "klein geschriebene Richtung"],
+        [["SELL", 50, "BULLISH", "NEUTRAL"], true, "SELL ohne bearishen Trend und ohne SELL-Signal"],
+        [["SELL", 50, "BULLISH", "STRONG_SELL"], false, "STRONG_SELL genuegt"],
+        [["SELL", 50, "BEARISH", "BUY"], false, "bearisher Trend genuegt"],
+        [["WAIT", 50, "BULLISH", "BUY"], true, "WAIT ist keine handelbare Richtung"],
+        [[null, 50, "BULLISH", "BUY"], true, "fehlende Richtung"],
+      ];
+      const falsch = faelle.filter(([e, erw]) => (v(...e) !== null) !== erw).map(([e, , n]) => `${n} → ${JSON.stringify(v(...e))}`);
+      torPruefung("meta-rueckfall: metaRegelVerstoss entscheidet an einer Grenze falsch", falsch.length === 0, falsch.join(" | "));
+      const gruende = faelle.map(([e]) => v(...e)).filter((g) => g !== null);
+      torPruefung("meta-rueckfall: ein Grund traegt ein rohes < oder > (Telegram-HTML)",
+        gruende.every((g) => !/[<>]/.test(g)), gruende.join(" | "));
+      // ── An die ANFRAGE gebunden: dieselben Zahlen, dieselben Regeln.
+      const aaB = read("frontend/lib/agents/analysis-agent.ts").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const anfrage = (aaB.match(/content: `Meta-Analyse[\s\S]*?`\s*\}\]/) || [""])[0];
+      torPruefung("meta-rueckfall: die RSI-Grenzen des Codes stehen nicht in der Anfrage an Claude",
+        anfrage.includes(`BUY bei rsi > ${X.META_RSI_GRENZE.buyUeber}, oder SELL bei rsi < ${X.META_RSI_GRENZE.sellUnter}`),
+        JSON.stringify(X.META_RSI_GRENZE));
+      torPruefung("meta-rueckfall: die Anfrage nimmt nicht mehr die gemeinsame Zusammenfassung",
+        /const candidateSummary = metaZusammenfassung\(candidates\);/.test(aaB)
+        && /for \(const k of metaZusammenfassung\(candidates\)\)/.test(aaB), "eine Quelle");
+      // Kommentarbereinigt: die Begruendung im Code ZITIERT die alte Form.
+      torPruefung("meta-rueckfall: der alte Rueckfall (alle freigeben) ist zurueck",
+        !/Fallback: alle approven/.test(aaB) && !/concern: "fallback"/.test(aaB)
+        && /Fallback: alle approven/.test(read("frontend/lib/agents/analysis-agent.ts")),
+        "approve: true fuer alle (Selbstpruefung: das Zitat steht roh noch da, bereinigt nicht)");
+      const agaB = read("frontend/lib/ai-gate/ai-gate-alert.ts").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      torPruefung("meta-rueckfall: die Ausfallmeldung behauptet wieder, ALLE wuerden freigegeben",
+        !/ALLE Kandidaten gelten als freigegeben/.test(agaB) && /werden ohne KI/.test(agaB),
+        "TOR_FOLGE Meta-KI");
+
+      // ── AUSGEFUEHRT: Claude-Guthaben leer.
+      const kandidaten = [
+        opp("EURUSD", "BUY", 75, "BULLISH", "BUY"),          // RSI-Verstoss
+        opp("GBPUSD", "BUY", 55, "BEARISH", "NEUTRAL"),      // Trend-Verstoss
+        opp("USDJPY", "SELL", 40, "BEARISH", "NEUTRAL"),     // regelkonform
+        opp("GOLD", "BUY", null, "UNKNOWN", "NEUTRAL"),      // nicht gemessen -> kein Grund
+        opp("SILVER", "SELL", 45, "BEARISH", "SELL", { claude: undefined }),  // ohne claude: darf NICHT abstuerzen
+        { ...opp("NAS100", "BUY", 90, "BEARISH", "NEUTRAL"), goSignal: false },  // kein GO: gar nicht im Tor
+      ];
+      const lauf = async (modus) => {
+        claudeModus = modus; aktuelleKandidaten = kandidaten; torEv.length = 0; alarme.length = 0; claudeAufrufe = 0;
+        try { const r = await X.runAnalysisAgent([]); await new Promise((res) => setTimeout(res, 10)); return { r, fehler: null }; }
+        catch (e) { return { r: null, fehler: String(e?.message ?? e) }; }
+      };
+      const leer = await lauf("leer");
+      const freiL = leer.r ? leer.r.approved.map((o) => o.symbol).sort() : null;
+      const abgL = leer.r ? leer.r.rejected.map((o) => o.symbol).sort() : null;
+      torPruefung("meta-rueckfall: bei leerem Guthaben bricht der Zyklus ab (auch ohne claude-Feld)",
+        leer.fehler === null, String(leer.fehler));
+      torPruefung("meta-rueckfall: bei leerem Guthaben entscheidet der Rueckfall falsch",
+        JSON.stringify(freiL) === JSON.stringify(["GOLD", "SILVER", "USDJPY"])
+        && JSON.stringify(abgL) === JSON.stringify(["EURUSD", "GBPUSD"]),
+        `frei ${JSON.stringify(freiL)} abgelehnt ${JSON.stringify(abgL)}`);
+      const metaEv = torEv.filter((e) => e.gate === "Meta-KI");
+      torPruefung("meta-rueckfall: nicht JEDE Rueckfall-Entscheidung zaehlt als Rueckfall (ja UND nein)",
+        metaEv.length === 5 && metaEv.every((e) => e.fallback === true)
+        && metaEv.filter((e) => e.approve === false).length === 2,
+        JSON.stringify(metaEv.map((e) => [e.symbol, e.approve, e.fallback])));
+      torPruefung("meta-rueckfall: die Ablehnung nennt ihren Grund nicht",
+        leer.r?.rejected.every((x) => /Rueckfall ohne KI: (RSI|BUY ohne)/.test(x.reason)) === true,
+        JSON.stringify(leer.r?.rejected));
+      torPruefung("meta-rueckfall: der Ausfall wird nicht gemeldet",
+        alarme.length === 1 && alarme[0][0] === "Meta-KI" && /credit balance/.test(alarme[0][1]) && claudeAufrufe === 1,
+        JSON.stringify(alarme));
+      torPruefung("meta-rueckfall: der Rueckfall veraendert die Confidence",
+        leer.r?.approved.every((o) => o.gpt.confidence === 80) === true, "nur die KI darf senken");
+      // Eine UNLESBARE Antwort geht denselben Weg (30.09.).
+      const unl = await lauf("unlesbar");
+      torPruefung("meta-rueckfall: eine unlesbare Antwort geht nicht in den Regel-Rueckfall",
+        JSON.stringify(unl.r?.approved.map((o) => o.symbol).sort()) === JSON.stringify(["GOLD", "SILVER", "USDJPY"])
+        && alarme.length === 1, JSON.stringify(unl.r?.approved.map((o) => o.symbol)));
+      // GEGENPROBE: antwortet Claude, entscheidet Claude — auch gegen die Regel.
+      const echt = await lauf("antwortet");
+      const evE = torEv.filter((e) => e.gate === "Meta-KI");
+      torPruefung("meta-rueckfall: die Regeln ueberstimmen ein ECHTES Urteil von Claude",
+        JSON.stringify(echt.r?.approved.map((o) => o.symbol).sort()) === JSON.stringify(["EURUSD", "GBPUSD", "GOLD", "SILVER", "USDJPY"])
+        && evE.length === 5 && evE.every((e) => e.fallback === false) && alarme.length === 0,
+        JSON.stringify(evE.map((e) => [e.symbol, e.approve, e.fallback])));
+
+      // ── DIE MESSUNG (18.11.): wer gepruefft hat, steht am Signal und im Journal.
+      torPruefung("meta-messung: das Signal traegt nicht, WER gepruefft hat (KI / REGELN)",
+        leer.r?.approved.every((o) => o.metaPruefung === "REGELN") === true
+        && echt.r?.approved.every((o) => o.metaPruefung === "KI") === true,
+        JSON.stringify([leer.r?.approved.map((o) => o.metaPruefung), echt.r?.approved.map((o) => o.metaPruefung)]));
+      const trB = read("frontend/lib/capital-com/capital-trade-tracker.ts").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const orB = read("frontend/lib/agents/orchestrator-agent.ts").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      torPruefung("meta-messung: der Tracker schreibt `metaPruefung` nicht, oder erfindet sie",
+        /\.\.\.\(trade\.metaPruefung \? \{ metaPruefung: trade\.metaPruefung \} : \{\}\)/.test(trB)
+        && /metaPruefung\?: string;/.test(trB), "Notizen + TradeRecord");
+      torPruefung("meta-messung: der Orchestrator reicht `metaPruefung` nicht ins Journal",
+        /metaPruefung: candidate\.metaPruefung,/.test(orB) && /metaPruefung\?: string \}/.test(orB), "orchestrator");
+      const whMB = read("frontend/app/api/telegram/webhook/route.ts").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      torPruefung("meta-messung: /edge haengt die Meta-Zeile nicht an, oder mit einem anderen Fenster",
+        /\+ "\\n\\n" \+ metaPruefungZeile\(zeilen, tage === null \? null : \{ tage \}\)/.test(whMB), "webhook /edge");
+      // Die Zeile selbst GERECHNET — mit dem echten erwartungswert().
+      const ewM = ladeTsModul("lib/expectancy/erwartungswert.ts", {
+        "capital-com/capital-trade-tracker": { ETIKETTEN_OHNE_ERGEBNIS: ["NIE_BESTAETIGT", "KEIN_PNL"] },
+      });
+      if (ewM.fehler || typeof ewM.exports?.metaPruefungZeile !== "function") {
+        torPruefung("meta-messung: metaPruefungZeile nicht ausfuehrbar", false, ewM.fehler ?? "Export fehlt");
+      } else {
+        const T = Date.UTC(2026, 10, 18);
+        const zl = (pnl, meta, tageAlt = 1) => ({ profitLoss: pnl, result: pnl > 0 ? "WIN" : "LOSS",
+          updatedAt: new Date(T - tageAlt * 86_400_000),
+          notes: JSON.stringify({ broker: "Capital.com DEMO", source: "auto-scan", ...(meta === undefined ? {} : { metaPruefung: meta }) }) });
+        // KI: 40 Trades, abwechselnd +3 / -1 -> EW +1.00; REGELN: 10 (zu wenig);
+        // ohne: 5; ein UNBEKANNTER Wert zaehlt zu „ohne"; 3 KI ausserhalb 60 Tage.
+        const daten = [];
+        for (let i = 0; i < 40; i++) daten.push(zl(i % 2 ? -1 : 3, "KI"));
+        for (let i = 0; i < 10; i++) daten.push(zl(2, "REGELN"));
+        for (let i = 0; i < 5; i++) daten.push(zl(1, undefined));
+        daten.push(zl(1, "IRGENDWAS"));
+        for (let i = 0; i < 3; i++) daten.push(zl(-50, "KI", 90));
+        const ganz = ewM.exports.metaPruefungZeile(daten, null);
+        const f60 = ewM.exports.metaPruefungZeile(daten, { tage: 60 });
+        const ewKI60 = ewM.exports.erwartungswert(daten.filter((d) => /"KI"/.test(d.notes)), { tage: 60 }).erwartungswert;
+        torPruefung("meta-messung: die Zeile rechnet anders als erwartungswert() oder ohne Fenster",
+          f60 === `🧪 <b>Meta-Gegenprüfung</b> (seit 18.11.): KI 40 · EW <b>${ewKI60}</b> | REGELN 10 · zu wenig | ohne Angabe 6`
+          && ewKI60 === 1 && /KI 43 · EW/.test(ganz), `${f60} || ${ganz}`);
+        // Unlesbare/fehlende Notizen zaehlt erwartungswert() als `unlesbar`,
+        // nicht als gewertet — die Zeile folgt DERSELBEN Zaehlung (0), statt
+        // eine eigene zu erfinden. Gemessen, nicht angenommen.
+        torPruefung("meta-messung: unlesbare Notizen bringen die Zeile zum Absturz oder zaehlen anders als /edge",
+          (() => { try { return /ohne Angabe 0$/.test(ewM.exports.metaPruefungZeile(
+            [{ profitLoss: 1, notes: "{kaputt", updatedAt: new Date(T) }, { profitLoss: 1, notes: null, updatedAt: new Date(T) }], null)); }
+            catch { return false; } })(), "kaputte Notizen");
+      }
+    }
+  }
 
   // ── /exitsim — DIE AUSSTIEGSLOGIK NACHGERECHNET (17.11.) ──────────────────
   //

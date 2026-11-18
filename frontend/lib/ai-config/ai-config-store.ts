@@ -305,6 +305,23 @@ export async function testAnthropicConnection(apiKey: string, model: string): Pr
       await vermerke(() => updateAnthropic({ testStatus: "FAILED", testError: "Ungültiger API Key", connected: false, lastTestedAt: new Date().toISOString() }));
       return { ok: false, error: "Ungültiger API Key (401 Unauthorized)" };
     }
+    // ── LEERES GUTHABEN IST KEIN „VERBUNDEN" (18.11.) ──────────────────────
+    //
+    // Ein 400 galt hier immer als verbunden. Anthropic meldet ein leeres
+    // Guthaben aber genau so: HTTP 400 `invalid_request_error`, "Your credit
+    // balance is too low …" (mehrere Quellen; am 18.11. live: Meta-KI 238
+    // Rueckfaelle). Der Test zeigte dann „Connected ✓", Mission Control
+    // ebenso — eine Anzeige, die etwas behauptet, das nicht stimmt.
+    // Nur DIESER Fall wird jetzt zum Fehler, mit Grund; jeder andere 400
+    // verhaelt sich wie bisher.
+    if (res.status === 400) {
+      const koerper = await res.text().catch(() => "");
+      if (/credit balance/i.test(koerper)) {
+        const err = "Anthropic-Guthaben aufgebraucht (HTTP 400: credit balance is too low)";
+        await vermerke(() => updateAnthropic({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() }));
+        return { ok: false, error: err };
+      }
+    }
     if (!res.ok && res.status !== 400) {
       const err = `HTTP ${res.status}`;
       await vermerke(() => updateAnthropic({ testStatus: "FAILED", testError: err, connected: false, lastTestedAt: new Date().toISOString() }));

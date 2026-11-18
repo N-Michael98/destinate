@@ -51,8 +51,13 @@ export function alarmFaellig(gate: string, jetzt = Date.now()): boolean {
 export const TOR_FOLGE: Record<string, string> = {
   Orchestrator:   "Der Zyklus läuft ohne KI-Freigabe weiter (proceed).",
   ExecutionAgent: "Aufträge gehen ohne KI-Freigabe an beide Broker.",
-  "Meta-KI":      "ALLE Kandidaten gelten als freigegeben — die Gegenprüfung "
-                + "auf RSI-Extreme und TA-Widerspruch entfällt.",
+  // Seit 18.11. prueft der Rueckfall die Regeln selbst (metaRegelVerstoss) —
+  // hier stand "ALLE Kandidaten gelten als freigegeben", und das tut der Code
+  // nicht mehr. Eine Meldung, die etwas behauptet, das der Code nicht tut.
+  "Meta-KI":      "Claude urteilt nicht mehr. Die drei Regeln der Anfrage "
+                + "(RSI-Überdehnung, Trend/TA-Signal zur Richtung) werden ohne KI "
+                + "im Code geprüft; was sie verletzt, wird abgelehnt. Eine Senkung "
+                + "der Confidence aus eigenem Grund entfällt.",
   "Risk-Agent":   "Ausstiege laufen rein regelbasiert weiter (Breakeven, "
                 + "Teilgewinn, Trailing, Zeit-Exit) — die KI berät nicht mehr.",
   Watchdog:       "Sicherheitsereignisse werden NICHT mehr beurteilt. Der "
