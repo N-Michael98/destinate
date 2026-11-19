@@ -13190,6 +13190,27 @@ module.exports = async function pruefe() {
         !== /HEDGE_STELLE = "(.*?)"/.exec(trOhneK)?.[1],
         `${/MEHRFACH_STELLE = "(.*?)"/.exec(trOhneK)?.[1]} / `
         + `${/HEDGE_STELLE = "(.*?)"/.exec(trOhneK)?.[1]}`);
+      // Die Stufe-1-MELDUNG blieb nach Stufe 2 auf dem alten Stand stehen
+      // ("die Map UEBERSCHREIBT ... nur EIN Bein") und erschien bei jedem
+      // Teilgewinn als Warnung — gefunden am 19.11. an 13 Live-Trades mit
+      // KEIN_SCHLUSSKURS. Summiert der Tracker, muss die Meldung das sagen.
+      {
+        const a = trOhneK.indexOf("MEHRFACHER SCHLUSS:");
+        const e = a < 0 ? -1 : trOhneK.indexOf("${liste}", a);
+        const meldung = a >= 0 && e > a ? trOhneK.slice(a, e) : "";
+        torPruefung("die MEHRFACHER-SCHLUSS-Meldung ist nicht auffindbar",
+          meldung.length > 0, `a=${a} e=${e}`);
+        if (/beineZusammenfuehren\(beine\)/.test(trOhneK) && meldung) {
+          torPruefung("die MEHRFACHER-SCHLUSS-Meldung behauptet wieder, die Map "
+            + "ueberschreibe / nur EIN Bein stehe in der Geldtabelle — seit "
+            + "Stufe 2 wird summiert",
+            !/UEBERSCHREIBT|summiert nicht|nur EIN Bein/i.test(meldung),
+            meldung.slice(0, 160));
+          torPruefung("die MEHRFACHER-SCHLUSS-Meldung nennt das Summieren nicht",
+            /SUMMIERT/.test(meldung) && /NICHTS geschrieben/.test(meldung),
+            meldung.slice(0, 160));
+        }
+      }
       // ── STUFE 2: DIE BEINE WERDEN ZUSAMMENGEFUEHRT (14.11.) ─────────
       //
       // Hier stand bis heute der Stufe-1-Riegel, der ein Summieren ROT

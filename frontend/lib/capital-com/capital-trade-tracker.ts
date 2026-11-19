@@ -1553,10 +1553,15 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
             + ` Summe=${m.summe === null ? "unlesbar" : m.summe}`
             + ` Schlusskurse=[${m.closeLevels.map((c) => c === null ? "?" : c).join(", ")}]`
           ).join(" | ");
-          console.warn(`[trade-tracker] \u26a0\ufe0f MEHRFACHER SCHLUSS: ${mehrfach.length} `
-            + `Position(en) haben mehr als ein Schliess-Bein. Die Map UEBERSCHREIBT, `
-            + `sie summiert nicht — in der Geldtabelle steht nur EIN Bein. Das `
-            + `betrifft /edge, /hebel und den Lernzyklus. ${liste}`
+          // Der Text stand bis 19.11. auf dem Stand von Stufe 1 ("die Map
+          // ueberschreibt, in der Geldtabelle steht nur ein Bein") — seit
+          // Stufe 2 falsch, und er erschien bei JEDEM Teilgewinn als Warnung.
+          // Eine Meldung, die etwas behauptet, das der Code nicht tut (27.09.).
+          console.log(`[trade-tracker] \u2139\ufe0f MEHRFACHER SCHLUSS: ${mehrfach.length} `
+            + `Position(en) haben mehr als ein Schliess-Bein. Zwei lesbare Beine `
+            + `werden SUMMIERT (Zeile ZUSAMMENGEFUEHRT), sonst wird fuer den `
+            + `Schluessel NICHTS geschrieben (Zeile NICHT zusammenfuehrbar). Beim `
+            + `Summieren bleibt der Schlusskurs leer, /edge zeigt KEIN_SCHLUSSKURS. ${liste}`
             + (mehrfach.length > 5 ? ` (+${mehrfach.length - 5} weitere)` : ""));
         }
       } else if (lageMelden(MEHRFACH_STELLE, "ok")) {
