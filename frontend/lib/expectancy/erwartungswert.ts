@@ -647,3 +647,62 @@ export function metaPruefungZeile(
   const ohne = erwartungswert(alle.filter((z) => { const w = lies(z); return w === null || !bekannt.has(w); }), fenster);
   return `🧪 <b>Meta-Gegenprüfung</b> (seit 18.11.): ${teile.join(" | ")} | ohne Angabe ${ohne.gewertet}`;
 }
+
+/**
+ * Mit welchem Faktor eine Zeile DOPPELT verbucht wurde (19.11.).
+ *
+ * Stufe 2 (14.11.) hat zwei Schliess-Eintraege mit DERSELBEN dealId als zwei
+ * Beine summiert — der P&L stand damit doppelt in der Geldtabelle (Fund im
+ * Railway-Log, behoben in `nachDealIdVerdichten`). Solche Zeilen tragen
+ * `beinDealIds` mit lauter GLEICHEN Eintraegen. Ein echter Teilgewinn hat
+ * zwei VERSCHIEDENE dealIds (26.07.) und bleibt hier bei 1.
+ *
+ * Liefert die Zahl der gleichen Eintraege (≥ 2), sonst 1. Eine leere ID ist
+ * kein Beleg fuer Gleichheit — wie im Tracker.
+ */
+export function doppeltFaktor(notes: string | null | undefined): number {
+  const m = notizen(notes ?? null);
+  const ids = m?.beinDealIds;
+  if (!Array.isArray(ids) || ids.length < 2) return 1;
+  const t = ids.map((x) => (typeof x === "string" ? x.trim() : ""));
+  if (t.some((x) => x === "")) return 1;
+  return t.every((x) => x === t[0]) ? t.length : 1;
+}
+
+/**
+ * EINE Zeile fuer /edge: wie viele Zeilen DOPPELT verbucht sind und was der
+ * Erwartungswert mit dem EINFACHEN Wert waere (19.11.).
+ *
+ * REINE LESUNG. Die Datenbank wird NICHT korrigiert — das waere eine nicht
+ * umkehrbare Datenaenderung und eine eigene Entscheidung. Diese Zeile macht
+ * nur sichtbar, wie viel davon abhaengt.
+ *
+ * Gerechnet mit DERSELBEN `erwartungswert()` und demselben Fenster wie /edge —
+ * keine zweite Wahrheit. Die Zeile erscheint IMMER, auch mit 0: so ist „keine
+ * betroffen" von „nicht gemessen" zu unterscheiden.
+ */
+export function doppeltVerbuchtZeile(
+  zeilen: ReadonlyArray<TradeZeile> | null | undefined,
+  fenster?: EwFenster | null,
+): string {
+  const alle = Array.isArray(zeilen) ? zeilen : [];
+  const kopf = "🧮 <b>Doppelt verbucht</b> (Stufe 2, behoben 19.11.):";
+  const betroffen = alle.filter((z) => doppeltFaktor(z?.notes) > 1);
+  const eB = erwartungswert(betroffen, fenster);
+  if (eB.gewertet === 0) return `${kopf} 0 Zeilen`;
+  const einfach = (z: TradeZeile): TradeZeile => {
+    const f = doppeltFaktor(z?.notes);
+    return f > 1 && typeof z.profitLoss === "number" && Number.isFinite(z.profitLoss)
+      ? { ...z, profitLoss: z.profitLoss / f } : z;
+  };
+  const eBk = erwartungswert(betroffen.map(einfach), fenster);
+  const zuViel = Number((eB.summePnl - eBk.summePnl).toFixed(2));
+  const oben = erwartungswert(alle, fenster);
+  const korr = erwartungswert(alle.map(einfach), fenster);
+  const ew = (e: EwErgebnis) => (e.belastbar && e.erwartungswert !== null
+    ? String(e.erwartungswert) : "zu wenig");
+  return `${kopf} <b>${eB.gewertet}</b> Zeilen · zu viel in der Summe: <b>${zuViel}</b>`
+    + ` · EW mit einfachem Wert: <b>${ew(korr)}</b> (oben ${ew(oben)})`
+    + "\n<i>gleiche dealId zweimal summiert — Etikett KEIN_SCHLUSSKURS, "
+    + "eigentlich EIN Bein. Datenbank nicht korrigiert.</i>";
+}

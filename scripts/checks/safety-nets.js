@@ -2466,6 +2466,9 @@ module.exports = async function pruefe() {
             torPruefung("/edge 60: die Meta-Zeile fehlt oder rechnet ohne das Fenster",
               /Meta-Gegenprüfung<\/b> \(seit 18\.11\.\): KI 0 · zu wenig \| REGELN 0 · zu wenig \| ohne Angabe 40/.test(mitF),
               (mitF.match(/Meta-Gegenprüfung[^\n]*/) ?? ["(keine Meta-Zeile)"])[0]);
+            torPruefung("/edge 60: die Zeile 'Doppelt verbucht' fehlt in der echten Antwort",
+              /\n🧮 <b>Doppelt verbucht<\/b> \(Stufe 2, behoben 19\.11\.\): 0 Zeilen/.test(mitF),
+              (mitF.match(/Doppelt verbucht[^\n]*/) ?? ["(keine Zeile)"])[0]);
             await edge("/edge");
             torPruefung("/edge ohne Angabe rechnet nicht mehr alles",
               /Zeitraum: <b>alles<\/b>/.test(antw.at(-1) ?? "")
@@ -15065,6 +15068,74 @@ module.exports = async function pruefe() {
           (() => { try { return /ohne Angabe 0$/.test(ewM.exports.metaPruefungZeile(
             [{ profitLoss: 1, notes: "{kaputt", updatedAt: new Date(T) }, { profitLoss: 1, notes: null, updatedAt: new Date(T) }], null)); }
             catch { return false; } })(), "kaputte Notizen");
+
+        // ── DOPPELT VERBUCHT (19.11.): gemessen, nicht korrigiert ─────────
+        const dF = ewM.exports.doppeltFaktor;
+        const dZ = ewM.exports.doppeltVerbuchtZeile;
+        if (typeof dF !== "function" || typeof dZ !== "function") {
+          torPruefung("doppelt-verbucht: doppeltFaktor/doppeltVerbuchtZeile nicht exportiert", false,
+            `${typeof dF}/${typeof dZ}`);
+        } else {
+          const nb = (ids) => JSON.stringify({ broker: "Capital.com DEMO", source: "auto-scan", beinDealIds: ids });
+          const faelle = [
+            [nb(["x", "x"]), 2, "zwei gleiche"],
+            [nb([" x ", "x"]), 2, "Leerzeichen"],
+            [nb(["a", "b"]), 1, "echter Teilgewinn (verschiedene IDs)"],
+            [nb(["x"]), 1, "nur eine"],
+            [nb(["", ""]), 1, "leere IDs sind kein Beleg"],
+            [nb(["x", ""]), 1, "eine leer"],
+            [nb("x"), 1, "kein Array"],
+            [JSON.stringify({ beine: 2 }), 1, "ohne beinDealIds"],
+            ["{kaputt", 1, "unlesbare Notizen"],
+            [null, 1, "keine Notizen"],
+          ];
+          for (const [notes, soll, name] of faelle) {
+            let ist; try { ist = dF(notes); } catch (e) { ist = `WIRFT ${e.message}`; }
+            torPruefung(`doppelt-verbucht: doppeltFaktor falsch bei „${name}"`, ist === soll,
+              `${ist} statt ${soll}`);
+          }
+          // GERECHNET, mit Gegenprobe: 40 normale Zeilen (+3/-1), 4 doppelt
+          // verbuchte (3.34 = 2 × 1.67), 2 ECHTE Zwei-Bein-Trades (2.00, IDs
+          // verschieden — duerfen NICHT mitzaehlen), 1 doppelte AUSSERHALB
+          // von 60 Tagen (zaehlt nur ohne Fenster).
+          const T2 = Date.UTC(2026, 10, 19);
+          const zd = (pnl, notes, alt = 1) => ({ profitLoss: pnl, result: pnl > 0 ? "WIN" : "LOSS",
+            updatedAt: new Date(T2 - alt * 86_400_000), notes });
+          const basisN = JSON.stringify({ broker: "Capital.com DEMO", source: "auto-scan" });
+          const dd = [];
+          for (let i = 0; i < 40; i++) dd.push(zd(i % 2 ? -1 : 3, basisN));
+          for (let i = 0; i < 4; i++) dd.push(zd(3.34, nb([`d${i}`, `d${i}`])));
+          for (let i = 0; i < 2; i++) dd.push(zd(2, nb([`a${i}`, `b${i}`])));
+          dd.push(zd(5, nb(["alt", "alt"]), 90));
+          const f60 = { tage: 60, jetzt: new Date(T2) };
+          const z60 = dZ(dd, f60);
+          const halb = dd.map((z) => (/"(d\d|alt)","\1"/.test(z.notes) ? { ...z, profitLoss: z.profitLoss / 2 } : z));
+          const korr60 = ewM.exports.erwartungswert(halb, f60).erwartungswert;
+          const oben60 = ewM.exports.erwartungswert(dd, f60).erwartungswert;
+          const soll60 = `🧮 <b>Doppelt verbucht</b> (Stufe 2, behoben 19.11.): <b>4</b> Zeilen · `
+            + `zu viel in der Summe: <b>6.68</b> · EW mit einfachem Wert: <b>${korr60}</b> (oben ${oben60})`;
+          torPruefung("doppelt-verbucht: die Zeile rechnet anders als erwartungswert() mit halbiertem "
+            + "Wert, zaehlt echte Zwei-Bein-Trades mit, oder ignoriert das Fenster",
+            z60.split("\n")[0] === soll60 && korr60 < oben60, `${z60.split("\n")[0]} || soll ${soll60}`);
+          const zAlles = dZ(dd, null);
+          torPruefung("doppelt-verbucht: ohne Fenster fehlt die alte doppelte Zeile",
+            /<b>5<\/b> Zeilen · zu viel in der Summe: <b>9\.18<\/b>/.test(zAlles), zAlles.split("\n")[0]);
+          torPruefung("doppelt-verbucht: der Hinweis, dass NICHT korrigiert wurde, fehlt",
+            /Datenbank nicht korrigiert/.test(z60), z60);
+          // GEGENPROBE: ohne betroffene Zeilen steht 0 — sichtbar, nicht stumm.
+          torPruefung("doppelt-verbucht: ohne betroffene Zeilen steht nicht „0 Zeilen\"",
+            dZ(dd.slice(0, 40), f60) === "🧮 <b>Doppelt verbucht</b> (Stufe 2, behoben 19.11.): 0 Zeilen",
+            dZ(dd.slice(0, 40), f60));
+          // Ausgeschlossene Zeilen (KEIN_PNL) zaehlen auch hier nicht — dieselbe
+          // Zaehlung wie /edge.
+          torPruefung("doppelt-verbucht: eine KEIN_PNL-Zeile wird als doppelt verbucht gezaehlt",
+            /: 0 Zeilen$/.test(dZ([zd(0, JSON.stringify({ exitReason: "KEIN_PNL", beinDealIds: ["k", "k"] }))], f60)),
+            dZ([zd(0, JSON.stringify({ exitReason: "KEIN_PNL", beinDealIds: ["k", "k"] }))], f60));
+          torPruefung("doppelt-verbucht: wirft bei undefined",
+            (() => { try { return /0 Zeilen$/.test(dZ(undefined, null)); } catch { return false; } })(), "undefined");
+          torPruefung("doppelt-verbucht: /edge haengt die Zeile nicht an, oder mit einem anderen Fenster",
+            /\+ "\\n" \+ doppeltVerbuchtZeile\(zeilen, tage === null \? null : \{ tage \}\)/.test(whMB), "webhook /edge");
+        }
       }
     }
   }

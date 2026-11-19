@@ -4968,6 +4968,34 @@ und `??` ohne Klammern — ein **Syntaxfehler**. Der Prüfer stürzte ab, die
 Suite meldete „rot, aber ohne Befund". Rot aus dem falschen Grund ist kein
 Nachweis.
 
+#### Wie viel hängt an den doppelt verbuchten Zeilen? `/edge` sagt es (19.11.)
+
+Die Korrektur oben wirkt ab dem Deploy. Die Zeilen **davor** tragen weiter
+den doppelten P&L — und eine Korrektur wäre eine nicht umkehrbare
+Datenänderung. Deshalb zuerst **messen**: `/edge` hat eine Zeile mehr.
+
+```
+🧮 Doppelt verbucht (Stufe 2, behoben 19.11.): <n> Zeilen · zu viel in der Summe: <x> · EW mit einfachem Wert: <y> (oben <z>)
+```
+
+(Form, keine Messung.) Erkannt an `beinDealIds` mit lauter **gleichen**
+Einträgen (`doppeltFaktor()`); ein echter Teilgewinn hat verschiedene IDs und
+zählt nicht, eine leere ID ist kein Beleg. Gerechnet mit **derselben**
+`erwartungswert()` und demselben Fenster — eine Zeile mit `KEIN_PNL` zählt hier
+so wenig wie in `/edge`. Die Zeile steht **immer**, auch mit 0: „keine
+betroffen" ist so von „nicht gemessen" zu unterscheiden.
+
+**Was sie NICHT tut:** die Datenbank anfassen. Ob korrigiert wird, ist eine
+eigene Entscheidung — mit dieser Zahl als Grundlage statt geraten.
+
+`safety-nets` 1793 → **1811** (zehn Lesarten von `doppeltFaktor`, die Zeile
+gegen halbierte `erwartungswert()` mit Fenster, echte Zwei-Bein-Trades als
+Gegenprobe, Null-Fall, `KEIN_PNL`, End-to-End durch die echte `POST`).
+**11 von 11 Sabotagen.** Länge gemessen am ungünstigsten Fall (fünfstellige
+Zahlen, alle Felder belegt, Tags mitgezählt): Meta-Zeile 127, diese Zeile 286,
+zusammen mit Trennern **416** — mit der `/edge`-Obergrenze vom 01.11. (3143)
+**3559 von 4096**.
+
 ### Stufe 3: der Teilgewinn wird bestätigt (14.11.)
 
 **Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
