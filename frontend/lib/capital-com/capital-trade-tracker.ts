@@ -976,10 +976,23 @@ export type NichtGeschrieben = {
   schluessel: string;
   anzahl: number;
   /** `kollision` = mehr Beine als eine Position haben kann;
-   *  `unlesbar` = mindestens ein P&L ist keine endliche Zahl. */
-  grund: "kollision" | "unlesbar";
+   *  `unlesbar` = mindestens ein P&L ist keine endliche Zahl;
+   *  `widerspruch` = dieselbe dealId traegt verschiedene P&L-Werte (19.11.) —
+   *  dann ist nicht entscheidbar, welcher gilt. */
+  grund: "kollision" | "unlesbar" | "widerspruch";
   pnls: number[];
   dealIds: string[];
+};
+
+/** Eine dealId, die auf DEMSELBEN Schluessel mehr als einmal vorkam (19.11.).
+ *  Sie zaehlt einmal; `closeLevels` sind die Schlusskurse ALLER Eintraege —
+ *  genau sie beantworten, ob es ein reines Duplikat ist (gleiche Kurse) oder
+ *  z. B. die Eroeffnung mitgezaehlt wurde (ein Kurs = Einstieg). */
+export type DoppelBeleg = {
+  schluessel: string;
+  dealId: string;
+  anzahl: number;
+  closeLevels: Array<number | null>;
 };
 
 export type Zusammenfuehrung = {
@@ -987,7 +1000,83 @@ export type Zusammenfuehrung = {
   close: Map<string, number>;
   summiert: SummenBeleg[];
   nichtGeschrieben: NichtGeschrieben[];
+  doppelt: DoppelBeleg[];
 };
+
+/** Ein Schlusskurs ist nur eine endliche Zahl > 0 — `Number(null)` ist 0
+ *  und endlich (Falle vom 24.08.), deshalb zuerst auf Abwesenheit pruefen. */
+function kursOderNull(c: unknown): number | null {
+  if (c === null || c === undefined) return null;
+  const n = Number(c);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+type Verdichtet = {
+  beine: Array<{ pnl: number; closeLevel: number | null; dealId: string }>;
+  doppelt: Array<{ dealId: string; anzahl: number; closeLevels: Array<number | null> }>;
+  widerspruch: string | null;
+};
+
+/**
+ * GLEICHE dealId ZAEHLT EINMAL (19.11.).
+ *
+ * DER FUND. Im Railway-Log vom 19.11. trug JEDE Zeile "ZUSAMMENGEFUEHRT" zwei
+ * IDENTISCHE dealIds, z. B. `XRPUSD|0.97647 2x [1.67, 1.67] = 3.34 (deals
+ * 00000000-74e7-18a1-…, 00000000-74e7-18a1-…)` — vier von vier Positionen.
+ * Der P&L eines Beins kommt aus `pnlByDealId.get(actDealId)`, und diese Map
+ * haelt EINEN Wert je dealId: zwei Eintraege mit derselben dealId bekommen
+ * zwangslaeufig denselben Wert. Stufe 2 hat sie summiert — der P&L stand
+ * DOPPELT in der Geldtabelle, und weil es "zwei Beine" waren, fiel der
+ * Schlusskurs weg (`WIN/KEIN_SCHLUSSKURS`, 13 Trades seit 16.11.).
+ *
+ * Ein ECHTER Teilgewinn hat zwei VERSCHIEDENE dealIds: jede Schliessung ist
+ * eine eigene Transaktion (bewiesen 26.07.). Deshalb wird hier zuerst je
+ * dealId verdichtet, erst danach gezaehlt.
+ *
+ * - Leere dealId: kein Beleg fuer Gleichheit — der Eintrag bleibt eigen.
+ * - Gleiche dealId, VERSCHIEDENE endliche P&L: Widerspruch, NICHTS schreiben.
+ *   Mit `pnlByDealId` ist das nicht erreichbar; die Funktion ist exportiert
+ *   und muss fuer sich stimmen (Begruendung wie bei `rrBand`, 29.10.).
+ * - Schlusskurs: stimmen alle BEKANNTEN Kurse ueberein, gilt er; weichen sie
+ *   ab, bleibt er leer — welcher der echte ist, waere geraten.
+ *
+ * WAS DAS NICHT TUT: Woher der doppelte Eintrag kommt, ist offen (Duplikat
+ * der Broker-Antwort oder die Eroeffnung mit derselben dealId). Bereits
+ * geschriebene Zeilen bleiben, wie sie sind — erkennbar an `beinDealIds`
+ * mit zwei gleichen Eintraegen.
+ */
+function nachDealIdVerdichten(liste: ReadonlyArray<SchlussBein>): Verdichtet {
+  const ergebnis: Verdichtet["beine"] = [];
+  const doppelt: Verdichtet["doppelt"] = [];
+  const nachId = new Map<string, SchlussBein[]>();
+  const reihenfolge: Array<string | SchlussBein> = [];
+  for (const b of liste) {
+    const id = typeof b?.dealId === "string" ? b.dealId.trim() : "";
+    if (id === "") { reihenfolge.push(b); continue; }
+    const g = nachId.get(id);
+    if (g) g.push(b);
+    else { nachId.set(id, [b]); reihenfolge.push(id); }
+  }
+  let widerspruch: string | null = null;
+  for (const r of reihenfolge) {
+    if (typeof r !== "string") {
+      ergebnis.push({ pnl: Number(r.pnl), closeLevel: kursOderNull(r.closeLevel), dealId: "" });
+      continue;
+    }
+    const g = nachId.get(r) ?? [];
+    const pnls = g.map((b) => Number(b.pnl));
+    const kurse = g.map((b) => kursOderNull(b.closeLevel));
+    if (g.length > 1) doppelt.push({ dealId: r, anzahl: g.length, closeLevels: kurse });
+    const alleEndlich = pnls.every((p) => Number.isFinite(p));
+    if (alleEndlich && pnls.some((p) => p !== pnls[0])) {
+      widerspruch = `dealId ${r} mit verschiedenen P&L [${pnls.join(", ")}]`;
+    }
+    const bekannt = kurse.filter((k): k is number => k !== null);
+    const kurs = bekannt.length > 0 && bekannt.every((k) => k === bekannt[0]) ? bekannt[0] : null;
+    ergebnis.push({ pnl: alleEndlich ? pnls[0] : Number.NaN, closeLevel: kurs, dealId: r });
+  }
+  return { beine: ergebnis, doppelt, widerspruch };
+}
 
 export function beineZusammenfuehren(
   beine: ReadonlyArray<SchlussBein>,
@@ -996,10 +1085,20 @@ export function beineZusammenfuehren(
   const close = new Map<string, number>();
   const summiert: SummenBeleg[] = [];
   const nichtGeschrieben: NichtGeschrieben[] = [];
+  const doppelt: DoppelBeleg[] = [];
 
-  for (const [schluessel, liste] of nachSchluessel(beine)) {
-    const pnls = liste.map((b) => Number(b.pnl));
-    const dealIds = liste.map((b) => (typeof b.dealId === "string" ? b.dealId : ""));
+  for (const [schluessel, roh] of nachSchluessel(beine)) {
+    // ZUERST je dealId verdichten (19.11.) — siehe nachDealIdVerdichten().
+    const v = nachDealIdVerdichten(roh);
+    for (const d of v.doppelt) doppelt.push({ schluessel, ...d });
+    const liste = v.beine;
+    const pnls = liste.map((b) => b.pnl);
+    const dealIds = liste.map((b) => b.dealId);
+
+    if (v.widerspruch !== null) {
+      nichtGeschrieben.push({ schluessel, anzahl: liste.length, grund: "widerspruch", pnls, dealIds });
+      continue;
+    }
 
     // Ein unlesbarer Wert macht die SUMME unlesbar. Aus "unbekannt" darf
     // keine Messung werden (Regel 22.09.) — also lieber gar nichts
@@ -1012,12 +1111,11 @@ export function beineZusammenfuehren(
     if (liste.length === 1) {
       // EIN BEIN: exakt wie bisher. Dieser Zweig ist der Normalfall, und er
       // darf sich nicht veraendern — sonst waere Stufe 2 keine Korrektur,
-      // sondern ein Umbau.
+      // sondern ein Umbau. Seit 19.11. landet hier auch eine dealId, die
+      // mehrfach vorkam: sie IST ein Bein.
       pnl.set(schluessel, pnls[0]);
       const c = liste[0].closeLevel;
-      if (c !== null && c !== undefined && Number.isFinite(Number(c)) && Number(c) > 0) {
-        close.set(schluessel, Number(c));
-      }
+      if (c !== null) close.set(schluessel, c);
       continue;
     }
 
@@ -1026,8 +1124,8 @@ export function beineZusammenfuehren(
       continue;
     }
 
-    // GENAU ZWEI BEINE: Teilgewinn + Schluss. Die Summe ist das echte
-    // Ergebnis des Trades. Der Schlusskurs bleibt bewusst LEER (siehe oben).
+    // GENAU ZWEI VERSCHIEDENE dealIds: Teilgewinn + Schluss. Die Summe ist das
+    // echte Ergebnis des Trades. Der Schlusskurs bleibt bewusst LEER (oben).
     const summe = Number(pnls.reduce((a, b) => a + b, 0).toFixed(2));
     pnl.set(schluessel, summe);
     summiert.push({ schluessel, anzahl: liste.length, summe, pnls, dealIds });
@@ -1036,7 +1134,8 @@ export function beineZusammenfuehren(
   // Der groesste Fall zuerst — wer hinsieht, will den teuersten zuerst.
   summiert.sort((a, b) => Math.abs(b.summe) - Math.abs(a.summe));
   nichtGeschrieben.sort((a, b) => b.anzahl - a.anzahl);
-  return { pnl, close, summiert, nichtGeschrieben };
+  doppelt.sort((a, b) => b.anzahl - a.anzahl);
+  return { pnl, close, summiert, nichtGeschrieben, doppelt };
 }
 
 /** Der Name steht EINMAL — zwei Schreibweisen waeren zwei Zustaende. */
@@ -1050,7 +1149,10 @@ export function mehrfachBeine(
   // meldete die Diagnose etwas anderes, als die Entscheidung rechnet.
   const nach = nachSchluessel(beine);
   const raus: MehrfachBefund[] = [];
-  for (const [schluessel, liste] of nach) {
+  for (const [schluessel, roh] of nach) {
+    // Seit 19.11. VERSCHIEDENE Beine — eine doppelte dealId ist ein Bein und
+    // wird als `doppelt` von beineZusammenfuehren gemeldet, nicht hier.
+    const liste = nachDealIdVerdichten(roh).beine;
     if (liste.length < 2) continue;
     const pnls = liste.map((b) => Number(b.pnl));
     const alleEndlich = pnls.every((p) => Number.isFinite(p));
@@ -1125,6 +1227,9 @@ export function gegenPositionen(
  *  waeren zwei Zustaende, und dann verdeckte der eine den anderen — die
  *  Lehre vom 13.11. aus dem Watchdog. */
 export const MEHRFACH_STELLE = "P&L mehrfacher Schluss";
+/** 19.11.: eigene Zustaende — teilten sie einen, verdeckte die eine Lage die andere. */
+export const DOPPELT_STELLE = "P&L doppelte dealId";
+export const SUMMIERT_STELLE = "P&L zwei Beine summiert";
 export const HEDGE_STELLE = "Gegenposition (Hedge)";
 
 export async function ergaenzeFehlendeJournalZeilen(
@@ -1522,7 +1627,11 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
       zusammenfuehrung = beineZusammenfuehren(beine);
       for (const [k, v] of zusammenfuehrung.pnl) pnlByEpicOpen.set(k, v);
       for (const [k, v] of zusammenfuehrung.close) closeByEpicOpen.set(k, v);
+      // GEDROSSELT (19.11.): die Aktivitaeten reichen 24 h zurueck, dieselbe
+      // Zusammenfuehrung stand deshalb ALLE 2 MINUTEN im Log (belegt
+      // 21:33:55 … 21:55:55). Jetzt bei jedem Wechsel und alle 30 Minuten.
       if (zusammenfuehrung.summiert.length > 0) {
+        if (lageMelden(SUMMIERT_STELLE, "aus")) {
         const l = zusammenfuehrung.summiert.slice(0, 5).map((x) =>
           `${x.schluessel} ${x.anzahl}x [${x.pnls.join(", ")}] = ${x.summe}`
           + ` (deals ${x.dealIds.join(", ")})`).join(" | ");
@@ -1530,6 +1639,26 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
           + `Position(en) mit zwei Schliess-Beinen ZUSAMMENGEFUEHRT: ${l}`
           + (zusammenfuehrung.summiert.length > 5
             ? ` (+${zusammenfuehrung.summiert.length - 5} weitere)` : ""));
+        }
+      } else if (lageMelden(SUMMIERT_STELLE, "ok")) {
+        console.log(`[trade-tracker] \u2705 keine zusammengefuehrten Schliess-Beine mehr im 24-h-Fenster.`);
+      }
+      if (zusammenfuehrung.doppelt.length > 0) {
+        if (lageMelden(DOPPELT_STELLE, "aus")) {
+          const l = zusammenfuehrung.doppelt.slice(0, 5).map((x) =>
+            `${x.schluessel} ${x.anzahl}x deal ${x.dealId} Schlusskurse=[`
+            + `${x.closeLevels.map((c) => c === null ? "?" : c).join(", ")}]`).join(" | ");
+          console.log(`[trade-tracker] \u2139\ufe0f DOPPELTE dealId: ${zusammenfuehrung.doppelt.length} `
+            + `Schliess-Eintrag/-Eintraege kamen mit DERSELBEN dealId mehrfach — sie zaehlen `
+            + `EINMAL. Bis 19.11. wurden sie als zwei Beine summiert, der P&L stand dann `
+            + `DOPPELT in der Geldtabelle (erkennbar an beinDealIds mit zwei gleichen `
+            + `Eintraegen). Gleiche Schlusskurse = Duplikat, ein Kurs = Einstieg = die `
+            + `Eroeffnung wurde mitgezaehlt. ${l}`
+            + (zusammenfuehrung.doppelt.length > 5
+              ? ` (+${zusammenfuehrung.doppelt.length - 5} weitere)` : ""));
+        }
+      } else if (lageMelden(DOPPELT_STELLE, "ok")) {
+        console.log(`[trade-tracker] \u2705 keine doppelte dealId mehr im 24-h-Fenster.`);
       }
       if (zusammenfuehrung.nichtGeschrieben.length > 0) {
         if (lageMelden(KOLLISION_STELLE, "aus")) {
@@ -1540,7 +1669,8 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
             + `Schluessel NICHT zusammenfuehrbar — es wurde KEIN P&L geschrieben, `
             + `die Zeile bleibt OPEN und wird erneut versucht. `
             + `"kollision" heisst: mehr Beine als eine Position haben kann `
-            + `(zwei Trades, gleicher Markt, gleicher Eroeffnungskurs). ${l}`);
+            + `(zwei Trades, gleicher Markt, gleicher Eroeffnungskurs); `
+            + `"widerspruch": dieselbe dealId mit verschiedenen P&L. ${l}`);
         }
       } else if (lageMelden(KOLLISION_STELLE, "ok")) {
         console.log(`[trade-tracker] \u2705 alle Schliess-Beine wieder zusammenfuehrbar.`);
@@ -1669,6 +1799,10 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
         updatedMeta.beinPnls = belegHaupt.pnls;
         updatedMeta.beinDealIds = belegHaupt.dealIds;
       }
+      // 19.11.: wurde hier eine doppelte dealId EINMAL gezaehlt? Beleg in die
+      // Zeile, sonst ist spaeter nicht nachpruefbar, warum es EIN Bein war.
+      const doppeltHaupt = zusammenfuehrung?.doppelt.filter((x) => x.schluessel === openKey) ?? [];
+      if (doppeltHaupt.length > 0) updatedMeta.doppelteDealIds = doppeltHaupt.map((x) => x.dealId);
       updatedMeta.closeLevel = schlusskurs ?? 0;
       updatedMeta.exitPosition = exitPosition;
       updatedMeta.exitReason = exitReason;
@@ -1758,6 +1892,8 @@ export async function syncCapitalPositionsToJournal(): Promise<void> {
               notizen.beinPnls = belegNach.pnls;
               notizen.beinDealIds = belegNach.dealIds;
             }
+            const doppeltNach = zusammenfuehrung?.doppelt.filter((x) => x.schluessel === key) ?? [];
+            if (doppeltNach.length > 0) notizen.doppelteDealIds = doppeltNach.map((x) => x.dealId);
             notizen.closeLevel = schluss ?? 0;
             notizen.exitPosition = grund.exitPosition;
             notizen.exitReason = grund.exitReason;

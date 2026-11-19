@@ -13348,6 +13348,172 @@ module.exports = async function pruefe() {
           sortiert.summiert.length === 2 && sortiert.summiert[0].schluessel === "GROSS",
           JSON.stringify(sortiert.summiert.map((x) => x.schluessel)));
 
+        // ── GLEICHE dealId ZAEHLT EINMAL (19.11.) ───────────────────────
+        //
+        // DER LIVE-FALL: im Railway-Log trug jede Zeile "ZUSAMMENGEFUEHRT"
+        // zwei IDENTISCHE dealIds — `XRPUSD|0.97647 2x [1.67, 1.67] = 3.34`.
+        // Bis heute enthielt KEIN Testfall zwei Beine mit derselben dealId;
+        // ein Testfall, der den Fehler nicht ausdruecken kann, beweist nichts.
+        const doppelLive = beineZusammenfuehren([
+          B("XRPUSD|0.97647", 1.67, 0.991, "00000000-74e7-18a1"),
+          B("XRPUSD|0.97647", 1.67, 0.991, "00000000-74e7-18a1"),
+        ]);
+        torPruefung("dieselbe dealId wird als ZWEI Beine summiert — der P&L "
+          + "steht dann DOPPELT in der Geldtabelle (Live-Fund 19.11.)",
+          doppelLive.pnl.get("XRPUSD|0.97647") === 1.67
+          && doppelLive.summiert.length === 0
+          && doppelLive.nichtGeschrieben.length === 0,
+          `pnl=${doppelLive.pnl.get("XRPUSD|0.97647")} summiert=${doppelLive.summiert.length}`);
+        torPruefung("eine doppelte dealId verliert den Schlusskurs — sie IST ein "
+          + "Bein, der Kurs ist bekannt",
+          doppelLive.close.get("XRPUSD|0.97647") === 0.991,
+          String(doppelLive.close.get("XRPUSD|0.97647")));
+        torPruefung("die doppelte dealId wird nicht gemeldet — dann bliebe die "
+          + "Frage, WOHER sie kommt, aus dem Log unbeantwortbar",
+          doppelLive.doppelt?.length === 1
+          && doppelLive.doppelt[0].dealId === "00000000-74e7-18a1"
+          && doppelLive.doppelt[0].anzahl === 2
+          && doppelLive.doppelt[0].schluessel === "XRPUSD|0.97647"
+          && JSON.stringify(doppelLive.doppelt[0].closeLevels) === JSON.stringify([0.991, 0.991]),
+          JSON.stringify(doppelLive.doppelt));
+        // Gesunder Fall: ohne Duplikat ist die Liste LEER (Gegenprobe).
+        torPruefung("ohne doppelte dealId wird trotzdem etwas als doppelt gemeldet",
+          Array.isArray(eins.doppelt) && eins.doppelt.length === 0
+          && Array.isArray(zwei.doppelt) && zwei.doppelt.length === 0,
+          `${JSON.stringify(eins.doppelt)} ${JSON.stringify(zwei.doppelt)}`);
+
+        // Verschiedene Kurse unter derselben dealId: welcher gilt, waere geraten.
+        const doppelKurse = beineZusammenfuehren([
+          B("A|1.00000", 2, 110, "d1"), B("A|1.00000", 2, 1.0, "d1"),
+        ]);
+        torPruefung("bei derselben dealId mit VERSCHIEDENEN Schlusskursen wird "
+          + "einer gesetzt — welcher der echte ist, waere geraten",
+          doppelKurse.pnl.get("A|1.00000") === 2 && !doppelKurse.close.has("A|1.00000"),
+          `pnl=${doppelKurse.pnl.get("A|1.00000")} close=${doppelKurse.close.get("A|1.00000")}`);
+        // Ein fehlender Kurs widerspricht nicht — der bekannte gilt.
+        const doppelEinKurs = beineZusammenfuehren([
+          B("A|1.00000", 2, null, "d1"), B("A|1.00000", 2, 110, "d1"),
+        ]);
+        torPruefung("ein FEHLENDER Kurs neben einem bekannten unter derselben "
+          + "dealId loescht den bekannten",
+          doppelEinKurs.close.get("A|1.00000") === 110,
+          String(doppelEinKurs.close.get("A|1.00000")));
+        // Verschiedene P&L unter derselben dealId: nicht entscheidbar.
+        const doppelWider = beineZusammenfuehren([
+          B("A|1.00000", 1, 110, "d1"), B("A|1.00000", 2, 110, "d1"),
+        ]);
+        torPruefung("dieselbe dealId mit VERSCHIEDENEN P&L wird geschrieben — "
+          + "welcher gilt, ist nicht entscheidbar",
+          !doppelWider.pnl.has("A|1.00000")
+          && doppelWider.nichtGeschrieben.length === 1
+          && doppelWider.nichtGeschrieben[0].grund === "widerspruch",
+          JSON.stringify(doppelWider.nichtGeschrieben));
+        // Ein unlesbarer Wert unter derselben dealId bleibt UNLESBAR.
+        const doppelNaN = beineZusammenfuehren([
+          B("A|1.00000", 1.67, 110, "d1"), B("A|1.00000", Number.NaN, 110, "d1"),
+        ]);
+        torPruefung("ein unlesbarer P&L unter derselben dealId wird geschrieben",
+          !doppelNaN.pnl.has("A|1.00000")
+          && doppelNaN.nichtGeschrieben.length === 1
+          && doppelNaN.nichtGeschrieben[0].grund === "unlesbar",
+          JSON.stringify(doppelNaN.nichtGeschrieben));
+        // Duplikat PLUS ein echtes zweites Bein: zwei VERSCHIEDENE → Summe.
+        const doppelPlus = beineZusammenfuehren([
+          B("A|1.00000", 4, 110, "d1"), B("A|1.00000", 4, 110, "d1"),
+          B("A|1.00000", -1.5, 108, "d2"),
+        ]);
+        torPruefung("ein Duplikat neben einem echten zweiten Bein wird zur "
+          + "Kollision (drei) statt zur Summe der zwei verschiedenen",
+          doppelPlus.pnl.get("A|1.00000") === 2.5
+          && doppelPlus.summiert.length === 1
+          && doppelPlus.summiert[0].anzahl === 2
+          && JSON.stringify(doppelPlus.summiert[0].dealIds) === JSON.stringify(["d1", "d2"]),
+          `pnl=${doppelPlus.pnl.get("A|1.00000")} ${JSON.stringify(doppelPlus.summiert)}`);
+        const doppelPlusGedreht = beineZusammenfuehren([
+          B("A|1.00000", -1.5, 108, "d2"), B("A|1.00000", 4, 110, "d1"),
+          B("A|1.00000", 4, 110, "d1"),
+        ]);
+        torPruefung("das Verdichten haengt an der REIHENFOLGE",
+          doppelPlusGedreht.pnl.get("A|1.00000") === 2.5,
+          String(doppelPlusGedreht.pnl.get("A|1.00000")));
+        // Dreimal dieselbe dealId ist EIN Bein, keine Kollision.
+        const dreifach = beineZusammenfuehren([
+          B("A|1.00000", 3, 110, "d1"), B("A|1.00000", 3, 110, "d1"),
+          B("A|1.00000", 3, 110, "d1"),
+        ]);
+        torPruefung("dreimal dieselbe dealId wird zur Kollision statt zu EINEM Bein",
+          dreifach.pnl.get("A|1.00000") === 3 && dreifach.doppelt[0]?.anzahl === 3,
+          `pnl=${dreifach.pnl.get("A|1.00000")} ${JSON.stringify(dreifach.doppelt)}`);
+        // GEGENPROBE: eine LEERE dealId ist kein Beleg fuer Gleichheit — zwei
+        // Beine ohne ID bleiben zwei. Sonst verschluckte das Verdichten
+        // echte Beine.
+        const ohneId = beineZusammenfuehren([
+          B("A|1.00000", 2, 110, ""), B("A|1.00000", 2, 108, ""),
+        ]);
+        torPruefung("zwei Beine OHNE dealId werden zu einem verdichtet — eine "
+          + "fehlende ID beweist keine Gleichheit",
+          ohneId.pnl.get("A|1.00000") === 4 && ohneId.doppelt.length === 0,
+          `pnl=${ohneId.pnl.get("A|1.00000")}`);
+        // Leerzeichen an der ID machen sie nicht zu einer anderen.
+        const getrimmt = beineZusammenfuehren([
+          B("A|1.00000", 2, 110, " d1 "), B("A|1.00000", 2, 110, "d1"),
+        ]);
+        torPruefung("Leerzeichen an der dealId verhindern das Verdichten",
+          getrimmt.pnl.get("A|1.00000") === 2,
+          String(getrimmt.pnl.get("A|1.00000")));
+        // mehrfachBeine zaehlt dieselben VERSCHIEDENEN Beine.
+        torPruefung("mehrfachBeine meldet eine doppelte dealId als zwei Beine — "
+          + "Diagnose und Entscheidung liefen auseinander",
+          mehrfachBeine([
+            { schluessel: "A|1.00000", pnl: 1.67, closeLevel: 1, dealId: "d1" },
+            { schluessel: "A|1.00000", pnl: 1.67, closeLevel: 1, dealId: "d1" },
+          ]).length === 0
+          && mehrfachBeine([
+            { schluessel: "A|1.00000", pnl: 1.67, closeLevel: 1, dealId: "d1" },
+            { schluessel: "A|1.00000", pnl: 1.67, closeLevel: 1, dealId: "d1" },
+            { schluessel: "A|1.00000", pnl: -1, closeLevel: 2, dealId: "d2" },
+          ])[0]?.anzahl === 2,
+          "d1,d1 / d1,d1,d2");
+
+        // Verdrahtung der neuen Teile, gezaehlt.
+        torPruefung("beide Leser verdichten nicht DIESELBE Weise — Diagnose "
+          + "und Entscheidung koennten auseinanderlaufen",
+          (trOhneK.match(/nachDealIdVerdichten\(roh\)/g) || []).length === 2,
+          `${(trOhneK.match(/nachDealIdVerdichten\(roh\)/g) || []).length}x`);
+        for (const stelle of ["DOPPELT_STELLE", "SUMMIERT_STELLE"]) {
+          for (const lage of ["aus", "ok"]) {
+            torPruefung(`der ${lage}-Zweig von ${stelle} fehlt`,
+              new RegExp(`lageMelden\\(${stelle},\\s*"${lage}"\\)`).test(trOhneK),
+              `${stelle} ${lage}`);
+          }
+        }
+        {
+          const namen = ["MEHRFACH_STELLE", "HEDGE_STELLE", "KOLLISION_STELLE",
+            "DOPPELT_STELLE", "SUMMIERT_STELLE"].map((n) =>
+            new RegExp(`${n} = "(.*?)"`).exec(trOhneK)?.[1]);
+          torPruefung("zwei Drossel-Stellen teilen sich einen Namen — dann "
+            + "verdeckt die eine Lage die andere",
+            namen.every((n) => typeof n === "string" && n.length > 0)
+            && new Set(namen).size === namen.length,
+            JSON.stringify(namen));
+        }
+        // Die ZUSAMMENGEFUEHRT-Zeile stand alle 2 Minuten im Log — sie muss
+        // INNERHALB der Drossel stehen, nicht daneben.
+        {
+          const aus = trOhneK.indexOf('if (lageMelden(SUMMIERT_STELLE, "aus")) {');
+          const zeile = trOhneK.indexOf("ZUSAMMENGEFUEHRT:", aus < 0 ? 0 : aus);
+          const ok = trOhneK.indexOf('} else if (lageMelden(SUMMIERT_STELLE, "ok")) {');
+          torPruefung("die ZUSAMMENGEFUEHRT-Zeile steht nicht hinter der Drossel "
+            + "— dann erscheint sie wieder alle 2 Minuten",
+            aus >= 0 && zeile > aus && ok > zeile
+            && trOhneK.indexOf("ZUSAMMENGEFUEHRT:") === zeile,
+            `aus@${aus} zeile@${zeile} ok@${ok}`);
+        }
+        torPruefung("der Beleg einer doppelten dealId steht nicht in BEIDEN "
+          + "Schreibpfaden",
+          (trOhneK.match(/\.doppelteDealIds = /g) || []).length === 2,
+          `${(trOhneK.match(/\.doppelteDealIds = /g) || []).length}x doppelteDealIds`);
+
         // ── VERDRAHTUNG, gezaehlt statt gefunden ────────────────────────
         torPruefung("die Schleife schreibt die P&L-Map wieder direkt — "
           + "genau das Ueberschreiben, das Stufe 2 behebt",

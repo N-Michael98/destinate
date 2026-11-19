@@ -4910,6 +4910,64 @@ wären nicht unterscheidbar und würden summiert. Die Schranke oben macht das
 unwahrscheinlich, **beweist** es aber nicht aus. Drei Beine fangen genau diesen
 Fall ab, zwei nicht.
 
+### Stufe 2 hat dieselbe Transaktion DOPPELT gezählt (19.11.)
+
+Gefunden im Railway-Log von `destinate`: **jede** Zeile `ZUSAMMENGEFUEHRT`
+trug zwei **identische** dealIds — vier von vier Positionen, z. B.
+
+```
+XRPUSD|0.97647 2x [1.67, 1.67] = 3.34
+(deals 00000000-74e7-18a1-047d-d1e3000c819e, 00000000-74e7-18a1-047d-d1e3000c819e)
+```
+
+Der P&L eines Beins kommt aus `pnlByDealId.get(actDealId)`, und diese Map
+hält **einen** Wert je dealId. Zwei Einträge mit derselben dealId bekommen
+zwangsläufig denselben Wert — Stufe 2 hat sie summiert und die Summe als
+`profitLoss` geschrieben. Ein **echter** Teilgewinn hat zwei **verschiedene**
+dealIds (jede Schliessung ist eine eigene Transaktion, 26.07.).
+
+**Folge seit dem 16.11.:** `WIN/KEIN_SCHLUSSKURS` (13 Trades in `/edge 60`)
+sind mit hoher Wahrscheinlichkeit **doppelt verbucht** — und tragen das falsche
+Etikett, weil „zwei Beine" den Schlusskurs leeren. `/edge`, `/hebel` und der
+Lernzyklus waren damit geschönt.
+
+**Mein Anteil:** Stufe 1 schrieb am 13.11. ausdrücklich „erst muss aus dem
+Log hervorgehen, ob der Fall auftritt". Stufe 2 kam am 14.11. ohne diesen
+Beleg — und **kein** Testfall hatte zwei Beine mit derselben dealId. Ein
+Testfall, der den Fehler nicht ausdrücken kann, beweist nichts.
+
+**Jetzt** (`nachDealIdVerdichten()`, beide Leser): gleiche dealId zählt
+**einmal**. Danach erst wird gezählt — ein Bein (mit Schlusskurs), zwei
+**verschiedene** (Summe), ab drei Kollision. Gleiche dealId mit verschiedenen
+P&L → `widerspruch`, nichts geschrieben. Verschiedene Schlusskurse unter
+derselben dealId → Kurs leer statt geraten; ein fehlender Kurs neben einem
+bekannten widerspricht nicht. Leere dealId ist **kein** Beleg für Gleichheit.
+
+Die Zeile `DOPPELTE dealId` nennt die Schlusskurse **aller** Einträge — gleiche
+Kurse heissen Duplikat, ein Kurs auf Einstiegshöhe heisst „die Eröffnung
+wurde mitgezählt". **Woher** der doppelte Eintrag kommt, ist damit messbar,
+aber **noch nicht** gemessen. Die Notiz `doppelteDealIds` steht in **beiden**
+Schreibpfaden.
+
+**Und die Zeile stand alle 2 Minuten im Log** (21:33:55 … 21:55:55): die
+Aktivitäten reichen 24 h zurück. `ZUSAMMENGEFUEHRT` geht jetzt durch die
+bestehende Drossel (`SUMMIERT_STELLE`), mit eigenem Zustand.
+
+**Was es NICHT tut:** bereits geschriebene Zeilen bleiben unverändert — eine
+Korrektur wäre eine nicht umkehrbare Datenänderung. Erkennbar sind sie an
+`beinDealIds` mit zwei gleichen Einträgen. Keine Order, kein Stop, keine
+Grösse, keine Schwelle. **Snapshot 299 unverändert.**
+
+`safety-nets` 1771 → **1793**, **14 von 14 Sabotagen** (darunter der
+Live-Fall exakt, Kurskonflikt, Widerspruch, NaN, Duplikat neben echtem
+zweitem Bein, Drossel ausgehebelt, gemeinsamer Drossel-Name). Regression
+Stufe 1 **11/11**, Stufe 2 nachgezogen (Z6 an der neuen Form).
+
+**Ein Messfehler in meinem Nachweis:** die erste Fassung von S3 mischte `&&`
+und `??` ohne Klammern — ein **Syntaxfehler**. Der Prüfer stürzte ab, die
+Suite meldete „rot, aber ohne Befund". Rot aus dem falschen Grund ist kein
+Nachweis.
+
 ### Stufe 3: der Teilgewinn wird bestätigt (14.11.)
 
 **Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg.
