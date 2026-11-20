@@ -15345,6 +15345,161 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ══ DER TEILGEWINN-MERKER GEHT NICHT MEHR VERLOREN (20.11.) ══════════════
+  //
+  // D1: nach einem Teilgewinn schrieben Breakeven/Trailing im SELBEN
+  //     Durchlauf den Speicher mit dem Stand vom ANFANG zurueck — `partialDone`
+  //     war im Speicher wieder `false`. Fand `persistMeta` keine offene Zeile,
+  //     nahm der naechste Zyklus einen ZWEITEN Teilgewinn.
+  // D2: `persistMeta` und `merkeAIEntscheidung` lesen, aendern und schreiben
+  //     die Notizen, ohne aufeinander zu warten — `instrumentation.ts:777-778`
+  //     ruft zwei davon direkt nacheinander. Der letzte Schreiber gewinnt.
+  //
+  // AUSGEFUEHRT mit der ECHTEN runRiskAgent; Broker, KI und Datenbank sind
+  // nachgebaut, nichts geht nach aussen.
+  {
+    const partials = [];
+    const updates = [];
+    const warns = [];
+    let dbModus = "leer";            // "leer" = keine offene Zeile, "zeile" = eine Zeile
+    let notizen = "";
+    const pause = () => new Promise((r) => setTimeout(r, 5));
+    const fakeDb = {
+      $queryRawUnsafe: async () => {
+        await pause();               // LESEN dauert — so lesen zwei Schreiber dasselbe
+        return dbModus === "zeile" ? [{ id: 7, notes: notizen }] : [];
+      },
+      $executeRawUnsafe: async (_sql, neu) => {
+        await pause();
+        notizen = neu;
+        return 1;
+      },
+    };
+    class KiAus { constructor() { this.messages = { create: async () => { throw new Error("400 credit balance is too low"); } }; } }
+    const raM = ladeTsModul("lib/agents/risk-agent.ts", {
+      "@anthropic-ai/sdk": { __esModule: true, default: KiAus },
+      "./agent-bus": { agentBus: { publish() {} } },
+      "./ai-manager-status": { meldeAIEntscheidung() {} },
+      "alter/alter": ladeTsModul("lib/alter/alter.ts").exports,
+      "capital-com/capital-com-client": {
+        capitalClosePartial: async (...a) => { partials.push(a); return { ok: true }; },
+        capitalUpdatePosition: async (...a) => { updates.push(a); return { ok: true }; },
+        capitalClosePosition: async () => ({ ok: true }),
+        EPIC_MAP: {},
+      },
+      "app/lib/prisma": { getPrisma: () => fakeDb },
+      "ai-gate/ai-gate-alert": { meldeAIGateAusfall() {} },
+      "telegram-notifications/telegram-sender": { notifyBreakeven: async () => {} },
+    });
+    const R = raM.exports ?? {};
+    if (raM.fehler || typeof R.runRiskAgent !== "function" || typeof R.merkeTeilgewinn !== "function") {
+      torPruefung("risk-zustand: runRiskAgent nicht ausfuehrbar", false, raM.fehler ?? "Export fehlt");
+    } else {
+      const warnVorher = console.warn;
+      const logVorher = console.log;
+      console.warn = (...a) => { warns.push(a.map(String).join(" ")); };
+      console.log = () => {};
+      // Warten, bis alle Hintergrund-Schreibvorgaenge durch sind.
+      const ruhe = async () => {
+        for (let i = 0; i < 40; i++) await pause();
+      };
+      try {
+        const pos = (dealId, size, stopLevel) => ({
+          dealId, direction: "BUY", openLevel: 1.0, stopLevel, profitLevel: 1.006,
+          symbol: "EURUSD", epic: "EURUSD", size,
+          createdDate: new Date(Date.now() - 3600_000).toISOString(),
+        });
+        const meta0 = { beSet: false, partialDone: false, trailSL: null, peakPrice: null,
+          confidence: 72, tradingStyle: "DAYTRADING" };
+        const ctx = (p) => ({ apiKey: "k", cst: "c", securityToken: "s", positions: [p],
+          priceMap: new Map([["EURUSD", { bid: 1.011, ask: 1.0111 }]]),
+          dbMeta: new Map([[p.dealId, meta0]]), atrMap: new Map([["EURUSD", 0.002]]) });
+
+        // ── D1: Teilgewinn + Breakeven im selben Durchlauf, KEINE offene Zeile ──
+        dbModus = "leer";
+        await R.runRiskAgent(ctx(pos("D1-TEST", 4, 0.997)));
+        await ruhe();
+        const nachZyklus1 = partials.length;
+        // Zyklus 2: die Position ist halbiert, der Stop steht auf Breakeven.
+        await R.runRiskAgent(ctx(pos("D1-TEST", 2, 0.99955)));
+        await ruhe();
+        torPruefung("risk-zustand: der Pruefstand erreicht Teilgewinn UND Breakeven "
+          + "im ersten Zyklus nicht — dann kann er D1 gar nicht ausdruecken",
+          nachZyklus1 === 1 && updates.length >= 1, `Teilgewinne ${nachZyklus1}, Stop-Updates ${updates.length}`);
+        torPruefung("risk-zustand: ZWEITER Teilgewinn auf derselben Position — der "
+          + "Merker ging im selben Durchlauf verloren (D1)",
+          partials.length === 1, `${partials.length} Teilgewinn-Auftraege`);
+        const ohneZeile = warns.filter((w) => w.includes("D1-TEST") && /keine offene Journal-Zeile/.test(w));
+        torPruefung("risk-zustand: dass der Zustand NUR im Speicher liegt, wird nicht "
+          + "(genau einmal je Position) gemeldet",
+          ohneZeile.length === 1 && /Neustart/.test(ohneZeile[0] ?? ""), `${ohneZeile.length} Meldungen`);
+
+        // ── D2: Python-Teilgewinn — zwei Schreiber direkt nacheinander ─────
+        dbModus = "zeile";
+        notizen = JSON.stringify({ dealId: "D2-TEST", tradingStyle: "DAYTRADING" });
+        R.merkeTeilgewinn("D2-TEST", 3);
+        R.merkeFremdAktion("D2-TEST", "Python-Lifecycle nahm Teilgewinn ueber 3");
+        await ruhe();
+        const n2 = (() => { try { return JSON.parse(notizen); } catch { return {}; } })();
+        torPruefung("risk-zustand: zwei Schreiber direkt nacheinander — einer verliert "
+          + "sein Feld (D2, instrumentation.ts:777-778)",
+          n2.partialDone === true && n2.partialSize === 3 && typeof n2.fremdAktion?.text === "string"
+          && n2.dealId === "D2-TEST", JSON.stringify(n2).slice(0, 200));
+
+        // ── D2c: ZWEI MODULKOPIEN (Regel vom 28.07.) ───────────────────────
+        // `instrumentation.ts` laedt den RiskAgent ueber zwei Wege. Liegt die
+        // Warteschlange im Modul statt auf `global`, wartet Kopie B nicht auf
+        // Kopie A — und genau dieser Fehler ist mit EINER Kopie unsichtbar.
+        const raM2 = ladeTsModul("lib/agents/risk-agent.ts", {
+          "@anthropic-ai/sdk": { __esModule: true, default: KiAus },
+          "./agent-bus": { agentBus: { publish() {} } },
+          "./ai-manager-status": { meldeAIEntscheidung() {} },
+          "alter/alter": ladeTsModul("lib/alter/alter.ts").exports,
+          "capital-com/capital-com-client": { capitalClosePartial: async () => ({ ok: true }),
+            capitalUpdatePosition: async () => ({ ok: true }), capitalClosePosition: async () => ({ ok: true }), EPIC_MAP: {} },
+          "app/lib/prisma": { getPrisma: () => fakeDb },
+          "ai-gate/ai-gate-alert": { meldeAIGateAusfall() {} },
+          "telegram-notifications/telegram-sender": { notifyBreakeven: async () => {} },
+        });
+        notizen = JSON.stringify({ dealId: "D2C-TEST", tradingStyle: "DAYTRADING" });
+        R.merkeTeilgewinn("D2C-TEST", 5);
+        raM2.exports?.merkeFremdAktion?.("D2C-TEST", "aus der zweiten Modulkopie");
+        await ruhe();
+        const n4 = (() => { try { return JSON.parse(notizen); } catch { return {}; } })();
+        torPruefung("risk-zustand: zwei Modulkopien schreiben gleichzeitig — die "
+          + "Warteschlange ist nicht geteilt (Regel 28.07.)",
+          typeof raM2.exports?.merkeFremdAktion === "function"
+          && n4.partialDone === true && n4.partialSize === 5
+          && n4.fremdAktion?.text === "aus der zweiten Modulkopie", JSON.stringify(n4).slice(0, 200));
+
+        // ── D2b: RiskAgent selbst — KI-Entscheidung und Zustand je Massnahme ──
+        notizen = JSON.stringify({ dealId: "D2B-TEST", tradingStyle: "DAYTRADING" });
+        partials.length = 0;
+        await R.runRiskAgent(ctx(pos("D2B-TEST", 4, 0.997)));
+        await ruhe();
+        const n3 = (() => { try { return JSON.parse(notizen); } catch { return {}; } })();
+        torPruefung("risk-zustand: Teilgewinn und Breakeven im selben Durchlauf — ein "
+          + "Notizfeld ging beim gleichzeitigen Schreiben verloren (D2)",
+          n3.partialDone === true && n3.partialSize === 2 && n3.beSet === true
+          && typeof n3.trailSL === "number" && n3.aiZusammenfassung?.APPROVE === 2
+          && Array.isArray(n3.aiEntscheidungen) && n3.aiEntscheidungen.length === 2,
+          JSON.stringify(n3).slice(0, 260));
+        // Gegenprobe: gibt es eine Zeile, wird NICHT „nur im Speicher" gemeldet.
+        torPruefung("risk-zustand: mit vorhandener Zeile wird trotzdem „keine Zeile“ gemeldet",
+          !warns.some((w) => w.includes("D2B-TEST") && /keine offene Journal-Zeile/.test(w)),
+          "Meldung trotz Zeile");
+        // Die Warteschlange darf nicht wachsen (Leck): nach der Ruhe leer.
+        torPruefung("risk-zustand: die Schreib-Warteschlange raeumt nicht auf — sie "
+          + "wuechse mit jeder je gesehenen Position",
+          !(global.__notizen_warteschlange__ instanceof Map) || global.__notizen_warteschlange__.size === 0,
+          `${global.__notizen_warteschlange__?.size ?? "keine"} Eintraege`);
+      } finally {
+        console.warn = warnVorher;
+        console.log = logVorher;
+      }
+    }
+  }
+
   // ── /exitsim — DIE AUSSTIEGSLOGIK NACHGERECHNET (17.11.) ──────────────────
   //
   // Bildet BEIDE Systeme nach, die eine offene Position alle 2 Minuten

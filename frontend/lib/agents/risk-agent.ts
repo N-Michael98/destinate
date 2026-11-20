@@ -129,6 +129,43 @@ export function getStyleThresholds(style: string): {
 
 const positionMeta: Map<string, PosMeta> = new Map();
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __notizen_warteschlange__: Map<string, Promise<void>> | undefined;
+}
+
+/**
+ * SCHREIBVORGAENGE AUF DIE NOTIZEN EINER POSITION LAUFEN NACHEINANDER (20.11.).
+ *
+ * DER FUND: `persistMeta` und `merkeAIEntscheidung` lesen die Notizen, aendern
+ * sie und schreiben sie zurueck — ohne aufeinander zu warten.
+ * `instrumentation.ts:777-778` ruft nach einem Python-Teilgewinn ZWEI davon
+ * direkt nacheinander (`merkeTeilgewinn`, `merkeFremdAktion`). Lesen beide,
+ * bevor einer schreibt, gewinnt der letzte Schreiber, und das Feld des ersten
+ * ist weg. AUSGEFUEHRT nachgewiesen: es verschwand `partialDone` — nach einem
+ * Neustart nahmen RiskAgent UND Python dann einen zweiten Teilgewinn.
+ *
+ * Jetzt haengt jeder Schreibvorgang einer Position an den vorigen an. Auf
+ * `global`, nicht modul-scoped (Regel vom 28.07.): `instrumentation.ts` laedt
+ * dieses Modul ueber zwei Wege. Der Eintrag wird entfernt, sobald nichts mehr
+ * wartet — sonst wuechse die Map mit jeder je gesehenen Position.
+ *
+ * WAS DAS NICHT LEISTET: andere Module (der Journal-Abgleich im Tracker)
+ * schreiben dieselben Notizen weiter unabhaengig. Das ist benannt und offen.
+ */
+function notizenNacheinander(dealId: string, arbeit: () => Promise<void>): void {
+  global.__notizen_warteschlange__ ??= new Map();
+  const schlange = global.__notizen_warteschlange__;
+  const vorher = schlange.get(dealId) ?? Promise.resolve();
+  // `arbeit` faengt selbst (non-fatal); das zweite `catch` haelt die Kette
+  // auch dann am Leben, wenn doch etwas wirft.
+  const jetzt = vorher.then(arbeit).catch(() => {});
+  schlange.set(dealId, jetzt);
+  void jetzt.then(() => {
+    if (schlange.get(dealId) === jetzt) schlange.delete(dealId);
+  });
+}
+
 /**
  * Persistiert Risiko-Zustand in Trade.notes (Generalkontroll-Fund 28.07.).
  *
@@ -146,7 +183,7 @@ const positionMeta: Map<string, PosMeta> = new Map();
  * "updatedAt" wird bewusst NICHT angefasst (Report-Zeiträume bleiben korrekt).
  */
 function persistMeta(dealId: string, patch: Record<string, unknown>): void {
-  (async () => {
+  notizenNacheinander(dealId, async () => {
     try {
       const { getPrisma } = await import("../../app/lib/prisma");
       const db = getPrisma();
@@ -154,7 +191,17 @@ function persistMeta(dealId: string, patch: Record<string, unknown>): void {
         `SELECT id, notes FROM "Trade" WHERE status = 'OPEN' AND notes LIKE $1 LIMIT 1`,
         `%"dealId":"${dealId}"%`
       );
-      if (!rows?.length) return;
+      if (!rows?.length) {
+        // BISHER STUMM (20.11.). Genau hier wurde aus D1 ein zweiter
+        // Teilgewinn: ohne Zeile lag der Merker NUR im Speicher. Einmal je
+        // Position (dieselbe Merkliste wie der geratene Stil, mit Aufraeumen).
+        if (geratenerStilMelden(`ohneZeile:${dealId}`, false, false)) {
+          console.warn(`[risk-agent] ⚠️ deal=${dealId}: keine offene Journal-Zeile mit `
+            + `dieser dealId — der Risiko-Zustand (${Object.keys(patch).join(", ")}) liegt `
+            + `NUR im Speicher und ist nach einem Neustart weg.`);
+        }
+        return;
+      }
       let m: Record<string, unknown> = {};
       try { m = JSON.parse(rows[0].notes) as Record<string, unknown>; } catch { m = {}; }
       await db.$executeRawUnsafe(
@@ -165,7 +212,7 @@ function persistMeta(dealId: string, patch: Record<string, unknown>): void {
     } catch (e) {
       console.warn(`[risk-agent] Risiko-Zustand nicht persistiert (deal=${dealId}):`, e instanceof Error ? e.message : String(e));
     }
-  })();
+  });
 }
 
 /**
@@ -196,7 +243,9 @@ function merkeAIEntscheidung(
   aktion: "APPROVE" | "SKIP" | "ADJUST",
   grund: string,
 ): void {
-  (async () => {
+  // Dieselbe Warteschlange wie persistMeta (20.11.) — sonst ueberschreiben
+  // sich KI-Entscheidung und Zustand derselben Massnahme gegenseitig.
+  notizenNacheinander(dealId, async () => {
     try {
       const { getPrisma } = await import("../../app/lib/prisma");
       const db = getPrisma();
@@ -234,7 +283,7 @@ function merkeAIEntscheidung(
       console.warn(`[risk-agent] AI-Entscheidung nicht festgehalten (deal=${dealId}):`,
         e instanceof Error ? e.message : String(e));
     }
-  })();
+  });
 }
 
 // ── AI Manager ────────────────────────────────────────────────────────────────
@@ -537,6 +586,20 @@ async function processPosition(
   // Schalter aus -> regelSchwellen unverändert, bisheriges Verhalten.
   const thresholds = wirksameSchwellen(regelSchwellen, slRange, entry, ctx.exitSchwellen);
 
+  // EIN LAUFENDER STAND JE DURCHLAUF (20.11.). Bis heute schrieb jede Massnahme
+  // `positionMeta.set(dealId, { ...meta, … })` — also mit dem Stand vom ANFANG
+  // des Durchlaufs. Feuerte nach dem Teilgewinn im selben Durchlauf der
+  // Breakeven oder das Trailing, stand `partialDone` im Speicher wieder auf
+  // `false`. AUSGEFUEHRT nachgewiesen: fand `persistMeta` keine offene Zeile,
+  // ging im naechsten Zyklus ein ZWEITER Teilgewinn an den Broker.
+  // Jetzt baut jede Speicherung auf dem aktuellen Stand auf. Gelesen wird
+  // weiter `meta` — an keiner Entscheidung aendert sich etwas.
+  let stand: PosMeta = meta;
+  const merke = (patch: Partial<PosMeta>): void => {
+    stand = { ...stand, ...patch };
+    positionMeta.set(dealId, stand);
+  };
+
   // Echter Profit in % — unabhängig von TP-Distanz
   const profitPct = isBuy
     ? (currentPrice - entry) / entry
@@ -696,7 +759,7 @@ async function processPosition(
         const epicForClose = EPIC_MAP[symbol] ?? epic ?? symbol;
         const result = await capitalClosePartial(apiKey, cst, securityToken, epicForClose, direction, partialSize);
         if (result.ok) {
-          positionMeta.set(dealId, { ...meta, partialDone: true });
+          merke({ partialDone: true });
           // partialSize MIT festhalten (11.08.). Grund: partialDone wird auch
           // im else-Zweig unten gesetzt, wenn die Position zu klein zum
           // Halbieren war und GAR NICHTS geschlossen wurde. Wer den Merker
@@ -719,7 +782,7 @@ async function processPosition(
         // partialSize AUSDRÜCKLICH 0: hier wurde nichts geschlossen. Der
         // Python-Lifecycle darf seinen eigenen Teilgewinn dann noch nehmen —
         // er rechnet mit kleineren Stückelungen als dieser Zweig.
-        positionMeta.set(dealId, { ...meta, partialDone: true });
+        merke({ partialDone: true });
         persistMeta(dealId, { partialDone: true, partialSize: 0 });
       }
     }
@@ -741,7 +804,7 @@ async function processPosition(
 
       const upd = await capitalUpdatePosition(apiKey, cst, securityToken, dealId, newSL, liveTP > 0 ? liveTP : undefined);
       if (upd.ok) {
-        positionMeta.set(dealId, { ...meta, beSet: true, trailSL: newSL });
+        merke({ beSet: true, trailSL: newSL });
         persistMeta(dealId, { beSet: true, trailSL: newSL });
         agentBus.publish({
           type: "RISK:BE_SET",
@@ -811,7 +874,7 @@ async function processPosition(
 
         const upd = await capitalUpdatePosition(apiKey, cst, securityToken, dealId, trailSL, liveTP > 0 ? liveTP : undefined);
         if (upd.ok) {
-          positionMeta.set(dealId, { ...meta, beSet: trailSL >= entry, peakPrice: newPeak, trailSL });
+          merke({ beSet: trailSL >= entry, peakPrice: newPeak, trailSL });
           persistMeta(dealId, { beSet: trailSL >= entry, peakPrice: newPeak, trailSL });
           agentBus.publish({
             type: "RISK:TRAIL_UPDATED",
@@ -823,7 +886,7 @@ async function processPosition(
         }
       }
     } else if (newPeak !== prevPeak) {
-      positionMeta.set(dealId, { ...meta, peakPrice: newPeak });
+      merke({ peakPrice: newPeak });
     }
   }
 }

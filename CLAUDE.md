@@ -6497,7 +6497,7 @@ im Teilgewinn des RiskAgent zu entfernen ändert nichts, denn
 `Math.floor(x · 0.5) > 0` gilt genau für x ≥ 2. Als „entwischt" zu zählen
 wäre ein Messfehler.
 
-### Beim Abgleich gefunden, NICHT geändert: `partialDone` geht im Speicher verloren
+### Beim Abgleich gefunden: `partialDone` geht im Speicher verloren — ERLEDIGT 20.11. (siehe unten)
 
 Die Nachbildung wurde Zeile für Zeile gegen `processPosition` gehalten. Dabei
 fiel im RiskAgent selbst auf — nachgelesen, nicht vermutet:
@@ -6520,6 +6520,55 @@ liegen ein KI-Aufruf und ein Broker-Aufruf, der erste landet also fast immer
 zuerst — garantiert ist es nicht. `risk-agent.ts` ist eine Datei mit erhöhtem
 Risiko; der Umbau braucht Plan und Zustimmung. `/exitsim` bildet das
 **gewollte** Verhalten nach (höchstens ein Teilgewinn).
+
+### ERLEDIGT am 20.11.: der Teilgewinn-Merker geht nicht mehr verloren
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg
+(`risk-agent.ts`: vier direkte Nutzer, acht Prüfer). Der Absatz oben
+beschrieb den Fund als „Verdacht, wie wahrscheinlich nicht gemessen". Jetzt
+ist er **ausgeführt nachgewiesen** — auf dem unveränderten Code, bevor
+irgendetwas geändert wurde:
+
+| | gemessen auf dem alten Code |
+|---|---|
+| **D1** Teilgewinn + Breakeven im selben Durchlauf, keine offene Zeile | Zyklus 2 schickt einen **zweiten** Teilgewinn-Auftrag |
+| **D2** `merkeTeilgewinn` + `merkeFremdAktion` direkt nacheinander (`instrumentation.ts:777-778`) | `partialDone` und `partialSize` **fehlen** in den Notizen |
+| **D2** Teilgewinn + Breakeven im RiskAgent selbst | `partialDone`, `partialSize` und **beide** KI-Entscheidungen fehlen |
+
+**D2 war die schärfere Hälfte**, und sie stand in meiner Notiz vom 17.11. nur
+als Randbemerkung: nach einem Python-Teilgewinn laufen ZWEI Schreibvorgänge
+direkt nacheinander an, beide lesen die Notizen, bevor einer schreibt — der
+letzte gewinnt. Fehlt danach `partialDone`, nehmen nach dem nächsten Neustart
+RiskAgent **und** Python einen zweiten Teilgewinn.
+
+**Jetzt:**
+- `processPosition` führt einen **laufenden Stand** (`merke()`); jede
+  Speicherung im Durchlauf baut darauf auf statt auf dem Stand vom Anfang.
+  Gelesen wird weiter `meta` — an keiner Entscheidung ändert sich etwas.
+- Alle Schreibvorgänge auf die Notizen einer Position laufen **nacheinander**
+  (`notizenNacheinander`), auf `global.__notizen_warteschlange__` — der
+  Prüfstand lädt das Modul **zweimal** und schreibt gleichzeitig über beide
+  Kopien (Regel 28.07.). Der Eintrag wird entfernt, sobald nichts mehr
+  wartet; die Map wächst nicht.
+- Die **stumme Stelle meldet sich:** findet `persistMeta` keine offene Zeile,
+  steht einmal je Position im Log, dass der Zustand nur im Speicher liegt.
+  Genau dort wurde aus D1 ein zweiter Teilgewinn.
+
+**Was es NICHT tut:** keine Schwelle, keine Grösse, kein Stop, kein
+Teilgewinn-Anteil, keine Entscheidung ob ausgelöst wird. Dieselben
+Datenbank-Zugriffe, nur in gesicherter Reihenfolge. `instrumentation.ts`
+unberührt. **Snapshot 299 unverändert.**
+
+**Grenze, benannt:** andere Module — vor allem der Journal-Abgleich im
+Tracker — schreiben dieselben Notizen weiter unabhängig (lesen, ändern,
+schreiben). Gegen diese Schreiber schützt die Warteschlange nicht.
+
+`safety-nets` 1903 → **1911** (die echte `runRiskAgent` über zwei Zyklen,
+Broker/KI/Datenbank nachgebaut, die Datenbank liest absichtlich langsam).
+**10 von 10 Sabotagen**, darunter die Warteschlange modul-scoped (nur mit
+zwei Kopien sichtbar) und die KI-Entscheidung ausserhalb der Warteschlange.
+Nicht gezählt: der Zweig „zu klein zum Halbieren" — dort geht kein Auftrag an
+den Broker, ein verlorener Merker hätte keine sichtbare Folge.
 
 ### Was es NICHT tut
 
