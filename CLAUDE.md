@@ -946,6 +946,81 @@ wurde nie ausgegeben. Ob Claude Prosa lieferte, das Feld vergass oder ablehnte,
 war nicht feststellbar. Jetzt stehen Länge und die ersten 200 Zeichen der
 Antwort in der Zeile, und die Sammelzeile behauptet keinen Fehlschlag mehr.
 
+### Jedes Signal genau einer Stufe — die Summenprobe des Trichters (19.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg
+(`ai-analysis-engine.ts`: drei direkte Nutzer, sechs Prüfer).
+
+`/status` vom 19.11.: 1730 Richtungssignale − 381 Veto − 463 unter der
+Grenze − 540 an der Freigabe = 346, aber **GO 344**. Zwei Signale ohne Zahl —
+und die Subtraktion **konnte gar nicht aufgehen**, gelesen im Code:
+
+| Lücke | Stelle |
+|---|---|
+| Signale aus dem **gemessenen Konsens** stehen nicht unter „Richtungssignale", laufen aber durch alle Stufen | `source: "MEASURED_CONSENSUS"` |
+| Confidence **unter der Grenze ohne Stop** — `claudeFragen` sagt `KEIN_SIGNAL`, keine Stufe zählt | `claudeFragen()` |
+| Ein Zyklus mit TA-Lib **unter 50 %**: `isRealAnalysis` falsch, ein Signal ab der Grenze stirbt ohne Zahl | `pythonBackendOk` |
+| Und umgekehrt: **ohne vollständige Daten UND unter der Grenze** zählen ZWEI Stufen dasselbe Signal | `ohneVolleDaten` + `unterGrenze` |
+
+**Deshalb wird nicht subtrahiert, sondern jeder Markt einzeln zugeordnet.**
+Je Markt zählt `stufen`, wie viele Stufen-Zähler für ihn gelaufen sind —
+jedes `stufen++` steht im **selben Statement** wie sein Zähler (Regel vom
+22.09.). `trichterZuordnung()` (rein, exportiert) entscheidet: eine Stufe =
+zugeordnet, mehr = doppelt gezählt, keine = `ohneEchteAnalyse` /
+`unterGrenzeOhneStop` / `ungeklaert`. Ein Ausnahmefall schreibt eine
+🧩-Zeile ins Log, der gesunde schweigt.
+
+Die Zahlen gehen durch die **ganze** Kette (Vorlage `gptZahlUnbrauchbar`,
+15.11.): `ScanDaten` → Zyklus-Zeile → `Tagessumme` → Tagesbilanz → Webhook →
+`/status`. Konsens und TA-Ersatz stehen in der Zeile „Richtungssignale"
+(`1730 + Konsens 12`), darunter:
+
+```
+• Summenprobe (<geprüft>/<Analysen>): jedes Signal genau einer Stufe zugeordnet
+```
+
+(Form, keine Messung.) **`trichterGeprueft` ist die Lehre vom
+persistierten Feld:** die Tagessumme von heute früh kennt die Felder nicht.
+Ohne die Zahl der geprüften Analysen behauptete `/status` für den ganzen Tag
+„alles zugeordnet", obwohl nur der Teil nach dem Deploy geprüft ist.
+`null` heisst „nicht gemessen", nicht „in Ordnung".
+
+**Was es NICHT tut:** keine Bedingung, keine Schwelle, kein Prompt.
+`goSignal` steht Zeichen für Zeichen unverändert; die einzigen geänderten
+Zeilen der Engine sind Zähler (`stufen++` angehängt, `if (goSignal)
+trichter.go++` als Block). **Snapshot 299 unverändert** (Prompt-Prüfsumme
+gleich), Karte unverändert — kein neuer Import.
+
+**Die Längenprüfung hat einen echten Fund gemacht.** Mit eigenen Zeilen für
+Konsens und TA-Ersatz kam `/status` im schlimmsten Fall auf **4122 von 4096**
+— er wäre gar nicht angekommen. Erst weil die neuen Felder in den Härtefall
+gelegt wurden, war das sichtbar. Jetzt in der Zeile „Richtungssignale":
+**4027 von 4096** (rohe Zeichen samt Tags; Telegram zählt die Tags nicht).
+Tagesbilanz **3291 von 4096**. Beide Härtefälle sind an die neuen Zeilen
+**gebunden** — sonst würde ein Härtefall ohne sie still kürzer und die
+Prüfung bliebe grün.
+
+`safety-nets` 1811 → **1903**: `trichterZuordnung` an elf Grenzfällen
+(NaN, genau an der Grenze, Reihenfolge), jede der sieben Stufen-Stellen und
+drei Eingänge **gezählt**, der Reset je Markt per Klammerzählung, die Kette
+Feld für Feld, die **Übergangslage** einer Summe ohne die Felder, Tagesbilanz
+und `handelsLage()` ausgeführt — dreiwertig.
+
+**19 von 19 Sabotagen**, dazu die Regression der sechs älteren Suiten auf
+denselben Dateien. Zwei Abweichungen, beide geklärt statt gezählt:
+`sabotage-tordeckel` S7 (`gezeigt` statt `alleTore` im Urteil) ist
+**nachweislich wirkungslos** — `gezeigt` ist der absteigend sortierte Anfang
+und enthält das Tor mit den meisten Ablehnungen immer, beide Sortierungen
+sind stabil; ersetzt durch eine wirksame (das falsche Ende der Liste), 8/8.
+Und die Gegenprobe G1 von `sabotage-rest` war **einmal rot** — am
+502-Prüfstand mit echtem HTTP-Server („1 Anfragen"), den diese Runde nicht
+berührt; wiederholt grün, dazu fünf Läufe `safety-nets` grün. Es ist das
+zeitabhängige Rot vom 09./13.11.; die Ursache ist weiter **nicht** bestimmt.
+
+**Ein eigener Fehler dabei:** ein deutsches „… mit ASCII-`"` geschlossen —
+`node --check` hat es vor dem ersten Lauf gefangen (die Falle steht im
+Gedächtnis, und ich bin trotzdem hineingelaufen).
+
 ## Ein Regex, der eine Modellantwort liest, ist eine Zeitbombe (30.09.)
 
 Telegram 30.09. 12:09: **„KI-Sicherheitstor Meta-KI nicht erreichbar —

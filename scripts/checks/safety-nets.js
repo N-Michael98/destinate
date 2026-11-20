@@ -4775,8 +4775,18 @@ module.exports = async function pruefe() {
                   "TA-Lib+Strategien": 10 },
                 unterGrenze: 300, confMin: 60, confMax: 79, rrAbgelehnt: 210,
                 ohneStopZiel: 30, go: 90, ohneGptAntwort: 120, tore,
+                // 19.11.: Konsens- und Summenprobe-Zeile im schlimmsten Fall.
+                konsensRichtungen: 90, taErsatzRichtungen: 12, trichterGeprueft: 287, restOhneAnalyse: 44, restOhneStop: 33, restUngeklaert: 22, mehrfachGezaehlt: 11,
               } }));
             const schlimmst = haertefall(toreMax);
+            // 19.11.: der Haertefall muss die Trichter-Zeilen WIRKLICH
+            // enthalten — sonst wuerde er still kuerzer, und die Laengen-
+            // Pruefung bliebe gruen (gemessen: ohne Kompaktfassung 4122).
+            torPruefung("der /status-Haertefall traegt die Summenprobe/Konsens-Zeile "
+              + "nicht — dann misst er einen Fall, der NICHT der schlimmste ist",
+              /Summenprobe \(287\/288 Analysen\): ⚠️ ohne echte Analyse 44, unter Grenze ohne Stop 33, ungeklärt 22, doppelt gezählt 11/.test(schlimmst)
+              && /\+ Konsens 90 \+ TA-Ersatz 12/.test(schlimmst),
+              (schlimmst.match(/Summenprobe[^\n]*/) ?? ["(keine)"])[0]);
             // ── DER HAERTEFALL MUSS DER HAERTEFALL BLEIBEN (04.11.) ─────
             //
             // Hier lag der Fund: bis heute trug `toreMax` KEINE
@@ -5096,6 +5106,8 @@ module.exports = async function pruefe() {
                 ohneVolleDaten: 44, ohneVolleDatenGrund: { "Strategien": 20,
                   "TA-Lib": 14, "TA-Lib+Strategien": 10 },
                 go: 90, claudeGefragt: 300, newsZyklen: 120, mtfSumme: 5000,
+                // 19.11.: Konsens- und Summenprobe-Zeile im schlimmsten Fall.
+                konsensRichtungen: 90, taErsatzRichtungen: 12, trichterGeprueft: 287, restOhneAnalyse: 44, restOhneStop: 33, restUngeklaert: 22, mehrfachGezaehlt: 11,
                 regelbrueche: { "BUY an Resistance": 40, "SELL an Support": 30,
                   "BUY ohne bullishen 1D-Trend/Signal": 25,
                   "SELL ohne bearishen 1D-Trend/Signal": 20,
@@ -5112,6 +5124,12 @@ module.exports = async function pruefe() {
                 dauerSummeMs: 900000, dauerMaxMs: 60000,
               });
               const vollText = tbF(voll);
+              // 19.11.: dieselbe Bindung wie beim /status-Haertefall.
+              torPruefung("der Tagesbilanz-Haertefall traegt die Summenprobe/Konsens-"
+                + "Zeile nicht — dann misst er nicht den schlimmsten Fall",
+                vollText.includes("🧩 Summenprobe (287 von 288 Analysen): ⚠️ ohne echte Analyse 44")
+                && vollText.includes("🧮 Richtungen ausserhalb von GPT: Konsens 90 · TA-Ersatz 12"),
+                (vollText.match(/🧩[^\n]*/) ?? ["(keine)"])[0]);
               torPruefung("die Tagesbilanz reisst Telegrams 4096 Zeichen "
                 + "— sie kaeme dann nicht an, und `sendTelegram` kennt "
                 + "keine Laengengrenze",
@@ -14182,6 +14200,193 @@ module.exports = async function pruefe() {
       ];
       for (const [name, ok] of kette) {
         torPruefung(`die Kette ist unterbrochen — ${name}`, ok, name);
+      }
+
+      // ══ JEDES SIGNAL GENAU EINER STUFE (19.11.) ═════════════════════════
+      //
+      // /status vom 19.11.: 1730 − 381 − 463 − 540 = 346, GO 344. Die
+      // Subtraktion konnte nicht aufgehen (Konsens ausserhalb von `gpt`,
+      // Stufen ohne Zahl, eine doppelt zaehlende Stufe). Jetzt wird JEDER
+      // Markt einzeln zugeordnet — hier GERECHNET, verdrahtet und GEZAEHLT.
+      {
+        const TF = ["konsensRichtungen", "taErsatzRichtungen", "trichterGeprueft",
+          "restOhneAnalyse", "restOhneStop", "restUngeklaert", "mehrfachGezaehlt"];
+        const engT = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts");
+        const tz = engT.exports?.trichterZuordnung;
+        if (typeof tz !== "function") {
+          torPruefung("trichter: trichterZuordnung ist nicht ausfuehrbar", false, engT.fehler ?? "Export fehlt");
+        } else {
+          const Z = (stufen, echteAnalyse, confidence, stopLoss) =>
+            tz({ stufen, echteAnalyse, confidence, stopLoss, minConfidence: 70 });
+          for (const [args, soll, name] of [
+            [[1, true, 80, 1.1], "zugeordnet", "eine Stufe"],
+            [[1, false, 10, 0], "zugeordnet", "eine Stufe ohne echte Analyse"],
+            [[2, true, 60, 1.1], "mehrfach", "zwei Stufen (ohne Daten UND unter Grenze)"],
+            [[3, true, 60, 1.1], "mehrfach", "drei Stufen"],
+            [[0, false, 80, 1.1], "ohneEchteAnalyse", "Backend unter 50 %"],
+            [[0, false, 60, 0], "ohneEchteAnalyse", "ohne Analyse geht vor ohne Stop"],
+            [[0, true, 60, 0], "unterGrenzeOhneStop", "unter der Grenze ohne Stop"],
+            [[0, true, Number.NaN, 0], "unterGrenzeOhneStop", "NaN-Confidence ohne Stop"],
+            [[0, true, 70, 0], "ungeklaert", "AN der Grenze ohne Stop (gehoert zu ohneStopZiel)"],
+            [[0, true, 60, 1.1], "ungeklaert", "unter der Grenze MIT Stop (waere gezaehlt)"],
+            [[0, true, 80, 1.1], "ungeklaert", "ab der Grenze mit Stop"],
+          ]) {
+            let ist; try { ist = Z(...args); } catch (e) { ist = `WIRFT ${e.message}`; }
+            torPruefung(`trichter: trichterZuordnung falsch bei „${name}"`, ist === soll, `${ist} statt ${soll}`);
+          }
+        }
+
+        // VERDRAHTUNG: jede Stufe im SELBEN Statement wie ihr Zaehler.
+        const stufenStellen = [
+          ["Stil", /stilVerworfenZahl\+\+; stufen\+\+;/],
+          ["Veto", /vetoZahl\+\+; stufen\+\+;/],
+          ["ohne volle Daten", /ohneVolleDatenZahl\+\+; stufen\+\+;/],
+          ["unter der Grenze", /claudeUnterGrenzeConf\.push\(Number\(gpt\.confidence\)\); stufen\+\+;/],
+          ["an der Freigabe", /nurRR: rrZuKlein && !scoreZuHoch,\s*\}\); stufen\+\+;/],
+          ["GO", /if \(goSignal\) \{ trichter\.go\+\+; stufen\+\+; \}/],
+          ["ohne Stop/Ziel", /if \(isRealAnalysis && hasFullData && gpt\.direction !== "WAIT" && gpt\.confidence >= MIN_SIGNAL_CONFIDENCE && !\(gpt\.stopLoss > 0 && gpt\.takeProfit > 0\)\) stufen\+\+;/],
+        ];
+        for (const [name, re] of stufenStellen) {
+          torPruefung(`trichter: die Stufe „${name}" zaehlt nicht in die Zuordnung`, re.test(aeG), String(re));
+        }
+        // ZAEHLEN statt finden (25.10.): eine achte Stelle waere eine Stufe,
+        // die es im Trichter nicht gibt — dann hiesse „doppelt" etwas anderes.
+        torPruefung("trichter: stufen++ steht nicht an genau den sieben Stufen",
+          (aeG.match(/stufen\+\+/g) ?? []).length === stufenStellen.length,
+          `${(aeG.match(/stufen\+\+/g) ?? []).length}x stufen++`);
+        for (const [name, re] of [
+          ["GPT-Richtung", /if \(rohRichtung === "BUY" \|\| rohRichtung === "SELL"\) imTrichter = true;/],
+          ["TA-Ersatz", /if \(dir !== "WAIT"\) \{ taErsatzRichtungenZahl\+\+; imTrichter = true; \}/],
+          ["Konsens", /konsensRichtungenZahl\+\+; imTrichter = true;/],
+        ]) {
+          torPruefung(`trichter: der Eingang „${name}" fehlt`, re.test(aeG), String(re));
+        }
+        torPruefung("trichter: imTrichter wird an einer vierten Stelle gesetzt",
+          (aeG.match(/imTrichter = true;/g) ?? []).length === 3,
+          `${(aeG.match(/imTrichter = true;/g) ?? []).length}x`);
+        // Je MARKT zurueckgesetzt — im Schleifenrumpf, per Klammerzaehlung.
+        let schleife = "";
+        try { schleife = objectBlock(aeG, "for (const market of validMarkets)"); } catch { /* leer -> rot */ }
+        torPruefung("trichter: der ausgeschnittene Block ist nicht die Markt-Schleife",
+          schleife.includes("const ta = taData.get(market.symbol);")
+          && schleife.includes("const goSignal = isRealAnalysis"), `Laenge ${schleife.length}`);
+        torPruefung("trichter: imTrichter/stufen werden nicht JE MARKT zurueckgesetzt — "
+          + "dann zaehlte ein Markt die Stufen des vorigen mit",
+          /let imTrichter = false;\s*let stufen = 0;/.test(schleife)
+          && (aeG.match(/let stufen = 0;/g) ?? []).length === 1, "let … = 0 in der Schleife");
+        torPruefung("trichter: die Zuordnung laeuft nicht im Schleifenrumpf, nicht nur fuer "
+          + "Maerkte im Trichter, oder mit falschen Werten",
+          /if \(imTrichter\) \{\s*const zuordnung = trichterZuordnung\(\{\s*stufen, echteAnalyse: isRealAnalysis, confidence: gpt\.confidence,\s*stopLoss: gpt\.stopLoss, minConfidence: MIN_SIGNAL_CONFIDENCE,\s*\}\);/.test(schleife),
+          "if (imTrichter) { … trichterZuordnung({ … }) }");
+        for (const [z, f] of [["mehrfach", "mehrfachGezaehltZahl"], ["ohneEchteAnalyse", "restOhneAnalyseZahl"],
+          ["unterGrenzeOhneStop", "restOhneStopZahl"], ["ungeklaert", "restUngeklaertZahl"]]) {
+          torPruefung(`trichter: „${z}" wird nicht gezaehlt`,
+            new RegExp(`zuordnung === "${z}"\\) ${f}\\+\\+;`).test(schleife)
+            && (aeG.match(new RegExp(`${f}\\+\\+`, "g")) ?? []).length === 1, `${z} → ${f}`);
+        }
+        torPruefung("trichter: der Ausnahmefall schreibt keine Diagnose-Zeile",
+          /if \(zuordnung !== "zugeordnet"\) \{\s*console\.log\(/.test(schleife), "🧩-Zeile");
+
+        // DIE KETTE, Feld fuer Feld — ohne jedes Glied bleibt die Zahl stehen.
+        const scanZiel = {
+          konsensRichtungen: "konsensRichtungenZahl", taErsatzRichtungen: "taErsatzRichtungenZahl",
+          trichterGeprueft: "1", restOhneAnalyse: "restOhneAnalyseZahl", restOhneStop: "restOhneStopZahl",
+          restUngeklaert: "restUngeklaertZahl", mehrfachGezaehlt: "mehrfachGezaehltZahl",
+        };
+        for (const f of TF) {
+          const glieder = [
+            ["Engine → ScanDaten", aeG.includes(`${f}: ${scanZiel[f]},`)],
+            ["ScanDaten + Tagessumme", (zbG.match(new RegExp(`\\b${f}: number;`, "g")) ?? []).length === 2],
+            ["leere Summe", new RegExp(`\\b${f}: 0[,\\n]`).test(zbG)],
+            ["Addition mit zahl() BEIDSEITIG", zbG.includes(`t.${f} = zahl(t.${f}) + zahl(s.${f});`)],
+            ["handels-lage: dreiwertiger Typ", hlG.includes(`${f}: number | null;`)],
+            ["webhook: Typ", whG.includes(`${f}?: number;`)],
+            ["webhook: Durchreiche", whG.includes(`${f}: tagessumme.${f} ?? null,`)],
+          ];
+          for (const [name, ok] of glieder) torPruefung(`trichter: Kette unterbrochen — ${f}: ${name}`, ok, `${f} / ${name}`);
+        }
+
+        // AUSGEFUEHRT: Zyklus-Zeile, Tagessumme (auch die UEBERGANGSLAGE einer
+        // Summe von vor dem Deploy), Tagesbilanz und /status.
+        const zbT = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+        const hlT = ladeTsModul("lib/handels-lage/handels-lage.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+        const E = zbT.exports ?? {};
+        if (["leereTagessumme", "tagessummeAddieren", "tagesbilanzText", "bilanzZeile", "trichterRestText"]
+          .some((n) => typeof E[n] !== "function") || typeof hlT.exports?.handelsLage !== "function") {
+          torPruefung("trichter: zyklus-bilanz/handels-lage nicht ausfuehrbar", false,
+            zbT.fehler ?? hlT.fehler ?? "Export fehlt");
+        } else {
+          const leer = E.leereTagessumme("2026-11-19");
+          torPruefung("trichter: die leere Tagessumme kennt die neuen Felder nicht mit 0",
+            TF.every((f) => leer[f] === 0), JSON.stringify(TF.map((f) => leer[f])));
+          torPruefung("trichter: trichterRestText meldet ohne Rest etwas", E.trichterRestText({}) === null,
+            String(E.trichterRestText({})));
+          const scan = {
+            maerkte: 30, gpt: { WAIT: 25, BUY: 3, SELL: 2 }, vetos: 1, stilVerworfen: 0,
+            unterGrenze: [60], go: 1, rrAbgelehnt: 1, ohneStopZiel: 0, ohneVolleDaten: 0,
+            ohneVolleDatenGrund: {}, ohneGptAntwort: 0, gptZahlUnbrauchbar: 0,
+            konsensRichtungen: 3, taErsatzRichtungen: 0, trichterGeprueft: 1,
+            restOhneAnalyse: 1, restOhneStop: 0, restUngeklaert: 2, mehrfachGezaehlt: 0,
+            claudeGefragt: 2, regelbrueche: {}, dauerMs: {}, kontext: { news: false, mtfSymbole: 0 },
+          };
+          const bil = { start: 0, ende: 1000, ausgang: "Keine freigegebenen Signale", scan, tore: [], trades: [], fehlgeschlagen: [] };
+          const zeile = E.bilanzZeile(bil);
+          torPruefung("trichter: die Zyklus-Zeile nennt Konsens oder Rest nicht",
+            zeile.includes("Konsens 3") && zeile.includes("Trichter-Rest: ohne echte Analyse 1, ungeklaert 2"), zeile);
+          // DIE UEBERGANGSLAGE: eine Summe von heute frueh, OHNE die Felder.
+          const alt = E.leereTagessumme("2026-11-19");
+          for (const f of TF) delete alt[f];
+          alt.scans = 100; alt.zyklen = 100;
+          const t1 = E.tagessummeAddieren(alt, bil, "2026-11-19");
+          torPruefung("trichter: die Uebergangslage ergibt NaN oder verliert den Scan — eine "
+            + "Summe von vor dem Deploy kennt die Felder nicht",
+            t1.trichterGeprueft === 1 && t1.konsensRichtungen === 3 && t1.restOhneAnalyse === 1
+            && t1.restUngeklaert === 2 && TF.every((f) => Number.isFinite(t1[f])) && t1.scans === 101,
+            JSON.stringify(TF.map((f) => t1[f])));
+          const tb1 = E.tagesbilanzText(t1);
+          torPruefung("trichter: die Tagesbilanz behauptet fuer den ganzen Tag, was nur fuer "
+            + "einen Teil geprueft ist, oder verschweigt den Rest",
+            tb1.includes("🧩 Summenprobe (1 von 101 Analysen): ⚠️ ohne echte Analyse 1, ungeklaert 2")
+            && tb1.includes("🧮 Richtungen ausserhalb von GPT: Konsens 3"),
+            (tb1.match(/🧩[^\n]*/) ?? ["(keine)"])[0]);
+          const tb0 = E.tagesbilanzText(Object.assign(E.leereTagessumme("2026-11-19"), { zyklen: 5, scans: 5 }));
+          torPruefung("trichter: ohne gepruefte Analyse behauptet die Tagesbilanz ein Ergebnis",
+            tb0.includes("🧩 Summenprobe (0 von 5 Analysen): nicht gemessen"), (tb0.match(/🧩[^\n]*/) ?? ["(keine)"])[0]);
+          const tbG = E.tagesbilanzText(Object.assign(E.leereTagessumme("2026-11-19"),
+            { zyklen: 5, scans: 5, trichterGeprueft: 5 }));
+          torPruefung("trichter: der gesunde Fall sagt nicht „jedes Signal genau einer Stufe“",
+            tbG.includes("🧩 Summenprobe (5 von 5 Analysen): jedes Signal genau einer Stufe zugeordnet")
+            && !tbG.includes("🧮"), (tbG.match(/🧩[^\n]*/) ?? ["(keine)"])[0]);
+
+          // /status — handelsLage() mit echten Werten, dreiwertig.
+          const LEERL = { brokerVerbunden: null, modus: null, offenePositionen: null,
+            maxGleichzeitig: null, tagesZaehler: null, tagesLimit: null, tagesLimitAktiv: null,
+            kontostand: null, hoechststand: null, maxDrawdownProzent: null, inHandelszeit: null,
+            fensterOrtszeit: null, zyklenHeute: null, ausgaenge: null };
+          const tr = (o) => ({ scans: 5, maerkte: 150, richtungen: 10, ohneGptAntwort: 0,
+            gptZahlUnbrauchbar: 0, vetos: 1, stilVerworfen: 0, ohneVolleDaten: 0,
+            ohneVolleDatenGrund: null, unterGrenze: 2, confMin: 60, confMax: 66, rrAbgelehnt: 3,
+            ohneStopZiel: 0, go: 1, tore: null, konsensRichtungen: null, taErsatzRichtungen: null,
+            trichterGeprueft: null, restOhneAnalyse: null, restOhneStop: null, restUngeklaert: null,
+            mehrfachGezaehlt: null, ...o });
+          const lage = (o) => hlT.exports.handelsLage({ ...LEERL, trichter: tr(o) }).zeilen.join("\n");
+          const lRest = lage({ konsensRichtungen: 3, trichterGeprueft: 2, restOhneAnalyse: 1,
+            restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 4 });
+          torPruefung("trichter: /status nennt Konsens oder Summenprobe nicht",
+            lRest.includes("• Richtungssignale (BUY/SELL): 10 + Konsens 3\n")
+            && lRest.includes("• Summenprobe (2/5 Analysen): ⚠️ ohne echte Analyse 1, doppelt gezählt 4"),
+            (lRest.match(/Summenprobe[^\n]*/) ?? ["(keine)"])[0]);
+          const lNull = lage({});
+          torPruefung("trichter: /status behauptet bei UNBEKANNT eine Summenprobe oder Konsens-Zahl",
+            lNull.includes("• Summenprobe: nicht gemessen (Analysen vor dem 19.11.)")
+            && lNull.includes("• Richtungssignale (BUY/SELL): 10\n"), (lNull.match(/Summenprobe[^\n]*/) ?? ["(keine)"])[0]);
+          const lGut = lage({ trichterGeprueft: 5, restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0 });
+          torPruefung("trichter: der gesunde Fall in /status sagt nicht „jedes Signal genau einer Stufe“",
+            lGut.includes("• Summenprobe (5/5 Analysen): jedes Signal genau einer Stufe zugeordnet"),
+            (lGut.match(/Summenprobe[^\n]*/) ?? ["(keine)"])[0]);
+        }
       }
 
       // Das Phantomfeld in der Oberfläche (15.11.).

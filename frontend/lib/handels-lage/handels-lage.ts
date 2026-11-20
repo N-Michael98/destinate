@@ -129,6 +129,17 @@ export interface TrichterZahlen {
   /** Siehe Tagessumme.gptZahlUnbrauchbar (15.11.): GPT hat geantwortet,
    *  aber mit einer Zahl, die keine ist. `null` heisst UNBEKANNT. */
   gptZahlUnbrauchbar: number | null;
+  /** Siehe Tagessumme.konsensRichtungen … mehrfachGezaehlt (19.11.):
+   *  Richtungen ausserhalb von GPT und die Summenprobe des Trichters.
+   *  `null` heisst UNBEKANNT — eine Summe von vor dem 19.11. kennt sie
+   *  nicht, und dann darf hier nichts als „geprueft" erscheinen. */
+  konsensRichtungen: number | null;
+  taErsatzRichtungen: number | null;
+  trichterGeprueft: number | null;
+  restOhneAnalyse: number | null;
+  restOhneStop: number | null;
+  restUngeklaert: number | null;
+  mehrfachGezaehlt: number | null;
   vetos: number | null;
   stilVerworfen: number | null;
   ohneVolleDaten: number | null;
@@ -459,8 +470,16 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     zeilen.push(`   • GPT-Zahl unbrauchbar: `
       + `${unbrauchbar === null ? "unbekannt" : unbrauchbar}`
       + `${unbrauchbar !== null && unbrauchbar > 0 ? " (Text/Objekt/Infinity — kein Urteil)" : ""}`);
+    // 19.11.: Richtungen, die NICHT von GPT kommen, aber durch alle Stufen
+    // laufen — ohne sie kann keine Summe aufgehen. Nur bei > 0, und IN
+    // derselben Zeile: gemessen kostete eine eigene Zeile im schlimmsten
+    // Fall so viel, dass /status ueber 4096 Zeichen kam.
+    const kons = zahl(t.konsensRichtungen);
+    const taErsatz = zahl(t.taErsatzRichtungen);
     zeilen.push(`   • Richtungssignale (BUY/SELL): `
-      + `${richt === null ? "unbekannt" : richt}`);
+      + `${richt === null ? "unbekannt" : richt}`
+      + `${kons !== null && kons > 0 ? ` + Konsens ${kons}` : ""}`
+      + `${taErsatz !== null && taErsatz > 0 ? ` + TA-Ersatz ${taErsatz}` : ""}`);
     for (const [name, n] of stufen) {
       if (n === null) { zeilen.push(`   • ${htmlSicher(name)}: unbekannt`); continue; }
       // Der Grund gehoert dazu: die Zahl allein sagt nicht, WELCHER Dienst
@@ -483,6 +502,25 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     }
     const go = zahl(t.go);
     zeilen.push(`   • <b>GO: ${go === null ? "unbekannt" : go}</b>`);
+    // ── DIE SUMMENPROBE DES TRICHTERS (19.11.) ──────────────────────────
+    //
+    // Jedes Signal muss an GENAU EINER Stufe gezaehlt sein. Null Stufen ist
+    // eine Luecke, zwei ist doppelt gezaehlt (`trichterZuordnung()` in der
+    // Engine). Sie gilt nur fuer die Analysen, die sie gemacht haben — eine
+    // Summe von vor dem Deploy darf nicht als geprueft erscheinen.
+    const gepr = zahl(t.trichterGeprueft);
+    const restTeile: string[] = [];
+    const rA = zahl(t.restOhneAnalyse); const rS = zahl(t.restOhneStop);
+    const rU = zahl(t.restUngeklaert); const rM = zahl(t.mehrfachGezaehlt);
+    if (rA !== null && rA > 0) restTeile.push(`ohne echte Analyse ${rA}`);
+    if (rS !== null && rS > 0) restTeile.push(`unter Grenze ohne Stop ${rS}`);
+    if (rU !== null && rU > 0) restTeile.push(`ungeklärt ${rU}`);
+    if (rM !== null && rM > 0) restTeile.push(`doppelt gezählt ${rM}`);
+    zeilen.push(`   • Summenprobe`
+      + (gepr === null || gepr === 0
+        ? ": nicht gemessen (Analysen vor dem 19.11.)"
+        : ` (${gepr}/${scans} Analysen): `
+          + (restTeile.length > 0 ? `⚠️ ${restTeile.join(", ")}` : "jedes Signal genau einer Stufe zugeordnet")));
 
     // ── WAS NACH DEM GO PASSIERT ──────────────────────────────────────
     //

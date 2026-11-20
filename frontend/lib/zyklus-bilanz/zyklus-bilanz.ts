@@ -66,7 +66,23 @@ export type ScanDaten = {
    *  0..100. Ohne eigene Zahl stirbt so ein Signal an `ohneStopZiel`
    *  bzw. an der Confidence-Grenze und ist dort von einem URTEIL nicht
    *  zu unterscheiden. Dieselbe Fehlerklasse wie `ohneGptAntwort`. */
+  /** ── JEDES SIGNAL GENAU EINER STUFE (19.11.) ─────────────────────────
+   *
+   *  Siehe `trichterZuordnung()` in der Engine. `konsensRichtungen` und
+   *  `taErsatzRichtungen` sind Richtungssignale, die NICHT unter `gpt`
+   *  stehen — ohne sie kann keine Summe aufgehen. Die vier `rest…`/
+   *  `mehrfach…` zaehlen Signale, die an KEINER bzw. an MEHR ALS EINER
+   *  Stufe gezaehlt wurden. `trichterGeprueft` ist 1 je Scan, der die
+   *  Zuordnung gemacht hat — eine Summe von vor dem 19.11. kennt sie nicht,
+   *  und „geprueft" darf sie nicht behaupten. */
   gptZahlUnbrauchbar: number;
+  konsensRichtungen: number;
+  taErsatzRichtungen: number;
+  trichterGeprueft: number;
+  restOhneAnalyse: number;
+  restOhneStop: number;
+  restUngeklaert: number;
+  mehrfachGezaehlt: number;
   claudeGefragt: number;
   /** GPT-Antworten, die dem eigenen Prompt widersprechen — Anzahl je Art. */
   regelbrueche: Record<string, number>;
@@ -181,6 +197,14 @@ export type Tagessumme = {
   ohneGptAntwort: number;
   /** Siehe ScanDaten.gptZahlUnbrauchbar (15.11.). */
   gptZahlUnbrauchbar: number;
+  /** Siehe ScanDaten.konsensRichtungen … mehrfachGezaehlt (19.11.). */
+  konsensRichtungen: number;
+  taErsatzRichtungen: number;
+  trichterGeprueft: number;
+  restOhneAnalyse: number;
+  restOhneStop: number;
+  restUngeklaert: number;
+  mehrfachGezaehlt: number;
   claudeGefragt: number;
   /** Broker-Fehler nach Grund — die Zahl allein sagt nicht, WARUM (20.09.). */
   fehlgeschlagenGruende: Record<string, number>;
@@ -355,6 +379,21 @@ export function bilanzVerbuchen(
   }
 }
 
+/** Signale, die an KEINER oder an MEHR ALS EINER Stufe gezaehlt wurden —
+ *  `null`, wenn es keine gibt (19.11.). EINE Formulierung fuer Zyklus-Zeile
+ *  und Tagesbilanz, damit beide dasselbe sagen. */
+export function trichterRestText(s: {
+  restOhneAnalyse?: number; restOhneStop?: number;
+  restUngeklaert?: number; mehrfachGezaehlt?: number;
+}): string | null {
+  const teile: string[] = [];
+  if (zahl(s.restOhneAnalyse) > 0) teile.push(`ohne echte Analyse ${zahl(s.restOhneAnalyse)}`);
+  if (zahl(s.restOhneStop) > 0) teile.push(`unter Grenze ohne Stop ${zahl(s.restOhneStop)}`);
+  if (zahl(s.restUngeklaert) > 0) teile.push(`ungeklaert ${zahl(s.restUngeklaert)}`);
+  if (zahl(s.mehrfachGezaehlt) > 0) teile.push(`doppelt gezaehlt ${zahl(s.mehrfachGezaehlt)}`);
+  return teile.length > 0 ? teile.join(", ") : null;
+}
+
 /** Die Zeile pro Zyklus. */
 export function bilanzZeile(b: ZyklusBilanz): string {
   const dauer = b.ende !== undefined ? Math.round((b.ende - b.start) / 1000) : null;
@@ -390,6 +429,12 @@ export function bilanzZeile(b: ZyklusBilanz): string {
     teile.push(`Freigabe-Nein ${s.rrAbgelehnt}`);
     if (zahl(s.ohneStopZiel) > 0) teile.push(`ohne Stop/Ziel ${s.ohneStopZiel}`);
     teile.push(`GO ${s.go}`);
+    // 19.11.: Signale ausserhalb von `gpt` und Signale ohne genau EINE Stufe.
+    // Nur bei > 0 — im gesunden Zyklus waere jede Zeile Rauschen.
+    if (zahl(s.konsensRichtungen) > 0) teile.push(`Konsens ${s.konsensRichtungen}`);
+    if (zahl(s.taErsatzRichtungen) > 0) teile.push(`TA-Ersatz ${s.taErsatzRichtungen}`);
+    const rest = trichterRestText(s);
+    if (rest) teile.push(`Trichter-Rest: ${rest}`);
     const brueche = Object.entries(s.regelbrueche).filter(([, n]) => n > 0);
     if (brueche.length > 0) teile.push(`Regelbruch GPT: ${brueche.map(([k, n]) => `${k} ${n}`).join(", ")}`);
     // Was im Prompt wirklich drinstand (17.09.). Bis heute wurde `kontext`
@@ -417,6 +462,8 @@ export function leereTagessumme(datum: string): Tagessumme {
     unterGrenze: 0, confMin: null, confMax: null, go: 0, rrAbgelehnt: 0,
     ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
     ohneGptAntwort: 0, gptZahlUnbrauchbar: 0,
+    konsensRichtungen: 0, taErsatzRichtungen: 0, trichterGeprueft: 0,
+    restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0,
     claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
     fehlgeschlagenGruende: {},
     regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
@@ -466,6 +513,17 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     // darueber: eine Tagessumme aus Redis kann von gestern stammen und
     // dieses Feld noch nicht kennen (15.11.).
     t.gptZahlUnbrauchbar = zahl(t.gptZahlUnbrauchbar) + zahl(s.gptZahlUnbrauchbar);
+    // 19.11.: `zahl()` auf BEIDEN Seiten — die Summe von heute frueh kennt
+    // diese Felder noch nicht. `trichterGeprueft` zaehlt, WIE VIELE Scans
+    // die Zuordnung gemacht haben; nur so kann /status ehrlich sagen, fuer
+    // welchen Teil des Tages die Summenprobe gilt.
+    t.konsensRichtungen = zahl(t.konsensRichtungen) + zahl(s.konsensRichtungen);
+    t.taErsatzRichtungen = zahl(t.taErsatzRichtungen) + zahl(s.taErsatzRichtungen);
+    t.trichterGeprueft = zahl(t.trichterGeprueft) + zahl(s.trichterGeprueft);
+    t.restOhneAnalyse = zahl(t.restOhneAnalyse) + zahl(s.restOhneAnalyse);
+    t.restOhneStop = zahl(t.restOhneStop) + zahl(s.restOhneStop);
+    t.restUngeklaert = zahl(t.restUngeklaert) + zahl(s.restUngeklaert);
+    t.mehrfachGezaehlt = zahl(t.mehrfachGezaehlt) + zahl(s.mehrfachGezaehlt);
     // `t.ohneVolleDatenGrund` kann fehlen, wenn die Tagessumme aus Redis noch
     // von gestern stammt (ohne dieses Feld) — derselbe Fall, den `zahl()` eine
     // Zeile tiefer fuer die Zahlen abfaengt.
@@ -610,6 +668,17 @@ export function tagesbilanzText(t: Tagessumme): string {
     zeilen.push(`⚖️ An der Risiko-Freigabe gescheitert (R/R oder Risiko-Score): ${t.rrAbgelehnt}`);
     zeilen.push(`✂️ Ohne Stop oder Ziel von GPT (weder GO noch gescheitert): ${zahl(t.ohneStopZiel)}`);
     zeilen.push(`✅ GO: ${t.go} · Claude gefragt: ${t.claudeGefragt}`);
+    // 19.11.: die Summenprobe des Trichters — fuer den Teil des Tages, der
+    // sie gemacht hat. Ohne Zahl der geprueften Scans behauptete eine Summe
+    // von vor dem Deploy „alles zugeordnet".
+    if (zahl(t.konsensRichtungen) > 0 || zahl(t.taErsatzRichtungen) > 0) {
+      zeilen.push(`🧮 Richtungen ausserhalb von GPT: Konsens ${zahl(t.konsensRichtungen)}`
+        + (zahl(t.taErsatzRichtungen) > 0 ? ` · TA-Ersatz ${zahl(t.taErsatzRichtungen)}` : ""));
+    }
+    const restT = trichterRestText(t);
+    zeilen.push(`🧩 Summenprobe (${zahl(t.trichterGeprueft)} von ${t.scans} Analysen): `
+      + (zahl(t.trichterGeprueft) === 0 ? "nicht gemessen"
+        : restT ? `⚠️ ${restT}` : "jedes Signal genau einer Stufe zugeordnet"));
     // Womit GPT gearbeitet hat. Ein Tag mit "MTF Ø 0" heisst: jedes Urteil kam
     // allein aus dem Tageschart, obwohl der Prompt 1H/1W vorsieht.
     const mtfSchnitt = t.scans > 0 ? Math.round(zahl(t.mtfSumme) / t.scans) : 0;

@@ -969,6 +969,46 @@ export function rrVerteilung(
  */
 export type ClaudeWeg = "FRAGEN" | "KEIN_SIGNAL" | "UNTER_GRENZE" | "KEIN_SCHLUESSEL";
 
+/**
+ * JEDES SIGNAL GENAU EINER STUFE (19.11.).
+ *
+ * DER FUND: `/status` vom 19.11. zeigte 1730 Richtungssignale − 381 Veto −
+ * 463 unter der Grenze − 540 an der Freigabe = 346, aber GO 344. Zwei
+ * Signale ohne Zahl — und die Subtraktion KONNTE gar nicht aufgehen:
+ *   - Signale aus dem gemessenen Konsens stehen nicht unter
+ *     „Richtungssignale", laufen aber durch alle Stufen;
+ *   - Confidence unter der Grenze OHNE Stop: `claudeFragen` sagt dann
+ *     `KEIN_SIGNAL`, keine Stufe zaehlt es;
+ *   - ein Zyklus, in dem TA-Lib unter 50 % liefert (`isRealAnalysis` falsch):
+ *     ein Signal ab der Grenze stirbt ohne Zahl;
+ *   - und umgekehrt zaehlen ZWEI Stufen dasselbe Signal, wenn es ohne
+ *     vollstaendige Daten UND unter der Grenze ist.
+ *
+ * Deshalb wird nicht subtrahiert, sondern JEDER MARKT im Trichter wird
+ * einzeln zugeordnet: `stufen` ist, wie viele Stufen-Zaehler fuer ihn
+ * gelaufen sind (jeder steht im selben Statement wie sein Zaehler). Genau
+ * eine ist richtig; null heisst Luecke, zwei heisst doppelt gezaehlt.
+ *
+ * REIN UND EXPORTIERT, damit ein Pruefer sie ausfuehren kann. Entscheidet
+ * NICHTS am Handel.
+ */
+export type TrichterZuordnung =
+  | "zugeordnet" | "mehrfach" | "ohneEchteAnalyse" | "unterGrenzeOhneStop" | "ungeklaert";
+
+export function trichterZuordnung(s: {
+  stufen: number;
+  echteAnalyse: boolean;
+  confidence: number;
+  stopLoss: number;
+  minConfidence: number;
+}): TrichterZuordnung {
+  if (s.stufen === 1) return "zugeordnet";
+  if (s.stufen > 1) return "mehrfach";
+  if (!s.echteAnalyse) return "ohneEchteAnalyse";
+  if (!(s.confidence >= s.minConfidence) && !(s.stopLoss > 0)) return "unterGrenzeOhneStop";
+  return "ungeklaert";
+}
+
 export function claudeFragen(s: {
   hatSchluessel: boolean;
   direction: string;
@@ -1580,9 +1620,20 @@ each market's own data, never from habit or from these examples' direction:
   // kein einziges Mal aus, und an welcher der vier Bedingungen es scheitert,
   // war nicht erkennbar. Rein zählend, beeinflusst nichts.
   const konsens = { gptWait: 0, taStark: 0, strategienEinig: 0, qualitaetEinig: 0 };
+  // TRICHTER-ZUORDNUNG (19.11.) — siehe trichterZuordnung(). Reine Zaehler.
+  let konsensRichtungenZahl = 0;   // Richtungssignale aus dem gemessenen Konsens
+  let taErsatzRichtungenZahl = 0;  // Richtungssignale aus dem TA-Ersatz (kein GPT-Schluessel)
+  let restOhneAnalyseZahl = 0;
+  let restOhneStopZahl = 0;
+  let restUngeklaertZahl = 0;
+  let mehrfachGezaehltZahl = 0;
 
   for (const market of validMarkets) {
     const ta = taData.get(market.symbol);
+    // Je Markt: kam er MIT Richtung in den Trichter, und wie viele
+    // Stufen-Zaehler sind fuer ihn gelaufen? (19.11.)
+    let imTrichter = false;
+    let stufen = 0;
 
     // GPT Signal
     let gpt: GPTMarketAnalysis;
@@ -1598,6 +1649,7 @@ each market's own data, never from habit or from these examples' direction:
     if (hasGPT) {
       const rohRichtung = normalisiereRichtung(gptData?.direction ?? "WAIT");
       bilanzRichtungen[rohRichtung ?? "WAIT"]++;
+      if (rohRichtung === "BUY" || rohRichtung === "SELL") imTrichter = true;
       if (gptData) {
         const lvRoh = strategyData.get(market.symbol)?.levels;
         for (const bruch of gptRegelbrueche({
@@ -1676,7 +1728,7 @@ each market's own data, never from habit or from these examples' direction:
           + `Ein geratener Stil verschiebt Stop, Haltedauer und Tageslimit.`
         );
         stilVerworfen = true;
-        stilVerworfenZahl++;
+        stilVerworfenZahl++; stufen++;
         gpt = {
           ...gpt,
           direction: "WAIT",
@@ -1709,6 +1761,7 @@ each market's own data, never from habit or from these examples' direction:
         tradingStyle: "DAYTRADING",
         source: "GPT_SIMULATED",
       };
+      if (dir !== "WAIT") { taErsatzRichtungenZahl++; imTrichter = true; }
     } else {
       // Kein GPT, kein klares TA-Signal → WAIT (kein Zufalls-Trade mehr)
       gpt = noSignal(market);
@@ -1826,6 +1879,7 @@ each market's own data, never from habit or from these examples' direction:
           tradingStyle: "DAYTRADING",
           source: "MEASURED_CONSENSUS",
         };
+        konsensRichtungenZahl++; imTrichter = true;
         console.log(`[ai-engine] 🧮 ${market.symbol}: gemessener Konsens ${richtung} conf=${conf} — TA=${ta.signal}, Strategien=${sr!.consensus}(${sr!.consensus_conf}), EQ=${eq!.tier}(${eq!.score}), Stop=${stopHerkunft}`);
       }
     }
@@ -1878,7 +1932,7 @@ each market's own data, never from habit or from these examples' direction:
       }
 
       if (blockReason) {
-        vetoZahl++;
+        vetoZahl++; stufen++;
         console.log(`[ai-engine] 🛑 ${market.symbol} ${gpt.direction} blockiert: ${blockReason}`);
         gpt = {
           ...gpt,
@@ -2065,7 +2119,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       if (claudeWeg === "KEIN_SCHLUESSEL") ohneClaudeKeinSchluessel++;
       if (claudeWeg === "UNTER_GRENZE") {
         claudeUnterGrenze.push(`${market.symbol} ${gpt.confidence}`);
-        claudeUnterGrenzeConf.push(Number(gpt.confidence));
+        claudeUnterGrenzeConf.push(Number(gpt.confidence)); stufen++;
       }
       claude = simulateClaude(gpt, market);
     }
@@ -2135,7 +2189,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     // unten bleibt unveraendert.
     if (!hasFullData && isRealAnalysis && gpt.direction !== "WAIT") {
       console.log(`[ai-engine] 🔒 ${market.symbol}: unvollständige Analyse (TA=${!!ta}, Strategien=${strategienOk}${srDaten?.fehlgeschlagen ? ` — ${srDaten.fehlgeschlagen}/${srDaten.total_strategies} gescheitert: ${Object.values(srDaten.fehler_gruende ?? {})[0] ?? "?"}` : ""}) — kein goSignal diesen Zyklus`);
-      ohneVolleDatenZahl++;
+      ohneVolleDatenZahl++; stufen++;
       // WELCHER Dienst gefehlt hat — das ist die Frage, mit der man ins
       // Railway-Log steigt. "beide" ist ein eigener Fall, nicht zweimal ein
       // halber: faellt der ganze Dienst aus, fehlen TA-Lib UND Strategien.
@@ -2235,7 +2289,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
           symbol: market.symbol,
           rr: claude.rewardRiskRatio,
           nurRR: rrZuKlein && !scoreZuHoch,
-        });
+        }); stufen++;
       }
       // Hat GPT dabei seine eigenen Prompt-Regeln verletzt? Das trennt
       // "der Markt gibt gerade nichts her" von "das Modell haelt sich nicht
@@ -2269,7 +2323,27 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT") trichter.richtung++;
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE) trichter.confidence++;
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && gpt.stopLoss > 0 && gpt.takeProfit > 0) trichter.slTp++;
-    if (goSignal) trichter.go++;
+    if (goSignal) { trichter.go++; stufen++; }
+    // Stufe „ohne Stop/Ziel" — ScanDaten.ohneStopZiel ist confidence − slTp,
+    // also GENAU dieser Fall je Markt (19.11.).
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && !(gpt.stopLoss > 0 && gpt.takeProfit > 0)) stufen++;
+    if (imTrichter) {
+      const zuordnung = trichterZuordnung({
+        stufen, echteAnalyse: isRealAnalysis, confidence: gpt.confidence,
+        stopLoss: gpt.stopLoss, minConfidence: MIN_SIGNAL_CONFIDENCE,
+      });
+      if (zuordnung === "mehrfach") mehrfachGezaehltZahl++;
+      else if (zuordnung === "ohneEchteAnalyse") restOhneAnalyseZahl++;
+      else if (zuordnung === "unterGrenzeOhneStop") restOhneStopZahl++;
+      else if (zuordnung === "ungeklaert") restUngeklaertZahl++;
+      // Nur der Ausnahmefall schreibt — die Diagnose darf im interessanten
+      // Fall nicht schweigen (22.09.), im gesunden nicht fluten.
+      if (zuordnung !== "zugeordnet") {
+        console.log(`[ai-engine] 🧩 ${market.symbol}: Trichter-Zuordnung ${zuordnung} `
+          + `(Stufen ${stufen}, echte Analyse ${isRealAnalysis}, volle Daten ${hasFullData}, `
+          + `conf ${gpt.confidence}, SL ${gpt.stopLoss}, TP ${gpt.takeProfit}, Quelle ${gpt.source})`);
+      }
+    }
 
     const taEntry = taData.get(market.symbol);
     opportunities.push({
@@ -2465,6 +2539,14 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       ohneGptAntwort: ohneGptAntwortZahl,
       // Siehe den Zaehler oben: eine unbrauchbare Zahl ist kein Urteil.
       gptZahlUnbrauchbar: gptZahlUnbrauchbarZahl,
+      // TRICHTER-ZUORDNUNG (19.11.) — siehe trichterZuordnung().
+      konsensRichtungen: konsensRichtungenZahl,
+      taErsatzRichtungen: taErsatzRichtungenZahl,
+      trichterGeprueft: 1,
+      restOhneAnalyse: restOhneAnalyseZahl,
+      restOhneStop: restOhneStopZahl,
+      restUngeklaert: restUngeklaertZahl,
+      mehrfachGezaehlt: mehrfachGezaehltZahl,
       ohneVolleDatenGrund: ohneVolleDatenGruende,
       claudeGefragt,
       regelbrueche,

@@ -694,6 +694,9 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
           ohneVolleDaten?: number; ohneVolleDatenGrund?: Record<string, number>;
           unterGrenze?: number; confMin?: number | null; confMax?: number | null;
           ohneGptAntwort?: number; gptZahlUnbrauchbar?: number;
+          konsensRichtungen?: number; taErsatzRichtungen?: number;
+          trichterGeprueft?: number; restOhneAnalyse?: number;
+          restOhneStop?: number; restUngeklaert?: number; mehrfachGezaehlt?: number;
           rrAbgelehnt?: number; ohneStopZiel?: number; go?: number;
           tore?: Record<string, { ja?: number; nein?: number;
             fallback?: number; gruende?: Record<string, number>;
@@ -831,6 +834,13 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
               ohneVolleDatenGrund: tagessumme.ohneVolleDatenGrund ?? null,
               ohneGptAntwort: tagessumme.ohneGptAntwort ?? null,
               gptZahlUnbrauchbar: tagessumme.gptZahlUnbrauchbar ?? null,
+              konsensRichtungen: tagessumme.konsensRichtungen ?? null,
+              taErsatzRichtungen: tagessumme.taErsatzRichtungen ?? null,
+              trichterGeprueft: tagessumme.trichterGeprueft ?? null,
+              restOhneAnalyse: tagessumme.restOhneAnalyse ?? null,
+              restOhneStop: tagessumme.restOhneStop ?? null,
+              restUngeklaert: tagessumme.restUngeklaert ?? null,
+              mehrfachGezaehlt: tagessumme.mehrfachGezaehlt ?? null,
               unterGrenze: tagessumme.unterGrenze ?? null,
               confMin: tagessumme.confMin ?? null,
               confMax: tagessumme.confMax ?? null,
