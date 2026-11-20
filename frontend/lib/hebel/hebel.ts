@@ -22,10 +22,12 @@
  *
  * ── WAS SIE NICHT KANN, UND DAS STEHT IM BERICHT ────────────────────────────
  *
- * Die `Trade`-Tabelle hat **keine Confidence-Spalte** (nachgesehen im Schema,
- * nicht vermutet). Eine Empfehlung zur Freigabe-Schwelle ist aus den echten
- * Trades damit **nicht** berechenbar — und wird deshalb nicht gegeben,
- * sondern benannt. Eine erfundene Empfehlung wäre schlimmer als keine.
+ * KORRIGIERT 20.11.: hier stand, die Confidence-Schwelle sei „nicht
+ * berechenbar, die `Trade`-Tabelle hat keine Confidence-Spalte". Die SPALTE
+ * fehlt — aber `notes.confidence` schreibt der Orchestrator bei jedem
+ * automatischen Trade mit (`orchestrator-agent.ts:515`). Die Kalibrierung
+ * steht deshalb in /edge (`kalibrierungZeile`), nicht hier: /hebel liegt
+ * an der Laengengrenze, eine achte Dimension strich alle Hinweise (18.11.).
  *
  * ── UND EIN UNTERSCHIED IST KEINE ZUSAGE ────────────────────────────────────
  *
@@ -554,9 +556,8 @@ function textMit(
     + "verschiebt, ändert auch die MENGE der Trades — die übrigbleibenden "
     + "sind dann nicht mehr dieselben wie die hier gemessenen.");
   z.push("");
-  z.push("🚫 <b>Nicht berechenbar:</b> die Confidence-Schwelle. Die "
-    + "<code>Trade</code>-Tabelle hat keine Confidence-Spalte — eine "
-    + "Empfehlung dazu wäre erfunden.");
+  z.push("🎯 <b>Confidence:</b> die Kalibrierung (Confidence gegen Treffer, "
+    + "je Band) steht in <code>/edge</code> — gelesen aus den Notizen.");
   if (maxGruppen < GRUPPEN_MAX || !mitHinweisen) {
     z.push("");
     const teile: string[] = [];

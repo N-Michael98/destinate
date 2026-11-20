@@ -922,7 +922,7 @@ ${SYSTEM_BEFEHLE}`
           return NextResponse.json({ ok: true });
         }
         const { getPrisma } = await import("@/app/lib/prisma");
-        const { erwartungswert, erwartungswertText, metaPruefungZeile, doppeltVerbuchtZeile } =
+        const { erwartungswert, erwartungswertText, metaPruefungZeile, doppeltVerbuchtZeile, kalibrierungZeile } =
           await import("@/lib/expectancy/erwartungswert");
         const zeilen = await getPrisma().trade.findMany({
           where: { status: { not: "OPEN" } },
@@ -941,7 +941,9 @@ ${SYSTEM_BEFEHLE}`
           + "\n\n" + metaPruefungZeile(zeilen, tage === null ? null : { tage })
           // 19.11.: wie viel haengt an den doppelt verbuchten Zeilen? Reine
           // Lesung, dieselben Zeilen, dasselbe Fenster.
-          + "\n" + doppeltVerbuchtZeile(zeilen, tage === null ? null : { tage }));
+          + "\n" + doppeltVerbuchtZeile(zeilen, tage === null ? null : { tage })
+          // 20.11.: sagt die Confidence etwas? Dieselben Zeilen, dasselbe Fenster.
+          + "\n" + kalibrierungZeile(zeilen, tage === null ? null : { tage }));
       } catch (e) {
         // Der Grund gehoert in die Antwort — sonst steht man vor einem
         // stummen Befehl und raet ("wer den Grund nicht mitschreibt …").

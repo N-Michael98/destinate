@@ -2301,6 +2301,60 @@ durch `/edge` und durch `/hebel` müssen **dieselbe Zahl** ergeben.
 die `Trade`-Tabelle hat keine Confidence-Spalte (im Schema nachgesehen,
 nicht vermutet). Eine erfundene Empfehlung wäre schlimmer als keine.
 
+> **KORRIGIERT 20.11.:** Der Satz oben ist falsch. Die **Spalte** fehlt, aber
+> `notes.confidence` schreibt der Orchestrator bei jedem automatischen Trade mit
+> (`orchestrator-agent.ts:515`) — den Wert **nach** der Meta-KI, an dem die
+> Schwelle entschieden hat. Die Kalibrierung steht seitdem in `/edge` (siehe
+> „Sagt die Confidence etwas? Die Kalibrierung in `/edge`").
+
+### Sagt die Confidence etwas? Die Kalibrierung in `/edge` (20.11.)
+
+Anlass: zwei Ideen zur Weiterentwicklung (Lernstufen; Scanner nach Erwartungswert)
+setzen dieselbe Frage voraus — **wenn ein Signal mit Confidence 78 gehandelt
+wird, gehen dann rund 78 von 100 auf?** Ohne die Antwort ist jede Rangfolge nach
+„Chance" eine Zahl ohne Bedeutung, und die Schwelle 70 hängt genau daran.
+
+`/hebel` behauptete dazu bis heute im Telegram-Text: **„Nicht berechenbar — die
+`Trade`-Tabelle hat keine Confidence-Spalte."** Nachgelesen: die Spalte fehlt,
+das Feld in den Notizen nicht. Und ein Prüfer **verlangte** den falschen Satz.
+Dieselbe Fehlerklasse wie der `/status`-Riegel vom 31.10., der das rohe `<`
+festschrieb.
+
+`/edge` hat jetzt eine Zeile mehr:
+
+```
+🎯 Kalibrierung (Confidence gegen Treffer), <n> Trades: Ø Confidence <x> · Treffer <y %> der entschiedenen → <Differenz>
+   70–74: <n> · <Treffer> · EW <..> | 75–79: … | ohne Angabe <m>
+```
+
+(Form, keine Messung.) Gerechnet mit **derselben** `erwartungswert()` und
+demselben Fenster; eine Zeile zählt nur, wenn `/edge` sie auch zählt. Verglichen
+wird mit den **entschiedenen** (derselbe Nenner wie die nötige Trefferquote).
+`confidence: 0` (rekonstruierte Zeilen) und alles ausserhalb 1..100 heisst
+**„ohne Angabe"**, nicht 0. Unter 30 entschiedenen je Band: „zu wenig".
+
+**Was die Zahl NICHT ist:** eine Empfehlung für die Schwelle. Gehandelt wird nur
+ab 70 — über darunterliegende Signale sagt sie nichts, und eine verschobene
+Schwelle ändert die Menge der Trades.
+
+**Und der Längen-Riegel von `/edge` mass nur den Haupttext.** Meta-Zeile (18.11.)
+und „Doppelt verbucht" (19.11.) hingen ungemessen dahinter. Jetzt wird die
+**ganze** Antwort gemessen, wie der Webhook sie baut, mit Testzeilen, die alle
+sechs Bänder, beide Meta-Gruppen und doppelte IDs tragen (an diese Eigenschaft
+gebunden): **3868 von 4096** (Haupttext 3143).
+
+**Belegt ungefährlich:** `confidence: body.confidence ?? 70` in
+`/api/capital-com/execute` (eine erfundene Zahl) greift praktisch nie — der
+einzige Aufrufer (`MarketScannerPanel.tsx:171`) schickt sie immer mit, und für
+die Order selbst wird sie nicht benutzt. Benannt, nicht geändert: es ist eine
+Order-Route.
+
+`safety-nets` 1911 → **1937**, **10 von 10 Sabotagen** (Bandgrenze, Confidence 0
+als Wert, Nenner der gewerteten, Fenster, MIN_TRADES, Vorzeichen, Ausschlüsse,
+Verdrahtung, der falsche `/hebel`-Satz). Die Testdaten tragen absichtlich
+Breakeven im 70er-Band — ohne sie wäre „Treffer der entschiedenen" gleich
+„Treffer der gewerteten", und die Sabotage am Nenner bliebe grün.
+
 **Eine 0 ist kein R/R.** `riskReward` hat im Schema `@default(0)`; eine 0
 heisst „nie geschrieben" und kommt in ein eigenes Band, statt als
 schlechtestes R/R mitgerechnet zu werden — dieselbe Regel wie bei

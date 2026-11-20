@@ -2466,6 +2466,9 @@ module.exports = async function pruefe() {
             torPruefung("/edge 60: die Meta-Zeile fehlt oder rechnet ohne das Fenster",
               /Meta-Gegenprüfung<\/b> \(seit 18\.11\.\): KI 0 · zu wenig \| REGELN 0 · zu wenig \| ohne Angabe 40/.test(mitF),
               (mitF.match(/Meta-Gegenprüfung[^\n]*/) ?? ["(keine Meta-Zeile)"])[0]);
+            torPruefung("/edge 60: die Kalibrierung fehlt in der echten Antwort",
+              /\n🎯 <b>Kalibrierung<\/b> \(Confidence gegen Treffer\): keine gewerteten Trades mit Confidence-Angabe/.test(mitF),
+              (mitF.match(/🎯[^\n]*/) ?? ["(keine Zeile)"])[0]);
             torPruefung("/edge 60: die Zeile 'Doppelt verbucht' fehlt in der echten Antwort",
               /\n🧮 <b>Doppelt verbucht<\/b> \(Stufe 2, behoben 19\.11\.\): 0 Zeilen/.test(mitF),
               (mitF.match(/Doppelt verbucht[^\n]*/) ?? ["(keine Zeile)"])[0]);
@@ -4534,9 +4537,14 @@ module.exports = async function pruefe() {
           torPruefung("der Text verschweigt, dass ein Unterschied keine "
             + "Zusage ist",
             /keine Zusage/.test(tH) && /MENGE der Trades/.test(tH), tH.slice(-300));
-          torPruefung("der Text behauptet eine Confidence-Empfehlung — die "
-            + "`Trade`-Tabelle hat gar keine Confidence-Spalte",
-            /Nicht berechenbar/.test(tH) && /Confidence/.test(tH), tH.slice(-300));
+          // KORRIGIERT 20.11.: hier wurde der Satz „nicht berechenbar, keine
+          // Confidence-Spalte" VERLANGT — er war falsch, `notes.confidence`
+          // wird bei jedem automatischen Trade geschrieben. Die Kalibrierung
+          // steht in /edge; /hebel verweist darauf und behauptet nichts mehr.
+          torPruefung("der /hebel-Text behauptet wieder, die Confidence sei nicht "
+            + "berechenbar — oder verweist nicht auf die Kalibrierung in /edge",
+            /Kalibrierung/.test(tH) && /<code>\/edge<\/code>/.test(tH)
+            && !/keine Confidence-Spalte/.test(tH), tH.slice(-300));
           torPruefung("das Fenster steht nicht in der Antwort",
             /letzte <b>60<\/b> Tage/.test(tH), tH.slice(0, 200));
           torPruefung("ohne Fenster wird ein Fenster vorgetaeuscht",
@@ -8687,7 +8695,12 @@ module.exports = async function pruefe() {
                     lang.push({
                       profitLoss: pnl, result: res,
                       updatedAt: `${i % 2 === 0 ? "2026-01-03" : "2026-10-28"}T10:00:00.000Z`,
-                      notes: JSON.stringify({ exitReason: grund, exitPosition: 1.0834 }),
+                      // 20.11.: dazu die Felder, die die ANGEHAENGTEN Zeilen
+                      // lesen (Meta, Doppelt, Kalibrierung) — sonst misst der
+                      // Riegel nur den Haupttext, nicht die ganze Antwort.
+                      notes: JSON.stringify({ exitReason: grund, exitPosition: 1.0834,
+                        metaPruefung: i % 2 ? "KI" : "REGELN", confidence: 65 + (i % 30),
+                        ...(i % 5 === 0 ? { beinDealIds: [`dd${kk}`, `dd${kk}`] } : {}) }),
                     });
                   }
                 }
@@ -8705,6 +8718,25 @@ module.exports = async function pruefe() {
                 + "ihrer Obergrenze — sie kaeme dann gar nicht an, und "
                 + "`sendTelegram` kennt keine Laengengrenze",
                 langText.length <= 4096, `${langText.length} von 4096`);
+              // DIE GANZE ANTWORT, wie der Webhook sie baut (20.11.). Bis heute
+              // mass der Riegel nur den Haupttext — Meta-Zeile (18.11.),
+              // „Doppelt verbucht" (19.11.) und Kalibrierung (20.11.) haengen
+              // dahinter und waren UNGEMESSEN.
+              const E2 = ew.exports;
+              const ganz = langText + "\n\n" + E2.metaPruefungZeile(lang, null)
+                + "\n" + E2.doppeltVerbuchtZeile(lang, null)
+                + "\n" + E2.kalibrierungZeile(lang, null);
+              torPruefung("die GANZE /edge-Antwort (mit Meta, Doppelt, Kalibrierung) "
+                + "reisst Telegrams 4096 Zeichen",
+                ganz.length <= 4096, `${ganz.length} von 4096`);
+              // Die angehaengten Zeilen muessen im Testfall WIRKLICH lang sein —
+              // sonst misst der Riegel einen Fall, der nicht der schlimmste ist.
+              torPruefung("der /edge-Laengentest traegt die angehaengten Zeilen nicht in "
+                + "voller Laenge (alle Kalibrier-Baender, Meta mit beiden Gruppen, Doppelt > 0)",
+                ["unter 70:", "70–74:", "75–79:", "80–84:", "85–89:", "90+:"].every((b) => ganz.includes(b))
+                && /KI \d+ · EW .*\| REGELN \d+ · EW /.test(ganz)
+                && /Doppelt verbucht<\/b> \(Stufe 2, behoben 19\.11\.\): <b>\d+<\/b> Zeilen/.test(ganz),
+                (ganz.match(/🎯[^\n]*\n[^\n]*/) ?? ["(keine Kalibrierung)"])[0].slice(0, 200));
               // GEGENPROBE: der Riegel darf nicht immer gruen sein. Mit
               // zehnfach langen Etiketten MUSS die Grenze reissen — sonst
               // messe ich nur, dass eine Zahl kleiner als 4096 ist.
@@ -15340,6 +15372,67 @@ module.exports = async function pruefe() {
             (() => { try { return /0 Zeilen$/.test(dZ(undefined, null)); } catch { return false; } })(), "undefined");
           torPruefung("doppelt-verbucht: /edge haengt die Zeile nicht an, oder mit einem anderen Fenster",
             /\+ "\\n" \+ doppeltVerbuchtZeile\(zeilen, tage === null \? null : \{ tage \}\)/.test(whMB), "webhook /edge");
+        }
+        // ── KALIBRIERUNG (20.11.): sagt die Confidence etwas? ──────────────
+        const kZ = ewM.exports.kalibrierungZeile;
+        const kA = ewM.exports.confidenceAusNotizen;
+        const kB = ewM.exports.confidenceBand;
+        if (typeof kZ !== "function" || typeof kA !== "function" || typeof kB !== "function") {
+          torPruefung("kalibrierung: Funktionen nicht exportiert", false, `${typeof kZ}/${typeof kA}/${typeof kB}`);
+        } else {
+          for (const [c, soll] of [[69.9, "unter 70"], [70, "70–74"], [74.99, "70–74"], [75, "75–79"],
+            [84.9, "80–84"], [85, "85–89"], [90, "90+"], [100, "90+"]]) {
+            torPruefung(`kalibrierung: Band falsch bei ${c}`, kB(c) === soll, `${kB(c)} statt ${soll}`);
+          }
+          for (const [n, soll, name] of [
+            [JSON.stringify({ confidence: 72 }), 72, "72"], [JSON.stringify({ confidence: 100 }), 100, "100"],
+            [JSON.stringify({ confidence: 0 }), null, "0 = rekonstruiert, unbekannt"],
+            [JSON.stringify({ confidence: 101 }), null, "101"], [JSON.stringify({ confidence: -5 }), null, "-5"],
+            [JSON.stringify({ confidence: "72" }), null, "Text"], [JSON.stringify({}), null, "fehlt"],
+            ["{kaputt", null, "unlesbar"], [null, null, "keine Notizen"],
+          ]) {
+            torPruefung(`kalibrierung: confidenceAusNotizen falsch bei „${name}"`, kA(n) === soll, `${kA(n)} statt ${soll}`);
+          }
+          // UNBEQUEME TESTDATEN mit Absicht: Breakeven im 70er-Band (sonst waere
+          // „Treffer der entschiedenen" gleich „Treffer der gewerteten"), ein Band
+          // unter 30 (zu wenig), Zeilen ohne Angabe, KEIN_PNL und eine Zeile vor
+          // dem Fenster — alle mit Confidence, die NICHT mitzaehlen darf.
+          const Tk = Date.UTC(2026, 10, 20);
+          const zk = (pnl, notes, alt = 1) => ({ profitLoss: pnl, result: pnl > 0 ? "WIN" : pnl < 0 ? "LOSS" : "BREAKEVEN",
+            updatedAt: new Date(Tk - alt * 86_400_000), notes: JSON.stringify(notes) });
+          const kd = [];
+          for (let i = 0; i < 40; i++) kd.push(zk(i % 2 ? -1 : 3, { confidence: 72 }));
+          for (let i = 0; i < 6; i++) kd.push(zk(0, { confidence: 73 }));
+          for (let i = 0; i < 40; i++) kd.push(zk(i < 30 ? 2 : -1, { confidence: 82 }));
+          for (let i = 0; i < 5; i++) kd.push(zk(1, { confidence: 88 }));
+          for (let i = 0; i < 10; i++) kd.push(zk(1, { confidence: 0 }));
+          for (let i = 0; i < 3; i++) kd.push(zk(1, { confidence: "abc" }));
+          for (let i = 0; i < 2; i++) kd.push(zk(0, { confidence: 72, exitReason: "KEIN_PNL" }));
+          for (let i = 0; i < 4; i++) kd.push(zk(-50, { confidence: 72 }, 90));
+          // Ø = (40·72 + 6·73 + 40·82 + 5·88) / 91 = 7038/91 = 77.3; Treffer
+          // 55/85 = 64.7 % der entschiedenen; 70er-Band 20/40 = 50 % (die sechs
+          // Breakeven NICHT im Nenner), EW (60−20)/46 = 0.87.
+          const k60 = kZ(kd, { tage: 60, jetzt: new Date(Tk) });
+          const soll1 = "🎯 <b>Kalibrierung</b> (Confidence gegen Treffer), 91 Trades: Ø Confidence <b>77.3</b> · "
+            + "Treffer <b>64.7 %</b> der entschiedenen → <b>12.6 Punkte zu hoch</b>";
+          const soll2 = "   70–74: 46 · 50 % · EW 0.87 | 80–84: 40 · 75 % · EW 1.25 | 85–89: 5 · zu wenig | ohne Angabe 13";
+          torPruefung("kalibrierung: die Zeile rechnet anders als von Hand nachgerechnet (Fenster, "
+            + "Ausschluesse, Nenner der entschiedenen, Bandgrenzen)",
+            k60 === `${soll1}\n${soll2}`, `${k60} || soll: ${soll1} / ${soll2}`);
+          // Ohne Fenster zaehlen die vier alten Zeilen MIT (95 statt 91).
+          torPruefung("kalibrierung: ohne Fenster fehlen die alten Zeilen",
+            /\), 95 Trades: /.test(kZ(kd, null)), kZ(kd, null).split("\n")[0]);
+          torPruefung("kalibrierung: ohne Confidence-Angaben behauptet die Zeile eine Messung",
+            kZ([zk(1, {}), zk(-1, { confidence: 0 })], null)
+              === "🎯 <b>Kalibrierung</b> (Confidence gegen Treffer): keine gewerteten Trades mit Confidence-Angabe",
+            kZ([zk(1, {})], null));
+          torPruefung("kalibrierung: wirft bei undefined",
+            (() => { try { return /keine gewerteten/.test(kZ(undefined, null)); } catch { return false; } })(), "undefined");
+          torPruefung("kalibrierung: /edge haengt die Zeile nicht an, oder mit einem anderen Fenster",
+            /\+ "\\n" \+ kalibrierungZeile\(zeilen, tage === null \? null : \{ tage \}\)/.test(whMB), "webhook /edge");
+          // Kein rohes `<` — die Zeile geht als HTML raus (02.11.).
+          torPruefung("kalibrierung: ein rohes < in der Zeile — Telegram lehnte die ganze Antwort ab",
+            !/<(?!\/?(b|i|code)>)/.test(kZ([...kd, zk(1, { confidence: 60 })], null)), "rohes <");
         }
       }
     }

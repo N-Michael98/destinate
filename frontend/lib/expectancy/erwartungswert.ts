@@ -706,3 +706,79 @@ export function doppeltVerbuchtZeile(
     + "\n<i>gleiche dealId zweimal summiert — Etikett KEIN_SCHLUSSKURS, "
     + "eigentlich EIN Bein. Datenbank nicht korrigiert.</i>";
 }
+
+/** Die Confidence einer Zeile — oder `null`. `0` heisst „nicht bekannt"
+ *  (rekonstruierte Zeilen schreiben `confidence: 0`), ebenso alles, was
+ *  keine endliche Zahl in 1..100 ist. Nie geraten. */
+export function confidenceAusNotizen(notes: string | null | undefined): number | null {
+  const c = notizen(notes ?? null)?.confidence;
+  return typeof c === "number" && Number.isFinite(c) && c > 0 && c <= 100 ? c : null;
+}
+
+/** Band einer Confidence. Ohne `<`: der Text geht als HTML raus (02.11.). */
+export function confidenceBand(c: number): string {
+  if (c < 70) return "unter 70";
+  if (c < 75) return "70–74";
+  if (c < 80) return "75–79";
+  if (c < 85) return "80–84";
+  if (c < 90) return "85–89";
+  return "90+";
+}
+const CONF_BAENDER = ["unter 70", "70–74", "75–79", "80–84", "85–89", "90+"];
+
+/**
+ * KALIBRIERUNG — sagt die Confidence etwas? Eine Zeile fuer /edge (20.11.).
+ *
+ * DIE FRAGE: wenn ein Signal mit Confidence 78 gehandelt wird, gehen dann
+ * auch rund 78 von 100 solchen Trades auf? Ohne diese Messung ist die
+ * Confidence eine Zahl ohne Bedeutung — und die Schwelle 70, an der jedes
+ * Signal entschieden wird, haengt genau an ihr.
+ *
+ * WAS BIS HEUTE IN /hebel STAND, WAR FALSCH: „die Confidence-Schwelle ist
+ * nicht berechenbar, die Trade-Tabelle hat keine Confidence-Spalte". Die
+ * SPALTE fehlt — aber `notes.confidence` schreibt der Orchestrator bei jedem
+ * automatischen Trade mit (`orchestrator-agent.ts:515`), und zwar den Wert
+ * NACH der Meta-KI, an dem die Schwelle entschieden hat.
+ *
+ * Gerechnet mit DERSELBEN `erwartungswert()` und demselben Fenster wie /edge.
+ * Eine Zeile zaehlt nur, wenn /edge sie auch zaehlt (dieselben Ausschluesse).
+ * Verglichen wird mit der Trefferquote der ENTSCHIEDENEN — derselbe Nenner wie
+ * die "noetige Trefferquote" in /edge. Unter MIN_TRADES: „zu wenig".
+ */
+export function kalibrierungZeile(
+  zeilen: ReadonlyArray<TradeZeile> | null | undefined,
+  fenster?: EwFenster | null,
+): string {
+  const alle = Array.isArray(zeilen) ? zeilen : [];
+  // Nur, was /edge auch wertet — je Zeile mit derselben Funktion geprueft.
+  const gewertet = alle.filter((z) => erwartungswert([z], fenster).gewertet === 1);
+  const mit = gewertet.filter((z) => confidenceAusNotizen(z.notes) !== null);
+  const ohne = gewertet.length - mit.length;
+  const kopf = "🎯 <b>Kalibrierung</b> (Confidence gegen Treffer)";
+  if (mit.length === 0) return `${kopf}: keine gewerteten Trades mit Confidence-Angabe`;
+  const quote = (e: EwErgebnis): number | null =>
+    e.entschieden >= MIN_TRADES ? Number((e.wins / e.entschieden * 100).toFixed(1)) : null;
+  const eAlle = erwartungswert(mit, fenster);
+  const schnitt = Number((mit.reduce((s, z) => s + (confidenceAusNotizen(z.notes) as number), 0)
+    / mit.length).toFixed(1));
+  const q = quote(eAlle);
+  let urteil = "zu wenig entschiedene Trades";
+  if (q !== null) {
+    const diff = Number((schnitt - q).toFixed(1));
+    urteil = diff > 0 ? `<b>${diff} Punkte zu hoch</b>`
+      : diff < 0 ? `${-diff} Punkte zu tief` : "deckungsgleich";
+  }
+  const z1 = `${kopf}, ${mit.length} Trades: Ø Confidence <b>${schnitt}</b> · Treffer `
+    + `${q === null ? "?" : `<b>${q} %</b>`} der entschiedenen → ${urteil}`;
+  const teile: string[] = [];
+  for (const band of CONF_BAENDER) {
+    const im = mit.filter((z) => confidenceBand(confidenceAusNotizen(z.notes) as number) === band);
+    if (im.length === 0) continue;
+    const e = erwartungswert(im, fenster);
+    const qb = quote(e);
+    teile.push(`${band}: ${im.length} · `
+      + (qb === null ? "zu wenig" : `${qb} %${e.belastbar && e.erwartungswert !== null ? ` · EW ${e.erwartungswert}` : ""}`));
+  }
+  if (ohne > 0) teile.push(`ohne Angabe ${ohne}`);
+  return `${z1}\n   ${teile.join(" | ")}`;
+}
