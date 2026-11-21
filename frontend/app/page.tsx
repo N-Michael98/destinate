@@ -7,6 +7,7 @@ import AIAgentControlCenter from "@/components/AIAgentControlCenter";
 import UnifiedMissionControlDashboard from "@/components/UnifiedMissionControlDashboard";
 import { SidebarIcon } from "@/components/SidebarIcon";
 import { lesbareRichtung, richtungAnzeige } from "@/lib/richtung/richtung";
+import { konsensQuellenLage, type KonsensQuellen } from "@/lib/konsens-quellen/konsens-quellen";
 import EvolutionCenterPanel from "@/components/EvolutionCenterPanel";
 import BrokerCenterPanel from "@/components/BrokerCenterPanel";
 import PortfolioBrainCenterPanel from "@/components/PortfolioBrainCenterPanel";
@@ -1795,6 +1796,9 @@ type ConsensusApiResponse = {
   decisions: ConsensusDecision[];
   count: number;
   updatedAt: string;
+  // Die Route sendet das seit jeher (`sources: { gpt, claude, python }`) —
+  // gelesen wurde es bis zum 21.11. nirgends.
+  sources?: KonsensQuellen;
 };
 
 type ClaudeRiskAssessment = {
@@ -2257,6 +2261,9 @@ function ConsensusLiveCenter() {
   const [consensusLoading, setConsensusLoading] = useState(true);
   const [consensusError, setConsensusError] = useState<string | null>(null);
   const [lastConsensusUpdate, setLastConsensusUpdate] = useState("");
+  // `undefined` bis zur ersten Antwort: dann ist die Herkunft noch nicht
+  // geprueft, und der Hinweis bleibt aus statt "unbekannt" zu behaupten.
+  const [consensusSources, setConsensusSources] = useState<KonsensQuellen | null | undefined>(undefined);
 
   async function loadConsensusDecisions() {
     try {
@@ -2274,6 +2281,7 @@ function ConsensusLiveCenter() {
       const payload = (await response.json()) as ConsensusApiResponse;
       setDecisions(payload.decisions);
       setLastConsensusUpdate(payload.updatedAt);
+      setConsensusSources(payload.sources ?? null);
     } catch (caughtError) {
       setConsensusError(
         caughtError instanceof Error
@@ -2285,15 +2293,15 @@ function ConsensusLiveCenter() {
     }
   }
 
+  // KEIN 20-Sekunden-Takt mehr (21.11.). Die Route fragt GPT-Analyst und
+  // Claude-Risiko an — beides sind Routen, die ein echtes Modell rufen
+  // koennen. Geladen wird beim Oeffnen, danach nur ueber "Refresh".
   useEffect(() => {
     loadConsensusDecisions();
-
-    const interval = window.setInterval(() => {
-      loadConsensusDecisions();
-    }, 20000);
-
-    return () => window.clearInterval(interval);
   }, []);
+
+  const quellenLage =
+    consensusSources === undefined ? null : konsensQuellenLage(consensusSources);
 
   const approvedCount = decisions.filter((item) => item.approved).length;
   const waitingCount = decisions.filter((item) => item.finalVote === "WAIT").length;
@@ -2337,8 +2345,24 @@ function ConsensusLiveCenter() {
           <div>
             <h3 className="text-3xl font-bold"> Live Consensus Decisions</h3>
             <p className="text-gray-400 mt-2">
-              Daten aus <span className="text-purple-400">/api/consensus/decision</span>. Auto-Refresh alle 20 Sekunden.
+              Daten aus <span className="text-purple-400">/api/consensus/decision</span>. Lädt beim Öffnen, danach nur über „Refresh“.
             </p>
+            {/* HERKUNFT SICHTBAR (21.11.). Die Route meldet seit jeher, ob
+                GPT, Claude und Python wirklich geantwortet haben — die
+                Ansicht zeigte es nie. Fehlt eine Stimme, rechnet die Route
+                mit Ersatzwerten; das steht jetzt hier. */}
+            {quellenLage && (
+              quellenLage.echt ? (
+                <p className="mt-2 text-sm text-green-400">● Alle drei Stimmen echt gemessen</p>
+              ) : (
+                <div className="mt-2 text-sm text-yellow-400">
+                  <p>⚠ Nicht alle Stimmen sind echt — die Entscheidungen beruhen teilweise auf Ersatzwerten:</p>
+                  {quellenLage.zeilen.map((zeile) => (
+                    <p key={zeile} className="ml-4">• {zeile}</p>
+                  ))}
+                </div>
+              )
+            )}
           </div>
 
           <button
@@ -2529,14 +2553,11 @@ function ClaudeRiskLiveCenter() {
     }
   }
 
+  // KEIN 20-Sekunden-Takt mehr (21.11.). Mit hinterlegtem Schluessel ist
+  // jeder Aufruf ein echter Claude-Aufruf — offen gelassen 180 in der Stunde. Geladen wird
+  // beim Oeffnen, danach nur ueber "Refresh".
   useEffect(() => {
     loadClaudeRisks();
-
-    const interval = window.setInterval(() => {
-      loadClaudeRisks();
-    }, 20000);
-
-    return () => window.clearInterval(interval);
   }, []);
 
   const approvedCount = risks.filter((item) => item.approved).length;
@@ -2592,7 +2613,7 @@ function ClaudeRiskLiveCenter() {
           <div>
             <h3 className="text-3xl font-bold"> Claude Risk Review</h3>
             <p className="text-gray-400 mt-2">
-              Daten aus <span className="text-red-400">/api/claude-risk/assess</span>. Auto-Refresh alle 20 Sekunden.
+              Daten aus <span className="text-red-400">/api/claude-risk/assess</span>. Lädt beim Öffnen, danach nur über „Refresh“ — jeder Klick ruft Claude, sofern ein Schlüssel hinterlegt ist.
             </p>
             {/* HERKUNFT SICHTBAR (25.08.). Die Kachel hiess "Live Claude Risk
                 Review" — auch dann, wenn gar kein Claude gefragt wurde, weil
@@ -2794,14 +2815,12 @@ function GPTAnalystLiveCenter() {
     }
   }
 
+  // KEIN 20-Sekunden-Takt mehr (21.11.). Mit hinterlegtem Schluessel ist
+  // jeder Aufruf ein echter GPT-Aufruf, dazu immer zwei Sechs-Monats-
+  // Backtests beim Python-Backend — offen gelassen 180 in der Stunde. Geladen wird beim Oeffnen, danach
+  // nur ueber "Refresh".
   useEffect(() => {
     loadAnalyses();
-
-    const interval = window.setInterval(() => {
-      loadAnalyses();
-    }, 20000);
-
-    return () => window.clearInterval(interval);
   }, []);
 
   const bullishCount = analyses.filter((item) => item.bias === "BULLISH").length;
@@ -2882,7 +2901,7 @@ function GPTAnalystLiveCenter() {
           <div>
             <h3 className="text-3xl font-bold"> Live GPT Trade Analysis</h3>
             <p className="text-gray-400 mt-2">
-              Daten aus <span className="text-cyan-400">/api/gpt-analyst/analyze</span>. Auto-Refresh alle 20 Sekunden.
+              Daten aus <span className="text-cyan-400">/api/gpt-analyst/analyze</span>. Lädt beim Öffnen, danach nur über „Refresh“ — jeder Klick ruft GPT, sofern ein Schlüssel hinterlegt ist.
             </p>
           </div>
 

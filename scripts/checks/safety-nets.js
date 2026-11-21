@@ -16043,6 +16043,441 @@ module.exports = async function pruefe() {
   }
 
 
+  // ── KEIN MODELL IM TAKT DES DASHBOARDS (21.11.) ─────────────────────────
+  //
+  // Bis heute riefen VIER Stellen im Browser echte Modelle in einem Takt,
+  // solange ihre Ansicht offen war:
+  //   - GPT-Analyst      alle 20 s  /api/gpt-analyst/analyze   (GPT + 2 Backtests)
+  //   - Claude-Risiko    alle 20 s  /api/claude-risk/assess    (Claude)
+  //   - KI-Konsens       alle 20 s  /api/consensus/decision    (fragt beide an)
+  //   - Market Scanner   alle 60 s  /api/market-scanner?action=scan
+  //                                 (volle analyzeMarkets: GPT fuer alle
+  //                                  Maerkte + Claude je Kandidat, ohne
+  //                                  Handelszeit-Pruefung, rund um die Uhr)
+  // Der Server selbst analysiert alle 5 Minuten und nur in der Handelszeit.
+  //
+  // Der Riegel ist ALLGEMEIN, nicht eine Liste der vier: jedes `setInterval`
+  // im Frontend wird bis zu seinen `fetch`-Aufrufen verfolgt (auch ueber
+  // Funktionen und `xRef.current()`), und die Menge der Modell-Routen wird
+  // AUS DEN ROUTEN SELBST abgeleitet (direkte Marker, dann alles, was eine
+  // solche Route anfragt). Eine fuenfte Stelle faellt damit von selbst auf.
+  {
+    const FRONT = "frontend/";
+
+    // Werkzeug: Kommentare weg (Zeilen bleiben), zweite Fassung mit
+    // ausgeblendeten Zeichenketten fuer Struktur und Klammerzaehlung. Beide
+    // gleich lang, die Indizes passen also aufeinander. Ein Anfuehrungszeichen
+    // oeffnet nur im AUSDRUCK eine Zeichenkette — ein Apostroph im JSX-Text
+    // ("don't") steht nach einem Buchstaben und bleibt Text.
+    const tnLesen = (src) => {
+      let code = "", maske = "";
+      const n = src.length;
+      const imAusdruck = () => {
+        let k = maske.length - 1;
+        while (k >= 0 && /\s/.test(maske[k])) k--;
+        if (k < 0) return true;
+        if (/[=(,:\[!&|?{};+\-*%^~<>]/.test(maske[k])) return true;
+        return /\b(return|case|typeof|in|of|await|yield)$/.test(maske.slice(Math.max(0, k - 7), k + 1));
+      };
+      let i = 0;
+      while (i < n) {
+        const c = src[i], d = src[i + 1];
+        if (c === "/" && d === "/" && src[i - 1] !== ":") {
+          while (i < n && src[i] !== "\n") { code += " "; maske += " "; i++; }
+          continue;
+        }
+        if (c === "/" && d === "*") {
+          const e = src.indexOf("*/", i + 2);
+          const ende = e < 0 ? n : e + 2;
+          const leer = src.slice(i, ende).replace(/[^\n]/g, " ");
+          code += leer; maske += leer; i = ende;
+          continue;
+        }
+        if ((c === '"' || c === "'" || c === "`") && imAusdruck()) {
+          // Ein Template endet NICHT am naechsten Backtick: `${ … }` darf
+          // weitere Templates und Zeichenketten enthalten
+          // (`a ${x ?? `b ${y}`}` — page.tsx:522). Deshalb rekursiv.
+          const einfach = (k, q) => {
+            while (k < n && src[k] !== q && src[k] !== "\n") { if (src[k] === "\\") k++; k++; }
+            return k;
+          };
+          const ausdruckEnde = (k) => {
+            let tiefe = 1;
+            while (k < n) {
+              const z = src[k];
+              if (z === "`") k = templateEnde(k + 1);
+              else if (z === '"' || z === "'") k = einfach(k + 1, z);
+              else if (z === "{") tiefe++;
+              else if (z === "}" && --tiefe === 0) return k;
+              k++;
+            }
+            return k;
+          };
+          const templateEnde = (k) => {
+            while (k < n && src[k] !== "`") {
+              if (src[k] === "\\") k += 2;
+              else if (src[k] === "$" && src[k + 1] === "{") k = ausdruckEnde(k + 2) + 1;
+              else k++;
+            }
+            return k;
+          };
+          const j = c === "`" ? templateEnde(i + 1) : einfach(i + 1, c);
+          const stueck = src.slice(i, Math.min(j + 1, n));
+          code += stueck;
+          maske += c + stueck.slice(1, -1).replace(/[^\n]/g, " ") + (stueck.length > 1 ? c : "");
+          i = j + 1;
+          continue;
+        }
+        code += c; maske += c; i++;
+      }
+      return { code, maske };
+    };
+
+    // Klammerblock ab dem ersten `auf` nach `ab` (auf der Maske gezaehlt).
+    const tnBlock = (t, ab, auf = "{", zu = "}") => {
+      const s = t.maske.indexOf(auf, ab);
+      if (s < 0) return null;
+      let tiefe = 0;
+      for (let k = s; k < t.maske.length; k++) {
+        if (t.maske[k] === auf) tiefe++;
+        else if (t.maske[k] === zu && --tiefe === 0) {
+          return { von: s, bis: k + 1, code: t.code.slice(s, k + 1), maske: t.maske.slice(s, k + 1) };
+        }
+      }
+      return null;
+    };
+
+    const tnBilanz = (t) => {
+      let a = 0, z = 0, ra = 0, rz = 0;
+      for (const ch of t.maske) { if (ch === "{") a++; else if (ch === "}") z++; else if (ch === "(") ra++; else if (ch === ")") rz++; }
+      return a === z && ra === rz;
+    };
+
+    // Rumpf einer Definition in derselben Datei: `function name(` oder
+    // `const/let name = …` (Pfeil mit Block, Pfeil mit Ausdruck, useCallback).
+    const tnName = (name) => name.replace(/\$/g, "\\$");
+    const tnDefinition = (t, name) => {
+      const fm = new RegExp(`\\bfunction\\s+${tnName(name)}\\s*\\(`).exec(t.maske);
+      if (fm) {
+        const kopf = tnBlock(t, fm.index + fm[0].length - 1, "(", ")");
+        return kopf ? tnBlock(t, kopf.bis) : null;
+      }
+      const cm = new RegExp(`\\b(?:const|let)\\s+${tnName(name)}\\s*=`).exec(t.maske);
+      if (!cm) return null;
+      const pfeil = t.maske.indexOf("=>", cm.index);
+      if (pfeil < 0) return null;
+      let k = pfeil + 2;
+      while (k < t.maske.length && /\s/.test(t.maske[k])) k++;
+      if (t.maske[k] === "{") return tnBlock(t, k);
+      const zeilenEnde = t.maske.indexOf("\n", k);
+      const bis = zeilenEnde < 0 ? t.maske.length : zeilenEnde;
+      return { von: k, bis, code: t.code.slice(k, bis), maske: t.maske.slice(k, bis) };
+    };
+
+    const TN_KEINE = new Set(["if", "for", "while", "switch", "catch", "function", "return", "typeof",
+      "await", "fetch", "setInterval", "clearInterval", "setTimeout", "useEffect", "useCallback",
+      "useState", "useRef", "Number", "String", "Boolean", "Date", "Math", "JSON", "Promise", "Array", "Object"]);
+
+    // Alles, was von einem Ausschnitt aus erreichbar ist (Tiefe 4).
+    const tnErreichbar = (t, start) => {
+      const gesehen = new Set();
+      let texte = [start.code];
+      let offen = [start.maske];
+      for (let tiefe = 0; tiefe < 4 && offen.length; tiefe++) {
+        const naechste = [];
+        for (const m of offen) {
+          const namen = new Set();
+          // `setInterval(lade, 20000)` uebergibt die Funktion OHNE Klammer —
+          // ein Name als erstes Argument zaehlt als Aufruf.
+          const erstes = /^\(\s*([A-Za-z_$][\w$]*)\s*[,)]/.exec(m);
+          if (erstes) namen.add(erstes[1]);
+          for (const r of m.matchAll(/\b([A-Za-z_$][\w$]*)Ref\.current\s*\(/g)) namen.add(r[1]);
+          for (const r of m.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) namen.add(r[1]);
+          for (const name of namen) {
+            if (TN_KEINE.has(name) || gesehen.has(name)) continue;
+            gesehen.add(name);
+            const def = tnDefinition(t, name);
+            if (def) { texte.push(def.code); naechste.push(def.maske); }
+          }
+        }
+        offen = naechste;
+      }
+      return texte.join("\n");
+    };
+
+    // fetch-Aufrufe mit literalem /api-Pfad, samt Methode.
+    const tnFetches = (code) => {
+      const aus = [];
+      const re = /fetch\(\s*(["'`])((?:\$\{[^}]*\}|(?!\1)[^\\]|\\.)*?)\1/g;
+      for (const r of code.matchAll(re)) {
+        const url = r[2].replace(/^\$\{[^}]*\}/, "");
+        if (!url.startsWith("/api/")) continue;
+        const rest = code.slice(r.index, r.index + 400);
+        const naechster = rest.indexOf("fetch(", 6);
+        const fenster = naechster > 0 ? rest.slice(0, naechster) : rest;
+        aus.push({ url, pfad: url.split("?")[0], methode: /method:\s*["'](\w+)["']/.exec(fenster)?.[1]?.toUpperCase() ?? "GET" });
+      }
+      return aus;
+    };
+
+    // ── Selbstpruefung der Werkzeuge an Faellen, die ich vollstaendig kontrolliere
+    {
+      const a = tnLesen('const s = "a { b"; // x {\n<p>don\'t {x}</p>\nconst u = "http://y";\n'
+        + 'f(`a ${m ?? `${n} b`} {`); g({ z: 1 });');
+      torPruefung("Takt-Werkzeug: Zeichenkette/Kommentar/Apostroph/verschachteltes Template falsch gelesen",
+        tnBilanz(a) && !/x \{/.test(a.code) && a.code.includes('"a { b"') && a.code.includes("http://y")
+        && a.maske.includes("{x}") && a.maske.includes("g({ z: 1 });") && !/\$\{n\}/.test(a.maske), JSON.stringify(a.maske));
+    }
+
+    // ── Die Modell-Routen, abgeleitet aus den Routen selbst ───────────────
+    const TN_MARKER = /api\.openai\.com|api\.anthropic\.com|\banalyzeMarkets\(|\btestOpenAIConnection\(|\btestAnthropicConnection\(|\brunAnalysisAgent\(|\brunOrchestratorCycle\(|\brunRiskAgent\(|\brunClaudeWatchdog\(|\bmessages\.create\(/;
+    const routen = [];
+    for (const f of sourceFiles([".ts"]).filter((p) => /^frontend\/app\/api\/.+\/route\.ts$/.test(p))) {
+      const t = tnLesen(read(f));
+      const pfad = f.replace(/^frontend\/app/, "").replace(/\/route\.ts$/, "");
+      for (const m of t.maske.matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\s*\(/g)) {
+        const kopf = tnBlock(t, m.index + m[0].length - 1, "(", ")");
+        const rumpf = kopf && tnBlock(t, kopf.bis);
+        if (!rumpf) continue;
+        routen.push({ pfad, methode: m[1], text: tnErreichbar(t, rumpf) });
+      }
+    }
+    const modell = new Set(routen.filter((r) => TN_MARKER.test(r.text)).map((r) => `${r.methode} ${r.pfad}`));
+    for (let runde = 0; runde < 5; runde++) {
+      const modellGet = [...modell].filter((x) => x.startsWith("GET ")).map((x) => x.slice(4));
+      for (const r of routen) {
+        if (modellGet.some((p) => new RegExp(`${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/-])`).test(r.text))) {
+          modell.add(`${r.methode} ${r.pfad}`);
+        }
+      }
+    }
+    for (const pflicht of ["GET /api/gpt-analyst/analyze", "GET /api/claude-risk/assess",
+      "GET /api/consensus/decision", "GET /api/market-scanner", "POST /api/ai-config"]) {
+      torPruefung(`Takt-Riegel: ${pflicht} gilt nicht als Modell-Route — die Ableitung ist blind`,
+        modell.has(pflicht), [...modell].join(", "));
+    }
+    for (const frei of ["GET /api/ai-config", "GET /api/market-data/prices", "GET /api/settings"]) {
+      torPruefung(`Takt-Riegel: ${frei} gilt faelschlich als Modell-Route`, !modell.has(frei), [...modell].join(", "));
+    }
+
+    // `action=last` und `action=status` kehren in der Scanner-Route VOR der
+    // Analyse zurueck — nur dann sind sie im Takt erlaubt. An der Quelle
+    // geprueft, sonst waere die Ausnahme eine Behauptung.
+    const scR = tnLesen(read("frontend/app/api/market-scanner/route.ts"));
+    const freieAktionen = [];
+    for (const akt of ["last", "status"]) {
+      const at = scR.code.indexOf(`if (action === "${akt}")`);
+      const blk = at >= 0 ? tnBlock(scR, at + `if (action === "${akt}")`.length) : null;
+      const analyse = scR.maske.indexOf("analyzeMarkets(");
+      const ok = blk !== null && analyse > blk.bis && /return NextResponse\.json\(/.test(blk.code)
+        && !/analyzeMarkets\(/.test(blk.maske);
+      torPruefung(`Takt-Riegel: action=${akt} kehrt nicht vor analyzeMarkets zurueck`, ok,
+        `block=${blk ? `${blk.von}-${blk.bis}` : "fehlt"} analyse@${analyse}`);
+      if (ok) freieAktionen.push(akt);
+    }
+
+    const verstoesse = (t, datei) => {
+      const aus = [];
+      for (const m of t.maske.matchAll(/\bsetInterval\s*\(/g)) {
+        const arg = tnBlock(t, m.index + m[0].length - 1, "(", ")");
+        if (!arg) { aus.push(`${datei}: setInterval nicht lesbar`); continue; }
+        for (const f of tnFetches(tnErreichbar(t, arg))) {
+          if (!modell.has(`${f.methode} ${f.pfad}`)) continue;
+          if (f.pfad === "/api/market-scanner" && f.methode === "GET"
+            && freieAktionen.some((a) => new RegExp(`[?&]action=${a}(?![\\w])`).test(f.url))) continue;
+          aus.push(`${datei}: ${f.methode} ${f.url}`);
+        }
+      }
+      return aus;
+    };
+
+    // Selbstpruefung an synthetischen Komponenten: Treffer UND Nicht-Treffer.
+    const synth = (src) => verstoesse(tnLesen(src), "synth");
+    const s1 = synth('async function load() { await fetch("/api/gpt-analyst/analyze"); }\nuseEffect(() => { const t = setInterval(() => load(), 20000); }, []);');
+    const s2 = synth('const runScan = useCallback(async () => { await fetch(`/api/market-scanner?action=scan&types=${t}`); }, []);\nconst runScanRef = useRef(runScan);\nsetInterval(() => runScanRef.current(), 60000);');
+    const s3 = synth('const lade = useCallback(async () => { await fetch("/api/market-scanner?action=last"); }, []);\nsetInterval(() => lade(), 60000);');
+    const s4 = synth('function a() { b(); }\nfunction b() { return c(); }\nconst c = () => fetch("/api/consensus/decision");\nsetInterval(a, 20000);');
+    const s5 = synth('const g = () => fetch("/api/ai-config");\nconst p = () => fetch("/api/ai-config", { method: "POST", body: x });\nsetInterval(() => { g(); }, 20000);\nsetInterval(() => { p(); }, 20000);');
+    const s6 = synth('// setInterval(() => fetch("/api/gpt-analyst/analyze"), 1000);\nconst x = 1;');
+    const s7 = synth('setInterval(() => fetch("/api/claude-risk/assess"), 20000);');
+    torPruefung("Takt-Riegel Selbstpruefung: Funktion im Takt ruft ein Modell — nicht erkannt", s1.length === 1, JSON.stringify(s1));
+    torPruefung("Takt-Riegel Selbstpruefung: der alte Scanner-Takt (Ref + action=scan) nicht erkannt", s2.length === 1, JSON.stringify(s2));
+    torPruefung("Takt-Riegel Selbstpruefung: action=last faelschlich als Modellaufruf", s3.length === 0, JSON.stringify(s3));
+    torPruefung("Takt-Riegel Selbstpruefung: Umweg ueber drei Funktionen nicht erkannt", s4.length === 1, JSON.stringify(s4));
+    torPruefung("Takt-Riegel Selbstpruefung: GET/POST bei /api/ai-config verwechselt", s5.length === 1 && /POST/.test(s5[0] ?? ""), JSON.stringify(s5));
+    torPruefung("Takt-Riegel Selbstpruefung: ein Kommentar zaehlt als Takt", s6.length === 0, JSON.stringify(s6));
+    torPruefung("Takt-Riegel Selbstpruefung: direkter fetch im Takt nicht erkannt", s7.length === 1, JSON.stringify(s7));
+
+    // Das echte Frontend.
+    const taktDateien = sourceFiles([".ts", ".tsx"]).filter((p) =>
+      (p.startsWith(`${FRONT}app/`) && !p.startsWith(`${FRONT}app/api/`)) || p.startsWith(`${FRONT}components/`));
+    const alle = [];
+    let taktStellen = 0;
+    const gelesen = [];
+    for (const f of taktDateien) {
+      const src = read(f);
+      if (!/setInterval\s*\(/.test(src)) continue;
+      const t = tnLesen(src);
+      torPruefung(`Takt-Riegel: ${f} ist fuer das Werkzeug nicht lesbar (Klammern unausgeglichen)`, tnBilanz(t), f);
+      taktStellen += [...t.maske.matchAll(/\bsetInterval\s*\(/g)].length;
+      gelesen.push(f);
+      alle.push(...verstoesse(t, f));
+    }
+    torPruefung("Takt-Riegel: ein Intervall im Dashboard ruft eine Modell-Route", alle.length === 0, alle.join(" | "));
+    torPruefung("Takt-Riegel: zu wenige Intervalle gefunden — das Werkzeug sieht das Frontend nicht",
+      taktStellen >= 10 && gelesen.includes(`${FRONT}components/MarketScannerPanel.tsx`)
+      && gelesen.includes(`${FRONT}app/page.tsx`), `${taktStellen} Stellen in ${gelesen.length} Dateien`);
+
+    // ── Namentlich: die drei Ansichten ────────────────────────────────────
+    const pg = tnLesen(read(`${FRONT}app/page.tsx`));
+    for (const [komp, lader] of [["ConsensusLiveCenter", "loadConsensusDecisions"],
+      ["ClaudeRiskLiveCenter", "loadClaudeRisks"], ["GPTAnalystLiveCenter", "loadAnalyses"]]) {
+      const m = new RegExp(`\\bfunction\\s+${komp}\\s*\\(`).exec(pg.maske);
+      const kopf = m && tnBlock(pg, m.index + m[0].length - 1, "(", ")");
+      const rumpf = kopf && tnBlock(pg, kopf.bis);
+      if (!rumpf) { torPruefung(`Takt: ${komp} nicht gefunden`, false, ""); continue; }
+      torPruefung(`Takt: ${komp} hat wieder ein setInterval`, !/\bsetInterval\s*\(/.test(rumpf.maske), komp);
+      torPruefung(`Takt: ${komp} laedt beim Oeffnen nicht mehr (genau einmal, im useEffect)`,
+        new RegExp(`useEffect\\(\\(\\)\\s*=>\\s*\\{\\s*${lader}\\(\\);\\s*\\},\\s*\\[\\]\\)`).test(rumpf.maske), komp);
+      torPruefung(`Takt: ${komp} hat keinen Refresh-Knopf mehr`, rumpf.maske.includes(`onClick={${lader}}`), komp);
+      torPruefung(`Takt: ${komp} behauptet weiter "Auto-Refresh alle 20 Sekunden"`,
+        !/Auto-Refresh alle 20/.test(rumpf.code), komp);
+    }
+
+    // ── Konsens: die Quellen werden gelesen und angezeigt ─────────────────
+    {
+      const m = /\bfunction\s+ConsensusLiveCenter\s*\(/.exec(pg.maske);
+      const kopf = m && tnBlock(pg, m.index + m[0].length - 1, "(", ")");
+      const k = kopf && tnBlock(pg, kopf.bis);
+      const kc = k ? k.code : "";
+      torPruefung("Konsens: die Quellen der Antwort werden nicht mehr gelesen",
+        /setConsensusSources\(payload\.sources\s*\?\?\s*null\)/.test(kc), "");
+      torPruefung("Konsens: die Lage wird nicht aus konsensQuellenLage() gerechnet",
+        /konsensQuellenLage\(consensusSources\)/.test(kc), "");
+      torPruefung("Konsens: die Ersatzwert-Zeilen werden nicht angezeigt",
+        /quellenLage\.zeilen\.map\(/.test(kc) && /quellenLage\.echt/.test(kc), "");
+      // Die Route muss das Feld wirklich senden — Name an der Quelle (30.09.).
+      const kr = tnLesen(read(`${FRONT}app/api/consensus/decision/route.ts`)).code;
+      const quellenBlk = /sources:\s*\{([\s\S]*?)\}/.exec(kr)?.[1] ?? "";
+      torPruefung("Konsens-Route sendet sources.gpt/claude/python nicht mehr",
+        /\bgpt:/.test(quellenBlk) && /\bclaude:/.test(quellenBlk) && /\bpython:/.test(quellenBlk), quellenBlk.slice(0, 120));
+      // Die Ersatzwerte, die der Hinweis NENNT, muessen die der Route sein.
+      for (const [was, re] of [["Confidence 70", /gpt\?\.confidence\s*\?\?\s*70\b/],
+        ["Freigabe ja", /claude\s*!=\s*null\s*\?\s*claude\.approved\s*:\s*true\b/],
+        ["Risiko 40", /claude\?\.riskScore\s*\?\?\s*40\b/],
+        ["RANGING", /:\s*"RANGING"/], ["UNAVAILABLE", /"UNAVAILABLE"/], ["LIVE/OFFLINE", /"LIVE"\s*:\s*"OFFLINE"/]]) {
+        torPruefung(`Konsens-Hinweis nennt "${was}", die Route rechnet anders`, re.test(kr), was);
+      }
+      for (const [datei, lit] of [["gpt-analyst/analyze", "GPT_REAL"], ["gpt-analyst/analyze", "GPT_ANALYST_LIVE"],
+        ["claude-risk/assess", "CLAUDE_REAL"], ["claude-risk/assess", "CLAUDE_RISK_LIVE"]]) {
+        torPruefung(`Konsens-Hinweis kennt "${lit}", die Route sendet es nicht mehr`,
+          tnLesen(read(`${FRONT}app/api/${datei}/route.ts`)).code.includes(`"${lit}"`), datei);
+      }
+    }
+
+    // ── konsensQuellenLage() AUSGEFUEHRT ───────────────────────────────────
+    {
+      const KQ = ladeTsModul("lib/konsens-quellen/konsens-quellen.ts");
+      const f = KQ.exports?.konsensQuellenLage;
+      if (KQ.fehler || typeof f !== "function") {
+        torPruefung("konsensQuellenLage nicht ladbar", false, KQ.fehler ?? "fehlt");
+      } else {
+        const echt = f({ gpt: "GPT_REAL", claude: "CLAUDE_REAL", python: "LIVE" });
+        torPruefung("konsensQuellenLage: drei echte Stimmen gelten nicht als echt",
+          echt.echt === true && echt.zeilen.length === 0, JSON.stringify(echt));
+        const heute = f({ gpt: "UNAVAILABLE", claude: "UNAVAILABLE", python: "LIVE" });
+        torPruefung("konsensQuellenLage: die heutige Lage (beide 401) nennt die Ersatzwerte nicht",
+          heute.echt === false && heute.zeilen.length === 2
+          && /nicht erreichbar[\s\S]*Confidence 70/.test(heute.zeilen[0]) && /nicht erreichbar[\s\S]*Risiko 40/.test(heute.zeilen[1]),
+          JSON.stringify(heute));
+        const regel = f({ gpt: "GPT_ANALYST_LIVE", claude: "CLAUDE_RISK_LIVE", python: "LIVE" });
+        torPruefung("konsensQuellenLage: regelbasierte Rueckfaelle ohne Ersatzwert-Hinweis",
+          regel.echt === false && regel.zeilen.length === 2 && /regelbasiert[\s\S]*Confidence 70/.test(regel.zeilen[0])
+          && /regelbasiert[\s\S]*Risiko 40/.test(regel.zeilen[1]), JSON.stringify(regel));
+        const py = f({ gpt: "GPT_REAL", claude: "CLAUDE_REAL", python: "OFFLINE" });
+        torPruefung("konsensQuellenLage: Python offline nicht gemeldet",
+          py.echt === false && py.zeilen.length === 1 && /RANGING/.test(py.zeilen[0]), JSON.stringify(py));
+        for (const roh of [null, undefined, "x", 5]) {
+          const r = f(roh);
+          torPruefung(`konsensQuellenLage(${String(roh)}): fehlende Angabe gilt als in Ordnung`,
+            r.echt === false && r.zeilen.length === 1 && /unbekannt/.test(r.zeilen[0]), JSON.stringify(r));
+        }
+        const leer = f({});
+        torPruefung("konsensQuellenLage({}): fehlende Felder gelten als echt", leer.echt === false && leer.zeilen.length === 3,
+          JSON.stringify(leer));
+        const klein = f({ gpt: "gpt_real", claude: "CLAUDE_REAL", python: "LIVE" });
+        torPruefung("konsensQuellenLage: ein fast richtiger Wert gilt als echt", klein.echt === false, JSON.stringify(klein));
+      }
+    }
+
+    // ── Scanner: Auto liest den Server-Stand, der Knopf scannt echt ───────
+    {
+      const sp = tnLesen(read(`${FRONT}components/MarketScannerPanel.tsx`));
+      const lade = tnDefinition(sp, "ladeLetztenScan");
+      const scan = tnDefinition(sp, "runScan");
+      torPruefung("Scanner: ladeLetztenScan holt nicht action=last",
+        !!lade && tnFetches(lade.code).some((x) => /[?&]action=last\b/.test(x.url)) && tnFetches(lade.code).length === 1,
+        lade ? JSON.stringify(tnFetches(lade.code)) : "fehlt");
+      torPruefung("Scanner: der Knopf macht keine echte Analyse mehr (action=scan fehlt)",
+        !!scan && tnFetches(scan.code).some((x) => /[?&]action=scan\b/.test(x.url)) && sp.maske.includes("onClick={runScan}"),
+        scan ? JSON.stringify(tnFetches(scan.code)) : "fehlt");
+      const autoEff = /if \(!autoScan\) return;[\s\S]{0,300}?\}, \[autoScan, ladeLetztenScan\]\);/.exec(sp.maske)?.[0] ?? "";
+      torPruefung("Scanner: der Auto-Modus ruft nicht ladeLetztenScan im Takt",
+        /setInterval\(\(\) => ladeLetztenScan\(\), 60000\)/.test(autoEff) && !/runScan/.test(autoEff), autoEff.slice(0, 160));
+      torPruefung("Scanner: eine fehlende Zeit wird wieder 'Invalid Date'",
+        /\{scanZeit\(result\.scannedAt\)\}/.test(sp.code) && !/new Date\(result\.scannedAt\)/.test(sp.code), "");
+      torPruefung("Scanner: unbekannte Marktzahl wird wieder leer statt '—'",
+        /result\.totalMarkets \?\? "—"/.test(sp.code), "");
+    }
+
+    // ── action=last AUSGEFUEHRT, mit gezaehlter Analyse ────────────────────
+    {
+      let analysen = 0;
+      const altLast = global.__last_scan_result__;
+      const altEnv = { a: process.env.PYTHON_BACKEND_NEW_URL, b: process.env.PYTHON_BACKEND_URL };
+      delete process.env.PYTHON_BACKEND_NEW_URL; delete process.env.PYTHON_BACKEND_URL;
+      try {
+        const R = ladeTsModul("app/api/market-scanner/route.ts", {
+          "next/server": { NextResponse: { json: (x, init) => ({ __json: x, status: init?.status ?? 200 }) } },
+          "capital-com/capital-com-session": { getCapitalSession: () => null, isCapitalConnected: () => true },
+          "capital-com/capital-com-client": { capitalGetTopMarkets: async () => ({ markets: [] }), capitalSearchMarkets: async () => ({ markets: [] }) },
+          "market-scanner/ai-analysis-engine": { analyzeMarkets: async () => { analysen++; return []; } },
+          "ai-config/ai-config-store": { getAISettings: async () => ({ openai: { connected: true, model: "m" }, anthropic: { connected: false, model: "c" } }) },
+          "cache/redis-cache": { cacheGetOrFetch: async (_k, fn) => fn() },
+          "python-backend/auth-header": { pythonBackendAuthHeader: () => ({}) },
+        });
+        if (R.fehler || typeof R.exports?.GET !== "function") {
+          torPruefung("Scanner-Route nicht ausfuehrbar", false, R.fehler ?? "GET fehlt");
+        } else {
+          const GET = (q) => R.exports.GET({ url: `http://pruefstand/api/market-scanner?${q}` });
+          delete global.__last_scan_result__;
+          const ohne = await GET("action=last");
+          torPruefung("action=last ohne Stand: kein ehrliches 'noch kein Scan'",
+            ohne.__json?.ok === false && analysen === 0, JSON.stringify(ohne.__json));
+          global.__last_scan_result__ = {
+            opportunities: [{ symbol: "A", goSignal: true }, { symbol: "B", goSignal: false }, { symbol: "C", goSignal: "true" }, null],
+            updatedAt: "2026-11-21T10:00:00.000Z",
+          };
+          const d = (await GET("action=last")).__json ?? {};
+          torPruefung("action=last: die Felder eines echten Scans fehlen oder sind erfunden",
+            d.ok === true && d.fromCache === true && d.goCount === 1 && Array.isArray(d.goSignals) && d.goSignals.length === 1
+            && d.goSignals[0]?.symbol === "A" && d.scannedAt === "2026-11-21T10:00:00.000Z" && d.totalMarkets === null
+            && d.capitalConnected === true && d.gptConnected === true && d.claudeConnected === false
+            && d.opportunities?.length === 4, JSON.stringify(d).slice(0, 300));
+          await GET("action=status");
+          torPruefung("action=last/status hat eine ANALYSE gestartet (Modellaufruf)", analysen === 0, `${analysen} Analysen`);
+          await GET("action=scan");
+          torPruefung("Gegenprobe: action=scan startet keine Analyse mehr — der Knopf waere tot", analysen === 1, `${analysen} Analysen`);
+        }
+      } finally {
+        if (altLast === undefined) delete global.__last_scan_result__; else global.__last_scan_result__ = altLast;
+        if (altEnv.a === undefined) delete process.env.PYTHON_BACKEND_NEW_URL; else process.env.PYTHON_BACKEND_NEW_URL = altEnv.a;
+        if (altEnv.b === undefined) delete process.env.PYTHON_BACKEND_URL; else process.env.PYTHON_BACKEND_URL = altEnv.b;
+      }
+    }
+  }
+
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,

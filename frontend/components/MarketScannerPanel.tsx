@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 interface GPTAnalysis {
   direction: "BUY" | "SELL" | "WAIT";
@@ -41,11 +41,15 @@ interface ScanResult {
   capitalConnected: boolean;
   gptConnected: boolean;
   claudeConnected: boolean;
-  totalMarkets: number;
+  // `null` beim gespeicherten Server-Stand (`action=last`): die Zahl der
+  // Maerkte wird dort nicht mitgespeichert — unbekannt, nicht 0.
+  totalMarkets: number | null;
   opportunities: Opportunity[];
   goSignals: Opportunity[];
   goCount: number;
   scannedAt: string;
+  // true = gespeicherter Stand des Servers, false/fehlt = eigener Scan
+  fromCache?: boolean;
 }
 
 interface ExecLog {
@@ -60,6 +64,14 @@ interface ExecLog {
 
 const TYPE_FILTERS = ["ALL", "CURRENCIES", "INDICES", "COMMODITIES", "CRYPTOCURRENCIES"];
 const DIR_COLORS: Record<string, string> = { BUY: "#10c96d", SELL: "#f87171", WAIT: "#64748b" };
+
+// Eine fehlende oder unlesbare Zeit wird "—", nicht "Invalid Date" (21.11.;
+// dieselbe Regel wie `zeit()` in LiveExecutionMonitor, 28.10.).
+function scanZeit(v: unknown): string {
+  if (typeof v !== "string" || v.trim() === "") return "—";
+  const d = new Date(v);
+  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString() : "—";
+}
 
 function formatPrice(v: number): string {
   if (v === 0) return "—";
@@ -102,12 +114,18 @@ export default function MarketScannerPanel() {
     }).catch(() => {});
   }, []);
 
+  // Letzten Stand des SERVERS holen — kostet nichts: `action=last` liest nur
+  // `global.__last_scan_result__`, es ruft kein Modell (route.ts kehrt vor
+  // `analyzeMarkets` zurueck). Benutzt beim Oeffnen und vom Auto-Modus.
+  const ladeLetztenScan = useCallback(async () => {
+    const d = await fetch("/api/market-scanner?action=last").then(r => r.json()).catch(() => null);
+    if (d?.ok && d.opportunities?.length) setResult(d as ScanResult);
+  }, []);
+
   // Load last server-side auto-scan results on mount (so UI isn't empty)
   useEffect(() => {
-    fetch("/api/market-scanner?action=last").then(r => r.json()).then(d => {
-      if (d.ok && d.opportunities?.length) setResult(d as ScanResult);
-    }).catch(() => {});
-  }, []);
+    ladeLetztenScan();
+  }, [ladeLetztenScan]);
 
   const setAutoScan = (val: boolean) => {
     setAutoScanRaw(val);
@@ -140,16 +158,26 @@ export default function MarketScannerPanel() {
     }
   }, [typeFilter, searchQ]);
 
-  // Auto-scan every 60 seconds — sofortiger erster Scan beim Einschalten
-  const runScanRef = useRef(runScan);
-  useEffect(() => { runScanRef.current = runScan; }, [runScan]);
-
+  // AUTO-MODUS LIEST NUR NOCH DEN STAND DES SERVERS (21.11.).
+  //
+  // Hier lief bis heute jede Minute `runScan()`, also
+  // `/api/market-scanner?action=scan` — und die Route startet dabei bei JEDEM
+  // Aufruf die volle `analyzeMarkets()`: ein GPT-Aufruf fuer alle Maerkte plus
+  // je ein Claude-Aufruf fuer jeden Markt ueber der Confidence-Untergrenze.
+  // Ohne Handelszeit-Pruefung, also auch nachts und am Wochenende. Der Server
+  // selbst analysiert nur alle 5 Minuten und nur in der Handelszeit; ein
+  // offener Tab mit Auto-Scan rechnete fuenfmal so oft, rund um die Uhr. Und
+  // der Schalter bleibt im Browser gespeichert (`scanner_autoScan`).
+  //
+  // Jetzt holt der Auto-Modus jede Minute nur den letzten Stand des Servers —
+  // derselbe, den der Orchestrator alle 5 Minuten schreibt. Der Knopf
+  // "Scan Alle Maerkte" macht weiterhin eine echte Analyse.
   useEffect(() => {
     if (!autoScan) return;
-    runScanRef.current(); // Sofort scannen
-    const t = setInterval(() => runScanRef.current(), 60000);
+    ladeLetztenScan(); // Sofort den Server-Stand holen
+    const t = setInterval(() => ladeLetztenScan(), 60000);
     return () => clearInterval(t);
-  }, [autoScan]);
+  }, [autoScan, ladeLetztenScan]);
 
   const executeGO = async (opp: Opportunity) => {
     if (executing) return;
@@ -235,7 +263,10 @@ export default function MarketScannerPanel() {
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "10px", color: "#64748b" }}>Auto 60s:</span>
+            <span style={{ fontSize: "10px", color: "#64748b" }}
+              title="Holt jede Minute den letzten Stand des Servers — ruft kein Modell. Eine neue Analyse startet nur der Knopf „Scan Alle Märkte“.">
+              Auto 60s (Server-Stand):
+            </span>
             <button onClick={() => setAutoScan(!autoScan)}
               style={{ width: "36px", height: "20px", borderRadius: "10px", border: "none", cursor: "pointer", background: autoScan ? "#10c96d" : "rgba(255,255,255,0.1)", position: "relative" }}>
               <div style={{ width: "14px", height: "14px", borderRadius: "50%", background: "#fff", position: "absolute", top: "3px", left: autoScan ? "19px" : "3px", transition: "left 0.15s" }} />
@@ -295,7 +326,7 @@ export default function MarketScannerPanel() {
       {result && (
         <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
           {[
-            { label: "Märkte", value: result.totalMarkets, color: "#94a3b8" },
+            { label: "Märkte", value: result.totalMarkets ?? "—", color: "#94a3b8" },
             { label: "Analysiert", value: result.opportunities.length, color: "#a5b4fc" },
             { label: "GO Signale", value: result.goCount, color: "#10c96d" },
             { label: "BUY", value: result.opportunities.filter((o) => o.gpt.direction === "BUY").length, color: "#10c96d" },
@@ -307,7 +338,10 @@ export default function MarketScannerPanel() {
             </div>
           ))}
           <div style={{ padding: "8px 16px", borderRadius: "8px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-            <span style={{ fontSize: "10px", color: "#475569" }}>Letzter Scan: {new Date(result.scannedAt).toLocaleTimeString()}</span>
+            <span style={{ fontSize: "10px", color: "#475569" }}>
+              Letzter Scan: {scanZeit(result.scannedAt)}
+              {result.fromCache ? " (Server-Stand)" : " (dieser Knopf)"}
+            </span>
           </div>
         </div>
       )}

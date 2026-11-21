@@ -19,10 +19,38 @@ export async function GET(request: Request) {
     const session = getCapitalSession();
 
     // Return last server-side auto-scan results (no re-scan needed)
+    //
+    // DIESELBE FORM WIE EIN ECHTER SCAN (21.11.). Hier kamen nur
+    // `opportunities` und `updatedAt` zurueck. Die Scanner-Ansicht liest aber
+    // `capitalConnected`, `gptConnected`, `claudeConnected`, `goCount`,
+    // `totalMarkets` und `scannedAt` — und zeigte damit "Offline",
+    // "GPT SIM / CLAUDE SIM", eine leere GO-Zahl und "Invalid Date", egal wie
+    // die Lage war. Seit der Auto-Modus der Ansicht NUR noch diesen Stand
+    // liest (statt jede Minute eine eigene Analyse mit echten Modellen zu
+    // starten), waere das der Normalfall gewesen.
+    //
+    // Abgeleitet wird nur, was sich ehrlich ableiten laesst: die Verbindungen
+    // wie beim Scan aus dem JETZIGEN Stand, `goSignals` aus den `goSignal`-
+    // Flaggen der gespeicherten Analysen. `totalMarkets` ist NICHT gespeichert
+    // und heisst deshalb `null` (unbekannt), nicht 0.
     if (action === "last") {
       const last = global.__last_scan_result__;
       if (!last) return NextResponse.json({ ok: false, reason: "Noch kein Auto-Scan gelaufen" });
-      return NextResponse.json({ ok: true, ...last, fromCache: true });
+      const goSignals = (Array.isArray(last.opportunities) ? last.opportunities : []).filter(
+        (o) => typeof o === "object" && o !== null && (o as { goSignal?: unknown }).goSignal === true
+      );
+      return NextResponse.json({
+        ok: true,
+        ...last,
+        fromCache: true,
+        capitalConnected,
+        gptConnected: ai.openai.connected,
+        claudeConnected: ai.anthropic.connected,
+        totalMarkets: null,
+        goSignals,
+        goCount: goSignals.length,
+        scannedAt: last.updatedAt,
+      });
     }
 
     if (action === "status") {
