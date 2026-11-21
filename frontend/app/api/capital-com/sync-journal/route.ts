@@ -104,18 +104,37 @@ export async function POST(request: Request) {
   const posRes = await fetch(`${DEMO_BASE}/positions`, { headers: h });
   const openDealIds = new Set<string>();
 
+  // ── OHNE POSITIONSLISTE KEIN ABGLEICH (21.11.) ─────────────────────────
+  //
+  // Hier stand `if (posRes.ok) { … }` OHNE else-Zweig. Scheiterte die
+  // Abfrage, blieb `openDealIds` LEER — und Schritt 2 hielt damit JEDE offene
+  // Zeile fuer "beim Broker weg", auch die laufender Positionen: jede bekam
+  // `brokerPositionWeg`, und die Antwort meldete "N markiert". Eine fehlende
+  // Liste ist nicht dieselbe Aussage wie eine leere — "ein Ausfall darf sich
+  // nicht als Ergebnis ausgeben".
+  //
+  // Dasselbe gilt fuer eine Antwort OHNE `positions`-Feld: `?? []` machte
+  // daraus ebenfalls eine leere Liste.
+  let positionenFehler: string | null = null;
   if (posRes.ok) {
-    const posData = await posRes.json() as { positions?: Record<string, unknown>[] };
-    for (const p of posData.positions ?? []) {
-      const pos = (p.position ?? p) as Record<string, unknown>;
-      const dealId = String(pos.dealId ?? "");
-      if (dealId) openDealIds.add(dealId);
+    const posData = await posRes.json().catch(() => null) as { positions?: unknown } | null;
+    if (posData && Array.isArray(posData.positions)) {
+      for (const p of posData.positions as Record<string, unknown>[]) {
+        const pos = (p?.position ?? p) as Record<string, unknown>;
+        const dealId = String(pos?.dealId ?? "");
+        if (dealId) openDealIds.add(dealId);
+      }
+    } else {
+      positionenFehler = "Antwort ohne Positionsliste";
     }
+  } else {
+    positionenFehler = `HTTP ${posRes.status}`;
   }
 
   // ── Step 2: Mark OPEN DB trades as CLOSED if no longer in Capital.com ──────
+  // Nur mit einer GELESENEN Positionsliste — siehe oben.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const openDbTrades = await (db.$queryRawUnsafe as any)(
+  const openDbTrades = positionenFehler !== null ? [] : await (db.$queryRawUnsafe as any)(
     `SELECT id, market, direction, notes FROM "Trade" WHERE "status" = 'OPEN' AND notes LIKE '%dealId%'`
   ) as Array<{ id: number; market: string; direction: string; notes: string }>;
 
@@ -157,6 +176,10 @@ export async function POST(request: Request) {
   const txRes = await fetch(`${DEMO_BASE}/history/transactions?lastPeriod=604800&pageSize=500`, { headers: h });
   let txCount = 0;
   let txTradeCount = 0;
+  // Ohne Transaktionen wird kein P&L abgeglichen — das gehoert in die
+  // Meldung. Vorher stand dann "0 mit echtem P&L geschlossen", nicht zu
+  // unterscheiden von "es gab nichts abzugleichen" (21.11.).
+  const transaktionenFehler: string | null = txRes.ok ? null : `HTTP ${txRes.status}`;
 
   if (txRes.ok) {
     const txData = await txRes.json() as { transactions?: Record<string, unknown>[] };
@@ -341,8 +364,31 @@ export async function POST(request: Request) {
     }
   }
 
+  const meldung = `${markiert} markiert, ${aktualisiert} mit echtem P&L geschlossen, `
+    + `${neuAngelegt} neu angelegt, ${uebersprungen} ohne P&L übersprungen`
+    // Nur wenn > 0 — wie `Stil` und `ohne Stop/Ziel` in der Zyklus-Zeile.
+    + `${ohneBrokerZeit > 0 ? `, ${ohneBrokerZeit} OHNE Broker-Zeit (createdAt = jetzt)` : ""}`
+    // Nur wenn > 0, wie die Zeile darueber. `message` hat ZWEI gemessene
+    // Empfaenger: `app/page.tsx` (setSyncMsg) und
+    // `app/trading-journal/page.tsx` (alert) — kein stummes Feld (28.10.).
+    + `${ohneKontostand > 0 ? `, ${ohneKontostand} OHNE Kontostand (accountSize = 0 = nicht erfasst)` : ""}`
+    + `${positionenFehler !== null ? ` — Positionsabfrage fehlgeschlagen (${positionenFehler}): `
+      + "NICHTS markiert, sonst gaelte jede laufende Position als weg" : ""}`
+    + `${transaktionenFehler !== null ? ` — Transaktionsabfrage fehlgeschlagen (${transaktionenFehler}): `
+      + "KEIN P&L abgeglichen" : ""}`;
+
+  // EIN AUSFALL IST KEIN ERFOLG (21.11.). Beide Aufrufer zeigen bei `ok: true`
+  // "✅ …" bzw. "Sync abgeschlossen: …" — und bei `ok: false` den Text aus
+  // `error`. Scheitert eine der beiden Abfragen, geht die volle Meldung samt
+  // Zaehlern dorthin, statt hinter einem Haken zu stehen.
+  const ausfall = positionenFehler !== null || transaktionenFehler !== null;
+  if (ausfall) {
+    console.warn(`[sync-journal] ⚠️ ${meldung}`);
+  }
+
   return NextResponse.json({
-    ok: true,
+    ok: !ausfall,
+    ...(ausfall ? { error: meldung } : {}),
     // `imported` bleibt als Summe erhalten, damit ältere Aufrufer nicht
     // brechen — die Aufschlüsselung daneben sagt, WAS geschehen ist.
     imported: markiert + aktualisiert + neuAngelegt,
@@ -355,13 +401,6 @@ export async function POST(request: Request) {
     txStatus: txRes.status,
     txTotal: txCount,
     txTrades: txTradeCount,
-    message: `${markiert} markiert, ${aktualisiert} mit echtem P&L geschlossen, `
-      + `${neuAngelegt} neu angelegt, ${uebersprungen} ohne P&L übersprungen`
-      // Nur wenn > 0 — wie `Stil` und `ohne Stop/Ziel` in der Zyklus-Zeile.
-      + `${ohneBrokerZeit > 0 ? `, ${ohneBrokerZeit} OHNE Broker-Zeit (createdAt = jetzt)` : ""}`
-      // Nur wenn > 0, wie die Zeile darueber. `message` hat ZWEI gemessene
-      // Empfaenger: `app/page.tsx` (setSyncMsg) und
-      // `app/trading-journal/page.tsx` (alert) — kein stummes Feld (28.10.).
-      + `${ohneKontostand > 0 ? `, ${ohneKontostand} OHNE Kontostand (accountSize = 0 = nicht erfasst)` : ""}`
+    message: meldung,
   });
 }

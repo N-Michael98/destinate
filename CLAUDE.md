@@ -6615,7 +6615,9 @@ unberührt. **Snapshot 299 unverändert.**
 
 **Grenze, benannt:** andere Module — vor allem der Journal-Abgleich im
 Tracker — schreiben dieselben Notizen weiter unabhängig (lesen, ändern,
-schreiben). Gegen diese Schreiber schützt die Warteschlange nicht.
+schreiben). Gegen diese Schreiber schützt die Warteschlange nicht. **Gemessen am 21.11.: in
+der Schleife nicht erreichbar** — siehe „Kann ein anderer Schreiber den
+Teilgewinn-Merker überschreiben?“.
 
 `safety-nets` 1903 → **1911** (die echte `runRiskAgent` über zwei Zyklen,
 Broker/KI/Datenbank nachgebaut, die Datenbank liest absichtlich langsam).
@@ -6879,6 +6881,66 @@ unverändert**, Karte +1 Kante (`page.tsx` → `konsens-quellen`).
 gibt es nur in den Server-Schleifen, in den Verbindungstest-Knöpfen (nur auf
 Klick, `POST /api/ai-config`) und im Python-Dienst `analysis-engine`
 (`ai_learning.py`, täglich 03:30 UTC per Zeitplan).
+
+## Kann ein anderer Schreiber den Teilgewinn-Merker überschreiben? Gemessen (21.11.)
+
+Beim Fix vom 20.11. blieb benannt: andere Module schreiben die Notizen einer
+offenen Position unabhängig (lesen, ändern, schreiben). Geht dabei
+`partialDone` verloren, folgt ein zweiter Teilgewinn. **Nachgelesen, nicht
+vermutet — in der Schleife ist das nicht erreichbar:**
+
+- Tracker und RiskAgent laufen in der 2-Minuten-Schleife **nacheinander**
+  (`instrumentation.ts:373` → `:381`, beide `await`; eine Sperre verhindert
+  überlappende Zyklen, `:345`).
+- Und sie treffen **verschiedene Zeilen**: der RiskAgent findet eine Zeile nur
+  über `"dealId":"<laufende ID>"` (`risk-agent.ts:191`, `:253`). Die
+  Tracker-Schreiber an offenen Zeilen fassen nur Zeilen **ohne** passende ID an
+  (`zeileBrauchtZuordnung`, `if (m.dealId) continue`) oder solche, deren
+  Position beim Broker **weg** ist (P&L-Abstimmung, `:1715`).
+
+### Der Sync-Knopf markierte bei einem Ausfall jede laufende Position (21.11.)
+
+Gefunden bei genau dieser Messung — beim einzigen Schreiber, der **jederzeit**
+laufen kann: `/api/capital-com/sync-journal` (Knopf im Dashboard und im
+Journal). Er las die offenen Positionen mit `if (posRes.ok) { … }` **ohne
+else**. Scheiterte die Abfrage, blieb die Liste leer, und Schritt 2 hielt
+**jede** offene Zeile für „beim Broker weg“ — auch die laufender Positionen,
+per Lesen–Ändern–Schreiben ihrer Notizen. Die Antwort meldete „N markiert“ mit
+Haken. Eine Antwort **ohne** `positions`-Feld ergab über `?? []` dasselbe.
+Ebenso stumm: eine gescheiterte Transaktionsabfrage hiess „0 mit echtem P&L
+geschlossen“ — nicht zu unterscheiden von „nichts zu tun“.
+
+**Ehrlich eingeordnet:** `brokerPositionWeg` hat **keinen einzigen Leser**
+(nachgezählt), der falsche Vermerk selbst war folgenlos. Ein verlorener Merker
+hätte zusätzlich verlangt, dass der RiskAgent genau in den Millisekunden
+zwischen Lesen und Schreiben derselben Zeile schreibt. Falsch war die
+**Meldung** — und ein Schreibvorgang an Zeilen, die nicht angefasst werden
+durften.
+
+**Jetzt:** ohne gelesene Positionsliste wird **nichts** markiert, beide
+Ausfälle stehen mit HTTP-Status in der Meldung, die Antwort ist `ok: false`
+mit dem Grund in `error` (beide Aufrufer zeigen ihn dort an — an der Quelle
+geprüft), und der Ausfall steht im Log. Eine **wirklich** verschwundene
+Position wird weiter markiert, ihr `partialDone` bleibt erhalten
+(Gegenprobe).
+
+`safety-nets` 2012 → **2022**: die echte `POST` mit einer offenen Zeile einer
+laufenden Position, gezählten Schreibvorgängen und gezählten Warnungen —
+HTTP 500, Antwort ohne Feld, unlesbare Antwort, Transaktionen 503, eine
+laufende Position in der Liste, und die Gegenprobe. **9 von 9 Sabotagen**, darunter
+der Fund exakt wiederhergestellt und ein zu strenger Riegel, der nie mehr
+markiert.
+
+**Was es NICHT tut:** keine Hochrisiko-Datei, keine Order, kein P&L-Pfad
+geändert (Schritt 3 rechnet wie bisher), kein Schritt-2-Verhalten bei
+gelesener Liste.
+
+**Benannt, nicht geändert:** Schritt 3 schliesst eine Zeile, deren dealId
+**exakt** der dealId einer Transaktion entspricht — **ohne** Statusfilter.
+Jede Schliessung ist eine eigene Transaktion mit eigener dealId (26.07.); eine
+laufende Position kann so nur getroffen werden, wenn Capital.com für eine
+Teilschliessung die ID der Position wiederverwendet. Belegt ist das nicht,
+widerlegt auch nicht — die Daten liegen nur auf dem Server.
 
 ## Das Handelsfenster ist in UTC festgenagelt (01.11.) — ÜBERHOLT
 

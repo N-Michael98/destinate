@@ -16478,6 +16478,113 @@ module.exports = async function pruefe() {
   }
 
 
+  // ── SYNC-KNOPF: OHNE POSITIONSLISTE KEIN ABGLEICH (21.11.) ─────────────
+  //
+  // `/api/capital-com/sync-journal` (Knopf im Dashboard und im Journal) las
+  // die offenen Positionen mit `if (posRes.ok) { … }` OHNE else-Zweig.
+  // Scheiterte die Abfrage, blieb die Liste LEER, und Schritt 2 hielt JEDE
+  // offene Zeile fuer "beim Broker weg" — auch die laufender Positionen,
+  // per Lesen-Aendern-Schreiben ihrer Notizen. Die Antwort meldete
+  // "N markiert" mit Haken. Ebenso eine gescheiterte Transaktionsabfrage:
+  // "0 mit echtem P&L geschlossen", nicht von "nichts zu tun" zu trennen.
+  //
+  // AUSGEFUEHRT: die echte POST, eine offene Zeile einer LAUFENDEN Position
+  // (mit `partialDone` — genau der Merker, den ein Ueberschreiben kosten
+  // koennte), gezaehlte Schreibvorgaenge und gezaehlte Warnungen.
+  {
+    const geschrieben = [];
+    let offeneZeilen = [];
+    const sj2 = ladeTsModul("app/api/capital-com/sync-journal/route.ts", {
+      "next/server": { NextResponse: { json: (body, init) => ({ __body: body, status: init?.status ?? 200 }) } },
+      "capital-com/capital-com-session": {
+        isCapitalConnected: () => true,
+        getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s", balance: 2000 }),
+      },
+      "lib/prisma": {
+        getPrisma: () => ({
+          $queryRawUnsafe: async (sql) =>
+            /"status" = 'OPEN' AND notes LIKE '%dealId%'/.test(String(sql)) ? offeneZeilen : [],
+          $executeRawUnsafe: async (sql, ...args) => { geschrieben.push({ sql: String(sql), args }); return 1; },
+        }),
+      },
+      "capital-com/capital-com-client": { brokerZeitNachUtc: (x) => (x ?? "") },
+      "capital-com/capital-trade-tracker": { notizenNachSync: () => "{}" },
+    });
+    if (sj2.fehler || typeof sj2.exports?.POST !== "function") {
+      torPruefung("sync-journal (Ausfall-Pruefstand) nicht ausfuehrbar", false, sj2.fehler ?? "POST fehlt");
+    } else {
+      const ZEILE = { id: 7, market: "EURUSD", direction: "BUY",
+        notes: JSON.stringify({ dealId: "LIVE1", partialDone: true, partialSize: 5 }) };
+      const antwort = (ok, status, leib, wirft = false) => ({
+        ok, status,
+        json: async () => { if (wirft) throw new Error("kein JSON"); return leib; },
+        text: async () => JSON.stringify(leib ?? null),
+      });
+      const fahre = async (pos, tx) => {
+        geschrieben.length = 0;
+        offeneZeilen = [ZEILE];
+        const warnungen = [];
+        const altFetch = global.fetch, altWarn = console.warn;
+        global.fetch = async (url) => (String(url).includes("/history/transactions") ? tx : pos);
+        console.warn = (...a) => { warnungen.push(a.map(String).join(" ")); };
+        try {
+          const r = await sj2.exports.POST({ json: async () => ({}) });
+          return { b: r?.__body ?? {}, zeilen: geschrieben.slice(), warnungen };
+        } catch (e) {
+          return { b: { absturz: String(e) }, zeilen: geschrieben.slice(), warnungen };
+        } finally { global.fetch = altFetch; console.warn = altWarn; }
+      };
+      const txLeer = antwort(true, 200, { transactions: [] });
+      const markiertZeilen = (z) => z.filter((x) => /brokerPositionWeg/.test(String(x.args[0] ?? "")));
+
+      const a = await fahre(antwort(false, 500, { errorCode: "x" }), txLeer);
+      torPruefung("Sync: gescheiterte Positionsabfrage markiert LAUFENDE Positionen als weg",
+        a.zeilen.length === 0 && a.b.markiert === 0, JSON.stringify(a.zeilen).slice(0, 160));
+      torPruefung("Sync: gescheiterte Positionsabfrage gilt als Erfolg (ok/Haken)",
+        a.b.ok === false && typeof a.b.error === "string" && /Positionsabfrage fehlgeschlagen \(HTTP 500\)/.test(a.b.error)
+        && /NICHTS markiert/.test(a.b.error) && a.b.error === a.b.message, JSON.stringify(a.b).slice(0, 240));
+      torPruefung("Sync: der Ausfall erscheint nicht im Log", a.warnungen.filter((w) => /\[sync-journal\]/.test(w)).length === 1,
+        JSON.stringify(a.warnungen).slice(0, 200));
+
+      const b = await fahre(antwort(true, 200, {}), txLeer);
+      torPruefung("Sync: Antwort OHNE positions-Feld gilt als leere Liste",
+        b.zeilen.length === 0 && b.b.ok === false && /Antwort ohne Positionsliste/.test(b.b.error ?? ""), JSON.stringify(b.b).slice(0, 200));
+      const b2 = await fahre(antwort(true, 200, null, true), txLeer);
+      torPruefung("Sync: unlesbare Positionsantwort gilt als leere Liste (oder stuerzt ab)",
+        b2.zeilen.length === 0 && b2.b.ok === false && /Antwort ohne Positionsliste/.test(b2.b.error ?? ""), JSON.stringify(b2.b).slice(0, 200));
+
+      // GEGENPROBE: eine WIRKLICH verschwundene Position wird weiter markiert —
+      // und ihr Merker bleibt dabei erhalten.
+      const c = await fahre(antwort(true, 200, { positions: [] }), txLeer);
+      const mc = markiertZeilen(c.zeilen);
+      let mcNotiz = {};
+      try { mcNotiz = JSON.parse(String(mc[0]?.args[0] ?? "{}")); } catch { mcNotiz = {}; }
+      torPruefung("Sync Gegenprobe: eine verschwundene Position wird nicht mehr markiert — der Riegel ist zu streng",
+        mc.length === 1 && c.b.markiert === 1 && c.b.ok === true && c.b.error === undefined
+        && mcNotiz.partialDone === true && mcNotiz.partialSize === 5, JSON.stringify(c.b).slice(0, 200));
+      torPruefung("Sync Gegenprobe: ein gesunder Lauf schreibt eine Warnung",
+        c.warnungen.filter((w) => /\[sync-journal\]/.test(w)).length === 0, JSON.stringify(c.warnungen).slice(0, 160));
+
+      // Eine LAUFENDE Position (in der Liste) wird nicht angefasst.
+      const d = await fahre(antwort(true, 200, { positions: [{ position: { dealId: "LIVE1" } }] }), txLeer);
+      torPruefung("Sync: eine laufende Position wird angefasst",
+        d.zeilen.length === 0 && d.b.markiert === 0 && d.b.ok === true, JSON.stringify(d.b).slice(0, 160));
+
+      const e = await fahre(antwort(true, 200, { positions: [{ position: { dealId: "LIVE1" } }] }), antwort(false, 503, {}));
+      torPruefung("Sync: gescheiterte Transaktionsabfrage gilt als Erfolg ('0 mit echtem P&L')",
+        e.b.ok === false && /Transaktionsabfrage fehlgeschlagen \(HTTP 503\)/.test(e.b.error ?? "")
+        && /KEIN P&L abgeglichen/.test(e.b.error ?? ""), JSON.stringify(e.b).slice(0, 200));
+
+      // Die Empfaenger lesen `error` bei ok:false — an der Quelle (Name aus dem Gedaechtnis, 30.09.).
+      const pTop = read("frontend/app/page.tsx");
+      const pTj = read("frontend/app/trading-journal/page.tsx");
+      const liestFehler = /sync-journal"[\s\S]{0,300}?if \(data\.ok\) \{[\s\S]{0,500}?\} else \{\s*(?:setSyncMsg|alert)\(`[^`]*\$\{data\.error\}/;
+      torPruefung("Sync: ein Aufrufer liest bei ok:false nicht `data.error` im else-Zweig — der Grund verschwaende",
+        liestFehler.test(pTop) && liestFehler.test(pTj), "page.tsx / trading-journal");
+    }
+  }
+
+
   return {
     titel: `Sicherheitsnetze (${pruefungen.length + 23 + zusatz} Prüfungen)`,
     funde,
