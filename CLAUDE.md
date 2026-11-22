@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()` | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -7024,6 +7024,48 @@ Länge im Härtefall (sechs künstliche Gruppen, jede mit der längsten
 V3-Zeile): **3872 von 3900**; mit den echten vier Gruppen 2945.
 `safety-nets` 2110 → **2118**, **16 von 16 Sabotagen**, Regression `/exitsim` **43/43**. Was es NICHT tut: keine Order, kein Stop,
 keine Schwelle, kein Prompt, keine Hochrisiko-Datei.
+
+## SWING pausieren können — Teil 1: die Oberfläche (23.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan vorweg. Anlass: SWING
+verliert in jeder gemessenen Variante — in Geld (`/hebel 60`) **−2.91 je
+Trade** über 47 Trades, rund 65 % des Verlusts der letzten 60 Tage (DAYTRADING
+−0.70 über 63); simuliert heute −0.50 R, mit der Regel-Geometrie −0.21 R. Ob
+der Unterschied zwischen den Stilen mehr als Zufall ist, sagt `/hebel` nicht —
+es nennt keine Streuung.
+
+**Der Automat konnte es schon** (nachgelesen, nicht vermutet): `stilGrenze()`
+lässt eine ausdrückliche `0` als „kein Trade dieses Stils" durch (seit
+17.09., gerechnet in `signal-untergrenze`), die Route speichert sie ohne Klemme
+(`updateBotSettings`: `{ ...s.botSettings, ...patch }`), das Stil-Tor gilt
+unabhängig von `tradeLimitEnabled`, und die Statusanzeige liest 0 als 0.
+**Nur die Oberfläche nicht:** der Schieberegler begann bei `min={1}`.
+
+Jetzt `min={0}`, daneben **„0 = pausiert"** statt einer nackten Null, und der
+Hinweis darunter sagt, dass der **GO-Knopf** im Market Scanner das Limit
+**nicht** prüft — manuell bliebe der Stil handelbar. Das Execution Center
+zeigte bei Grenze 0 „0 heute von 0"; jetzt „pausiert (Grenze 0)".
+
+**Was es NICHT tut:** keinen Standard ändern (SWING bleibt 2), keinen
+gespeicherten Wert anfassen, keinen Trade. Umstellen tut der Nutzer im
+Dashboard — und zurück genauso.
+
+**Und die Lücke daneben, gefunden beim Durchgehen der Kette:** das Stil-Tor
+prüft den Stil von **GPT** (`orchestrator-agent.ts`, `const s =
+o.gpt.tradingStyle`), gehandelt und gezählt wird mit dem Stil **nach** einem
+Override (`style`, `byStyle[style]`). Ein Override konnte damit jedes
+Stil-Limit umgehen, auch eine 0. In 60 Tagen war bei **0 von 108** Trades ein
+Override aktiv. Behoben in Teil 2 (eigener Commit).
+
+**Absicherung:** `safety-nets` 2118 → **2125** — die 0 durch die **echte**
+`POST /api/settings` bis in `getSettings()` (und die anderen Stile bleiben),
+die Statusanzeige ausgeführt, der Schieberegler am Block „pro Trading-Stil"
+gebunden (ein `min={0}` anderswo bewiese nichts), Anzeige, Hinweis, Execution
+Center. **8 von 8 Sabotagen**, jede gegen **alle 23** Prüfer — darunter die
+Route, die die 0 auf 1 klemmt, und `stilGrenze()`, die sie durch den Standard
+ersetzt (gefangen von `signal-untergrenze`).
+
+Regression: Kontonummer-Suite (dieselbe Oberfläche und Route) **9 von 9** plus Gegenprobe.
 
 ## Der Meta-KI-Rückfall prüft die Regeln selbst (18.11.)
 

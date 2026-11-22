@@ -12559,7 +12559,49 @@ module.exports = async function pruefe() {
           !/"accountId":"[A-Z]{3}-DEMO-\d+"/.test(alleAntw)
           && !/"accountId":"IC-MCP"/.test(alleAntw),
           alleAntw.slice(0, 200));
+        // ── SWING PAUSIEREN (23.11.) — eine 0 im Stil-Limit durch die ECHTE
+        //    Route bis in die Einstellungen: als 0 (nicht als Standard 2), und
+        //    die anderen Stile bleiben stehen. `stilGrenze()` liest eine
+        //    ausdrueckliche 0 als „kein Trade" — gerechnet in signal-untergrenze.
+        await roM.exports.POST({ json: async () => ({ action: "update_bot",
+          patch: { maxTradesPerDayByStyle: { DAYTRADING: 3, SCALPING: 5, SWING: 0 } } }) });
+        const stilTab = (await stM.exports.getSettings()).botSettings?.maxTradesPerDayByStyle;
+        torPruefung("eine 0 im Stil-Limit kommt nicht als 0 in den Einstellungen an (SWING pausieren)",
+          stilTab?.SWING === 0 && stilTab?.DAYTRADING === 3 && stilTab?.SCALPING === 5, JSON.stringify(stilTab));
+        // Und die Statusanzeige liest sie als 0 — nicht als „keine Grenze".
+        const esS = ladeTsModul("lib/execution-status/execution-status.ts");
+        const stand0 = esS.fehler ? null : esS.exports.ausfuehrungsStand({ date: "2026-11-23", count: 0, byStyle: {} }, null,
+          { maxTradesPerDay: 21, tradeLimitEnabled: true, maxTradesPerDayByStyle: stilTab }, Date.parse("2026-11-23T09:00:00Z"));
+        const sw0 = stand0?.jeStil?.find((z) => z.stil === "SWING");
+        torPruefung("die Statusanzeige liest eine Stil-Grenze 0 nicht als 0",
+          sw0?.grenze === 0 && sw0?.heute === 0, esS.fehler ?? JSON.stringify(sw0));
       }
+    }
+
+    // ── SWING PAUSIEREN: die OBERFLAECHE laesst die 0 zu (23.11.) ─────────
+    //
+    // Der Automat konnte eine Stil-Grenze 0 seit dem 17.09. („kein Trade
+    // dieses Stils", `stilGrenze()`), das Dashboard nicht: der Schieberegler
+    // begann bei `min={1}`. Gebunden an den Block „pro Trading-Stil" — ein
+    // `min={0}` irgendwo sonst in der Datei bewiese nichts ueber diesen.
+    {
+      const ohneKommT = (t) => t.replace(/\{\/\*[\s\S]*?\*\/\}/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const sd = ohneKommT(read("frontend/components/SettingsDashboard.tsx"));
+      const i0 = sd.indexOf("Max Trades / Tag — pro Trading-Stil");
+      const i1 = sd.indexOf("Jeder Stil hat ein eigenes Tageslimit");
+      const stilBlock = i0 >= 0 && i1 > i0 ? sd.slice(i0, i1) : "";
+      torPruefung("SWING pausieren: der Block 'pro Trading-Stil' ist nicht auffindbar (Selbstpruefung)",
+        stilBlock.includes('maxTradesPerDayByStyle') && stilBlock.includes('type="range"'), `${i0}/${i1}`);
+      torPruefung("SWING pausieren: der Schieberegler je Stil laesst die 0 nicht zu",
+        /type="range"\s+min=\{0\}/.test(stilBlock) && !/min=\{1\}/.test(stilBlock), stilBlock.slice(0, 120));
+      torPruefung("SWING pausieren: eine 0 steht als nackte Zahl statt '0 = pausiert'",
+        /\{val === 0 \? "0 = pausiert" : val\}/.test(stilBlock), "Anzeige");
+      torPruefung("SWING pausieren: der Hinweis nennt die 0 nicht (oder verschweigt den GO-Knopf)",
+        /0 = Stil pausiert/.test(sd) && /GO-Knopf im Market Scanner prüft das Limit nicht/.test(sd), "Hinweis");
+      const ec = ohneKommT(read("frontend/components/ExecutionCenterPanel.tsx"));
+      torPruefung("SWING pausieren: das Execution Center zeigt bei Grenze 0 'von 0' statt 'pausiert'",
+        /s\.grenze === 0 \? " · pausiert \(Grenze 0\)"/.test(ec), "Execution Center");
     }
 
     // ── UND DIE ERFUNDENE KONTONUMMER "IC-MCP" (09.11.) ──────────────────

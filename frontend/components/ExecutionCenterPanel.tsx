@@ -173,7 +173,7 @@ export default function ExecutionCenterPanel() {
                 <p className="text-sm font-semibold text-white">{s.stil}</p>
                 <p className="mt-1 text-xs text-zinc-400">
                   {s.heute} heute
-                  {s.grenze === null ? " · keine Grenze" : ` von ${s.grenze}`}
+                  {s.grenze === null ? " · keine Grenze" : s.grenze === 0 ? " · pausiert (Grenze 0)" : ` von ${s.grenze}`}
                 </p>
               </div>
             ))}

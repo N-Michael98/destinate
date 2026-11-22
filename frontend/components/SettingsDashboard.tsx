@@ -1057,7 +1057,7 @@ export default function SettingsDashboard() {
                       </label>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <input
-                          type="range" min={1} max={15} step={1} value={val}
+                          type="range" min={0} max={15} step={1} value={val}
                           onChange={(e) => updateBotField("maxTradesPerDayByStyle", {
                             ...(settings.botSettings.maxTradesPerDayByStyle ?? { DAYTRADING: 3, SCALPING: 5, SWING: 2 }),
                             [style]: parseInt(e.target.value),
@@ -1065,7 +1065,7 @@ export default function SettingsDashboard() {
                           style={{ flex: 1, accentColor: styleColors[style] }}
                         />
                         <span style={{ fontSize: "14px", fontWeight: 700, color: styleColors[style], minWidth: "24px", textAlign: "right" }}>
-                          {val}
+                          {val === 0 ? "0 = pausiert" : val}
                         </span>
                       </div>
                     </div>
@@ -1073,7 +1073,7 @@ export default function SettingsDashboard() {
                 })}
               </div>
               <div style={{ fontSize: "10px", color: "#475569", marginTop: "8px" }}>
-                Jeder Stil hat ein eigenes Tageslimit — z.B. 3 Daytrading-Trades blockieren keine Swing-Trades mehr.
+                Jeder Stil hat ein eigenes Tageslimit — z.B. 3 Daytrading-Trades blockieren keine Swing-Trades mehr. 0 = Stil pausiert: der Automat eröffnet keine Trades dieses Stils (der GO-Knopf im Market Scanner prüft das Limit nicht).
               </div>
             </div>
 
