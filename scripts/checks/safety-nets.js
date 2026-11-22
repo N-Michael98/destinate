@@ -14730,9 +14730,11 @@ module.exports = async function pruefe() {
       torPruefung("exits: ab MIN_BEWERTET steht an der Gruppe trotzdem 'zu wenig'",
         new RegExp(`  SWING \\(${X.MIN_BEWERTET}\\):[^\\n]*`).test(tViel)
         && !new RegExp(`  SWING \\(${X.MIN_BEWERTET}\\):[^\\n]*zu wenig`).test(tViel), "MIN_BEWERTET");
+      // DREI Abschnitte seit dem 22.11. (Stil, Richtung, Ziel-Abstand in
+      // Tages-ATR) — je einer traegt den Leer-Hinweis.
       torPruefung("exits: ohne bewertete Trades fehlt der ehrliche Leer-Hinweis",
         (X.exitsText(X.exitBericht(ausB, [], { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }))
-          .match(/\(keine bewerteten Trades\)/g) ?? []).length === 2, "leer");
+          .match(/\(keine bewerteten Trades\)/g) ?? []).length === 3, "leer");
 
       // ── exitLauf mit hineingereichten Abhaengigkeiten (kein Netz).
       const kand = X.auswahl([0, 1, 2].map((i) => zeile({ id: i, createdAt: new Date(T0 + i * 3_600_000) })), opt).kandidaten;
@@ -16581,6 +16583,201 @@ module.exports = async function pruefe() {
       const liestFehler = /sync-journal"[\s\S]{0,300}?if \(data\.ok\) \{[\s\S]{0,500}?\} else \{\s*(?:setSyncMsg|alert)\(`[^`]*\$\{data\.error\}/;
       torPruefung("Sync: ein Aufrufer liest bei ok:false nicht `data.error` im else-Zweig — der Grund verschwaende",
         liestFehler.test(pTop) && liestFehler.test(pTj), "page.tsx / trading-journal");
+    }
+  }
+
+
+  // ── /exits: ZIEL UND STOP IN TAGES-ATR (22.11.) ──────────────────────────
+  //
+  // Offen seit dem 16.11.: kommen nahe Ziele oefter an als ferne, und haelt
+  // GPT seine eigene Stop-Regel ein (≥ 1.5 Tages-ATR)? Gemessen wird an der
+  // ATR, die GPT im Prompt SAH — das ist nur dann wahr, wenn die Kette
+  // Engine → taSignals → entryContext → Notizen wirklich dieselbe Zahl traegt.
+  // Deshalb hier BEIDES: die Rechnung AUSGEFUEHRT und die Kette an den Quellen.
+  {
+    const XA = ladeTsModul("lib/exit-messung/exit-messung.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+      "html-sicher/html-sicher": htmlSicherEcht,
+    });
+    const A = XA.exports;
+    if (XA.fehler || typeof A?.zielAtrBand !== "function" || typeof A?.stopAtrLage !== "function") {
+      torPruefung("exits-ATR: Modul nicht ladbar oder Funktionen fehlen", false, XA.fehler ?? "fehlt");
+    } else {
+      // 1. Die Bandgrenzen — die UNTERE Grenze gehoert zum Band.
+      const band = (abstand, atr) => A.zielAtrBand({ entry: 100, ziel: 100 + abstand, atrTag: atr });
+      for (const [abstand, atr, erw] of [
+        [0.99, 1, "< 1 ATR"], [1, 1, "1–2 ATR"], [1.99, 1, "1–2 ATR"], [2, 1, "2–3 ATR"],
+        [2.99, 1, "2–3 ATR"], [3, 1, "≥ 3 ATR"], [30, 1, "≥ 3 ATR"],
+        [1, null, A.OHNE_ATR], [1, 0, A.OHNE_ATR], [1, -2, A.OHNE_ATR], [1, NaN, A.OHNE_ATR],
+        [1, Infinity, A.OHNE_ATR], [1, undefined, A.OHNE_ATR], [1, "2", A.OHNE_ATR],
+      ]) {
+        torPruefung(`exits-ATR: Ziel ${abstand} bei ATR ${String(atr)} landet nicht in „${erw}"`,
+          band(abstand, atr) === erw, band(abstand, atr));
+      }
+      // SELL: das Ziel liegt UNTER dem Einstieg — der Abstand ist der Betrag.
+      torPruefung("exits-ATR: ein SELL-Ziel (unter dem Einstieg) wird falsch eingeordnet",
+        A.zielAtrBand({ entry: 100, ziel: 97.5, atrTag: 1 }) === "2–3 ATR", A.zielAtrBand({ entry: 100, ziel: 97.5, atrTag: 1 }));
+      torPruefung("exits-ATR: die Reihenfolge der Baender stimmt nicht (OHNE_ATR muss ans Ende)",
+        JSON.stringify(A.ZIEL_ATR_REIHENFOLGE) === JSON.stringify(["< 1 ATR", "1–2 ATR", "2–3 ATR", "≥ 3 ATR", A.OHNE_ATR]),
+        JSON.stringify(A.ZIEL_ATR_REIHENFOLGE));
+
+      // 2. Die Stop-Lage — ABSICHTLICH ein Wert GENAU auf der Regel (1.5 ist
+      //    KEIN Verstoss) und einer knapp darunter, dazu SELL und ohne ATR.
+      const s = A.stopAtrLage([
+        { entry: 100, stop: 98.5, atrTag: 1 },   // 1.5  — genau an der Regel
+        { entry: 100, stop: 98.6, atrTag: 1 },   // 1.4  — darunter
+        { entry: 100, stop: 103, atrTag: 1 },    // 3.0  — SELL-Seite
+        { entry: 100, stop: 99, atrTag: null },  // ohne ATR — zaehlt NICHT im Nenner
+        { entry: 100, stop: 99, atrTag: 0 },     // 0 = unbekannt
+      ]);
+      torPruefung("exits-ATR: die Stop-Lage rechnet falsch (Nenner, Regel, Schnitt)",
+        s.mitAtr === 3 && s.unterRegel === 1 && Math.abs(s.schnitt - (1.5 + 1.4 + 3) / 3) < 1e-9,
+        JSON.stringify(s));
+      torPruefung("exits-ATR: die Prompt-Regel steht nicht auf 1.5",
+        A.PROMPT_STOP_MIN_ATR === 1.5, String(A.PROMPT_STOP_MIN_ATR));
+      const leerS = A.stopAtrLage([{ entry: 100, stop: 99, atrTag: null }]);
+      torPruefung("exits-ATR: ohne ATR wird ein Schnitt erfunden",
+        leerS.mitAtr === 0 && leerS.unterRegel === 0 && leerS.schnitt === null, JSON.stringify(leerS));
+
+      // 3. auswahl() liest die ATR aus `entryContext.atr` — und NUR dort.
+      const T0a = Date.UTC(2026, 10, 2, 9, 0, 0);
+      const notizA = (n) => JSON.stringify({ broker: "Capital.com DEMO", source: "auto-scan",
+        tradingStyle: "DAYTRADING", exitReason: "DAZWISCHEN", closeLevel: 1.102, ...n });
+      const zeileA = (n) => ({ id: 1, market: "EURUSD", direction: "BUY", entry: 1.1, stopLoss: 1.095,
+        takeProfit: 1.11, createdAt: new Date(T0a), notes: notizA(n) });
+      const optA = { haltedauer: { DAYTRADING: 24 }, ohneErgebnis: ["KEIN_PNL"], epicMap: { EURUSD: "EURUSD" },
+        jetztMs: T0a + 86_400_000, tage: null };
+      const atrVon = (n) => A.auswahl([zeileA(n)], optA).kandidaten[0]?.atrTag;
+      torPruefung("exits-ATR: auswahl() liest entryContext.atr nicht",
+        atrVon({ entryContext: { atr: 0.004, hourUTC: 9 } }) === 0.004, String(atrVon({ entryContext: { atr: 0.004 } })));
+      for (const [name, n] of [["fehlt", {}], ["0 (Orchestrator schreibt ?? 0)", { entryContext: { atr: 0 } }],
+        ["Text", { entryContext: { atr: "0.004" } }], ["entryContext ist ein Array", { entryContext: [0.004] }],
+        ["entryContext null", { entryContext: null }], ["ATR auf oberster Ebene statt im Kontext", { atr: 0.004 }]]) {
+        torPruefung(`exits-ATR: eine ATR wird erfunden, wenn sie ${name}`,
+          atrVon(n) === null, String(atrVon(n)));
+      }
+      // Eine Zeile OHNE ATR wird NICHT ausgeschlossen — sie faellt nur in „ohne ATR".
+      torPruefung("exits-ATR: eine Zeile ohne ATR wird aus der Auswahl geworfen",
+        A.auswahl([zeileA({})], optA).kandidaten.length === 1, "ohne ATR");
+
+      // 4. Der Bericht: Summenprobe gegen die Gesamtzeile, EINE Rechnung.
+      const kB = { id: 1, symbol: "X", epic: "X", richtung: "BUY", entry: 100, stop: 99, ziel: 102, risiko: 1,
+        rrGeplant: 2, stil: "DAYTRADING", horizontStunden: 24, eroeffnetMs: T0a, istEtikett: null, istSchluss: 100.5,
+        teilgewinnGenommen: false, kiAbweichung: false, confidence: 75, groesse: 3 };
+      const EA = (atr, treffer, maxR, haltenR) => ({ kandidat: { ...kB, atrTag: atr },
+        nachrechnung: { treffer, maxR, haltenR, kerzenGenutzt: 5 }, datenGrund: null, gekappt: false });
+      const ergA = [
+        EA(4, "ZIEL", 2, 2),            // Ziel 2 / ATR 4 = 0.5 → < 1
+        EA(4, "STOP", 0.3, -1),         // < 1
+        EA(1.5, "OFFEN", 1.2, 0.4),     // 2 / 1.5 = 1.33 → 1–2
+        EA(0.8, "STOP", 0.1, -1),       // 2.5 → 2–3
+        EA(0.5, "BEIDE", 0, -1),        // 4 → ≥ 3
+        EA(null, "OFFEN", 0.6, 0.2),    // ohne ATR
+        { ...EA(4, "KEINE_DATEN", null, null), datenGrund: "HTTP 400" },  // darf in KEINEM Band stehen
+      ];
+      const ausA = { gesamt: 7, kandidaten: new Array(7), ausgeschlossen: Object.fromEntries(A.AUSSCHLUESSE.map((a) => [a, 0])) };
+      const BA = A.exitBericht(ausA, ergA, { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null });
+      torPruefung("exits-ATR: die Baender stehen nicht in fester Reihenfolge",
+        JSON.stringify(BA.nachZielAtr.map((g) => g.name)) === JSON.stringify(["< 1 ATR", "1–2 ATR", "2–3 ATR", "≥ 3 ATR", A.OHNE_ATR]),
+        JSON.stringify(BA.nachZielAtr.map((g) => g.name)));
+      const sa = (f) => BA.nachZielAtr.reduce((x, g) => x + g.k[f], 0);
+      torPruefung("exits-ATR: die Baender addieren sich nicht zur Gesamtzeile (KEINE_DATEN darf nicht mitzaehlen)",
+        sa("n") === BA.bewertet && BA.bewertet === 6 && sa("ziel") === BA.treffer.ZIEL && sa("stop") === BA.treffer.STOP
+        && sa("beide") === BA.treffer.BEIDE && sa("offen") === BA.treffer.OFFEN && sa("ab10") === BA.lauf.ab10
+        && sa("mitWert") === BA.lauf.mitWert && sa("paarN") === BA.paar.n,
+        JSON.stringify(BA.nachZielAtr.map((g) => [g.name, g.k.n, g.k.ziel, g.k.stop])));
+      const unter1 = BA.nachZielAtr.find((g) => g.name === "< 1 ATR")?.k ?? {};
+      torPruefung("exits-ATR: ein Band rechnet seine Kennzahlen falsch",
+        unter1.n === 2 && unter1.ziel === 1 && unter1.stop === 1 && unter1.ab10 === 1 && unter1.paarN === 2
+        && Math.abs(unter1.haltenR - (2 - 1) / 2) < 1e-9 && Math.abs(unter1.istR - 0.5) < 1e-9,
+        JSON.stringify(unter1));
+      // Stop-Lage im Bericht: Stop 1 R gegen ATR 4/4/1.5/0.8/0.5 = 0.25/0.25/0.667/1.25/2.0
+      // → 4 von 5 naeher als 1.5 (2.0 nicht); der Trade OHNE ATR und der
+      // KEINE_DATEN-Fall zaehlen NICHT.
+      torPruefung("exits-ATR: die Stop-Lage im Bericht nimmt die falschen Trades",
+        BA.stopAtr.mitAtr === 5 && BA.stopAtr.unterRegel === 4
+        && Math.abs(BA.stopAtr.schnitt - (0.25 + 0.25 + 1 / 1.5 + 1.25 + 2) / 5) < 1e-9,
+        JSON.stringify(BA.stopAtr));
+
+      // 5. Der Text: der Abschnitt, die Zeile je Band in derselben Form, die Stop-Zeile.
+      const tA = A.exitsText(BA);
+      torPruefung("exits-ATR: der Text zeigt den Abschnitt oder die Stop-Zeile nicht",
+        /<b>Je Ziel-Abstand in Tages-ATR<\/b>/.test(tA)
+        && tA.includes("  &lt; 1 ATR (2): 🎯1 🛑1 ⏱0 · ≥1R 1/2 · +0.50 → +0.50 R (2) ⚠️ zu wenig")
+        && /Stop in Tages-ATR: Ø 0\.88 · näher als 1\.5 \(Prompt-Regel\): 4\/5 \(80 %\)/.test(tA),
+        (tA.match(/[^\n]*(Tages-ATR|ATR \()[^\n]*/g) ?? []).join(" | "));
+      torPruefung("exits-ATR: das Band '< 1 ATR' geht roh (mit '<') ins HTML",
+        !/\n {2}< 1 ATR/.test(tA), "roh");
+      const tLeer = A.exitsText(A.exitBericht(ausA, [EA(null, "OFFEN", 0.6, 0.2)],
+        { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }));
+      torPruefung("exits-ATR: ohne ATR wird ein Stop-Wert behauptet statt 'nicht messbar'",
+        /Stop in Tages-ATR: nicht messbar/.test(tLeer), (tLeer.match(/Stop in Tages-ATR[^\n]*/) ?? [""])[0]);
+
+      // 6. LAENGE im Haertefall: alle 13 Ausschluesse fuenfstellig, Abbruch mit
+      //    400 Zeichen, 20 Datengruende, drei Stile, zwei Richtungen und ALLE
+      //    FUENF Baender belegt. Die Baender sind eine geschlossene Menge —
+      //    mehr Zeilen kann es nicht geben. An diese Eigenschaft GEBUNDEN.
+      const stile = ["SCALPING", "DAYTRADING", "SWING"];
+      const hart = [];
+      for (let i = 0; i < 600; i++) {
+        hart.push({ kandidat: { ...kB, id: i, stil: stile[i % 3], richtung: i % 2 ? "BUY" : "SELL", ziel: 101.5,
+          atrTag: [0.3, 0.6, 1, 3, null][i % 5] }, nachrechnung: { treffer: ["ZIEL", "STOP", "BEIDE", "OFFEN"][i % 4],
+          maxR: -12.3456, haltenR: -12.3456, kerzenGenutzt: 5 }, datenGrund: null, gekappt: i % 7 === 0 });
+      }
+      for (let i = 0; i < 20; i++) {
+        hart.push({ kandidat: { ...kB, id: 9000 + i, atrTag: 1 }, nachrechnung: { treffer: "KEINE_DATEN", maxR: null, haltenR: null },
+          datenGrund: `HTTP ${400 + i} ${"lang".repeat(20)}`, gekappt: false });
+      }
+      const BH = A.exitBericht({ gesamt: 99999, kandidaten: new Array(620),
+        ausgeschlossen: Object.fromEntries(A.AUSSCHLUESSE.map((a) => [a, 99999])) }, hart,
+        { fensterTage: 99999, abbruch: "<b>x</b>&y" + "z".repeat(400), kerzenUnbrauchbar: 99999, versatzMin: -999, versatzMax: 999 });
+      torPruefung("exits-ATR: der Haertefall belegt nicht alle fuenf Baender — die Laenge waere zu klein gemessen",
+        BH.nachZielAtr.length === 5 && BH.nachStil.length === 3 && BH.nachRichtung.length === 2,
+        JSON.stringify(BH.nachZielAtr.map((g) => g.name)));
+      const lH = A.exitsText(BH).length;
+      torPruefung("exits-ATR: /exits sprengt im Haertefall die Grenze (3900, Telegram 4096)", lH <= 3900, `${lH} Zeichen`);
+
+      // 7. DIE KETTE AN DEN QUELLEN: nur wenn sie haelt, ist es die ATR aus dem Prompt.
+      const ohneK = (p) => read(p).replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const eng = ohneK("frontend/lib/market-scanner/ai-analysis-engine.ts");
+      const orc = ohneK("frontend/lib/agents/orchestrator-agent.ts");
+      const trk = ohneK("frontend/lib/capital-com/capital-trade-tracker.ts");
+      const talibFn = (() => { const i = eng.indexOf("async function fetchTALibData("); return i < 0 ? "" : eng.slice(i, i + 900); })();
+      torPruefung("exits-ATR Kette: fetchTALibData holt nicht mehr den TAGES-Chart",
+        /interval:\s*"1d"/.test(talibFn), talibFn.slice(0, 80));
+      torPruefung("exits-ATR Kette: der Prompt zeigt GPT nicht die ATR aus taData",
+        /const ta = taData\.get\(m\.symbol\)/.test(eng) && /atr=\$\{promptZahl\(ta\.atr\)\}/.test(eng), "prompt");
+      torPruefung("exits-ATR Kette: taSignals.atr kommt nicht aus derselben taData",
+        /const taEntry = taData\.get\(market\.symbol\)/.test(eng) && /taSignals: taEntry \? \{ atr: taEntry\.atr/.test(eng), "taSignals");
+      // Der SCHLUESSEL `atr`, nicht irgendein `atr,`: die erste Fassung fand
+      // das `atr,` im WERT von `atrX: atr,` und blieb gruen (Sabotage A14,
+      // 22.11.) — die Falle „die Schluessel-Erkennung zaehlte auch Werte"
+      // (17.09., 22.10.). Jetzt: Objekt per Klammerzaehlung ausgeschnitten,
+      // und der Schluessel muss am ZEILENANFANG stehen.
+      const objektAb = (src, kopf) => {
+        const i = src.indexOf(kopf);
+        if (i < 0) return "";
+        let tiefe = 0;
+        for (let k = i + kopf.length - 1; k < src.length; k++) {
+          if (src[k] === "{") tiefe++;
+          else if (src[k] === "}" && --tiefe === 0) return src.slice(i, k + 1);
+        }
+        return "";
+      };
+      const atrSchluessel = (block) => /(^|\n)[ \t]*atr[ \t]*(:[ \t]*atr[ \t]*)?,/.test(block);
+      torPruefung("exits-ATR Kette: die Schluessel-Erkennung ist kaputt (Selbstpruefung)",
+        atrSchluessel("{\n  hourUTC: 1,\n  atr,\n}") && atrSchluessel("{\n  atr: atr,\n}")
+        && !atrSchluessel("{\n  atrX: atr,\n}") && !atrSchluessel("{\n  hourUTC: atr,\n}"), "selbst");
+      const ctxBlock = objektAb(orc, "const entryContext: Record<string, unknown> = {");
+      torPruefung("exits-ATR Kette: der Orchestrator schreibt nicht taSignals.atr in entryContext.atr",
+        /const atr = \(candidate\.taSignals as \{ atr\?: number \} \| undefined\)\?\.atr \?\? 0;/.test(orc)
+        && ctxBlock.length > 0 && atrSchluessel(ctxBlock), ctxBlock.slice(0, 80));
+      torPruefung("exits-ATR Kette: der Tracker legt entryContext nicht unter diesem Namen in die Notizen",
+        /\.\.\.\(trade\.entryContext \? \{ entryContext: trade\.entryContext \} : \{\}\)/.test(trk), "tracker");
+      // Die Prompt-Regel, die der Text nennt, muss im Prompt stehen.
+      torPruefung("exits-ATR Kette: die Regel 'nie naeher als 1.5 ATR' steht nicht mehr im Prompt",
+        read("frontend/lib/market-scanner/ai-analysis-engine.ts").includes("Never place the stop CLOSER than 1.5 ATR to entry"),
+        "prompt-regel");
     }
   }
 

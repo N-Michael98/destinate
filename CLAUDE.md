@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal) | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -6401,6 +6401,72 @@ Jetzt ist `istR()` bei `partialSize > 0` **`null`** — unbekannt, nicht
 geraten —, die Trades fallen aus dem gepaarten Vergleich, und der Bericht
 nennt ihre Zahl: `ohne „tatsächlich": N mit Teilgewinn`. Die Zahlen oben
 stammen **vom Stand vor dieser Korrektur**; der nächste Lauf rechnet sie neu.
+
+### Ziel und Stop in Tages-ATR — die offene Einstiegsfrage wird messbar (22.11.)
+
+Offen seit dem 16.11. („Der Einstieg: drei Code-Befunde"): GPT plant in
+**Tages-ATR** (Stop ≥ 1.5 ATR, Ziel ≥ 1.5 × Stop), gehandelt wird mit
+Haltedauern von 4 / 24 / 168 Stunden. Kommen nahe Ziele öfter an als ferne?
+Und hält GPT die eigene Stop-Regel ein? `promptVerstoesse()` sieht nur
+**abgelehnte** Signale — an den gehandelten war das nie gemessen.
+
+**Die Zahl lag schon in den Daten.** Der Orchestrator schreibt
+`entryContext.atr` in jede automatische Zeile, und das ist **dieselbe** ATR,
+die GPT im Prompt sah — nachgelesen, nicht angenommen:
+
+```
+fetchTALibData(… interval: "1d") → taData
+  → Prompt:      atr=${promptZahl(ta.atr)}         (ai-analysis-engine.ts)
+  → taSignals:   { atr: taEntry.atr, … }           (gleiche taData)
+  → entryContext.atr                               (orchestrator-agent.ts)
+  → notes.entryContext                             (capital-trade-tracker.ts)
+```
+
+`/exits` hat jetzt einen Abschnitt **„Je Ziel-Abstand in Tages-ATR"** (< 1 /
+1–2 / 2–3 / ≥ 3 / ohne ATR) in **derselben** Zeilenform und aus **derselben**
+`kennzahlen()` wie „Je Stil" — die Bänder addieren sich zur Gesamtzeile. Dazu
+eine Zeile: Ø Stop-Abstand in Tages-ATR und wie viele Stops **näher als 1.5**
+lagen (die Regel steht wörtlich im Prompt: *„Never place the stop CLOSER than
+1.5 ATR to entry"*).
+
+**Drei Regeln dabei:**
+- **Eine ATR von 0 ist keine Messung.** Der Orchestrator schreibt `?? 0`; 0,
+  Text, ein Array statt des Kontexts und eine ATR auf der **obersten** Ebene
+  heissen „ohne ATR", nicht 0.
+- **Genau 1.5 ist kein Verstoss.** Die untere Bandgrenze gehört zum Band.
+- **Ohne ATR wird kein Schnitt erfunden** — die Zeile sagt „nicht messbar".
+
+**Was es NICHT tut:** keine Order, keine Schwelle, kein Prompt. Gemessen wird
+an der **gespeicherten** Geometrie (Fill, tatsächlicher Stop und Ziel — auch
+nach einem Struktur-Override). Eine Empfehlung für den Prompt ist das nicht:
+ein Band ist eine Beobachtung, und ein anderer Prompt ändert, welche Trades es
+gibt. Ältere Zeilen ohne `entryContext` fallen in „ohne ATR".
+
+**Länge gemessen**, nicht geschätzt: Härtefall (13 Ausschlüsse fünfstellig,
+Abbruch mit 400 Zeichen, 20 Datengründe, 3 Stile, 2 Richtungen, **alle fünf**
+Bänder) **3740 von 3900** — vorher 3216. Die Bänder sind eine geschlossene
+Menge, und der Prüfer ist an diese Eigenschaft gebunden.
+
+`safety-nets` 2022 → **2064**: Bandgrenzen (0.99/1/1.99/2/2.99/3), SELL über
+den Betrag, ATR 0/negativ/NaN/Infinity/Text/fehlt, die Stop-Lage mit einem Wert
+**genau** auf 1.5, die Lesart aus `entryContext`, die Summenprobe ohne
+`KEINE_DATEN`, Text samt Entschärfung des `<`, die Länge — und **die Kette an
+den Quellen**: Tages-Chart, Prompt, `taSignals`, Orchestrator, Tracker,
+Prompt-Regel. Bricht ein Glied, misst der Abschnitt nicht mehr die ATR aus dem
+Prompt, und der Prüfer wird rot. **17 von 17 Sabotagen**, Regression `/exits` **36/36** und `/exitsim` **43/43**.
+
+**Eine Sabotage entwischte zuerst — und zwar an einer bekannten Falle.** A14
+machte im Orchestrator aus dem Schlüssel `atr,` die Zeile `atrX: atr,`. Meine
+Prüfung suchte `\batr,` in einem Fenster hinter `entryContext` — und fand das
+`atr,` im **Wert**. Der Schlüssel war weg, der Prüfer grün. Wörtlich „die
+Schlüssel-Erkennung zählte auch Werte" (17.09., 22.10.), zum dritten Mal.
+Jetzt wird das Objekt per Klammerzählung ausgeschnitten, der Schlüssel muss am
+Zeilenanfang stehen (Kurzform oder `atr: atr`), und die Erkennung trägt eine
+Selbstprüfung in beide Richtungen.
+
+Eine bestehende Zusicherung wurde dabei zu Recht rot: sie zählte den
+Leer-Hinweis „(keine bewerteten Trades)" mit **zwei** — einer je Abschnitt.
+Mit dem dritten Abschnitt sind es drei.
 
 ## Was hätte der Schalter je Stil gebracht? `/exitsim` (17.11.)
 

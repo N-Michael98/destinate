@@ -113,6 +113,14 @@ export interface Kandidat {
   confidence: number | null;
   /** Positionsgrösse aus der Spalte, sonst null. */
   groesse: number | null;
+  /**
+   * Die TAGES-ATR beim Einstieg (`notes.entryContext.atr`, 22.11.). Es ist
+   * dieselbe Zahl, die GPT im Prompt sah: beide kommen aus `fetchTALibData`
+   * mit `interval: "1d"` (`ai-analysis-engine.ts`, `atr=${ta.atr}` im Prompt,
+   * `taSignals.atr` → `entryContext.atr` im Orchestrator). Fehlt sie oder ist
+   * sie 0 (der Orchestrator schreibt `?? 0`), ist sie UNBEKANNT — null.
+   */
+  atrTag: number | null;
 }
 
 export interface Auswahl {
@@ -217,6 +225,8 @@ export function auswahl(zeilen: readonly ExitZeile[], opt: AuswahlOptionen): Aus
     const partialSize = typeof m.partialSize === "number" && Number.isFinite(m.partialSize) ? m.partialSize : 0;
     const kiZaehler = (m.aiZusammenfassung !== null && typeof m.aiZusammenfassung === "object"
       ? m.aiZusammenfassung : {}) as Record<string, unknown>;
+    const einstieg = m.entryContext !== null && typeof m.entryContext === "object" && !Array.isArray(m.entryContext)
+      ? m.entryContext as Record<string, unknown> : null;
     alle.push({
       id: z.id, symbol, epic, richtung, entry, stop, ziel, risiko,
       rrGeplant: Math.abs(ziel - entry) / risiko,
@@ -227,6 +237,7 @@ export function auswahl(zeilen: readonly ExitZeile[], opt: AuswahlOptionen): Aus
       kiAbweichung: (Number(kiZaehler.SKIP) || 0) > 0 || (Number(kiZaehler.ADJUST) || 0) > 0,
       confidence: typeof m.confidence === "number" && Number.isFinite(m.confidence) ? m.confidence : null,
       groesse: zahlUeberNull(z.positionSize),
+      atrTag: einstieg === null ? null : zahlUeberNull(einstieg.atr),
     });
   }
 
@@ -395,6 +406,60 @@ export function istR(k: Kandidat): number | null {
   return k.richtung === "BUY" ? (k.istSchluss - k.entry) / k.risiko : (k.entry - k.istSchluss) / k.risiko;
 }
 
+// ── ZIEL UND STOP IN TAGES-ATR (22.11.) ────────────────────────────────────
+//
+// Offen seit dem 16.11.: GPT plant in TAGES-ATR (Stop ≥ 1.5 ATR, Ziel ≥ 1.5×
+// Stop), gehandelt wird aber mit Haltedauern von 4 / 24 / 168 Stunden. Kommen
+// nahe Ziele oefter an als ferne? Und haelt GPT seine eigene Stop-Regel ein
+// („Never place the stop CLOSER than 1.5 ATR“, ai-analysis-engine.ts)?
+// Beides war bisher nicht gemessen — `promptVerstoesse()` sieht nur
+// abgelehnte Signale.
+//
+// Gemessen wird an der GESPEICHERTEN Geometrie: Einstieg (Fill), Stop und Ziel
+// aus der Zeile (das sind die tatsaechlich gesetzten, auch nach einem
+// Struktur-Override). Eine Aussage ueber die Schwelle ist das NICHT.
+
+/** Der Mindestabstand, den der Prompt fuer den Stop verlangt (in Tages-ATR). */
+export const PROMPT_STOP_MIN_ATR = 1.5;
+export const OHNE_ATR = "ohne ATR";
+export const ZIEL_ATR_REIHENFOLGE = ["< 1 ATR", "1–2 ATR", "2–3 ATR", "≥ 3 ATR", OHNE_ATR] as const;
+
+/** Ein Abstand in Tages-ATR — oder null, wenn eine der beiden Zahlen nicht taugt. */
+export function inTagesAtr(abstand: number, atr: number | null | undefined): number | null {
+  if (typeof atr !== "number" || !Number.isFinite(atr) || atr <= 0) return null;
+  if (typeof abstand !== "number" || !Number.isFinite(abstand) || abstand < 0) return null;
+  return abstand / atr;
+}
+
+/** Das Band des Ziel-Abstands. Untere Grenze gehoert zum Band (1.0 → „1–2"). */
+export function zielAtrBand(k: Pick<Kandidat, "entry" | "ziel" | "atrTag">): string {
+  const v = inTagesAtr(Math.abs(k.ziel - k.entry), k.atrTag);
+  if (v === null) return OHNE_ATR;
+  if (v < 1) return "< 1 ATR";
+  if (v < 2) return "1–2 ATR";
+  if (v < 3) return "2–3 ATR";
+  return "≥ 3 ATR";
+}
+
+export interface StopAtrLage {
+  /** Bewertete Trades MIT brauchbarer ATR — der Nenner. */
+  mitAtr: number;
+  /** Davon mit einem Stop naeher als PROMPT_STOP_MIN_ATR. */
+  unterRegel: number;
+  schnitt: number | null;
+}
+
+export function stopAtrLage(kandidaten: ReadonlyArray<Pick<Kandidat, "entry" | "stop" | "atrTag">>): StopAtrLage {
+  const werte = kandidaten
+    .map((k) => inTagesAtr(Math.abs(k.entry - k.stop), k.atrTag))
+    .filter((v): v is number => v !== null);
+  return {
+    mitAtr: werte.length,
+    unterRegel: werte.filter((v) => v < PROMPT_STOP_MIN_ATR).length,
+    schnitt: werte.length === 0 ? null : werte.reduce((s, v) => s + v, 0) / werte.length,
+  };
+}
+
 export interface EinzelErgebnis {
   kandidat: Kandidat;
   nachrechnung: Nachrechnung;
@@ -426,6 +491,9 @@ export interface ExitBericht {
   /** Aufschluesselung (16.11.): aus DERSELBEN Rechnung wie die Gesamtzahlen. */
   nachStil: GruppenZeile[];
   nachRichtung: GruppenZeile[];
+  /** Je Ziel-Abstand in Tages-ATR (22.11.) — dieselbe Rechnung, eine Gruppe je Band. */
+  nachZielAtr: GruppenZeile[];
+  stopAtr: StopAtrLage;
 }
 
 /** Die Kennzahlen EINER Menge bewerteter Trades. */
@@ -566,6 +634,8 @@ export function exitBericht(
     abbruch: zusatz.abbruch,
     nachStil: gruppieren(bewertete, (e) => e.kandidat.stil, STIL_REIHENFOLGE),
     nachRichtung: gruppieren(bewertete, (e) => e.kandidat.richtung, ["BUY", "SELL"]),
+    nachZielAtr: gruppieren(bewertete, (e) => zielAtrBand(e.kandidat), ZIEL_ATR_REIHENFOLGE),
+    stopAtr: stopAtrLage(bewertete.map((e) => e.kandidat)),
   };
 }
 
@@ -638,6 +708,13 @@ export function exitsText(b: ExitBericht): string {
   z.push("<b>Je Richtung</b>:");
   for (const g of b.nachRichtung) z.push(gruppenZeile(g));
   if (b.nachRichtung.length === 0) z.push("  (keine bewerteten Trades)");
+  // ZIEL UND STOP IN TAGES-ATR (22.11.): die ATR, die GPT im Prompt sah.
+  z.push("<b>Je Ziel-Abstand in Tages-ATR</b> <i>(ATR beim Einstieg = die im GPT-Prompt)</i>:");
+  for (const g of b.nachZielAtr) z.push(gruppenZeile(g));
+  if (b.nachZielAtr.length === 0) z.push("  (keine bewerteten Trades)");
+  z.push(b.stopAtr.mitAtr === 0
+    ? "  Stop in Tages-ATR: nicht messbar (keine ATR beim Einstieg gespeichert)"
+    : `  Stop in Tages-ATR: Ø ${(b.stopAtr.schnitt as number).toFixed(2)} · näher als ${PROMPT_STOP_MIN_ATR} (Prompt-Regel): ${anteil(b.stopAtr.unterRegel, b.stopAtr.mitAtr)}`);
 
   z.push("", "<b>Selbstprüfung</b>");
   z.push(`  Etikett STOP → Stop auch nachgerechnet: ${anteil(b.kalibrierung.davonStopGefunden, b.kalibrierung.stopEtikett)}`);
