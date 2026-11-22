@@ -14782,7 +14782,7 @@ module.exports = async function pruefe() {
         const { r, aufrufe } = await lauf([ok, () => ({ ok: false, status: 400, error: "alt" }), ok]);
         torPruefung("exits: HTTP 400 bricht ab statt nur diesen Trade auszulassen",
           r.abbruch === null && aufrufe.length === 3 && r.ergebnisse[1]?.nachrechnung.treffer === "KEINE_DATEN"
-          && r.ergebnisse[1]?.datenGrund === "HTTP 400", JSON.stringify(r.ergebnisse.map((e) => e.datenGrund)));
+          && r.ergebnisse[1]?.datenGrund === "HTTP 400 — alt", JSON.stringify(r.ergebnisse.map((e) => e.datenGrund)));
       }
       {
         const netz = () => ({ ok: false, status: null, error: "ECONNRESET" });
@@ -16721,11 +16721,14 @@ module.exports = async function pruefe() {
       const hart = [];
       for (let i = 0; i < 600; i++) {
         hart.push({ kandidat: { ...kB, id: i, stil: stile[i % 3], richtung: i % 2 ? "BUY" : "SELL", ziel: 101.5,
-          atrTag: [0.3, 0.6, 1, 3, null][i % 5] }, nachrechnung: { treffer: ["ZIEL", "STOP", "BEIDE", "OFFEN"][i % 4],
+          atrTag: [0.3, 0.6, 1, 3, null][i % 5],
+          // 23.11.: beide „ohne tatsaechlich"-Ursachen, je dreistellig — sonst fehlte die Zeile.
+          teilgewinnGenommen: i % 4 === 1, istSchluss: i % 4 === 2 ? null : 100.5 }, nachrechnung: { treffer: ["ZIEL", "STOP", "BEIDE", "OFFEN"][i % 4],
           maxR: -12.3456, haltenR: -12.3456, kerzenGenutzt: 5 },
           // Mit Regel-Nachrechnung (22.11.) — ohne sie stuende der Abschnitt als
           // kurzes „nicht messbar" da und die Laenge waere zu klein gemessen.
-          regel: { treffer: ["OFFEN", "ZIEL", "STOP", "BEIDE"][i % 4], maxR: -12.3456, haltenR: -12.3456, kerzenGenutzt: 5 },
+          // Δ zweistellig und „über 2 SE" (23.11.) — die laengste Form der Regel-Zeile.
+          regel: { treffer: ["OFFEN", "ZIEL", "STOP", "BEIDE"][i % 4], maxR: -12.3456, haltenR: 12.3456 + (i % 2) * 0.001, kerzenGenutzt: 5 },
           datenGrund: null, gekappt: i % 7 === 0 });
       }
       for (let i = 0; i < 20; i++) {
@@ -16738,8 +16741,11 @@ module.exports = async function pruefe() {
       torPruefung("exits-ATR: der Haertefall belegt nicht alle fuenf Baender — die Laenge waere zu klein gemessen",
         BH.nachZielAtr.length === 5 && BH.nachStil.length === 3 && BH.nachRichtung.length === 2
         && BH.regel.gesamt.n > 0 && BH.regel.gesamt.beide > 0
-        && BH.regel.nachStil.filter((g) => g.v.n > 0).length === 3,
-        JSON.stringify({ baender: BH.nachZielAtr.map((g) => g.name), regel: BH.regel.nachStil.map((g) => g.v.n) }));
+        && BH.regel.nachStil.filter((g) => g.v.n > 0).length === 3
+        && BH.teilgewinnOhneIst >= 100 && BH.ohneSchlusskurs >= 100
+        && (A.exitsText(BH).match(/\(über 2 SE\)/g) ?? []).length === 4,
+        JSON.stringify({ baender: BH.nachZielAtr.map((g) => g.name), regel: BH.regel.nachStil.map((g) => g.v.n),
+          teil: BH.teilgewinnOhneIst, ohne: BH.ohneSchlusskurs }));
       const lH = A.exitsText(BH).length;
       torPruefung("exits-ATR: /exits sprengt im Haertefall die Grenze (3900, Telegram 4096)", lH <= 3900, `${lH} Zeichen`);
 
@@ -16883,10 +16889,12 @@ module.exports = async function pruefe() {
       // 4. Der Text — Kopf mit den Regelwerten AUS DEN KONSTANTEN, Zeilen in fester Form.
       const tR = R.exitsText(BR);
       torPruefung("exits-Regel: der Text zeigt den Abschnitt nicht oder falsch",
-        tR.includes("<b>Mit Prompt-Regel</b> <i>(Stop 1.5 ATR, Ziel 2.25 ATR; Ø Halten Regel → echt)</i>:")
-        && tR.includes("  alle (3): 🎯1 🛑1 ⏱1 · +0.30 → -0.10 R ⚠️ zu wenig")
-        && tR.includes("  DAYTRADING (1): 🎯0 🛑1 ⏱0 · -1.00 → +0.50 R ⚠️ zu wenig")
-        && tR.includes("  SWING (2): 🎯1 🛑0 ⏱1 · +0.95 → -0.40 R ⚠️ zu wenig"),
+        tR.includes("<b>Mit Prompt-Regel</b> <i>(Stop 1.5 ATR, Ziel 2.25 ATR; Ø Halten Regel → echt, Δ ±2 SE)</i>:")
+        // Δ von Hand: alle 1.4, 1.3, −1.5 → +0.40, s = √(5.42/2), 2 SE = 1.90;
+        // SWING 1.4, 1.3 → +1.35, 2 SE = 0.10 → darueber; DAYTRADING ein Paar → „±?".
+        && tR.includes("  alle (3): 🎯1 🛑1 ⏱1 · +0.30 → -0.10 R · Δ +0.40 ±1.90 ⚠️ zu wenig")
+        && tR.includes("  DAYTRADING (1): 🎯0 🛑1 ⏱0 · -1.00 → +0.50 R · Δ -1.50 ±? ⚠️ zu wenig")
+        && tR.includes("  SWING (2): 🎯1 🛑0 ⏱1 · +0.95 → -0.40 R · Δ +1.35 ±0.10 (über 2 SE) ⚠️ zu wenig"),
         (tR.match(/(Mit Prompt-Regel|  (alle|DAYTRADING|SWING) \()[^\n]*/g) ?? []).join(" | "));
       const tOhne = R.exitsText(R.exitBericht(ausR, [e(N("STOP", -1), null)],
         { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }));
@@ -16923,6 +16931,109 @@ module.exports = async function pruefe() {
       });
       torPruefung("exits-Regel E2E: ohne Kerzen wird eine Regel-Nachrechnung behauptet",
         lauf400.ergebnisse[0]?.regel === null, JSON.stringify(lauf400.ergebnisse[0]?.regel));
+      // 7. DIE STREUUNG (23.11.): ohne sie war „deutlich besser" ein Gefuehl.
+      //    Von Hand: Differenzen 1.4, 1.3, -3 → Mittel -0.1, s = √(12.62 / 2), SE = s / √3.
+      //    [2, 4] → s = √2, SE = 1 — mit n statt n−1 kaeme 0.71 heraus.
+      const seVon = R.standardfehler;
+      torPruefung("exits-SE: standardfehler fehlt oder rechnet falsch (n−1, √n)",
+        typeof seVon === "function" && Math.abs(seVon([1.4, 1.3, -3]) - Math.sqrt(12.62 / 2) / Math.sqrt(3)) < 1e-9
+        && Math.abs(seVon([2, 4]) - 1) < 1e-12,
+        typeof seVon === "function" ? `${seVon([1.4, 1.3, -3])} / ${seVon([2, 4])}` : "fehlt");
+      torPruefung("exits-SE: aus weniger als zwei Werten wird eine Streuung erfunden (oder NaN zaehlt mit)",
+        typeof seVon === "function" && seVon([]) === null && seVon([1.5]) === null && seVon([1.5, NaN]) === null
+        && Math.abs((seVon([2, NaN, 4]) ?? -1) - 1) < 1e-12,
+        typeof seVon === "function" ? JSON.stringify([seVon([]), seVon([1.5]), seVon([1.5, NaN]), seVon([2, NaN, 4])]) : "fehlt");
+      torPruefung("exits-SE: diffSe ist nicht der Standardfehler der GEPAARTEN Differenzen",
+        typeof v.diffSe === "number" && Math.abs(v.diffSe - Math.sqrt(12.62 / 2) / Math.sqrt(3)) < 1e-9 && leer.diffSe === null,
+        JSON.stringify({ se: v.diffSe, leer: leer.diffSe }));
+      const dT = R.deltaText;
+      const vg = (regelR, echtR, diffSe) => ({ n: 40, ziel: 0, stop: 0, beide: 0, offen: 0, regelR, echtR, diffSe });
+      torPruefung("exits-SE: deltaText behauptet etwas, das nicht gemessen ist",
+        typeof dT === "function" && dT(vg(null, 0.1, 0.2)) === "Δ ?" && dT(vg(0.1, null, 0.2)) === "Δ ?"
+        && dT(vg(0.3, 0.1, null)) === "Δ +0.20 ±?" && dT(vg(0.3, 0.1, NaN)) === "Δ +0.20 ±?",
+        typeof dT === "function" ? [dT(vg(null, 0.1, 0.2)), dT(vg(0.3, 0.1, null)), dT(vg(0.3, 0.1, NaN))].join(" | ") : "fehlt");
+      // Gleich ist NICHT darueber; ein negatives Δ wird am Betrag gemessen.
+      torPruefung("exits-SE: 'über 2 SE' an der falschen Grenze oder ohne Betrag",
+        typeof dT === "function" && dT(vg(0.5, 0.1, 0.2)) === "Δ +0.40 ±0.40"
+        && dT(vg(0.1, 0.5, 0.15)) === "Δ -0.40 ±0.30 (über 2 SE)"
+        && dT(vg(0.6, 0.1, 0.2)) === "Δ +0.50 ±0.40 (über 2 SE)"
+        && dT(vg(0.2, 0.1, 0.2)) === "Δ +0.10 ±0.40",
+        typeof dT === "function" ? [dT(vg(0.5, 0.1, 0.2)), dT(vg(0.1, 0.5, 0.15)), dT(vg(0.6, 0.1, 0.2)), dT(vg(0.2, 0.1, 0.2))].join(" | ") : "fehlt");
+
+      // 8. JEDE TRADE-MENGE GEHT AUF (23.11.): bewertet = gepaart + Teilgewinn + ohne Schlusskurs.
+      //    Im Lauf vom 22.11.: 107 = 72 + 34 + EINER, der stumm fehlte.
+      const mit = (k, h) => ({ kandidat: { ...basis, ...k }, nachrechnung: N("OFFEN", h), regel: null, datenGrund: null, gekappt: false });
+      const mengen = [
+        mit({ istSchluss: 101 }, 0.5), mit({ istSchluss: 99.5 }, -0.2),          // gepaart
+        mit({ istSchluss: 101, teilgewinnGenommen: true }, 0.3),                 // Teilgewinn
+        mit({ istSchluss: null, teilgewinnGenommen: true }, 0.3),                // beides: zaehlt EINMAL, als Teilgewinn
+        mit({ istSchluss: null }, 0.1), mit({ istSchluss: null }, -1),           // ohne Schlusskurs
+      ];
+      const zus = { fensterTage: 60, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: 60, versatzMax: 60 };
+      const BM = R.exitBericht(ausR, mengen, zus);
+      torPruefung("exits-Menge: bewertet geht nicht in gepaart + Teilgewinn + ohne Schlusskurs auf",
+        BM.bewertet === 6 && BM.paar.n === 2 && BM.teilgewinnOhneIst === 2 && BM.ohneSchlusskurs === 2
+        && BM.paar.n + BM.teilgewinnOhneIst + BM.ohneSchlusskurs === BM.bewertet,
+        JSON.stringify({ b: BM.bewertet, p: BM.paar.n, t: BM.teilgewinnOhneIst, o: BM.ohneSchlusskurs }));
+      const zeileOhneIst = (t) => (t.match(/[^\n]*ohne „tatsächlich[^\n]*/) ?? ["(keine Zeile)"])[0];
+      const tM = R.exitsText(BM);
+      torPruefung("exits-Menge: der Text nennt die Trades ohne Schlusskurs nicht",
+        tM.includes('  ohne „tatsächlich": 2 mit Teilgewinn (Bein fehlt) · 2 ohne Schlusskurs'), zeileOhneIst(tM));
+      const tM1 = R.exitsText(R.exitBericht(ausR, [mengen[0], mengen[4]], zus));
+      const tM2 = R.exitsText(R.exitBericht(ausR, [mengen[0], mengen[2]], zus));
+      const tM0 = R.exitsText(R.exitBericht(ausR, [mengen[0]], zus));
+      torPruefung("exits-Menge: die Zeile behauptet eine Ursache, die es nicht gibt (oder fehlt)",
+        tM1.includes('  ohne „tatsächlich": 1 ohne Schlusskurs\n') && !tM1.includes("Teilgewinn (Bein")
+        && tM2.includes('  ohne „tatsächlich": 1 mit Teilgewinn (Bein fehlt)\n') && !tM2.includes("ohne Schlusskurs")
+        && !tM0.includes("ohne „tatsächlich"),
+        [zeileOhneIst(tM1), zeileOhneIst(tM2), zeileOhneIst(tM0)].join(" | "));
+
+      // 9. DER ANTWORTTEXT DES BROKERS (23.11.): bis dahin stand nur „HTTP 400" da.
+      const AF = ELR.exports.abrufFehlerGrund;
+      torPruefung("exits-Grund: abrufFehlerGrund fehlt oder liest den Antworttext falsch",
+        typeof AF === "function" && AF(null, "ECONNRESET") === "Netzfehler" && AF(400, "") === "HTTP 400"
+        && AF(400, undefined) === "HTTP 400" && AF(400, null) === "HTTP 400" && AF(400, "   ") === "HTTP 400"
+        && AF(400, 42) === "HTTP 400"
+        && AF(400, '{"errorCode":"error.invalid.from"}') === 'HTTP 400 — {"errorCode":"error.invalid.from"}'
+        && AF(502, "<html><b>Bad</b> & x</html>") === "HTTP 502 — Bad x"
+        && AF(400, "x & y < z") === "HTTP 400 — x y z"
+        && AF(400, "a".repeat(80)) === "HTTP 400 — " + "a".repeat(50),
+        typeof AF === "function" ? [AF(null, "e"), AF(400, ""), AF(502, "<html><b>Bad</b> & x</html>"), AF(400, "x & y < z"), AF(400, "a".repeat(80)).length].join(" | ") : "fehlt");
+      const tCap = R.exitsText(R.exitBericht(ausR, [{ ...e(N("KEINE_DATEN", null), null), datenGrund: "<".repeat(100) }], zus));
+      torPruefung("exits-Grund: der Datengrund wird nicht auf 70 Zeichen gekuerzt (oder erst nach dem Entschaerfen)",
+        tCap.includes("     – " + "&lt;".repeat(70) + ": 1") && !tCap.includes("&lt;".repeat(71)),
+        String((tCap.match(/     – [^\n]*/) ?? [""])[0].length));
+      const warnAlt = console.warn;
+      const warns = [];
+      let lauf400b = null, sim400 = null, fehlerE2E = null;
+      console.warn = (...a) => { warns.push(a.map(String).join(" ")); };
+      try {
+        lauf400b = await ELR.exports.exitLauf([basis], {
+          kerzen: async () => ({ ok: false, status: 400, error: '{"errorCode":"error.invalid.from"}' }),
+          warte: async () => {}, jetzt: () => T + 30 * 86_400_000,
+        });
+        sim400 = await ELR.exports.exitSimLauf([basis], {
+          kerzen: async () => ({ ok: false, status: 400, error: "<b>nein</b>" }),
+          warte: async () => {}, jetzt: () => T + 30 * 86_400_000,
+        });
+      } catch (err) {
+        fehlerE2E = String(err);
+      } finally {
+        console.warn = warnAlt;
+      }
+      const wExits = warns.filter((w) => w.startsWith("[exits]"));
+      const wSim = warns.filter((w) => w.startsWith("[exitsim]"));
+      torPruefung("exits-Grund E2E: der Antworttext des Brokers geht in /exits verloren",
+        fehlerE2E === null && lauf400b?.ergebnisse[0]?.datenGrund === 'HTTP 400 — {"errorCode":"error.invalid.from"}',
+        fehlerE2E ?? String(lauf400b?.ergebnisse[0]?.datenGrund));
+      torPruefung("exits-Grund E2E: /exits schreibt den Ausfall nicht genau einmal mit Markt und Antwort ins Log",
+        wExits.length === 1 && wExits[0].includes("EURUSD") && wExits[0].includes("epic=EURUSD")
+        && wExits[0].includes("error.invalid.from") && wExits[0].includes("MINUTE"),
+        JSON.stringify(wExits));
+      torPruefung("exitsim-Grund E2E: /exitsim wirft den Antworttext weg oder schreibt ihn nicht ins Log",
+        fehlerE2E === null && sim400?.daten[0]?.datenGrund === "HTTP 400 — nein"
+        && wSim.length === 1 && wSim[0].includes("HTTP 400 — nein") && wSim[0].includes("epic=EURUSD"),
+        JSON.stringify({ g: sim400?.daten[0]?.datenGrund, w: wSim }));
     }
   }
 

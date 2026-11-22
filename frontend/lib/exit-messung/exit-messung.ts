@@ -502,6 +502,22 @@ export interface RegelVergleich {
   regelR: number | null;
   /** Ø „halten" mit der ECHTEN Geometrie — auf DENSELBEN Trades. */
   echtR: number | null;
+  /**
+   * Standardfehler des GEPAARTEN Unterschieds Regel − echt (23.11.): die
+   * Streuung der Differenzen je Trade, geteilt durch √n. Ohne ihn ist ein
+   * Unterschied von 0.3 R aus 46 Trades nicht von Zufall zu unterscheiden.
+   * null unter zwei Paaren — eine Streuung aus einem Wert gibt es nicht.
+   */
+  diffSe: number | null;
+}
+
+/** Standardfehler des Mittels (Stichproben-Streuung / √n); null unter zwei Werten. */
+export function standardfehler(werte: readonly number[]): number | null {
+  const ok = werte.filter((w) => Number.isFinite(w));
+  if (ok.length < 2) return null;
+  const m = ok.reduce((s, w) => s + w, 0) / ok.length;
+  const varianz = ok.reduce((s, w) => s + (w - m) ** 2, 0) / (ok.length - 1);
+  return Math.sqrt(varianz / ok.length);
 }
 
 export function regelVergleich(ergebnisse: readonly EinzelErgebnis[]): RegelVergleich {
@@ -519,6 +535,7 @@ export function regelVergleich(ergebnisse: readonly EinzelErgebnis[]): RegelVerg
     offen: zaehle("OFFEN"),
     regelR: mittel(paare.map((e) => (e.regel as Nachrechnung).haltenR as number)),
     echtR: mittel(paare.map((e) => e.nachrechnung.haltenR as number)),
+    diffSe: standardfehler(paare.map((e) => ((e.regel as Nachrechnung).haltenR as number) - (e.nachrechnung.haltenR as number))),
   };
 }
 
@@ -550,6 +567,12 @@ export interface ExitBericht {
   zielAberVorherRaus: { n: number; istRSchnitt: number | null };
   /** Bewertete Trades mit Teilgewinn — fuer sie ist „tatsaechlich" nicht bestimmbar. */
   teilgewinnOhneIst: number;
+  /**
+   * Bewertete Trades OHNE Teilgewinn, aber ohne Schlusskurs in den Notizen
+   * (23.11.). Bis dahin ohne eigene Zahl: im Lauf vom 22.11. gingen 107
+   * bewertete in 72 Paare und 34 Teilgewinne auf — einer fehlte stumm.
+   */
+  ohneSchlusskurs: number;
   kalibrierung: { stopEtikett: number; davonStopGefunden: number };
   versatz: { min: number | null; max: number | null };
   kerzenUnbrauchbar: number;
@@ -693,6 +716,7 @@ export function exitBericht(
       istRSchnitt: schnitt(vorherRaus.map((e) => istR(e.kandidat)).filter((x): x is number => x !== null)),
     },
     teilgewinnOhneIst: bewertete.filter((e) => e.kandidat.teilgewinnGenommen === true).length,
+    ohneSchlusskurs: bewertete.filter((e) => e.kandidat.teilgewinnGenommen !== true && e.kandidat.istSchluss === null).length,
     kalibrierung: {
       stopEtikett: stopEtikett.length,
       davonStopGefunden: stopEtikett.filter((e) => e.nachrechnung.treffer === "STOP" || e.nachrechnung.treffer === "BEIDE").length,
@@ -734,6 +758,19 @@ function gruppenZeile(g: GruppenZeile): string {
     + (k.n < MIN_BEWERTET ? " ⚠️ zu wenig" : "");
 }
 
+/**
+ * Δ Regel − echt mit ±2 SE. „über 2 SE" nur, wenn der Abstand zu null
+ * GROESSER ist als zwei Standardfehler — sonst ist es Rauschen und wird nicht
+ * als Befund ausgegeben. Ohne Standardfehler (unter zwei Paaren) steht „±?".
+ */
+export function deltaText(v: RegelVergleich): string {
+  if (v.regelR === null || v.echtR === null) return "Δ ?";
+  const d = v.regelR - v.echtR;
+  if (v.diffSe === null || !Number.isFinite(v.diffSe)) return `Δ ${rKurz(d)} ±?`;
+  const zweiSe = 2 * v.diffSe;
+  return `Δ ${rKurz(d)} ±${zweiSe.toFixed(2)}` + (Math.abs(d) > zweiSe ? " (über 2 SE)" : "");
+}
+
 function anteil(n: number, von: number): string {
   return von > 0 ? `${n}/${von} (${((n / von) * 100).toFixed(0)} %)` : `${n}/0`;
 }
@@ -765,7 +802,9 @@ export function exitsText(b: ExitBericht): string {
   z.push(`  ❓ beide in derselben Kerze: ${b.treffer.BEIDE} (als Stop gewertet)`);
   z.push(`  ⏱ keins bis zum Zeit-Exit: ${b.treffer.OFFEN}`);
   z.push(`  ∅ keine Kursdaten: ${b.treffer.KEINE_DATEN}`);
-  for (const [g, n] of b.ohneDatenGruende.slice(0, 4)) z.push(`     – ${htmlSicher(g)}: ${n}`);
+  // Auf 70 Zeichen gekuerzt (23.11.), VOR dem Entschaerfen: der Grund traegt
+  // seitdem den Antworttext des Brokers, und der ist fremd und beliebig lang.
+  for (const [g, n] of b.ohneDatenGruende.slice(0, 4)) z.push(`     – ${htmlSicher(g.slice(0, 70))}: ${n}`);
   if (b.ohneDatenGruende.length > 4) z.push(`     – (${b.ohneDatenGruende.length - 4} weitere Gründe)`);
 
   z.push("", `<b>Grösster Lauf vor dem Stop</b> (${b.lauf.mitWert} mit Kursdaten):`);
@@ -778,9 +817,13 @@ export function exitsText(b: ExitBericht): string {
   z.push(`  bis Stop/Ziel/Zeit-Exit gehalten: Ø ${rText(b.paar.haltenR)}`);
   z.push(`  tatsächlich realisiert: Ø ${rText(b.paar.istR)}`);
   z.push(`  Ziel wäre zuerst gekommen, aber anders ausgestiegen: ${b.zielAberVorherRaus.n} (dort realisiert Ø ${rText(b.zielAberVorherRaus.istRSchnitt)})`);
-  if (b.teilgewinnOhneIst > 0) {
-    z.push(`  ohne „tatsächlich": ${b.teilgewinnOhneIst} mit Teilgewinn — das Teilgewinn-Bein steht nicht im Schlusskurs`);
-  }
+  // Beide Ursachen mit eigener Zahl (23.11.) — sonst gehen bewertet, gepaart
+  // und Teilgewinn nicht auf, und niemand sieht, warum. Eine Zeile, nicht
+  // zwei: die Telegram-Grenze ist knapp.
+  const ohneIst: string[] = [];
+  if (b.teilgewinnOhneIst > 0) ohneIst.push(`${b.teilgewinnOhneIst} mit Teilgewinn (Bein fehlt)`);
+  if (b.ohneSchlusskurs > 0) ohneIst.push(`${b.ohneSchlusskurs} ohne Schlusskurs`);
+  if (ohneIst.length > 0) z.push(`  ohne „tatsächlich": ${ohneIst.join(" · ")}`);
 
   // AUFSCHLUESSELUNG (16.11.): dieselbe Rechnung wie oben, je Gruppe.
   z.push("", "<b>Je Stil</b> <i>(🎯Ziel 🛑Stop ⏱keins · ≥1R · Ø Halten → tatsächlich, gepaart)</i>:");
@@ -798,7 +841,9 @@ export function exitsText(b: ExitBericht): string {
     : `  Stop in Tages-ATR: Ø ${(b.stopAtr.schnitt as number).toFixed(2)} · näher als ${PROMPT_STOP_MIN_ATR} (Prompt-Regel): ${anteil(b.stopAtr.unterRegel, b.stopAtr.mitAtr)}`);
   // MIT DER PROMPT-REGEL NACHGERECHNET (22.11.): dieselben Trades, dieselben
   // Kerzen, Stop 1.5 ATR / Ziel 1.5 × Stop. Ø „halten", Regel gegen echt.
-  z.push(`<b>Mit Prompt-Regel</b> <i>(Stop ${PROMPT_STOP_MIN_ATR} ATR, Ziel ${PROMPT_STOP_MIN_ATR * PROMPT_ZIEL_FAKTOR} ATR; Ø Halten Regel → echt)</i>:`);
+  // Δ = Regel − echt, gepaart, mit ±2 Standardfehlern (23.11.). Ohne die
+  // Streuung war „deutlich besser" ein Gefuehl, keine Messung.
+  z.push(`<b>Mit Prompt-Regel</b> <i>(Stop ${PROMPT_STOP_MIN_ATR} ATR, Ziel ${PROMPT_STOP_MIN_ATR * PROMPT_ZIEL_FAKTOR} ATR; Ø Halten Regel → echt, Δ ±2 SE)</i>:`);
   const rg = b.regel.gesamt;
   if (rg.n === 0) {
     z.push("  nicht messbar (keine ATR beim Einstieg gespeichert)");
@@ -806,6 +851,7 @@ export function exitsText(b: ExitBericht): string {
     const regelZeile = (name: string, v: RegelVergleich) =>
       `  ${htmlSicher(name)} (${v.n}): 🎯${v.ziel} 🛑${v.stop}${v.beide > 0 ? ` ❓${v.beide}` : ""} ⏱${v.offen}`
       + ` · ${rKurz(v.regelR)} → ${rKurz(v.echtR)} R`
+      + ` · ${deltaText(v)}`
       + (v.n < MIN_BEWERTET ? " ⚠️ zu wenig" : "");
     z.push(regelZeile("alle", rg));
     for (const g of b.regel.nachStil) if (g.v.n > 0) z.push(regelZeile(g.name, g.v));
@@ -822,6 +868,7 @@ export function exitsText(b: ExitBericht): string {
   // Eine Zeile, die von Hand im Journal geaendert wurde (PATCH
   // /api/trades/[id]), traegt KEINE Markierung — sie ist nicht erkennbar und
   // wird deshalb hier benannt statt verschwiegen.
-  z.push("", "<i>Kein Schlupf eingerechnet. Von Hand im Journal geänderte Einstiegs-, Stop- oder Zielwerte sind nicht erkennbar. Ein Unterschied ist keine Zusage: andere Schwellen ändern auch, welche Trades es gibt.</i>");
+  // Gekuerzt am 23.11. (Platz fuer die Δ-Spalte), keine Aussage weggelassen.
+  z.push("", "<i>Ohne Schlupf. Von Hand im Journal geänderte Einstieg/Stop/Ziel sind nicht erkennbar. Ein Unterschied ist keine Zusage: andere Schwellen ändern auch die Trades.</i>");
   return z.join("\n");
 }

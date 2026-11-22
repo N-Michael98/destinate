@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()` | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()` | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -6557,6 +6557,80 @@ Selbstprüfung (roh ≥ 2, bereinigt genau 1); dieselbe Bereinigung gilt für di
 1.5-ATR-Regel. Zwei Anker älterer Suiten wurden nachgezogen: ATR-A2 (dieselbe
 Zeile steht jetzt auch in `regelKandidat`) und `/exits`-S23 (die gekürzte
 Abbruch-Zeile).
+
+#### Der erste Regel-Lauf — und warum er noch kein Urteil trägt (23.11.)
+
+`/exits 60` auf `a35efef`, 108 Trades, jede Summe nachgerechnet (Auswahl
+108 + 770 Ausschlüsse = 878; Stile, Richtungen und Bänder addieren sich zur
+Gesamtzeile; die Regel-Zeilen ebenso):
+
+| | n | Regel 🎯/🛑/⏱ | Ø Halten Regel → echt |
+|---|---|---|---|
+| alle | 107 | 3 / 22 / 82 | −0.09 → −0.12 R |
+| DAYTRADING | 61 | 0 / 1 / 60 | +0.02 → +0.22 R |
+| SWING | 46 | 3 / 21 / 22 | −0.24 → −0.58 R |
+
+Die beiden Stile zeigen in **entgegengesetzte** Richtungen. Bei DAYTRADING
+erreicht mit der Regel-Geometrie praktisch kein Trade Stop oder Ziel in 24
+Stunden — 60 von 61 enden am Zeit-Exit. Gemessen wird dort also kaum die
+Regel, sondern „24 Stunden halten“.
+
+**Ein Urteil gab die Zeile trotzdem nicht her:** sie nannte zwei Mittelwerte
+und keine Streuung. Meine eigene Anleitung dazu lautete „deutlich besser“ —
+ein Gefühl, keine Messung. Jetzt steht je Zeile **Δ = Regel − echt mit ±2
+Standardfehlern** des **gepaarten** Unterschieds, und „(über 2 SE)“ nur, wenn
+der Abstand zu null **grösser** ist (gleich ist nicht darüber):
+
+```
+  SWING (<n>): 🎯… 🛑… ⏱… · <Regel> → <echt> R · Δ <x> ±<2 SE> [(über 2 SE)]
+```
+
+(Form, keine Messung.) Unter zwei Paaren steht „±?“ — eine Streuung aus einem
+Wert gibt es nicht. `standardfehler()` rechnet mit n − 1 und √n.
+
+**Und zwei Zahlen fehlten in derselben Antwort:**
+
+- **107 bewertet, 72 gepaart, 34 mit Teilgewinn — einer fehlte stumm.** Ein
+  Trade ohne Schlusskurs in den Notizen (`closeLevel`) und ohne Teilgewinn
+  hatte keine eigene Zahl. Jetzt: `ohne „tatsächlich": 34 mit Teilgewinn
+  (Bein fehlt) · 1 ohne Schlusskurs`, und der Prüfer verlangt die Summe
+  bewertet = gepaart + Teilgewinn + ohne Schlusskurs.
+- **„HTTP 400: 1“ — ohne Grund.** Ein Trade, der Stunden vorher noch Kerzen
+  hatte, bekam einen 400. Der Client liefert den Antworttext mit
+  (`capitalGetKerzen`, seit 16.11.), `exitLauf` hat ihn **weggeworfen** —
+  wörtlich „wer den Grund nicht mitschreibt, muss ihn später raten“ (22.09.),
+  in meinem eigenen Code. Jetzt steht er im Grund (`abrufFehlerGrund()`:
+  Tags und `< > &` werden Leerzeichen, 50 Zeichen) und mit Markt, Epic,
+  Auflösung und Zeitfenster im Log; dasselbe für `/exitsim`, das nur die
+  Anzahl zeigt. **Warum** der 400 kam, ist damit noch nicht bestimmt — erst
+  der nächste Lauf nennt es.
+
+**Platz:** die Δ-Spalte kostete im Härtefall 38 Zeichen. Gekürzt wurde die
+Schlussbemerkung (keine Aussage weggelassen) und die Anzeige jedes Datengrunds
+auf 70 Zeichen — **vor** dem Entschärfen. Härtefall jetzt mit beiden
+„ohne tatsächlich“-Ursachen (dreistellig) und viermal „(über 2 SE)“, daran
+gebunden: **≤ 3900**.
+
+`safety-nets` 2086 → **2099**: `standardfehler` an von Hand gerechneten Werten
+(n − 1 **und** √n — mit n statt n − 1 käme bei [2, 4] 0.71 statt 1 heraus),
+unter zwei Werten und mit `NaN`; `diffSe` gegen die **gepaarten**
+Differenzen; `deltaText` an der Grenze (gleich ist nicht darüber, ein
+negatives Δ am Betrag); die Mengen-Summe samt einem Trade, der beides ist
+(zählt einmal, als Teilgewinn); `abrufFehlerGrund` an Tags, `& <`, Länge,
+Nicht-Text; die Kürzung vor dem Entschärfen; und **End-to-End** durch die
+echten `exitLauf()` und `exitSimLauf()` mit gezählten Logzeilen.
+**22 von 22 Sabotagen**, Regression Regel **18/18**, ATR **17/17**, `/exits`
+**36/36**, `/exitsim` **43/43**.
+
+**Ein Lauf war nicht grün, und er zählt nicht als grün:** im ersten
+Gruppenlauf brach die `/exits`-Suite ab, weil ein einzelner Prüferlauf die
+Zeitgrenze von 1500 s riss (normal ~20 s; die `/exitsim`-Gegenprobe brauchte
+im selben Lauf 311 s). Belegt, bevor weitergemacht wurde: der `finally`-Zweig
+hatte die Datei zurückgestellt, keine `node`-Prozesse übrig, der Diff genau
+die beabsichtigte Änderung. Dann die Suite **allein** wiederholt: 36/36, je
+~20 s. Ein abgebrochener Lauf ist kein bestandener — dieselbe Regel wie
+„ein übersprungener Fall ist kein bestandener“ (14.11.). Warum der Rechner
+so langsam war, ist **nicht** bestimmt.
 
 ## Was hätte der Schalter je Stil gebracht? `/exitsim` (17.11.)
 

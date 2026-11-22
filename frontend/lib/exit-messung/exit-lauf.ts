@@ -42,6 +42,27 @@ export const PAUSE_MS = 500;
 export const NETZFEHLER_GRENZE = 3;
 const ENDGUELTIG = new Set([401, 403, 429]);
 
+/**
+ * Der Grund eines Kerzen-Abrufs, der KEINE Daten brachte (23.11.). Bis dahin
+ * stand nur „HTTP 400" in der Bilanz — der Antworttext, in dem Capital.com
+ * den Grund nennt, kam vom Client mit und wurde HIER weggeworfen. Im Lauf vom
+ * 22.11. war ein Trade, der Stunden vorher Kerzen hatte, ploetzlich „HTTP 400"
+ * — und warum, war nicht feststellbar. Wer den Grund nicht mitschreibt, muss
+ * ihn spaeter raten (22.09.).
+ *
+ * Der Text ist fremd: Tags und die Zeichen < > & werden zu Leerzeichen, damit
+ * ein HTML-Fehlerkoerper die Telegram-Laenge nicht beim Entschaerfen
+ * vervielfacht; gekuerzt auf 50 Zeichen. Gleiche Antworten ergeben denselben
+ * Grund und werden weiter zusammengezaehlt.
+ */
+export function abrufFehlerGrund(status: number | null, text: string | null | undefined): string {
+  if (status === null) return "Netzfehler";
+  const sauber = typeof text === "string"
+    ? text.replace(/<[^>]*>/g, " ").replace(/[<>&]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50)
+    : "";
+  return sauber === "" ? `HTTP ${status}` : `HTTP ${status} — ${sauber}`;
+}
+
 export async function exitLauf(kandidaten: readonly Kandidat[], abh: LaufAbhaengigkeiten): Promise<LaufErgebnis> {
   const ergebnisse: EinzelErgebnis[] = [];
   let abbruch: string | null = null;
@@ -75,11 +96,15 @@ export async function exitLauf(kandidaten: readonly Kandidat[], abh: LaufAbhaeng
       } else {
         netzfehlerFolge = 0;
       }
+      const datenGrund = abrufFehlerGrund(antwort.status, antwort.error);
+      // Ins Log mit allem, was zum Nachstellen noetig ist (hoechstens ein Mal je Trade).
+      console.warn(`[exits] ⚠️ Kerzen-Abruf ohne Daten (${k.symbol}, epic=${k.epic}, ${a.name}, `
+        + `${utcParameter(k.eroeffnetMs)} … ${utcParameter(endeMs + a.minuten * 60_000)}): ${datenGrund}`);
       ergebnisse.push({
         kandidat: k,
         nachrechnung: { treffer: "KEINE_DATEN", maxR: null, haltenR: null, kerzenGenutzt: 0 },
         regel: null,
-        datenGrund: antwort.status === null ? "Netzfehler" : `HTTP ${antwort.status}`,
+        datenGrund,
         gekappt: false,
       });
       if (abbruch !== null) break;
@@ -174,7 +199,10 @@ export async function exitSimLauf(kandidaten: readonly Kandidat[], abh: LaufAbha
       } else {
         netzfehlerFolge = 0;
       }
-      grund.wert = a.status === null ? "Netzfehler" : `HTTP ${a.status}`;
+      grund.wert = abrufFehlerGrund(a.status, a.error);
+      // /exitsim zeigt nur die ANZAHL ohne Kursdaten — der Grund steht im Log.
+      console.warn(`[exitsim] ⚠️ Kerzen-Abruf ohne Daten (${symbol}, epic=${epic}, ${aufl}, `
+        + `${utcParameter(vonMs)} … ${utcParameter(bisMs)}): ${grund.wert}`);
       return null;
     }
     netzfehlerFolge = 0;
