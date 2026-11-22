@@ -15045,7 +15045,13 @@ module.exports = async function pruefe() {
             torPruefung("exits E2E: ein zweites /exits laeuft NEBEN dem ersten",
               /läuft schon seit/.test(zweite) && nachher.length === 1 && findAufrufe === vorFind + 1, zweite.slice(0, 120));
             await abarbeiten();
-            const ergebnis = letzte();
+            // Seit 23.11. folgt eine ZWEITE Nachricht (wer setzt den Stop?) —
+            // das Ergebnis wird gezielt gesucht, die Reihenfolge mitgeprueft.
+            const ergebnisIdx = antworten.findLastIndex((a) => a.includes("wie weit lief der Kurs"));
+            const ergebnis = ergebnisIdx < 0 ? "" : antworten[ergebnisIdx];
+            torPruefung("exits E2E: die Stop-Aufschluesselung folgt dem Ergebnis nicht als eigene Nachricht",
+              ergebnisIdx >= 0 && ergebnisIdx === antworten.length - 2 && /wer setzt den Stop\?/.test(letzte())
+              && letzte().includes("Nicht messbar: keine der 3 Zeilen"), letzte().slice(0, 200));
             torPruefung("exits E2E: das Ergebnis stimmt nicht (Ziel/Stop/OFFEN je 1)",
               /🎯 Ziel: 1\n/.test(ergebnis) && /🛑 Stop: 1\n/.test(ergebnis)
               && /keins bis zum Zeit-Exit: 1\n/.test(ergebnis) && /Auswahl:<\/b> 3 von 4/.test(ergebnis)
@@ -15072,18 +15078,23 @@ module.exports = async function pruefe() {
             kerzenAntwort = (a) => { sitzung = null; return kerzenJe(a); };
             await schicke("/exits");
             await abarbeiten();
+            const abbruchE = antworten.findLast((a) => a.includes("wie weit lief der Kurs")) ?? "";
             torPruefung("exits E2E: eine weggefallene Sitzung wird nicht als Abbruch gemeldet",
-              /Abgebrochen:/.test(letzte()) && /weggefallen/.test(letzte()) && kerzenAufrufe.length === 1
-              && (global.__exits_laeuft_seit__ ?? null) === null, letzte().slice(0, 300));
+              /Abgebrochen:/.test(abbruchE) && /weggefallen/.test(abbruchE) && kerzenAufrufe.length === 1
+              && (global.__exits_laeuft_seit__ ?? null) === null && /wer setzt den Stop\?/.test(letzte()),
+              abbruchE.slice(0, 300));
             sitzung = { apiKey: "k", cst: "c", securityToken: "s" };
 
             // 6) der Lauf WIRFT: Meldung entschaerft, Sperre trotzdem frei.
             kerzenAntwort = () => { throw new Error("<b>kaputt</b>"); };
             await schicke("/exits");
             await abarbeiten();
+            // Die Stop-Aufschluesselung braucht keine Kerzen — sie kommt auch nach dem Wurf.
+            const wurfE = antworten.at(-2) ?? "";
             torPruefung("exits E2E: ein Wurf im Lauf meldet sich nicht (entschaerft) oder haelt die Sperre",
-              /\/exits fehlgeschlagen/.test(letzte()) && letzte().includes("&lt;b&gt;kaputt")
-              && (global.__exits_laeuft_seit__ ?? null) === null, letzte().slice(0, 200));
+              /\/exits fehlgeschlagen/.test(wurfE) && wurfE.includes("&lt;b&gt;kaputt")
+              && (global.__exits_laeuft_seit__ ?? null) === null && /wer setzt den Stop\?/.test(letzte()),
+              `${wurfE.slice(0, 160)} | ${letzte().slice(0, 80)}`);
 
             torPruefung("exits E2E: /exits hat in die Datenbank GESCHRIEBEN",
               schreibversuche.length === 0, JSON.stringify(schreibversuche));
@@ -17034,6 +17045,104 @@ module.exports = async function pruefe() {
         fehlerE2E === null && sim400?.daten[0]?.datenGrund === "HTTP 400 — nein"
         && wSim.length === 1 && wSim[0].includes("HTTP 400 — nein") && wSim[0].includes("epic=EURUSD"),
         JSON.stringify({ g: sim400?.daten[0]?.datenGrund, w: wSim }));
+      // 10. WER SETZT DEN STOP? (23.11.) — die zweite /exits-Nachricht.
+      //     a) Die Auswahl liest Quelle und Override, und nur ehrlich.
+      const zeileA = (notes) => ({ id: 1, market: "EURUSD", direction: "BUY", entry: 100, stopLoss: 99, takeProfit: 102,
+        createdAt: new Date(T), notes: JSON.stringify({ broker: "Capital.com", source: "auto-scan", tradingStyle: "SWING", ...notes }) });
+      const optA = { haltedauer: { SWING: 168 }, ohneErgebnis: [], epicMap: { EURUSD: "EURUSD" }, jetztMs: T + 1000, tage: null };
+      const kA = R.auswahl([
+        zeileA({ signalQuelle: " GPT_REAL ", entryContext: { atr: 2, overrideActive: true } }),
+        zeileA({}),
+        zeileA({ signalQuelle: "", entryContext: { atr: 2, overrideActive: "true" } }),
+        zeileA({ signalQuelle: 5, entryContext: [{ overrideActive: false }] }),
+        zeileA({ entryContext: { overrideActive: false } }),
+      ], optA).kandidaten.map((k) => [k.signalQuelle, k.overrideAktiv]);
+      torPruefung("stop-herkunft: die Auswahl liest Quelle oder Override falsch (oder erfindet sie)",
+        JSON.stringify(kA) === JSON.stringify([["GPT_REAL", true], [null, null], [null, null], [null, null], [null, false]]),
+        JSON.stringify(kA));
+
+      //     b) Die Aufschluesselung, von Hand gerechnet (Werte im Kommentar).
+      const kS = (o) => ({ ...basis, ...o });
+      // ABSICHTLICH UNBEQUEM: ein Stop bei 95 % des Deckels (fängt eine Grenze
+      // bei 100 %), einer GENAU auf dem Deckel (fängt >= statt >), einer
+      // darüber, und eine Quelle, die NUR bei Zeilen ohne ATR vorkommt.
+      const kandS = [
+        kS({ symbol: "USOIL", entry: 100, stop: 98.1, atrTag: 1.9, signalQuelle: "GPT_REAL", overrideAktiv: false, stil: "SWING" }),    // 1.0 ATR, 95 % des Deckels
+        kS({ symbol: "USOIL", entry: 100, stop: 98, atrTag: 2, signalQuelle: "GPT_REAL", overrideAktiv: true, stil: "SWING" }),          // 1.0, GENAU am Deckel
+        kS({ symbol: "XAUUSD", entry: 2000, stop: 1980, atrTag: 80, signalQuelle: null, overrideAktiv: null, stil: "DAYTRADING" }),    // 0.25, ueber dem Deckel (15)
+        kS({ symbol: "EURGBP", entry: 100, stop: 99, atrTag: 1, signalQuelle: "MEASURED_CONSENSUS", overrideAktiv: false, stil: "DAYTRADING" }), // 1.0
+        kS({ symbol: "EURGBP", entry: 100, stop: 99, atrTag: null, signalQuelle: "GPT_REAL", overrideAktiv: false, stil: "SWING" }),     // ohne ATR
+        kS({ symbol: "EURGBP", entry: 100, stop: 97, atrTag: 1, signalQuelle: "<b>XYZ", overrideAktiv: null, stil: "SWING" }),          // 3.0, „andere"
+        kS({ symbol: "EURGBP", entry: 100, stop: 99, atrTag: null, signalQuelle: "GPT_SIMULATED", overrideAktiv: true, stil: "SCALPING" }), // nur ohne ATR
+      ];
+      const H = typeof R.stopHerkunft === "function" ? R.stopHerkunft(kandS) : null;
+      const lg = (g) => g === undefined ? null : [g.name, g.lage.mitAtr, Number((g.lage.schnitt ?? NaN).toFixed(4)), g.lage.unterRegel];
+      torPruefung("stop-herkunft: Signalquelle falsch gruppiert, sortiert oder gerechnet",
+        H !== null && H.n === 7 && H.ohneAtr === 2
+        && JSON.stringify(H.nachQuelle.map(lg)) === JSON.stringify([["GPT_REAL", 2, 1, 2], ["MEASURED_CONSENSUS", 1, 1, 1],
+          ["andere", 1, 3, 0], ["ohne Angabe", 1, 0.25, 1]]),
+        H === null ? "fehlt" : JSON.stringify({ n: H.n, o: H.ohneAtr, q: H.nachQuelle.map(lg) }));
+      torPruefung("stop-herkunft: Override oder Stil falsch gruppiert (oder 'ohne Angabe' wird zu 'aus')",
+        H !== null && JSON.stringify(H.nachOverride.map(lg)) === JSON.stringify([["ohne Override", 2, 1, 2], ["Override", 1, 1, 1],
+          ["ohne Angabe", 2, 1.625, 1]])
+        && JSON.stringify(H.nachStil.map(lg)) === JSON.stringify([["DAYTRADING", 2, 0.625, 2], ["SWING", 3, 1.6667, 2]]),
+        H === null ? "fehlt" : JSON.stringify({ o: H.nachOverride.map(lg), s: H.nachStil.map(lg) }));
+      torPruefung("stop-herkunft: der Max-SL-Deckel ist falsch gerechnet (Markt, Deckel in ATR, am/ueber dem Deckel)",
+        H !== null && H.deckel.lage.mitAtr === 3 && Math.abs(H.deckel.lage.schnitt - (1 + 1 + 0.25) / 3) < 1e-9
+        && Math.abs(H.deckel.deckelAtr - (2 / 1.9 + 1 + 15 / 80) / 3) < 1e-9 && H.deckel.deckelUnterRegel === 3
+        && H.deckel.ueberDeckel === 1 && H.deckel.amDeckel === 3
+        && H.uebrige.mitAtr === 2 && H.uebrige.schnitt === 2 && H.uebrige.unterRegel === 1,
+        H === null ? "fehlt" : JSON.stringify({ d: H.deckel, u: H.uebrige }));
+
+      //     c) Der Text: in fester Form, fremde Namen entschaerft, ehrlich bei „nicht messbar".
+      const tS = H === null ? "" : R.stopHerkunftText(H, 60);
+      torPruefung("stop-herkunft: der Text zeigt die Aufschluesselung nicht oder falsch",
+        tS.includes("🔍 <b>/exits 60 — wer setzt den Stop?</b>")
+        && tS.includes("  GPT_REAL (2): Ø 1.00 · unter 1.5: 2\n")
+        && tS.includes("  ohne Angabe (1): Ø 0.25 · unter 1.5: 1\n")
+        && tS.includes("  Deckel in Tages-ATR: Ø 0.75 · unter 1.5: 3/3 · Stop am Deckel (≥ 90 %): 3 · darüber: 1\n")
+        && tS.includes("  übrige Märkte (2): Ø 2.00 · unter 1.5: 1\n")
+        && tS.includes("ohne ATR beim Einstieg (nicht messbar): 2")
+        && !tS.includes("XYZ"),
+        tS.slice(0, 600));
+      const tSL = typeof R.stopHerkunftText === "function"
+        ? R.stopHerkunftText(R.stopHerkunft([kS({ atrTag: null }), kS({ atrTag: 0 })]), null) : "";
+      torPruefung("stop-herkunft: ohne ATR wird eine Aufschluesselung behauptet statt 'nicht messbar'",
+        tSL.includes("Nicht messbar: keine der 2 Zeilen trägt eine ATR beim Einstieg.") && !tSL.includes("<b>Signalquelle</b>"),
+        tSL.slice(0, 300));
+
+      //     d) Die Deckel-Tabelle ist eine KOPIE — gebunden an die Quelle im Prompt.
+      const engS = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const blockS = (engS.match(/const MAX_SL_ABSTAND[^=]*=\s*\{([\s\S]*?)\n\};/) ?? [null, ""])[1];
+      const quelleS = Object.fromEntries([...blockS.matchAll(/(\w+):\s*\{\s*wert:\s*([\d.]+)/g)].map((m) => [m[1], Number(m[2])]));
+      torPruefung("stop-herkunft: die Deckel-Tabelle weicht von MAX_SL_ABSTAND im Prompt ab (oder ist nicht lesbar)",
+        Object.keys(quelleS).length === 5 && R.MAX_SL_PROMPT !== undefined
+        && JSON.stringify(Object.entries(R.MAX_SL_PROMPT).sort()) === JSON.stringify(Object.entries(quelleS).sort()),
+        JSON.stringify({ quelle: quelleS, kopie: R.MAX_SL_PROMPT }));
+      torPruefung("stop-herkunft: die Markt-Zuordnung (XAUUSD = GOLD) weicht von maxSlFuer() ab",
+        /const schluessel = symbol === "XAUUSD" \? "GOLD" : symbol;/.test(engS)
+        && typeof R.maxSlPrompt === "function" && R.maxSlPrompt("XAUUSD") === 15 && R.maxSlPrompt("GOLD") === 15
+        && R.maxSlPrompt("EURGBP") === null && R.maxSlPrompt("constructor") === null && R.maxSlPrompt("EURUSD") === 0.004,
+        typeof R.maxSlPrompt === "function" ? JSON.stringify([R.maxSlPrompt("XAUUSD"), R.maxSlPrompt("constructor")]) : "fehlt");
+
+      //     e) Laenge im Haertefall: alle Gruppen jeder geschlossenen Menge, dreistellig.
+      const hartS = [];
+      const qs = ["GPT_REAL", "MEASURED_CONSENSUS", "GPT_SIMULATED", "fremd", null];
+      const ovs = [true, false, null];
+      const sts = ["SCALPING", "DAYTRADING", "SWING"];
+      for (let i = 0; i < 400; i++) {
+        hartS.push(kS({ symbol: i % 2 ? "USOIL" : "EURGBP", entry: 100, stop: 99.12345, atrTag: i % 9 === 0 ? null : 0.123456,
+          signalQuelle: qs[i % 5], overrideAktiv: ovs[i % 3], stil: sts[i % 3] }));
+      }
+      const HS = R.stopHerkunft(hartS);
+      const lS = R.stopHerkunftText(HS, 99999).length;
+      torPruefung("stop-herkunft: der Haertefall belegt nicht jede Gruppe — die Laenge waere zu klein gemessen",
+        HS.nachQuelle.length === 5 && HS.nachOverride.length === 3 && HS.nachStil.length === 3
+        && HS.deckel.lage.mitAtr >= 100 && HS.uebrige.mitAtr >= 100 && HS.ohneAtr > 0,
+        JSON.stringify({ q: HS.nachQuelle.length, o: HS.nachOverride.length, s: HS.nachStil.length }));
+      torPruefung("stop-herkunft: die zweite Nachricht sprengt im Haertefall die Grenze (3900, Telegram 4096)",
+        lS <= 3900, `${lS} Zeichen`);
     }
   }
 

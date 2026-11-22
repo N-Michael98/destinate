@@ -121,6 +121,16 @@ export interface Kandidat {
    * sie 0 (der Orchestrator schreibt `?? 0`), ist sie UNBEKANNT — null.
    */
   atrTag: number | null;
+  /**
+   * Woher das Signal kam (`notes.signalQuelle`, seit 30.10.): GPT_REAL,
+   * MEASURED_CONSENSUS, GPT_SIMULATED. null = nicht geschrieben (aeltere Zeile).
+   */
+  signalQuelle: string | null;
+  /**
+   * Hat ein Override Stop/Ziel prozentual gesetzt (`entryContext.overrideActive`,
+   * orchestrator-agent.ts)? null = nicht geschrieben.
+   */
+  overrideAktiv: boolean | null;
 }
 
 export interface Auswahl {
@@ -238,6 +248,8 @@ export function auswahl(zeilen: readonly ExitZeile[], opt: AuswahlOptionen): Aus
       confidence: typeof m.confidence === "number" && Number.isFinite(m.confidence) ? m.confidence : null,
       groesse: zahlUeberNull(z.positionSize),
       atrTag: einstieg === null ? null : zahlUeberNull(einstieg.atr),
+      signalQuelle: typeof m.signalQuelle === "string" && m.signalQuelle.trim() !== "" ? m.signalQuelle.trim() : null,
+      overrideAktiv: einstieg !== null && typeof einstieg.overrideActive === "boolean" ? einstieg.overrideActive : null,
     });
   }
 
@@ -460,6 +472,129 @@ export function stopAtrLage(kandidaten: ReadonlyArray<Pick<Kandidat, "entry" | "
   };
 }
 
+// ── WER SETZT DEN STOP? (23.11.) ───────────────────────────────────────────
+//
+// Der Regel-Lauf vom 23.11. ergab fuer SWING Δ +0.34 ±0.24 — „über 2 SE".
+// Bevor daraus ein Plan wird, muss feststehen, WO der enge Stop entsteht;
+// sonst dreht man an der falschen Stelle. Drei Wege setzen ihn (im Code
+// gelesen, nicht vermutet):
+//   - der gemessene Konsens: IMMER ≥ 1.5 ATR (ai-analysis-engine.ts, atrRange),
+//   - ein Override: ein fester Prozent-Stop (orchestrator-agent.ts, slPct),
+//   - sonst GPT — mit der Regel „nie naeher als 1.5 ATR" UND, fuer fuenf
+//     Maerkte, einem festen ABSOLUTEN Hoechstabstand („Max SL distances").
+// Die Aufschluesselung braucht keine Kerzen, nur die gespeicherten Zeilen.
+
+/**
+ * KOPIE von `MAX_SL_ABSTAND` aus ai-analysis-engine.ts (dort nicht exportiert,
+ * die Datei ist eine mit erhoehtem Risiko). Gebunden: safety-nets schneidet
+ * die Tabelle aus der Quelle und verlangt dieselben Schluessel und Werte —
+ * wie RISK_KONST in /exitsim.
+ */
+export const MAX_SL_PROMPT: Readonly<Record<string, number>> = {
+  GOLD: 15, EURUSD: 0.004, NAS100: 200, USOIL: 2.0, BTCUSD: 1000,
+};
+
+/** Derselbe Schluessel wie `maxSlFuer()` im Engine: XAUUSD heisst im Prompt GOLD. */
+export function maxSlPrompt(symbol: string): number | null {
+  const s = symbol === "XAUUSD" ? "GOLD" : symbol;
+  return Object.prototype.hasOwnProperty.call(MAX_SL_PROMPT, s) ? MAX_SL_PROMPT[s] : null;
+}
+
+export const QUELLEN_REIHENFOLGE = ["GPT_REAL", "MEASURED_CONSENSUS", "GPT_SIMULATED"] as const;
+export const OHNE_ANGABE = "ohne Angabe";
+
+export interface StopHerkunft {
+  /** Kandidaten insgesamt / davon OHNE brauchbare ATR (nicht messbar). */
+  n: number;
+  ohneAtr: number;
+  /** Je Signalquelle: die drei bekannten, „andere" und „ohne Angabe". */
+  nachQuelle: Array<{ name: string; lage: StopAtrLage }>;
+  nachOverride: Array<{ name: string; lage: StopAtrLage }>;
+  nachStil: Array<{ name: string; lage: StopAtrLage }>;
+  /** Die fuenf Maerkte mit festem Hoechstabstand im Prompt. */
+  deckel: {
+    lage: StopAtrLage;
+    /** Ø Hoechstabstand in Tages-ATR — liegt er unter 1.5, widerspricht sich der Prompt. */
+    deckelAtr: number | null;
+    deckelUnterRegel: number;
+    /** Stop weiter als der Deckel (Verstoss gegen die Prompt-Zeile). */
+    ueberDeckel: number;
+    /** Stop bei mindestens 90 % des Deckels — „am Deckel". */
+    amDeckel: number;
+  };
+  uebrige: StopAtrLage;
+}
+
+function gruppiereLage<T extends Kandidat>(
+  liste: readonly T[], schluessel: (k: T) => string, reihenfolge: readonly string[],
+): Array<{ name: string; lage: StopAtrLage }> {
+  // Dieselbe Teilung und Reihenfolge wie „Je Stil" in /exits — keine Kopie.
+  return teileGeordnet(liste, schluessel, reihenfolge).map(([name, teil]) => ({ name, lage: stopAtrLage(teil) }));
+}
+
+export function stopHerkunft(kandidaten: readonly Kandidat[]): StopHerkunft {
+  const mitAtr = kandidaten.filter((k) => inTagesAtr(Math.abs(k.entry - k.stop), k.atrTag) !== null);
+  // Eine unbekannte Quelle heisst „andere", nicht ihr Rohtext — die Menge der
+  // Zeilen bleibt damit geschlossen und die Telegram-Laenge begrenzt.
+  const quelle = (k: Kandidat) => k.signalQuelle === null || k.signalQuelle === undefined ? OHNE_ANGABE
+    : (QUELLEN_REIHENFOLGE as readonly string[]).includes(k.signalQuelle) ? k.signalQuelle : "andere";
+  const ovr = (k: Kandidat) => k.overrideAktiv === true ? "Override" : k.overrideAktiv === false ? "ohne Override" : OHNE_ANGABE;
+  const mitDeckel = mitAtr.filter((k) => maxSlPrompt(k.symbol) !== null);
+  const deckelWerte = mitDeckel
+    .map((k) => inTagesAtr(maxSlPrompt(k.symbol) as number, k.atrTag))
+    .filter((v): v is number => v !== null);
+  return {
+    n: kandidaten.length,
+    ohneAtr: kandidaten.length - mitAtr.length,
+    nachQuelle: gruppiereLage(mitAtr, quelle, [...QUELLEN_REIHENFOLGE, "andere", OHNE_ANGABE]),
+    nachOverride: gruppiereLage(mitAtr, ovr, ["ohne Override", "Override", OHNE_ANGABE]),
+    nachStil: gruppiereLage(mitAtr, (k) => k.stil, STIL_REIHENFOLGE),
+    deckel: {
+      lage: stopAtrLage(mitDeckel),
+      deckelAtr: deckelWerte.length === 0 ? null : deckelWerte.reduce((s, v) => s + v, 0) / deckelWerte.length,
+      deckelUnterRegel: deckelWerte.filter((v) => v < PROMPT_STOP_MIN_ATR).length,
+      ueberDeckel: mitDeckel.filter((k) => Math.abs(k.entry - k.stop) > (maxSlPrompt(k.symbol) as number)).length,
+      amDeckel: mitDeckel.filter((k) => Math.abs(k.entry - k.stop) >= 0.9 * (maxSlPrompt(k.symbol) as number)).length,
+    },
+    uebrige: stopAtrLage(mitAtr.filter((k) => maxSlPrompt(k.symbol) === null)),
+  };
+}
+
+function lageKurz(name: string, l: StopAtrLage): string {
+  return `${htmlSicher(name)} (${l.mitAtr}): Ø ${l.schnitt === null ? "?" : l.schnitt.toFixed(2)}`
+    + ` · unter ${PROMPT_STOP_MIN_ATR}: ${l.unterRegel}`;
+}
+
+/** Zweite /exits-Nachricht (23.11.). Geschlossene Mengen, also begrenzte Laenge. */
+export function stopHerkunftText(h: StopHerkunft, fensterTage: number | null): string {
+  const z: string[] = [];
+  z.push(`🔍 <b>/exits${fensterTage === null ? "" : ` ${fensterTage}`} — wer setzt den Stop?</b>`);
+  z.push(`<i>Stop-Abstand in Tages-ATR beim Einstieg (Ø, und wie viele unter den ${PROMPT_STOP_MIN_ATR} des Prompts). Gespeicherte Zeilen, keine Kerzen.</i>`);
+  if (h.n - h.ohneAtr === 0) {
+    z.push("", `Nicht messbar: keine der ${h.n} Zeilen trägt eine ATR beim Einstieg.`);
+    return z.join("\n");
+  }
+  z.push("", "<b>Signalquelle</b>:");
+  for (const g of h.nachQuelle) z.push(`  ${lageKurz(g.name, g.lage)}`);
+  z.push("<b>Override</b>:");
+  for (const g of h.nachOverride) z.push(`  ${lageKurz(g.name, g.lage)}`);
+  z.push("<b>Je Stil</b>:");
+  for (const g of h.nachStil) z.push(`  ${lageKurz(g.name, g.lage)}`);
+  const d = h.deckel;
+  z.push(`<b>Fester Max-SL im Prompt</b> <i>(${Object.keys(MAX_SL_PROMPT).join(", ")})</i>:`);
+  if (d.lage.mitAtr === 0) {
+    z.push("  keine Trades auf diesen Märkten");
+  } else {
+    z.push(`  ${lageKurz("diese Märkte", d.lage)}`);
+    z.push(`  Deckel in Tages-ATR: Ø ${d.deckelAtr === null ? "?" : d.deckelAtr.toFixed(2)} · unter ${PROMPT_STOP_MIN_ATR}: ${d.deckelUnterRegel}/${d.lage.mitAtr}`
+      + ` · Stop am Deckel (≥ 90 %): ${d.amDeckel} · darüber: ${d.ueberDeckel}`);
+  }
+  z.push(`  ${lageKurz("übrige Märkte", h.uebrige)}`);
+  if (h.ohneAtr > 0) z.push("", `ohne ATR beim Einstieg (nicht messbar): ${h.ohneAtr}`);
+  z.push("", "<i>Liegt der Deckel selbst unter 1.5 ATR, kann GPT beide Prompt-Zeilen nicht zugleich erfüllen. Eine Aufschlüsselung ist keine Ursache: sie zeigt, wo die engen Stops liegen.</i>");
+  return z.join("\n");
+}
+
 // ── WAS HAETTE DIE PROMPT-REGEL GEBRACHT? (22.11.) ─────────────────────────
 //
 // Der erste Lauf der ATR-Zeile ergab: Stop im Schnitt 0.76 Tages-ATR, 104 von
@@ -644,17 +779,23 @@ export function kennzahlen(bewertete: readonly EinzelErgebnis[]): Kennzahlen {
   };
 }
 
-/** Bekannte Namen zuerst in fester Reihenfolge, alles andere alphabetisch danach. */
-function gruppieren(
-  bewertete: readonly EinzelErgebnis[],
-  schluessel: (e: EinzelErgebnis) => string,
+/**
+ * Teilt eine Liste nach Namen — bekannte Namen zuerst in fester Reihenfolge,
+ * alles andere alphabetisch danach. EINE Fassung fuer alle Aufschluesselungen
+ * (23.11.): die Stop-Herkunft hatte die Sortierung zuerst KOPIERT, und zwei
+ * Fassungen derselben Reihenfolge koennen auseinanderlaufen (die Sabotage A3
+ * fand den Anker deshalb zweimal).
+ */
+function teileGeordnet<T>(
+  liste: readonly T[],
+  schluessel: (x: T) => string,
   reihenfolge: readonly string[],
-): GruppenZeile[] {
-  const m = new Map<string, EinzelErgebnis[]>();
-  for (const e of bewertete) {
-    const s = schluessel(e);
-    const liste = m.get(s);
-    if (liste) liste.push(e); else m.set(s, [e]);
+): Array<[string, T[]]> {
+  const m = new Map<string, T[]>();
+  for (const x of liste) {
+    const s = schluessel(x);
+    const teil = m.get(s);
+    if (teil) teil.push(x); else m.set(s, [x]);
   }
   const rang = (s: string) => {
     const i = reihenfolge.indexOf(s);
@@ -662,7 +803,16 @@ function gruppieren(
   };
   return [...m.keys()]
     .sort((a, b) => rang(a) - rang(b) || a.localeCompare(b))
-    .map((name) => ({ name, k: kennzahlen(m.get(name) ?? []) }));
+    .map((name): [string, T[]] => [name, m.get(name) ?? []]);
+}
+
+/** Bekannte Namen zuerst in fester Reihenfolge, alles andere alphabetisch danach. */
+function gruppieren(
+  bewertete: readonly EinzelErgebnis[],
+  schluessel: (e: EinzelErgebnis) => string,
+  reihenfolge: readonly string[],
+): GruppenZeile[] {
+  return teileGeordnet(bewertete, schluessel, reihenfolge).map(([name, teil]) => ({ name, k: kennzahlen(teil) }));
 }
 
 export const STIL_REIHENFOLGE = ["SCALPING", "DAYTRADING", "SWING"] as const;

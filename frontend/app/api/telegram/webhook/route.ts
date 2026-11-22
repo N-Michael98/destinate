@@ -1049,7 +1049,7 @@ ${SYSTEM_BEFEHLE}`
         const { STYLE_MAX_HOURS } = await import("@/lib/agents/risk-agent");
         const { ETIKETTEN_OHNE_ERGEBNIS } = await import("@/lib/capital-com/capital-trade-tracker");
         const { EPIC_MAP, capitalGetKerzen } = await import("@/lib/capital-com/capital-com-client");
-        const { auswahl, exitBericht, exitsText } = await import("@/lib/exit-messung/exit-messung");
+        const { auswahl, exitBericht, exitsText, stopHerkunft, stopHerkunftText } = await import("@/lib/exit-messung/exit-messung");
 
         const zeilen = await getPrisma().trade.findMany({
           where: { status: { not: "OPEN" } },
@@ -1103,6 +1103,16 @@ ${SYSTEM_BEFEHLE}`
               `❌ <b>/exits fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
           } finally {
             exitsSperreFreigeben();
+          }
+          // Zweite Nachricht (23.11.): wer setzt den Stop? Dieselben Kandidaten,
+          // KEINE Kerzen — deshalb auch nach einem Abbruch oder Wurf des Laufs.
+          // Eine eigene Nachricht, weil /exits die Telegram-Grenze im Haertefall
+          // schon ausschoepft. Ein Fehler hier darf nicht als „/exits
+          // fehlgeschlagen" erscheinen — das Ergebnis oben ist dann schon da.
+          try {
+            await reply(chatId, stopHerkunftText(stopHerkunft(aus.kandidaten), leer.fensterTage));
+          } catch (e) {
+            console.error(`[exits] ⚠️ Stop-Aufschluesselung nicht gesendet: ${e instanceof Error ? e.message : String(e)}`);
           }
         });
       } catch (e) {

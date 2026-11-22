@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()` | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -6631,6 +6631,77 @@ die beabsichtigte Änderung. Dann die Suite **allein** wiederholt: 36/36, je
 ~20 s. Ein abgebrochener Lauf ist kein bestandener — dieselbe Regel wie
 „ein übersprungener Fall ist kein bestandener“ (14.11.). Warum der Rechner
 so langsam war, ist **nicht** bestimmt.
+
+#### SWING liegt „über 2 SE" — und die Frage davor: wer setzt den Stop? (23.11.)
+
+`/exits 60` auf `36dcfe6` (dieselben 108 Trades, Summen nachgerechnet):
+
+| | n | Δ Regel − echt |
+|---|---|---|
+| alle | 107 | +0.03 ±0.22 |
+| DAYTRADING | 61 | −0.20 ±0.34 |
+| **SWING** | **46** | **+0.34 ±0.24 (über 2 SE)** |
+
+Der erste belastbare Unterschied: bei SWING hätte ein Stop von 1.5 Tages-ATR
+mit Ziel 2.25 ATR, **gehalten**, rund 0.34 R je Trade mehr gebracht. **Ein
+Prompt-Plan ist das noch nicht**, aus drei Gründen:
+
+- Gerechnet ist „halten" — Breakeven, Teilgewinn und Trailing stecken in
+  keiner der beiden Zahlen.
+- Ein weiterer Stop verkleinert die Position; wo sie unter `MIN_SIZE` fiele,
+  klemmt `calcPositionSize` sie **hoch**, und das Risiko in Franken stiege.
+  Nicht gemessen.
+- **Wo** der enge Stop entsteht, war offen — und daran hängt, wo man dreht.
+
+Im Code gelesen, nicht vermutet: drei Wege setzen den Stop. Der gemessene
+Konsens legt ihn **immer** auf mindestens 1.5 ATR (`atrRange`,
+`ai-analysis-engine.ts`), ein Override setzt einen festen Prozent-Stop
+(`slPct`, `orchestrator-agent.ts`), sonst GPT — mit der Regel „nie näher als
+1.5 ATR" **und**, für fünf Märkte, einem festen **absoluten** Höchstabstand
+(`Max SL distances`). Liegt dieser Deckel selbst unter 1.5 ATR, kann GPT beide
+Zeilen nicht zugleich erfüllen.
+
+`/exits` schickt deshalb eine **zweite Nachricht** — „wer setzt den Stop?":
+Stop-Abstand in Tages-ATR je Signalquelle (`notes.signalQuelle`), mit/ohne
+Override (`entryContext.overrideActive`), je Stil, und für die fünf
+Deckel-Märkte, wo der Deckel in ATR liegt und wie viele Stops an ihm kleben
+(≥ 90 %) oder darüber liegen. Ohne Kerzen, aus den gespeicherten Zeilen —
+deshalb auch nach einem Abbruch oder Wurf des Kerzen-Laufs. Eine eigene
+Nachricht, kein neuer Befehl: `/exits` ist an der Grenze, und eine Zeile mehr
+in der Befehlsliste hätte `/status` im Härtefall (4027) über 4096 geschoben.
+
+**Was es NICHT ist:** eine Ursache. Es zeigt, **wo** die engen Stops liegen.
+Fehlt die Angabe (Quelle vor dem 30.10., Override nicht geschrieben), heisst
+sie „ohne Angabe", nicht „GPT" und nicht „aus"; eine unbekannte Quelle heisst
+„andere", nicht ihr Rohtext — die Mengen bleiben geschlossen.
+
+**Die Deckel-Tabelle ist eine Kopie** (`MAX_SL_PROMPT`; das Original
+`MAX_SL_ABSTAND` steht nicht exportiert in einer Datei mit erhöhtem Risiko).
+Gebunden wie `RISK_KONST` in `/exitsim`: `safety-nets` schneidet die Tabelle
+kommentarbereinigt aus der Quelle und verlangt dieselben Schlüssel und Werte,
+dazu die Zuordnung `XAUUSD → GOLD` aus `maxSlFuer()`.
+
+**Und ein eigener Fehler, von der Sabotage gefunden:** die erste Fassung
+**kopierte** die Sortierung aus `gruppieren()`. Die Regression der
+`/exits`-Suite übersprang A3 („Anker 2x") — zwei Fassungen derselben
+Reihenfolge, die auseinanderlaufen können. Jetzt `teileGeordnet()`, eine
+Teilung für alle Aufschlüsselungen. **Ein übersprungener Fall war hier der
+Befund**, nicht ein Messproblem.
+
+**Die Testdaten mussten unbequem werden, bevor die Suite lief:** ein Stop bei
+95 % des Deckels (sonst fällt eine Grenze bei 100 % nicht auf), einer **genau**
+auf dem Deckel (sonst `>=` statt `>`), einer darüber, und eine Quelle, die
+**nur** bei Zeilen ohne ATR vorkommt (sonst fällt nicht auf, wenn diese
+Zeilen wieder mitgruppiert werden).
+
+Länge im Härtefall (jede Gruppe jeder geschlossenen Menge, dreistellig):
+**1164 von 3900**, daran gebunden.
+
+`safety-nets` 2099 → **2110**, **20 von 20 Sabotagen** (H14 — Name roh ins
+HTML — bleibt nachweislich grün: alle Namen sind geschlossene Mengen; als
+„entwischt" zu zählen wäre ein Messfehler). Regression auf dem
+**Endstand** (nach `teileGeordnet()`): `/exits` 36/36, ATR 17/17, Δ ±2 SE
+22/22, Regel 18/18; `/exitsim` 43/43 nach der Webhook-Änderung.
 
 ## Was hätte der Schalter je Stil gebracht? `/exitsim` (17.11.)
 
