@@ -13,7 +13,7 @@
 // Das Teilergebnis wird trotzdem gemeldet — mit Grund.
 
 import {
-  aufloesungFuer, kerzenLesen, nachrechnen, utcParameter, MAX_KERZEN,
+  aufloesungFuer, kerzenLesen, nachrechnen, regelKandidat, utcParameter, MAX_KERZEN,
   type Kandidat, type EinzelErgebnis, type Kerze,
 } from "./exit-messung";
 
@@ -78,6 +78,7 @@ export async function exitLauf(kandidaten: readonly Kandidat[], abh: LaufAbhaeng
       ergebnisse.push({
         kandidat: k,
         nachrechnung: { treffer: "KEINE_DATEN", maxR: null, haltenR: null, kerzenGenutzt: 0 },
+        regel: null,
         datenGrund: antwort.status === null ? "Netzfehler" : `HTTP ${antwort.status}`,
         gekappt: false,
       });
@@ -91,9 +92,13 @@ export async function exitLauf(kandidaten: readonly Kandidat[], abh: LaufAbhaeng
     if (lesung.versatzMin !== null) versatzMin = versatzMin === null ? lesung.versatzMin : Math.min(versatzMin, lesung.versatzMin);
     if (lesung.versatzMax !== null) versatzMax = versatzMax === null ? lesung.versatzMax : Math.max(versatzMax, lesung.versatzMax);
     const nachrechnung = nachrechnen(k, lesung.kerzen, a.minuten, endeMs);
+    // Derselbe Trade mit der Prompt-Regel (22.11.) — DIESELBEN Kerzen, kein
+    // weiterer Abruf. Ohne brauchbare ATR: null.
+    const regelK = regelKandidat(k);
     ergebnisse.push({
       kandidat: k,
       nachrechnung,
+      regel: regelK === null ? null : nachrechnen(regelK, lesung.kerzen, a.minuten, endeMs),
       datenGrund: nachrechnung.treffer === "KEINE_DATEN"
         ? (lesung.kerzen.length === 0 ? "leere Antwort" : "keine Kerze nach dem Einstieg")
         : null,

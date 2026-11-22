@@ -16722,7 +16722,11 @@ module.exports = async function pruefe() {
       for (let i = 0; i < 600; i++) {
         hart.push({ kandidat: { ...kB, id: i, stil: stile[i % 3], richtung: i % 2 ? "BUY" : "SELL", ziel: 101.5,
           atrTag: [0.3, 0.6, 1, 3, null][i % 5] }, nachrechnung: { treffer: ["ZIEL", "STOP", "BEIDE", "OFFEN"][i % 4],
-          maxR: -12.3456, haltenR: -12.3456, kerzenGenutzt: 5 }, datenGrund: null, gekappt: i % 7 === 0 });
+          maxR: -12.3456, haltenR: -12.3456, kerzenGenutzt: 5 },
+          // Mit Regel-Nachrechnung (22.11.) — ohne sie stuende der Abschnitt als
+          // kurzes „nicht messbar" da und die Laenge waere zu klein gemessen.
+          regel: { treffer: ["OFFEN", "ZIEL", "STOP", "BEIDE"][i % 4], maxR: -12.3456, haltenR: -12.3456, kerzenGenutzt: 5 },
+          datenGrund: null, gekappt: i % 7 === 0 });
       }
       for (let i = 0; i < 20; i++) {
         hart.push({ kandidat: { ...kB, id: 9000 + i, atrTag: 1 }, nachrechnung: { treffer: "KEINE_DATEN", maxR: null, haltenR: null },
@@ -16732,8 +16736,10 @@ module.exports = async function pruefe() {
         ausgeschlossen: Object.fromEntries(A.AUSSCHLUESSE.map((a) => [a, 99999])) }, hart,
         { fensterTage: 99999, abbruch: "<b>x</b>&y" + "z".repeat(400), kerzenUnbrauchbar: 99999, versatzMin: -999, versatzMax: 999 });
       torPruefung("exits-ATR: der Haertefall belegt nicht alle fuenf Baender — die Laenge waere zu klein gemessen",
-        BH.nachZielAtr.length === 5 && BH.nachStil.length === 3 && BH.nachRichtung.length === 2,
-        JSON.stringify(BH.nachZielAtr.map((g) => g.name)));
+        BH.nachZielAtr.length === 5 && BH.nachStil.length === 3 && BH.nachRichtung.length === 2
+        && BH.regel.gesamt.n > 0 && BH.regel.gesamt.beide > 0
+        && BH.regel.nachStil.filter((g) => g.v.n > 0).length === 3,
+        JSON.stringify({ baender: BH.nachZielAtr.map((g) => g.name), regel: BH.regel.nachStil.map((g) => g.v.n) }));
       const lH = A.exitsText(BH).length;
       torPruefung("exits-ATR: /exits sprengt im Haertefall die Grenze (3900, Telegram 4096)", lH <= 3900, `${lH} Zeichen`);
 
@@ -16775,9 +16781,148 @@ module.exports = async function pruefe() {
       torPruefung("exits-ATR Kette: der Tracker legt entryContext nicht unter diesem Namen in die Notizen",
         /\.\.\.\(trade\.entryContext \? \{ entryContext: trade\.entryContext \} : \{\}\)/.test(trk), "tracker");
       // Die Prompt-Regel, die der Text nennt, muss im Prompt stehen.
+      // KOMMENTARBEREINIGT (`eng`): ein Wort im Kommentar ist keine Verwendung.
       torPruefung("exits-ATR Kette: die Regel 'nie naeher als 1.5 ATR' steht nicht mehr im Prompt",
-        read("frontend/lib/market-scanner/ai-analysis-engine.ts").includes("Never place the stop CLOSER than 1.5 ATR to entry"),
+        eng.includes("Never place the stop CLOSER than 1.5 ATR to entry"),
         "prompt-regel");
+    }
+  }
+
+
+  // ── /exits: MIT DER PROMPT-REGEL NACHGERECHNET (22.11.) ──────────────────
+  //
+  // Der erste Lauf der ATR-Zeile: Stop Ø 0.76 Tages-ATR, 104 von 108 naeher
+  // als die 1.5 aus dem Prompt. Was die Regel EINGEHALTEN gebracht haette,
+  // rechnet /exits jetzt auf DENSELBEN Kerzen nach — ohne weiteren Abruf.
+  // Gepaart: nur Trades mit BEIDEN Nachrechnungen, sonst vergliche man zwei
+  // Mengen (Lehre /exits 16.11.).
+  {
+    const XR = ladeTsModul("lib/exit-messung/exit-messung.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+      "html-sicher/html-sicher": htmlSicherEcht,
+    });
+    const R = XR.exports;
+    const ELR = XR.fehler ? { fehler: XR.fehler } : ladeTsModul("lib/exit-messung/exit-lauf.ts", { "./exit-messung": R });
+    if (XR.fehler || ELR.fehler || typeof R?.regelKandidat !== "function" || typeof R?.regelVergleich !== "function"
+      || typeof ELR.exports?.exitLauf !== "function") {
+      torPruefung("exits-Regel: Module nicht ladbar oder Funktionen fehlen", false, XR.fehler ?? ELR.fehler ?? "fehlt");
+    } else {
+      const T = Date.UTC(2026, 10, 3, 9, 0, 0);
+      const basis = { id: 1, symbol: "EURUSD", epic: "EURUSD", richtung: "BUY", entry: 100, stop: 99, ziel: 101.5,
+        risiko: 1, rrGeplant: 1.5, stil: "SWING", horizontStunden: 168, eroeffnetMs: T, istEtikett: null,
+        istSchluss: null, teilgewinnGenommen: false, kiAbweichung: false, confidence: 75, groesse: 3, atrTag: 2 };
+
+      // 1. Die Geometrie der Regel — und das Original bleibt unangetastet.
+      const rb = R.regelKandidat(basis);
+      torPruefung("exits-Regel: BUY-Geometrie falsch (Stop 1.5 ATR, Ziel 1.5 × Stop)",
+        rb !== null && rb.stop === 97 && rb.ziel === 104.5 && rb.risiko === 3 && rb.rrGeplant === 1.5
+        && rb.entry === 100 && rb.richtung === "BUY" && basis.stop === 99 && basis.ziel === 101.5,
+        JSON.stringify(rb && { s: rb.stop, z: rb.ziel, r: rb.risiko, rr: rb.rrGeplant }));
+      const rs = R.regelKandidat({ ...basis, richtung: "SELL" });
+      torPruefung("exits-Regel: SELL-Geometrie falsch (Stop ueber, Ziel unter dem Einstieg)",
+        rs !== null && rs.stop === 103 && rs.ziel === 95.5 && rs.risiko === 3, JSON.stringify(rs && { s: rs.stop, z: rs.ziel }));
+      for (const atr of [null, 0, -1, NaN, Infinity, "2", undefined]) {
+        torPruefung(`exits-Regel: aus ATR ${String(atr)} wird eine Regel-Geometrie erfunden`,
+          R.regelKandidat({ ...basis, atrTag: atr }) === null, "atr");
+      }
+      torPruefung("exits-Regel: ein Stop oder Ziel unter null wird als Preis benutzt",
+        R.regelKandidat({ ...basis, entry: 2 }) === null && R.regelKandidat({ ...basis, entry: 2, richtung: "SELL" }) === null,
+        "unter null");
+      torPruefung("exits-Regel: der Ziel-Faktor steht nicht auf 1.5", R.PROMPT_ZIEL_FAKTOR === 1.5, String(R.PROMPT_ZIEL_FAKTOR));
+      // KOMMENTARBEREINIGT: derselbe Satz steht auch im Doku-Kommentar ueber
+      // `promptVerstoesse()` — die rohe Suche blieb dort gruen, auch wenn der
+      // PROMPT ihn nicht mehr trug (Sabotage R17, 22.11.).
+      const engR = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      const satzR = "the distance to the target must be at least 1.5× the distance to the stop";
+      torPruefung("exits-Regel: die Bereinigung entfernt den Kommentar nicht (Selbstpruefung)",
+        read("frontend/lib/market-scanner/ai-analysis-engine.ts").split(satzR).length - 1 >= 2
+        && engR.split(satzR).length - 1 === 1, "selbst");
+      torPruefung("exits-Regel: der Faktor 1.5 steht nicht mehr im Prompt",
+        engR.includes(satzR),
+        "prompt");
+
+      // 2. Gepaart — ABSICHTLICH mit allen Faellen, die NICHT zaehlen duerfen.
+      const N = (t, h) => ({ treffer: t, maxR: 0, haltenR: h, kerzenGenutzt: 5 });
+      const e = (echt, regel, k = basis) => ({ kandidat: k, nachrechnung: echt, regel, datenGrund: null, gekappt: false });
+      const liste = [
+        e(N("STOP", -1), N("OFFEN", 0.4)),
+        e(N("OFFEN", 0.2), N("ZIEL", 1.5)),
+        e(N("ZIEL", 2), N("BEIDE", -1)),
+        e(N("STOP", -1), null),                       // ohne ATR
+        e(N("STOP", -1), undefined),                  // nicht gerechnet
+        e(N("KEINE_DATEN", null), N("OFFEN", 1)),     // echt ohne Daten
+        e(N("OFFEN", 0.1), N("KEINE_DATEN", null)),   // Regel ohne Daten
+      ];
+      const v = R.regelVergleich(liste);
+      torPruefung("exits-Regel: der Vergleich ist nicht gepaart oder zaehlt falsch",
+        v.n === 3 && v.ziel === 1 && v.stop === 0 && v.beide === 1 && v.offen === 1
+        && Math.abs(v.regelR - (0.4 + 1.5 - 1) / 3) < 1e-9 && Math.abs(v.echtR - (-1 + 0.2 + 2) / 3) < 1e-9,
+        JSON.stringify(v));
+      const leer = R.regelVergleich([e(N("STOP", -1), null)]);
+      torPruefung("exits-Regel: ohne Paare wird ein Schnitt erfunden",
+        leer.n === 0 && leer.regelR === null && leer.echtR === null, JSON.stringify(leer));
+
+      // 3. Bericht: je Stil in derselben Reihenfolge wie „Je Stil", je Stil NUR die eigenen Trades.
+      const day = { ...basis, stil: "DAYTRADING" };
+      const ergB = [
+        e(N("STOP", -1), N("OFFEN", 0.4)), e(N("OFFEN", 0.2), N("ZIEL", 1.5)),   // SWING
+        e(N("OFFEN", 0.5), N("STOP", -1), day),                                   // DAYTRADING
+        { ...e(N("KEINE_DATEN", null), null), datenGrund: "HTTP 400" },           // in KEINER Zahl
+      ];
+      const ausR = { gesamt: 4, kandidaten: new Array(4), ausgeschlossen: Object.fromEntries(R.AUSSCHLUESSE.map((a) => [a, 0])) };
+      const BR = R.exitBericht(ausR, ergB, { fensterTage: 60, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: 60, versatzMax: 60 });
+      const sw = BR.regel.nachStil.find((g) => g.name === "SWING")?.v ?? {};
+      const dt = BR.regel.nachStil.find((g) => g.name === "DAYTRADING")?.v ?? {};
+      torPruefung("exits-Regel: je Stil falsch gerechnet oder falsch sortiert",
+        JSON.stringify(BR.regel.nachStil.map((g) => g.name)) === JSON.stringify(["DAYTRADING", "SWING"])
+        && BR.regel.gesamt.n === 3 && sw.n === 2 && dt.n === 1 && dt.stop === 1 && Math.abs(dt.regelR + 1) < 1e-9
+        && Math.abs(dt.echtR - 0.5) < 1e-9 && Math.abs(sw.regelR - (0.4 + 1.5) / 2) < 1e-9,
+        JSON.stringify(BR.regel));
+
+      // 4. Der Text — Kopf mit den Regelwerten AUS DEN KONSTANTEN, Zeilen in fester Form.
+      const tR = R.exitsText(BR);
+      torPruefung("exits-Regel: der Text zeigt den Abschnitt nicht oder falsch",
+        tR.includes("<b>Mit Prompt-Regel</b> <i>(Stop 1.5 ATR, Ziel 2.25 ATR; Ø Halten Regel → echt)</i>:")
+        && tR.includes("  alle (3): 🎯1 🛑1 ⏱1 · +0.30 → -0.10 R ⚠️ zu wenig")
+        && tR.includes("  DAYTRADING (1): 🎯0 🛑1 ⏱0 · -1.00 → +0.50 R ⚠️ zu wenig")
+        && tR.includes("  SWING (2): 🎯1 🛑0 ⏱1 · +0.95 → -0.40 R ⚠️ zu wenig"),
+        (tR.match(/(Mit Prompt-Regel|  (alle|DAYTRADING|SWING) \()[^\n]*/g) ?? []).join(" | "));
+      const tOhne = R.exitsText(R.exitBericht(ausR, [e(N("STOP", -1), null)],
+        { fensterTage: null, abbruch: null, kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }));
+      torPruefung("exits-Regel: ohne Regel-Nachrechnung wird ein Ergebnis behauptet statt 'nicht messbar'",
+        /Mit Prompt-Regel[^\n]*\n {2}nicht messbar/.test(tOhne), (tOhne.match(/Mit Prompt-Regel[^\n]*\n[^\n]*/) ?? [""])[0]);
+
+      // 5. Der Abbruch-Grund ist auf 200 Zeichen gekuerzt — VOR dem Entschaerfen.
+      const tAb = R.exitsText(R.exitBericht(ausR, [], { fensterTage: null, abbruch: "<b>x</b>&y" + "z".repeat(400),
+        kerzenUnbrauchbar: 0, versatzMin: null, versatzMax: null }));
+      torPruefung("exits-Regel: der Abbruch-Grund wird nicht auf 200 Zeichen gekuerzt (oder nach dem Entschaerfen)",
+        tAb.includes("&lt;b&gt;x&lt;/b&gt;&amp;y" + "z".repeat(190) + " — Teilergebnis") && !tAb.includes("z".repeat(191)),
+        (tAb.match(/Abgebrochen:[^\n]{0,60}/) ?? [""])[0]);
+
+      // 6. END-TO-END durch die echte exitLauf(): DIESELBEN Kerzen, KEIN weiterer Abruf.
+      //    Echt (Stop 99 / Ziel 101.5): die Kerze beruehrt beide → BEIDE.
+      //    Regel (Stop 97 / Ziel 104.5): keins → OFFEN, halten (100.6 − 100) / 3 = 0.2.
+      const utc = (ms) => R.utcParameter(ms);
+      const kerze = (ms, hb, lb, cb) => ({ snapshotTimeUTC: utc(ms), snapshotTime: utc(ms + 3_600_000),
+        highPrice: { bid: hb, ask: hb + 0.01 }, lowPrice: { bid: lb, ask: lb + 0.01 },
+        closePrice: { bid: cb, ask: cb + 0.01 }, openPrice: { bid: cb, ask: cb + 0.01 } });
+      const abrufe = [];
+      const lauf = await ELR.exports.exitLauf([basis, { ...basis, id: 2, atrTag: null }], {
+        kerzen: async (...a) => { abrufe.push(a); return { ok: true, daten: { prices: [kerze(T + 6 * 3_600_000, 102, 98, 100.6)] } }; },
+        warte: async () => {},
+        jetzt: () => T + 30 * 86_400_000,
+      });
+      const r0 = lauf.ergebnisse[0], r1 = lauf.ergebnisse[1];
+      torPruefung("exits-Regel E2E: exitLauf rechnet die Regel nicht auf denselben Kerzen nach",
+        abrufe.length === 2 && r0?.nachrechnung.treffer === "BEIDE" && r0?.regel?.treffer === "OFFEN"
+        && Math.abs(r0.regel.haltenR - 0.2) < 1e-9 && r1?.regel === null,
+        JSON.stringify({ n: abrufe.length, e0: r0?.nachrechnung.treffer, r0: r0?.regel, r1: r1?.regel }));
+      const lauf400 = await ELR.exports.exitLauf([basis], {
+        kerzen: async () => ({ ok: false, status: 400, error: "alt" }), warte: async () => {}, jetzt: () => T + 30 * 86_400_000,
+      });
+      torPruefung("exits-Regel E2E: ohne Kerzen wird eine Regel-Nachrechnung behauptet",
+        lauf400.ergebnisse[0]?.regel === null, JSON.stringify(lauf400.ergebnisse[0]?.regel));
     }
   }
 

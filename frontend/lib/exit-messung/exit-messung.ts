@@ -460,9 +460,76 @@ export function stopAtrLage(kandidaten: ReadonlyArray<Pick<Kandidat, "entry" | "
   };
 }
 
+// ── WAS HAETTE DIE PROMPT-REGEL GEBRACHT? (22.11.) ─────────────────────────
+//
+// Der erste Lauf der ATR-Zeile ergab: Stop im Schnitt 0.76 Tages-ATR, 104 von
+// 108 naeher als die 1.5, die der Prompt verlangt — und bei SWING beruehrten 36
+// von 46 zuerst den Stop. Ob die Regel, EINGEHALTEN, etwas bringt, ist damit
+// noch nicht gesagt. Deshalb wird jeder Trade ein zweites Mal nachgerechnet,
+// mit DENSELBEN Kerzen (kein Abruf mehr), aber mit der Geometrie, die der Prompt
+// mindestens verlangt: Stop 1.5 Tages-ATR, Ziel 1.5 × Stop.
+//
+// R ist dabei die richtige Einheit: die Positionsgroesse haelt den Euro-Einsatz
+// je Trade fest (`riskAmount / Stopabstand`), ein weiterer Stop heisst eine
+// kleinere Position, nicht mehr Risiko. Verglichen wird „halten" mit „halten"
+// auf DENSELBEN Trades — unsere Ausstiegslogik ist in keiner der beiden Zahlen.
+
+/** „the distance to the target must be at least 1.5× the distance to the stop" (Prompt). */
+export const PROMPT_ZIEL_FAKTOR = 1.5;
+
+/** Derselbe Trade mit Stop und Ziel nach der Prompt-Regel — null ohne brauchbare ATR. */
+export function regelKandidat(k: Kandidat): Kandidat | null {
+  const atr = k.atrTag;
+  if (typeof atr !== "number" || !Number.isFinite(atr) || atr <= 0) return null;
+  const risiko = PROMPT_STOP_MIN_ATR * atr;
+  const zielAbstand = PROMPT_ZIEL_FAKTOR * risiko;
+  const buy = k.richtung === "BUY";
+  const stop = buy ? k.entry - risiko : k.entry + risiko;
+  const ziel = buy ? k.entry + zielAbstand : k.entry - zielAbstand;
+  // Ein Stop unter null (BUY auf einem sehr kleinen Kurs) waere kein Preis.
+  if (!(stop > 0) || !(ziel > 0)) return null;
+  return { ...k, stop, ziel, risiko, rrGeplant: PROMPT_ZIEL_FAKTOR };
+}
+
+export interface RegelVergleich {
+  /** Trades mit BEIDEN Nachrechnungen (echt und Regel), ohne KEINE_DATEN. */
+  n: number;
+  ziel: number;
+  stop: number;
+  beide: number;
+  offen: number;
+  /** Ø „halten" mit der Regel-Geometrie. */
+  regelR: number | null;
+  /** Ø „halten" mit der ECHTEN Geometrie — auf DENSELBEN Trades. */
+  echtR: number | null;
+}
+
+export function regelVergleich(ergebnisse: readonly EinzelErgebnis[]): RegelVergleich {
+  const paare = ergebnisse.filter((e) =>
+    e.nachrechnung.treffer !== "KEINE_DATEN" && e.nachrechnung.haltenR !== null
+    && e.regel !== undefined && e.regel !== null
+    && e.regel.treffer !== "KEINE_DATEN" && e.regel.haltenR !== null);
+  const zaehle = (t: Treffer) => paare.filter((e) => (e.regel as Nachrechnung).treffer === t).length;
+  const mittel = (w: number[]) => (w.length === 0 ? null : w.reduce((s, x) => s + x, 0) / w.length);
+  return {
+    n: paare.length,
+    ziel: zaehle("ZIEL"),
+    stop: zaehle("STOP"),
+    beide: zaehle("BEIDE"),
+    offen: zaehle("OFFEN"),
+    regelR: mittel(paare.map((e) => (e.regel as Nachrechnung).haltenR as number)),
+    echtR: mittel(paare.map((e) => e.nachrechnung.haltenR as number)),
+  };
+}
+
 export interface EinzelErgebnis {
   kandidat: Kandidat;
   nachrechnung: Nachrechnung;
+  /**
+   * Derselbe Trade mit der Prompt-Regel nachgerechnet (22.11.), auf denselben
+   * Kerzen. null = keine brauchbare ATR; fehlt = nicht gerechnet (alte Aufrufer).
+   */
+  regel?: Nachrechnung | null;
   /** Gesetzt, wenn keine Kerzen kamen — mit Grund (HTTP-Status, Netz, leer). */
   datenGrund: string | null;
   gekappt: boolean;
@@ -494,6 +561,8 @@ export interface ExitBericht {
   /** Je Ziel-Abstand in Tages-ATR (22.11.) — dieselbe Rechnung, eine Gruppe je Band. */
   nachZielAtr: GruppenZeile[];
   stopAtr: StopAtrLage;
+  /** Mit der Prompt-Regel nachgerechnet (22.11.) — gesamt und je Stil. */
+  regel: { gesamt: RegelVergleich; nachStil: Array<{ name: string; v: RegelVergleich }> };
 }
 
 /** Die Kennzahlen EINER Menge bewerteter Trades. */
@@ -636,6 +705,14 @@ export function exitBericht(
     nachRichtung: gruppieren(bewertete, (e) => e.kandidat.richtung, ["BUY", "SELL"]),
     nachZielAtr: gruppieren(bewertete, (e) => zielAtrBand(e.kandidat), ZIEL_ATR_REIHENFOLGE),
     stopAtr: stopAtrLage(bewertete.map((e) => e.kandidat)),
+    regel: {
+      gesamt: regelVergleich(bewertete),
+      // Dieselbe Gruppierung und Reihenfolge wie „Je Stil".
+      nachStil: gruppieren(bewertete, (e) => e.kandidat.stil, STIL_REIHENFOLGE).map((g) => ({
+        name: g.name,
+        v: regelVergleich(bewertete.filter((e) => e.kandidat.stil === g.name)),
+      })),
+    },
   };
 }
 
@@ -671,7 +748,11 @@ export function exitsText(b: ExitBericht): string {
   z.push(`📐 <b>/exits${b.fensterTage === null ? "" : ` ${b.fensterTage}`}</b> — wie weit lief der Kurs?`);
   z.push(`<i>Nachgerechnet mit dem URSPRÜNGLICHEN Stop und Ziel, bis zum Zeit-Exit des Stils. Unsere Ausstiegslogik (BE/Teilgewinn/Trailing) ist NICHT simuliert.</i>`);
   if (b.abbruch !== null) {
-    z.push("", `⚠️ <b>Abgebrochen:</b> ${htmlSicher(b.abbruch)} — Teilergebnis über ${b.geprueft} von ${b.auswahl.kandidaten} Trades.`);
+    // Auf 200 Zeichen gekuerzt (22.11.): der Grund kommt aus dem Antwortkoerper
+    // des Brokers; 200 tragen Status und Meldung, und die Telegram-Grenze
+    // braucht den Platz fuer die Regel-Nachrechnung. Gekuerzt VOR dem
+    // Entschaerfen — sonst koennte der Schnitt ein `&amp;` zerteilen.
+    z.push("", `⚠️ <b>Abgebrochen:</b> ${htmlSicher(b.abbruch.slice(0, 200))} — Teilergebnis über ${b.geprueft} von ${b.auswahl.kandidaten} Trades.`);
   }
   z.push("", `<b>Auswahl:</b> ${b.auswahl.kandidaten} von ${b.auswahl.gesamt} geschlossenen Trades`);
   for (const a of AUSSCHLUESSE) {
@@ -715,6 +796,20 @@ export function exitsText(b: ExitBericht): string {
   z.push(b.stopAtr.mitAtr === 0
     ? "  Stop in Tages-ATR: nicht messbar (keine ATR beim Einstieg gespeichert)"
     : `  Stop in Tages-ATR: Ø ${(b.stopAtr.schnitt as number).toFixed(2)} · näher als ${PROMPT_STOP_MIN_ATR} (Prompt-Regel): ${anteil(b.stopAtr.unterRegel, b.stopAtr.mitAtr)}`);
+  // MIT DER PROMPT-REGEL NACHGERECHNET (22.11.): dieselben Trades, dieselben
+  // Kerzen, Stop 1.5 ATR / Ziel 1.5 × Stop. Ø „halten", Regel gegen echt.
+  z.push(`<b>Mit Prompt-Regel</b> <i>(Stop ${PROMPT_STOP_MIN_ATR} ATR, Ziel ${PROMPT_STOP_MIN_ATR * PROMPT_ZIEL_FAKTOR} ATR; Ø Halten Regel → echt)</i>:`);
+  const rg = b.regel.gesamt;
+  if (rg.n === 0) {
+    z.push("  nicht messbar (keine ATR beim Einstieg gespeichert)");
+  } else {
+    const regelZeile = (name: string, v: RegelVergleich) =>
+      `  ${htmlSicher(name)} (${v.n}): 🎯${v.ziel} 🛑${v.stop}${v.beide > 0 ? ` ❓${v.beide}` : ""} ⏱${v.offen}`
+      + ` · ${rKurz(v.regelR)} → ${rKurz(v.echtR)} R`
+      + (v.n < MIN_BEWERTET ? " ⚠️ zu wenig" : "");
+    z.push(regelZeile("alle", rg));
+    for (const g of b.regel.nachStil) if (g.v.n > 0) z.push(regelZeile(g.name, g.v));
+  }
 
   z.push("", "<b>Selbstprüfung</b>");
   z.push(`  Etikett STOP → Stop auch nachgerechnet: ${anteil(b.kalibrierung.davonStopGefunden, b.kalibrierung.stopEtikett)}`);
