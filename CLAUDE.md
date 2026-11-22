@@ -46,7 +46,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `ai-clamp` | `inGrenzen()` | 11.08. |
 | `exit-schwellen` | `wirksameSchwellen()` | 10.08. |
 | `teilgewinn` | `teilgewinnErlaubt()`, `teilgewinnStand()` | 11.08. |
-| `signal-untergrenze` | die Untergrenze der Signalkette; seit 15.09. auch `wirksameApproveSchwelle()` und `rrVerteilung()`; seit 17.09. `stilGrenze()` — ein fehlendes Stil-Tageslimit heisst nicht mehr „unbegrenzt" | 13.08. |
+| `signal-untergrenze` | die Untergrenze der Signalkette; seit 15.09. auch `wirksameApproveSchwelle()` und `rrVerteilung()`; seit 17.09. `stilGrenze()` — ein fehlendes Stil-Tageslimit heisst nicht mehr „unbegrenzt"; seit 23.11. `stilLimitNachOverride()` — das Stil-Limit gilt für den gehandelten Stil, auch nach einem Override | 13.08. |
 | `order-bestaetigung` | `ausstiegsgrund()`, `stopAbstandGenug()` | 13.08. |
 | `lifecycle-rueckkehr` | `nachzuregistrieren()`, `stammdatenAusNotizen()`, `notizenBefund()`, `positionenOhneStammdaten()` | 18.08. |
 | `python-ueberwachung` | `meldePythonAufruf()`, `pythonUebergang()` | 19.08. |
@@ -7066,6 +7066,54 @@ Route, die die 0 auf 1 klemmt, und `stilGrenze()`, die sie durch den Standard
 ersetzt (gefangen von `signal-untergrenze`).
 
 Regression: Kontonummer-Suite (dieselbe Oberfläche und Route) **9 von 9** plus Gegenprobe.
+
+### Teil 2: das Stil-Limit gilt für den GEHANDELTEN Stil (23.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg
+(`orchestrator-agent.ts`, zwei direkte Nutzer).
+
+Das Stil-Tor in der Kandidaten-Auswahl prüfte den Stil von **GPT**
+(`const s = o.gpt.tradingStyle`). Ein vom Admin bestätigter **Override** kann
+ihn danach ändern — gehandelt **und gezählt** (`byStyle[style]`) wurde dann
+mit dem Override-Stil. Sagt GPT DAYTRADING und setzt ein Override SWING,
+entstand trotz SWING = 0 ein SWING-Trade; ebenso liess sich jedes Limit > 0
+so überschreiten. Gefunden beim Durchgehen der Kette für Teil 1 — die Lücke
+bestand schon vorher. In den 60 Tagen davor war bei **0 von 108** Trades ein
+Override aktiv; ob gerade einer hinterlegt ist, war von hier nicht sichtbar.
+
+Jetzt prüft `stilLimitNachOverride()` (rein, exportiert) den **gehandelten**
+Stil mit **demselben** `stilGrenze()` und dessen eigenem Zähler — aber nur,
+wenn der Override den Stil wirklich **ändert**; sonst hat das Tor oben genau
+diesen Stil schon geprüft. Gemeldet wird nur die **Ablehnung** (Tor
+„Stil-Limit", dann `continue`): die Zustimmung hat das Tor oben für diesen
+Kandidaten schon gemeldet, ein zweites „ja" zählte ihn doppelt.
+
+`stilLimitGrund()` ist **ein** Wortlaut für beide Stellen; bei Grenze 0
+heisst es **„SWING pausiert (Tageslimit 0)"** statt „Tageslimit erreicht
+(0/0)". Die Ablehnung trägt jetzt die Zahlen (`(2/2)`) — `grundSchluessel()`
+fasst sie in der Bilanz weiter zusammen.
+
+**Was es NICHT tut:** keine Schwelle, Grösse, Stop, Prompt; ohne Override
+und ohne Stilwechsel ändert sich nichts. `const grenze = stilGrenze(…)` am
+Tor bleibt — daran hängt `signal-untergrenze`. **Snapshot 299 und Karte 924
+unverändert.** Der GO-Knopf im Market Scanner prüft weiterhin keine
+Stil-Limits — eigene Entscheidung.
+
+**Und ein Prüfer zieht mit:** der Tor-Deckel (`MAX_TORE_JE_ZYKLUS`, 400)
+rechnete mit 8 Meldungen je Kandidat; jetzt kann eine neunte kommen. Die
+Schranke im Prüfer ist `Watchlist × 9 + 2` = 272 — weiter Luft.
+
+**Absicherung:** `signal-untergrenze` 112 → **122**: `stilLimitGrund` und
+`stilLimitNachOverride` **gerechnet** — ohne Stilwechsel keine zweite
+Prüfung, eine 0 wird nicht umgangen, erreicht gegen frei, ohne Zähler die
+Lesart des Tors, und der entscheidende Fall: GPT-Stil schon voll (5/3),
+gehandelt SWING (0/2) → **erlaubt**, weil der gehandelte Stil zählt. Die
+Verdrahtung per **Klammerzählung** (der Ablehnungs-Zweig endet mit
+Tor-Meldung und `continue`), `gptStil` **vor** der Zuweisung, die
+Einstellungs-Tabelle statt der Standard-Tabelle, beide Tor-Gründe über
+`stilLimitGrund`.
+
+**12 von 12 Sabotagen** gegen alle 23 Prüfer (darunter: Ablehnung ohne `continue`, gezählt wird GPTs Stil, `<=` statt `<`, `gptStil` nach der Zuweisung, Standard- statt Einstellungs-Tabelle). Regression Stil-Null **8/8**, ATR **17/17**, Meta-Rückfall **26/26**. Der geänderte Deckel-Prüfer eigens nachgewiesen: Deckel **271** rot (die alte Formel ×8 hätte ihn durchgelassen), **272** grün.
 
 ## Der Meta-KI-Rückfall prüft die Regeln selbst (18.11.)
 

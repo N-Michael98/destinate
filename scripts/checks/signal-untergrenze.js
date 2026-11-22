@@ -503,6 +503,79 @@ module.exports = function pruefe() {
       pruefe1("das Stil-Limit wird nicht ueber stilGrenze() geholt",
         /const grenze = stilGrenze\(/.test(orchOhneKomm),
         "sonst rechnet der Pruefer etwas, das der Handel nicht benutzt");
+      // ── DAS STIL-LIMIT GILT FUER DEN GEHANDELTEN STIL (23.11.) ──────────
+      //
+      // Das Tor oben prueft GPTs Stil; ein Override kann ihn danach aendern,
+      // und gehandelt/gezaehlt wird mit dem Override-Stil. Ohne zweite
+      // Pruefung umging ein Override jedes Stil-Limit, auch eine 0.
+      const slg = orchModul.exports.stilLimitGrund;
+      const slo = orchModul.exports.stilLimitNachOverride;
+      if (typeof slg !== "function" || typeof slo !== "function") {
+        funde.push("stilLimitGrund/stilLimitNachOverride werden nicht exportiert — die "
+          + "Pruefung des Override-Stils bliebe ungerechnet");
+        geprueft++;
+      } else {
+        pruefe1("der Grund nennt eine Grenze 0 nicht 'pausiert' (oder zaehlt falsch)",
+          slg("SWING", 0, 0) === "SWING pausiert (Tageslimit 0)"
+          && slg("SWING", 2, 2) === "Tageslimit SWING erreicht (2/2)"
+          && slg("SWING", 1, 2) === "Tageslimit SWING nicht erreicht (1/2)",
+          [slg("SWING", 0, 0), slg("SWING", 2, 2), slg("SWING", 1, 2)].join(" | "));
+        const stille5 = console.warn;
+        let o;
+        console.warn = () => {};
+        try {
+          o = {
+            gleich:   slo({ SWING: 0 }, "SWING", "SWING", { SWING: 0 }),
+            pausiert: slo({ DAYTRADING: 3, SWING: 0 }, "DAYTRADING", "SWING", { DAYTRADING: 0 }),
+            voll:     slo({ SWING: 2 }, "DAYTRADING", "SWING", { SWING: 2 }),
+            frei:     slo({ SWING: 2 }, "DAYTRADING", "SWING", { SWING: 1 }),
+            ohneZahl: slo({ DAYTRADING: 3 }, "DAYTRADING", "SWING", null),
+            // GPT-Stil schon voll (5 von 3), gehandelt wird SWING (0 von 2):
+            // gezaehlt werden muss der GEHANDELTE Stil.
+            gehandelt: slo({ DAYTRADING: 3, SWING: 2 }, "DAYTRADING", "SWING", { DAYTRADING: 5, SWING: 0 }),
+          };
+        } finally { console.warn = stille5; }
+        pruefe1("ohne Stilwechsel wird ein zweites Mal geprueft (doppelte Zaehlung im Trichter)",
+          o.gleich.geprueft === false && o.gleich.erlaubt === true, JSON.stringify(o.gleich));
+        pruefe1("ein Override umgeht eine Stil-Grenze 0 (pausiert)",
+          o.pausiert.geprueft === true && o.pausiert.erlaubt === false
+          && o.pausiert.grund === "SWING pausiert (Tageslimit 0) — Override-Stil statt DAYTRADING",
+          JSON.stringify(o.pausiert));
+        pruefe1("ein Override umgeht ein erreichtes Stil-Limit (oder sperrt ein freies)",
+          o.voll.erlaubt === false && o.frei.erlaubt === true, `${JSON.stringify(o.voll)} | ${JSON.stringify(o.frei)}`);
+        pruefe1("ohne Zaehler oder ohne Tabellen-Eintrag gilt nicht dieselbe Lesart wie am Tor (0 Trades, Standard)",
+          o.ohneZahl.erlaubt === true && o.ohneZahl.grund === `Tageslimit SWING nicht erreicht (0/${std.SWING}) — Override-Stil statt DAYTRADING`,
+          JSON.stringify(o.ohneZahl));
+        pruefe1("gezaehlt wird der Stil von GPT statt des GEHANDELTEN",
+          o.gehandelt.erlaubt === true && /\(0\/2\)/.test(o.gehandelt.grund), JSON.stringify(o.gehandelt));
+
+        // Verdrahtung — der Ablehnungs-Zweig per KLAMMERZAEHLUNG, nicht per
+        // Zeichen-Fenster (ein Fenster beweist Naehe, nicht Zugehoerigkeit).
+        const blockAb = (text, start) => {
+          const i = text.indexOf(start);
+          if (i < 0) return "";
+          let tiefe = 0;
+          for (let k = text.indexOf("{", i); k < text.length; k++) {
+            if (text[k] === "{") tiefe++;
+            else if (text[k] === "}") { tiefe--; if (tiefe === 0) return text.slice(i, k + 1); }
+          }
+          return "";
+        };
+        const zweig = blockAb(orchOhneKomm, "if (stilOv.geprueft && !stilOv.erlaubt) {");
+        pruefe1("der Ablehnungs-Zweig fuer den Override-Stil fehlt (Selbstpruefung des Ausschnitts)",
+          zweig.length > 40 && zweig.includes("stilOv.grund"), `${zweig.length} Zeichen`);
+        pruefe1("eine Ablehnung des Override-Stils handelt trotzdem (kein continue) oder meldet kein Tor",
+          /meldeTorEntscheidung\(AGENT_ID, \{ gate: "Stil-Limit",[^}]*approve: false, reason: stilOv\.grund \}\);\s*continue;\s*\}$/.test(zweig),
+          zweig.slice(0, 200));
+        pruefe1("die Override-Pruefung bekommt nicht den GPT-Stil, den gehandelten Stil und den Tageszaehler",
+          /const gptStil = style;\s*style = ovStil;/.test(orchOhneKomm)
+          && /stilLimitNachOverride\(styleLimit as Record<string, number>, gptStil, style,\s*global\.__daily_trades__\?\.byStyle\)/.test(orchOhneKomm),
+          "Verdrahtung");
+        pruefe1("das Tor oben nennt den Grund nicht ueber stilLimitGrund (zwei Wortlaute)",
+          (orchOhneKomm.match(/reason: stilLimitGrund\(s, heute, grenze\)/g) ?? []).length === 2
+          && /verworfen\.push\(`\$\{o\.symbol\}: \$\{stilLimitGrund\(s, heute, grenze\)\}`\)/.test(orchOhneKomm),
+          "Tor");
+      }
     }
   }
 

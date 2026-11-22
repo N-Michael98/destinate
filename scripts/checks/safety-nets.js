@@ -9103,11 +9103,12 @@ module.exports = async function pruefe() {
           const zbQ = read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts");
           const deckel = Number((zbQ.match(/MAX_TORE_JE_ZYKLUS = (\d+)/) || [])[1] ?? 0);
           // 7 Tore je Kandidat + eine Meta-KI-Meldung je Signal, dazu
-          // Orchestrator-KI und Zyklus-Limit.
-          const noetig = wl * 8 + 2;
+          // Orchestrator-KI und Zyklus-Limit. Seit 23.11. EINE mehr je
+          // Kandidat: das Stil-Limit des Override-Stils (nur die Ablehnung).
+          const noetig = wl * 9 + 2;
           torPruefung("der Tor-Deckel schnappt zu — die spaeten Tore fallen dann aus der Bilanz",
             deckel >= noetig,
-            `Deckel ${deckel}, noetig ${noetig} (${wl} Maerkte x 8 + 2)`);
+            `Deckel ${deckel}, noetig ${noetig} (${wl} Maerkte x 9 + 2)`);
         }
 
         torPruefung("STAGE 3 sagt nicht mehr, dass /reset genuegt",

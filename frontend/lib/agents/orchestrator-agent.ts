@@ -712,6 +712,49 @@ export function stilGrenze(tabelle: Record<string, number> | null | undefined, s
 }
 
 /**
+ * EIN Grundtext fuer das Stil-Tor (23.11.). Bei Grenze 0 ist der Stil
+ * PAUSIERT (im Dashboard eingestellt) — „Tageslimit erreicht (0/0)" las sich
+ * wie ein Zaehlfehler.
+ */
+export function stilLimitGrund(stil: string, heute: number, grenze: number): string {
+  if (grenze === 0) return `${stil} pausiert (Tageslimit 0)`;
+  return heute >= grenze
+    ? `Tageslimit ${stil} erreicht (${heute}/${grenze})`
+    : `Tageslimit ${stil} nicht erreicht (${heute}/${grenze})`;
+}
+
+/**
+ * DAS STIL-LIMIT GILT FUER DEN GEHANDELTEN STIL (23.11.).
+ *
+ * Das Stil-Tor in der Kandidaten-Auswahl prueft den Stil von GPT. Ein vom
+ * Admin bestaetigter Override kann ihn DANACH aendern — gehandelt und gezaehlt
+ * (`byStyle[style]`) wird dann mit dem Override-Stil. Ohne zweite Pruefung
+ * umging ein Override damit jedes Stil-Limit, auch eine 0 („pausiert").
+ * Gefunden beim Bau der Pause; in den 60 Tagen davor war bei 0 von 108 Trades
+ * ein Override aktiv.
+ *
+ * Nur wenn der Override den Stil WIRKLICH aendert (`geprueft`): sonst hat das
+ * Tor oben genau diesen Stil schon geprueft, und eine zweite Meldung waere
+ * eine doppelte Zaehlung im Trichter.
+ */
+export function stilLimitNachOverride(
+  tabelle: Record<string, number> | null | undefined,
+  gptStil: string,
+  gehandelterStil: string,
+  heuteJeStil: Readonly<Record<string, number>> | null | undefined,
+): { geprueft: boolean; erlaubt: boolean; grund: string } {
+  if (gehandelterStil === gptStil) return { geprueft: false, erlaubt: true, grund: "" };
+  // Dieselbe Lesart wie das Tor oben (`?? 0`).
+  const heute = heuteJeStil?.[gehandelterStil] ?? 0;
+  const grenze = stilGrenze(tabelle, gehandelterStil);
+  return {
+    geprueft: true,
+    erlaubt: heute < grenze,
+    grund: `${stilLimitGrund(gehandelterStil, heute, grenze)} — Override-Stil statt ${gptStil}`,
+  };
+}
+
+/**
  * Die "Min Signal Confidence", die WIRKLICH gilt (09.09.).
  *
  * DERSELBE RIEGEL WIE FÜR DIE APPROVE-SCHWELLE, eine Einstellung weiter —
@@ -1091,11 +1134,11 @@ async function zyklusInnen(): Promise<string> {
     const heute = global.__daily_trades__?.byStyle[s] ?? 0;
     const grenze = stilGrenze(styleLimit as Record<string, number>, s);
     if (heute >= grenze) {
-      verworfen.push(`${o.symbol}: Tageslimit ${s} erreicht (${heute}/${grenze})`);
-      meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: `Tageslimit ${s} erreicht` });
+      verworfen.push(`${o.symbol}: ${stilLimitGrund(s, heute, grenze)}`);
+      meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: false, reason: stilLimitGrund(s, heute, grenze) });
       return false;
     }
-    meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: true, reason: `Tageslimit ${s} nicht erreicht (${heute}/${grenze})` });
+    meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: o.symbol, direction: o.gpt.direction, approve: true, reason: stilLimitGrund(s, heute, grenze) });
     return true;
   });
 
@@ -1303,8 +1346,19 @@ async function zyklusInnen(): Promise<string> {
       // Stil-Tageslimit. Dieselbe Pruefung wie fuer GPTs Stil.
       const ovStil = normalisiereStil(override.style);
       if (ovStil) {
+        const gptStil = style;
         style = ovStil;
         console.log(`[orchestrator] 🔧 ${candidate.symbol}: Override aktiv — Style=${style}${override.slPct ? ` SL=${(override.slPct * 100).toFixed(1)}%` : ""}`);
+        // Das Stil-Tor oben prueft GPTs Stil — gehandelt wird mit DIESEM (23.11.).
+        const stilOv = stilLimitNachOverride(styleLimit as Record<string, number>, gptStil, style,
+          global.__daily_trades__?.byStyle);
+        // Gemeldet wird nur die ABLEHNUNG: die Zustimmung hat das Tor oben fuer
+        // diesen Kandidaten schon gemeldet — ein zweites `ja` zaehlte ihn doppelt.
+        if (stilOv.geprueft && !stilOv.erlaubt) {
+          console.log(`[orchestrator] 🚫 ${candidate.symbol}: ${stilOv.grund}`);
+          meldeTorEntscheidung(AGENT_ID, { gate: "Stil-Limit", symbol: candidate.symbol, direction: candidate.gpt.direction, approve: false, reason: stilOv.grund });
+          continue;
+        }
       } else {
         console.warn(`[orchestrator] ⚠️ ${candidate.symbol}: Override-Stil ${JSON.stringify(override.style)} `
           + `ist keiner von SCALPING/DAYTRADING/SWING — es gilt weiter ${style}`);
