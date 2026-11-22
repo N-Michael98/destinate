@@ -24,7 +24,9 @@
 // die Kalibrierung gegen das TATSAECHLICHE Ergebnis, auf Trades OHNE
 // KI-Abweichung und OHNE Teilgewinn-Bein.
 
-import { istR, nachrechnen, STIL_REIHENFOLGE, type Kandidat, type Kerze } from "./exit-messung";
+import {
+  istR, nachrechnen, regelKandidat, PROMPT_STOP_MIN_ATR, PROMPT_ZIEL_FAKTOR, STIL_REIHENFOLGE, type Kandidat, type Kerze,
+} from "./exit-messung";
 import { htmlSicher } from "../html-sicher/html-sicher";
 
 export interface StilSchwellen { bePct: number; partialPct: number; trailPct: number; atrFactor: number }
@@ -292,6 +294,12 @@ export interface SimFall {
   halten: number | null;     // aus `/exits` (nachrechnen)
   v1: SimErgebnis;           // heute
   v2: SimErgebnis;           // Schalter umgelegt
+  /**
+   * V3 (23.11.): heute, aber mit der Geometrie der Prompt-Regel — Stop 1.5
+   * Tages-ATR, Ziel 1.5 × Stop (`regelKandidat`, dieselbe Funktion wie in
+   * /exits). null ohne brauchbare Tages-ATR. Fehlt fuer alte Aufrufer.
+   */
+  v3?: SimErgebnis | null;
 }
 
 export interface SimGruppe {
@@ -307,6 +315,11 @@ export interface SimGruppe {
   /** Hat die Nachbildung einen Teilgewinn, wo einer war — und keinen, wo keiner war? */
   teilgewinnTreffer: number;
   urteil: string;
+  /** V3 (Regel-Geometrie) — nur Trades MIT V3. */
+  v3: Stat;
+  /** V3 − V1 je Trade, gepaart — auf denselben Trades. */
+  delta3: Stat;
+  urteil3: string;
 }
 
 export interface SimBericht {
@@ -318,6 +331,8 @@ export interface SimBericht {
   ohneDaten: number;
   kiAbweichung: number;
   teilgewinnOhneIst: number;
+  /** Nachgerechnete Trades OHNE V3 (keine brauchbare Tages-ATR beim Einstieg). */
+  ohneRegel: number;
   gruppen: SimGruppe[];
   abbruch: string | null;
 }
@@ -334,21 +349,43 @@ export function simGruppe(name: string, faelle: readonly SimFall[]): SimGruppe {
     .map((f) => { const i = istR(f.kandidat); return i === null ? NaN : f.v1.r - i; }));
   const teilgewinnTreffer = faelle.filter((f) => (f.v1.teilgewinn !== null) === f.kandidat.teilgewinnGenommen).length;
 
+  // V3 nur auf den Trades, die eine haben — und gepaart gegen DEREN V1.
+  const mitV3 = faelle.filter((f): f is SimFall & { v3: SimErgebnis } => f.v3 !== undefined && f.v3 !== null);
+  const v3 = statistik(mitV3.map((f) => f.v3.r));
+  const delta3 = statistik(mitV3.map((f) => f.v3.r - f.v1.r));
+
+  return {
+    name, n: faelle.length, halten, v1, v2, delta, kalibrierung: kal, teilgewinnTreffer,
+    urteil: urteilVon(faelle.length, delta, kal, "V2"),
+    v3, delta3,
+    // Dieselbe Kalibrierung (V1 gegen tatsaechlich): V3 rechnet mit derselben
+    // Nachbildung, nur mit anderer Geometrie.
+    urteil3: urteilVon(mitV3.length, delta3, kal, "V3"),
+  };
+}
+
+/**
+ * EIN Urteil fuer V2 und V3 (23.11.) — eine zweite Fassung der Regel koennte
+ * auseinanderlaufen. Die Kalibrierung hat Vorrang: weicht die Nachbildung
+ * staerker von der Wirklichkeit ab als der Effekt gross ist, sagt der Effekt
+ * nichts.
+ */
+export function urteilVon(n: number, delta: Stat, kal: Stat, was: string): string {
   let urteil: string;
-  if (faelle.length < MIN_JE_GRUPPE) {
-    urteil = `⚠️ zu wenig (${faelle.length} < ${MIN_JE_GRUPPE})`;
+  if (n < MIN_JE_GRUPPE) {
+    urteil = `⚠️ zu wenig (${n} < ${MIN_JE_GRUPPE})`;
   } else if (delta.mittel === null || delta.se === null) {
     urteil = "nicht berechenbar";
   } else if (kal.mittel === null) {
-    urteil = "⚠️ keine Kalibrierung möglich — V2 nicht belastbar";
+    urteil = `⚠️ keine Kalibrierung möglich — ${was} nicht belastbar`;
   } else if (Math.abs(kal.mittel) > Math.abs(delta.mittel)) {
-    urteil = "⚠️ Nachbildung weicht stärker ab als der Effekt — V2 nicht belastbar";
+    urteil = `⚠️ Nachbildung weicht stärker ab als der Effekt — ${was} nicht belastbar`;
   } else if (Math.abs(delta.mittel) > 2 * delta.se) {
     urteil = "Unterschied ausserhalb ±2 SE";
   } else {
     urteil = "Unterschied innerhalb des Rauschens (±2 SE)";
   }
-  return { name, n: faelle.length, halten, v1, v2, delta, kalibrierung: kal, teilgewinnTreffer, urteil };
+  return urteil;
 }
 
 /** Was der Abruf je Trade liefert (Form von `SimDaten` aus exit-lauf.ts). */
@@ -382,7 +419,15 @@ export function simBerichtAus(
     const v1 = simuliere(k, d.kerzen, d.minuten, d.endeMs, atr, heute, abh);
     const v2 = simuliere(k, d.kerzen, d.minuten, d.endeMs, atr, umgelegt, abh);
     if (v1 === null || v2 === null) { ohneDaten++; continue; }
-    faelle.push({ kandidat: k, halten: nachrechnen(k, d.kerzen, d.minuten, d.endeMs).haltenR, v1, v2 });
+    // V3 (23.11.): DIESELBEN Kerzen und dieselbe Einstellung wie V1, nur die
+    // Geometrie der Prompt-Regel. Die Grösse PROPORTIONAL zum weiteren Stop —
+    // gleiches Risiko in Franken, wie `calcPositionSize` es rechnet, aber OHNE
+    // Mindest-/Hoechstgrösse und Rundung (das ist eine eigene Frage). Sie zaehlt
+    // hier nur fuer den Teilgewinn (ab 2 Einheiten, halbe Grösse abgerundet).
+    const regel = regelKandidat(k);
+    const v3 = regel === null ? null
+      : simuliere({ ...regel, groesse: k.groesse * (k.risiko / regel.risiko) }, d.kerzen, d.minuten, d.endeMs, atr, heute, abh);
+    faelle.push({ kandidat: k, halten: nachrechnen(k, d.kerzen, d.minuten, d.endeMs).haltenR, v1, v2, v3 });
   }
   const stile = [...new Set(faelle.map((f) => f.kandidat.stil))].sort((a, b) => {
     const ra = (STIL_REIHENFOLGE as readonly string[]).indexOf(a);
@@ -398,6 +443,7 @@ export function simBerichtAus(
     ohneConfidence, ohneGroesse, ohneDaten,
     kiAbweichung: faelle.filter((f) => f.kandidat.kiAbweichung).length,
     teilgewinnOhneIst: faelle.filter((f) => f.kandidat.teilgewinnGenommen).length,
+    ohneRegel: faelle.filter((f) => f.v3 === undefined || f.v3 === null).length,
     gruppen,
     abbruch: zusatz.abbruch,
   };
@@ -415,7 +461,7 @@ export function simText(b: SimBericht): string {
   const z: string[] = [];
   const schalter = (an: boolean) => (an ? "AN" : "AUS");
   z.push(`🧪 <b>/exitsim${b.fensterTage === null ? "" : ` ${b.fensterTage}`}</b> — Ausstiegslogik nachgerechnet`);
-  z.push(`<i>Beide Systeme wie im Betrieb (RiskAgent, dann Python-Lifecycle, engerer Stop gilt). V1 = heute (Schalter ${schalter(b.heuteRelativ)}), V2 = Schalter ${schalter(!b.heuteRelativ)}. Die KI vor jeder Stufe ist NICHT nachgebildet.</i>`);
+  z.push(`<i>Beide Systeme wie im Betrieb (RiskAgent, dann Python-Lifecycle, engerer Stop gilt). V1 = heute (Schalter ${schalter(b.heuteRelativ)}), V2 = Schalter ${schalter(!b.heuteRelativ)}, V3 = heute mit Stop ${PROMPT_STOP_MIN_ATR} Tages-ATR und Ziel ${PROMPT_STOP_MIN_ATR * PROMPT_ZIEL_FAKTOR} ATR (Prompt-Regel). Die KI vor jeder Stufe ist NICHT nachgebildet.</i>`);
   if (b.abbruch !== null) z.push("", `⚠️ <b>Abgebrochen:</b> ${htmlSicher(b.abbruch)}`);
   z.push("", `<b>Nachgerechnet:</b> ${b.gruppen.find((g) => g.name === "gesamt")?.n ?? 0} von ${b.kandidaten} Trades`);
   if (b.ohneDaten > 0) z.push(`  • ohne Kursdaten: ${b.ohneDaten}`);
@@ -423,12 +469,14 @@ export function simText(b: SimBericht): string {
   if (b.ohneGroesse > 0) z.push(`  • ohne Positionsgrösse (Teilgewinn nicht nachbildbar): ${b.ohneGroesse}`);
   z.push(`  • davon KI abgewichen (SKIP/ADJUST): ${b.kiAbweichung} — nicht in der Kalibrierung`);
   if (b.teilgewinnOhneIst > 0) z.push(`  • mit Teilgewinn: ${b.teilgewinnOhneIst} — „tatsächlich" nicht bestimmbar, nicht in der Kalibrierung`);
+  if (b.ohneRegel > 0) z.push(`  • ohne Tages-ATR beim Einstieg: ${b.ohneRegel} — kein V3`);
   z.push("", "<b>Ø R je Trade</b> <i>(±2 Standardfehler)</i>:");
   for (const g of b.gruppen) {
     z.push(`<b>${htmlSicher(g.name)}</b> (${g.n}): halten ${pm(g.halten)} · V1 ${pm(g.v1)} · V2 ${pm(g.v2)}`);
     z.push(`   V2−V1 ${pm(g.delta)} · Kalibrierung V1−tats. ${pm(g.kalibrierung)} (${g.kalibrierung.n}) · Teilgewinn getroffen ${g.teilgewinnTreffer}/${g.n}`);
     z.push(`   → ${htmlSicher(g.urteil)}`);
+    z.push(`   V3 ${pm(g.v3)} (${g.v3.n}) · V3−V1 ${pm(g.delta3)} → ${htmlSicher(g.urteil3)}`);
   }
-  z.push("", "<i>5-Minuten-Kerzen statt 2-Minuten-Takt, kein Schlupf, ATR aus Capital- statt yfinance-Kerzen, Teilgewinn als echte Halbierung. Ein Unterschied ist keine Zusage.</i>");
+  z.push("", "<i>5-Minuten-Kerzen statt 2-Minuten-Takt, kein Schlupf, ATR aus Capital- statt yfinance-Kerzen, Teilgewinn als echte Halbierung. V3: Grösse proportional zum weiteren Stop, ohne Mindest-/Höchstgrösse. Ein Unterschied ist keine Zusage.</i>");
   return z.join("\n");
 }

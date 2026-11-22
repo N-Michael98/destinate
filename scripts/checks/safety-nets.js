@@ -15828,6 +15828,69 @@ module.exports = async function pruefe() {
         gKi.kalibrierung.n === 0 && /keine Kalibrierung/.test(gKi.urteil), JSON.stringify(gKi.kalibrierung));
       const gTeil = X.simGruppe("t", [{ ...F(0, 0, 0), kandidat: { ...KB, teilgewinnGenommen: true, istSchluss: 101 } }]);
       torPruefung("exitsim: ein Trade mit Teilgewinn geht mit Ist-R in die Kalibrierung", gTeil.kalibrierung.n === 0, JSON.stringify(gTeil.kalibrierung));
+      // ── V3 (23.11.): heute, aber mit der Geometrie der Prompt-Regel. VON HAND:
+      //  KB mit Tages-ATR 2 -> Regel-Stop 97, Ziel 104.5, Risiko 3, Grösse 4 × 1/3.
+      //  V3a: +5 Tief 98.5 reisst den ECHTEN Stop 99 (V1 −1), nicht den Regel-Stop;
+      //       +10 Schluss 100.1 (0.1 % < BE 0.5 %, Python 0.024 < 0.40) -> Zeit-Exit
+      //       0.1 / 3 = +0.0333.
+      //  V3b: +5 Schluss 101.05 (1.05 %): V1 Teil 2 von 4 @101.05 + BE 99.85,
+      //       Python 0.53 -> Teil gesperrt; +10 Tief 99.5 -> Rest @99.85:
+      //       0.5·1.05 − 0.5·0.15 = +0.45.  V3: Grösse 1.333 < 2 -> KEIN Teil
+      //       („zu klein"), BE 100 − 3·0.15 = 99.55, Python 0.236 -> nichts;
+      //       +10 Tief 99.5 -> @99.55 = −0.15. OHNE Skalierung (Grösse 4) waere
+      //       es 0.5·0.35 − 0.5·0.15 = +0.10 — genau das faengt die Pruefung.
+      const KR = { ...KB, atrTag: 2 };
+      const kerzenV3a = [K(5, 100.2, 98.5, 99.0), K(10, 100.2, 99.5, 100.1)];
+      const kerzenV3b = [K(5, 101.1, 100.0, 101.05), K(10, 101.2, 99.5, 99.6)];
+      const SV = (kz, k = KR) => X.simBerichtAus([{ kandidat: k, kerzen: kz, stunden: [], minuten: 5, endeMs: ende, datenGrund: null }],
+        AUS, abh, { fensterTage: null, abbruch: null, kandidaten: 1 }).gruppen.find((g) => g.name === "gesamt");
+      const gV3a = SV(kerzenV3a);
+      torPruefung("exitsim V3: Fall V3a — der Regel-Stop ist nicht die Prompt-Geometrie (V1 −1, V3 +0.0333)",
+        gV3a && nahe(gV3a.v1.mittel, -1) && nahe(gV3a.v3.mittel, 0.1 / 3) && gV3a.v3.n === 1 && nahe(gV3a.delta3.mittel, 1 + 0.1 / 3),
+        JSON.stringify(gV3a && [gV3a.v1.mittel, gV3a.v3.mittel, gV3a.delta3.mittel]));
+      const gV3b = SV(kerzenV3b);
+      torPruefung("exitsim V3: Fall V3b — die Grösse wird nicht proportional zum weiteren Stop skaliert (V1 +0.45, V3 −0.15)",
+        gV3b && nahe(gV3b.v1.mittel, 0.45) && nahe(gV3b.v3.mittel, -0.15) && nahe(gV3b.delta3.mittel, -0.6),
+        JSON.stringify(gV3b && [gV3b.v1.mittel, gV3b.v3.mittel, gV3b.delta3.mittel]));
+      torPruefung("exitsim V3: V3 rechnet nicht mit der Einstellung von HEUTE (V1), sondern mit der umgelegten",
+        (() => { const an = X.simBerichtAus([{ kandidat: KR, kerzen: kerzenV3b, stunden: [], minuten: 5, endeMs: ende, datenGrund: null }],
+          AN, abh, { fensterTage: null, abbruch: null, kandidaten: 1 }).gruppen.find((g) => g.name === "gesamt");
+          // Mit AN rechnet V3 relativ zum Regel-Stop: 1.05 % < BE bei 1 R = 3 % -> kein BE,
+          // Zeit-Exit @99.6 = −0.1333. Kaeme hier −0.15 heraus, liefe V3 mit AUS.
+          return an && nahe(an.v3.mittel, (99.6 - 100) / 3); })(),
+        "V3 heute");
+      // Ohne Tages-ATR: kein V3, gezaehlt — und V1/V2 bleiben trotzdem in der Gruppe.
+      const SBo = X.simBerichtAus([
+        { kandidat: KR, kerzen: kerzenV3a, stunden: [], minuten: 5, endeMs: ende, datenGrund: null },
+        { kandidat: { ...KB, id: 9, atrTag: null }, kerzen: kerzenV3a, stunden: [], minuten: 5, endeMs: ende, datenGrund: null },
+      ], AUS, abh, { fensterTage: null, abbruch: null, kandidaten: 2 });
+      const gO = SBo.gruppen.find((g) => g.name === "gesamt");
+      torPruefung("exitsim V3: ohne Tages-ATR wird V3 erfunden, nicht gezaehlt, oder V1 verliert den Trade",
+        SBo.ohneRegel === 1 && gO && gO.n === 2 && gO.v1.n === 2 && gO.v3.n === 1 && gO.delta3.n === 1,
+        JSON.stringify({ o: SBo.ohneRegel, n: gO?.n, v1: gO?.v1.n, v3: gO?.v3.n, d: gO?.delta3.n }));
+      // Das Urteil fuer V3 zaehlt NUR die Trades MIT V3 (40 Faelle, 20 mit V3 -> „zu wenig").
+      // V2 ABSICHTLICH ungleich V1 (0.3 gegen 0): sonst faellt nicht auf, wenn V3
+      // gegen V2 statt gegen V1 gepaart wird.
+      const FV = (i, mitV3) => ({ ...F(0, 0.3, 0), v3: mitV3 ? { r: 0.5 + (i % 2) * 0.01, ende: "ZEIT", teilgewinn: null, breakeven: false } : null });
+      const gHalb = X.simGruppe("t", viele((i) => FV(i, i % 2 === 0)));
+      const gVoll = X.simGruppe("t", viele((i) => FV(i, true)));
+      torPruefung("exitsim V3: das Urteil fuer V3 zaehlt Trades ohne V3 mit (oder urteilt nicht)",
+        /zu wenig \(20 < 30\)/.test(gHalb.urteil3) && /ausserhalb ±2 SE/.test(gVoll.urteil3)
+        && nahe(gVoll.delta3.mittel, 0.505) && gVoll.v3.n === 40,
+        [gHalb.urteil3, gVoll.urteil3].join(" | "));
+      torPruefung("exitsim V3: urteilVon fehlt oder nennt die falsche Variante",
+        typeof X.urteilVon === "function"
+        && /V3 nicht belastbar/.test(X.urteilVon(40, { n: 40, mittel: 0.1, sd: 1, se: 0.01 }, { n: 40, mittel: 0.5, sd: 1, se: 0.1 }, "V3")),
+        typeof X.urteilVon);
+      const tV3 = X.simText(X.simBerichtAus([{ kandidat: KR, kerzen: kerzenV3b, stunden: [], minuten: 5, endeMs: ende, datenGrund: null },
+        { kandidat: { ...KB, id: 9, atrTag: null }, kerzen: kerzenV3a, stunden: [], minuten: 5, endeMs: ende, datenGrund: null }],
+        AUS, abh, { fensterTage: null, abbruch: null, kandidaten: 2 }));
+      torPruefung("exitsim V3: der Text zeigt V3 nicht (Zeile je Gruppe, Kopf, ohne ATR, Annahme zur Grösse)",
+        tV3.includes("   V3 -0.15 (1) · V3−V1 -0.60 → ⚠️ zu wenig (1 &lt; 30)")
+        && tV3.includes("V3 = heute mit Stop 1.5 Tages-ATR und Ziel 2.25 ATR (Prompt-Regel)")
+        && tV3.includes("  • ohne Tages-ATR beim Einstieg: 1 — kein V3")
+        && tV3.includes("V3: Grösse proportional zum weiteren Stop, ohne Mindest-/Höchstgrösse"),
+        (tV3.match(/[^\n]*V3[^\n]*/g) ?? []).join(" | ").slice(0, 600));
 
       // ── Text: Gift im Abbruch und im Gruppennamen, Laenge im Haertefall.
       const tS = X.simText({ ...SB, abbruch: "<b>x</b>&y" + "z".repeat(300),
@@ -15835,12 +15898,18 @@ module.exports = async function pruefe() {
       torPruefung("exitsim: der Text gibt Fremdes roh ins HTML",
         !tS.includes("<b>x</b>&y") && !tS.includes("<i>GIFT</i>") && tS.includes("&lt;i&gt;GIFT"), "gift");
       const vollG = Array.from({ length: 6 }, (_v, i) => ({ ...SB.gruppen[0], name: `STIL${"X".repeat(30)}${i}`,
-        urteil: "⚠️ Nachbildung weicht stärker ab als der Effekt — V2 nicht belastbar" }));
+        urteil: "⚠️ Nachbildung weicht stärker ab als der Effekt — V2 nicht belastbar",
+        // 23.11.: die V3-Zeile in ihrer laengsten Form — sonst waere die Laenge zu klein gemessen.
+        v3: { n: 99999, mittel: -12.3456, sd: 1, se: 6.1728 }, delta3: { n: 99999, mittel: -12.3456, sd: 1, se: 6.1728 },
+        urteil3: "⚠️ Nachbildung weicht stärker ab als der Effekt — V3 nicht belastbar" }));
       const tLang = X.simText({ ...SB, fensterTage: 99999, ohneDaten: 99999, ohneConfidence: 99999, ohneGroesse: 99999,
-        teilgewinnOhneIst: 99999, kiAbweichung: 99999, abbruch: "z".repeat(400), gruppen: vollG });
+        teilgewinnOhneIst: 99999, kiAbweichung: 99999, ohneRegel: 99999, abbruch: "z".repeat(400), gruppen: vollG });
+      torPruefung("exitsim: der Haertefall traegt die V3-Zeile nicht — die Laenge waere zu klein gemessen",
+        (tLang.match(/V3 nicht belastbar/g) ?? []).length === vollG.length && tLang.includes("kein V3"), "V3 im Haertefall");
       torPruefung("exitsim: der Text sprengt die Telegram-Grenze im Haertefall", tLang.length <= 3900, `${tLang.length}`);
       torPruefung("exitsim: der Text nennt die Grenzen der Nachbildung nicht",
-        /KI vor jeder Stufe ist NICHT nachgebildet/.test(tS) && /5-Minuten-Kerzen/.test(tS) && /Teilgewinn als echte Halbierung/.test(tS), "Grenzen");
+        /KI vor jeder Stufe ist NICHT nachgebildet/.test(tS) && /5-Minuten-Kerzen/.test(tS) && /Teilgewinn als echte Halbierung/.test(tS)
+        && /V3: Grösse proportional zum weiteren Stop/.test(tS), "Grenzen");
 
       // ── exitSimLauf: seitenweise, Stundenkerzen, Pause, Abbruch.
       {
