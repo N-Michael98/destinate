@@ -4785,8 +4785,18 @@ module.exports = async function pruefe() {
                 ohneStopZiel: 30, go: 90, ohneGptAntwort: 120, tore,
                 // 19.11.: Konsens- und Summenprobe-Zeile im schlimmsten Fall.
                 konsensRichtungen: 90, taErsatzRichtungen: 12, trichterGeprueft: 287, restOhneAnalyse: 44, restOhneStop: 33, restUngeklaert: 22, mehrfachGezaehlt: 11,
+                // 23.11.: die Stufe NACH den Toren, im schlimmsten Fall — ein
+                // Grund aus lauter `&` (wird beim Entschaerfen fuenffach lang)
+                // und mehrere Gruende, dazu der Satz im Urteil.
+                brokerFehler: 999, brokerFehlerGruende: { ["XAUUSD: Broker: " + "&".repeat(80)]: 900,
+                  "b": 50, "c": 30, "d": 19 },
               } }));
             const schlimmst = haertefall(toreMax);
+            torPruefung("der /status-Haertefall traegt die Broker-Zeile nicht im schlimmsten Fall "
+              + "(gekuerzt, mit weiteren Gruenden, im Urteil) — dann misst er zu wenig",
+              /• beim Broker gescheitert: 999 — XAUUSD: (&amp;)+… \(900\) \+3 Gründe/.test(schlimmst)
+              && /und beim Broker \(<b>999<\/b>\) gescheitert/.test(schlimmst),
+              (schlimmst.match(/[^\n]*beim Broker[^\n]*/g) ?? ["(keine)"]).join(" | ").slice(0, 300));
             // 19.11.: der Haertefall muss die Trichter-Zeilen WIRKLICH
             // enthalten — sonst wuerde er still kuerzer, und die Laengen-
             // Pruefung bliebe gruen (gemessen: ohne Kompaktfassung 4122).
@@ -14461,6 +14471,154 @@ module.exports = async function pruefe() {
           torPruefung("trichter: der gesunde Fall in /status sagt nicht „jedes Signal genau einer Stufe“",
             lGut.includes("• Summenprobe (5/5 Analysen): jedes Signal genau einer Stufe zugeordnet"),
             (lGut.match(/Summenprobe[^\n]*/) ?? ["(keine)"])[0]);
+        }
+      }
+
+      // ══ DIE STUFE NACH DEM LETZTEN TOR: BEIM BROKER GESCHEITERT (23.11.) ══
+      //
+      // /status vom 23.11.: „Filterkette: ja 2" und als Ausgang „Alle
+      // Kandidaten gescheitert: 1" — zwei Signale passierten jedes Tor und
+      // scheiterten beim Broker. Den Grund trug dieselbe Tagessumme seit dem
+      // 20.09. (`fehlgeschlagenGruende`), gezeigt wurde er nur in der
+      // Tagesbilanz um 22:05 UTC, und das Urteil nannte ein Tor DAVOR.
+      // GERECHNET mit den echten Modulen, mit dem echten Schluessel-Format.
+      {
+        const hlB = ladeTsModul("lib/handels-lage/handels-lage.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+        const zbB = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+        const HL = hlB.exports ?? {};
+        const ZB = zbB.exports ?? {};
+        if (typeof HL.handelsLage !== "function" || typeof HL.entschaerftGekuerzt !== "function"
+          || typeof HL.BROKER_GRUND_MAX_STATUS !== "number"
+          || typeof ZB.tagessummeAddieren !== "function" || typeof ZB.leereTagessumme !== "function") {
+          torPruefung("broker-stufe: handels-lage/zyklus-bilanz nicht ausfuehrbar", false,
+            hlB.fehler ?? zbB.fehler ?? "Export fehlt");
+        } else {
+          const MAXB = HL.BROKER_GRUND_MAX_STATUS;
+          // 1. entschaerftGekuerzt: das ERGEBNIS ist begrenzt, und kein Schnitt
+          //    zerteilt ein Entity. Ein `&` wird fuenf Zeichen lang — eine
+          //    Grenze VOR dem Entschaerfen haette nichts begrenzt.
+          const zerteilt = (s) => /&(?!(amp|lt|gt|quot|#39);)/.test(s);
+          for (const [roh, name] of [
+            ["&".repeat(300), "nur &"], ["<".repeat(300), "nur <"],
+            ["a&b<c>d\"e'f ".repeat(40), "gemischt"], ["x".repeat(300), "ohne Sonderzeichen"],
+          ]) {
+            const r = HL.entschaerftGekuerzt(roh, MAXB);
+            torPruefung(`broker-stufe: entschaerftGekuerzt ueberschreitet ${MAXB} oder zerteilt ein Entity (${name})`,
+              r.length <= MAXB && !zerteilt(r) && r.endsWith("…") && !/[<>]/.test(r),
+              `${r.length}: ${r.slice(0, 80)}`);
+          }
+          // Ein kurzer Text bleibt UNVERAENDERT (nur entschaerft) — ein Riegel,
+          // der alles kuerzt, verlöre den Grund.
+          torPruefung("broker-stufe: ein kurzer Grund wird gekuerzt oder nicht entschaerft",
+            HL.entschaerftGekuerzt("A<B", MAXB) === "A&lt;B"
+            && HL.entschaerftGekuerzt("x".repeat(MAXB), MAXB) === "x".repeat(MAXB),
+            HL.entschaerftGekuerzt("A<B", MAXB));
+
+          // 2. Die ECHTE Kette: Orchestrator-Format → Zyklus-Bilanz → Tagessumme
+          //    → handelsLage, gemappt wie der Webhook. Der Schluessel heisst
+          //    `SYMBOL: Broker: <Fehler>` — an der Quelle geprueft unten.
+          const bil = { start: 0, ende: 1000, ausgang: "Alle Kandidaten gescheitert", scan: null,
+            tore: [], trades: [],
+            fehlgeschlagen: ["XAUUSD: Broker: error.invalid.stoploss.minvalue: 1.05",
+              "XAUUSD: Broker: error.invalid.stoploss.minvalue: 1.07",
+              "EURUSD: Broker: <html>502 & mehr</html>"] };
+          let summe = null;
+          try { summe = ZB.tagessummeAddieren(ZB.leereTagessumme("2026-11-23"), bil, "2026-11-23"); }
+          catch (e) { summe = null; torPruefung("broker-stufe: tagessummeAddieren wirft", false, e.message); }
+          const BEK = { brokerVerbunden: true, modus: "AUTO", offenePositionen: 0, maxGleichzeitig: 6,
+            tagesZaehler: 0, tagesLimit: 21, tagesLimitAktiv: true, kontostand: 1914.2,
+            hoechststand: 1990.36, maxDrawdownProzent: 10, inHandelszeit: true, fensterOrtszeit: null,
+            zyklenHeute: 208, ausgaenge: { "Alle Kandidaten gescheitert": 1 } };
+          const TOR_NEIN = { "Schwelle": { ja: 2, nein: 25, fallback: 0, gruende: { "Confidence # < Schwelle #": 25 } } };
+          const TOR_JA = { "Filterkette": { ja: 2, nein: 0, fallback: 0, gruende: {} } };
+          const lageB = (trichterExtra, tore = TOR_NEIN) => HL.handelsLage({ ...BEK,
+            trichter: { scans: 124, maerkte: 3720, richtungen: 1779, ohneGptAntwort: 0, gptZahlUnbrauchbar: 0,
+              vetos: 682, stilVerworfen: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: null, unterGrenze: 727,
+              confMin: 47, confMax: 69, rrAbgelehnt: 307, ohneStopZiel: 0, go: 56, tore,
+              konsensRichtungen: null, taErsatzRichtungen: null, trichterGeprueft: null, restOhneAnalyse: null,
+              restOhneStop: null, restUngeklaert: null, mehrfachGezaehlt: null, ...trichterExtra } });
+          if (summe) {
+            const ausWebhook = { brokerFehler: summe.fehlgeschlagen ?? null,
+              brokerFehlerGruende: summe.fehlgeschlagenGruende ?? null };
+            const l = lageB(ausWebhook);
+            const zeile = l.zeilen.find((z) => /beim Broker gescheitert/.test(z)) ?? "";
+            // Die Zahlen sind maskiert (`grundSchluessel`): beide XAUUSD-Faelle
+            // fallen zusammen, der haeufigste Grund ist also der mit (2). Und
+            // das doppelte „Broker:" faellt in der Anzeige weg.
+            torPruefung("broker-stufe: /status nennt die Broker-Fehler nicht mit dem haeufigsten Grund "
+              + "aus derselben Tagessumme",
+              zeile === "   • beim Broker gescheitert: 3 — XAUUSD: error.invalid.stoploss.minvalue: # (2) +1 Gründe",
+              zeile || "(keine Zeile)");
+            torPruefung("broker-stufe: das Urteil nennt die Broker-Fehler nicht — es zeigt dann nur "
+              + "auf ein Tor DAVOR",
+              /an den Toren DANACH und beim Broker \(<b>3<\/b>\) gescheitert\. Grösstes: <b>Schwelle<\/b> \(25× nein\)\./
+                .test(l.zeilen[l.zeilen.length - 1] ?? ""), l.zeilen[l.zeilen.length - 1] ?? "");
+          }
+          // 3. SORTIERUNG: der haeufigste Grund steht im Objekt HINTEN.
+          {
+            const l = lageB({ brokerFehler: 5, brokerFehlerGruende: { "A: Broker: selten": 1, "B: Broker: oft": 4 } });
+            const z = l.zeilen.find((x) => /beim Broker gescheitert/.test(x)) ?? "";
+            torPruefung("broker-stufe: der gezeigte Grund ist nicht der haeufigste",
+              z === "   • beim Broker gescheitert: 5 — B: oft (4) +1 Gründe", z);
+          }
+          // 4. ENTSCHAERFT — ein `<` aus der Broker-Antwort braeche die Nachricht.
+          {
+            const l = lageB({ brokerFehler: 1, brokerFehlerGruende: { "EURUSD: Broker: <html>502 & x</html>": 1 } });
+            const z = l.zeilen.find((x) => /beim Broker gescheitert/.test(x)) ?? "";
+            torPruefung("broker-stufe: der Grund geht ROH ins HTML — Telegram lehnte /status dann ab",
+              z.includes("EURUSD: &lt;html&gt;502 &amp; x&lt;/html&gt; (1)") && !/<html>/.test(z), z);
+          }
+          // 5. DREIWERTIG: unbekannt ist nicht 0, 0 ist nicht unbekannt.
+          {
+            const zU = lageB({}).zeilen.find((x) => /beim Broker gescheitert/.test(x)) ?? "(keine Zeile)";
+            const zN = lageB({ brokerFehler: 0, brokerFehlerGruende: {} }).zeilen
+              .find((x) => /beim Broker gescheitert/.test(x)) ?? "(keine Zeile)";
+            const zOhne = lageB({ brokerFehler: 2, brokerFehlerGruende: {} }).zeilen
+              .find((x) => /beim Broker gescheitert/.test(x)) ?? "(keine Zeile)";
+            torPruefung("broker-stufe: eine fehlende Zahl wird als 0 gezeigt — oder fehlt ganz",
+              zU === "   • beim Broker gescheitert: unbekannt", zU);
+            torPruefung("broker-stufe: eine gemessene 0 wird nicht als 0 gezeigt",
+              zN === "   • beim Broker gescheitert: 0", zN);
+            torPruefung("broker-stufe: Fehler ohne Grund behaupten einen Grund",
+              zOhne === "   • beim Broker gescheitert: 2 — Grund unbekannt", zOhne);
+            // Ohne Fehler bleibt das Urteil wie vorher.
+            const u0 = lageB({ brokerFehler: 0, brokerFehlerGruende: {} }).zeilen.at(-1) ?? "";
+            torPruefung("broker-stufe: ohne Broker-Fehler behauptet das Urteil welche",
+              !/beim Broker \(/.test(u0) && /an den Toren DANACH gescheitert/.test(u0), u0);
+          }
+          // 6. Der GRUENE Zweig (kein Tor lehnt ab): mit Fehlern NAMENTLICH,
+          //    ohne Fehler wie vorher.
+          {
+            const uMit = lageB({ brokerFehler: 2, brokerFehlerGruende: { "X: Broker: y": 2 } }, TOR_JA).zeilen.at(-1) ?? "";
+            const uOhne = lageB({ brokerFehler: 0, brokerFehlerGruende: {} }, TOR_JA).zeilen.at(-1) ?? "";
+            torPruefung("broker-stufe: ohne ablehnendes Tor verschweigt das Urteil die Broker-Fehler",
+              /^🟢 /.test(uMit) && /An der Ausführung gescheitert: <b>2<\/b> beim Broker/.test(uMit), uMit);
+            torPruefung("broker-stufe: ohne Broker-Fehler sagt der gruene Zweig nicht mehr, wo es dann liegt",
+              /liegt es an der Ausführung\./.test(uOhne) && !/beim Broker/.test(uOhne), uOhne);
+          }
+          // 7. DIE QUELLEN: das Schluessel-Format und die Feldnamen, nicht aus
+          //    dem Gedaechtnis (Klasse 30.09.).
+          const orG = bereinige(read("frontend/lib/agents/orchestrator-agent.ts"));
+          torPruefung("broker-stufe: der Orchestrator meldet den Broker-Fehler nicht als "
+            + "`Broker: …` auf dem Bus — dann passt das Kuerzen des Schluessels nicht",
+            /: `Broker: \$\{execResult\.capital\?\.error/.test(orG)
+            && /type: "EXECUTION:TRADE_FAILED"[\s\S]{0,200}grund: brokerGrund/.test(orG), "orchestrator");
+          torPruefung("broker-stufe: die Zyklus-Bilanz baut den Schluessel nicht als `SYMBOL: Grund`",
+            /b\.fehlgeschlagen\.push\(`\$\{text\(p\.symbol\)\}: \$\{text\(p\.grund\)\}`\)/.test(zbG), "zyklus-bilanz");
+          let typS = "";
+          try { typS = objectBlock(zbG, "export type Tagessumme ="); } catch { typS = ""; }
+          torPruefung("broker-stufe: `Tagessumme` traegt `fehlgeschlagen`/`fehlgeschlagenGruende` nicht",
+            /\bfehlgeschlagen: number;/.test(typS) && /\bfehlgeschlagenGruende: Record<string, number>;/.test(typS),
+            `${typS.length} Zeichen`);
+          torPruefung("broker-stufe: der Webhook liest die Felder nicht oder reicht sie nicht durch",
+            /fehlgeschlagen\?: number; fehlgeschlagenGruende\?: Record<string, number>;/.test(whG)
+            && whG.includes("brokerFehler: tagessumme.fehlgeschlagen ?? null,")
+            && whG.includes("brokerFehlerGruende: tagessumme.fehlgeschlagenGruende ?? null,"), "webhook");
+          torPruefung("broker-stufe: handels-lage hat die Felder nicht dreiwertig",
+            hlG.includes("brokerFehler?: number | null;")
+            && hlG.includes("brokerFehlerGruende?: Record<string, number> | null;"), "handels-lage");
         }
       }
 

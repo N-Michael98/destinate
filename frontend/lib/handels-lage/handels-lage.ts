@@ -160,6 +160,45 @@ export interface TrichterZahlen {
    * laengst in derselben Tagessumme — und wurde nicht gezeigt.
    */
   tore: Record<string, TorZahlen> | null;
+  /**
+   * DIE LETZTE STUFE (23.11.): was nach ALLEN Toren beim Broker scheiterte —
+   * `Tagessumme.fehlgeschlagen` und `.fehlgeschlagenGruende`. (Die eroeffneten
+   * Trades zeigt schon der Tageslimit-Zaehler.)
+   *
+   * WOZU. Am 23.11. stand in `/status` „Filterkette: ja 2" und als Ausgang
+   * „Alle Kandidaten gescheitert: 1" — zwei Signale kamen durch jedes Tor
+   * und scheiterten beim Broker. Den Grund trug dieselbe Tagessumme
+   * (`fehlgeschlagenGruende`, seit 20.09.), gezeigt wurde er nur in der
+   * Tagesbilanz um 22:05 UTC. Und das Urteil nannte als „Grösstes" ein Tor
+   * VOR der Ausfuehrung. „Ein Verweis ist keine Antwort" (29.10.).
+   *
+   * `null`/fehlend heisst UNBEKANNT, nicht 0. Optional, weil ein Aufrufer
+   * von vor dem Einbau sie nicht kennt.
+   */
+  brokerFehler?: number | null;
+  brokerFehlerGruende?: Record<string, number> | null;
+}
+
+/**
+ * Wie viele Zeichen eines Broker-Grundes `/status` zeigt (23.11.) — gemessen
+ * NACH dem Entschaerfen. Der Grund ist fremder Text (die Antwort von
+ * Capital.com), seine Laenge ist nicht unsere, und ein `&` wird beim
+ * Entschaerfen fuenf Zeichen lang. Eine Grenze VOR dem Entschaerfen haette
+ * die Laenge also nicht begrenzt. Exportiert fuer den Laengen-Riegel.
+ */
+export const BROKER_GRUND_MAX_STATUS = 60;
+
+/**
+ * Entschaerft und kuerzt so, dass das ERGEBNIS hoechstens `max` Zeichen hat.
+ * Geschnitten wird am ROHTEXT, nie im Ergebnis — sonst zerteilte der Schnitt
+ * ein `&amp;`, und Telegram lehnte die ganze Nachricht ab (02.11.).
+ */
+export function entschaerftGekuerzt(roh: string, max: number): string {
+  const ganz = htmlSicher(roh);
+  if (ganz.length <= max) return ganz;
+  let n = Math.min(roh.length, max);
+  while (n > 0 && htmlSicher(roh.slice(0, n)).length + 1 > max) n--;
+  return `${htmlSicher(roh.slice(0, n))}…`;
 }
 
 /** Ein Tor, wie es die Zyklus-Bilanz zaehlt (`TorSumme` dort). */
@@ -200,8 +239,14 @@ export interface HandelsLage {
  *
  * Sechs wie in der Tagesbilanz. Gemessen am 07.11.: elf Tore kosten 1871
  * Zeichen, ein Tor im Schnitt 170 — ohne Deckel blieben 84 Zeichen Luft.
+ *
+ * FUENF seit dem 23.11. Die Stufe NACH den Toren (beim Broker gescheitert,
+ * mit Grund) kam dazu, und GEMESSEN lag der Haertefall damit bei 4106 +
+ * Rest — ueber der Grenze. Das Tor mit den WENIGSTEN Ablehnungen tritt
+ * seinen Platz ab; es wird weiter gezaehlt („N weitere Tore, M
+ * Ablehnungen"), und das Urteil sieht weiter ALLE Tore.
  */
-export const TORE_MAX_STATUS = 6;
+export const TORE_MAX_STATUS = 5;
 
 /**
  * Wie viele offene Positionen `/status` einzeln zeigt (07.11.).
@@ -444,6 +489,8 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
   // Tagessumme, die oben schon gelesen wird.
   let groessteStufe: { name: string; n: number } | null = null;
   let groesstesTor: { name: string; n: number } | null = null;
+  /** Orders, die nach ALLEN Toren beim Broker scheiterten (23.11.). */
+  let brokerGescheitert = 0;
   const t = e.trichter;
   const scans = zahl(t?.scans ?? null);
   if (t && scans !== null && scans > 0) {
@@ -625,6 +672,33 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
       abgelehnt.sort((x, y) => y[1] - x[1]);
       if (abgelehnt.length > 0) groesstesTor = { name: abgelehnt[0][0], n: abgelehnt[0][1] };
     }
+
+    // ── DIE AUSFUEHRUNG — DIE STUFE NACH DEM LETZTEN TOR (23.11.) ──────
+    //
+    // „Jede Stufe, an der ein Signal sterben kann, braucht eine eigene
+    // Zahl" (22.09.). Der Broker war die letzte ohne Zahl in /status.
+    // Dreiwertig: fehlt die Zahl, steht „unbekannt" da, nicht 0.
+    //
+    // Die Zahl der ERÖFFNETEN Trades steht nicht hier: sie steht oben als
+    // Tageslimit-Zaehler. Zweimal dieselbe Zahl kostet Platz, und /status
+    // ist an der Grenze.
+    const bf = zahl(t.brokerFehler ?? null);
+    const bfGruende = Object.entries(t.brokerFehlerGruende ?? {})
+      .filter(([, n]) => zahl(n) !== null && (zahl(n) as number) > 0)
+      .sort((x, y) => (zahl(y[1]) as number) - (zahl(x[1]) as number));
+    let bfText = "";
+    if (bf !== null && bf > 0) {
+      // Der Schluessel lautet `SYMBOL: Broker: <Fehler>` (orchestrator-agent.ts,
+      // `brokerGrund`). In einer Zeile, die schon „beim Broker" heisst, ist das
+      // zweite „Broker:" nur Platz, der dem Fehlertext fehlt.
+      bfText = bfGruende.length > 0
+        ? ` — ${entschaerftGekuerzt(String(bfGruende[0][0]).replace(/^([^:]{1,24}): Broker: /, "$1: "),
+          BROKER_GRUND_MAX_STATUS)} (${bfGruende[0][1]})`
+          + (bfGruende.length > 1 ? ` +${bfGruende.length - 1} Gründe` : "")
+        : " — Grund unbekannt";
+      brokerGescheitert = bf;
+    }
+    zeilen.push(`   • beim Broker gescheitert: ${bf === null ? "unbekannt" : bf}${bfText}`);
   } else if (t && scans === 0) {
     zeilen.push("");
     zeilen.push("🔻 Trichter heute: kein einziger Zyklus kam bis zur Analyse");
@@ -645,13 +719,21 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     // Kandidaten nach Filter: 2" stand. Die Tore NACH dem GO sind nicht
     // die Ausfuehrung — und sie melden sich namentlich.
     const tor: { name: string; n: number } = groesstesTor;
-    zeilen.push(`🟡 <b>Kein Vor-Tor blockt</b>, und ${zahl(t?.go ?? null)} Signal(e) `
-      + "wurden freigegeben — aber sie sind an den Toren DANACH gescheitert. "
+    // 23.11.: wer ALLE Tore passierte und beim Broker scheiterte, ist an
+    // keinem Tor gescheitert — sonst nennt das Urteil nur die Stelle davor.
+    // Kuerzer gefasst (23.11.): die Broker-Zahl brauchte Platz, und
+    // /status lag im Haertefall bei 4094 von 4096. Keine Aussage faellt weg.
+    zeilen.push(`🟡 <b>Kein Vor-Tor blockt</b>: ${zahl(t?.go ?? null)} GO, `
+      + "an den Toren DANACH"
+      + (brokerGescheitert > 0 ? ` und beim Broker (<b>${brokerGescheitert}</b>)` : "")
+      + " gescheitert. "
       + `Grösstes: <b>${htmlSicher(tor.name)}</b> (${tor.n}× nein).`);
   } else if (zahl(t?.go ?? null) !== null && (zahl(t?.go ?? null) as number) > 0) {
     zeilen.push(`🟢 <b>Kein Tor blockt</b>, und ${zahl(t?.go ?? null)} Signal(e) `
-      + "wurden freigegeben, und kein Tor danach hat abgelehnt. Bleiben die "
-      + "Trades trotzdem aus, liegt es an der Ausführung.");
+      + "wurden freigegeben, und kein Tor danach hat abgelehnt. "
+      + (brokerGescheitert > 0
+        ? `An der Ausführung gescheitert: <b>${brokerGescheitert}</b> beim Broker — Grund oben.`
+        : "Bleiben die Trades trotzdem aus, liegt es an der Ausführung."));
   } else if (groessteStufe !== null) {
     const g: { name: string; n: number } = groessteStufe;
     zeilen.push("🟢 <b>Kein Tor blockt</b> — die Signale sterben im Trichter. "

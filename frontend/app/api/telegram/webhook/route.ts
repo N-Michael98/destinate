@@ -710,6 +710,8 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
             // — und die GO-Aufteilung bliebe dauerhaft leer, obwohl sie in
             // Redis steht. Derselbe Grund wie bei `confSpanne` darueber.
             richtungenJa?: Record<string, number> }>;
+          // Die Stufe NACH dem letzten Tor (23.11.) — Namen wie in `Tagessumme`.
+          fehlgeschlagen?: number; fehlgeschlagenGruende?: Record<string, number>;
         }>(TAGESSUMME_SCHLUESSEL(handelstag()));
       }),
       sicher(async () => {
@@ -848,6 +850,8 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
               ohneStopZiel: tagessumme.ohneStopZiel ?? null,
               go: tagessumme.go ?? null,
               tore: tagessumme.tore ?? null,
+              brokerFehler: tagessumme.fehlgeschlagen ?? null,
+              brokerFehlerGruende: tagessumme.fehlgeschlagenGruende ?? null,
             }
             : null,
         }).zeilen;

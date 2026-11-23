@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()` | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()` | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -2261,6 +2261,78 @@ interpretieren, bevor er ankommt. **Nach jedem erzeugten Codeblock `node -c
 <datei>`** — sonst fällt der Fehler erst im Prüferlauf auf, mit einer
 irreführenden Fundstelle.
 
+
+### Zwei Signale kamen durch jedes Tor — und `/status` sagte nicht, woran sie scheiterten (23.11.)
+
+`/status` vom 23.11. (`0d6e848`, 208 Zyklen): `GO: 56`, danach `Filterkette:
+ja 2 (2 SELL)` und als Ausgang **„Alle Kandidaten gescheitert: 1"**. Zwingend,
+nicht gedeutet: der Ausgang entsteht nur, wenn `runExecutionAgent` für **jeden**
+Kandidaten `ok: false` liefert (`orchestrator-agent.ts`, Ende der Schleife). Eine
+KI-Ablehnung wäre als `Ausfuehrungs-KI: nein` gezählt — dort stand „(1 weitere
+Tore, **0** Ablehnungen)". Die zwei Orders sind also **beim Broker** gescheitert.
+
+**Den Grund trug dieselbe Tagessumme seit dem 20.09.** (`fehlgeschlagenGruende`,
+befüllt aus `EXECUTION:TRADE_FAILED`). Gezeigt wurde er nur in der Tagesbilanz
+um 22:05 UTC, und das Urteil in `/status` nannte als „Grösstes" ein Tor **davor**
+(Schwelle). Wörtlich „ein Verweis ist keine Antwort" (29.10.) und „jede Stufe
+braucht eine eigene Zahl" (22.09.), an der **letzten** Stufe.
+
+Jetzt steht nach den Toren:
+
+```
+   • beim Broker gescheitert: <n> — <SYMBOL>: <Fehler> (<Anzahl>) +<k> Gründe
+🟡 Kein Vor-Tor blockt: <GO> GO, an den Toren DANACH und beim Broker (<n>) gescheitert. Grösstes: …
+```
+
+(Form, keine Messung.) Dreiwertig: fehlt die Zahl, heisst sie „unbekannt", eine
+gemessene 0 heisst 0, Fehler ohne Grund heissen „Grund unbekannt". Der
+häufigste Grund steht vorn; das doppelte „Broker:" des Schlüssels
+(`SYMBOL: Broker: <Fehler>`) fällt in der Anzeige weg. Der grüne Zweig (kein Tor
+lehnt ab) nennt die Zahl ebenfalls, statt pauschal „liegt es an der Ausführung".
+
+**Was den Platz gekostet hat — gemessen, nicht geschätzt.** Der `/status`-
+Härtefall lag mit der neuen Zeile bei **4106 + Rest**, also über 4096. Drei
+Massnahmen, keine Aussage fällt weg:
+
+- `entschaerftGekuerzt()` begrenzt den Grund auf **60 Zeichen NACH dem
+  Entschärfen** und schneidet am Rohtext. Eine Grenze davor hätte nichts
+  begrenzt: ein `&` wird fünf Zeichen lang. Der Härtefall trägt dafür einen
+  Grund aus lauter `&`.
+- `TORE_MAX_STATUS` **6 → 5**. Das Tor mit den wenigsten Ablehnungen tritt
+  seinen Platz an die Broker-Zeile ab; es wird weiter gezählt („N weitere
+  Tore, M Ablehnungen"), und das Urteil sieht weiter alle Tore.
+- Das gelbe Urteil ist kürzer gefasst; die eröffneten Trades stehen nicht
+  doppelt da (sie stehen im Tageslimit-Zähler).
+
+Härtefall jetzt **3958 von 4096** (Rest gemessen 817, gerechnet wird weiter mit
+1064).
+
+**Was es NICHT tut:** keine Order, kein Stop, keine Schwelle, kein Prompt, keine
+Datei mit erhöhtem Risiko. Es zeigt nur, was die Tagessumme schon hat — und weil
+der Grund dort seit dem Morgen liegt, nennt das nächste `/status` nach dem Deploy
+auch den Grund von heute (bis 00:00 UTC).
+
+**Warum die zwei Orders scheiterten, ist damit noch nicht bestimmt** — erst die
+Zeile nennt es. Kandidaten sind im Code alle Fehlerwege von
+`executeCapitalDemoOrder` (Broker-Ablehnung, Grösse, Stop-Abstand, Killswitch,
+`ordersRiegel`); eine Vermutung steht hier bewusst nicht.
+
+`safety-nets` 2125 → **2146**: `entschaerftGekuerzt` an vier Eingaben (nur `&`,
+nur `<`, gemischt, ohne Sonderzeichen — Länge und kein zerteiltes Entity), die
+**echte** Kette Orchestrator-Format → `tagessummeAddieren` → `handelsLage` mit dem
+Webhook-Mapping, Sortierung (häufigster Grund steht im Objekt hinten),
+Entschärfung, dreiwertig, beide Urteils-Zweige, die Quellen (Bus-Format,
+Schlüssel, Feldnamen in `Tagessumme`, Webhook, Typ) und der Härtefall an die
+Broker-Zeile gebunden.
+
+**15 von 15 Sabotagen** gegen alle 23 Prüfer, darunter der Fund exakt zurück,
+„unbekannt wird 0", die Kürzung **vor** dem Entschärfen, `TORE_MAX_STATUS`
+zurück auf 6 und eine aufgezogene Grund-Grenze (beide reissen die 4096).
+Regression Trichter **19/19**, GPT-Lesart **21/21**. Dabei Z3 (GPT-Lesart)
+einzeln nachgefahren: im Gruppenlauf nannte er als ersten Befund das bekannte
+zeitabhängige Rot des 502-Prüfstands — allein läuft er rot mit seinem
+**eigenen** Befund („Trichter-Zeile nennt unbekannt"). Ein Rot aus dem falschen
+Grund wäre kein Nachweis.
 
 ## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
 
