@@ -4790,8 +4790,17 @@ module.exports = async function pruefe() {
                 // und mehrere Gruende, dazu der Satz im Urteil.
                 brokerFehler: 999, brokerFehlerGruende: { ["XAUUSD: Broker: " + "&".repeat(80)]: 900,
                   "b": 50, "c": 30, "d": 19 },
+                // 23.11. abends: WARUM GPT-Antworten fehlten — alle vier Lagen
+                // vierstellig (zusammen 8640 = 288 × 30, also erreichbar), nur
+                // teilweise gemessen, und ein Grund aus lauter `&`.
+                ohneGptJeLage: { gescheitert: 2160, abgeschnitten: 2160, unlesbar: 2160, ausgelassen: 2160 },
+                gptLageGeprueft: 287, gptAusfallGruende: { ["gescheitert: " + "&".repeat(80)]: 999, "b": 1, "c": 1 },
               } }));
             const schlimmst = haertefall(toreMax);
+            torPruefung("der /status-Haertefall traegt die GPT-Aufschluesselung nicht im schlimmsten Fall "
+              + "— dann misst er zu wenig",
+              /• ohne GPT-Antwort: 120 — \S+ 2160 · \S+ 2160 · \S+ 2160 \+1 \(287\/288 gemessen\) — (&amp;)+… \(999\) \+2 Gründe/.test(schlimmst),
+              (schlimmst.match(/[^\n]*ohne GPT-Antwort[^\n]*/) ?? ["(keine)"])[0].slice(0, 220));
             torPruefung("der /status-Haertefall traegt die Broker-Zeile nicht im schlimmsten Fall "
               + "(gekuerzt, mit weiteren Gruenden, im Urteil) — dann misst er zu wenig",
               /• beim Broker gescheitert: 999 — XAUUSD: (&amp;)+… \(900\) \+3 Gründe/.test(schlimmst)
@@ -5140,8 +5149,18 @@ module.exports = async function pruefe() {
                     `${sym}: error.invalid.details - Position size exceeds `
                     + `maximum allowed for this instrument`, 8 - i])),
                 dauerSummeMs: 900000, dauerMaxMs: 60000,
+                // 23.11. abends: die GPT-Aufschluesselung im schlimmsten Fall —
+                // vier Lagen, teilweise gemessen, drei Gruende aus lauter `<`.
+                ohneGptJeLage: { gescheitert: 30, abgeschnitten: 30, unlesbar: 30, ausgelassen: 30 },
+                gptLageGeprueft: 287, gptAusfallGruende: Object.fromEntries(
+                  ["gescheitert", "abgeschnitten", "unlesbar", "ausgelassen"].map((l, i) => [`${l}: ${"<".repeat(80)}`, 9 - i])),
               });
               const vollText = tbF(voll);
+              torPruefung("der Tagesbilanz-Haertefall traegt die GPT-Aufschluesselung nicht — dann misst er "
+                + "nicht den schlimmsten Fall",
+                /↳ \S+ 30 · \S+ 30 · \S+ 30 · \S+ 30 \(aufgeschlüsselt 287 von 288 Analysen\)/.test(vollText)
+                && (vollText.match(/^ {3}❗ \S+: (&lt;)+…/gm) ?? []).length === 3,
+                (vollText.match(/[^\n]*(↳|❗)[^\n]*/g) ?? ["(keine)"]).join(" | ").slice(0, 300));
               // 19.11.: dieselbe Bindung wie beim /status-Haertefall.
               torPruefung("der Tagesbilanz-Haertefall traegt die Summenprobe/Konsens-"
                 + "Zeile nicht — dann misst er nicht den schlimmsten Fall",
@@ -14738,6 +14757,237 @@ module.exports = async function pruefe() {
             hlG.includes("brokerFehler?: number | null;")
             && hlG.includes("brokerFehlerGruende?: Record<string, number> | null;"), "handels-lage");
         }
+      }
+
+      // ══ WARUM FEHLTEN DIE GPT-ANTWORTEN? (23.11.) ══════════════════════
+      //
+      // /status vom 23.11.: „ohne GPT-Antwort: 1520" von 4380 — und vier
+      // Wege dorthin (Aufruf gescheitert, abgeschnitten, unlesbar, einzelne
+      // Maerkte ausgelassen), die die Tagessumme nicht unterschied. GERECHNET
+      // an der echten Funktion, `callGPT` gegen einen gefaelschten `fetch`,
+      // die Kette Feld fuer Feld, und die Entscheidung bleibt unberuehrt.
+      {
+        const engL = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts");
+        const GZ = engL.exports?.gptZyklusLage, CG = engL.exports?.callGPT;
+        if (typeof GZ !== "function" || typeof CG !== "function") {
+          torPruefung("gpt-lage: gptZyklusLage/callGPT sind nicht ausfuehrbar", false, engL.fehler ?? "Export fehlt");
+        } else {
+          const L = (o) => GZ({ gefragt: true, kamText: true, abgeschnitten: false, lesbar: true,
+            grund: "", ohneAntwort: 0, ...o });
+          for (const [o, sollLage, sollGrund, name] of [
+            [{ gefragt: false, ohneAntwort: 30 }, "nicht-gefragt", "", "nicht gefragt"],
+            [{}, "ok", "", "nichts fehlt"],
+            [{ abgeschnitten: true }, "ok", "", "abgeschnitten, aber nichts fehlt"],
+            [{ kamText: false, ohneAntwort: 30, grund: "HTTP 429 — KEIN GUTHABEN" }, "gescheitert", "HTTP 429 — KEIN GUTHABEN", "Aufruf gescheitert"],
+            [{ kamText: false, ohneAntwort: 30, grund: "   " }, "gescheitert", "ohne Grund", "gescheitert ohne Grund"],
+            [{ kamText: false, ohneAntwort: 30, grund: undefined }, "gescheitert", "ohne Grund", "Grund kein Text"],
+            [{ abgeschnitten: true, lesbar: false, ohneAntwort: 30 }, "abgeschnitten", "Tokengrenze erreicht (finish_reason=length)", "abgeschnitten vor unlesbar"],
+            [{ lesbar: false, ohneAntwort: 30 }, "unlesbar", "Antwort ohne lesbare opportunities-Liste", "unlesbar"],
+            [{ ohneAntwort: 3 }, "ausgelassen", "3 Maerkte fehlen in der Antwort", "einzelne ausgelassen"],
+            [{ ohneAntwort: Number.NaN }, "ok", "", "NaN fehlende"],
+            [{ ohneAntwort: -2 }, "ok", "", "negative fehlende"],
+          ]) {
+            const r = L(o);
+            torPruefung(`gpt-lage: gptZyklusLage falsch bei „${name}"`,
+              r?.lage === sollLage && r?.grund === sollGrund, `${r?.lage} / ${r?.grund}`);
+          }
+          // callGPT meldet `abgeschnitten` an ALLEN drei Ausgaengen.
+          const altFetch = global.fetch, altWarn = console.warn, altErr = console.error;
+          const fall = async (antwort) => {
+            global.fetch = async () => { if (antwort === "WIRFT") throw new Error("netz weg"); return antwort; };
+            console.warn = () => {}; console.error = () => {};
+            try { return await CG("k".repeat(30), "m", "p", 100); }
+            finally { global.fetch = altFetch; console.warn = altWarn; console.error = altErr; }
+          };
+          const r429 = await fall({ ok: false, status: 429, text: async () => '{"error":{"type":"insufficient_quota"}}' });
+          const rLen = await fall({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"opportunities":[' }, finish_reason: "length" }] }) });
+          const rStop = await fall({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"opportunities":[]}' }, finish_reason: "stop" }] }) });
+          const rNetz = await fall("WIRFT");
+          torPruefung("gpt-lage: callGPT meldet einen HTTP-Fehler nicht als nicht-abgeschnitten",
+            r429?.text === null && r429?.abgeschnitten === false && r429?.endgueltig === true, JSON.stringify(r429));
+          torPruefung("gpt-lage: callGPT meldet eine abgeschnittene Antwort nicht als abgeschnitten",
+            rLen?.abgeschnitten === true && typeof rLen?.text === "string", JSON.stringify(rLen));
+          torPruefung("gpt-lage: callGPT meldet eine vollstaendige Antwort als abgeschnitten",
+            rStop?.abgeschnitten === false && typeof rStop?.text === "string", JSON.stringify(rStop));
+          torPruefung("gpt-lage: callGPT meldet einen Netzfehler nicht sauber",
+            rNetz?.text === null && rNetz?.status === null && rNetz?.abgeschnitten === false, JSON.stringify(rNetz));
+        }
+
+        // VERDRAHTUNG in der Engine — und die Entscheidung bleibt, wie sie war.
+        torPruefung("gpt-lage: der Batch merkt sich nicht, ob die BENUTZTE Antwort abgeschnitten war",
+          /let gptAbgeschnitten = ersterGpt\.abgeschnitten;/.test(aeG)
+          && /raw = zweiterGpt\.text;\s*gptAbgeschnitten = zweiterGpt\.abgeschnitten;/.test(aeG), "Batch");
+        torPruefung("gpt-lage: die Lesbarkeit wird nicht OHNE den stillen Rueckfall gemessen",
+          /const lesbarRoh = parseJSON<\{ opportunities\?: unknown \} \| null>\(raw, null\);/.test(aeG)
+          && /lesbar: lesbarRoh !== null && Array\.isArray\(lesbarRoh\.opportunities\),/.test(aeG)
+          && /kamText: raw !== null,/.test(aeG) && /abgeschnitten: gptAbgeschnitten,/.test(aeG)
+          && /grund: gptGrund,/.test(aeG), "gptRoh");
+        torPruefung("gpt-lage: die Lage wird nicht aus der Zahl OHNE Antwort bestimmt oder nicht in ScanDaten gelegt",
+          /const gptLageJetzt = gptZyklusLage\(\{ \.\.\.gptRoh, ohneAntwort: ohneGptAntwortZahl \}\);/.test(aeG)
+          && /gptLage: gptLageJetzt\.lage,/.test(aeG) && /gptLageGrund: gptLageJetzt\.grund,/.test(aeG)
+          && /gptLageGeprueft: 1,/.test(aeG), "ScanDaten");
+        torPruefung("gpt-lage: die ENTSCHEIDUNG hat sich geaendert — `parsed` faellt nicht mehr auf die leere Liste",
+          /const parsed = parseJSON<\{ opportunities: Array<Partial<GPTMarketAnalysis>> \}>\(raw, \{ opportunities: \[\] \}\);/.test(aeG)
+          && (aeG.match(/\bgptRoh\b/g) ?? []).length === 3, `${(aeG.match(/\bgptRoh\b/g) ?? []).length}x gptRoh`);
+        {
+          let cgBody = "";
+          try { cgBody = objectBlock(aeG, "export async function callGPT("); } catch { cgBody = ""; }
+          torPruefung("gpt-lage: callGPT setzt `abgeschnitten` nicht an genau den drei Ausgaengen",
+            (cgBody.match(/abgeschnitten:/g) ?? []).length === 3
+            && /abgeschnitten: choices\?\.\[0\]\?\.finish_reason === "length",/.test(cgBody),
+            `${(cgBody.match(/abgeschnitten:/g) ?? []).length}x`);
+        }
+
+        // DIE KETTE, ausgefuehrt: Tagessumme, Zyklus-Zeile, Tagesbilanz.
+        const zbL = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+        const hlL = ladeTsModul("lib/handels-lage/handels-lage.ts",
+          { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+        const Z = zbL.exports ?? {}, H = hlL.exports ?? {};
+        if (["leereTagessumme", "tagessummeAddieren", "tagesbilanzText", "bilanzZeile"].some((n) => typeof Z[n] !== "function")
+          || typeof H.handelsLage !== "function") {
+          torPruefung("gpt-lage: zyklus-bilanz/handels-lage nicht ausfuehrbar", false, zbL.fehler ?? hlL.fehler ?? "Export fehlt");
+        } else {
+          const scan = (o) => ({ maerkte: 30, gpt: { WAIT: 30, BUY: 0, SELL: 0 }, vetos: 0, stilVerworfen: 0,
+            unterGrenze: [], go: 0, rrAbgelehnt: 0, ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
+            ohneGptAntwort: 0, gptZahlUnbrauchbar: 0, konsensRichtungen: 0, taErsatzRichtungen: 0,
+            trichterGeprueft: 1, restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0,
+            claudeGefragt: 0, regelbrueche: {}, dauerMs: {}, kontext: { news: false, mtfSymbole: 0 },
+            gptLage: "ok", gptLageGrund: "", gptLageGeprueft: 1, ...o });
+          const bil = (s) => ({ start: 0, ende: 1000, ausgang: "Keine freigegebenen Signale", scan: s,
+            tore: [], trades: [], fehlgeschlagen: [] });
+          const leer = Z.leereTagessumme("2026-11-23");
+          torPruefung("gpt-lage: die leere Tagessumme kennt die neuen Felder nicht",
+            JSON.stringify(leer.ohneGptJeLage) === "{}" && JSON.stringify(leer.gptAusfallGruende) === "{}"
+            && leer.gptLageGeprueft === 0, JSON.stringify([leer.ohneGptJeLage, leer.gptAusfallGruende, leer.gptLageGeprueft]));
+          // UEBERGANGSLAGE: die Summe von heute frueh kennt die Felder nicht.
+          const alt = Z.leereTagessumme("2026-11-23");
+          delete alt.ohneGptJeLage; delete alt.gptAusfallGruende; delete alt.gptLageGeprueft;
+          // Ein Wurf hier ist ein BEFUND, kein Absturz des Pruefers — sonst
+          // verschluckte er jeden anderen Befund mit (Lehre 16.11.).
+          let t = Z.leereTagessumme("2026-11-23");
+          try {
+            t = Z.tagessummeAddieren(alt, bil(scan({ ohneGptAntwort: 30, gptLage: "gescheitert",
+              gptLageGrund: "HTTP 429 — KEIN GUTHABEN: x" })), "2026-11-23");
+            t = Z.tagessummeAddieren(t, bil(scan({ ohneGptAntwort: 30, gptLage: "gescheitert",
+              gptLageGrund: "HTTP 429 — KEIN GUTHABEN: x" })), "2026-11-23");
+            t = Z.tagessummeAddieren(t, bil(scan({ ohneGptAntwort: 3, gptLage: "ausgelassen",
+              gptLageGrund: "3 Maerkte fehlen in der Antwort" })), "2026-11-23");
+            t = Z.tagessummeAddieren(t, bil(scan({})), "2026-11-23");
+          } catch (e) {
+            torPruefung("gpt-lage: die Uebergangslage WIRFT — eine Summe von vor dem Deploy kennt die Felder nicht",
+              false, e instanceof Error ? e.message : String(e));
+          }
+          torPruefung("gpt-lage: die Tagessumme verbucht die Lagen falsch (oder die Uebergangslage wirft/NaN)",
+            t.ohneGptJeLage?.gescheitert === 60 && t.ohneGptJeLage?.ausgelassen === 3
+            && t.ohneGptJeLage?.ok === undefined && t.gptLageGeprueft === 4 && t.ohneGptAntwort === 63,
+            JSON.stringify([t.ohneGptJeLage, t.gptLageGeprueft, t.ohneGptAntwort]));
+          torPruefung("gpt-lage: die Gruende zaehlen keine ZYKLEN oder maskieren die Zahlen nicht",
+            t.gptAusfallGruende?.["gescheitert: HTTP # — KEIN GUTHABEN: x"] === 2
+            && t.gptAusfallGruende?.["ausgelassen: # Maerkte fehlen in der Antwort"] === 1,
+            JSON.stringify(t.gptAusfallGruende));
+          // DECKEL der Gruende — wie bei den Broker-Gruenden.
+          let tv = Z.leereTagessumme("2026-11-23");
+          for (let i = 0; i < 40; i++) {
+            tv = Z.tagessummeAddieren(tv, bil(scan({ ohneGptAntwort: 30, gptLage: "gescheitert",
+              gptLageGrund: `Fehler ${"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"[i]}` })), "2026-11-23");
+          }
+          const nG = Object.keys(tv.gptAusfallGruende ?? {}).length;
+          torPruefung("gpt-lage: die Gruende haben keinen Deckel — die Tagessumme waechst mit jedem neuen Text",
+            nG < 40 && (tv.gptAusfallGruende?.["(weitere)"] ?? 0) > 0, `${nG} Gruende`);
+          // Zyklus-Zeile und Tagesbilanz.
+          const zZ = Z.bilanzZeile(bil(scan({ ohneGptAntwort: 30, gptLage: "gescheitert", gptLageGrund: "HTTP 429" })));
+          torPruefung("gpt-lage: die Zyklus-Zeile nennt die Lage nicht",
+            zZ.includes("ohne GPT-Antwort 30 (gescheitert: HTTP 429)"), zZ.slice(0, 200));
+          const tb = Z.tagesbilanzText(t);
+          torPruefung("gpt-lage: die Tagesbilanz schluesselt nicht auf",
+            tb.includes("   ↳ gescheitert 60 · ausgelassen 3 (aufgeschlüsselt 4 von 4 Analysen)")
+            && tb.includes("   ❗ gescheitert: HTTP # — KEIN GUTHABEN: x (2×)"),
+            (tb.match(/[^\n]*(↳|❗ gescheitert)[^\n]*/g) ?? ["(keine)"]).join(" | "));
+          const tbAlt = Z.tagesbilanzText(Object.assign(Z.leereTagessumme("2026-11-23"),
+            { zyklen: 5, scans: 5, ohneGptAntwort: 30 }));
+          torPruefung("gpt-lage: die Tagesbilanz behauptet eine Aufschluesselung, die nicht gemessen ist",
+            tbAlt.includes("   ↳ nicht aufgeschlüsselt (Analysen vor dem 23.11.)"), (tbAlt.match(/[^\n]*↳[^\n]*/) ?? ["(keine)"])[0]);
+          const tbNull = Z.tagesbilanzText(Object.assign(Z.leereTagessumme("2026-11-23"), { zyklen: 5, scans: 5 }));
+          torPruefung("gpt-lage: die Tagesbilanz schluesselt eine 0 auf",
+            !tbNull.includes("↳"), "ohneGptAntwort 0");
+          const tbGift = Z.tagesbilanzText(Object.assign(Z.leereTagessumme("2026-11-23"),
+            { zyklen: 1, scans: 1, ohneGptAntwort: 30, gptLageGeprueft: 1, ohneGptJeLage: { gescheitert: 30 },
+              gptAusfallGruende: { ["gescheitert: " + "<".repeat(80)]: 1 } }));
+          const zGift = (tbGift.match(/[^\n]*❗ gescheitert[^\n]*/) ?? [""])[0];
+          torPruefung("gpt-lage: der Grund in der Tagesbilanz ist ROH oder nicht begrenzt",
+            zGift.length > 0 && !zGift.includes("<")
+            && zGift.length <= "   ❗ ".length + (Z.GPT_GRUND_MAX_BILANZ ?? 0) + " (1×)".length,
+            `${zGift.length}: ${zGift.slice(0, 120)}`);
+
+          // /status — handelsLage, dreiwertig.
+          const LEERS = { brokerVerbunden: null, modus: null, offenePositionen: null, maxGleichzeitig: null,
+            tagesZaehler: null, tagesLimit: null, tagesLimitAktiv: null, kontostand: null, hoechststand: null,
+            maxDrawdownProzent: null, inHandelszeit: null, fensterOrtszeit: null, zyklenHeute: null, ausgaenge: null };
+          const zeileS = (o) => H.handelsLage({ ...LEERS, trichter: { scans: 146, maerkte: 4380, richtungen: 10,
+            gptZahlUnbrauchbar: 0, vetos: 0, stilVerworfen: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: null,
+            unterGrenze: 0, confMin: null, confMax: null, rrAbgelehnt: 0, ohneStopZiel: 0, go: 0, tore: null, ...o } })
+            .zeilen.find((z) => /ohne GPT-Antwort/.test(z)) ?? "(keine Zeile)";
+          torPruefung("gpt-lage: /status zeigt eine unbekannte Zahl nicht als unbekannt",
+            zeileS({ ohneGptAntwort: null }) === "   • ohne GPT-Antwort: unbekannt", zeileS({ ohneGptAntwort: null }));
+          torPruefung("gpt-lage: /status zeigt eine gemessene 0 nicht nackt",
+            zeileS({ ohneGptAntwort: 0 }) === "   • ohne GPT-Antwort: 0", zeileS({ ohneGptAntwort: 0 }));
+          for (const gp of [undefined, null, 0]) {
+            const z = zeileS({ ohneGptAntwort: 1520, gptLageGeprueft: gp });
+            torPruefung(`gpt-lage: /status behauptet eine Aufschluesselung von vor dem Deploy (geprueft ${String(gp)})`,
+              z === "   • ohne GPT-Antwort: 1520 — nicht aufgeschlüsselt (vor dem 23.11.)", z);
+          }
+          // Die Testdaten sind absichtlich UNBEQUEM: die kleinere Lage und der
+          // seltenere Grund stehen VORN im Objekt — eine fehlende Sortierung
+          // muss auffallen.
+          const voll = zeileS({ ohneGptAntwort: 320, gptLageGeprueft: 12,
+            ohneGptJeLage: { ausgelassen: 20, gescheitert: 300 },
+            gptAusfallGruende: { "ausgelassen: # Maerkte fehlen": 1, "gescheitert: <html>502</html>": 40 } });
+          torPruefung("gpt-lage: /status schluesselt nicht sortiert, gemessen-Anteil und Grund entschaerft auf",
+            voll === "   • ohne GPT-Antwort: 320 — gescheitert 300 · ausgelassen 20 (12/146 gemessen) — &lt;html&gt;502&lt;/html&gt; (40) +1 Gründe",
+            voll);
+          const vier = zeileS({ ohneGptAntwort: 120, gptLageGeprueft: 2,
+            ohneGptJeLage: { unlesbar: 4, gescheitert: 60, abgeschnitten: 30, ausgelassen: 26 } });
+          torPruefung("gpt-lage: /status zeigt mehr als drei Lagen oder verschweigt den Rest",
+            vier === "   • ohne GPT-Antwort: 120 — gescheitert 60 · abgeschnitten 30 · ausgelassen 26 +1 (2/146 gemessen)", vier);
+          const lang = zeileS({ ohneGptAntwort: 30, gptLageGeprueft: 1, ohneGptJeLage: { gescheitert: 30 },
+            gptAusfallGruende: { ["gescheitert: " + "&".repeat(80)]: 1 } });
+          const grundTeil = lang.split(" (1/146 gemessen) — ")[1] ?? "";
+          torPruefung("gpt-lage: der Grund in /status ist nicht NACH dem Entschaerfen begrenzt",
+            grundTeil.endsWith(" (1)") && grundTeil.length - " (1)".length <= (H.GPT_GRUND_MAX_STATUS ?? 0)
+            && !/&(?!amp;)/.test(grundTeil.slice(0, -4)), `${grundTeil.length}: ${grundTeil.slice(0, 80)}`);
+        }
+
+        // DIE QUELLEN: Feldnamen in `Tagessumme`/`ScanDaten`, Webhook, Typ.
+        let typT = "", typS = "";
+        try { typT = objectBlock(zbG, "export type Tagessumme ="); } catch { typT = ""; }
+        try { typS = objectBlock(zbG, "export type ScanDaten ="); } catch { typS = ""; }
+        torPruefung("gpt-lage: `Tagessumme` traegt die Felder nicht",
+          /\bohneGptJeLage: Record<string, number>;/.test(typT) && /\bgptAusfallGruende: Record<string, number>;/.test(typT)
+          && /\bgptLageGeprueft: number;/.test(typT), `${typT.length} Zeichen`);
+        torPruefung("gpt-lage: `ScanDaten` traegt die Felder nicht",
+          /\bgptLage: string;/.test(typS) && /\bgptLageGrund: string;/.test(typS) && /\bgptLageGeprueft: number;/.test(typS),
+          `${typS.length} Zeichen`);
+        torPruefung("gpt-lage: die Tagessumme addiert nicht mit zahl()/??= auf BEIDEN Seiten",
+          /t\.gptLageGeprueft = zahl\(t\.gptLageGeprueft\) \+ zahl\(s\.gptLageGeprueft\);/.test(zbG)
+          && /t\.ohneGptJeLage \?\?= \{\};/.test(zbG) && /t\.gptAusfallGruende \?\?= \{\};/.test(zbG), "tagessummeAddieren");
+        torPruefung("gpt-lage: der Webhook liest die Felder nicht oder reicht sie nicht durch",
+          /ohneGptJeLage\?: Record<string, number>; gptAusfallGruende\?: Record<string, number>;/.test(whG)
+          && /gptLageGeprueft\?: number;/.test(whG)
+          && whG.includes("ohneGptJeLage: tagessumme.ohneGptJeLage ?? null,")
+          && whG.includes("gptAusfallGruende: tagessumme.gptAusfallGruende ?? null,")
+          && whG.includes("gptLageGeprueft: tagessumme.gptLageGeprueft ?? null,"), "webhook");
+        torPruefung("gpt-lage: handels-lage hat die Felder nicht dreiwertig",
+          hlG.includes("ohneGptJeLage?: Record<string, number> | null;")
+          && hlG.includes("gptAusfallGruende?: Record<string, number> | null;")
+          && hlG.includes("gptLageGeprueft?: number | null;"), "handels-lage");
+        // EINE Fassung des begrenzten Entschaerfens — in html-sicher, nicht zweimal.
+        const hsG = bereinige(read("frontend/lib/html-sicher/html-sicher.ts"));
+        torPruefung("gpt-lage: entschaerftGekuerzt steht zweimal statt einmal in html-sicher",
+          /export function entschaerftGekuerzt\(/.test(hsG) && !/function entschaerftGekuerzt\(/.test(hlG)
+          && !/function entschaerftGekuerzt\(/.test(zbG)
+          && /import \{ htmlSicher, entschaerftGekuerzt \} from "\.\.\/html-sicher\/html-sicher";/.test(zbG)
+          && /entschaerftGekuerzt\(k, GPT_GRUND_MAX_BILANZ\)/.test(zbG), "html-sicher");
       }
 
       // Das Phantomfeld in der Oberfläche (15.11.).

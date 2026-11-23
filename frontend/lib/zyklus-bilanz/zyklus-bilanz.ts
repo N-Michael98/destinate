@@ -61,6 +61,13 @@ export type ScanDaten = {
   /** Maerkte, fuer die GPT GAR NICHT geantwortet hat (30.10.).
    *  Bis dahin als WAIT gezaehlt — ein Ausfall gab sich als Urteil aus. */
   ohneGptAntwort: number;
+  /** WARUM sie fehlten (23.11.) — `gptZyklusLage()` in der Engine:
+   *  ok / nicht-gefragt / gescheitert / abgeschnitten / unlesbar / ausgelassen.
+   *  `gptLageGeprueft` ist 1 je Scan, der das gemessen hat — eine Summe von
+   *  vor dem Deploy kennt es nicht und darf keine Aufschluesselung behaupten. */
+  gptLage: string;
+  gptLageGrund: string;
+  gptLageGeprueft: number;
   /** Maerkte, fuer die GPT eine Zahl geschickt hat, die KEINE brauchbare
    *  ist (15.11.) — Text, Objekt, `Infinity`, Confidence ausserhalb
    *  0..100. Ohne eigene Zahl stirbt so ein Signal an `ohneStopZiel`
@@ -208,6 +215,11 @@ export type Tagessumme = {
   claudeGefragt: number;
   /** Broker-Fehler nach Grund — die Zahl allein sagt nicht, WARUM (20.09.). */
   fehlgeschlagenGruende: Record<string, number>;
+  /** Maerkte OHNE GPT-Antwort je Lage, und die Gruende je Zyklus (23.11.).
+   *  Siehe ScanDaten.gptLage. */
+  ohneGptJeLage: Record<string, number>;
+  gptAusfallGruende: Record<string, number>;
+  gptLageGeprueft: number;
   /** Wie oft News im Prompt standen, und die Summe der Symbole MIT 1H/1W. */
   newsZyklen: number;
   mtfSumme: number;
@@ -259,6 +271,9 @@ const text = (x: unknown): string => String(x ?? "").slice(0, MAX_TEXT);
  */
 /** Obergrenze des Gruppierungs-Schluessels. */
 export const GRUND_MAX = 80;
+/** Wie viele Zeichen ein GPT-Ausfallgrund in der Tagesbilanz zeigt (23.11.) —
+ *  gemessen NACH dem Entschaerfen, siehe `entschaerftGekuerzt`. */
+export const GPT_GRUND_MAX_BILANZ = 90;
 /** Unter so viel Zeichen wird NICHT an der Wortgrenze gekuerzt — sonst
  *  bliebe von einem Grund ohne fruehes Leerzeichen fast nichts uebrig. */
 export const GRUND_MIN_WORT = 40;
@@ -408,7 +423,11 @@ export function bilanzZeile(b: ZyklusBilanz): string {
     // Ohne diese Zahl bleibt „30W" mehrdeutig: dreissig WAIT-URTEILE oder
     // dreissig ausgebliebene Antworten (30.10.). Nur bei > 0, wie bei
     // `stilVerworfen` und `ohneStopZiel` — eine 0 waere nur Rauschen.
-    if (zahl(s.ohneGptAntwort) > 0) teile.push(`ohne GPT-Antwort ${s.ohneGptAntwort}`);
+    // 23.11.: und WARUM — sonst ist „ohne Antwort" wieder mehrdeutig.
+    if (zahl(s.ohneGptAntwort) > 0) {
+      teile.push(`ohne GPT-Antwort ${s.ohneGptAntwort}`
+        + (typeof s.gptLage === "string" && s.gptLage ? ` (${s.gptLage}: ${text(s.gptLageGrund).slice(0, 120)})` : ""));
+    }
     // Nur bei > 0, wie die Zeile darueber — eine 0 waere Rauschen.
     if (zahl(s.gptZahlUnbrauchbar) > 0) {
       teile.push(`GPT-Zahl unbrauchbar ${s.gptZahlUnbrauchbar}`);
@@ -466,6 +485,7 @@ export function leereTagessumme(datum: string): Tagessumme {
     restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0,
     claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
     fehlgeschlagenGruende: {},
+    ohneGptJeLage: {}, gptAusfallGruende: {}, gptLageGeprueft: 0,
     regelbrueche: {}, tore: {}, trades: 0, fehlgeschlagen: 0,
     dauerSummeMs: 0, dauerMaxMs: 0,
   };
@@ -509,6 +529,24 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     // `zahl()` auch auf den Summanden links: eine Tagessumme aus Redis
     // kann von gestern stammen und dieses Feld noch nicht haben.
     t.ohneGptAntwort = zahl(t.ohneGptAntwort) + zahl(s.ohneGptAntwort);
+    // WARUM (23.11.) — mit `zahl()`/`??=` auf BEIDEN Seiten: die Summe von
+    // heute frueh kennt diese Felder nicht. Verbucht wird nur, wo wirklich
+    // Antworten fehlten; die Gruende zaehlen ZYKLEN, gedeckelt wie die
+    // Broker-Gruende.
+    t.gptLageGeprueft = zahl(t.gptLageGeprueft) + zahl(s.gptLageGeprueft);
+    t.ohneGptJeLage ??= {};
+    t.gptAusfallGruende ??= {};
+    const gptLage = typeof s.gptLage === "string" ? s.gptLage : "";
+    if (gptLage && zahl(s.ohneGptAntwort) > 0) {
+      t.ohneGptJeLage[gptLage] = zahl(t.ohneGptJeLage[gptLage]) + zahl(s.ohneGptAntwort);
+      const k = grundSchluessel(`${gptLage}: ${text(s.gptLageGrund)}`);
+      if (t.gptAusfallGruende[k] !== undefined
+        || Object.keys(t.gptAusfallGruende).length < MAX_GRUENDE_JE_TOR) {
+        t.gptAusfallGruende[k] = zahl(t.gptAusfallGruende[k]) + 1;
+      } else {
+        t.gptAusfallGruende["(weitere)"] = zahl(t.gptAusfallGruende["(weitere)"]) + 1;
+      }
+    }
     // `zahl()` auf BEIDEN Seiten, aus demselben Grund wie eine Zeile
     // darueber: eine Tagessumme aus Redis kann von gestern stammen und
     // dieses Feld noch nicht kennen (15.11.).
@@ -604,7 +642,7 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
 // waeren zwei Stellen, an denen sie auseinanderlaufen koennen — dieselbe
 // Begruendung wie bei `herkunftListe()` in /edge.
 export { htmlSicher } from "../html-sicher/html-sicher";
-import { htmlSicher } from "../html-sicher/html-sicher";
+import { htmlSicher, entschaerftGekuerzt } from "../html-sicher/html-sicher";
 
 /** Die Tagesbilanz als Telegram-Text. */
 export function tagesbilanzText(t: Tagessumme): string {
@@ -642,6 +680,27 @@ export function tagesbilanzText(t: Tagessumme): string {
     // WAIT sind das die, bei denen GPT gar nicht geantwortet hat.
     zeilen.push(`🤐 davon OHNE GPT-Antwort: ${zahl(t.ohneGptAntwort)} `
       + `(als WAIT gezählt, aber kein Urteil)`);
+    // UND WARUM (23.11.): ganzer Zyklus ohne Antwort oder einzelne Maerkte
+    // ausgelassen. Nur fuer den GEMESSENEN Teil des Tages — eine Summe von
+    // vor dem Deploy kennt die Felder nicht, und dann steht das da.
+    if (zahl(t.ohneGptAntwort) > 0) {
+      const gepr = zahl(t.gptLageGeprueft);
+      // Nach Menge sortiert, wie jede andere Aufschluesselung hier — eine
+      // feste Reihenfolge waere eine zweite Liste der Lagen, die veraltet.
+      const teileL = Object.entries(t.ohneGptJeLage ?? {})
+        .filter(([, v]) => zahl(v) > 0)
+        .sort((a, b) => zahl(b[1]) - zahl(a[1]))
+        .map(([k, n]) => `${htmlSicher(k)} ${zahl(n)}`);
+      zeilen.push(gepr === 0
+        ? "   ↳ nicht aufgeschlüsselt (Analysen vor dem 23.11.)"
+        : `   ↳ ${teileL.length > 0 ? teileL.join(" · ") : "keine Lage verbucht"} `
+          + `(aufgeschlüsselt ${gepr} von ${t.scans} Analysen)`);
+      for (const [k, n] of Object.entries(t.gptAusfallGruende ?? {})
+        .filter(([, v]) => zahl(v) > 0).sort((a, b) => zahl(b[1]) - zahl(a[1])).slice(0, 3)) {
+        // Fremder Text (OpenAIs Antwortkoerper): begrenzt NACH dem Entschaerfen.
+        zeilen.push(`   ❗ ${entschaerftGekuerzt(k, GPT_GRUND_MAX_BILANZ)} (${zahl(n)}×)`);
+      }
+    }
     // Dieselbe Klasse eine Stufe weiter: GPT HAT geantwortet, aber mit
     // einer Zahl, die keine ist (15.11.). Ohne diese Zeile stirbt das
     // Signal sichtbar an `ohne Stop/Ziel` oder `unter der Grenze` — und

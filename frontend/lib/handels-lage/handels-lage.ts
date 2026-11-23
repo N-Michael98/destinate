@@ -1,4 +1,4 @@
-import { htmlSicher } from "../html-sicher/html-sicher";
+import { htmlSicher, entschaerftGekuerzt } from "../html-sicher/html-sicher";
 // NUR der Typ — `import type` wird beim Übersetzen gelöscht und erzeugt
 // keine Laufzeit-Abhängigkeit. Dieses Modul bleibt damit so importfrei wie
 // bisher; gerechnet wird in `positionen-lage.ts`, hier wird nur gezeigt.
@@ -126,6 +126,12 @@ export interface TrichterZahlen {
    * Analysen ist das die Frage, mit der man ins Log steigt.
    */
   ohneGptAntwort: number | null;
+  /** WARUM (23.11.) — `Tagessumme.ohneGptJeLage`, `.gptAusfallGruende`,
+   *  `.gptLageGeprueft`. Fehlend heisst UNBEKANNT; optional, weil eine
+   *  Tagessumme von vor dem Deploy die Felder nicht kennt. */
+  ohneGptJeLage?: Record<string, number> | null;
+  gptAusfallGruende?: Record<string, number> | null;
+  gptLageGeprueft?: number | null;
   /** Siehe Tagessumme.gptZahlUnbrauchbar (15.11.): GPT hat geantwortet,
    *  aber mit einer Zahl, die keine ist. `null` heisst UNBEKANNT. */
   gptZahlUnbrauchbar: number | null;
@@ -188,18 +194,16 @@ export interface TrichterZahlen {
  */
 export const BROKER_GRUND_MAX_STATUS = 60;
 
-/**
- * Entschaerft und kuerzt so, dass das ERGEBNIS hoechstens `max` Zeichen hat.
- * Geschnitten wird am ROHTEXT, nie im Ergebnis — sonst zerteilte der Schnitt
- * ein `&amp;`, und Telegram lehnte die ganze Nachricht ab (02.11.).
- */
-export function entschaerftGekuerzt(roh: string, max: number): string {
-  const ganz = htmlSicher(roh);
-  if (ganz.length <= max) return ganz;
-  let n = Math.min(roh.length, max);
-  while (n > 0 && htmlSicher(roh.slice(0, n)).length + 1 > max) n--;
-  return `${htmlSicher(roh.slice(0, n))}…`;
-}
+/** Dasselbe fuer den Grund, warum GPT-Antworten fehlten (23.11.) — er traegt
+ *  OpenAIs Antwortkoerper, also fremden Text. Exportiert fuer den Laengen-Riegel. */
+export const GPT_GRUND_MAX_STATUS = 35;
+/** Wie viele Lagen die Zeile „ohne GPT-Antwort" in /status zeigt (23.11.). */
+export const GPT_LAGEN_MAX_STATUS = 3;
+
+// `entschaerftGekuerzt` liegt seit dem 23.11. abends in `html-sicher.ts` —
+// /status UND die Tagesbilanz benutzen dieselbe Fassung. Hier nur
+// weitergereicht, damit bestehende Aufrufer und Pruefer sie weiter finden.
+export { entschaerftGekuerzt };
 
 /** Ein Tor, wie es die Zyklus-Bilanz zaehlt (`TorSumme` dort). */
 export interface TorZahlen {
@@ -508,9 +512,39 @@ export function handelsLage(e: HandelsLageEingaben): HandelsLage {
     zeilen.push(`🔻 <b>Trichter heute</b> (${scans} Analysen`
       + `${maerkte === null ? "" : `, ${maerkte} Marktanalysen`}):`);
     const ohneAntwort = zahl(t.ohneGptAntwort);
+    // UND WARUM (23.11.): ganzer Zyklus ohne Antwort (gescheitert /
+    // abgeschnitten / unlesbar) oder einzelne Maerkte ausgelassen. Der alte
+    // Zusatz „(als WAIT gezählt, aber kein Urteil)" weicht dafuer — /status
+    // hatte im Haertefall 138 Zeichen Luft. Gilt nur fuer den GEMESSENEN Teil.
+    let warum = "";
+    if (ohneAntwort !== null && ohneAntwort > 0) {
+      const gepr = zahl(t.gptLageGeprueft ?? null);
+      if (gepr === null || gepr === 0) {
+        warum = " — nicht aufgeschlüsselt (vor dem 23.11.)";
+      } else {
+        // GEMESSEN, nicht geschaetzt: mit allen vier Lagen vierstellig und
+        // einem Grund aus lauter `&` lag /status bei 4076 von 4096. Deshalb
+        // hoechstens drei Lagen (der Rest wird GEZAEHLT), und der Grund ohne
+        // die Lage am Anfang — die steht schon in der Zaehlung.
+        const alleLagen = Object.entries(t.ohneGptJeLage ?? {})
+          .filter(([, v]) => zahl(v) !== null && (zahl(v) as number) > 0)
+          .sort((a, b) => (zahl(b[1]) as number) - (zahl(a[1]) as number));
+        const lagen = alleLagen.slice(0, GPT_LAGEN_MAX_STATUS).map(([k, v]) => `${htmlSicher(k)} ${v}`);
+        const mehrLagen = alleLagen.length - lagen.length;
+        const gr = Object.entries(t.gptAusfallGruende ?? {})
+          .filter(([, v]) => zahl(v) !== null && (zahl(v) as number) > 0)
+          .sort((a, b) => (zahl(b[1]) as number) - (zahl(a[1]) as number));
+        warum = ` — ${lagen.length > 0 ? lagen.join(" · ") : "keine Lage verbucht"}`
+          + `${mehrLagen > 0 ? ` +${mehrLagen}` : ""} (${gepr}/${scans} gemessen)`
+          + (gr.length > 0
+            ? ` — ${entschaerftGekuerzt(String(gr[0][0]).replace(/^[a-z-]{2,20}: /, ""),
+              GPT_GRUND_MAX_STATUS)} (${gr[0][1]})`
+              + (gr.length > 1 ? ` +${gr.length - 1} Gründe` : "")
+            : "");
+      }
+    }
     zeilen.push(`   • ohne GPT-Antwort: `
-      + `${ohneAntwort === null ? "unbekannt" : ohneAntwort}`
-      + `${ohneAntwort !== null && ohneAntwort > 0 ? " (als WAIT gezählt, aber kein Urteil)" : ""}`);
+      + `${ohneAntwort === null ? "unbekannt" : ohneAntwort}${warum}`);
     // Dreiwertig wie alles hier: `null` heisst unbekannt, nicht 0
     // (15.11.). Eine stille 0 waere die Luege vom 22.09.
     const unbrauchbar = zahl(t.gptZahlUnbrauchbar);

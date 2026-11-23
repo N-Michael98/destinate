@@ -712,6 +712,9 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
             richtungenJa?: Record<string, number> }>;
           // Die Stufe NACH dem letzten Tor (23.11.) — Namen wie in `Tagessumme`.
           fehlgeschlagen?: number; fehlgeschlagenGruende?: Record<string, number>;
+          // Warum GPT-Antworten fehlten (23.11.) — Namen wie in `Tagessumme`.
+          ohneGptJeLage?: Record<string, number>; gptAusfallGruende?: Record<string, number>;
+          gptLageGeprueft?: number;
         }>(TAGESSUMME_SCHLUESSEL(handelstag()));
       }),
       sicher(async () => {
@@ -852,6 +855,9 @@ unverändert — nur der Bezugspunkt wird neu gesetzt.
               tore: tagessumme.tore ?? null,
               brokerFehler: tagessumme.fehlgeschlagen ?? null,
               brokerFehlerGruende: tagessumme.fehlgeschlagenGruende ?? null,
+              ohneGptJeLage: tagessumme.ohneGptJeLage ?? null,
+              gptAusfallGruende: tagessumme.gptAusfallGruende ?? null,
+              gptLageGeprueft: tagessumme.gptLageGeprueft ?? null,
             }
             : null,
         }).zeilen;

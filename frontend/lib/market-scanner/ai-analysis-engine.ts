@@ -409,7 +409,56 @@ export type GptAufrufLage = {
    * koennen vorbeigehen.
    */
   endgueltig: boolean;
+  /**
+   * Die Antwort riss die Tokengrenze (`finish_reason === "length"`, 23.11.).
+   * Bis dahin stand das nur in einer Logzeile — der Aufrufer bekam den Text
+   * und konnte „abgeschnitten" nicht von „unlesbar" unterscheiden.
+   */
+  abgeschnitten: boolean;
 };
+
+/**
+ * WARUM FEHLTEN DIE GPT-ANTWORTEN IN DIESEM ZYKLUS? (23.11.)
+ *
+ * `/status` vom 23.11.: „ohne GPT-Antwort: 1520" von 4380 Marktanalysen. Die
+ * Zahl entsteht auf VIER Wegen, und die Tagessumme unterschied sie nicht:
+ *
+ *   gescheitert    — der Aufruf kam ohne Text zurueck (HTTP, Netz, Guthaben)
+ *   abgeschnitten  — die Antwort riss die Tokengrenze
+ *   unlesbar       — Text da, aber keine lesbare `opportunities`-Liste
+ *   ausgelassen    — lesbar, aber einzelne Maerkte fehlen darin
+ *
+ * Die ersten drei kosten einen GANZEN Zyklus, der vierte einzelne Maerkte.
+ * REIN und exportiert, damit der Pruefer sie rechnet. Entscheidet NICHTS —
+ * `ohneGptAntwortZahl` und der WAIT-Zweig bleiben, wie sie sind.
+ *
+ * Gefragt wird zuerst, OB etwas fehlt: ohne fehlende Antwort ist der Zyklus
+ * „ok", auch wenn die Antwort abgeschnitten war — gemessen wird, warum Maerkte
+ * verloren gingen, nicht, was sonst noch auffiel.
+ */
+export type GptZyklusLageArt =
+  | "ok" | "nicht-gefragt" | "gescheitert" | "abgeschnitten" | "unlesbar" | "ausgelassen";
+
+export function gptZyklusLage(e: {
+  gefragt: boolean;
+  kamText: boolean;
+  abgeschnitten: boolean;
+  lesbar: boolean;
+  grund: string;
+  ohneAntwort: number;
+}): { lage: GptZyklusLageArt; grund: string } {
+  if (!e.gefragt) return { lage: "nicht-gefragt", grund: "" };
+  const n = typeof e.ohneAntwort === "number" && Number.isFinite(e.ohneAntwort) && e.ohneAntwort > 0
+    ? e.ohneAntwort : 0;
+  if (n === 0) return { lage: "ok", grund: "" };
+  if (!e.kamText) {
+    const g = typeof e.grund === "string" ? e.grund.trim() : "";
+    return { lage: "gescheitert", grund: g || "ohne Grund" };
+  }
+  if (e.abgeschnitten) return { lage: "abgeschnitten", grund: "Tokengrenze erreicht (finish_reason=length)" };
+  if (!e.lesbar) return { lage: "unlesbar", grund: "Antwort ohne lesbare opportunities-Liste" };
+  return { lage: "ausgelassen", grund: `${n} Maerkte fehlen in der Antwort` };
+}
 
 /**
  * Aus Status und Antwortkoerper: Grund + ob ein zweiter Versuch mit
@@ -446,7 +495,9 @@ export function gptFehlerLage(
   };
 }
 
-async function callGPT(
+// Exportiert (23.11.) NUR, damit der Pruefer sie gegen einen gefaelschten
+// `fetch` ausfuehren kann — `abgeschnitten` an allen drei Ausgaengen.
+export async function callGPT(
   apiKey: string, model: string, prompt: string, maxTokens = 4000,
 ): Promise<GptAufrufLage> {
   try {
@@ -464,7 +515,7 @@ async function callGPT(
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.warn(`[ai-engine] ⛔ GPT HTTP ${res.status}: ${body.slice(0, 200)}`);
-      return { text: null, status: res.status, ...gptFehlerLage(res.status, body) };
+      return { text: null, status: res.status, ...gptFehlerLage(res.status, body), abgeschnitten: false };
     }
     const data = await res.json() as Record<string, unknown>;
     const choices = data.choices as Array<{ message: { content: string }; finish_reason?: string }>;
@@ -486,11 +537,12 @@ async function callGPT(
       status: res.status,
       grund: inhalt === null ? "Antwort ohne Inhalt" : "",
       endgueltig: false,
+      abgeschnitten: choices?.[0]?.finish_reason === "length",
     };
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     console.warn(`[ai-engine] ⛔ GPT Call fehlgeschlagen: ${m}`);
-    return { text: null, status: null, ...gptFehlerLage(null, m) };
+    return { text: null, status: null, ...gptFehlerLage(null, m), abgeschnitten: false };
   }
 }
 
@@ -1252,6 +1304,9 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
 
   // ── GPT Batch Analyse mit echten TA-Daten ────────────────────────────────
   let gptBatchResult: Record<string, Partial<GPTMarketAnalysis>> = {};
+  // Was der GPT-Aufruf dieses Zyklus geliefert hat — fuer `gptZyklusLage()`
+  // (23.11.). Reine Messung: gelesen wird es nur fuer die Bilanz.
+  let gptRoh = { gefragt: false, kamText: false, abgeschnitten: false, lesbar: false, grund: "" };
 
   if (hasGPT && validMarkets.length > 0) {
     // Marktliste mit TA-Lib Daten anreichern
@@ -1444,6 +1499,8 @@ each market's own data, never from habit or from these examples' direction:
     const ersterGpt = await callGPT(ai.openai.apiKey, scanGptModel, prompt, platz);
     let raw = ersterGpt.text;
     let gptGrund = ersterGpt.grund;
+    // Gehoert zu dem Versuch, dessen Text benutzt wird (23.11.).
+    let gptAbgeschnitten = ersterGpt.abgeschnitten;
 
     // ── Das Sicherheitsnetz greift jetzt in BEIDE Richtungen (07.09.) ──────
     //
@@ -1487,6 +1544,7 @@ each market's own data, never from habit or from these examples' direction:
         + `zweiter Versuch mit ${zweitModell}`);
       const zweiterGpt = await callGPT(ai.openai.apiKey, zweitModell, prompt, platz);
       raw = zweiterGpt.text;
+      gptAbgeschnitten = zweiterGpt.abgeschnitten;
       if (zweiterGpt.grund) gptGrund = zweiterGpt.grund;
       if (raw !== null) {
         console.warn(`[ai-engine] ⚠️ Die Analyse läuft mit ${zweitModell} statt `
@@ -1499,6 +1557,18 @@ each market's own data, never from habit or from these examples' direction:
     for (const opp of parsed.opportunities ?? []) {
       if (opp.epic) gptBatchResult[opp.epic] = opp;
     }
+    // LESBAR — gemessen OHNE den stillen Rueckfall (23.11.). `parseJSON`
+    // faellt bei unlesbarem Text auf die leere Liste, und dann sah eine
+    // kaputte Antwort aus wie eine, in der GPT nichts fand. Die Entscheidung
+    // oben bleibt, wie sie ist; das hier ist nur die Messung.
+    const lesbarRoh = parseJSON<{ opportunities?: unknown } | null>(raw, null);
+    gptRoh = {
+      gefragt: true,
+      kamText: raw !== null,
+      abgeschnitten: gptAbgeschnitten,
+      lesbar: lesbarRoh !== null && Array.isArray(lesbarRoh.opportunities),
+      grund: gptGrund,
+    };
     console.log(`[ai-engine] GPT-Batch: ${raw ? `Antwort ${raw.length} Zeichen` : "KEINE ANTWORT (Call fehlgeschlagen)"} → ${Object.keys(gptBatchResult).length} Opportunities`);
 
     // ── DIE SIGNALQUELLE DARF NICHT STUMM STERBEN (02.11.) ──────────
@@ -2503,6 +2573,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
   // scanDatenVon(). Scheitert das, bleibt das Ergebnis unberuehrt.
   try {
     if (claudeMs > 0) scanDauer.Claude = claudeMs;
+    const gptLageJetzt = gptZyklusLage({ ...gptRoh, ohneAntwort: ohneGptAntwortZahl });
     const scanDaten: ScanDaten = {
       maerkte: validMarkets.length,
       gpt: bilanzRichtungen,
@@ -2537,6 +2608,11 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       // Siehe `ohneGptAntwortZahl` oben: eine ausgebliebene Antwort ist
       // kein WAIT-Urteil.
       ohneGptAntwort: ohneGptAntwortZahl,
+      // WARUM sie fehlten — gescheitert / abgeschnitten / unlesbar /
+      // ausgelassen (23.11.). Siehe gptZyklusLage().
+      gptLage: gptLageJetzt.lage,
+      gptLageGrund: gptLageJetzt.grund,
+      gptLageGeprueft: 1,
       // Siehe den Zaehler oben: eine unbrauchbare Zahl ist kein Urteil.
       gptZahlUnbrauchbar: gptZahlUnbrauchbarZahl,
       // TRICHTER-ZUORDNUNG (19.11.) — siehe trichterZuordnung().

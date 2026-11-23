@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()` | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()`; dazu `gptZyklusLage()` und `callGPT` gegen einen gefälschten `fetch` — warum GPT-Antworten fehlten | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -2384,6 +2384,60 @@ durch die echte `executeCapitalDemoOrder` (BTC 0.012, ETH 0.07, EURUSD wie
 vorher) und der Wiederholversuch mit gezählten Broker-Aufrufen (0.012 → 0.024).
 
 **9 von 9 Sabotagen** gegen alle 23 Prüfer (der Fund zurück, `toFixed(2)` zurück, Stellen immer 1, aufrunden statt abrunden, Wiederholversuch mit Stufe 0.1, Hochklemme weg, Toleranz kippt die 0.1, Obergrenze weg) plus Gegenprobe. Regression Grössen-Riegel **10/10**, Risiko-Lesart **11/11**.
+
+### Warum fehlten die GPT-Antworten? Jetzt aufgeschlüsselt (23.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg
+(`ai-analysis-engine.ts`: drei direkte Nutzer, drei Prüfer).
+
+`/status` vom 23.11.: **„ohne GPT-Antwort: 1520"** von 4380 Marktanalysen. Im
+Code gelesen: die Zahl entsteht auf **vier** Wegen, und die Tagessumme
+unterschied sie nicht.
+
+| Lage | woran erkannt |
+|---|---|
+| `gescheitert` | der Aufruf kam ohne Text zurück (HTTP, Netz, Guthaben) |
+| `abgeschnitten` | `finish_reason === "length"` — stand bis heute nur in einer Logzeile, `callGPT` gab es nicht zurück |
+| `unlesbar` | Text da, aber keine lesbare `opportunities`-Liste — `parseJSON` fiel still auf die leere Liste |
+| `ausgelassen` | lesbar, aber einzelne Märkte fehlen darin |
+
+Die ersten drei kosten einen **ganzen** Zyklus, die vierte einzelne Märkte.
+
+- `gptZyklusLage()` (rein, exportiert) ordnet jeden Zyklus **genau einer** Lage
+  zu. Gefragt wird zuerst, **ob** etwas fehlt: ohne fehlende Antwort ist der
+  Zyklus „ok", auch wenn die Antwort abgeschnitten war.
+- `callGPT` meldet `abgeschnitten` an allen drei Ausgängen zurück (exportiert,
+  nur damit der Prüfer sie gegen einen gefälschten `fetch` fährt).
+- Die Lesbarkeit wird **ohne** den stillen Rückfall gemessen; die Entscheidung
+  (`parsed` mit leerer Liste als Rückfall) bleibt Zeichen für Zeichen.
+- Kette: `ScanDaten` (`gptLage`, `gptLageGrund`, `gptLageGeprueft`) →
+  `Tagessumme` (`ohneGptJeLage`, `gptAusfallGruende` als Zyklen je Grund,
+  gedeckelt wie die Broker-Gründe, `gptLageGeprueft`) → Zyklus-Zeile →
+  Tagesbilanz (`↳` plus bis zu drei `❗`-Gründe) → Webhook → `/status`.
+- `/status`: `• ohne GPT-Antwort: N — gescheitert … · ausgelassen … (G/S
+  gemessen) — <Grund> (n) +k Gründe` (Form, keine Messung). Ohne Messung
+  heisst es „nicht aufgeschlüsselt (vor dem 23.11.)". Der alte Zusatz „(als
+  WAIT gezählt, aber kein Urteil)" weicht dafür — in der Tagesbilanz bleibt er.
+
+**Platz, gemessen:** mit allen vier Lagen vierstellig (zusammen 8640 = 288 ×
+30, also erreichbar) und einem Grund aus lauter `&` lag `/status` bei **4076**
+von 4096. Jetzt höchstens drei Lagen (der Rest wird gezählt), der Grund ohne
+die Lage am Anfang und auf 35 Zeichen **nach** dem Entschärfen: **4049**.
+
+**`entschaerftGekuerzt()` liegt jetzt in `html-sicher.ts`.** Beim Bemessen der
+Tagesbilanz gefunden: dort wäre der GPT-Grund (OpenAIs Antwortkörper, fremder
+Text) **ungekürzt** entschärft worden — eine Fehlerseite voller `<` wird dabei
+vierfach lang. Beide Module importieren `html-sicher` schon: eine Fassung, keine
+neue Kante, kein neuer Ersatz in den 14 Prüfständen, die sie laden.
+`handels-lage.ts` reicht sie weiter.
+
+**Was es NICHT tut:** keine Order, keine Grösse, kein Stop, keine Schwelle, kein
+Prompt (Snapshot-Prüfsumme unverändert), kein zusätzlicher GPT-Aufruf. Der
+Engine-Diff entfernt drei Zeilen — die Signatur von `callGPT` und zwei ihrer
+`return` — und ändert keine Entscheidung. **Nachträglich lässt sich nichts
+aufschlüsseln:** die 1520 vom 23.11. bleiben ungeteilt.
+
+`safety-nets` 2166 → **2211**: `gptZyklusLage` an elf Lagen (abgeschnitten ohne Verlust ist „ok“, abgeschnitten geht vor unlesbar, NaN/negativ), `callGPT` gegen einen gefälschten `fetch` (429, `length`, `stop`, Netzfehler), die Verdrahtung samt Gegenprobe, dass die Entscheidung unberührt bleibt, die Tagessumme mit **Übergangslage** und Deckel, Zyklus-Zeile, Tagesbilanz, `/status` dreiwertig (auch `gptLageGeprueft: 0`), absichtlich unsortierte Testdaten, und beide Härtefälle an die neue Aufschlüsselung gebunden. **21 von 21 Sabotagen** gegen alle 23 Prüfer; S9 einzeln nachgefahren (rot mit eigenem Befund). Regression Broker-Stufe **15/15** (B5 auf `html-sicher.ts` umgestellt), Trichter **19/19**, GPT-Lesart **21/21**.
 
 ## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
 

@@ -39,3 +39,21 @@ export function htmlSicher(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+/**
+ * Entschaerft und kuerzt so, dass das ERGEBNIS hoechstens `max` Zeichen hat
+ * (23.11., zuerst in `handels-lage.ts`, hierher verlegt, damit /status UND die
+ * Tagesbilanz dieselbe Fassung benutzen — beide importieren dieses Modul schon).
+ *
+ * Eine Grenze VOR dem Entschaerfen begrenzt nichts: ein `&` wird fuenf Zeichen
+ * lang, ein `<` vier. Geschnitten wird am ROHTEXT, nie im Ergebnis — sonst
+ * zerteilte der Schnitt ein `&amp;`, und Telegram lehnte die ganze Nachricht
+ * ab (02.11.).
+ */
+export function entschaerftGekuerzt(roh: string, max: number): string {
+  const ganz = htmlSicher(roh);
+  if (ganz.length <= max) return ganz;
+  let n = Math.min(roh.length, max);
+  while (n > 0 && htmlSicher(roh.slice(0, n)).length + 1 > max) n--;
+  return `${htmlSicher(roh.slice(0, n))}…`;
+}
