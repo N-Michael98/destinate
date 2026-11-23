@@ -178,6 +178,49 @@ function assertEpicTablesComplete(): void {
 }
 assertEpicTablesComplete();
 
+// ── DIE RUNDUNG RICHTET SICH NACH DER MINDESTGROESSE DES MARKTS (23.11.) ────
+//
+// Hier stand fuer JEDEN Markt:
+//
+//   Math.min(max, Math.max(min, Math.floor(raw * 10) / 10))   → Stufe 0.1
+//   Number(rounded.toFixed(2))                                → 2 Stellen
+//
+// BTCUSD hat die Mindestgroesse 0.001. GERECHNET mit dem Kontostand vom
+// 23.11. (1914, Risiko 1 %): Stop 1500 Punkte → Soll 0.0128 → abgerundet auf
+// 0.1 = 0 → hochgeklemmt auf 0.001 → `toFixed(2)` = **0**. Seit dem Riegel vom
+// 15.11. hiess das „Groesse nicht berechenbar — KEINE Order"; live am 23.11.
+// in /status gesehen. Laut `git` stand die Rundung so seit Juni: BTCUSD war mit
+// diesem Kontostand praktisch nicht handelbar (nur bei einem Stop unter ~190
+// Punkten). ETHUSD/BNBUSD (Mindestgroesse 0.01) wurden still zu klein: Soll
+// 0.08 → 0.01.
+//
+// Jetzt: die Stufe ist die Stellenzahl der Mindestgroesse (0.001 → 3, 0.01 →
+// 2, alles ab 0.1 → 1 wie bisher), und `toFixed` hat mindestens die bisherigen
+// 2 Stellen. Fuer jeden Markt mit Mindestgroesse ≥ 0.1 ist die Rechnung damit
+// ZEICHEN FUER ZEICHEN die alte — der Pruefer rechnet alt gegen neu.
+//
+// Weiter ABGERUNDET: die Groesse liegt nie ueber dem eingestellten Risiko,
+// ausser durch die bestehende Hochklemme auf `MIN_SIZE`.
+//
+// NICHT GEMESSEN: ob Capital.com bei BTC drei Nachkommastellen annimmt. Das
+// folgt nur aus der Tabelle (Mindestgroesse 0.001). Lehnt der Broker ab, kommt
+// keine Order zustande, und /status nennt den Grund in der Broker-Zeile.
+
+/** Nachkommastellen der Groessen-Stufe eines Markts — mindestens 1. */
+export function groessenStellen(min: number): number {
+  let s = 1;
+  while (s < 6 && Number.isFinite(min) && min > 0 && min * 10 ** s < 1 - 1e-9) s++;
+  return s;
+}
+
+/** Abrunden auf die Stufe des Markts, dann klemmen. Rein, damit der Pruefer sie rechnet. */
+export function rundeGroesse(raw: number, min: number, max: number): number {
+  const stellen = groessenStellen(min);
+  const f = 10 ** stellen;
+  const rounded = Math.min(max, Math.max(min, Math.floor(raw * f) / f));
+  return Number(rounded.toFixed(Math.max(2, stellen)));
+}
+
 function calcPositionSize(
   epic: string,
   accountBalance: number,
@@ -233,8 +276,7 @@ function calcPositionSize(
   const raw = riskAmount / (effectiveStop * pipVal);
   const min = MIN_SIZE[epic] ?? 0.1;
   const max = MAX_SIZE[epic] ?? raw;
-  const rounded = Math.min(max, Math.max(min, Math.floor(raw * 10) / 10));
-  const groesse = Number(rounded.toFixed(2));
+  const groesse = rundeGroesse(raw, min, max);
 
   // ── OHNE ENDLICHE GROESSE KEINE ORDER (15.11.) ────────────────────────
   //
@@ -459,7 +501,11 @@ export async function executeCapitalDemoOrder(
     // Verdoppeln, aber NIE über MAX_SIZE hinaus (Generalkontroll-Fund 28.07.):
     // die Klemme aus calcPositionSize wurde hier vorher umgangen — bei 4
     // Versuchen bis zu 8x der risikobasiert berechneten Grösse.
-    const doubled = Math.round(size * 2 * 10) / 10;
+    // Dieselbe Stufe wie die Groessenrechnung (23.11.) — mit `* 10 / 10`
+    // ergab eine BTC-Groesse von 0.012 hier 0.0, und der Versuch brach mit
+    // einer falschen Meldung („Mindestgroesse ueber MAX_SIZE") ab.
+    const stufe = 10 ** groessenStellen(MIN_SIZE[epic] ?? 0.1);
+    const doubled = Math.round(size * 2 * stufe) / stufe;
     const maxAllowed = MAX_SIZE[epic];
     const next = maxAllowed != null ? Math.min(doubled, maxAllowed) : doubled;
     if (next <= size) {

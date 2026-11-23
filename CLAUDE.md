@@ -748,6 +748,10 @@ gegen neu gerechnet: 70 000 identisch, 18 anders (ausnahmslos die entarteten
 Eingaben), **null** Änderungen bei gültigen Daten, **null** Fälle mit
 steigendem Risiko.
 
+> **Korrektur 23.11.:** „nie einen Nullauftrag“ stimmte für **BTCUSD** nicht.
+> Die Hochklemme auf `MIN_SIZE` (0.001) lief, danach machte `toFixed(2)` daraus 0 —
+> seit Juni. Siehe „Und warum sie scheiterten: BTCUSD bekam die Grösse 0“.
+
 ## Die Zeit des Brokers ist Ortszeit — und eine Zukunft ist nicht „frisch" (22.09.)
 
 Capital.com schickt seine Zeitstempel **ohne Zonenangabe** und liefert **kein
@@ -2333,6 +2337,53 @@ einzeln nachgefahren: im Gruppenlauf nannte er als ersten Befund das bekannte
 zeitabhängige Rot des 502-Prüfstands — allein läuft er rot mit seinem
 **eigenen** Befund („Trichter-Zeile nennt unbekannt"). Ein Rot aus dem falschen
 Grund wäre kein Nachweis.
+
+### Und warum sie scheiterten: BTCUSD bekam die Grösse 0 — seit Juni (23.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg
+(`capital-com-execution.ts`: drei direkte Nutzer, vier Prüfer).
+
+Die neue Broker-Zeile hat den Grund beim ersten Lauf genannt:
+`BTCUSD: Groesse nicht berechenbar — KEINE Order platziert`. Die Rundung in
+`calcPositionSize` war für **jeden** Markt dieselbe — Stufe 0.1, dann
+`toFixed(2)` —, und BTCUSD hat die Mindestgrösse **0.001**. Gerechnet mit dem
+Kontostand vom 23.11. (1914, Risiko 1 %):
+
+| Stop | Soll | auf 0.1 abgerundet | hochgeklemmt | `toFixed(2)` |
+|---|---|---|---|---|
+| 1500 Punkte | 0.0128 | 0 | 0.001 | **0** |
+| 600 Punkte | 0.0319 | 0 | 0.001 | **0** |
+
+Seit dem Riegel vom 15.11. heisst eine 0 „keine Order" (vorher ging laut Code
+eine Grösse 0 an den Broker — dessen Antwort ist nicht gemessen). Laut `git`
+stand die Rundung so seit Juni: mit diesem Kontostand war **BTCUSD praktisch
+nicht handelbar** (nur bei einem Stop unter ~190 Punkten). ETHUSD und BNBUSD
+(Mindestgrösse 0.01) wurden still **zu klein**: Soll 0.08 → 0.01.
+
+Jetzt `rundeGroesse()` / `groessenStellen()` (rein, exportiert): die Stufe ist
+die Stellenzahl der Mindestgrösse (0.001 → 3, 0.01 → 2, ab 0.1 → 1), `toFixed`
+mit mindestens den bisherigen 2 Stellen. Weiter **abgerundet** — nie über dem
+eingestellten Risiko, ausser der bestehenden Hochklemme auf `MIN_SIZE`. Dieselbe
+Stufe im Wiederholversuch bei `size.minvalue`: dort ergab `* 10 / 10` aus 0.012
+× 2 ebenfalls 0, und der Abbruch nannte als Grund „Mindestgrösse über MAX_SIZE".
+
+**Für jeden Markt mit Mindestgrösse ≥ 0.1 rechnet es Zeichen für Zeichen wie
+vorher** — der Prüfer rechnet alt gegen neu je Markt, die Tabellen aus der
+Quelle.
+
+**Was es NICHT tut:** keine Tabelle (Snapshot 299 unverändert), kein Stop, keine
+Obergrenze, kein Limit, keine Schwelle. **Nicht gemessen:** ob Capital.com bei
+BTC drei Nachkommastellen annimmt — das folgt nur aus der Mindestgrösse 0.001.
+Lehnt der Broker ab, kommt keine Order zustande, und `/status` nennt den Grund
+in der Broker-Zeile.
+
+`safety-nets` 2146 → **2166**: `groessenStellen` an neun Werten (NaN, 0,
+negativ, Infinity), alt gegen neu über 30 Märkte × 19 Eingaben, „nie über dem
+Soll", „nie 0", der BTC- und der ETH-Fall alt **und** neu gerechnet, End-to-End
+durch die echte `executeCapitalDemoOrder` (BTC 0.012, ETH 0.07, EURUSD wie
+vorher) und der Wiederholversuch mit gezählten Broker-Aufrufen (0.012 → 0.024).
+
+**9 von 9 Sabotagen** gegen alle 23 Prüfer (der Fund zurück, `toFixed(2)` zurück, Stellen immer 1, aufrunden statt abrunden, Wiederholversuch mit Stufe 0.1, Hochklemme weg, Toleranz kippt die 0.1, Obergrenze weg) plus Gegenprobe. Regression Grössen-Riegel **10/10**, Risiko-Lesart **11/11**.
 
 ## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
 

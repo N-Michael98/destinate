@@ -5922,6 +5922,124 @@ module.exports = async function pruefe() {
             }
           }
 
+          // ══ DIE RUNDUNG RICHTET SICH NACH DER MINDESTGROESSE (23.11.) ══════
+          //
+          // /status vom 23.11.: „BTCUSD: Groesse nicht berechenbar — KEINE
+          // Order platziert". GERECHNET: Soll 0.0128 → auf 0.1 abgerundet 0 →
+          // hochgeklemmt 0.001 → `toFixed(2)` = 0. Seit Juni so.
+          {
+            const SG = ex2.exports?.groessenStellen, RG = ex2.exports?.rundeGroesse;
+            if (typeof SG !== "function" || typeof RG !== "function") {
+              torPruefung("groessenStellen/rundeGroesse sind nicht exportiert", false, "Export fehlt");
+            } else {
+              for (const [min, soll] of [[0.001, 3], [0.01, 2], [0.1, 1], [1, 1], [100, 1],
+                [Number.NaN, 1], [0, 1], [-1, 1], [Number.POSITIVE_INFINITY, 1]]) {
+                torPruefung(`groessenStellen(${String(min)}) ist nicht ${soll}`,
+                  SG(min) === soll, String(SG(min)));
+              }
+              // ALT GEGEN NEU, je Markt — die Tabellen aus der QUELLE, nicht
+              // aus dem Gedaechtnis. Ab Mindestgroesse 0.1 muss die Rechnung
+              // Zeichen fuer Zeichen die alte sein; darunter darf sie nie ueber
+              // dem Soll liegen (ausser der Hochklemme auf die Mindestgroesse).
+              const exT = read("frontend/lib/capital-com/capital-com-execution.ts");
+              const tabelle = (name) => {
+                let b = ""; try { b = objectBlock(exT, `const ${name}: Record<string, number> =`); } catch { b = ""; }
+                return Object.fromEntries([...b.matchAll(/\b([A-Z0-9_]+):\s*([0-9.]+)/g)].map((m) => [m[1], Number(m[2])]));
+              };
+              const MINT = tabelle("MIN_SIZE"), MAXT = tabelle("MAX_SIZE");
+              const maerkte = Object.keys(MINT);
+              torPruefung("die Groessen-Tabellen liessen sich nicht aus der Quelle lesen — "
+                + "dann prueft der Vergleich darunter nichts",
+                maerkte.length >= 25 && MINT.BTCUSD === 0.001 && MINT.ETHUSD === 0.01
+                && MINT.EURUSD === 100 && MAXT.BTCUSD === 0.05 && maerkte.every((m) => MAXT[m] > 0),
+                `${maerkte.length} Maerkte, BTC ${MINT.BTCUSD}/${MAXT.BTCUSD}`);
+              const alt = (raw, min, max) => Number(Math.min(max, Math.max(min, Math.floor(raw * 10) / 10)).toFixed(2));
+              const RAWS = [0, 0.0005, 0.004, 0.0128, 0.05, 0.0766, 0.099, 0.1, 0.15, 0.37, 1, 2.55,
+                7.77, 49.99, 120.3, 777.7, 9999, Number.NaN, Number.POSITIVE_INFINITY];
+              const abweichend = [], zuGross = [], nichtPositiv = [];
+              for (const m of maerkte) {
+                const min = MINT[m], max = MAXT[m];
+                for (const raw of RAWS) {
+                  const neu = RG(raw, min, max);
+                  if (min >= 0.1) {
+                    if (!Object.is(neu, alt(raw, min, max))) abweichend.push(`${m}@${raw}: ${neu}≠${alt(raw, min, max)}`);
+                  } else if (Number.isFinite(raw)) {
+                    if (raw >= min && neu > Math.min(raw, max) + 1e-12) zuGross.push(`${m}@${raw}: ${neu}`);
+                    if (!(neu > 0)) nichtPositiv.push(`${m}@${raw}: ${neu}`);
+                  }
+                }
+              }
+              torPruefung("die Rundung weicht fuer einen Markt mit Mindestgroesse ≥ 0.1 von der "
+                + "alten ab — dort durfte sich nichts aendern",
+                abweichend.length === 0, abweichend.slice(0, 4).join(" | "));
+              torPruefung("die Rundung liegt ueber dem Soll — die Position waere groesser als "
+                + "das eingestellte Risiko",
+                zuGross.length === 0, zuGross.slice(0, 4).join(" | "));
+              torPruefung("die Rundung ergibt fuer einen Krypto-Markt 0 oder NaN — dann gibt es "
+                + "wieder keine Order",
+                nichtPositiv.length === 0, nichtPositiv.slice(0, 4).join(" | "));
+              // DER FUND, gerechnet — alt UND neu, damit die Pruefung den Fehler
+              // ausdruecken kann.
+              torPruefung("der BTC-Fall vom 23.11. ergibt nicht 0.012 (alt 0)",
+                RG(19.142 / 1500, 0.001, 0.05) === 0.012 && alt(19.142 / 1500, 0.001, 0.05) === 0,
+                `neu ${RG(19.142 / 1500, 0.001, 0.05)} alt ${alt(19.142 / 1500, 0.001, 0.05)}`);
+              torPruefung("der ETH-Fall ergibt nicht 0.07 (alt still 0.01)",
+                RG(0.0766, 0.01, 0.5) === 0.07 && alt(0.0766, 0.01, 0.5) === 0.01,
+                `neu ${RG(0.0766, 0.01, 0.5)} alt ${alt(0.0766, 0.01, 0.5)}`);
+
+              // END-TO-END durch die echte `executeCapitalDemoOrder`.
+              const btc = { symbol: "BTCUSD", direction: "SELL", riskPercent: 1, accountBalance: 1914.2,
+                currentPrice: 87000, stopLossPrice: 88500, takeProfitPrice: 84000, tradingStyle: "DAYTRADING" };
+              platziert = 0;
+              const rB = await f(btc);
+              torPruefung("BTCUSD bekommt end-to-end keine Order mit 0.012 — der Fund vom 23.11.",
+                platziert === 1 && rB?.ok === true && rB?.size === 0.012,
+                `platziert=${platziert} ok=${String(rB?.ok)} size=${String(rB?.size)} error=${String(rB?.error).slice(0, 90)}`);
+              platziert = 0;
+              const rE = await f({ ...btc, symbol: "ETHUSD", riskPercent: 0.6, accountBalance: 1914.2,
+                currentPrice: 3000, stopLossPrice: 3150, takeProfitPrice: 2700 });
+              torPruefung("ETHUSD bekommt end-to-end nicht die risikogerechte Groesse 0.07",
+                platziert === 1 && rE?.ok === true && rE?.size === 0.07,
+                `platziert=${platziert} size=${String(rE?.size)} error=${String(rE?.error).slice(0, 90)}`);
+              // GEGENPROBE: EURUSD wie bisher (Stufe 0.1, unveraendert).
+              platziert = 0;
+              const rF = await f({ ...btc, symbol: "EURUSD", direction: "BUY", currentPrice: 1.085,
+                stopLossPrice: 1.08, takeProfitPrice: 1.095, accountBalance: 2000, riskPercent: 0.05 });
+              torPruefung("EURUSD rechnet nicht mehr wie vorher",
+                platziert === 1 && rF?.size === alt((2000 * 0.0005) / ((1.085 - 1.08) / 0.0001 * 0.0001), 100, 5000),
+                `size=${String(rF?.size)} alt=${alt((2000 * 0.0005) / ((1.085 - 1.08) / 0.0001 * 0.0001), 100, 5000)}`);
+
+              // DER WIEDERHOLVERSUCH bei size.minvalue: dieselbe Stufe. Mit
+              // `* 10 / 10` ergab 0.012 × 2 hier 0.0 — und der Abbruch nannte
+              // als Grund die Mindestgroesse ueber MAX_SIZE.
+              const gesendet = [];
+              const exW = ladeTsModul("lib/capital-com/capital-com-execution.ts", {
+                "killswitch": { isKillswitchActive: () => false },
+                "kontostand/kontostand": ladeTsModul("lib/kontostand/kontostand.ts").exports,
+                "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
+                "capital-com-session": { getCapitalSession: () => ({ apiKey: "k", cst: "c", securityToken: "s" }) },
+                "capital-com-client": { ...klient.exports,
+                  capitalPlaceOrder: async (_a, _b, _c, o) => {
+                    gesendet.push(o.size);
+                    return gesendet.length === 1 ? { ok: false, error: "error.invalid.size.minvalue" } : { ok: true, dealId: "D2" };
+                  } },
+              });
+              const fW = exW.exports?.executeCapitalDemoOrder;
+              const rW = typeof fW === "function" ? await fW(btc) : null;
+              torPruefung("der Wiederholversuch bei size.minvalue rundet BTC wieder auf 0.1 — "
+                + "dann bricht er ab statt zu verdoppeln",
+                JSON.stringify(gesendet) === "[0.012,0.024]" && rW?.ok === true && rW?.size === 0.024,
+                `gesendet=${JSON.stringify(gesendet)} ok=${String(rW?.ok)} size=${String(rW?.size)} ${exW.fehler ?? ""}`);
+              // STRUKTURELL: die Groessenrechnung GEHT ueber die Funktion.
+              const exB = exT.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+              torPruefung("calcPositionSize rundet nicht ueber rundeGroesse — oder die alte "
+                + "feste Stufe 0.1 ist zurueck",
+                /const groesse = rundeGroesse\(raw, min, max\);/.test(exB)
+                && !/Math\.floor\(raw \* 10\) \/ 10/.test(exB) && !/size \* 2 \* 10\) \/ 10/.test(exB),
+                "calcPositionSize / Wiederholversuch");
+            }
+          }
+
           // STRUKTURELL: beide Riegel muessen in der Datei stehen, und die
           // Lesart kommt aus dem EINEN Modul. Kommentarbereinigt, weil die
           // Begruendung die alten Formen zitiert.
