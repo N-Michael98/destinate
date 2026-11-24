@@ -13200,6 +13200,217 @@ module.exports = async function pruefe() {
       global.__redis_lage__ = vorLage;
     }
 
+    // ── UMGANGEN HEISST: NACH DER SPERRE (24.11.) ───────────────────────────
+    //
+    // 24.11.: 02:45 sperrt der Watchdog 35.205.89.77, 02:48 liest der naechste
+    // Zyklus drei Ereignisse derselben IP und loest den Killswitch aus ("Block
+    // umgangen") — kein Handel bis zum /reset um 09:43. Die Pruefung fragte nur
+    // `isIPBlocked(ip)`, also ob die IP JETZT gesperrt ist, nicht ob das
+    // Ereignis NACH der Sperre entstand. Der Zyklus sperrt aber erst nach dem
+    // Claude-Aufruf und entfernt nur die gelesenen Ereignisse: alles, was in
+    // dieser Zeit eintraf, ist im naechsten Zyklus ein Nachzuegler.
+    //
+    // GERECHNET: `umgehungsLage` an den Grenzen, `sperrZeiten` gegen einen
+    // nachgebauten Speicher (und gegen `isIPBlocked` auf denselben Listen),
+    // und der ECHTE Watchdog-Zyklus mit gezaehltem `triggerKillswitch`.
+    {
+      const T = 1_000_000_000;
+      const uMod = ladeTsModul("lib/security-watchdog/claude-watchdog.ts", wdErsatz(leer));
+      const uL = uMod.exports?.umgehungsLage;
+      const TOL = uMod.exports?.UMGEHUNG_TOLERANZ_MS;
+      if (uMod.fehler || typeof uL !== "function" || typeof TOL !== "number") {
+        funde.push(`umgehungsLage / UMGEHUNG_TOLERANZ_MS nicht ausfuehrbar: ${uMod.fehler ?? "nicht exportiert"}`);
+        zusatz++;
+      } else {
+        const sp = new Map([
+          ["1.1.1.1", { gesperrt: true, seitMs: T }],
+          ["2.2.2.2", { gesperrt: false, seitMs: null }],
+          ["3.3.3.3", { gesperrt: true, seitMs: null }],
+          ["4.4.4.4", { gesperrt: true, seitMs: Infinity }],
+          ["5.5.5.5", { gesperrt: true, seitMs: T + 50_000 }],
+        ]);
+        const u = (ev, tol) => { try { return uL(ev, sp, tol); } catch (e) { return { wirft: e.message }; } };
+        const r1 = u([{ ip: "1.1.1.1", ts: T - 5000 }]);
+        torPruefung("ein Ereignis VOR der Sperre gilt als Umgehung — der Fehlalarm vom 24.11.",
+          r1.bypassedIP === null && r1.nachzuegler?.length === 1
+          && r1.nachzuegler[0].ip === "1.1.1.1" && r1.nachzuegler[0].anzahl === 1
+          && r1.nachzuegler[0].letztesVorSperreMs === 5000, JSON.stringify(r1));
+        const r2 = u([{ ip: "1.1.1.1", ts: T + TOL }]);
+        torPruefung("genau auf der Toleranzgrenze zaehlt als Umgehung (die Grenze gehoert zum Nachzuegler)",
+          r2.bypassedIP === null && r2.nachzuegler?.[0]?.letztesVorSperreMs === -TOL, JSON.stringify(r2));
+        const r3 = u([{ ip: "1.1.1.1", ts: T + TOL + 1 }]);
+        torPruefung("ein Ereignis NACH der Sperre (plus Toleranz) loest nicht aus — ein echter Durchbruch",
+          r3.bypassedIP === "1.1.1.1" && /NACH der Sperre/.test(r3.grund ?? ""), JSON.stringify(r3));
+        const r4 = u([{ ip: "3.3.3.3", ts: T }]);
+        const r4b = u([{ ip: "4.4.4.4", ts: T }]);
+        torPruefung("eine UNLESBARE Sperrzeit gilt als Nachzuegler — unbekannt muss vorsichtig bleiben",
+          r4.bypassedIP === "3.3.3.3" && /Sperrzeit unlesbar/.test(r4.grund ?? "")
+          && r4b.bypassedIP === "4.4.4.4", `${JSON.stringify(r4)} ${JSON.stringify(r4b)}`);
+        const r5 = [u([{ ip: "1.1.1.1", ts: NaN }]), u([{ ip: "1.1.1.1" }]), u([{ ip: "1.1.1.1", ts: "1000000000" }])];
+        torPruefung("ein UNLESBARER Zeitstempel gilt als Nachzuegler — unbekannt muss vorsichtig bleiben",
+          r5.every((r) => r.bypassedIP === "1.1.1.1" && /Zeitstempel/.test(r.grund ?? "")),
+          JSON.stringify(r5));
+        const r6 = u([{ ip: "2.2.2.2", ts: T + 999_999 }, { ip: "9.9.9.9", ts: T + 999_999 }, { ts: T + 999_999 }]);
+        torPruefung("eine NICHT gesperrte oder unbekannte IP zaehlt als Umgehung oder Nachzuegler",
+          r6.bypassedIP === null && r6.nachzuegler?.length === 0, JSON.stringify(r6));
+        // Absichtlich unsortiert: ein "letzter gewinnt" oder ein max statt min
+        // faellt nur so auf.
+        const r7 = u([{ ip: "1.1.1.1", ts: T - 9000 }, { ip: "5.5.5.5", ts: T }, { ip: "1.1.1.1", ts: T - 1000 },
+          { ip: "1.1.1.1", ts: T - 4000 }, { ip: "3.3.3.3", ts: T }, { ip: "1.1.1.1", ts: T + 60_000 }]);
+        const n1 = r7.nachzuegler?.find((n) => n.ip === "1.1.1.1");
+        const n5 = r7.nachzuegler?.find((n) => n.ip === "5.5.5.5");
+        torPruefung("Nachzuegler werden falsch gezaehlt oder das spaeteste Ereignis falsch bestimmt",
+          n1?.anzahl === 3 && n1?.letztesVorSperreMs === 1000 && n5?.anzahl === 1
+          && n5?.letztesVorSperreMs === 50_000, JSON.stringify(r7.nachzuegler));
+        torPruefung("die ERSTE Umgehung in Ereignisreihenfolge wird nicht gemeldet",
+          r7.bypassedIP === "3.3.3.3" && /Sperrzeit unlesbar/.test(r7.grund ?? ""), JSON.stringify(r7));
+        const r8 = [u([{ ip: "1.1.1.1", ts: T + 1 }], NaN), u([{ ip: "1.1.1.1", ts: T + 1 }], -5000),
+          u([{ ip: "1.1.1.1", ts: T + 1 }], Infinity)];
+        torPruefung("eine unbrauchbare Toleranz oeffnet den Riegel — sie muss auf 0 fallen",
+          r8.every((r) => r.bypassedIP === "1.1.1.1"), JSON.stringify(r8));
+        // Die Toleranz an ihre Quelle gebunden: der Proxy prueft die Sperre bis
+        // zu N ms und setzt den Zeitstempel erst danach.
+        const proxyQ = read("frontend/proxy.ts");
+        const proxyMs = Number((proxyQ.match(/setTimeout\(\(\) => resolve\(false\), (\d+)\)/) || [])[1]);
+        torPruefung("die Toleranz deckt die Proxy-Wartezeit nicht oder ist so gross, dass ein echter Durchbruch durchrutscht",
+          Number.isFinite(proxyMs) && TOL > proxyMs && TOL <= 5000,
+          `Toleranz ${TOL} ms, Proxy ${proxyMs} ms`);
+        // Der Grund muss in den Alarm.
+        const esk = uMod.exports.eskalationsEntscheidung;
+        const e1 = esk({ bypassedIP: "1.1.1.1", distinctIPs: 1, vorherKoordiniertAm: null, jetzt: T,
+          umgehungGrund: "GRUND-XY" });
+        torPruefung("der Umgehungs-Grund fehlt in der Eskalationsmeldung",
+          e1.killswitch === true && /GRUND-XY/.test(e1.grund), e1.grund);
+      }
+
+      // ── sperrZeiten gegen einen nachgebauten Speicher ──
+      const iso = (ms) => new Date(ms).toISOString();
+      const jetztMs = Date.now();
+      const LISTEN = {
+        "security:blocked_ips_permanent": [
+          { ip: "A", blockedAt: iso(jetztMs - 10_000), expiresAt: null, permanent: true },
+          { ip: "C", blockedAt: "kaputt", expiresAt: null, permanent: true },
+          { ip: "E", blockedAt: null, expiresAt: null, permanent: true },
+        ],
+        "security:blocked_ips": [
+          { ip: "A", blockedAt: iso(jetztMs - 90_000), expiresAt: iso(jetztMs + 3_600_000), permanent: false },
+          { ip: "B", blockedAt: iso(jetztMs - 20_000), expiresAt: iso(jetztMs + 3_600_000), permanent: false },
+          { ip: "D", blockedAt: iso(jetztMs - 20_000), expiresAt: iso(jetztMs - 1000), permanent: false },
+        ],
+      };
+      const blMod = (cacheGet) => ladeTsModul("lib/security-watchdog/ip-blocklist.ts", {
+        "cache/redis-cache": { cacheGet, cacheSet: async () => true },
+      });
+      const bl = blMod(async (k) => LISTEN[k] ?? null);
+      if (bl.fehler || typeof bl.exports?.sperrZeiten !== "function") {
+        funde.push(`sperrZeiten nicht ausfuehrbar: ${bl.fehler ?? "nicht exportiert"}`);
+        zusatz++;
+      } else {
+        const ips = ["A", "B", "C", "D", "E", "F"];
+        const z = await bl.exports.sperrZeiten(ips);
+        const g = (ip) => z.get(ip) ?? {};
+        torPruefung("die Sperrzeit ist nicht die FRUEHESTE aktive — eine aeltere temporaere Sperre wird uebersehen",
+          g("A").gesperrt === true && g("A").seitMs === jetztMs - 90_000, JSON.stringify(g("A")));
+        torPruefung("eine aktive temporaere Sperre fehlt",
+          g("B").gesperrt === true && g("B").seitMs === jetztMs - 20_000, JSON.stringify(g("B")));
+        torPruefung("eine unlesbare Sperrzeit wird zu einer Zahl — unbekannt muss null bleiben",
+          g("C").gesperrt === true && g("C").seitMs === null
+          && g("E").gesperrt === true && g("E").seitMs === null,
+          `${JSON.stringify(g("C"))} ${JSON.stringify(g("E"))} — new Date(null) ist 1970`);
+        torPruefung("eine abgelaufene oder fehlende Sperre gilt als gesperrt",
+          g("D").gesperrt === false && g("F").gesperrt === false, `${JSON.stringify(g("D"))} ${JSON.stringify(g("F"))}`);
+        const gleich = [];
+        for (const ip of ips) {
+          if ((await bl.exports.isIPBlocked(ip)) !== g(ip).gesperrt) gleich.push(ip);
+        }
+        torPruefung("sperrZeiten und isIPBlocked lesen dieselben Listen verschieden — zwei Wahrheiten",
+          gleich.length === 0, `abweichend: ${gleich.join(",")}`);
+        const blW = blMod(async () => { throw new Error("REDIS-WEG"); });
+        const zW = blW.fehler ? null : await blW.exports.sperrZeiten(["A"]);
+        torPruefung("ein Lesefehler verhaelt sich anders als bisher (isIPBlocked: im Zweifel nicht gesperrt)",
+          zW?.get("A")?.gesperrt === false, JSON.stringify(zW ? [...zW] : blW.fehler));
+
+        // ── Der ECHTE Zyklus, gezaehlter Killswitch ──
+        class FakeAnthropic {
+          constructor() {
+            this.messages = { stream: async () => ({ finalMessage: async () => ({
+              content: [{ type: "text", text: '{"verdict":"ATTACK","summary":"Scanner-Test"}' }] }) }) };
+          }
+        }
+        const vorKey = process.env.ANTHROPIC_API_KEY;
+        const vorWd2 = global.__watchdog_laeuft_seit__;
+        const vorLage2 = global.__redis_lage__;
+        process.env.ANTHROPIC_API_KEY = "pruefstand-schluessel";
+        const zyklus = async (events, listen) => {
+          const ks = [];
+          const tg = [];
+          const log = [];
+          const blE = blMod(async (k) => (listen[k] ? JSON.parse(JSON.stringify(listen[k])) : null));
+          const m = ladeTsModul("lib/security-watchdog/claude-watchdog.ts", {
+            ...wdErsatz(async () => ({ ereignisse: events, roh: events.map((e) => JSON.stringify(e)) })),
+            "@anthropic-ai/sdk": { __esModule: true, default: FakeAnthropic },
+            "lib/killswitch": { triggerKillswitch: (...a) => { ks.push(a); return { triggered: true }; } },
+            "telegram-notifications/telegram-sender": { sendTelegram: async (t) => { tg.push(t); return true; },
+              telegramZeit: () => "24.11.2026, 02:48:00 MEZ" },
+            "ip-blocklist": blE.exports,
+          });
+          if (m.fehler || blE.fehler) return { fehler: m.fehler ?? blE.fehler };
+          global.__watchdog_laeuft_seit__ = null;
+          global.__redis_lage__ = new Map();
+          const [l, w, f] = [console.log, console.warn, console.error];
+          console.log = console.warn = console.error = (...a) => log.push(a.map(String).join(" "));
+          let erg;
+          try { erg = await m.exports.runClaudeWatchdog(); } catch (e) { log.push(`WURF ${e.message}`); }
+          finally { console.log = l; console.warn = w; console.error = f; }
+          return { ks: ks.length, tg: tg.join("\n"), log: log.join("\n"), erg };
+        };
+        try {
+          const X = "35.205.89.77";
+          const gesperrtAm = jetztMs - 60_000;
+          const nurX = (blockedAt) => ({
+            "security:blocked_ips_permanent": [{ ip: X, blockedAt, expiresAt: null, permanent: true }],
+          });
+          const ev = (ts) => ({ type: "HONEYPOT_ACCESS", ip: X, path: "/.env", ...(ts === undefined ? {} : { ts }) });
+          // Der Fall vom 24.11.: drei Ereignisse, Sekunden VOR der Sperre.
+          const z1 = await zyklus([ev(gesperrtAm - 3000), ev(gesperrtAm - 2000), ev(gesperrtAm - 1000)],
+            nurX(iso(gesperrtAm)));
+          torPruefung("der echte Zyklus loest bei Nachzueglern den Killswitch aus — der Fehlalarm vom 24.11.",
+            z1.fehler == null && z1.ks === 0, z1.fehler ?? `${z1.ks} Killswitch-Aufrufe | ${(z1.log ?? "").slice(0, 160)}`);
+          torPruefung("die Nachzuegler werden nicht genannt — 'keine Umgehung' waere von 'nicht geprueft' nicht zu unterscheiden",
+            /Nachzügler \(VOR der Sperre protokolliert/.test(z1.tg ?? "") && /Nachzuegler von gesperrten IPs/.test(z1.log ?? "")
+            && /35\.205\.89\.77 3× \(spaetestes 1\.0 s vor der Sperre\)/.test(z1.tg ?? ""),
+            (z1.tg ?? "").slice(0, 200));
+          const z2 = await zyklus([ev(gesperrtAm - 3000), ev(gesperrtAm + 30_000)], nurX(iso(gesperrtAm)));
+          torPruefung("ein Ereignis NACH der Sperre loest im echten Zyklus nicht genau einmal den Killswitch aus",
+            z2.fehler == null && z2.ks === 1 && /30\.0 s NACH der Sperre/.test(z2.tg ?? ""),
+            z2.fehler ?? `${z2.ks} Aufrufe | ${(z2.tg ?? "").slice(0, 200)}`);
+          const z3 = await zyklus([ev(undefined)], nurX(iso(gesperrtAm)));
+          const z4 = await zyklus([ev(gesperrtAm - 3000)], nurX("kaputt"));
+          torPruefung("Unbekanntes (Zeitstempel oder Sperrzeit unlesbar) loest im echten Zyklus nicht aus",
+            z3.ks === 1 && z4.ks === 1, `Zeitstempel ${z3.ks}, Sperrzeit ${z4.ks} | ${z3.fehler ?? ""}${z4.fehler ?? ""}`);
+          const z5 = await zyklus([{ type: "SQL_INJECTION", ip: "7.7.7.7", path: "/api", ts: jetztMs }], {});
+          torPruefung("GEGENPROBE: eine ungesperrte Angreifer-IP loest den Killswitch aus oder meldet Nachzuegler",
+            z5.fehler == null && z5.ks === 0 && !/Nachz/.test(z5.tg ?? "") && /ANGRIFF GEBLOCKT/.test(z5.tg ?? ""),
+            z5.fehler ?? `${z5.ks} | ${(z5.tg ?? "").slice(0, 160)}`);
+          // Gefunden von genau diesem Pruefstand: `new Date(e.ts).toISOString()`
+          // warf bei einer unlesbaren Zeit AUSSERHALB des try — der Zyklus brach
+          // ab, und weil nichts entfernt wurde, jeder folgende auch.
+          const z6 = await zyklus([
+            { type: "SQL_INJECTION", ip: "8.8.4.4", path: "/a", payload: 12345 },
+            { type: "SQL_INJECTION", ip: "8.8.4.4", path: "/b", ts: 1e20 },
+            { type: "SQL_INJECTION", ip: "8.8.4.4", path: "/c", ts: "gestern" },
+          ], {});
+          torPruefung("ein Ereignis mit unlesbarer Zeit oder fremdem payload bricht den ganzen Watchdog-Zyklus ab",
+            z6.fehler == null && z6.erg != null && z6.erg.verdict === "ATTACK" && !/ABGEBROCHEN/.test(z6.log ?? ""),
+            z6.fehler ?? `${JSON.stringify(z6.erg ?? null)} | ${(z6.log ?? "").slice(0, 200)}`);
+        } finally {
+          if (vorKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = vorKey;
+          global.__watchdog_laeuft_seit__ = vorWd2;
+          global.__redis_lage__ = vorLage2;
+        }
+      }
+    }
+
     // ── UND DER INNERE CATCH DES CAPITAL-KEEP-ALIVE (13.11.) ─────────────
     //
     // Dort stand `} catch {` — ohne Parameter, ohne Zeile. Ein Netzfehler

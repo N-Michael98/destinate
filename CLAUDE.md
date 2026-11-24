@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()`; dazu `gptZyklusLage()` und `callGPT` gegen einen gefälschten `fetch` — warum GPT-Antworten fehlten | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()`; dazu `gptZyklusLage()` und `callGPT` gegen einen gefälschten `fetch` — warum GPT-Antworten fehlten; seit 24.11. `umgehungsLage()`/`sperrZeiten()` und der echte Watchdog-Zyklus mit gezähltem Killswitch — ein Nachzügler vor der Sperre ist kein umgangener Block | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -2438,6 +2438,88 @@ Engine-Diff entfernt drei Zeilen — die Signatur von `callGPT` und zwei ihrer
 aufschlüsseln:** die 1520 vom 23.11. bleiben ungeteilt.
 
 `safety-nets` 2166 → **2211**: `gptZyklusLage` an elf Lagen (abgeschnitten ohne Verlust ist „ok“, abgeschnitten geht vor unlesbar, NaN/negativ), `callGPT` gegen einen gefälschten `fetch` (429, `length`, `stop`, Netzfehler), die Verdrahtung samt Gegenprobe, dass die Entscheidung unberührt bleibt, die Tagessumme mit **Übergangslage** und Deckel, Zyklus-Zeile, Tagesbilanz, `/status` dreiwertig (auch `gptLageGeprueft: 0`), absichtlich unsortierte Testdaten, und beide Härtefälle an die neue Aufschlüsselung gebunden. **21 von 21 Sabotagen** gegen alle 23 Prüfer; S9 einzeln nachgefahren (rot mit eigenem Befund). Regression Broker-Stufe **15/15** (B5 auf `html-sicher.ts` umgestellt), Trichter **19/19**, GPT-Lesart **21/21**.
+
+## Der Watchdog stoppte den Handel wegen eines Nachzüglers (24.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan vorweg (Notaus-Pfad; Impact:
+`claude-watchdog.ts` nur von `instrumentation.ts`, `ip-blocklist.ts` zusätzlich
+von Proxy und Webhook, beide nur durch `safety-nets` gesichert).
+
+24.11.: 02:45 sperrt der Watchdog `35.205.89.77` (ATTACK, Einzel-IP, Handel läuft
+weiter). 02:48 sieht der nächste Zyklus drei Ereignisse derselben IP und löst den
+Killswitch aus — „Block wurde umgangen". Bis zum `/reset` um 09:43 kein Handel,
+davon 1 h 43 im Handelsfenster.
+
+**Die Prüfung kannte keine Zeit.** `isIPBlocked(ip)` sagt, ob eine IP **jetzt**
+gesperrt ist — nicht, ob das Ereignis **nach** der Sperre entstand. `blockedAt`
+wurde gespeichert und nirgends gelesen. Der Zyklus aber liest die Ereignisse,
+fragt Claude (Sekunden), sperrt erst **danach** und entfernt nur die gelesenen.
+Was der Angreifer in dieser Zeit schickt, kommt regulär durch, wird protokolliert
+und liegt im nächsten Zyklus vor — von einer IP, die jetzt gesperrt ist. Ein
+Nachzügler, keine Umgehung. Der Kommentar „die Middleware weist gesperrte IPs ab
+BEVOR Events geloggt werden" stimmt nur ab dem Moment der Sperre.
+
+**Ob es heute Nacht genau so war, ist aus dem Code allein nicht bewiesen** — der
+Pfad existiert sicher und passt zum Bild (Sperre, drei Ereignisse, nächster
+Zyklus). Den Beleg liefert das Railway-Log von `destinate`: stehen alle
+`Security event detected … 35.205.89.77` **vor** `IP geblockt (PERMANENT)`, war es
+dieser Fehlalarm.
+
+**Jetzt:**
+- `sperrZeiten()` (`ip-blocklist.ts`) liest **dieselben** zwei Listen wie
+  `isIPBlocked` — einmal je Liste, nicht je IP — und nennt je IP den
+  **frühesten** aktiven Sperrzeitpunkt. Ist einer unlesbar, ist er `null`
+  (`new Date(null)` wäre 1970 und endlich). Ein Lesefehler heisst „nicht
+  gesperrt", wie bisher.
+- `umgehungsLage()` (rein, exportiert) zählt ein Ereignis nur als Umgehung, wenn
+  es **später als Sperre + 2 s** entstand. Die 2 s sind hergeleitet: der Proxy
+  prüft die Sperre bis zu 800 ms (`Promise.race`) und setzt den Zeitstempel erst
+  danach; der Prüfer bindet die Toleranz an diese Zahl in `proxy.ts`.
+- **Unbekannt bleibt vorsichtig:** eine unlesbare Sperrzeit oder ein unlesbarer
+  Zeitstempel zählt **weiter** als Umgehung.
+- Nachzügler werden **genannt** (Log und Telegram, höchstens fünf IPs, Rest
+  gezählt, entschärft), der Umgehungs-Grund steht im Eskalations-Alarm
+  (`… Block wurde umgangen! (Ereignis 30.0 s NACH der Sperre)`).
+
+**Dabei vom eigenen Prüfstand gefunden — ein zweiter, älterer Fehler:**
+`new Date(e.ts).toISOString()` im Prompt-Aufbau **wirft** bei einer unlesbaren
+Zeit, und zwar **ausserhalb** des `try`. Der Zyklus brach ab, die Ereignisse
+wurden nicht entfernt, und jeder folgende Zyklus scheiterte an derselben Zeile —
+bis die Liste ablief, deren Lebensdauer jedes neue Ereignis verlängert. Über den
+Proxy nicht erreichbar (er setzt `ts: now`), aber die Liste kommt aus Redis und
+wird nur geparst. Jetzt „Zeit unlesbar" — und `Number.isFinite` allein reicht
+nicht: `new Date(1e20)` ist ungültig. Dasselbe für `payload` (`String()` vor
+`.slice`).
+
+**Was es NICHT tut:** die Regel für koordinierte Angriffe (≥ 5 IPs in zwei
+Zyklen), das Sperren, den Proxy und den Killswitch selbst lässt es unverändert.
+Ein **echter** Durchbruch nach der Sperre löst weiter sofort aus — auch einer,
+den unser eigener Proxy verursacht (Redis langsamer als 800 ms, „fail-open").
+Keine Order, keine Schwelle, keine Hochrisiko-Datei. **Snapshot 299 und Karte
+unverändert** (kein neuer Import).
+
+**Benannt, NICHT geändert — eigene Entscheidung:** `getClientIP()` (`proxy.ts`)
+nimmt den **ersten** Eintrag von `X-Forwarded-For`. Ob Railway diesen Kopf
+überschreibt oder an einen mitgeschickten anhängt, ist **nicht gemessen**. Hängt
+es an, bestimmt der Client seine „IP" selbst: eine Sperre liesse sich mit jeder
+Anfrage umgehen, eine Whitelist-Adresse (`176.113.69.*`) vortäuschen, und die
+Zeichenkette geht roh in `<code>${attackIP}</code>` (Telegram fällt dann seit
+01.11. auf reinen Text zurück). Zu messen mit einer Anfrage mit eigenem
+`X-Forwarded-For` gegen den laufenden Dienst und der Logzeile dazu.
+
+`safety-nets` 2211 → **2234**: `umgehungsLage` an den Grenzen (vor der Sperre,
+genau auf der Toleranz, eine ms darüber, Sperrzeit `null`/`Infinity`,
+Zeitstempel `NaN`/fehlt/Text, ungesperrte und unbekannte IP, absichtlich
+unsortierte Nachzügler, erste Umgehung in Reihenfolge, unbrauchbare Toleranz),
+die Toleranz an `proxy.ts` gebunden, `sperrZeiten` gegen einen nachgebauten
+Speicher (früheste aktive Sperre, abgelaufen, `null`, unlesbar, Lesefehler) und
+**gegen `isIPBlocked` auf denselben Listen** — und der **echte** Watchdog-Zyklus
+mit nachgebautem Claude und **gezähltem** `triggerKillswitch`: der Fall vom 24.11.
+(0), Ereignis nach der Sperre (1, Grund im Alarm), Unbekanntes (je 1), eine
+ungesperrte Angreifer-IP (0, „ANGRIFF GEBLOCKT"), und ein Ereignis mit kaputter
+Zeit bricht den Zyklus nicht mehr ab.
+
+**21 von 21 Sabotagen** gegen alle 23 Prüfer (darunter der Fund exakt zurück — jede gesperrte IP gilt als Umgehung —, die Grenze `>=`, unbekannt nicht mehr vorsichtig, späteste statt früheste Sperre, `new Date(null)`, abgelaufene Sperren, der alte Wurf bei unlesbarer Zeit, eine Toleranz unter der Proxy-Wartezeit und eine aufgeblasene) plus Gegenprobe. Regression der Watchdog-Suite vom 13.11. **14/14** plus Gegenprobe.
 
 ## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
 

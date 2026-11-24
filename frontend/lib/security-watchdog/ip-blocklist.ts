@@ -100,6 +100,61 @@ export async function isIPBlocked(ip: string): Promise<boolean> {
   }
 }
 
+// ── SEIT WANN IST EINE IP GESPERRT? (24.11.) ────────────────────────────────
+//
+// `isIPBlocked` sagt nur, ob eine IP JETZT gesperrt ist. Der Watchdog wertete
+// damit jedes Ereignis einer gesperrten IP als "Block umgangen" — auch eines,
+// das VOR der Sperre protokolliert wurde. Genau das passiert regelmaessig: der
+// Watchdog liest die Ereignisse, fragt Claude (Sekunden), und sperrt erst
+// DANACH. Was der Angreifer in dieser Zeit schickt, kommt normal durch, wird
+// protokolliert und liegt im naechsten Zyklus als "Umgehung" vor — Killswitch.
+// So am 24.11. um 02:48, bis zum /reset um 09:43 kein Handel.
+//
+// Dieselben zwei Listen und dieselbe Lesart wie `isIPBlocked` (permanent, dazu
+// nicht abgelaufene temporaere) — zwei Lesarten koennten sich widersprechen.
+// Gelesen wird EINMAL je Liste, nicht je IP: der Watchdog fragt fuer bis zu
+// 200 IPs.
+//
+// `seitMs` ist der FRUEHESTE Sperrzeitpunkt aller aktiven Eintraege der IP.
+// Ist auch nur einer davon unlesbar, ist `seitMs` null (unbekannt): dann laesst
+// sich nicht ausschliessen, dass die Sperre frueher begann. Der Aufrufer wertet
+// unbekannt als Umgehung — das bisherige, vorsichtige Verhalten.
+//
+// Ein Lesefehler gibt `gesperrt: false` — wie `isIPBlocked` ("im Zweifel nicht
+// blockieren"). Damit verhaelt sich der Ausfall genau wie bisher.
+export interface SperrZeit {
+  gesperrt: boolean;
+  seitMs: number | null;
+}
+
+export async function sperrZeiten(ips: string[]): Promise<Map<string, SperrZeit>> {
+  const ergebnis = new Map<string, SperrZeit>();
+  for (const ip of ips) ergebnis.set(ip, { gesperrt: false, seitMs: null });
+  try {
+    const now = Date.now();
+    const permanent = (await cacheGet<BlockedIP[]>(REDIS_KEY_PERMANENT)) ?? [];
+    const temp = (await cacheGet<BlockedIP[]>(REDIS_KEY_TEMP)) ?? [];
+    const aktiv = [
+      ...permanent,
+      ...temp.filter(e => e.expiresAt != null && new Date(e.expiresAt).getTime() > now),
+    ];
+    for (const ip of ips) {
+      const eintraege = aktiv.filter(e => e.ip === ip);
+      if (eintraege.length === 0) continue;
+      // `new Date(null)` ist 1970 und ENDLICH — nur eine Zeichenkette zaehlt.
+      const zeiten = eintraege.map(e =>
+        typeof e.blockedAt === "string" ? new Date(e.blockedAt).getTime() : NaN);
+      const seitMs = zeiten.every(z => Number.isFinite(z)) ? Math.min(...zeiten) : null;
+      ergebnis.set(ip, { gesperrt: true, seitMs });
+    }
+    return ergebnis;
+  } catch {
+    const leer = new Map<string, SperrZeit>();
+    for (const ip of ips) leer.set(ip, { gesperrt: false, seitMs: null });
+    return leer;
+  }
+}
+
 export async function getBlockedIPs(): Promise<BlockedIP[]> {
   try {
     const now = Date.now();
