@@ -14257,8 +14257,11 @@ module.exports = async function pruefe() {
         fehlt40.ersetzt.length === 0 && L({ maxRiskPercent: null }, 1.9, 40).ersetzt.length === 0,
         `fehlt=${fehlt40.ersetzt.length} null=${L({ maxRiskPercent: null }, 1.9, 40).ersetzt.length}`);
 
+      // Die ZAHL 0 steht seit dem 24.11. NICHT mehr hier: sie ist eine
+      // gelesene Aussage ("nichts riskieren") und ein Veto — eigene Pruefung
+      // unten. `"0"` als TEXT bleibt unbrauchbar.
       const risikoLagen = [
-        ["Zahl als Text", "0.5"], ["Text", "abc"], ["0", 0], ["negativ", -5],
+        ["Zahl als Text", "0.5"], ["Text", "abc"], ["0 als Text", "0"], ["negativ", -5],
         ["true", true], ["Objekt", {}], ["Array", []],
       ];
       for (const [name, wert] of risikoLagen) {
@@ -14361,11 +14364,12 @@ module.exports = async function pruefe() {
         + "Felder wieder ungeprueft uebernommen",
         /const felder = kiFelderLesen\(parsed, rrRatio, riskScore\);/.test(echtZweig),
         "kiFelderLesen(parsed, rrRatio, riskScore)");
-      torPruefung("die FREIGABE haengt nicht am gelesenen Verhaeltnis — ein "
-        + '`"5"` gaebe sie dann wieder',
-        /approved: riskScore < 60 && felder\.rewardRiskRatio >= 1\.5,/.test(echtZweig),
-        "approved: riskScore < 60 && felder.rewardRiskRatio >= 1.5");
+      torPruefung("die FREIGABE haengt nicht am gelesenen Verhaeltnis und am "
+        + 'Claude-Veto — ein `"5"` gaebe sie dann wieder, eine 0 ginge mit 1 % durch',
+        /approved: claudeFreigabe\(riskScore, felder\.rewardRiskRatio, felder\.nullRisiko\),/.test(echtZweig),
+        "approved: claudeFreigabe(riskScore, felder.rewardRiskRatio, felder.nullRisiko)");
       for (const [name, muster] of [
+        ["nullRisiko", /nullRisiko: felder\.nullRisiko,/],
         ["maxRiskPercent", /maxRiskPercent: felder\.maxRiskPercent,/],
         ["reasoning", /reasoning: felder\.reasoning,/],
         ["rewardRiskRatio", /rewardRiskRatio: felder\.rewardRiskRatio,/],
@@ -14404,6 +14408,164 @@ module.exports = async function pruefe() {
     }
   }
 
+
+  // ── CLAUDES "NICHTS RISKIEREN" IST EIN VETO (24.11.) ─────────────────────
+  //
+  // Claude schickt bei einer Ablehnung `maxRiskPercent: 0` (23./24.11. im Log:
+  // BNBUSD, XAUUSD, BTCUSD). `lesbaresRisiko` wertete die 0 als unbrauchbar,
+  // sie wurde durch 0.5 bzw. 1.0 ersetzt — und bei riskScore < 60 und
+  // R/R >= 1.5 ging der Trade mit 1.0 % durch. Vor dem 15.11. wurde aus
+  // derselben 0 ueber den Boden der Volatilitaets-Skalierung 0.1 %.
+  //
+  // GERECHNET: `kiFelderLesen` (nullRisiko, keine Fehlerzeile mehr fuer die
+  // 0), `claudeFreigabe` aus der ECHTEN Engine, und die Kette bis in die
+  // Tagesbilanz samt Uebergangslage.
+  {
+    const kiN = ladeTsModul("lib/ki-antwort/ki-antwort.ts", {
+      "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
+    });
+    const LN = kiN.exports?.kiFelderLesen;
+    if (kiN.fehler || typeof LN !== "function") {
+      funde.push(`nullveto: kiFelderLesen nicht ausfuehrbar: ${kiN.fehler ?? "kein Export"}`);
+      zusatz++;
+    } else {
+      const n0 = LN({ maxRiskPercent: 0 }, 1.9, 40);
+      torPruefung("nullveto: Claudes maxRiskPercent 0 wird nicht als Veto gelesen — "
+        + "dann geht der Trade mit 1 % durch, obwohl Claude 0 % wollte",
+        n0.nullRisiko === true, JSON.stringify(n0));
+      torPruefung("nullveto: die 0 steht weiter als 'unbrauchbar' im Log — eine "
+        + "gelesene Aussage ist kein Lesefehler",
+        Array.isArray(n0.ersetzt) && n0.ersetzt.length === 0, JSON.stringify(n0.ersetzt));
+      torPruefung("nullveto: maxRiskPercent ist bei der 0 keine Zahl > 0 mehr — der Typ "
+        + "verspricht eine, und der Rueckfall-Pfad darf nicht brechen",
+        n0.maxRiskPercent === 1.0 && LN({ maxRiskPercent: 0 }, 1.9, 70).maxRiskPercent === 0.5,
+        `${n0.maxRiskPercent}`);
+      torPruefung("nullveto: -0 ist eine 0 und muss ebenfalls Veto sein",
+        LN({ maxRiskPercent: -0 }, 1.9, 40).nullRisiko === true);
+      // GEGENPROBEN: nur die exakte Zahl 0 ist ein Veto.
+      const keinVeto = [["fehlt", undefined], ["null", null], ["0.5", 0.5], ["Text 0", "0"],
+        ["negativ", -1], ["NaN", NaN], ["Infinity", Infinity], ["false", false], ["Objekt", {}]];
+      const falschVeto = keinVeto.filter(([, w]) => LN({ maxRiskPercent: w }, 1.9, 40).nullRisiko !== false);
+      torPruefung("nullveto: ein anderer Wert als die Zahl 0 gilt als Veto — dann "
+        + "verschwinden echte Freigaben",
+        falschVeto.length === 0, falschVeto.map(([n]) => n).join(", "));
+      // R/R: eine 0, die mit der GEMESSENEN 0 uebereinstimmt, ersetzt nichts;
+      // eine 0 gegen eine gemessene 1.9 bleibt ein Befund.
+      const rrGleich = LN({ rewardRiskRatio: 0 }, 0, 40);
+      const rrAnders = LN({ rewardRiskRatio: 0 }, 1.9, 40);
+      torPruefung("nullveto: rewardRiskRatio 0 gleich der Messung steht als Ersetzung im "
+        + "Log, oder 0 gegen eine abweichende Messung verschwindet",
+        rrGleich.ersetzt.length === 0 && rrGleich.rewardRiskRatio === 0
+        && rrAnders.ersetzt.some((e) => e.startsWith("rewardRiskRatio=")) && rrAnders.rewardRiskRatio === 1.9,
+        `${JSON.stringify(rrGleich.ersetzt)} ${JSON.stringify(rrAnders.ersetzt)}`);
+    }
+
+    // ── claudeFreigabe aus der ECHTEN Engine ──
+    const engN = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts");
+    const CF = engN.exports?.claudeFreigabe;
+    if (engN.fehler || typeof CF !== "function") {
+      funde.push(`nullveto: claudeFreigabe nicht ausfuehrbar: ${engN.fehler ?? "nicht exportiert"}`);
+      zusatz++;
+    } else {
+      torPruefung("nullveto: Claudes 0 gibt trotz Score 55 und R/R 2.0 FREI — der Fall, "
+        + "den das Veto schliesst",
+        CF(55, 2.0, true) === false, String(CF(55, 2.0, true)));
+      torPruefung("nullveto: ohne Veto gibt Score 55 und R/R 2.0 nicht mehr frei — die "
+        + "alte Freigabe ist beschaedigt",
+        CF(55, 2.0, false) === true, String(CF(55, 2.0, false)));
+      // Die Schwellen unveraendert: genau 60 gibt nicht frei, genau 1.5 schon.
+      torPruefung("nullveto: die Schwellen 60 / 1.5 haben sich verschoben",
+        CF(59.99, 1.5, false) === true && CF(60, 2.0, false) === false
+        && CF(40, 1.4999, false) === false, `${CF(59.99, 1.5, false)} ${CF(60, 2.0, false)} ${CF(40, 1.4999, false)}`);
+      torPruefung("nullveto: ein NaN gibt frei",
+        CF(NaN, 2.0, false) === false && CF(40, NaN, false) === false);
+    }
+
+    // ── Die Ablehnung nennt das Veto und zaehlt "nur daran" ──
+    const aeN = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    torPruefung("nullveto: das Veto zaehlt nur im echten Claude-Pfad nicht — oder gar nicht",
+      /const nullVeto = claude\.source === "CLAUDE_REAL" && claude\.nullRisiko === true;/.test(aeN),
+      "const nullVeto = …");
+    torPruefung("nullveto: die Ablehnung nennt das Veto nicht, oder zaehlt 'nur daran' falsch",
+      /if \(nullVeto\) \{\s*gruende\.push\("Claude: maxRiskPercent 0[^"]*"\);\s*if \(!rrZuKlein && !scoreZuHoch\) claudeNullAlleinZahl\+\+;\s*\}/.test(aeN),
+      "if (nullVeto) { gruende.push(…); if (!rrZuKlein && !scoreZuHoch) claudeNullAlleinZahl++; }");
+    torPruefung("nullveto: die Zahl erreicht ScanDaten nicht",
+      /claudeNullAllein: claudeNullAlleinZahl,\s*claudeNullGeprueft: 1,/.test(aeN), "ScanDaten");
+    torPruefung("nullveto: der Zaehler wird nicht je Scan bei 0 begonnen",
+      (aeN.match(/let claudeNullAlleinZahl = 0;/g) || []).length === 1
+      && (aeN.match(/claudeNullAlleinZahl\+\+/g) || []).length === 1, "genau eine Deklaration, genau eine Zaehlstelle");
+
+    // ── Die Kette: Tagessumme (mit Uebergangslage), Zyklus-Zeile, Tagesbilanz ──
+    const zbN = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts",
+      { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+    const ZN = zbN.exports ?? {};
+    if (zbN.fehler || ["leereTagessumme", "tagessummeAddieren", "tagesbilanzText", "bilanzZeile"]
+      .some((n) => typeof ZN[n] !== "function")) {
+      torPruefung("nullveto: zyklus-bilanz nicht ausfuehrbar", false, zbN.fehler ?? "Export fehlt");
+    } else {
+      const scanN = (o) => ({ maerkte: 30, gpt: { WAIT: 28, BUY: 1, SELL: 1 }, vetos: 0, stilVerworfen: 0,
+        unterGrenze: [], go: 0, rrAbgelehnt: 2, ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
+        ohneGptAntwort: 0, gptZahlUnbrauchbar: 0, konsensRichtungen: 0, taErsatzRichtungen: 0,
+        trichterGeprueft: 1, restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0,
+        claudeGefragt: 2, regelbrueche: {}, dauerMs: {}, kontext: { news: false, mtfSymbole: 0 },
+        gptLage: "ok", gptLageGrund: "", gptLageGeprueft: 1, ...o });
+      const bilN = (s) => ({ start: 0, ende: 1000, ausgang: "Keine freigegebenen Signale", scan: s,
+        tore: [], trades: [], fehlgeschlagen: [] });
+      const leerN = ZN.leereTagessumme("2026-11-24");
+      torPruefung("nullveto: die leere Tagessumme kennt die Felder nicht",
+        leerN.claudeNullAllein === 0 && leerN.claudeNullGeprueft === 0,
+        JSON.stringify([leerN.claudeNullAllein, leerN.claudeNullGeprueft]));
+      // UEBERGANGSLAGE: die Summe von heute frueh kennt die Felder nicht, und
+      // ein Scan von VOR dem Deploy schickt sie nicht.
+      const altN = ZN.leereTagessumme("2026-11-24");
+      delete altN.claudeNullAllein; delete altN.claudeNullGeprueft;
+      let tN = null;
+      try {
+        // Der ERSTE Schritt nach dem Deploy wird direkt geprueft: der naechste
+        // kopiert die Summe per JSON, und dabei wird ein NaN zu null und dann
+        // wieder zu einer Zahl — im Sabotage-Lauf (N12) blieb ein fehlendes
+        // `zahl()` links deshalb zuerst gruen (Testdaten, die den Fehler nicht
+        // ausdruecken konnten). In Redis passiert dasselbe: der Wert des ersten
+        // Scans ginge still verloren.
+        const altN2 = ZN.leereTagessumme("2026-11-24");
+        delete altN2.claudeNullAllein; delete altN2.claudeNullGeprueft;
+        const erst = ZN.tagessummeAddieren(altN2,
+          bilN(scanN({ claudeNullAllein: 2, claudeNullGeprueft: 1 })), "2026-11-24");
+        torPruefung("nullveto: der erste Scan nach dem Deploy geht in der Uebergangslage verloren (NaN)",
+          erst.claudeNullAllein === 2 && erst.claudeNullGeprueft === 1,
+          JSON.stringify([erst.claudeNullAllein, erst.claudeNullGeprueft]));
+        tN = ZN.tagessummeAddieren(altN, bilN(scanN({})), "2026-11-24");
+        torPruefung("nullveto: ein Scan von vor dem Deploy ergibt NaN statt 0",
+          tN.claudeNullAllein === 0 && tN.claudeNullGeprueft === 0,
+          JSON.stringify([tN.claudeNullAllein, tN.claudeNullGeprueft]));
+        const tbVor = ZN.tagesbilanzText(tN);
+        torPruefung("nullveto: vor dem Deploy behauptet die Tagesbilanz eine Messung",
+          tbVor.includes("nur am Claude-Veto (Risiko 0): nicht gemessen (Analysen vor dem 24.11.)"),
+          (tbVor.match(/[^\n]*Claude-Veto \(Risiko 0\)[^\n]*/) ?? ["(keine)"])[0]);
+        tN = ZN.tagessummeAddieren(tN, bilN(scanN({ claudeNullAllein: 2, claudeNullGeprueft: 1 })), "2026-11-24");
+        tN = ZN.tagessummeAddieren(tN, bilN(scanN({ claudeNullAllein: 1, claudeNullGeprueft: 1 })), "2026-11-24");
+      } catch (e) {
+        torPruefung("nullveto: die Uebergangslage WIRFT — eine Summe von vor dem Deploy kennt die Felder nicht",
+          false, e instanceof Error ? e.message : String(e));
+      }
+      if (tN) {
+        torPruefung("nullveto: die Tagessumme addiert falsch (Uebergang)",
+          tN.claudeNullAllein === 3 && tN.claudeNullGeprueft === 2 && tN.scans === 3,
+          JSON.stringify([tN.claudeNullAllein, tN.claudeNullGeprueft, tN.scans]));
+        const tbN = ZN.tagesbilanzText(tN);
+        torPruefung("nullveto: die Tagesbilanz nennt die Zahl oder ihre Abdeckung nicht",
+          tbN.includes("   davon nur am Claude-Veto (Risiko 0): 3 (gemessen in 2 von 3 Analysen)")
+          && tbN.includes("An der Risiko-Freigabe gescheitert (R/R, Risiko-Score oder Claude-Veto): 6"),
+          (tbN.match(/[^\n]*(Claude-Veto)[^\n]*/g) ?? ["(keine)"]).join(" | "));
+      }
+      const zl1 = ZN.bilanzZeile(bilN(scanN({ claudeNullAllein: 2, claudeNullGeprueft: 1 })));
+      const zl0 = ZN.bilanzZeile(bilN(scanN({ claudeNullAllein: 0, claudeNullGeprueft: 1 })));
+      torPruefung("nullveto: die Zyklus-Zeile nennt das Veto nicht, oder nennt eine 0 (Rauschen)",
+        zl1.includes("Freigabe-Nein 2 (nur Claude-Risiko 0: 2)") && zl0.includes("Freigabe-Nein 2 |")
+        && !zl0.includes("Claude-Risiko 0"), `${zl1.slice(0, 160)} || ${zl0.slice(0, 160)}`);
+    }
+  }
 
   // ── DIE FUENF GPT-ZAHLEN WERDEN GELESEN (15.11.) ─────────────────────────
   //
@@ -14675,7 +14837,7 @@ module.exports = async function pruefe() {
           ["Veto", /vetoZahl\+\+; stufen\+\+;/],
           ["ohne volle Daten", /ohneVolleDatenZahl\+\+; stufen\+\+;/],
           ["unter der Grenze", /claudeUnterGrenzeConf\.push\(Number\(gpt\.confidence\)\); stufen\+\+;/],
-          ["an der Freigabe", /nurRR: rrZuKlein && !scoreZuHoch,\s*\}\); stufen\+\+;/],
+          ["an der Freigabe", /nurRR: rrZuKlein && !scoreZuHoch && !nullVeto,\s*\}\); stufen\+\+;/],
           ["GO", /if \(goSignal\) \{ trichter\.go\+\+; stufen\+\+; \}/],
           ["ohne Stop/Ziel", /if \(isRealAnalysis && hasFullData && gpt\.direction !== "WAIT" && gpt\.confidence >= MIN_SIGNAL_CONFIDENCE && !\(gpt\.stopLoss > 0 && gpt\.takeProfit > 0\)\) stufen\+\+;/],
         ];

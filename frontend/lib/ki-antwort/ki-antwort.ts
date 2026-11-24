@@ -70,6 +70,14 @@ export interface GeleseneKiFelder {
   /** Was das Modell SELBST geurteilt hat — nur ein echtes Boolean. */
   eigenesUrteil: boolean | undefined;
   /**
+   * Das Modell hat ausdruecklich `maxRiskPercent: 0` geschickt (24.11.) —
+   * „nichts riskieren". Das ist eine GELESENE Aussage, kein unbrauchbarer
+   * Wert, und der Aufrufer behandelt sie als Veto. `maxRiskPercent` traegt
+   * dann trotzdem den abgeleiteten Wert (der Typ verspricht eine Zahl > 0);
+   * benutzt wird er nicht, weil die Freigabe ausbleibt.
+   */
+  nullRisiko: boolean;
+  /**
    * Felder, die VORHANDEN aber UNBRAUCHBAR waren, mit Rohwert.
    *
    * Nur diese Liste, nicht die fehlenden: ein weggelassenes Feld ist der
@@ -126,7 +134,22 @@ export function kiFelderLesen(
   // `maxRiskPerTradePct` in den Einstellungen.
   const risiko = lesbaresRisiko(roh.maxRiskPercent);
   const maxRiskPercent = risiko ?? (riskScore > 60 ? 0.5 : 1.0);
-  if (risiko === null && roh.maxRiskPercent !== undefined && roh.maxRiskPercent !== null) {
+  // ── EINE 0 IST EINE AUSSAGE, KEIN UNLESBARER WERT (24.11.) ──────────────
+  //
+  // Claude schickt bei einer Ablehnung `maxRiskPercent: 0` — gesehen am
+  // 23./24.11. im Log (BNBUSD, XAUUSD, BTCUSD, jeweils mit approved=false).
+  // Bis heute lief die 0 durch `lesbaresRisiko` (das fuer eine ORDER zu
+  // Recht nur Werte > 0 annimmt), galt als unbrauchbar und wurde durch 0.5
+  // bzw. 1.0 ERSETZT — mit einer Fehlerzeile "NICHT lesbar". Damit ging
+  // Claudes "nichts riskieren" verloren: bei riskScore < 60 und R/R >= 1.5
+  // wurde mit 1.0 % freigegeben. Vor dem 15.11. wurde aus derselben 0 ueber
+  // den Boden der Volatilitaets-Skalierung 0.1 %.
+  //
+  // Nur die exakte ZAHL 0. `"0"`, negativ, NaN, Text bleiben unbrauchbar und
+  // werden wie bisher ersetzt und gemeldet.
+  const nullRisiko = typeof roh.maxRiskPercent === "number" && roh.maxRiskPercent === 0;
+  if (risiko === null && !nullRisiko
+    && roh.maxRiskPercent !== undefined && roh.maxRiskPercent !== null) {
     ersetzt.push(`maxRiskPercent=${zeige(roh.maxRiskPercent)} -> ${maxRiskPercent} abgeleitet`);
   }
 
@@ -140,7 +163,12 @@ export function kiFelderLesen(
   const rrRoh = roh.rewardRiskRatio;
   const rrBrauchbar = typeof rrRoh === "number" && Number.isFinite(rrRoh) && rrRoh > 0;
   const rewardRiskRatio = rrBrauchbar ? rrRoh : rrGemessen;
-  if (!rrBrauchbar && rrRoh !== undefined && rrRoh !== null) {
+  // Eine 0, die mit der GEMESSENEN 0 uebereinstimmt, ersetzt nichts: das
+  // Modell hat den Wert aus dem Prompt zurueckgegeben (24.11. im Log:
+  // `rewardRiskRatio=0 (number) -> 0 gemessen` bei einem Stop auf der
+  // falschen Seite). Weicht die 0 von der Messung ab, bleibt es ein Befund.
+  const rrGleichNull = rrRoh === 0 && rrGemessen === 0;
+  if (!rrBrauchbar && !rrGleichNull && rrRoh !== undefined && rrRoh !== null) {
     ersetzt.push(`rewardRiskRatio=${zeige(rrRoh)} -> ${rewardRiskRatio} gemessen`);
   }
 
@@ -167,7 +195,7 @@ export function kiFelderLesen(
     ersetzt.push(`approved=${zeige(urteilRoh)} -> unbekannt`);
   }
 
-  return { maxRiskPercent, rewardRiskRatio, reasoning, eigenesUrteil, ersetzt };
+  return { maxRiskPercent, rewardRiskRatio, reasoning, eigenesUrteil, nullRisiko, ersetzt };
 }
 
 /* ──────────────────────────────────────────────────────────────────────────

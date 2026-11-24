@@ -83,6 +83,12 @@ export type ScanDaten = {
    *  Zuordnung gemacht hat — eine Summe von vor dem 19.11. kennt sie nicht,
    *  und „geprueft" darf sie nicht behaupten. */
   gptZahlUnbrauchbar: number;
+  /** Signale, die NUR an Claudes Veto `maxRiskPercent: 0` scheiterten
+   *  (24.11.) — R/R und Risiko-Score haetten sie freigegeben. Teilmenge von
+   *  `rrAbgelehnt`, keine eigene Stufe. `claudeNullGeprueft` ist 1 je Scan,
+   *  der das misst; eine Summe von vor dem Deploy kennt es nicht. */
+  claudeNullAllein: number;
+  claudeNullGeprueft: number;
   konsensRichtungen: number;
   taErsatzRichtungen: number;
   trichterGeprueft: number;
@@ -204,6 +210,9 @@ export type Tagessumme = {
   ohneGptAntwort: number;
   /** Siehe ScanDaten.gptZahlUnbrauchbar (15.11.). */
   gptZahlUnbrauchbar: number;
+  /** Siehe ScanDaten.claudeNullAllein (24.11.). */
+  claudeNullAllein: number;
+  claudeNullGeprueft: number;
   /** Siehe ScanDaten.konsensRichtungen … mehrfachGezaehlt (19.11.). */
   konsensRichtungen: number;
   taErsatzRichtungen: number;
@@ -445,7 +454,9 @@ export function bilanzZeile(b: ZyklusBilanz): string {
       teile.push(`ohne Daten ${zahl(s.ohneVolleDaten)}${gruende ? ` (${gruende})` : ""}`);
     }
     teile.push(`<Grenze ${s.unterGrenze.length}${conf}`);
-    teile.push(`Freigabe-Nein ${s.rrAbgelehnt}`);
+    // 24.11.: wie viele davon NUR an Claudes Veto (maxRiskPercent 0) — nur bei > 0.
+    teile.push(`Freigabe-Nein ${s.rrAbgelehnt}`
+      + (zahl(s.claudeNullAllein) > 0 ? ` (nur Claude-Risiko 0: ${s.claudeNullAllein})` : ""));
     if (zahl(s.ohneStopZiel) > 0) teile.push(`ohne Stop/Ziel ${s.ohneStopZiel}`);
     teile.push(`GO ${s.go}`);
     // 19.11.: Signale ausserhalb von `gpt` und Signale ohne genau EINE Stufe.
@@ -481,6 +492,7 @@ export function leereTagessumme(datum: string): Tagessumme {
     unterGrenze: 0, confMin: null, confMax: null, go: 0, rrAbgelehnt: 0,
     ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
     ohneGptAntwort: 0, gptZahlUnbrauchbar: 0,
+    claudeNullAllein: 0, claudeNullGeprueft: 0,
     konsensRichtungen: 0, taErsatzRichtungen: 0, trichterGeprueft: 0,
     restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0,
     claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
@@ -551,6 +563,10 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     // darueber: eine Tagessumme aus Redis kann von gestern stammen und
     // dieses Feld noch nicht kennen (15.11.).
     t.gptZahlUnbrauchbar = zahl(t.gptZahlUnbrauchbar) + zahl(s.gptZahlUnbrauchbar);
+    // 24.11.: `zahl()` auf BEIDEN Seiten — die Summe von heute frueh kennt
+    // diese Felder nicht.
+    t.claudeNullAllein = zahl(t.claudeNullAllein) + zahl(s.claudeNullAllein);
+    t.claudeNullGeprueft = zahl(t.claudeNullGeprueft) + zahl(s.claudeNullGeprueft);
     // 19.11.: `zahl()` auf BEIDEN Seiten — die Summe von heute frueh kennt
     // diese Felder noch nicht. `trichterGeprueft` zaehlt, WIE VIELE Scans
     // die Zuordnung gemacht haben; nur so kann /status ehrlich sagen, fuer
@@ -724,7 +740,16 @@ export function tagesbilanzText(t: Tagessumme): string {
       .join(", ");
     zeilen.push(`🔒 Ohne vollständige Daten (TA-Lib/Strategien fehlten): ${zahl(t.ohneVolleDaten)}`
       + `${gruende ? ` — ${gruende}` : ""}`);
-    zeilen.push(`⚖️ An der Risiko-Freigabe gescheitert (R/R oder Risiko-Score): ${t.rrAbgelehnt}`);
+    zeilen.push(`⚖️ An der Risiko-Freigabe gescheitert (R/R, Risiko-Score oder Claude-Veto): ${t.rrAbgelehnt}`);
+    // 24.11.: das Veto `maxRiskPercent: 0` — die Zahl, die zeigt, was es am
+    // Handel aendert. Dreiwertig wie die GPT-Lage: ohne Messung keine Zahl.
+    const nullGepr = zahl(t.claudeNullGeprueft);
+    // Kein `↳`: das Zeichen gehoert der GPT-Aufschluesselung, und deren
+    // Pruefer sucht es (eine 0 darf dort nicht aufgeschluesselt werden).
+    zeilen.push(nullGepr === 0
+      ? "   davon nur am Claude-Veto (Risiko 0): nicht gemessen (Analysen vor dem 24.11.)"
+      : `   davon nur am Claude-Veto (Risiko 0): ${zahl(t.claudeNullAllein)} `
+        + `(gemessen in ${nullGepr} von ${t.scans} Analysen)`);
     zeilen.push(`✂️ Ohne Stop oder Ziel von GPT (weder GO noch gescheitert): ${zahl(t.ohneStopZiel)}`);
     zeilen.push(`✅ GO: ${t.go} · Claude gefragt: ${t.claudeGefragt}`);
     // 19.11.: die Summenprobe des Trichters — fuer den Teil des Tages, der

@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()`; dazu `gptZyklusLage()` und `callGPT` gegen einen gefälschten `fetch` — warum GPT-Antworten fehlten; seit 24.11. `umgehungsLage()`/`sperrZeiten()` und der echte Watchdog-Zyklus mit gezähltem Killswitch — ein Nachzügler vor der Sperre ist kein umgangener Block | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()`; dazu `gptZyklusLage()` und `callGPT` gegen einen gefälschten `fetch` — warum GPT-Antworten fehlten; seit 24.11. `umgehungsLage()`/`sperrZeiten()` und der echte Watchdog-Zyklus mit gezähltem Killswitch — ein Nachzügler vor der Sperre ist kein umgangener Block; seit 24.11. abends `claudeFreigabe()` und `kiFelderLesen()` — Claudes `maxRiskPercent: 0` ist ein Veto, die Kette bis in die Tagesbilanz | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -2459,11 +2459,13 @@ und liegt im nächsten Zyklus vor — von einer IP, die jetzt gesperrt ist. Ein
 Nachzügler, keine Umgehung. Der Kommentar „die Middleware weist gesperrte IPs ab
 BEVOR Events geloggt werden" stimmt nur ab dem Moment der Sperre.
 
-**Ob es heute Nacht genau so war, ist aus dem Code allein nicht bewiesen** — der
-Pfad existiert sicher und passt zum Bild (Sperre, drei Ereignisse, nächster
-Zyklus). Den Beleg liefert das Railway-Log von `destinate`: stehen alle
-`Security event detected … 35.205.89.77` **vor** `IP geblockt (PERMANENT)`, war es
-dieser Fehlalarm.
+**Belegt am Railway-Log von `destinate`** (Deployment `a048ae8f`, gefiltert auf
+die IP): `Security event detected` von 02:44:10 bis 02:45:03, dann 20 Sekunden
+Pause (der Claude-Aufruf), bei 02:45:23 die letzten Ereignisse, **danach**
+`IP geblockt (PERMANENT)` und `ATTACK geblockt — kein Killswitch`, ab da nur noch
+`Geblockte IP abgewiesen` (bis 02:45:34). **Nach der Sperre kein einziges
+`Security event detected` dieser IP** — die drei Ereignisse, die um 02:48:24 als
+„Umgehung" galten, entstanden vor der Sperre. Es war dieser Fehlalarm.
 
 **Jetzt:**
 - `sperrZeiten()` (`ip-blocklist.ts`) liest **dieselben** zwei Listen wie
@@ -2507,6 +2509,10 @@ Zeichenkette geht roh in `<code>${attackIP}</code>` (Telegram fällt dann seit
 01.11. auf reinen Text zurück). Zu messen mit einer Anfrage mit eigenem
 `X-Forwarded-For` gegen den laufenden Dienst und der Logzeile dazu.
 
+> **Gemessen am 24.11. abends:** die Anfrage mit `X-Forwarded-For: 203.0.113.7`
+> erschien im Log mit der echten Absender-IP. Railway übernimmt den Kopf nicht —
+> nicht fälschbar, nichts zu ändern.
+
 `safety-nets` 2211 → **2234**: `umgehungsLage` an den Grenzen (vor der Sperre,
 genau auf der Toleranz, eine ms darüber, Sperrzeit `null`/`Infinity`,
 Zeitstempel `NaN`/fehlt/Text, ungesperrte und unbekannte IP, absichtlich
@@ -2520,6 +2526,76 @@ ungesperrte Angreifer-IP (0, „ANGRIFF GEBLOCKT"), und ein Ereignis mit kaputte
 Zeit bricht den Zyklus nicht mehr ab.
 
 **21 von 21 Sabotagen** gegen alle 23 Prüfer (darunter der Fund exakt zurück — jede gesperrte IP gilt als Umgehung —, die Grenze `>=`, unbekannt nicht mehr vorsichtig, späteste statt früheste Sperre, `new Date(null)`, abgelaufene Sperren, der alte Wurf bei unlesbarer Zeit, eine Toleranz unter der Proxy-Wartezeit und eine aufgeblasene) plus Gegenprobe. Regression der Watchdog-Suite vom 13.11. **14/14** plus Gegenprobe.
+
+### Claudes „nichts riskieren" ist ein Veto (24.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg
+(`ai-analysis-engine.ts`: drei direkte Nutzer, sechs Prüfer).
+
+Gefunden im Railway-Log vom 23./24.11.: Claude schickt bei einer Ablehnung
+`maxRiskPercent: 0` (BNBUSD, XAUUSD, BTCUSD — jeweils `approved=false`), und jede
+dieser Zeilen stand als Fehler im Log: *„Claude hat Felder geschickt, die NICHT
+lesbar sind — ersetzt: maxRiskPercent=0 (number) -> 0.5 abgeleitet"*.
+
+**Die 0 war lesbar — und ihre Bedeutung ging verloren.** `lesbaresRisiko()`
+nimmt für eine ORDER zu Recht nur Werte > 0 an (15.11.); im Claude-Pfad wurde die
+0 deshalb durch `riskScore > 60 ? 0.5 : 1.0` ersetzt. Die Freigabe hing allein an
+`riskScore < 60 && R/R >= 1.5` (Claudes eigenes `approved` ist nur Diagnose). Bei
+einer 0 mit Score unter 60 ging der Trade also mit **1.0 %** durch. **Vor dem
+15.11.** wurde aus derselben 0 über `Math.min` und den Boden der
+Volatilitäts-Skalierung (`trade-filters.ts`, 0.1) **0.1 %** — die Änderung vom
+15.11. hat das Risiko in genau diesem Fall erhöht. Wie oft er vorkam, ist nicht
+gemessen; in den gesehenen Zeilen lag der Score bei 72–85, dort blieb es folgenlos.
+
+**Jetzt:**
+- `kiFelderLesen()` liest die exakte **Zahl** 0 als Aussage (`nullRisiko`), nicht
+  als unbrauchbar — keine Fehlerzeile mehr. `"0"`, negativ, `NaN`, Text bleiben
+  unbrauchbar und gemeldet. Eine R/R-0, die mit der gemessenen 0 übereinstimmt
+  (Claude gibt den Prompt-Wert zurück), ersetzt nichts und wird nicht gemeldet;
+  weicht sie ab, bleibt sie ein Befund.
+- `claudeFreigabe()` (exportiert, in der Engine, Schwellen 60 / 1.5 unverändert):
+  `nullRisiko` gibt **nie** frei. Die Ablehnung nennt den Grund *„Claude:
+  maxRiskPercent 0 (kein Risiko — Veto)"*, und `nurRR` zählt das Veto mit — sonst
+  meldete die R/R-Verteilung eine Hoffnung, die nicht eintritt.
+- `claudeNullAllein` zählt Signale, die **nur** am Veto scheiterten — genau die
+  Zahl, die zeigt, was das Veto am Handel ändert. Kette: `ScanDaten` →
+  `Tagessumme` (Übergangslage, `claudeNullGeprueft`) → Zyklus-Zeile
+  (`Freigabe-Nein N (nur Claude-Risiko 0: M)`, nur bei > 0) → Tagesbilanz
+  (`davon nur am Claude-Veto (Risiko 0): M (gemessen in G von S Analysen)`, vor
+  dem Deploy „nicht gemessen"). `/status` unverändert (Härtefall 4049/4096).
+- Die Fehlerzeile heisst jetzt „die NICHT übernommen werden" — sie meldet auch
+  eine R/R, die von der Messung abweicht, und die ist lesbar.
+
+**Was es NICHT tut:** keine Schwelle, kein Stop, kein Prompt (Snapshot-Prüfsumme
+gleich), `simulateClaude`, `calcPositionSize` und die Order-Routen unverändert.
+Es kann nur **weniger** freigegeben werden, nie mehr. Der GO-Knopf im Scanner
+erscheint nur bei `goSignal`, das `claude.approved` verlangt — das Veto gilt dort
+mit. Karte unverändert (keine neue Kante).
+
+**Ein eigener Kollisionsfall beim Bau:** die neue Tagesbilanz-Zeile begann zuerst
+mit `↳` — und der Prüfer der GPT-Aufschlüsselung verlangt, dass bei 0 fehlenden
+Antworten **kein** `↳` erscheint. Rot zu Recht; die neue Zeile hat ein eigenes
+Format bekommen, statt die GPT-Prüfung aufzuweichen.
+
+`safety-nets` 2234 → **2256**: `kiFelderLesen` (die Zahl 0 ist Veto ohne Fehlerzeile, `-0` ebenso, neun Gegenproben ohne Veto, R/R-0 gleich bzw. ungleich der Messung), `claudeFreigabe` aus der echten Engine (Veto bei Score 55 / R/R 2.0, ohne Veto frei, Schwellen 59.99/60 und 1.4999/1.5, `NaN`), die Verdrahtung (nur echter Claude-Pfad, Grund in der Ablehnung, „nur daran“ nur ohne R/R- und Score-Grund, eine Zählstelle), die Tagessumme mit **Übergangslage** — der **erste** Scan nach dem Deploy direkt geprüft —, Tagesbilanz dreiwertig und Zyklus-Zeile (keine 0). **17 von 17 Sabotagen** gegen alle 23 Prüfer, Regression KI-Antwort **18/18** (A2 auf die neue Form umgestellt), GPT-Lesart **21/21**.
+
+**Ein Testdaten-Fehler von mir, von der Sabotage gefunden:** N12 (`zahl()` links
+entfernt) blieb zuerst grün. Meine Übergangs-Summe bekam zuerst einen Scan
+**ohne** Wert — das ergab `NaN`, und der nächste Schritt kopiert die Summe per
+`JSON`: aus `NaN` wird `null`, und `null + 2` ist 2. Am Ende stimmte die 3
+zufällig. In Redis passiert dasselbe — der Wert des ersten Scans ginge still
+verloren. Jetzt wird der erste Schritt direkt geprüft.
+
+**Und ein Regelverstoss:** während die Regressionen liefen, habe ich
+`safety-nets.js` geändert. Diese Läufe sind verworfen; alle drei Suiten liefen
+danach sauber neu. Beim Einsetzen dieses Absatzes hat PowerShell ein Argument
+am ASCII-`"` abgeschnitten — gefunden beim Nachlesen, ersetzt ohne Shell.
+
+**Und der Mess-Test zu `X-Forwarded-For` (24.11.):** eine Anfrage mit
+`X-Forwarded-For: 203.0.113.7` auf `/.env` erschien im Log mit der **echten**
+Absender-IP, nicht mit der mitgeschickten. Railway übernimmt den Kopf also nicht
+— `getClientIP()` ist darüber nicht fälschbar. Der benannte Punkt im Abschnitt
+zum Watchdog ist damit gemessen und erledigt.
 
 ## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
 

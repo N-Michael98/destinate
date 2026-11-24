@@ -45,6 +45,9 @@ export interface ClaudeRiskAssessment {
    *  Diagnose — es wird nichts damit entschieden.
    *  undefined = kein echter Claude-Aufruf (regelbasierter Rueckfall). */
   eigenesUrteil?: boolean;
+  /** Claude hat ausdruecklich `maxRiskPercent: 0` geschickt (24.11.) — ein
+   *  Veto: `approved` ist dann falsch. Nur im echten Claude-Pfad gesetzt. */
+  nullRisiko?: boolean;
 }
 
 export interface ScannerOpportunity {
@@ -1073,6 +1076,18 @@ export function claudeFragen(s: {
   return "FRAGEN";
 }
 
+/**
+ * Die Freigabe im ECHTEN Claude-Pfad (24.11. als Funktion, damit der Pruefer
+ * sie rechnet statt nur ihren Wortlaut zu lesen). Bis heute stand der Ausdruck
+ * `riskScore < 60 && rewardRiskRatio >= 1.5` direkt im Objektliteral. Neu ist
+ * allein das Veto: `nullRisiko` (Claude schickte `maxRiskPercent: 0`) gibt
+ * NIE frei. Die Schwellen 60 und 1.5 sind unveraendert und bleiben in dieser
+ * Datei. Ein `NaN` gibt nicht frei (`NaN < 60` und `NaN >= 1.5` sind falsch).
+ */
+export function claudeFreigabe(riskScore: number, rewardRiskRatio: number, nullRisiko: boolean): boolean {
+  return riskScore < 60 && rewardRiskRatio >= 1.5 && nullRisiko !== true;
+}
+
 function simulateClaude(gpt: GPTMarketAnalysis, markt: { bid: number; ask: number }): ClaudeRiskAssessment {
   const rrRatio = realesChanceRisiko(gpt, markt);
   const riskScore = Math.max(10, 80 - gpt.confidence);
@@ -1668,6 +1683,10 @@ each market's own data, never from habit or from these examples' direction:
   // Confidence-Grenze und ist dort von einem URTEIL nicht zu
   // unterscheiden — genau die Fehlerklasse vom 22.09.
   let gptZahlUnbrauchbarZahl = 0;
+  // Signale, die AUSSCHLIESSLICH an Claudes Veto `maxRiskPercent: 0`
+  // scheiterten (24.11.) — R/R und Risiko-Score haetten sie freigegeben.
+  // Genau diese Zahl misst, was das Veto am Handel aendert.
+  let claudeNullAlleinZahl = 0;
   const regelbrueche: Record<string, number> = {};
   let vetoZahl = 0;
   let stilVerworfenZahl = 0;
@@ -2166,19 +2185,27 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
             // Feld meldet sich absichtlich NICHT (rund sieben Claude-Aufrufe
             // je Zyklus — eine Zeile je Auslassung waere eine Logflut).
             console.error(`[ai-engine] ⚠️ ${market.symbol}: Claude hat Felder `
-              + `geschickt, die NICHT lesbar sind — ersetzt: `
+              + `geschickt, die NICHT übernommen werden — ersetzt: `
               + `${felder.ersetzt.join(" ; ")}. Der riskScore ${riskScore} ist `
               + `brauchbar, die Beurteilung bleibt deshalb CLAUDE_REAL.`);
           }
+          // ── CLAUDES "NICHTS RISKIEREN" IST EIN VETO (24.11.) ─────────────
+          //
+          // `maxRiskPercent: 0` wurde bis heute als unbrauchbar ersetzt (0.5
+          // bzw. 1.0) — bei riskScore < 60 und R/R >= 1.5 ging der Trade damit
+          // mit 1.0 % durch, obwohl Claude ausdruecklich 0 % wollte. Jetzt
+          // bleibt die Freigabe aus. Es kann dadurch nur WENIGER freigegeben
+          // werden, nie mehr. Gezaehlt in `claudeNullAlleinZahl` (unten).
           claude = {
             symbol: market.symbol,
-            approved: riskScore < 60 && felder.rewardRiskRatio >= 1.5,
+            approved: claudeFreigabe(riskScore, felder.rewardRiskRatio, felder.nullRisiko),
             riskScore,
             maxRiskPercent: felder.maxRiskPercent,
             reasoning: felder.reasoning,
             rewardRiskRatio: felder.rewardRiskRatio,
             source: "CLAUDE_REAL",
             eigenesUrteil: felder.eigenesUrteil,
+            nullRisiko: felder.nullRisiko,
           };
         }
       }
@@ -2328,12 +2355,20 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       // Der Risiko-Score ist NUR im echten Claude-Pfad eine Bedingung — der
       // Rückfall prüft ihn nicht. Ihn dort zu nennen wäre irreführend.
       const scoreZuHoch = claude.source === "CLAUDE_REAL" && claude.riskScore >= 60;
+      // Das Veto (24.11.) ist eine DRITTE Bedingung — ohne sie hiesse eine
+      // Ablehnung, die nur daran hing, "Grund nicht ableitbar", und `nurRR`
+      // unten meldete eine Hoffnung, die nicht eintritt.
+      const nullVeto = claude.source === "CLAUDE_REAL" && claude.nullRisiko === true;
       const gruende: string[] = [];
       if (rrZuKlein) {
         gruende.push(`R/R ${claude.rewardRiskRatio.toFixed(2)} < 1.5`);
       }
       if (scoreZuHoch) {
         gruende.push(`Risiko-Score ${claude.riskScore} >= 60`);
+      }
+      if (nullVeto) {
+        gruende.push("Claude: maxRiskPercent 0 (kein Risiko — Veto)");
+        if (!rrZuKlein && !scoreZuHoch) claudeNullAlleinZahl++;
       }
       // ── WIE WEIT war es bis zur Grenze? (15.09.) ───────────────────────
       //
@@ -2358,7 +2393,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
         abgelehnteRR.push({
           symbol: market.symbol,
           rr: claude.rewardRiskRatio,
-          nurRR: rrZuKlein && !scoreZuHoch,
+          nurRR: rrZuKlein && !scoreZuHoch && !nullVeto,
         }); stufen++;
       }
       // Hat GPT dabei seine eigenen Prompt-Regeln verletzt? Das trennt
@@ -2615,6 +2650,10 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       gptLageGeprueft: 1,
       // Siehe den Zaehler oben: eine unbrauchbare Zahl ist kein Urteil.
       gptZahlUnbrauchbar: gptZahlUnbrauchbarZahl,
+      // Claudes Veto `maxRiskPercent: 0` (24.11.): wie viele Signale NUR
+      // daran scheiterten. `claudeNullGeprueft` ist 1 je Scan, der das misst.
+      claudeNullAllein: claudeNullAlleinZahl,
+      claudeNullGeprueft: 1,
       // TRICHTER-ZUORDNUNG (19.11.) — siehe trichterZuordnung().
       konsensRichtungen: konsensRichtungenZahl,
       taErsatzRichtungen: taErsatzRichtungenZahl,
