@@ -5154,6 +5154,12 @@ module.exports = async function pruefe() {
                 ohneGptJeLage: { gescheitert: 30, abgeschnitten: 30, unlesbar: 30, ausgelassen: 30 },
                 gptLageGeprueft: 287, gptAusfallGruende: Object.fromEntries(
                   ["gescheitert", "abgeschnitten", "unlesbar", "ausgelassen"].map((l, i) => [`${l}: ${"<".repeat(80)}`, 9 - i])),
+                // 25.11.: das Claude-Veto (24.11.) und die GPT-Nachfrage (25.11.)
+                // in ihrer LAENGSTEN Form — ohne diese Felder stand der Haertefall
+                // nur mit „nicht gemessen" da und mass die kurze Zeile. 288 Zyklen
+                // × 30 Maerkte = 8640 ist die Obergrenze je Tag.
+                claudeNullAllein: 8640, claudeNullGeprueft: 287,
+                gptNachfragen: 287, gptNachgefragt: 8640, gptNachgeholt: 8640, gptNachfrageGeprueft: 287,
               });
               const vollText = tbF(voll);
               torPruefung("der Tagesbilanz-Haertefall traegt die GPT-Aufschluesselung nicht — dann misst er "
@@ -5167,6 +5173,14 @@ module.exports = async function pruefe() {
                 vollText.includes("🧩 Summenprobe (287 von 288 Analysen): ⚠️ ohne echte Analyse 44")
                 && vollText.includes("🧮 Richtungen ausserhalb von GPT: Konsens 90 · TA-Ersatz 12"),
                 (vollText.match(/🧩[^\n]*/) ?? ["(keine)"])[0]);
+              // 25.11.: dieselbe Bindung fuer Veto- und Nachfrage-Zeile —
+              // verliert der Haertefall die Felder, wird er still kuerzer.
+              torPruefung("der Tagesbilanz-Haertefall traegt Veto- oder Nachfrage-Zeile nicht in der "
+                + "laengsten Form — dann misst er nicht den schlimmsten Fall",
+                vollText.includes("davon nur am Claude-Veto (Risiko 0): 8640 (gemessen in 287 von 288 Analysen)")
+                && vollText.includes("🔁 GPT-Nachfrage: 287 Zyklen · 8640 Maerkte nachgefragt · 8640 nachgeholt "
+                  + "(gemessen in 287 von 288 Analysen)"),
+                (vollText.match(/[^\n]*(Claude-Veto \(Risiko 0\)|GPT-Nachfrage)[^\n]*/g) ?? ["(keine)"]).join(" | "));
               torPruefung("die Tagesbilanz reisst Telegrams 4096 Zeichen "
                 + "— sie kaeme dann nicht an, und `sendTelegram` kennt "
                 + "keine Laengengrenze",

@@ -2684,6 +2684,16 @@ GPT-Lesart Y4 nannte im Gruppenlauf als ersten Befund das bekannte zeitabhängig
 Rot des 502-Prüfstands — einzeln nachgefahren rot mit seinem **eigenen** Befund,
 und nur diesem.
 
+**Live belegt, 25.11. 21:43:52:** `GPT-Nachfrage (gpt-4o): 22 Maerkte nachgefragt
+→ 22 nachgeholt, beantwortet, 14s` — der erste Aufruf brachte 8 von 30, danach
+`GPT 11W/3B/16S` = 30, kein „ohne GPT-Antwort“, Zyklus 54 s.
+
+**Und der Tagesbilanz-Härtefall war blind für zwei Zeilen** (nachgezogen 25.11.):
+er trug weder die Veto-Felder (24.11.) noch die Nachfrage-Felder und mass beide
+nur in der Form „nicht gemessen“ — der eigene Fehler zweier Runden. Jetzt mit
+8640 = 288 × 30 und daran gebunden: **3900 von 4096**. `safety-nets` → **2296**,
+**4 von 4 Sabotagen** (Felder weg, Zeile weg, Gegenprobe).
+
 ## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
 
 `/edge` sagt, **dass** kein Edge da ist. `/status` sagt seit heute,
