@@ -57,7 +57,7 @@ fehlender Null-Fall), der strukturell unauffällig bliebe:
 | `einstellungen-ausfall` | `loadFromDB()`, `get()` und der SCHREIBpfad beider Speicher (Einstellungen + AI-Konfiguration) bei DB-Ausfall; seit 18.11. `testAnthropicConnection()` — leeres Guthaben ist kein „verbunden“ | 01.09. |
 | `prompt-zahlen` | `promptZahl()`, `promptVerstoesse()`; seit 15.09. auch `normalisiereStil()` — ein unbekannter Handelsstil wird WAIT, nicht geraten | 01.09. |
 | `menue-ansichten` | `brokerZustand()`, `ausfuehrungsStand()` | 03.09. |
-| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()`; dazu `gptZyklusLage()` und `callGPT` gegen einen gefälschten `fetch` — warum GPT-Antworten fehlten; seit 24.11. `umgehungsLage()`/`sperrZeiten()` und der echte Watchdog-Zyklus mit gezähltem Killswitch — ein Nachzügler vor der Sperre ist kein umgangener Block; seit 24.11. abends `claudeFreigabe()` und `kiFelderLesen()` — Claudes `maxRiskPercent: 0` ist ein Veto, die Kette bis in die Tagesbilanz | 07.09. |
+| `safety-nets` | `isWithinTradingSession()` — das Tor fuer jeden Trade des AUTOMATEN (zwei Entscheidungsstellen, beide in `orchestrator-agent.ts`; der Knopf im Market-Scanner prueft es NICHT, siehe „Das Handelszeit-Tor gilt nicht ueberall seit 15.09. auch `alarmEntscheidung()` (Zyklus-Absturz), `watchdogDarfStarten()`, `eskalationsEntscheidung()` und den echten Ereignis-Speicher (gleichzeitige Ereignisse, Obergrenze), dazu ein Riegel, der jeden `fs`-Import im Programm ohne Freigabe rot werden lässt; seit 17.09. ein Prüfstand für den Diagnose-Agenten (EIN Bus, ZWEI Modulkopien, echte Ereignisse, gezählte Telegram-Alarme) und die Bus-Verdrahtung; seit 22.09. `brokerZeitNachUtc()` (Ortszeit → UTC, inklusive Winterzeit), `ageInMinutes()` (eine Zukunft ist nicht „frisch") und `fetchStrategySignals()` — gegen einen **echten HTTP-Server** auf 127.0.0.1, der 502/401/200 spielt, mit gezählten Anfragen; seit 16.11. `/exits` — `auswahl()`, `nachrechnen()`, `exitLauf()`, `capitalGetKerzen()` und End-to-End durch die echte `POST` mit Datenbank-Spion; seit 17.11. `/exitsim` — `simuliere()` (RiskAgent UND Python-Lifecycle an von Hand gerechneten Kursverläufen, mit den echten `getStyleThresholds`/`wirksameSchwellen`/`BE_TOLERANCE`), `atrReihe()`, `simGruppe()`, `exitSimLauf()`, jede kopierte Zahl an ihre Quelle gebunden (Python `get_level`, RiskAgent-Literale, `instrumentation.ts`) und End-to-End durch die echte `POST`; seit 18.11. der Meta-KI-Rückfall — `metaRegelVerstoss()` und die echte `runAnalysisAgent` mit einem Claude, das den 400 des leeren Guthabens wirft, dazu `metaPruefungZeile()`; seit 21.11. `konsensQuellenLage()` und die Scanner-Route `action=last` mit gezähltem `analyzeMarkets` (null Mal); seit 22.11. `zielAtrBand()`/`stopAtrLage()` in `/exits` samt der Kette Prompt-ATR → Notizen, dazu `regelKandidat()`/`regelVergleich()` — dieselben Kerzen mit der Prompt-Regel, End-to-End durch `exitLauf()`; seit 23.11. `standardfehler()`/`deltaText()` (Δ ±2 SE, gepaart) und `abrufFehlerGrund()` — der Antworttext des Brokers durch `exitLauf()`/`exitSimLauf()`, dazu `stopHerkunft()` — wer setzt den Stop (Quelle, Override, Stil, Max-SL-Deckel), die Deckel-Kopie an `MAX_SL_ABSTAND` gebunden, zweite Nachricht End-to-End; seit 23.11. abends `/exitsim` V3 — die Ausstiegslogik mit der Regel-Geometrie, `urteilVon()` für V2 und V3, an von Hand gerechneten Kursverläufen; seit 23.11. die Stil-Grenze 0 („pausiert“) durch die echte `POST /api/settings` und `ausfuehrungsStand()`; seit 23.11. die Broker-Stufe in `/status` — `entschaerftGekuerzt()` und die Kette Bus → Tagessumme → `handelsLage()`; dazu `gptZyklusLage()` und `callGPT` gegen einen gefälschten `fetch` — warum GPT-Antworten fehlten; seit 24.11. `umgehungsLage()`/`sperrZeiten()` und der echte Watchdog-Zyklus mit gezähltem Killswitch — ein Nachzügler vor der Sperre ist kein umgangener Block; seit 24.11. abends `claudeFreigabe()` und `kiFelderLesen()` — Claudes `maxRiskPercent: 0` ist ein Veto, die Kette bis in die Tagesbilanz; seit 25.11. zum ersten Mal `analyzeMarkets()` end-to-end — gegen einen gefälschten `fetch` mit gezählten GPT-Aufrufen: fehlende Märkte werden genau einmal nachgefragt, nichts überschrieben, `callGPT` mit Zeitgrenze | 07.09. |
 
 Für alle anderen Pfade gilt der Absatz oben weiter.
 
@@ -2596,6 +2596,93 @@ am ASCII-`"` abgeschnitten — gefunden beim Nachlesen, ersetzt ohne Shell.
 Absender-IP, nicht mit der mitgeschickten. Railway übernimmt den Kopf also nicht
 — `getClientIP()` ist darüber nicht fälschbar. Der benannte Punkt im Abschnitt
 zum Watchdog ist damit gemessen und erledigt.
+
+## GPT liess Märkte aus — jetzt wird EINMAL nachgefragt (25.11.)
+
+**Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg
+(`ai-analysis-engine.ts`: drei direkte Nutzer, sechs Prüfer).
+
+Gemessen am 24./25.11. im Railway-Log: in rund der Hälfte der Zyklen kam eine
+**lesbare, nicht abgeschnittene** Antwort mit nur 6–12 statt ~30 Märkten
+(`GPT-Batch: Antwort N Zeichen → M Opportunities`), darunter echte
+Richtungssignale (17:54 SELL=7, 17:59 SELL=18). Kein Modellwechsel, kein
+Epic-Fehler, keine Tokengrenze. Die fehlenden Märkte starben als „ohne
+GPT-Antwort“, ohne Urteil. **Warum GPT weglässt, ist nicht bestimmt.**
+
+**Jetzt:** fehlen nach dem ersten Aufruf Märkte, werden **nur diese** **einmal**
+nachgefragt.
+
+- Nur bei der Lage „ausgelassen“ (`nachfrageNoetig()`): kam kein Text, war er
+  unlesbar oder abgeschnitten, ist die Ursache eine andere — dort wird nicht
+  nachgelegt (429/401 kehren deterministisch zurück, Regel 22.09./02.11.).
+- **Derselbe Prompt**, nur die Marktliste getauscht (`nachfragePrompt()`, ohne
+  Regex, ohne `replace` — dort wäre `$` ein Sonderzeichen). Steht die Liste
+  nicht genau einmal im Prompt, wird nicht nachgefragt statt geraten. Keine
+  neue Regel, Snapshot-Prüfsumme gleich. `marketList` entsteht aus den Zeilen
+  Zeichen für Zeichen wie vorher.
+- An **dasselbe Modell**, das den benutzten Text geliefert hat (auch nach dem
+  Modell-Rückfall), mit `tokenBudget(fehlende)`.
+- **Mit Zeitgrenze 45 s** (`GPT_NACHFRAGE_TIMEOUT_MS`). `callGPT` hatte keine —
+  ein hängender Aufruf hielte den 5-Minuten-Zyklus fest. Zyklus gemessen Ø 73 s,
+  max 202 s. Der **erste** Aufruf bleibt ohne Grenze wie bisher.
+- Übernommen werden **nur** Epics, die fehlten (`nachfrageUebernehmen()`). Eine
+  Antwort des ersten Aufrufs wird nie überschrieben, ein fremdes Epic nie
+  angelegt. Danach laufen alle bestehenden Lesarten und Tore unverändert.
+- **Messung:** `gptNachfragen`/`gptNachgefragt`/`gptNachgeholt` →
+  `Tagessumme` (Übergangslage, `gptNachfrageGeprueft`) → Zyklus-Zeile
+  (`GPT-Nachfrage 1/2 nachgeholt`, nur > 0) → Tagesbilanz
+  (`🔁 GPT-Nachfrage: N Zyklen · M Maerkte nachgefragt · K nachgeholt`, vor dem
+  Deploy „nicht gemessen“). „ohne GPT-Antwort“ ist der **Endstand danach**,
+  `gptZyklusLage()` beurteilt ihn. `/status` unverändert (Härtefall 4049/4096).
+
+**Nebenfund, behoben:** `for (const opp of parsed.opportunities ?? [])` mit
+`if (opp.epic)` stand **ausserhalb jedes `try`** in `analyzeMarkets`. Ein
+`{"opportunities":[null]}` oder `{"opportunities":5}` warf dort, und der ganze
+Zyklus starb. Jetzt `gptListeLesen()`: keine Liste → leer, Nicht-Objekte fallen
+weg; für echte Objekte unverändert.
+
+**Was es NICHT tut:** keine Regel, kein Prompt-Text, keine Schwelle, kein Stop,
+keine Grösse, keine Order, kein Tor. Nie mehr als **ein** Zusatzaufruf je
+Zyklus. Mehr Richtungssignale gehen durch dieselben Tore wie bisher. **Kosten:**
+ein kleinerer GPT-Aufruf in etwa der Hälfte der Zyklen — wie gross, sagt die
+neue Logzeile `🔁 GPT-Nachfrage (…): N Maerkte nachgefragt → K nachgeholt, …`.
+**Die Ursache des Weglassens ist damit nicht behoben**, nur ihre Folge.
+Snapshot 299 und Karte 924 unverändert.
+
+### Ein Prüfer, der nie zurückkehrt, war grün (25.11.)
+
+Beim Bau gefunden, im Netz selbst. Der neue Prüfstand für die Zeitgrenze wartete
+auf einen `fetch`, der nur auf den Abbruch reagierte — und der Timer von
+`AbortSignal.timeout` **hält Node nicht am Leben**. Die Ereignisschleife lief
+leer, und Node beendete `npm run check` **nach fünf von 23 Prüfern, ohne
+Zusammenfassung, mit Exit 0**. Der Pre-Commit-Hook liest Exit 0 als grün.
+
+`run-all.js` hat jetzt eine Wache am Prozessende: endet der Prozess, ohne dass
+`auswerten()` lief, ist das **rot**, mit dem Prüfer, der gerade lief. Der
+Prüfstand selbst hält den Prozess mit einem normalen Timer offen (5 s) und
+meldet, wenn die Zeitgrenze nicht greift.
+
+**Im Betrieb ist das kein Problem** — der Server hält seine Ereignisschleife
+ohnehin offen, dort feuert die Zeitgrenze.
+
+`safety-nets` 2256 → **2295**: die fünf reinen Funktionen an Grenzfällen
+(Doppelte, geerbtes Feld, NaN, `$&`, doppelte Liste, `null`-Eintrag), `callGPT`
+mit hängendem `fetch` (Abbruch nach 50 ms, ohne gültige Grenze kein Signal), und
+**`analyzeMarkets` end-to-end** — zum ersten Mal ausgeführt — gegen einen
+gefälschten `fetch` mit gezählten Aufrufen: 3 von 5 → genau eine Nachfrage mit
+genau den zwei Zeilen, Regelteil byte-gleich, kein Überschreiben, kein fremdes
+Epic, ScanDaten, Logzeile; Gegenproben vollständig / abgeschnitten / 429 /
+unlesbar / Nicht-Liste (je **ein** Aufruf); `null`-Eintrag; gescheiterte
+Nachfrage; keine Schleife; Modell nach dem Rückfall. Dazu die Kette samt
+Übergangslage (erster Schritt direkt).
+
+**28 von 28 Sabotagen** gegen alle 23 Prüfer, darunter R1 (der Prüfstand ohne
+Wache — der Fund selbst, rot mit „NICHT ZU ENDE GELAUFEN“) und R2 als Beleg des
+Lochs (Läufer-Wache abgeschaltet + hängender Prüfstand → **grün**). Regression
+GPT-Lage **21/21**, GPT-Lesart **21/21**, Veto **17/17**, Trichter **19/19**.
+GPT-Lesart Y4 nannte im Gruppenlauf als ersten Befund das bekannte zeitabhängige
+Rot des 502-Prüfstands — einzeln nachgefahren rot mit seinem **eigenen** Befund,
+und nur diesem.
 
 ## Welche Schraube würde etwas ändern? `/hebel` (29.10.)
 

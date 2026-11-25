@@ -464,6 +464,109 @@ export function gptZyklusLage(e: {
 }
 
 /**
+ * GPT LAESST MAERKTE AUS — EINMAL NACHFRAGEN (25.11.).
+ *
+ * Gemessen am 24./25.11. im Log: in rund der Haelfte der Zyklen kam eine
+ * LESBARE, NICHT abgeschnittene Antwort mit nur 6–12 statt ~30 Maerkten
+ * (`GPT-Batch: Antwort N Zeichen → M Opportunities`), darunter echte
+ * Richtungssignale. Kein Modellwechsel, kein Epic-Fehler, keine Tokengrenze.
+ * Die fehlenden Maerkte starben als „ohne GPT-Antwort", ohne Urteil.
+ *
+ * Jetzt werden NUR die fehlenden Maerkte EINMAL nachgefragt — mit demselben
+ * Prompt, in dem allein die Marktliste getauscht ist (`nachfragePrompt`).
+ * Keine neue Regel, kein neuer Satz, kein zweiter Nachfrage-Versuch.
+ *
+ * Nachgefragt wird NUR bei „ausgelassen": kam kein Text, war er unlesbar oder
+ * abgeschnitten, ist die Ursache eine andere, und ein Nachlegen waere dort
+ * falsch (429/401 kehren deterministisch zurueck, Regel 22.09./02.11.).
+ *
+ * Ursache des Weglassens ist damit NICHT behoben, nur ihre Folge. Die Zahlen
+ * (`gptNachgefragt`/`gptNachgeholt`) zeigen, ob es hilft.
+ */
+/** Obergrenze fuer den Nachfrage-Aufruf. `callGPT` hat sonst KEINE — ein
+ *  haengender Aufruf hielte den 5-Minuten-Zyklus fest (Sperre in
+ *  `instrumentation.ts`). Zyklus gemessen Ø 73 s, max 202 s: mit 45 s
+ *  bleibt er unter dem Takt. Der ERSTE Aufruf bleibt ohne Grenze wie bisher. */
+export const GPT_NACHFRAGE_TIMEOUT_MS = 45_000;
+
+/** Die `opportunities`-Liste einer GPT-Antwort, NUR mit Objekten (25.11.).
+ *
+ *  Bis heute stand dort `for (const opp of parsed.opportunities ?? [])` mit
+ *  `if (opp.epic)` — AUSSERHALB jedes `try` in `analyzeMarkets`. Ein
+ *  `{"opportunities":[null]}` warf dort (`null.epic`), ein
+ *  `{"opportunities":5}` ebenso (nicht iterierbar), und der ganze Zyklus
+ *  starb. Hier wird gelesen statt vertraut: keine Liste → leer, Eintraege,
+ *  die keine Objekte sind, fallen weg. Fuer echte Objekte unveraendert. */
+export function gptListeLesen(parsed: unknown): Array<Partial<GPTMarketAnalysis>> {
+  const liste = parsed !== null && typeof parsed === "object"
+    ? (parsed as { opportunities?: unknown }).opportunities
+    : undefined;
+  if (!Array.isArray(liste)) return [];
+  return liste.filter((o): o is Partial<GPTMarketAnalysis> =>
+    o !== null && typeof o === "object" && !Array.isArray(o));
+}
+
+/** Welche Epics haben KEINE Antwort? Reihenfolge der Marktliste, ohne
+ *  Doppelte; leere/unbrauchbare Epics zaehlen nicht. Dieselbe Lesart wie der
+ *  Nachschlag je Markt (`gptBatchResult[market.epic]` ohne Wert = fehlt). */
+export function fehlendeEpics(epics: readonly unknown[], antworten: Record<string, unknown>): string[] {
+  const gesehen = new Set<string>();
+  const fehlt: string[] = [];
+  for (const e of epics) {
+    if (typeof e !== "string" || e.length === 0 || gesehen.has(e)) continue;
+    gesehen.add(e);
+    if (!Object.prototype.hasOwnProperty.call(antworten, e) || !antworten[e]) fehlt.push(e);
+  }
+  return fehlt;
+}
+
+/** Ob nachgefragt wird — mit Grund, wenn nicht. Nur „ausgelassen" fragt nach. */
+export function nachfrageNoetig(e: {
+  kamText: boolean; abgeschnitten: boolean; lesbar: boolean; fehlend: number;
+}): { nachfragen: boolean; grund: string } {
+  const n = typeof e.fehlend === "number" && Number.isFinite(e.fehlend) && e.fehlend > 0 ? e.fehlend : 0;
+  if (n === 0) return { nachfragen: false, grund: "nichts fehlt" };
+  if (e.kamText !== true) return { nachfragen: false, grund: "Aufruf ohne Antwort — eine andere Ursache" };
+  if (e.abgeschnitten !== false) return { nachfragen: false, grund: "Antwort abgeschnitten — eine andere Ursache" };
+  if (e.lesbar !== true) return { nachfragen: false, grund: "Antwort unlesbar — eine andere Ursache" };
+  return { nachfragen: true, grund: "" };
+}
+
+/** Derselbe Prompt, nur die Marktliste getauscht. Ohne Regex und ohne
+ *  `replace` (dort waere `$` ein Sonderzeichen). Steht die Liste nicht GENAU
+ *  einmal im Prompt, gibt es `null` — dann wird NICHT nachgefragt, statt
+ *  einen anderen Prompt zu raten. */
+export function nachfragePrompt(prompt: unknown, liste: unknown, zeilen: readonly unknown[]): string | null {
+  if (typeof prompt !== "string" || typeof liste !== "string" || liste.length === 0) return null;
+  const i = prompt.indexOf(liste);
+  if (i < 0 || prompt.indexOf(liste, i + 1) >= 0) return null;
+  const neu = zeilen.filter((z): z is string => typeof z === "string" && z.length > 0);
+  if (neu.length === 0) return null;
+  return prompt.slice(0, i) + neu.join("\n") + prompt.slice(i + liste.length);
+}
+
+/** Antworten der Nachfrage uebernehmen: NUR Epics, die fehlten und noch
+ *  fehlen. Eine Antwort des ersten Aufrufs wird NIE ueberschrieben, ein
+ *  fremdes Epic nie angelegt. Gibt die uebernommenen Epics zurueck. */
+export function nachfrageUebernehmen(
+  ziel: Record<string, Partial<GPTMarketAnalysis>>,
+  antworten: ReadonlyArray<Partial<GPTMarketAnalysis>>,
+  fehlend: readonly string[],
+): string[] {
+  const offen = new Set(fehlend);
+  const uebernommen: string[] = [];
+  for (const opp of antworten) {
+    const epic = opp?.epic;
+    if (typeof epic !== "string" || !offen.has(epic)) continue;
+    if (Object.prototype.hasOwnProperty.call(ziel, epic) && ziel[epic]) continue;
+    ziel[epic] = opp;
+    offen.delete(epic);
+    uebernommen.push(epic);
+  }
+  return uebernommen;
+}
+
+/**
  * Aus Status und Antwortkoerper: Grund + ob ein zweiter Versuch mit
  * einem ANDEREN Modell helfen kann (02.11.).
  *
@@ -501,8 +604,13 @@ export function gptFehlerLage(
 // Exportiert (23.11.) NUR, damit der Pruefer sie gegen einen gefaelschten
 // `fetch` ausfuehren kann — `abgeschnitten` an allen drei Ausgaengen.
 export async function callGPT(
-  apiKey: string, model: string, prompt: string, maxTokens = 4000,
+  apiKey: string, model: string, prompt: string, maxTokens = 4000, timeoutMs?: number,
 ): Promise<GptAufrufLage> {
+  // Zeitgrenze NUR, wenn ausdruecklich gesetzt (25.11., Nachfrage). Ohne
+  // Angabe bleibt der Aufruf wie bisher ohne Grenze. Ein Abbruch landet im
+  // `catch` unten und ist ein Netzfehler mit Grund — kein Text.
+  const zeitGrenze = typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs : null;
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -514,6 +622,7 @@ export async function callGPT(
         max_tokens: maxTokens,
         response_format: { type: "json_object" },
       }),
+      ...(zeitGrenze !== null ? { signal: AbortSignal.timeout(zeitGrenze) } : {}),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -1322,10 +1431,16 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
   // Was der GPT-Aufruf dieses Zyklus geliefert hat — fuer `gptZyklusLage()`
   // (23.11.). Reine Messung: gelesen wird es nur fuer die Bilanz.
   let gptRoh = { gefragt: false, kamText: false, abgeschnitten: false, lesbar: false, grund: "" };
+  // Die Nachfrage fehlender Maerkte (25.11.) — reine Zaehler fuer die Bilanz.
+  // `gefragt` ist 0/1 je Scan, `nachgefragt`/`nachgeholt` zaehlen Maerkte.
+  const gptNachfrage = { gefragt: 0, nachgefragt: 0, nachgeholt: 0 };
 
   if (hasGPT && validMarkets.length > 0) {
-    // Marktliste mit TA-Lib Daten anreichern
-    const marketList = validMarkets.map((m) => {
+    // Marktliste mit TA-Lib Daten anreichern — je Markt EINE Zeile, in der
+    // Reihenfolge von `validMarkets` (25.11.: die Nachfrage braucht die
+    // Zeilen einzeln; `marketList` entsteht daraus Zeichen fuer Zeichen
+    // wie bisher).
+    const marketZeilen = validMarkets.map((m) => {
       const ta = taData.get(m.symbol);
       const sr = strategyData.get(m.symbol);
       const mtf = mtfData.get(m.symbol);
@@ -1373,7 +1488,8 @@ export async function analyzeMarkets(markets: CapitalMarket[]): Promise<ScannerO
           }`
         : sr ? ` | strategies=NEUTRAL(${sr.neutral_votes}/${sr.total_strategies} neutral)` : "";
       return `${m.epic} (${m.instrumentName}): bid=${m.bid} ask=${m.ask} spread=${m.spread}${taInfo}${extraInfo}${regimeText}${srZones}${swingInfo}${eqInfo}${mtfInfo}${stInfo}`;
-    }).join("\n");
+    });
+    const marketList = marketZeilen.join("\n");
 
     // News-Sentiment aus der Analysis Engine (Redis) — komplett fail-safe:
     // Fehler/leer → newsBlock bleibt "" und der Prompt ist exakt wie bisher.
@@ -1516,6 +1632,9 @@ each market's own data, never from habit or from these examples' direction:
     let gptGrund = ersterGpt.grund;
     // Gehoert zu dem Versuch, dessen Text benutzt wird (23.11.).
     let gptAbgeschnitten = ersterGpt.abgeschnitten;
+    // Welches Modell den benutzten Text geliefert hat (25.11.) — die Nachfrage
+    // geht an DASSELBE, sonst urteilten zwei Modelle in einem Zyklus.
+    let gptAntwortModell = scanGptModel;
 
     // ── Das Sicherheitsnetz greift jetzt in BEIDE Richtungen (07.09.) ──────
     //
@@ -1562,6 +1681,7 @@ each market's own data, never from habit or from these examples' direction:
       gptAbgeschnitten = zweiterGpt.abgeschnitten;
       if (zweiterGpt.grund) gptGrund = zweiterGpt.grund;
       if (raw !== null) {
+        gptAntwortModell = zweitModell;
         console.warn(`[ai-engine] ⚠️ Die Analyse läuft mit ${zweitModell} statt `
           + `${scanGptModel} — die Modellwahl greift NICHT. Prüfen, ob das Projekt `
           + `bei OpenAI Zugriff auf ${scanGptModel} hat.`);
@@ -1569,7 +1689,9 @@ each market's own data, never from habit or from these examples' direction:
     }
     scanDauer.GPT = Date.now() - gptBeginn;
     const parsed = parseJSON<{ opportunities: Array<Partial<GPTMarketAnalysis>> }>(raw, { opportunities: [] });
-    for (const opp of parsed.opportunities ?? []) {
+    // `gptListeLesen` statt `parsed.opportunities ?? []` (25.11.): ein
+    // `null`-Eintrag oder eine Nicht-Liste warf hier, ausserhalb jedes `try`.
+    for (const opp of gptListeLesen(parsed)) {
       if (opp.epic) gptBatchResult[opp.epic] = opp;
     }
     // LESBAR — gemessen OHNE den stillen Rueckfall (23.11.). `parseJSON`
@@ -1585,6 +1707,47 @@ each market's own data, never from habit or from these examples' direction:
       grund: gptGrund,
     };
     console.log(`[ai-engine] GPT-Batch: ${raw ? `Antwort ${raw.length} Zeichen` : "KEINE ANTWORT (Call fehlgeschlagen)"} → ${Object.keys(gptBatchResult).length} Opportunities`);
+
+    // ── FEHLENDE MAERKTE EINMAL NACHFRAGEN (25.11.) ─────────────────────
+    //
+    // Siehe `nachfrageNoetig()` oben: NUR wenn die Antwort lesbar, nicht
+    // abgeschnitten und nicht ausgefallen war. EIN Aufruf, kein zweiter,
+    // mit Zeitgrenze. Uebernommen werden nur Epics, die fehlten — eine
+    // Antwort des ersten Aufrufs wird nie ueberschrieben.
+    const fehlendErst = fehlendeEpics(validMarkets.map((m) => m.epic), gptBatchResult);
+    const nachfrageLage = nachfrageNoetig({
+      kamText: raw !== null,
+      abgeschnitten: gptAbgeschnitten,
+      lesbar: lesbarRoh !== null && Array.isArray(lesbarRoh.opportunities),
+      fehlend: fehlendErst.length,
+    });
+    if (nachfrageLage.nachfragen) {
+      const zeileJeEpic = new Map<string, string>();
+      validMarkets.forEach((m, i) => { if (!zeileJeEpic.has(m.epic)) zeileJeEpic.set(m.epic, marketZeilen[i]); });
+      const zeilenNach = fehlendErst.map((e) => zeileJeEpic.get(e) ?? "");
+      const promptNach = nachfragePrompt(prompt, marketList, zeilenNach);
+      if (promptNach === null) {
+        console.warn(`[ai-engine] ⏹️ GPT-Nachfrage NICHT gestellt: die Marktliste steht nicht `
+          + `genau einmal im Prompt — ${fehlendErst.length} Maerkte bleiben ohne Antwort.`);
+      } else {
+        gptNachfrage.gefragt = 1;
+        gptNachfrage.nachgefragt = fehlendErst.length;
+        const nachBeginn = Date.now();
+        const nach = await callGPT(ai.openai.apiKey, gptAntwortModell, promptNach,
+          tokenBudget(fehlendErst.length), GPT_NACHFRAGE_TIMEOUT_MS);
+        const uebernommen = nachfrageUebernehmen(gptBatchResult,
+          gptListeLesen(parseJSON<unknown>(nach.text, null)), fehlendErst);
+        gptNachfrage.nachgeholt = uebernommen.length;
+        scanDauer["GPT-Nachfrage"] = Date.now() - nachBeginn;
+        // Der Grund MUSS mit, wenn sie nichts brachte (Regel 22.09.).
+        const lage = nach.text === null
+          ? `ohne Antwort (${nach.grund.slice(0, 160)})`
+          : nach.abgeschnitten ? "abgeschnitten" : "beantwortet";
+        console.log(`[ai-engine] 🔁 GPT-Nachfrage (${gptAntwortModell}): ${fehlendErst.length} Maerkte `
+          + `nachgefragt → ${uebernommen.length} nachgeholt, ${lage}, `
+          + `${Math.round((Date.now() - nachBeginn) / 1000)}s`);
+      }
+    }
 
     // ── DIE SIGNALQUELLE DARF NICHT STUMM STERBEN (02.11.) ──────────
     //
@@ -2654,6 +2817,12 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       // daran scheiterten. `claudeNullGeprueft` ist 1 je Scan, der das misst.
       claudeNullAllein: claudeNullAlleinZahl,
       claudeNullGeprueft: 1,
+      // Die Nachfrage fehlender Maerkte (25.11.). `ohneGptAntwort` oben ist
+      // der ENDSTAND danach; diese drei sagen, ob die Nachfrage half.
+      gptNachfragen: gptNachfrage.gefragt,
+      gptNachgefragt: gptNachfrage.nachgefragt,
+      gptNachgeholt: gptNachfrage.nachgeholt,
+      gptNachfrageGeprueft: 1,
       // TRICHTER-ZUORDNUNG (19.11.) — siehe trichterZuordnung().
       konsensRichtungen: konsensRichtungenZahl,
       taErsatzRichtungen: taErsatzRichtungenZahl,

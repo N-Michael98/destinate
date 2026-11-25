@@ -122,6 +122,27 @@ const nurDieser = process.argv[2];
 let befunde = 0;
 let gelaufen = 0;
 
+// EIN PRUEFER, DER NIE ZURUECKKEHRT, WAR GRUEN (25.11.).
+//
+// Wartet ein Pruefer auf ein Promise, das nie erfuellt wird, und haelt NICHTS
+// mehr die Ereignisschleife am Leben (z. B. nur ein `AbortSignal.timeout` —
+// dessen Timer haelt Node nicht offen), dann beendet sich Node mitten im Lauf
+// von selbst: OHNE Zusammenfassung und mit Rueckgabewert 0. Der Pre-Commit-Hook
+// las das als gruen. Gefunden am 25.11., als ein neuer Pruefstand genau so
+// endete — nach fuenf von 23 Pruefern, Exit 0.
+//
+// Jetzt gilt ein Prozessende, das nicht durch `auswerten()` kam, als Befund,
+// samt dem Pruefer, der gerade lief.
+let fertig = false;
+let laeuftGerade = "(vor dem ersten Pruefer)";
+process.on("exit", () => {
+  if (fertig) return;
+  console.log(`\n  ✗ REGRESSIONSPRÜFUNG NICHT ZU ENDE GELAUFEN — der Prozess endete im Prüfer `
+    + `"${laeuftGerade}", bevor eine Auswertung kam (ein Promise, das nie erfüllt wird?). `
+    + `Das ist ROT, nicht grün.\n`);
+  process.exitCode = 1;
+});
+
 console.log("\n" + "─".repeat(64));
 console.log("  REGRESSIONSPRÜFUNG");
 console.log("─".repeat(64));
@@ -138,6 +159,7 @@ async function alleLaufen() {
   for (const [name, fn] of pruefer) {
     if (nurDieser && name !== nurDieser) continue;
     gelaufen++;
+    laeuftGerade = name;
     let ergebnis;
     try {
       ergebnis = await fn();
@@ -167,6 +189,7 @@ async function alleLaufen() {
 }
 
 function auswerten() {
+fertig = true;
 console.log("─".repeat(64));
 if (gelaufen === 0) {
   console.log(`  Kein Prüfer namens "${nurDieser}" gefunden.`);
@@ -184,5 +207,6 @@ process.exit(befunde === 0 ? 0 : 1);
 alleLaufen().catch((e) => {
   // Auch der Läufer selbst darf nicht still sterben.
   console.log(`\n  ✗ REGRESSIONSPRÜFUNG ABGEBROCHEN: ${e && e.message}\n`);
+  fertig = true;
   process.exit(1);
 });

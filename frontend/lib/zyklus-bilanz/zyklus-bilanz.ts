@@ -89,6 +89,14 @@ export type ScanDaten = {
    *  der das misst; eine Summe von vor dem Deploy kennt es nicht. */
   claudeNullAllein: number;
   claudeNullGeprueft: number;
+  /** GPT liess Maerkte aus — EINMAL nachgefragt (25.11.). `gptNachfragen` ist
+   *  0/1 je Scan, `gptNachgefragt`/`gptNachgeholt` zaehlen Maerkte.
+   *  `ohneGptAntwort` ist der Endstand DANACH. `gptNachfrageGeprueft` ist 1
+   *  je Scan, der das misst; eine Summe von vor dem Deploy kennt es nicht. */
+  gptNachfragen: number;
+  gptNachgefragt: number;
+  gptNachgeholt: number;
+  gptNachfrageGeprueft: number;
   konsensRichtungen: number;
   taErsatzRichtungen: number;
   trichterGeprueft: number;
@@ -213,6 +221,11 @@ export type Tagessumme = {
   /** Siehe ScanDaten.claudeNullAllein (24.11.). */
   claudeNullAllein: number;
   claudeNullGeprueft: number;
+  /** Siehe ScanDaten.gptNachfragen … gptNachfrageGeprueft (25.11.). */
+  gptNachfragen: number;
+  gptNachgefragt: number;
+  gptNachgeholt: number;
+  gptNachfrageGeprueft: number;
   /** Siehe ScanDaten.konsensRichtungen … mehrfachGezaehlt (19.11.). */
   konsensRichtungen: number;
   taErsatzRichtungen: number;
@@ -437,6 +450,10 @@ export function bilanzZeile(b: ZyklusBilanz): string {
       teile.push(`ohne GPT-Antwort ${s.ohneGptAntwort}`
         + (typeof s.gptLage === "string" && s.gptLage ? ` (${s.gptLage}: ${text(s.gptLageGrund).slice(0, 120)})` : ""));
     }
+    // 25.11.: nur wenn nachgefragt wurde — sonst waere es Rauschen.
+    if (zahl(s.gptNachgefragt) > 0) {
+      teile.push(`GPT-Nachfrage ${zahl(s.gptNachgeholt)}/${zahl(s.gptNachgefragt)} nachgeholt`);
+    }
     // Nur bei > 0, wie die Zeile darueber — eine 0 waere Rauschen.
     if (zahl(s.gptZahlUnbrauchbar) > 0) {
       teile.push(`GPT-Zahl unbrauchbar ${s.gptZahlUnbrauchbar}`);
@@ -493,6 +510,7 @@ export function leereTagessumme(datum: string): Tagessumme {
     ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
     ohneGptAntwort: 0, gptZahlUnbrauchbar: 0,
     claudeNullAllein: 0, claudeNullGeprueft: 0,
+    gptNachfragen: 0, gptNachgefragt: 0, gptNachgeholt: 0, gptNachfrageGeprueft: 0,
     konsensRichtungen: 0, taErsatzRichtungen: 0, trichterGeprueft: 0,
     restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0,
     claudeGefragt: 0, newsZyklen: 0, mtfSumme: 0,
@@ -567,6 +585,12 @@ export function tagessummeAddieren(alt: Tagessumme | null | undefined, b: Zyklus
     // diese Felder nicht.
     t.claudeNullAllein = zahl(t.claudeNullAllein) + zahl(s.claudeNullAllein);
     t.claudeNullGeprueft = zahl(t.claudeNullGeprueft) + zahl(s.claudeNullGeprueft);
+    // 25.11.: `zahl()` auf BEIDEN Seiten — die Summe von heute frueh kennt
+    // diese Felder nicht.
+    t.gptNachfragen = zahl(t.gptNachfragen) + zahl(s.gptNachfragen);
+    t.gptNachgefragt = zahl(t.gptNachgefragt) + zahl(s.gptNachgefragt);
+    t.gptNachgeholt = zahl(t.gptNachgeholt) + zahl(s.gptNachgeholt);
+    t.gptNachfrageGeprueft = zahl(t.gptNachfrageGeprueft) + zahl(s.gptNachfrageGeprueft);
     // 19.11.: `zahl()` auf BEIDEN Seiten — die Summe von heute frueh kennt
     // diese Felder noch nicht. `trichterGeprueft` zaehlt, WIE VIELE Scans
     // die Zuordnung gemacht haben; nur so kann /status ehrlich sagen, fuer
@@ -717,6 +741,15 @@ export function tagesbilanzText(t: Tagessumme): string {
         zeilen.push(`   ❗ ${entschaerftGekuerzt(k, GPT_GRUND_MAX_BILANZ)} (${zahl(n)}×)`);
       }
     }
+    // 25.11.: die Nachfrage fehlender Maerkte — ob sie hilft. Dreiwertig wie
+    // das Claude-Veto: ohne Messung keine Zahl. Steht NACH der Aufschluesselung
+    // oben, damit `↳`/`❗` an ihrer Zeile bleiben; „ohne GPT-Antwort" ist der
+    // Endstand NACH der Nachfrage.
+    const nachGepr = zahl(t.gptNachfrageGeprueft);
+    zeilen.push(nachGepr === 0
+      ? "🔁 GPT-Nachfrage: nicht gemessen (Analysen vor dem 25.11.)"
+      : `🔁 GPT-Nachfrage: ${zahl(t.gptNachfragen)} Zyklen · ${zahl(t.gptNachgefragt)} Maerkte nachgefragt `
+        + `· ${zahl(t.gptNachgeholt)} nachgeholt (gemessen in ${nachGepr} von ${t.scans} Analysen)`);
     // Dieselbe Klasse eine Stufe weiter: GPT HAT geantwortet, aber mit
     // einer Zahl, die keine ist (15.11.). Ohne diese Zeile stirbt das
     // Signal sichtbar an `ohne Stop/Ziel` oder `unter der Grenze` — und

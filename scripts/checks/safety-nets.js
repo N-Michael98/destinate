@@ -14567,6 +14567,335 @@ module.exports = async function pruefe() {
     }
   }
 
+  // ── GPT LAESST MAERKTE AUS — EINMAL NACHFRAGEN (25.11.) ──────────────────
+  //
+  // Gemessen 24./25.11.: in rund der Haelfte der Zyklen kam eine lesbare, nicht
+  // abgeschnittene Antwort mit 6–12 statt ~30 Maerkten. Jetzt werden NUR die
+  // fehlenden Maerkte EINMAL nachgefragt — derselbe Prompt, nur die Marktliste
+  // getauscht, mit Zeitgrenze, ohne eine Antwort des ersten Aufrufs zu
+  // ueberschreiben. AUSGEFUEHRT: die reinen Funktionen, `callGPT` mit Zeitgrenze,
+  // und `analyzeMarkets` END-TO-END gegen einen gefaelschten `fetch` mit
+  // GEZAEHLTEN Aufrufen — eine gerechnete Funktion beweist nichts ueber ihre
+  // Aufrufstelle (30.09.). Dazu die Kette bis in die Tagesbilanz.
+  {
+    const kiQ = ladeTsModul("lib/ki-antwort/ki-antwort.ts", {
+      "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
+    }).exports;
+    // Ersatz-Schluessel an den ECHTEN Importzeilen der Engine gemessen (25.11.).
+    const engQ = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts", {
+      "ai-config/ai-config-store": { getAISettings: async () => ({
+        openai: { connected: true, apiKey: "k".repeat(30), model: "gpt-4o" },
+        anthropic: { connected: false, apiKey: "", model: "claude-sonnet-4-6" } }) },
+      "redis-lage/redis-lage": { lageMelden: () => false },
+      "telegram-notifications/telegram-sender": { sendTelegram: async () => true },
+      "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
+      "broker-config": { MIN_SIGNAL_CONFIDENCE: 60 },
+      "python-backend/auth-header": { pythonBackendAuthHeader: () => ({}) },
+      "ki-antwort/ki-antwort": kiQ,
+      "settings/settings-store": { getSettings: async () => ({
+        botSettings: { useFullModelsForScan: true, allowMeasuredConsensus: false } }) },
+      "cache/redis-cache": { cacheGet: async () => null },
+    });
+    const E = engQ.exports ?? {};
+    const noetig = ["fehlendeEpics", "nachfrageNoetig", "nachfragePrompt", "nachfrageUebernehmen",
+      "gptListeLesen", "callGPT", "analyzeMarkets", "scanDatenVon", "tokenBudget"];
+    if (engQ.fehler || noetig.some((n) => typeof E[n] !== "function")) {
+      funde.push(`nachfrage: Engine nicht ausfuehrbar: ${engQ.fehler ?? noetig.filter((n) => typeof E[n] !== "function").join(", ")}`);
+      zusatz++;
+    } else {
+      // ── Die reinen Funktionen ──
+      const fe = E.fehlendeEpics(["A", "B", "A", "", 7, "C", "D"], { A: { x: 1 }, C: null, D: 0 });
+      torPruefung("nachfrage: fehlendeEpics zaehlt falsch (Doppelte, leere Epics, Eintrag ohne Wert)",
+        JSON.stringify(fe) === '["B","C","D"]', JSON.stringify(fe));
+      torPruefung("nachfrage: fehlendeEpics haelt ein geerbtes Feld fuer eine Antwort",
+        JSON.stringify(E.fehlendeEpics(["toString"], {})) === '["toString"]');
+      const N = (o) => E.nachfrageNoetig({ kamText: true, abgeschnitten: false, lesbar: true, fehlend: 3, ...o });
+      const nFaelle = [
+        [{}, true, "ausgelassen"],
+        [{ fehlend: 0 }, false, "nichts fehlt"],
+        [{ fehlend: Number.NaN }, false, "NaN fehlend"],
+        [{ fehlend: -1 }, false, "negativ fehlend"],
+        [{ kamText: false }, false, "ohne Antwort"],
+        [{ abgeschnitten: true }, false, "abgeschnitten"],
+        [{ lesbar: false }, false, "unlesbar"],
+        [{ kamText: "ja" }, false, "kamText kein boolean"],
+        [{ abgeschnitten: undefined }, false, "abgeschnitten unbekannt"],
+      ];
+      const nFalsch = nFaelle.filter(([o, soll]) => N(o)?.nachfragen !== soll);
+      torPruefung("nachfrage: nachfrageNoetig entscheidet falsch — nachgefragt wird NUR bei lesbar, "
+        + "nicht abgeschnitten, mit Antwort und fehlenden Maerkten",
+        nFalsch.length === 0, nFalsch.map(([, , n]) => n).join(", "));
+      torPruefung("nachfrage: nachfrageNoetig nennt keinen Grund, wenn es NICHT nachfragt",
+        nFaelle.filter(([, soll]) => !soll).every(([o]) => typeof N(o).grund === "string" && N(o).grund.length > 0)
+        && N({}).grund === "");
+      const P = "Regeln oben\nL1\nL2\nL3\nRegeln unten";
+      torPruefung("nachfrage: nachfragePrompt tauscht nicht genau die Marktliste",
+        E.nachfragePrompt(P, "L1\nL2\nL3", ["L2", "L3"]) === "Regeln oben\nL2\nL3\nRegeln unten",
+        String(E.nachfragePrompt(P, "L1\nL2\nL3", ["L2", "L3"])));
+      torPruefung("nachfrage: nachfragePrompt verdirbt `$&` in einer Marktzeile (replace statt slice)",
+        E.nachfragePrompt(P, "L1\nL2\nL3", ["X $& $1 Y"]) === "Regeln oben\nX $& $1 Y\nRegeln unten");
+      const pNull = [["nicht gefunden", E.nachfragePrompt(P, "ZZ", ["L1"])],
+        ["zweimal", E.nachfragePrompt("A\nL1\nB\nL1", "L1", ["L9"])],
+        ["keine Zeilen", E.nachfragePrompt(P, "L1\nL2\nL3", ["", null])],
+        ["leere Liste", E.nachfragePrompt(P, "", ["L1"])],
+        ["kein Text", E.nachfragePrompt(null, "L1", ["L1"])]];
+      torPruefung("nachfrage: nachfragePrompt raet einen Prompt, statt `null` zu geben",
+        pNull.every(([, v]) => v === null), pNull.filter(([, v]) => v !== null).map(([n]) => n).join(", "));
+      const ziel = { A: { epic: "A", reasoning: "ERST" } };
+      const ueb = E.nachfrageUebernehmen(ziel, [
+        { epic: "A", reasoning: "NACH" }, { epic: "B", reasoning: "NACH-B1" }, { epic: "B", reasoning: "NACH-B2" },
+        { epic: "X", reasoning: "fremd" }, { epic: 5 }, null], ["A", "B"]);
+      torPruefung("nachfrage: nachfrageUebernehmen ueberschreibt eine Antwort des ersten Aufrufs, "
+        + "legt ein fremdes Epic an oder nimmt ein Doppeltes zweimal",
+        JSON.stringify(ueb) === '["B"]' && ziel.A.reasoning === "ERST" && ziel.B?.reasoning === "NACH-B1"
+        && !("X" in ziel) && Object.keys(ziel).length === 2, JSON.stringify([ueb, ziel]));
+      const L = E.gptListeLesen;
+      const lFaelle = [[null, 0], [5, 0], ["x", 0], [{}, 0], [{ opportunities: 5 }, 0],
+        [{ opportunities: "abc" }, 0], [{ opportunities: { epic: "A" } }, 0],
+        [{ opportunities: [null, [], 7, "s", { epic: "A" }] }, 1], [{ opportunities: [{ epic: "A" }, { epic: "B" }] }, 2]];
+      const lFalsch = lFaelle.filter(([v, n]) => { try { return L(v).length !== n; } catch { return true; } });
+      torPruefung("nachfrage: gptListeLesen wirft oder liest falsch (null-Eintrag, Nicht-Liste)",
+        lFalsch.length === 0, lFalsch.map(([v]) => JSON.stringify(v)).join(" ; "));
+      torPruefung("nachfrage: die Zeitgrenze der Nachfrage ist nicht 45 s",
+        E.GPT_NACHFRAGE_TIMEOUT_MS === 45000, String(E.GPT_NACHFRAGE_TIMEOUT_MS));
+
+      // ── callGPT mit Zeitgrenze: ein haengender Aufruf wird abgebrochen ──
+      {
+        const alt = { fetch: global.fetch, warn: console.warn, error: console.error };
+        const signale = [];
+        global.fetch = (url, init) => new Promise((res, rej) => {
+          signale.push(init.signal);
+          if (!init.signal) {
+            res({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] }) });
+            return;
+          }
+          // WACHE (25.11.): der Timer von `AbortSignal.timeout` haelt Node NICHT
+          // am Leben. Wartete dieser Pruefstand nur auf ihn, beendete sich der
+          // ganze Lauf still mit Exit 0 (so am 25.11. passiert — seither faengt
+          // `run-all.js` das). Dieser normale Timer haelt den Prozess offen und
+          // bricht nach 5 s ab: greift die Zeitgrenze nicht, ist das ein Befund.
+          const wache = setTimeout(() => rej(new Error("Wache: die Zeitgrenze griff nicht")), 5000);
+          init.signal.addEventListener("abort", () => {
+            clearTimeout(wache);
+            rej(init.signal.reason ?? new Error("abort"));
+          });
+        });
+        console.warn = () => {}; console.error = () => {};
+        let rT = null, dauer = 0, rOhne = [];
+        try {
+          const t0 = Date.now();
+          rT = await E.callGPT("k".repeat(30), "m", "p", 100, 50);
+          dauer = Date.now() - t0;
+          for (const t of [undefined, Number.NaN, 0, -5, Infinity]) rOhne.push(await E.callGPT("k".repeat(30), "m", "p", 100, t));
+        } finally { global.fetch = alt.fetch; console.warn = alt.warn; console.error = alt.error; }
+        torPruefung("nachfrage: callGPT bricht einen haengenden Aufruf mit Zeitgrenze nicht ab",
+          rT?.text === null && rT?.status === null && dauer < 5000, `${JSON.stringify(rT)} nach ${dauer} ms`);
+        torPruefung("nachfrage: callGPT setzt OHNE gueltige Zeitgrenze trotzdem eine — der erste Aufruf "
+          + "muss sich verhalten wie bisher",
+          signale.length === 6 && signale.slice(1).every((s) => s === undefined)
+          && rOhne.every((r) => r.text === "{}"), `${signale.length} Aufrufe, ${signale.slice(1).map((s) => s === undefined ? "ohne" : "MIT").join(",")}`);
+      }
+
+      // ── END-TO-END: die echte analyzeMarkets, gezaehlte GPT-Aufrufe ──
+      const maerkte = ["E1", "E2", "E3", "E4", "E5"].map((e, i) => ({ epic: e, symbol: e,
+        instrumentName: `Markt ${e}`, instrumentType: "CURRENCIES", bid: 1 + i, ask: 1.001 + i, spread: 0.001, updateTime: "" }));
+      const opp = (e, r) => ({ epic: e, symbol: e, direction: "WAIT", confidence: 0, reasoning: r,
+        entry: 0, stopLoss: 0, takeProfit: 0, tradingStyle: "DAYTRADING" });
+      const liste = (...o) => JSON.stringify({ opportunities: o });
+      const antwort = (inhalt, finish = "stop") => ({ ok: true, status: 200, text: async () => "",
+        json: async () => ({ choices: [{ message: { content: inhalt }, finish_reason: finish }] }) });
+      const fehlerAntwort = (status, koerper) => ({ ok: false, status, text: async () => koerper });
+      const lauf = async (antworten) => {
+        const aufrufe = [], logs = [];
+        const alt = { fetch: global.fetch, log: console.log, warn: console.warn, error: console.error,
+          n: process.env.PYTHON_BACKEND_NEW_URL, u: process.env.PYTHON_BACKEND_URL };
+        delete process.env.PYTHON_BACKEND_NEW_URL; delete process.env.PYTHON_BACKEND_URL;
+        global.fetch = async (url, init) => {
+          if (!String(url).includes("api.openai.com")) throw new Error(`unerwarteter Abruf ${url}`);
+          const body = JSON.parse(init.body);
+          aufrufe.push({ model: body.model, prompt: body.messages[0].content, maxTokens: body.max_tokens, signal: init.signal });
+          const a = antworten[aufrufe.length - 1];
+          if (a === undefined) throw new Error("mehr GPT-Aufrufe als vorgesehen");
+          if (a === "WIRFT") throw new Error("netz weg");
+          return a;
+        };
+        const merk = (...x) => { logs.push(x.map(String).join(" ")); };
+        console.log = merk; console.warn = merk; console.error = merk;
+        let ergebnis = null, fehler = null;
+        try { ergebnis = await E.analyzeMarkets(maerkte); }
+        catch (e) { fehler = e instanceof Error ? e.message : String(e); }
+        finally {
+          global.fetch = alt.fetch; console.log = alt.log; console.warn = alt.warn; console.error = alt.error;
+          if (alt.n === undefined) delete process.env.PYTHON_BACKEND_NEW_URL; else process.env.PYTHON_BACKEND_NEW_URL = alt.n;
+          if (alt.u === undefined) delete process.env.PYTHON_BACKEND_URL; else process.env.PYTHON_BACKEND_URL = alt.u;
+        }
+        const scan = ergebnis ? E.scanDatenVon(ergebnis) : null;
+        const gptVon = (e) => (ergebnis ?? []).find((o) => o.epic === e)?.gpt;
+        return { aufrufe, logs, ergebnis, fehler, scan, gptVon };
+      };
+      const zeilenVon = (p) => p.split("\n").filter((l) => /^E\d \(Markt E\d\)/.test(l));
+      const regelnVon = (p) => p.split("\n").filter((l) => !/^E\d \(Markt E\d\)/.test(l)).join("\n");
+      const kurz = (r) => JSON.stringify({ fehler: r.fehler, aufrufe: r.aufrufe.length,
+        ohne: r.scan?.ohneGptAntwort, lage: r.scan?.gptLage, n: [r.scan?.gptNachfragen, r.scan?.gptNachgefragt, r.scan?.gptNachgeholt] });
+
+      // A: 3 von 5 beantwortet → genau EINE Nachfrage mit den 2 fehlenden.
+      const rA = await lauf([
+        antwort(liste(opp("E1", "ERST-E1"), opp("E2", "ERST-E2"), opp("E3", "ERST-E3"))),
+        antwort(liste(opp("E4", "NACH-E4"), opp("E1", "NACH-E1"), opp("XX", "NACH-XX"))),
+      ]);
+      const zA0 = rA.aufrufe[0] ? zeilenVon(rA.aufrufe[0].prompt) : [];
+      const zA1 = rA.aufrufe[1] ? zeilenVon(rA.aufrufe[1].prompt) : [];
+      torPruefung("nachfrage: E2E — bei 3 von 5 Antworten nicht GENAU ein zweiter Aufruf, oder der Lauf wirft",
+        rA.fehler === null && rA.aufrufe.length === 2, kurz(rA));
+      torPruefung("nachfrage: E2E — die Nachfrage enthaelt nicht genau die Zeilen der fehlenden Maerkte",
+        zA0.length === 5 && JSON.stringify(zA1) === JSON.stringify([zA0[3], zA0[4]]),
+        `${zA0.length} / ${JSON.stringify(zA1).slice(0, 160)}`);
+      torPruefung("nachfrage: E2E — der Regelteil der Nachfrage ist NICHT byte-gleich mit dem ersten Prompt",
+        rA.aufrufe.length === 2 && regelnVon(rA.aufrufe[0].prompt) === regelnVon(rA.aufrufe[1].prompt)
+        && rA.aufrufe[0].prompt.length > 500);
+      torPruefung("nachfrage: E2E — Modell, Platz oder Zeitgrenze der Nachfrage falsch, oder der ERSTE Aufruf "
+        + "hat eine Zeitgrenze bekommen",
+        rA.aufrufe.length === 2 && rA.aufrufe[1].model === rA.aufrufe[0].model
+        && rA.aufrufe[1].maxTokens === E.tokenBudget(2) && rA.aufrufe[0].maxTokens === E.tokenBudget(5)
+        && rA.aufrufe[1].signal instanceof AbortSignal && rA.aufrufe[0].signal === undefined,
+        JSON.stringify(rA.aufrufe.map((a) => [a.model, a.maxTokens, a.signal === undefined ? "ohne" : "mit"])));
+      torPruefung("nachfrage: E2E — die Nachfrage ueberschreibt den ersten Aufruf oder legt ein fremdes Epic an",
+        rA.gptVon("E1")?.reasoning === "ERST-E1" && rA.gptVon("E4")?.reasoning === "NACH-E4"
+        && !(rA.ergebnis ?? []).some((o) => o.epic === "XX") && (rA.ergebnis ?? []).length === 5,
+        `${rA.gptVon("E1")?.reasoning} / ${rA.gptVon("E4")?.reasoning} / ${(rA.ergebnis ?? []).map((o) => o.epic).join(",")}`);
+      torPruefung("nachfrage: E2E — ScanDaten zaehlen die Nachfrage falsch, oder `ohne GPT-Antwort` ist "
+        + "nicht der ENDSTAND danach",
+        rA.scan?.ohneGptAntwort === 1 && rA.scan?.gptNachfragen === 1 && rA.scan?.gptNachgefragt === 2
+        && rA.scan?.gptNachgeholt === 1 && rA.scan?.gptNachfrageGeprueft === 1
+        && rA.scan?.gptLage === "ausgelassen" && rA.scan?.gptLageGrund === "1 Maerkte fehlen in der Antwort", kurz(rA));
+      torPruefung("nachfrage: E2E — die Logzeile der Nachfrage fehlt oder nennt die Zahlen nicht",
+        rA.logs.some((l) => l.includes("🔁 GPT-Nachfrage (gpt-4o): 2 Maerkte nachgefragt → 1 nachgeholt, beantwortet")),
+        (rA.logs.find((l) => l.includes("GPT-Nachfrage")) ?? "(keine)").slice(0, 200));
+
+      // GEGENPROBEN: keine Nachfrage, wenn nichts fehlt oder die Ursache eine andere ist.
+      const alle5 = liste(...["E1", "E2", "E3", "E4", "E5"].map((e) => opp(e, `ERST-${e}`)));
+      const gegen = [
+        ["vollstaendig", [antwort(alle5)], 0, "ok"],
+        ["abgeschnitten", [antwort(liste(opp("E1", "x")), "length")], 4, "abgeschnitten"],
+        ["429 Guthaben", [fehlerAntwort(429, '{"error":{"type":"insufficient_quota"}}')], 5, "gescheitert"],
+        ["unlesbar", [antwort("kein JSON")], 5, "unlesbar"],
+        ["Liste keine Liste (warf frueher)", [antwort('{"opportunities":5}')], 5, "unlesbar"],
+      ];
+      for (const [name, antworten, ohne, lage] of gegen) {
+        const r = await lauf(antworten);
+        torPruefung(`nachfrage: E2E-Gegenprobe „${name}" — es wird nachgefragt oder der Lauf wirft`,
+          r.fehler === null && r.aufrufe.length === 1 && r.scan?.gptNachfragen === 0 && r.scan?.gptNachgefragt === 0
+          && r.scan?.ohneGptAntwort === ohne && r.scan?.gptLage === lage
+          && !r.logs.some((l) => l.includes("🔁 GPT-Nachfrage")), kurz(r));
+      }
+      // Ein null-Eintrag warf frueher den ganzen Zyklus; jetzt: lesen, nachfragen.
+      const rN = await lauf([antwort('{"opportunities":[null,[],7,' + JSON.stringify(opp("E1", "ERST-E1")) + "]}"),
+        antwort(liste(opp("E2", "N2"), opp("E3", "N3"), opp("E4", "N4"), opp("E5", "N5")))]);
+      torPruefung("nachfrage: E2E — ein null-Eintrag in der Liste wirft (Zyklus tot) oder wird nicht nachgefragt",
+        rN.fehler === null && rN.aufrufe.length === 2 && rN.scan?.ohneGptAntwort === 0
+        && rN.scan?.gptNachgeholt === 4 && rN.scan?.gptLage === "ok", kurz(rN));
+      // Die Nachfrage scheitert → kein Wurf, nichts erfunden, Grund im Log.
+      const rW = await lauf([antwort(liste(opp("E1", "x"), opp("E2", "x"), opp("E3", "x"))), "WIRFT"]);
+      torPruefung("nachfrage: E2E — eine gescheiterte Nachfrage wirft, erfindet Antworten oder verschweigt den Grund",
+        rW.fehler === null && rW.aufrufe.length === 2 && rW.scan?.ohneGptAntwort === 2 && rW.scan?.gptNachgeholt === 0
+        && rW.logs.some((l) => l.includes("0 nachgeholt, ohne Antwort (Netzfehler: netz weg")), kurz(rW));
+      // Bringt die Nachfrage nichts Neues: KEIN dritter Aufruf (keine Schleife).
+      const rI = await lauf([antwort(liste(opp("E1", "x"))), antwort(liste(opp("E1", "y")))]);
+      torPruefung("nachfrage: E2E — eine erfolglose Nachfrage loest einen weiteren Aufruf aus (Schleife)",
+        rI.fehler === null && rI.aufrufe.length === 2 && rI.scan?.gptNachgeholt === 0 && rI.scan?.ohneGptAntwort === 4
+        && rI.gptVon("E1")?.reasoning === "x", kurz(rI));
+      // Antwortete erst das zweite Modell, geht die Nachfrage an DASSELBE.
+      const rM = await lauf([fehlerAntwort(500, "boom"), antwort(liste(opp("E1", "x"), opp("E2", "x"))),
+        antwort(liste(opp("E3", "x")))]);
+      torPruefung("nachfrage: E2E — nach dem Modell-Rueckfall geht die Nachfrage an ein ANDERES Modell",
+        rM.fehler === null && rM.aufrufe.length === 3 && rM.aufrufe[1].model === "gpt-4o-mini"
+        && rM.aufrufe[2].model === "gpt-4o-mini" && rM.scan?.gptNachgeholt === 1,
+        JSON.stringify(rM.aufrufe.map((a) => a.model)) + " " + kurz(rM));
+    }
+
+    // ── Verdrahtung: der erste Aufruf unveraendert, GENAU drei Aufrufstellen ──
+    const aeQ = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    torPruefung("nachfrage: der ERSTE GPT-Aufruf hat sich geaendert",
+      /const ersterGpt = await callGPT\(ai\.openai\.apiKey, scanGptModel, prompt, platz\);/.test(aeQ), "ersterGpt");
+    torPruefung("nachfrage: es gibt nicht GENAU drei GPT-Aufrufstellen (erster, Modell-Rueckfall, Nachfrage)",
+      (aeQ.match(/await callGPT\(/g) ?? []).length === 3
+      && /await callGPT\(ai\.openai\.apiKey, gptAntwortModell, promptNach,\s*tokenBudget\(fehlendErst\.length\), GPT_NACHFRAGE_TIMEOUT_MS\)/.test(aeQ),
+      `${(aeQ.match(/await callGPT\(/g) ?? []).length}x`);
+    torPruefung("nachfrage: die Marktliste entsteht nicht mehr Zeichen fuer Zeichen aus den Zeilen",
+      /const marketList = marketZeilen\.join\("\\n"\);/.test(aeQ), "marketList");
+
+    // ── Die Kette: Tagessumme (Uebergangslage), Zyklus-Zeile, Tagesbilanz ──
+    const zbQ = ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts",
+      { "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports });
+    const ZQ = zbQ.exports ?? {};
+    if (zbQ.fehler || ["leereTagessumme", "tagessummeAddieren", "tagesbilanzText", "bilanzZeile"]
+      .some((n) => typeof ZQ[n] !== "function")) {
+      torPruefung("nachfrage: zyklus-bilanz nicht ausfuehrbar", false, zbQ.fehler ?? "Export fehlt");
+    } else {
+      const scanQ = (o) => ({ maerkte: 30, gpt: { WAIT: 30, BUY: 0, SELL: 0 }, vetos: 0, stilVerworfen: 0,
+        unterGrenze: [], go: 0, rrAbgelehnt: 0, ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {},
+        ohneGptAntwort: 0, gptZahlUnbrauchbar: 0, konsensRichtungen: 0, taErsatzRichtungen: 0,
+        trichterGeprueft: 1, restOhneAnalyse: 0, restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0,
+        claudeGefragt: 0, regelbrueche: {}, dauerMs: {}, kontext: { news: false, mtfSymbole: 0 },
+        gptLage: "ok", gptLageGrund: "", gptLageGeprueft: 1, claudeNullAllein: 0, claudeNullGeprueft: 1, ...o });
+      const bilQ = (s) => ({ start: 0, ende: 1000, ausgang: "Keine freigegebenen Signale", scan: s,
+        tore: [], trades: [], fehlgeschlagen: [] });
+      const leerQ = ZQ.leereTagessumme("2026-11-25");
+      torPruefung("nachfrage: die leere Tagessumme kennt die Felder nicht",
+        leerQ.gptNachfragen === 0 && leerQ.gptNachgefragt === 0 && leerQ.gptNachgeholt === 0
+        && leerQ.gptNachfrageGeprueft === 0);
+      const ohneFelder = () => {
+        const a = ZQ.leereTagessumme("2026-11-25");
+        delete a.gptNachfragen; delete a.gptNachgefragt; delete a.gptNachgeholt; delete a.gptNachfrageGeprueft;
+        return a;
+      };
+      let tQ = null;
+      try {
+        // Der ERSTE Schritt direkt (Lehre N12: der naechste waescht ein NaN per JSON).
+        const erst = ZQ.tagessummeAddieren(ohneFelder(), bilQ(scanQ({ gptNachfragen: 1, gptNachgefragt: 3,
+          gptNachgeholt: 2, gptNachfrageGeprueft: 1 })), "2026-11-25");
+        torPruefung("nachfrage: der erste Scan nach dem Deploy geht in der Uebergangslage verloren (NaN)",
+          erst.gptNachfragen === 1 && erst.gptNachgefragt === 3 && erst.gptNachgeholt === 2 && erst.gptNachfrageGeprueft === 1,
+          JSON.stringify([erst.gptNachfragen, erst.gptNachgefragt, erst.gptNachgeholt, erst.gptNachfrageGeprueft]));
+        tQ = ZQ.tagessummeAddieren(ohneFelder(), bilQ(scanQ({})), "2026-11-25");
+        torPruefung("nachfrage: ein Scan von vor dem Deploy ergibt NaN statt 0",
+          tQ.gptNachfragen === 0 && tQ.gptNachgefragt === 0 && tQ.gptNachgeholt === 0 && tQ.gptNachfrageGeprueft === 0);
+        const vor = ZQ.tagesbilanzText(tQ);
+        torPruefung("nachfrage: vor dem Deploy behauptet die Tagesbilanz eine Messung",
+          vor.includes("🔁 GPT-Nachfrage: nicht gemessen (Analysen vor dem 25.11.)"),
+          (vor.match(/[^\n]*GPT-Nachfrage[^\n]*/) ?? ["(keine)"])[0]);
+        tQ = ZQ.tagessummeAddieren(tQ, bilQ(scanQ({ ohneGptAntwort: 4, gptLage: "ausgelassen",
+          gptLageGrund: "4 Maerkte fehlen in der Antwort", gptNachfragen: 1, gptNachgefragt: 3,
+          gptNachgeholt: 2, gptNachfrageGeprueft: 1 })), "2026-11-25");
+        tQ = ZQ.tagessummeAddieren(tQ, bilQ(scanQ({ gptNachfragen: 1, gptNachgefragt: 2,
+          gptNachgeholt: 1, gptNachfrageGeprueft: 1 })), "2026-11-25");
+      } catch (e) {
+        torPruefung("nachfrage: die Uebergangslage WIRFT", false, e instanceof Error ? e.message : String(e));
+      }
+      if (tQ) {
+        torPruefung("nachfrage: die Tagessumme addiert falsch",
+          tQ.gptNachfragen === 2 && tQ.gptNachgefragt === 5 && tQ.gptNachgeholt === 3
+          && tQ.gptNachfrageGeprueft === 2 && tQ.scans === 3,
+          JSON.stringify([tQ.gptNachfragen, tQ.gptNachgefragt, tQ.gptNachgeholt, tQ.gptNachfrageGeprueft, tQ.scans]));
+        const tb = ZQ.tagesbilanzText(tQ);
+        torPruefung("nachfrage: die Tagesbilanz nennt die Nachfrage oder ihre Abdeckung nicht",
+          tb.includes("🔁 GPT-Nachfrage: 2 Zyklen · 5 Maerkte nachgefragt · 3 nachgeholt (gemessen in 2 von 3 Analysen)"),
+          (tb.match(/[^\n]*GPT-Nachfrage[^\n]*/) ?? ["(keine)"])[0]);
+        // Die Aufschluesselung bleibt an IHRER Zeile: direkt unter „ohne GPT-Antwort".
+        const zl = tb.split("\n");
+        const iOhne = zl.findIndex((z) => z.startsWith("🤐 davon OHNE GPT-Antwort"));
+        const iNach = zl.findIndex((z) => z.startsWith("🔁 GPT-Nachfrage"));
+        torPruefung("nachfrage: die neue Zeile trennt `ohne GPT-Antwort` von seiner Aufschluesselung",
+          iOhne >= 0 && iNach > iOhne + 1 && zl[iOhne + 1]?.startsWith("   ↳"), `${iOhne} ${iNach} ${zl[iOhne + 1]}`);
+      }
+      const z1 = ZQ.bilanzZeile(bilQ(scanQ({ gptNachfragen: 1, gptNachgefragt: 2, gptNachgeholt: 1, gptNachfrageGeprueft: 1 })));
+      const z0 = ZQ.bilanzZeile(bilQ(scanQ({ gptNachfrageGeprueft: 1 })));
+      torPruefung("nachfrage: die Zyklus-Zeile nennt die Nachfrage nicht, oder nennt eine 0 (Rauschen)",
+        z1.includes("GPT-Nachfrage 1/2 nachgeholt") && !z0.includes("GPT-Nachfrage"), `${z1.slice(0, 200)} || ${z0.slice(0, 120)}`);
+    }
+  }
+
   // ── DIE FUENF GPT-ZAHLEN WERDEN GELESEN (15.11.) ─────────────────────────
   //
   // Dieselbe Quelle wie beim Claude-Teil: ein reiner Cast, und `??` faengt nur
