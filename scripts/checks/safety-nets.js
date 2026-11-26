@@ -13345,10 +13345,13 @@ module.exports = async function pruefe() {
           zW?.get("A")?.gesperrt === false, JSON.stringify(zW ? [...zW] : blW.fehler));
 
         // ── Der ECHTE Zyklus, gezaehlter Killswitch ──
+        // 26.11.: das Urteil ist einstellbar — der SUSPICIOUS-Zweig wurde bis
+        // dahin von keinem Pruefstand betreten.
+        let fakeUrteil = '{"verdict":"ATTACK","summary":"Scanner-Test"}';
         class FakeAnthropic {
           constructor() {
             this.messages = { stream: async () => ({ finalMessage: async () => ({
-              content: [{ type: "text", text: '{"verdict":"ATTACK","summary":"Scanner-Test"}' }] }) }) };
+              content: [{ type: "text", text: fakeUrteil }] }) }) };
           }
         }
         const vorKey = process.env.ANTHROPIC_API_KEY;
@@ -13417,6 +13420,38 @@ module.exports = async function pruefe() {
           torPruefung("ein Ereignis mit unlesbarer Zeit oder fremdem payload bricht den ganzen Watchdog-Zyklus ab",
             z6.fehler == null && z6.erg != null && z6.erg.verdict === "ATTACK" && !/ABGEBROCHEN/.test(z6.log ?? ""),
             z6.fehler ?? `${JSON.stringify(z6.erg ?? null)} | ${(z6.log ?? "").slice(0, 200)}`);
+
+          // ── SUSPICIOUS (26.11.): die Meldung behauptet nur, was der Code tut ──
+          // Live 26.11. 18:47: zwei Honeypot-Treffer auf /.git/config, und die
+          // Meldung endete mit „If escalates, auto-killswitch will trigger" —
+          // der Killswitch loest aber nur bei Umgehung oder >= N IPs in zwei
+          // Zyklen aus, nie fuer einen einzelnen Scanner.
+          fakeUrteil = '{"verdict":"SUSPICIOUS","summary":"Scanner auf .git/config"}';
+          const S = "169.40.142.172";
+          const evS = (n) => Array.from({ length: n }, (_, i) =>
+            ({ type: "HONEYPOT_ACCESS", ip: S, path: "/.git/config", ts: jetztMs - 2000 + i }));
+          const s1 = await zyklus(evS(2), {});
+          torPruefung("SUSPICIOUS: die Meldung droht wieder mit dem Killswitch fuer einen einzelnen Scanner — der Code loest ihn dafuer nie aus",
+            s1.fehler == null && s1.ks === 0 && /Security Watchdog — SUSPICIOUS/.test(s1.tg ?? "")
+            && !/auto-killswitch/i.test(s1.tg ?? "") && /Killswitch nur bei Eskalation/.test(s1.tg ?? "")
+            && !/AUTO-GEBLOCKT/.test(s1.tg ?? ""),
+            s1.fehler ?? `${s1.ks} | ${(s1.tg ?? "").slice(-200)}`);
+          // Die Schwelle im Text ist die Schwelle im Code — an der Quelle gelesen.
+          const wdQ = read("frontend/lib/security-watchdog/claude-watchdog.ts");
+          const nCode = wdQ.match(/if \(!\(e\.distinctIPs >= (\d+)\)\)/)?.[1];
+          const nText = (s1.tg ?? "").match(/≥(\d+) IPs in zwei Zyklen/)?.[1];
+          torPruefung("SUSPICIOUS: die Meldung nennt eine andere IP-Schwelle als eskalationsEntscheidung()",
+            nCode !== undefined && nText === nCode, `Code ${nCode ?? "?"} · Text ${nText ?? "?"}`);
+          const s2 = await zyklus(evS(5), {});
+          torPruefung("SUSPICIOUS: ab 5 Ereignissen wird nicht gesperrt oder nicht gemeldet",
+            s2.fehler == null && s2.ks === 0 && /AUTO-GEBLOCKT 72h/.test(s2.tg ?? "")
+            && /IP geblockt \(72h\): 169\.40\.142\.172/.test(s2.log ?? ""),
+            s2.fehler ?? `${(s2.tg ?? "").slice(0, 200)} | ${(s2.log ?? "").slice(0, 120)}`);
+          const s3 = await zyklus(evS(5), { "security:trusted_ips": [{ ip: S, reason: "Test", addedAt: iso(jetztMs) }] });
+          torPruefung("SUSPICIOUS: eine IP auf der Whitelist wird als AUTO-GEBLOCKT gemeldet, obwohl sie nie gesperrt wird",
+            s3.fehler == null && !/AUTO-GEBLOCKT/.test(s3.tg ?? "") && /auf der Whitelist, NICHT gesperrt/.test(s3.tg ?? "")
+            && !/IP geblockt/.test(s3.log ?? ""),
+            s3.fehler ?? `${(s3.tg ?? "").slice(0, 200)} | ${(s3.log ?? "").slice(0, 120)}`);
         } finally {
           if (vorKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = vorKey;
           global.__watchdog_laeuft_seit__ = vorWd2;

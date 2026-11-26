@@ -2527,6 +2527,40 @@ Zeit bricht den Zyklus nicht mehr ab.
 
 **21 von 21 Sabotagen** gegen alle 23 Prüfer (darunter der Fund exakt zurück — jede gesperrte IP gilt als Umgehung —, die Grenze `>=`, unbekannt nicht mehr vorsichtig, späteste statt früheste Sperre, `new Date(null)`, abgelaufene Sperren, der alte Wurf bei unlesbarer Zeit, eine Toleranz unter der Proxy-Wartezeit und eine aufgeblasene) plus Gegenprobe. Regression der Watchdog-Suite vom 13.11. **14/14** plus Gegenprobe.
 
+### Die SUSPICIOUS-Meldung drohte mit einem Killswitch, den es dafür nicht gibt (26.11.)
+
+Live 26.11. 18:47: `169.40.142.172` fragte zweimal in derselben Sekunde
+`/.git/config` ab (Honeypot, `proxy.ts:35`). Ohne Anmelde-Cookie leitet der
+Proxy auf `/login` um, ausgeliefert wird nichts — und es gäbe nichts: `public/`
+hält fünf SVG, das Bündel `server.js`, `package.json`, `node_modules`. Der
+Watchdog urteilte SUSPICIOUS, sperrte nicht (unter 5 Ereignissen) — richtig.
+
+**Falsch war der Schluss der Meldung:** *„If escalates, auto-killswitch will
+trigger."* `eskalationsEntscheidung()` löst nur bei einem umgangenen Block oder
+≥ 5 IPs in zwei Zyklen in Folge aus; ein einzelner Scanner wird höchstens
+gesperrt. Jetzt nennt der Text genau diese zwei Auslöser, und die Schwelle im
+Text ist an die Schwelle im Code gebunden. Dazu in derselben Meldung:
+**„AUTO-GEBLOCKT 72h"** stand bei ≥ 5 Ereignissen auch für eine IP auf der
+Whitelist, die nie gesperrt wird — jetzt „auf der Whitelist, NICHT gesperrt".
+Dieselbe Klasse wie die zwei falschen Killswitch-Texte (27.09.).
+
+Der SUSPICIOUS-Zweig wurde bis heute von **keinem** Prüfstand betreten. Jetzt
+läuft der echte Zyklus mit einstellbarem Urteil: zwei Ereignisse (kein
+Killswitch, keine Sperre), fünf (gesperrt und gemeldet), fünf auf der Whitelist.
+`safety-nets` 2347 → **2351**, **7 von 7 Sabotagen**, Regression Umgehung
+**21/21**, Watchdog **14/14**.
+
+**Benannt, NICHT geändert — ein Fund in `ip-blocklist.ts`:** abgelaufene
+temporäre Sperren werden nie aus `security:blocked_ips` entfernt. `blockIP`
+bricht mit „bereits geblockt" ab, sobald **irgendein** Eintrag der IP existiert —
+auch ein abgelaufener —, während `isIPBlocked` nur nicht abgelaufene zählt: eine
+IP, die nach 72 h wiederkommt, wird **nie wieder** temporär gesperrt. Und weil
+jede neue Sperre die Lebensdauer der ganzen Liste auf 72 h zurücksetzt, wächst
+sie, solange gesperrt wird — und der Proxy liest sie bei **jeder** Anfrage.
+`blockIP` meldet dazu weder Erfolg noch Fehler (`catch { /* non-fatal */ }`), und
+liest die Liste mit `cacheGet` ohne Herkunft. Eine Sperre ist ein
+Sicherheitsmechanismus: Plan und Ja zuerst.
+
 ### Claudes „nichts riskieren" ist ein Veto (24.11.)
 
 **Geändert auf ausdrückliche Anweisung**, mit Plan und Impact-Analyse vorweg

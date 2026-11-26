@@ -463,23 +463,29 @@ Events analyzed: ${result.eventCount}${nachzueglerText ? `\nℹ️ Nachzügler (
     }
 
     if (result.verdict === "SUSPICIOUS") {
-      // Bei SUSPICIOUS: IP blockieren wenn sie > 5 Events hat (72h) — ausser whitelisted
+      // Bei SUSPICIOUS: IP blockieren ab 5 Events (72h) — ausser whitelisted.
+      // 26.11.: die Meldung sagt „AUTO-GEBLOCKT" nur, wenn die Sperre auch
+      // VERSUCHT wurde. Vorher stand es bei >= 5 Events auch fuer eine IP auf
+      // der Whitelist da, die nie gesperrt wird — eine Meldung, die etwas
+      // behauptet, das der Code nicht tut (Klasse 27.09.).
+      let gesperrt = false;
       if (topIP && topIP[1] >= 5) {
         const { isIPWhitelisted } = await import("./ip-blocklist");
         const trusted = await isIPWhitelisted(topIP[0]);
         if (!trusted) {
           await blockIP(topIP[0], `SUSPICIOUS (${topIP[1]} Events): ${result.summary}`, false);
+          gesperrt = true;
         }
       }
       await sendTelegram(
 `⚠️ <b>Security Watchdog — SUSPICIOUS</b>
 
 ${result.summary}
-${topIP ? `🔍 Haupt-IP: <code>${topIP[0]}</code> (${topIP[1]} Events)${topIP[1] >= 5 ? " — <b>AUTO-GEBLOCKT 72h</b>" : ""}` : ""}
+${topIP ? `🔍 Haupt-IP: <code>${topIP[0]}</code> (${topIP[1]} Events)${gesperrt ? " — <b>AUTO-GEBLOCKT 72h</b>" : topIP[1] >= 5 ? " — auf der Whitelist, NICHT gesperrt" : ""}` : ""}
 Events in window: ${result.eventCount}
 🕐 ${telegramZeit()}
 
-<i>Watching closely. If escalates, auto-killswitch will trigger.</i>`
+<i>Diese Meldung stoppt den Handel nicht. Killswitch nur bei Eskalation (Block umgangen, oder ≥5 IPs in zwei Zyklen in Folge) — ein einzelner Scanner löst ihn nie aus.</i>`
       );
     }
 
