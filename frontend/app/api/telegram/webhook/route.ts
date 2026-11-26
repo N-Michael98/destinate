@@ -51,10 +51,13 @@ const SYSTEM_BEFEHLE = [
   "/reset — System reaktivieren (Passwort erforderlich)",
   "/peakreset — Drawdown-Höchststand zurücksetzen (Passwort erforderlich)",
   "/status — System Status",
-  "/edge — Erwartungswert: hat das System einen Edge? (/edge 60 = letzte 60 Tage)",
-  "/hebel — was würde etwas ändern? EW je Gruppe (/hebel 60 = letzte 60 Tage)",
-  "/exits — wie weit lief der Kurs? Stop/Ziel nachgerechnet (/exits 60 = letzte 60 Tage)",
-  "/exitsim — Ausstiegslogik nachgerechnet: heute gegen Schalter umgelegt, je Stil (/exitsim 60)",
+  // 25.11.: die Zusaetze „(/x 60 = letzte 60 Tage)" gekuerzt — /status zeigt
+  // diese Liste, und ohne den Platz passte /schatten nicht mehr unter 4096.
+  "/edge — Erwartungswert: hat das System einen Edge? (/edge 60)",
+  "/hebel — was würde etwas ändern? EW je Gruppe (/hebel 60)",
+  "/exits — wie weit lief der Kurs? Stop/Ziel nachgerechnet (/exits 60)",
+  "/exitsim — Ausstiegslogik nachgerechnet, je Stil (/exitsim 60)",
+  "/schatten — was hätten abgelehnte Signale gebracht? (/schatten 30)",
   "/help — Alle Befehle",
 ].join("\n");
 
@@ -1254,6 +1257,105 @@ ${SYSTEM_BEFEHLE}`
         await reply(chatId,
           `❌ <b>/exitsim fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
       } finally {
+        if (freigeben !== null && !sperreUebergeben) freigeben();
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── /schatten — was haetten die NICHT gehandelten Signale gebracht? (25.11.)
+    //
+    // REINE LESUNG wie /exits: keine Order, kein Stop, keine Einstellung, KEIN
+    // Schreibzugriff. Die Eintraege schreibt der Handelszyklus selbst
+    // (`zyklus-bilanz.ts` → `lib/schattenbuch/`); hier wird nur gelesen und mit
+    // DERSELBEN Kerzen-Nachrechnung wie /exits gerechnet (`exitLauf`). Dieselbe
+    // Sperre wie /exits und /exitsim — sie teilen sich das Abruf-Kontingent.
+    if (textLower === "/schatten" || textLower.startsWith("/schatten ")) {
+      let sperreUebergeben = false;
+      let freigeben: (() => void) | null = null;
+      try {
+        const { exitsSperreNehmen, exitsSperreFreigeben, exitLauf, PAUSE_MS } =
+          await import("@/lib/exit-messung/exit-lauf");
+        const arg = textLower.slice("/schatten".length).trim();
+        const tage = arg === "" ? null : (/^\d+$/.test(arg) ? Number(arg) : NaN);
+        if (arg !== "" && (!Number.isFinite(tage) || (tage as number) <= 0)) {
+          await reply(chatId,
+            `⚠️ <b>/schatten</b> — das ist keine Anzahl Tage (${arg.length} Zeichen).`
+            + "\n\n<code>/schatten</code> rechnet alle gespeicherten Tage (höchstens 45), "
+            + "<code>/schatten 30</code> nur die letzten 30.");
+          return NextResponse.json({ ok: true });
+        }
+        const { getCapitalSession } = await import("@/lib/capital-com/capital-com-session");
+        if (!getCapitalSession()) {
+          await reply(chatId,
+            "⚠️ <b>/schatten</b> — keine Broker-Sitzung. Die Kursverläufe kommen von "
+            + "Capital.com; ohne Sitzung ist keine Messung möglich.");
+          return NextResponse.json({ ok: true });
+        }
+        const sperre = exitsSperreNehmen(Date.now());
+        if (!sperre.ok) {
+          await reply(chatId,
+            `⏳ Eine Messung (/exits, /exitsim oder /schatten) läuft schon seit ${telegramZeit(new Date(sperre.seitMs))} — `
+            + "das Ergebnis kommt als eigene Nachricht.");
+          return NextResponse.json({ ok: true });
+        }
+        freigeben = exitsSperreFreigeben;
+
+        const { STYLE_MAX_HOURS } = await import("@/lib/agents/risk-agent");
+        const { capitalGetKerzen } = await import("@/lib/capital-com/capital-com-client");
+        const { MAX_KANDIDATEN } = await import("@/lib/exit-messung/exit-messung");
+        const { schattenAuswahl, schattenBericht, schattenText, SCHATTEN_JE_GRUPPE } =
+          await import("@/lib/schattenbuch/schattenbuch");
+        const { schattenLesen } = await import("@/lib/schattenbuch/schattenbuch-speicher");
+
+        const jetzt = Date.now();
+        const gelesen = await schattenLesen(tage === null ? null : (tage as number), jetzt);
+        if (gelesen.fehler !== null) {
+          // Ein leeres Schattenbuch wuerde sich sonst als „keine Signale" ausgeben.
+          await reply(chatId, `⚠️ <b>/schatten</b> — nicht lesbar: ${htmlSicher(gelesen.fehler)}. Es wurde nichts gerechnet.`);
+          return NextResponse.json({ ok: true });
+        }
+        const aus = schattenAuswahl(gelesen.eintraege, {
+          haltedauer: STYLE_MAX_HOURS, jetztMs: jetzt,
+          tage: tage === null ? null : (tage as number),
+          maxGesamt: MAX_KANDIDATEN, jeGruppe: SCHATTEN_JE_GRUPPE,
+        });
+        if (aus.kandidaten.length === 0) {
+          await reply(chatId, schattenText(schattenBericht(aus, [],
+            { tageGelesen: gelesen.tageGelesen, abbruch: null })));
+          return NextResponse.json({ ok: true });
+        }
+
+        await reply(chatId,
+          `👥 <b>/schatten</b> läuft: ${aus.kandidaten.length} Signale, je ein Kursabruf `
+          + `nacheinander — mindestens ${Math.ceil((aus.kandidaten.length * PAUSE_MS) / 1000)} s. `
+          + "Das Ergebnis kommt als eigene Nachricht.");
+
+        sperreUebergeben = true;
+        after(async () => {
+          try {
+            const lauf = await exitLauf(aus.kandidaten, {
+              kerzen: async (epic, aufloesung, von, bis, max) => {
+                const s = getCapitalSession();
+                if (!s) return { ok: false, status: 401, error: "Broker-Sitzung während der Messung weggefallen" };
+                return capitalGetKerzen(s.apiKey, s.cst, s.securityToken, epic, aufloesung, von, bis, max);
+              },
+              warte: (ms) => new Promise((r) => setTimeout(r, ms)),
+              jetzt: () => Date.now(),
+            });
+            await reply(chatId, schattenText(schattenBericht(aus, lauf.ergebnisse,
+              { tageGelesen: gelesen.tageGelesen, abbruch: lauf.abbruch })));
+          } catch (e) {
+            await reply(chatId,
+              `❌ <b>/schatten fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
+          } finally {
+            exitsSperreFreigeben();
+          }
+        });
+      } catch (e) {
+        await reply(chatId,
+          `❌ <b>/schatten fehlgeschlagen</b>\n\n${htmlSicher(e instanceof Error ? e.message : String(e))}`);
+      } finally {
+        // Nur freigeben, wenn die Sperre NICHT an `after()` uebergeben wurde.
         if (freigeben !== null && !sperreUebergeben) freigeben();
       }
       return NextResponse.json({ ok: true });

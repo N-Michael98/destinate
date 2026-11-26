@@ -14596,7 +14596,7 @@ module.exports = async function pruefe() {
       "risiko/risiko": ladeTsModul("lib/risiko/risiko.ts").exports,
     }).exports;
     // Ersatz-Schluessel an den ECHTEN Importzeilen der Engine gemessen (25.11.).
-    const engQ = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts", {
+    const engErsatz = {
       "ai-config/ai-config-store": { getAISettings: async () => ({
         openai: { connected: true, apiKey: "k".repeat(30), model: "gpt-4o" },
         anthropic: { connected: false, apiKey: "", model: "claude-sonnet-4-6" } }) },
@@ -14609,7 +14609,17 @@ module.exports = async function pruefe() {
       "settings/settings-store": { getSettings: async () => ({
         botSettings: { useFullModelsForScan: true, allowMeasuredConsensus: false } }) },
       "cache/redis-cache": { cacheGet: async () => null },
-    });
+      // 25.11. (Schattenbuch): die Engine ruft `schattenRoh` je Markt — ohne
+      // das ECHTE Modul ist es ein Stellvertreter, der wirft (Falle 01.11.).
+      "schattenbuch/schattenbuch": ladeTsModul("lib/schattenbuch/schattenbuch.ts", {
+        "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
+        "exit-messung/exit-messung": ladeTsModul("lib/exit-messung/exit-messung.ts", {
+          "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports,
+          "html-sicher/html-sicher": ladeTsModul("lib/html-sicher/html-sicher.ts").exports,
+        }).exports,
+      }).exports,
+    };
+    const engQ = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts", engErsatz);
     const E = engQ.exports ?? {};
     const noetig = ["fehlendeEpics", "nachfrageNoetig", "nachfragePrompt", "nachfrageUebernehmen",
       "gptListeLesen", "callGPT", "analyzeMarkets", "scanDatenVon", "tokenBudget"];
@@ -14719,7 +14729,7 @@ module.exports = async function pruefe() {
       const antwort = (inhalt, finish = "stop") => ({ ok: true, status: 200, text: async () => "",
         json: async () => ({ choices: [{ message: { content: inhalt }, finish_reason: finish }] }) });
       const fehlerAntwort = (status, koerper) => ({ ok: false, status, text: async () => koerper });
-      const lauf = async (antworten) => {
+      const lauf = async (antworten, mod = E) => {
         const aufrufe = [], logs = [];
         const alt = { fetch: global.fetch, log: console.log, warn: console.warn, error: console.error,
           n: process.env.PYTHON_BACKEND_NEW_URL, u: process.env.PYTHON_BACKEND_URL };
@@ -14736,14 +14746,14 @@ module.exports = async function pruefe() {
         const merk = (...x) => { logs.push(x.map(String).join(" ")); };
         console.log = merk; console.warn = merk; console.error = merk;
         let ergebnis = null, fehler = null;
-        try { ergebnis = await E.analyzeMarkets(maerkte); }
+        try { ergebnis = await mod.analyzeMarkets(maerkte); }
         catch (e) { fehler = e instanceof Error ? e.message : String(e); }
         finally {
           global.fetch = alt.fetch; console.log = alt.log; console.warn = alt.warn; console.error = alt.error;
           if (alt.n === undefined) delete process.env.PYTHON_BACKEND_NEW_URL; else process.env.PYTHON_BACKEND_NEW_URL = alt.n;
           if (alt.u === undefined) delete process.env.PYTHON_BACKEND_URL; else process.env.PYTHON_BACKEND_URL = alt.u;
         }
-        const scan = ergebnis ? E.scanDatenVon(ergebnis) : null;
+        const scan = ergebnis ? mod.scanDatenVon(ergebnis) : null;
         const gptVon = (e) => (ergebnis ?? []).find((o) => o.epic === e)?.gpt;
         return { aufrufe, logs, ergebnis, fehler, scan, gptVon };
       };
@@ -14825,6 +14835,44 @@ module.exports = async function pruefe() {
         rM.fehler === null && rM.aufrufe.length === 3 && rM.aufrufe[1].model === "gpt-4o-mini"
         && rM.aufrufe[2].model === "gpt-4o-mini" && rM.scan?.gptNachgeholt === 1,
         JSON.stringify(rM.aufrufe.map((a) => a.model)) + " " + kurz(rM));
+
+      // ── SCHATTENBUCH (25.11.): die ECHTE Engine haelt jedes Richtungssignal
+      // mit seiner Stufe fest — mit der Richtung VOR einer Stil-Pruefung, die
+      // sie auf WAIT setzt. Und die Messung aendert KEINE Entscheidung.
+      const schattenAntwort = () => antwort(liste(
+        { ...opp("E1", "s1"), direction: "BUY", confidence: 50, entry: 1.001, stopLoss: 0.99, takeProfit: 1.02 },
+        { ...opp("E2", "s2"), direction: "BUY", confidence: 80, entry: 2.001, stopLoss: 1.98, takeProfit: 2.05 },
+        { ...opp("E3", "s3"), direction: "SELL", confidence: 80, entry: 3, stopLoss: 3.05, takeProfit: 2.9, tradingStyle: "UNSINN" },
+        opp("E4", "s4"), opp("E5", "s5")));
+      const rS = await lauf([schattenAntwort()]);
+      const sl = Array.isArray(rS.scan?.schatten) ? rS.scan.schatten : [];
+      const s1 = sl.find((s) => s.symbol === "E1"), s2 = sl.find((s) => s.symbol === "E2"), s3 = sl.find((s) => s.symbol === "E3");
+      torPruefung("schatten: E2E — die Engine haelt die Richtungssignale nicht fest (oder auch die WAIT)",
+        rS.fehler === null && sl.length === 3 && !sl.some((s) => s.symbol === "E4" || s.symbol === "E5"),
+        `${rS.fehler} ${JSON.stringify(sl).slice(0, 300)}`);
+      torPruefung("schatten: E2E — Stufe, Kurs (BUY zum Brief), Stop oder Ziel falsch festgehalten",
+        s1?.stufe === "unter Grenze" && s1?.richtung === "BUY" && s1?.kurs === 1.001 && s1?.stop === 0.99
+        && s1?.ziel === 1.02 && s1?.stil === "DAYTRADING" && s1?.confidence === 50 && s1?.quelle === "GPT_REAL"
+        && s2?.stufe === "ohne Stufe" && s2?.kurs === 2.001,
+        JSON.stringify([s1, s2]));
+      torPruefung("schatten: E2E — nach der Stil-Pruefung fehlt die URSPRUENGLICHE Richtung (SELL zum Geldkurs, Stil unbekannt)",
+        s3?.stufe === "Stil unbekannt" && s3?.richtung === "SELL" && s3?.kurs === 3 && s3?.stil === null
+        && rS.gptVon("E3")?.direction === "WAIT", JSON.stringify(s3));
+      // GEGENPROBE: dieselbe Engine OHNE Schattenbuch muss dieselben Entscheidungen treffen.
+      const engOhne = ladeTsModul("lib/market-scanner/ai-analysis-engine.ts", { ...engErsatz,
+        "schattenbuch/schattenbuch": { ...engErsatz["schattenbuch/schattenbuch"], schattenRoh: () => null } });
+      if (engOhne.fehler || typeof engOhne.exports?.analyzeMarkets !== "function") {
+        torPruefung("schatten: die Engine ohne Schattenbuch ist nicht ladbar", false, engOhne.fehler ?? "Export fehlt");
+      } else {
+        const rO = await lauf([schattenAntwort()], engOhne.exports);
+        const kern = (r) => JSON.stringify((r.ergebnis ?? []).map((o) => [o.epic, o.goSignal, o.gpt?.direction,
+          o.gpt?.confidence, o.gpt?.stopLoss, o.gpt?.takeProfit, o.gpt?.tradingStyle, o.claude?.approved,
+          o.finalScore, o.rank]));
+        torPruefung("schatten: die Messung AENDERT eine Entscheidung — mit und ohne Schattenbuch verschieden",
+          rO.fehler === null && kern(rO) === kern(rS) && (rS.ergebnis ?? []).length === 5
+          && Array.isArray(rO.scan?.schatten) && rO.scan.schatten.length === 0,
+          `${kern(rS).slice(0, 160)} || ${kern(rO).slice(0, 160)}`);
+      }
     }
 
     // ── Verdrahtung: der erste Aufruf unveraendert, GENAU drei Aufrufstellen ──
@@ -14908,6 +14956,422 @@ module.exports = async function pruefe() {
       torPruefung("nachfrage: die Zyklus-Zeile nennt die Nachfrage nicht, oder nennt eine 0 (Rauschen)",
         z1.includes("GPT-Nachfrage 1/2 nachgeholt") && !z0.includes("GPT-Nachfrage"), `${z1.slice(0, 200)} || ${z0.slice(0, 120)}`);
     }
+  }
+
+  // ── DAS SCHATTENBUCH (25.11.) ────────────────────────────────────────────
+  //
+  // Jedes Richtungssignal mit seinem Schicksal — und spaeter mit DERSELBEN
+  // Kerzen-Nachrechnung wie /exits, was es gebracht haette. GERECHNET: die
+  // reinen Funktionen an Grenzfaellen, die Kette ueber den ECHTEN Bus bis in
+  // ein nachgebautes Redis und zurueck, /schatten durch die echte POST, die
+  // Verdrahtung in Engine und Bilanz, und die Laenge im Haertefall.
+  {
+    const hsS = ladeTsModul("lib/html-sicher/html-sicher.ts").exports;
+    const emS = ladeTsModul("lib/exit-messung/exit-messung.ts", {
+      "richtung/richtung": ladeTsModul("lib/richtung/richtung.ts").exports, "html-sicher/html-sicher": hsS });
+    const sbM = ladeTsModul("lib/schattenbuch/schattenbuch.ts", {
+      "html-sicher/html-sicher": hsS, "exit-messung/exit-messung": emS.exports });
+    const S = sbM.exports ?? {};
+    const noetigS = ["schattenRoh", "istSchattenRoh", "schicksalBestimmen", "zyklusEintraege",
+      "eintraegeAufnehmen", "schattenKandidat", "schattenAuswahl", "schattenBericht", "schattenText"];
+    if (sbM.fehler || emS.fehler || noetigS.some((n) => typeof S[n] !== "function")) {
+      funde.push(`schatten: nicht ausfuehrbar: ${sbM.fehler ?? emS.fehler ?? noetigS.filter((n) => typeof S[n] !== "function").join(", ")}`);
+      zusatz++;
+    } else {
+      const ST = S.SCHATTEN_STUFE, SK = S.SCHICKSAL;
+      // ── schattenRoh: nur BUY/SELL, Kurs je Seite, unbrauchbare Zahlen sind null ──
+      const mk = { symbol: "EURUSD", epic: "EURUSD", bid: 1.1, ask: 1.1002 };
+      const g = (o = {}) => ({ direction: "BUY", stopLoss: 1.09, takeProfit: 1.12, tradingStyle: "DAYTRADING",
+        confidence: 75, source: "GPT_REAL", ...o });
+      const rb = S.schattenRoh(mk, g(), "GO"), rs = S.schattenRoh(mk, g({ direction: "SELL" }), "GO");
+      torPruefung("schatten: schattenRoh nimmt den falschen Kurs (BUY zum Brief, SELL zum Geld)",
+        rb?.kurs === 1.1002 && rs?.kurs === 1.1 && rb?.richtung === "BUY" && rs?.richtung === "SELL",
+        JSON.stringify([rb, rs]));
+      const nullFaelle = [["WAIT", g({ direction: "WAIT" })], ["LONG", g({ direction: "LONG" })],
+        ["kein Symbol", g()]];
+      const nullFalsch = nullFaelle.filter(([n, gg]) => S.schattenRoh(n === "kein Symbol" ? { ...mk, symbol: "" } : mk, gg, "GO") !== null);
+      torPruefung("schatten: schattenRoh haelt etwas fest, das kein Richtungssignal ist",
+        nullFalsch.length === 0, nullFalsch.map(([n]) => n).join(", "));
+      const rk = S.schattenRoh({ ...mk, ask: NaN }, g({ stopLoss: "1.09", takeProfit: Infinity, confidence: NaN,
+        source: undefined, tradingStyle: "" }), "GO");
+      torPruefung("schatten: schattenRoh uebernimmt unbrauchbare Zahlen oder erfindet Werte",
+        rk?.kurs === null && rk?.stop === null && rk?.ziel === null && rk?.confidence === null
+        && rk?.quelle === "unbekannt" && rk?.stil === null, JSON.stringify(rk));
+      torPruefung("schatten: ein unbekannter Stil wird als bekannt festgehalten",
+        S.schattenRoh(mk, g(), ST.stil, false)?.stil === null && rb?.stil === "DAYTRADING");
+      torPruefung("schatten: istSchattenRoh laesst Unbrauchbares durch oder weist Gueltiges ab",
+        S.istSchattenRoh(rb) && !S.istSchattenRoh({ ...rb, stufe: "" }) && !S.istSchattenRoh({ ...rb, richtung: "LONG" })
+        && !S.istSchattenRoh({ ...rb, kurs: "1" }) && !S.istSchattenRoh(null) && S.istSchattenRoh(rk));
+
+      // ── schicksalBestimmen: jeder Zweig, und die Reihenfolge ──
+      const L = (o = {}) => ({ tore: [], trades: [], fehlgeschlagen: [], ausgang: "Keine freigegebenen Signale", ...o });
+      const tor = (gate, symbol, approve, reason = "r") => ({ gate, symbol, approve, reason });
+      const sFaelle = [
+        ["Stufe vor dem GO", S.schattenRoh(mk, g(), ST.veto), L({ tore: [tor("Schwelle", "EURUSD", false)] }), "Veto", ""],
+        ["erstes ABLEHNENDES Tor", rb, L({ tore: [tor("Walk-Forward", "EURUSD", true), tor("Schwelle", "EURUSD", false, "Confidence 72 < Schwelle 73"),
+          tor("Stil-Limit", "EURUSD", false)], trades: ["EURUSD BUY"] }), "Schwelle", "Confidence 72 < Schwelle 73"],
+        ["fremdes Symbol mit gleichem Anfang", rb, L({ tore: [tor("Schwelle", "EURUSD2", false)], trades: ["EURUSD2 BUY", "EURUSD BUY"] }), SK.gehandelt, ""],
+        ["gehandelt", rb, L({ trades: ["EURUSD BUY"], tore: [tor("Orchestrator-KI", undefined, false)] }), SK.gehandelt, ""],
+        ["nicht gehandelt bei Praefix-Symbol", rb, L({ trades: ["EURUSD2 BUY"] }), SK.zyklusEnde, "Keine freigegebenen Signale"],
+        ["Broker", rb, L({ fehlgeschlagen: ["EURUSD: Broker: error.invalid.size"] }), SK.broker, "Broker: error.invalid.size"],
+        ["Orchestrator-KI", rb, L({ tore: [tor("Orchestrator-KI", undefined, false, "Markt unruhig")] }), SK.orchestratorKi, "Markt unruhig"],
+        ["Zyklus-Limit", rb, L({ tore: [tor("Zyklus-Limit", undefined, false)] }), SK.zyklusLimit, ""],
+        ["Zyklus endete vorher", rb, L({ ausgang: "Max. Positionen erreicht" }), SK.zyklusEnde, "Max. Positionen erreicht"],
+      ];
+      const sFalsch = sFaelle.filter(([, r, l, soll, grund]) => {
+        const x = S.schicksalBestimmen(r, l);
+        return x.schicksal !== soll || x.grund !== grund;
+      });
+      torPruefung("schatten: schicksalBestimmen ordnet falsch zu",
+        sFalsch.length === 0, sFalsch.map(([n, r, l]) => `${n}: ${JSON.stringify(S.schicksalBestimmen(r, l))}`).join(" ; "));
+      // DER GRUND IST BEGRENZT — an ALLEN vier Zweigen, die einen tragen. Bei der
+      // Meta-KI ist er ein von Claude geschriebener Satz; unbegrenzt waechst Redis.
+      const lang = "x".repeat(300);
+      const gLaengen = [
+        S.schicksalBestimmen(rb, L({ tore: [tor("Meta-KI", "EURUSD", false, lang)] })).grund.length,
+        S.schicksalBestimmen(rb, L({ fehlgeschlagen: [`EURUSD: ${lang}`] })).grund.length,
+        S.schicksalBestimmen(rb, L({ tore: [tor("Orchestrator-KI", undefined, false, lang)] })).grund.length,
+        S.schicksalBestimmen(rb, L({ ausgang: lang })).grund.length,
+      ];
+      torPruefung("schatten: ein Grund ist nicht begrenzt — Redis waechst dann mit jedem langen KI-Satz",
+        S.SCHATTEN_GRUND_MAX === 120 && gLaengen.every((n) => n === 120), JSON.stringify(gLaengen));
+
+      // ── zyklusEintraege: aus der Bilanz, mit Zyklusbeginn als Zeit ──
+      const zb = { start: 5000, ausgang: "x", tore: [tor("Meta-KI", "EURUSD", false, "TA")], trades: [], fehlgeschlagen: [],
+        scan: { schatten: [rb, S.schattenRoh({ ...mk, symbol: "GBPUSD", epic: "GBPUSD" }, g(), ST.unterGrenze), { kaputt: 1 }] } };
+      const ze = S.zyklusEintraege(zb);
+      torPruefung("schatten: zyklusEintraege liest die Bilanz falsch",
+        ze.length === 2 && ze[0].ts === 5000 && ze[0].schicksal === "Meta-KI" && ze[0].grund === "TA"
+        && ze[1].schicksal === "unter Grenze"
+        && S.zyklusEintraege({ ...zb, scan: undefined }).length === 0
+        && S.zyklusEintraege({ ...zb, scan: { schatten: "x" } }).length === 0
+        && S.zyklusEintraege({ ...zb, start: NaN }).length === 0, JSON.stringify(ze).slice(0, 200));
+
+      // ── eintraegeAufnehmen: Uebergang, 60-Minuten-Regel, Deckel ──
+      const T = Date.UTC(2026, 10, 25, 10, 0, 0);
+      const e = (o = {}) => ({ ...rb, ts: T, schicksal: "Schwelle", grund: "", ...o });
+      const t1 = S.eintraegeAufnehmen(null, "2026-11-25", [e()]);
+      const tFremd = S.eintraegeAufnehmen({ datum: "2026-11-24", eintraege: [e()], dedupliziert: 3, verworfen: 1 }, "2026-11-25", []);
+      const tKaputt = S.eintraegeAufnehmen({ datum: "2026-11-25", eintraege: "x" }, "2026-11-25", [e()]);
+      torPruefung("schatten: eintraegeAufnehmen behaelt einen fremden Tag oder stirbt an einem unlesbaren",
+        t1.eintraege.length === 1 && tFremd.eintraege.length === 0 && tFremd.dedupliziert === 0
+        && tKaputt.eintraege.length === 1, JSON.stringify([t1.eintraege.length, tFremd, tKaputt.eintraege.length]));
+      const tD = S.eintraegeAufnehmen(t1, "2026-11-25", [
+        e({ ts: T + 59 * 60_000 }),                         // dasselbe, 59 min spaeter → doppelt
+        e({ ts: T + 60 * 60_000 }),                         // genau 60 min → neu
+        e({ ts: T + 5 * 60_000, schicksal: "Meta-KI" }),    // anderes Schicksal → neu
+        e({ ts: T + 5 * 60_000, richtung: "SELL" }),        // andere Richtung → neu
+        e({ ts: NaN }),                                     // ohne Zeit → nicht aufgenommen
+      ]);
+      torPruefung("schatten: die 60-Minuten-Regel greift falsch (zu breit, zu eng oder an der Grenze)",
+        tD.eintraege.length === 4 && tD.dedupliziert === 1, JSON.stringify([tD.eintraege.length, tD.dedupliziert]));
+      const voll = { datum: "2026-11-25", dedupliziert: 0, verworfen: 0,
+        eintraege: Array.from({ length: S.SCHATTEN_MAX_JE_TAG }, (_, i) => e({ symbol: `S${i}` })) };
+      const tV = S.eintraegeAufnehmen(voll, "2026-11-25", [e({ symbol: "NEU1" }), e({ symbol: "NEU2" })]);
+      torPruefung("schatten: der Tagesdeckel greift nicht oder verschweigt die verworfenen",
+        S.SCHATTEN_MAX_JE_TAG === 600 && tV.eintraege.length === 600 && tV.verworfen === 2,
+        `${S.SCHATTEN_MAX_JE_TAG} ${tV.eintraege.length} ${tV.verworfen}`);
+      torPruefung("schatten: Aufbewahrung, Deduplizierung oder Schluessel weichen vom Plan ab (45 Tage, 60 min)",
+        S.SCHATTEN_TAGE_MAX === 45 && S.SCHATTEN_TTL_SEKUNDEN === 45 * 86400 && S.SCHATTEN_DEDUP_MS === 3_600_000
+        && S.SCHATTEN_SCHLUESSEL("2026-11-25") === "schatten:tag:2026-11-25");
+
+      // ── schattenKandidat: jeder Ausschluss, die Seiten, die Grenze der Haltedauer ──
+      const HD = { SCALPING: 4, DAYTRADING: 24, SWING: 168 };
+      const J = T + 30 * 3_600_000;
+      const ke = (o = {}) => e({ kurs: 100, stop: 99, ziel: 102, stil: "DAYTRADING", ts: T, ...o });
+      const K = (o) => S.schattenKandidat(ke(o), { id: 7, haltedauer: HD, jetztMs: J });
+      const kOk = K({});
+      torPruefung("schatten: ein gueltiges Signal wird kein richtiger Kandidat",
+        kOk.kandidat?.entry === 100 && kOk.kandidat?.risiko === 1 && kOk.kandidat?.rrGeplant === 2
+        && kOk.kandidat?.horizontStunden === 24 && kOk.kandidat?.eroeffnetMs === T && kOk.kandidat?.id === 7
+        && kOk.kandidat?.istSchluss === null && kOk.kandidat?.teilgewinnGenommen === false
+        && kOk.kandidat?.signalQuelle === "GPT_REAL", JSON.stringify(kOk));
+      const kFaelle = [
+        [{ richtung: "SELL", kurs: 100, stop: 101, ziel: 98 }, null],
+        [{ richtung: "SELL", kurs: 100, stop: 99, ziel: 98 }, "falscheSeite"],
+        [{ ziel: 99.5 }, "falscheSeite"],
+        [{ kurs: null }, "ohneKurs"], [{ stop: null }, "ohneStopZiel"], [{ ziel: null }, "ohneStopZiel"],
+        [{ stil: null }, "stilUnbekannt"], [{ stil: "XY" }, "stilUnbekannt"], [{ epic: "" }, "ohneEpic"],
+        [{ ts: NaN }, "ohneDatum"], [{ ts: J - 23 * 3_600_000 }, "nochOffen"],
+        [{ ts: J - 24 * 3_600_000 }, null],   // genau abgelaufen = nachrechenbar
+      ];
+      const kFalsch = kFaelle.filter(([o, soll]) => {
+        const r = K(o);
+        return soll === null ? !r.kandidat : r.grund !== soll;
+      });
+      torPruefung("schatten: schattenKandidat schliesst falsch aus (Seite, Haltedauer, fehlende Werte)",
+        kFalsch.length === 0, kFalsch.map(([o, soll]) => `${JSON.stringify(o)}→${JSON.stringify(K(o).grund ?? "Kandidat")} statt ${soll}`).join(" ; "));
+
+      // ── schattenAuswahl: Fenster, je Gruppe, gesamt, die neuesten zuerst ──
+      const alt = ke({ ts: J - 5 * 86_400_000, symbol: "ALT" });
+      const liste = [alt,
+        ke({ symbol: "A1", schicksal: "Schwelle", ts: T - 3_600_000 }), ke({ symbol: "A2", schicksal: "Schwelle", ts: T - 2 * 3_600_000 }),
+        ke({ symbol: "A3", schicksal: "Schwelle", ts: T - 3 * 3_600_000 }),
+        ke({ symbol: "B1", schicksal: "gehandelt", ts: T - 4 * 3_600_000 }), ke({ symbol: "C1", schicksal: "Veto", kurs: null })];
+      const au = S.schattenAuswahl(liste, { haltedauer: HD, jetztMs: J, tage: 2, maxGesamt: 10, jeGruppe: 2 });
+      torPruefung("schatten: schattenAuswahl haelt Fenster, Gruppen-Deckel oder Reihenfolge nicht ein",
+        au.ausgeschlossen.ausserhalbFenster === 1 && au.ausgeschlossen.ohneKurs === 1 && au.ausgeschlossen.ueberObergrenze === 1
+        && au.kandidaten.map((k) => k.symbol).join(",") === "A1,A2,B1" && au.gesamt === 5
+        && au.jeSchicksal.Schwelle === 3 && au.jeSchicksal.Veto === 1 && au.schicksalVon[au.kandidaten[2].id] === "gehandelt",
+        JSON.stringify([au.kandidaten.map((k) => k.symbol), au.ausgeschlossen, au.jeSchicksal]));
+      const au2 = S.schattenAuswahl(liste, { haltedauer: HD, jetztMs: J, tage: null, maxGesamt: 2, jeGruppe: 10 });
+      torPruefung("schatten: schattenAuswahl haelt die Gesamt-Obergrenze nicht ein",
+        au2.kandidaten.length === 2 && au2.ausgeschlossen.ausserhalbFenster === 0 && au2.kandidaten[0].symbol === "A1",
+        JSON.stringify(au2.kandidaten.map((k) => k.symbol)));
+
+      // ── schattenBericht: Gruppen, gehandelt zuerst, Mittel und SE, KEINE_DATEN ──
+      const erg = (k, treffer, h) => ({ kandidat: k, nachrechnung: { treffer, maxR: null, haltenR: h, kerzenGenutzt: 1 },
+        regel: null, datenGrund: treffer === "KEINE_DATEN" ? "leer" : null, gekappt: false });
+      const [kA1, kA2, kB1] = au.kandidaten;
+      const be = S.schattenBericht(au, [erg(kA1, "STOP", -1), erg(kA2, "ZIEL", 2), erg(kB1, "KEINE_DATEN", null)],
+        { tageGelesen: 3, abbruch: null });
+      const gS = be.gruppen.find((x) => x.schicksal === "Schwelle"), gH = be.gruppen.find((x) => x.schicksal === "gehandelt");
+      torPruefung("schatten: schattenBericht rechnet oder ordnet falsch",
+        be.gruppen[0].schicksal === "gehandelt" && gS?.bewertet === 2 && gS?.haltenR === 0.5
+        && Math.abs((gS?.se ?? 0) - 1.5) < 1e-9 && gS?.ziel === 1 && gS?.stop === 1 && gS?.imFenster === 3
+        && gH?.bewertet === 0 && gH?.haltenR === null && be.ohneDaten === 1 && be.bewertet === 2
+        && be.gruppen.some((x) => x.schicksal === "Veto" && x.nachgerechnet === 0),
+        JSON.stringify(be.gruppen).slice(0, 300));
+      const txt = S.schattenText(be);
+      torPruefung("schatten: der Text nennt Gruppe, Zahlen oder die Grenzen nicht",
+        txt.includes("  Schwelle (2/3): 🎯1 🛑1 ⏱0 · Ø +0.50 R ±3.00 ⚠️ zu wenig")
+        && txt.includes("  gehandelt (0/1): 🎯0 🛑0 ⏱0 · Ø R — ⚠️ zu wenig")
+        && txt.includes("NICHT unsere Ausstiegslogik") && txt.includes("ausserhalb des Fensters 1")
+        && txt.indexOf("gehandelt (") < txt.indexOf("Schwelle ("), txt.slice(0, 400));
+      const giftig = S.schattenText({ ...be, abbruch: "&".repeat(300),
+        gruppen: [{ ...be.gruppen[0], schicksal: "<b>x</b>" }] });
+      torPruefung("schatten: fremder Text geht roh ins HTML, oder der Schnitt zerteilt ein Entity",
+        giftig.includes("&lt;b&gt;x&lt;/b&gt;") && !giftig.includes("<b>x</b>")
+        && (giftig.match(/&amp;/g) ?? []).length === 200 && !/&amp(?!;)/.test(giftig), giftig.slice(0, 200));
+      // HAERTEFALL: jede moegliche Gruppe (Stufen, alle Tor-Namen aus der QUELLE,
+      // die Schicksale), vierstellige Zahlen, langer Abbruch aus lauter `<`.
+      const busS = read("frontend/lib/agents/agent-bus.ts");
+      const q0 = busS.indexOf("export type GateName ="), q1 = q0 >= 0 ? busS.indexOf(";", q0) : -1;
+      const toreS = q0 >= 0 && q1 > q0 ? [...busS.slice(q0, q1).matchAll(/\|\s*"([^"]+)"/g)].map((m) => m[1]) : [];
+      const alleNamen = [...Object.values(ST), ...toreS, ...Object.values(SK)];
+      const hart = S.schattenText({ fensterTage: 45, tageGelesen: 45, gesamt: 9999, nachgerechnet: 400, bewertet: 9999,
+        ohneDaten: 9999, abbruch: "<".repeat(300),
+        ausgeschlossen: Object.fromEntries(S.SCHATTEN_AUSSCHLUESSE.map((a) => [a, 9999])),
+        gruppen: alleNamen.map((n) => ({ schicksal: n, imFenster: 9999, nachgerechnet: 9999, bewertet: 9999,
+          ziel: 9999, stop: 9999, beide: 9999, offen: 9999, haltenR: -10.55, se: 9.99 })) });
+      torPruefung("schatten: der Haertefall misst nicht alle Gruppen", toreS.length >= 10 && alleNamen.length >= 23,
+        `${toreS.length} Tore, ${alleNamen.length} Namen`);
+      torPruefung("schatten: /schatten reisst im Haertefall Telegrams Grenze (3900)",
+        hart.length <= 3900, `${hart.length} von 3900`);
+
+      // ── DIE KETTE ueber den ECHTEN Bus: Zyklus → Bilanz → Schattenbuch → Redis → Lesen ──
+      {
+        const altBus = global.__agent_bus__, altBilanz = global.__zyklus_bilanz__;
+        delete global.__agent_bus__; delete global.__zyklus_bilanz__;
+        const speicher = new Map();
+        let redisAus = false;
+        const redisS = {
+          cacheGet: async (k) => (speicher.has(k) ? JSON.parse(speicher.get(k)) : null),
+          cacheSet: async (k, v) => { speicher.set(k, JSON.stringify(v)); },
+          cacheLesen: async (k) => (redisAus ? { wert: null, herkunft: "aus" }
+            : { wert: speicher.has(k) ? JSON.parse(speicher.get(k)) : null, herkunft: "redis" }),
+        };
+        const sp = ladeTsModul("lib/schattenbuch/schattenbuch-speicher.ts", {
+          "cache/redis-cache": redisS, "redis-lage/redis-lage": ladeTsModul("lib/redis-lage/redis-lage.ts").exports,
+          "schattenbuch": S });
+        const busM = ladeTsModul("lib/agents/agent-bus.ts");
+        const bilM = busM.fehler ? busM : ladeTsModul("lib/zyklus-bilanz/zyklus-bilanz.ts", {
+          "html-sicher/html-sicher": hsS, "agent-bus": busM.exports, "cache/redis-cache": redisS,
+          "telegram-sender": { htmlAbgelehnt: tgHtml, telegramZeit: () => "", telegramDatum: () => "", sendTelegram: async () => true },
+          "schattenbuch/schattenbuch-speicher": sp.exports });
+        const logs = [];
+        const altLog = console.log, altWarn = console.warn;
+        try {
+          if (sp.fehler || bilM.fehler) {
+            torPruefung("schatten: Speicher oder Bilanz nicht ausfuehrbar", false, sp.fehler ?? bilM.fehler);
+          } else {
+            const B = bilM.exports, bus = busM.exports.agentBus;
+            console.log = (...a) => logs.push(a.join(" ")); console.warn = (...a) => logs.push(a.join(" "));
+            await B.bilanzAbonnieren();
+            const scanS = { maerkte: 30, gpt: { WAIT: 27, BUY: 2, SELL: 1 }, vetos: 0, stilVerworfen: 0, unterGrenze: [65],
+              go: 2, rrAbgelehnt: 0, ohneStopZiel: 0, ohneVolleDaten: 0, ohneVolleDatenGrund: {}, ohneGptAntwort: 0,
+              gptZahlUnbrauchbar: 0, konsensRichtungen: 0, taErsatzRichtungen: 0, trichterGeprueft: 1, restOhneAnalyse: 0,
+              restOhneStop: 0, restUngeklaert: 0, mehrfachGezaehlt: 0, claudeGefragt: 2, regelbrueche: {}, dauerMs: {},
+              kontext: { news: false, mtfSymbole: 0 }, gptLage: "ok", gptLageGrund: "", gptLageGeprueft: 1,
+              schatten: [rb, S.schattenRoh({ ...mk, symbol: "GBPUSD", epic: "GBPUSD" }, g(), ST.go),
+                S.schattenRoh({ ...mk, symbol: "USDJPY", epic: "USDJPY" }, g({ direction: "SELL" }), ST.unterGrenze)] };
+            const zyklus = async () => {
+              bus.publish({ type: "CYCLE:STARTED", agentId: "OrchestratorAgent", timestamp: "", payload: {} });
+              bus.publish({ type: "ANALYSIS:SCAN_DONE", agentId: "AnalysisAgent", timestamp: "", payload: { scan: scanS } });
+              busM.exports.meldeTorEntscheidung("AnalysisAgent", { gate: "Meta-KI", symbol: "EURUSD", direction: "BUY", approve: false, reason: "TA widerspricht" });
+              bus.publish({ type: "EXECUTION:TRADE_OPENED", agentId: "ExecutionAgent", timestamp: "", payload: { symbol: "GBPUSD", direction: "BUY" } });
+              bus.publish({ type: "CYCLE:FINISHED", agentId: "OrchestratorAgent", timestamp: "", payload: { ausgang: "1 Trade(s) eröffnet" } });
+              await new Promise((r) => setTimeout(r, 30));
+            };
+            await zyklus();
+            const keys = [...speicher.keys()].filter((k) => k.startsWith("schatten:tag:"));
+            const tagS = keys.length === 1 ? JSON.parse(speicher.get(keys[0])) : null;
+            const von = (s) => tagS?.eintraege?.find((x) => x.symbol === s);
+            // Jeder Zugriff abgesichert (Sabotage S28, 25.11.): schreibt das
+            // Zyklusende NICHT, ist das ein BEFUND mit Grund — kein Absturz des
+            // Pruefers, der jeden anderen Befund mit verschluckt (Lehre 16.11.).
+            const tsE = von("EURUSD")?.ts;
+            torPruefung("schatten: die Kette Bus → Bilanz → Redis schreibt das Schattenbuch nicht oder falsch",
+              keys.length === 1 && tagS?.eintraege?.length === 3 && von("EURUSD")?.schicksal === "Meta-KI"
+              && von("EURUSD")?.grund === "TA widerspricht" && von("GBPUSD")?.schicksal === "gehandelt"
+              && von("USDJPY")?.schicksal === "unter Grenze" && Number.isFinite(tsE)
+              && keys[0] === `schatten:tag:${Number.isFinite(tsE) ? B.handelstag(new Date(tsE)) : "?"}`,
+              `${keys.join(",") || "(kein Schattenbuch-Schluessel)"} ${JSON.stringify(tagS?.eintraege?.map((x) => [x.symbol, x.schicksal]) ?? null)}`);
+            torPruefung("schatten: die Tagessumme wird neben dem Schattenbuch nicht mehr geschrieben",
+              [...speicher.keys()].some((k) => k.startsWith("zyklus:tag:")));
+            if (keys.length === 1) {
+            await zyklus();
+            const tag2 = JSON.parse(speicher.get(keys[0]));
+            torPruefung("schatten: derselbe Zyklus innerhalb von 60 Minuten wird doppelt verbucht",
+              tag2.eintraege.length === 3 && tag2.dedupliziert === 3, JSON.stringify([tag2.eintraege.length, tag2.dedupliziert]));
+            const vorher = speicher.get(keys[0]);
+            redisAus = true;
+            await zyklus();
+            torPruefung("schatten: bei einem Redis-Ausfall wird geschrieben oder geschwiegen",
+              speicher.get(keys[0]) === vorher && logs.some((l) => l.includes("werden NICHT ins Schattenbuch geschrieben")),
+              logs.filter((l) => l.includes("[schatten]")).join(" | ").slice(0, 200));
+            const gelesenAus = await sp.exports.schattenLesen(null, Date.now());
+            redisAus = false;
+            const gelesen = await sp.exports.schattenLesen(null, Date.now());
+            torPruefung("schatten: schattenLesen gibt bei einem Ausfall ein leeres Ergebnis statt eines Grundes",
+              gelesenAus.fehler !== null && gelesenAus.eintraege.length === 0
+              && gelesen.fehler === null && gelesen.eintraege.length === 3 && gelesen.tageGelesen === 45,
+              JSON.stringify([gelesenAus.fehler, gelesen.fehler, gelesen.eintraege.length, gelesen.tageGelesen]));
+            const g30 = await sp.exports.schattenLesen(30, Date.now());
+            torPruefung("schatten: schattenLesen liest zu wenige Tage fuer das Fenster",
+              g30.tageGelesen === 31 && g30.eintraege.length === 3, JSON.stringify([g30.tageGelesen, g30.eintraege.length]));
+            }
+          }
+        } finally {
+          console.log = altLog; console.warn = altWarn;
+          if (altBus === undefined) delete global.__agent_bus__; else global.__agent_bus__ = altBus;
+          if (altBilanz === undefined) delete global.__zyklus_bilanz__; else global.__zyklus_bilanz__ = altBilanz;
+        }
+      }
+
+      // ── /schatten END-TO-END durch die echte POST ──
+      {
+        const chat = "123456789";
+        const altEnv = { TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID, TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN };
+        const altFetch = global.fetch, altSperre = global.__exits_laeuft_seit__;
+        const antworten = [], nachher = [], kerzenAufrufe = [], schreib = [];
+        let sitzung = { apiKey: "k", cst: "c", securityToken: "s" };
+        let lesen = { eintraege: [], tageGelesen: 45, fehler: null };
+        let lesenArgs = null;
+        try {
+          process.env.TELEGRAM_CHAT_ID = chat;
+          process.env.TELEGRAM_BOT_TOKEN = "T".repeat(20);
+          delete global.__exits_laeuft_seit__;
+          global.fetch = async (_u, init) => {
+            antworten.push(String(JSON.parse(String(init?.body ?? "{}")).text ?? ""));
+            return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: {} }), json: async () => ({ ok: true }) };
+          };
+          const prismaSpionS = new Proxy({}, { get: (_t, p) => (typeof p === "symbol" || p === "then") ? undefined
+            : new Proxy({}, { get: (_t2, q) => (typeof q === "symbol" || q === "then") ? undefined
+              : async () => { schreib.push(`${String(p)}.${String(q)}`); return null; } }) });
+          const wh = ladeTsModul("app/api/telegram/webhook/route.ts", {
+            "next/server": { NextResponse: { json: (x) => ({ __json: x }) }, after: (fn) => { nachher.push(fn); } },
+            "telegram-notifications/telegram-sender": { htmlAbgelehnt: tgHtml, sendTelegram: async () => true,
+              telegramZeit: () => "25.11.2026, 22:00:00 MEZ", telegramDatum: () => "25.11.2026" },
+            "html-sicher/html-sicher": hsS,
+            "app/lib/prisma": { getPrisma: () => prismaSpionS },
+            "capital-com/capital-com-session": { getCapitalSession: () => sitzung },
+            "agents/risk-agent": { STYLE_MAX_HOURS: HD },
+            "capital-com/capital-com-client": { EPIC_MAP: {},
+              capitalGetKerzen: async (...a) => {
+                kerzenAufrufe.push(a);
+                const t = emS.exports.utcParameter(Date.parse(`${a[5]}Z`) + 10 * 60_000);
+                // Kurs 100, Stop 99, Ziel 102: die Kerze beruehrt das Ziel (BUY gegen den Geldkurs).
+                return { ok: true, daten: { prices: [{ snapshotTimeUTC: t, snapshotTime: t,
+                  highPrice: { bid: 102.5, ask: 102.6 }, lowPrice: { bid: 99.5, ask: 99.6 },
+                  closePrice: { bid: 102, ask: 102.1 }, openPrice: { bid: 100, ask: 100.1 } }] } };
+              } },
+            "exit-messung/exit-messung": emS.exports,
+            "exit-messung/exit-lauf": ladeTsModul("lib/exit-messung/exit-lauf.ts", { "./exit-messung": emS.exports }).exports,
+            "schattenbuch/schattenbuch-speicher": { schattenLesen: async (...a) => { lesenArgs = a; return lesen; } },
+            "schattenbuch/schattenbuch": S,
+          });
+          if (wh.fehler || typeof wh.exports?.POST !== "function") {
+            torPruefung("schatten E2E: der Webhook ist nicht ausfuehrbar", false, wh.fehler ?? "POST fehlt");
+          } else {
+            const schicke = (text) => wh.exports.POST({ json: async () => ({ message: {
+              chat: { id: Number(chat) }, from: { first_name: "P" }, text } }) });
+            const abarbeiten = async () => { while (nachher.length) await nachher.shift()(); };
+            const letzte = () => antworten.at(-1) ?? "";
+            await schicke("/schatten 1e5");
+            torPruefung("schatten E2E: ein unbrauchbares Argument wird nicht abgewiesen oder ECHOT",
+              /keine Anzahl Tage/.test(letzte()) && !letzte().includes("1e5") && lesenArgs === null && nachher.length === 0,
+              letzte().slice(0, 120));
+            sitzung = null;
+            await schicke("/schatten");
+            torPruefung("schatten E2E: ohne Sitzung kein ehrlicher Abbruch",
+              /keine Broker-Sitzung/.test(letzte()) && lesenArgs === null && (global.__exits_laeuft_seit__ ?? null) === null,
+              letzte().slice(0, 120));
+            sitzung = { apiKey: "k", cst: "c", securityToken: "s" };
+            lesen = { eintraege: [], tageGelesen: 3, fehler: "Redis antwortet nicht (Tag 2026-11-25)" };
+            await schicke("/schatten 30");
+            torPruefung("schatten E2E: ein Lesefehler wird als leeres Schattenbuch ausgegeben oder die Sperre haengt",
+              /nicht lesbar: Redis antwortet nicht/.test(letzte()) && lesenArgs?.[0] === 30
+              && (global.__exits_laeuft_seit__ ?? null) === null && nachher.length === 0, letzte().slice(0, 160));
+            const jetztS = Date.now();
+            lesen = { tageGelesen: 45, fehler: null, eintraege: [
+              ke({ symbol: "EURUSD", epic: "EURUSD", schicksal: "Schwelle", ts: jetztS - 30 * 3_600_000 }),
+              ke({ symbol: "GOLD", epic: "GOLD", schicksal: "gehandelt", ts: jetztS - 26 * 3_600_000 }),
+              ke({ symbol: "SPX", epic: "SPX", schicksal: "Veto", stop: null, ts: jetztS - 26 * 3_600_000 })] };
+            await schicke("/schatten");
+            const start = letzte();
+            const gesperrt = typeof global.__exits_laeuft_seit__ === "number";
+            await schicke("/exits");
+            const zweite = letzte();
+            torPruefung("schatten E2E: der Start antwortet nicht SOFORT, die Arbeit liegt nicht in after(), oder die Sperre fehlt",
+              /läuft: 2 Signale/.test(start) && nachher.length === 1 && kerzenAufrufe.length === 0 && gesperrt
+              && /läuft schon seit/.test(zweite), `${start.slice(0, 120)} || ${zweite.slice(0, 80)}`);
+            await abarbeiten();
+            const ende = letzte();
+            torPruefung("schatten E2E: das Ergebnis rechnet nicht mit derselben Nachrechnung wie /exits",
+              kerzenAufrufe.length === 2 && /Schwelle \(1\/1\): 🎯1 🛑0 ⏱0 · Ø \+2\.00 R/.test(ende)
+              && /gehandelt \(1\/1\): 🎯1/.test(ende) && /Veto \(0\/1\)/.test(ende) && /ohne Stop\/Ziel 1/.test(ende)
+              && ende.indexOf("gehandelt (") < ende.indexOf("Schwelle ("), ende.slice(0, 500));
+            torPruefung("schatten E2E: die Sperre wird nach dem Lauf nicht freigegeben",
+              (global.__exits_laeuft_seit__ ?? null) === null);
+            torPruefung("schatten E2E: /schatten schreibt in die Datenbank", schreib.length === 0, schreib.join(","));
+          }
+        } finally {
+          global.fetch = altFetch;
+          if (altSperre === undefined) delete global.__exits_laeuft_seit__; else global.__exits_laeuft_seit__ = altSperre;
+          for (const [k, v] of Object.entries(altEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+        }
+      }
+    }
+
+    // ── Verdrahtung (kommentarbereinigt): jede Stufe im SELBEN Statement ──
+    const aeS = read("frontend/lib/market-scanner/ai-analysis-engine.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    const stellenS = [
+      ["Stil", /stilVerworfenZahl\+\+; stufen\+\+; schatten \?\?= schattenRoh\(market, gpt, SCHATTEN_STUFE\.stil, false\);/],
+      ["Veto", /vetoZahl\+\+; stufen\+\+; schatten \?\?= schattenRoh\(market, gpt, SCHATTEN_STUFE\.veto\);/],
+      ["unter Grenze", /claudeUnterGrenzeConf\.push\(Number\(gpt\.confidence\)\); stufen\+\+; schatten \?\?= schattenRoh\(market, gpt, SCHATTEN_STUFE\.unterGrenze\);/],
+      ["ohne Daten", /ohneVolleDatenZahl\+\+; stufen\+\+; if \(schatten === null \|\| schatten\.stufe === SCHATTEN_STUFE\.unterGrenze\) schatten = schattenRoh\(market, gpt, SCHATTEN_STUFE\.ohneDaten\);/],
+      ["Freigabe-Nein", /\}\); stufen\+\+; schatten \?\?= schattenRoh\(market, gpt, SCHATTEN_STUFE\.freigabeNein\);/],
+      ["GO", /if \(goSignal\) \{ trichter\.go\+\+; stufen\+\+; schatten \?\?= schattenRoh\(market, gpt, SCHATTEN_STUFE\.go\); \}/],
+      ["ohne Stop/Ziel", /\{ stufen\+\+; schatten \?\?= schattenRoh\(market, gpt, SCHATTEN_STUFE\.ohneStopZiel\); \}/],
+      ["ohne Stufe + Sammeln", /schatten \?\?= schattenRoh\(market, gpt, SCHATTEN_STUFE\.ohneStufe\);\s*if \(schatten !== null\) schattenListe\.push\(schatten\);/],
+    ];
+    for (const [name, re] of stellenS) {
+      torPruefung(`schatten: die Stufe „${name}" wird nicht im selben Statement wie ihr Zaehler festgehalten`, re.test(aeS), String(re));
+    }
+    torPruefung("schatten: schattenRoh steht nicht an genau den acht Stellen, oder der Zustand wird nicht je Markt neu begonnen",
+      (aeS.match(/schattenRoh\(/g) ?? []).length === 8
+      && /for \(const market of validMarkets\) \{[\s\S]{0,400}?let schatten: SchattenRoh \| null = null;/.test(aeS)
+      && (aeS.match(/const schattenListe: SchattenRoh\[\] = \[\];/g) ?? []).length === 1
+      && /schatten: schattenListe,/.test(aeS), `${(aeS.match(/schattenRoh\(/g) ?? []).length}x`);
+    const zbS = read("frontend/lib/zyklus-bilanz/zyklus-bilanz.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    torPruefung("schatten: das Zyklusende verbucht das Schattenbuch nicht, nicht im eigenen try, oder mit dem falschen Tag",
+      /try \{\s*const \{ schattenTagVerbuchen \} = await import\("\.\.\/schattenbuch\/schattenbuch-speicher"\);\s*await schattenTagVerbuchen\(b, handelstag\(new Date\(b\.start\)\)\);\s*\} catch/.test(zbS),
+      "CYCLE:FINISHED");
+    const whS2 = read("frontend/app/api/telegram/webhook/route.ts");
+    torPruefung("schatten: /schatten steht nicht in der Hilfe", /"\/schatten — /.test(whS2), "SYSTEM_BEFEHLE");
   }
 
   // ── DIE FUENF GPT-ZAHLEN WERDEN GELESEN (15.11.) ─────────────────────────
@@ -15181,8 +15645,10 @@ module.exports = async function pruefe() {
           ["ohne volle Daten", /ohneVolleDatenZahl\+\+; stufen\+\+;/],
           ["unter der Grenze", /claudeUnterGrenzeConf\.push\(Number\(gpt\.confidence\)\); stufen\+\+;/],
           ["an der Freigabe", /nurRR: rrZuKlein && !scoreZuHoch && !nullVeto,\s*\}\); stufen\+\+;/],
-          ["GO", /if \(goSignal\) \{ trichter\.go\+\+; stufen\+\+; \}/],
-          ["ohne Stop/Ziel", /if \(isRealAnalysis && hasFullData && gpt\.direction !== "WAIT" && gpt\.confidence >= MIN_SIGNAL_CONFIDENCE && !\(gpt\.stopLoss > 0 && gpt\.takeProfit > 0\)\) stufen\+\+;/],
+          // 25.11.: im selben Block steht jetzt die Schattenbuch-Messung — die
+          // Stufe muss weiter im SELBEN Block wie ihr Zaehler stehen.
+          ["GO", /if \(goSignal\) \{ trichter\.go\+\+; stufen\+\+;[^}\n]*\}/],
+          ["ohne Stop/Ziel", /if \(isRealAnalysis && hasFullData && gpt\.direction !== "WAIT" && gpt\.confidence >= MIN_SIGNAL_CONFIDENCE && !\(gpt\.stopLoss > 0 && gpt\.takeProfit > 0\)\) \{ stufen\+\+;/],
         ];
         for (const [name, re] of stufenStellen) {
           torPruefung(`trichter: die Stufe „${name}" zaehlt nicht in die Zuordnung`, re.test(aeG), String(re));

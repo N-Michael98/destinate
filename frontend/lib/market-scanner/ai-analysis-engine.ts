@@ -11,6 +11,8 @@ import type { ScanDaten } from "../zyklus-bilanz/zyklus-bilanz";
 // (15.11.) — `??` faengt nur `null`/`undefined`, und `parseJSON` ist ein
 // reiner Cast. Begruendung und Messung im Modul.
 import { kiFelderLesen, gptFelderLesen } from "../ki-antwort/ki-antwort";
+// Schattenbuch (25.11.): reine Messung — welches Signal starb an welcher Stufe.
+import { schattenRoh, SCHATTEN_STUFE, type SchattenRoh } from "../schattenbuch/schattenbuch";
 
 export interface GPTMarketAnalysis {
   symbol: string;
@@ -1879,6 +1881,8 @@ each market's own data, never from habit or from these examples' direction:
   let restOhneStopZahl = 0;
   let restUngeklaertZahl = 0;
   let mehrfachGezaehltZahl = 0;
+  // Schattenbuch (25.11.): je Richtungssignal Stufe + urspruengliche Werte.
+  const schattenListe: SchattenRoh[] = [];
 
   for (const market of validMarkets) {
     const ta = taData.get(market.symbol);
@@ -1886,6 +1890,11 @@ each market's own data, never from habit or from these examples' direction:
     // Stufen-Zaehler sind fuer ihn gelaufen? (19.11.)
     let imTrichter = false;
     let stufen = 0;
+    // SCHATTENBUCH (25.11.): das Signal, wie es aus GPT kam, und die Stufe, an
+    // der es starb — gesetzt im SELBEN Statement wie der Stufen-Zaehler
+    // (Regel 22.09.). Die ERSTE Stufe gilt; nur „ohne Daten" geht vor „unter
+    // Grenze", weil das Daten-Tor im Trichter davor steht. Reine Messung.
+    let schatten: SchattenRoh | null = null;
 
     // GPT Signal
     let gpt: GPTMarketAnalysis;
@@ -1980,7 +1989,7 @@ each market's own data, never from habit or from these examples' direction:
           + `Ein geratener Stil verschiebt Stop, Haltedauer und Tageslimit.`
         );
         stilVerworfen = true;
-        stilVerworfenZahl++; stufen++;
+        stilVerworfenZahl++; stufen++; schatten ??= schattenRoh(market, gpt, SCHATTEN_STUFE.stil, false);
         gpt = {
           ...gpt,
           direction: "WAIT",
@@ -2184,7 +2193,7 @@ each market's own data, never from habit or from these examples' direction:
       }
 
       if (blockReason) {
-        vetoZahl++; stufen++;
+        vetoZahl++; stufen++; schatten ??= schattenRoh(market, gpt, SCHATTEN_STUFE.veto);
         console.log(`[ai-engine] 🛑 ${market.symbol} ${gpt.direction} blockiert: ${blockReason}`);
         gpt = {
           ...gpt,
@@ -2379,7 +2388,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       if (claudeWeg === "KEIN_SCHLUESSEL") ohneClaudeKeinSchluessel++;
       if (claudeWeg === "UNTER_GRENZE") {
         claudeUnterGrenze.push(`${market.symbol} ${gpt.confidence}`);
-        claudeUnterGrenzeConf.push(Number(gpt.confidence)); stufen++;
+        claudeUnterGrenzeConf.push(Number(gpt.confidence)); stufen++; schatten ??= schattenRoh(market, gpt, SCHATTEN_STUFE.unterGrenze);
       }
       claude = simulateClaude(gpt, market);
     }
@@ -2449,7 +2458,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     // unten bleibt unveraendert.
     if (!hasFullData && isRealAnalysis && gpt.direction !== "WAIT") {
       console.log(`[ai-engine] 🔒 ${market.symbol}: unvollständige Analyse (TA=${!!ta}, Strategien=${strategienOk}${srDaten?.fehlgeschlagen ? ` — ${srDaten.fehlgeschlagen}/${srDaten.total_strategies} gescheitert: ${Object.values(srDaten.fehler_gruende ?? {})[0] ?? "?"}` : ""}) — kein goSignal diesen Zyklus`);
-      ohneVolleDatenZahl++; stufen++;
+      ohneVolleDatenZahl++; stufen++; if (schatten === null || schatten.stufe === SCHATTEN_STUFE.unterGrenze) schatten = schattenRoh(market, gpt, SCHATTEN_STUFE.ohneDaten);
       // WELCHER Dienst gefehlt hat — das ist die Frage, mit der man ins
       // Railway-Log steigt. "beide" ist ein eigener Fall, nicht zweimal ein
       // halber: faellt der ganze Dienst aus, fehlen TA-Lib UND Strategien.
@@ -2557,7 +2566,7 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
           symbol: market.symbol,
           rr: claude.rewardRiskRatio,
           nurRR: rrZuKlein && !scoreZuHoch && !nullVeto,
-        }); stufen++;
+        }); stufen++; schatten ??= schattenRoh(market, gpt, SCHATTEN_STUFE.freigabeNein);
       }
       // Hat GPT dabei seine eigenen Prompt-Regeln verletzt? Das trennt
       // "der Markt gibt gerade nichts her" von "das Modell haelt sich nicht
@@ -2591,10 +2600,14 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT") trichter.richtung++;
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE) trichter.confidence++;
     if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && gpt.stopLoss > 0 && gpt.takeProfit > 0) trichter.slTp++;
-    if (goSignal) { trichter.go++; stufen++; }
+    if (goSignal) { trichter.go++; stufen++; schatten ??= schattenRoh(market, gpt, SCHATTEN_STUFE.go); }
     // Stufe „ohne Stop/Ziel" — ScanDaten.ohneStopZiel ist confidence − slTp,
     // also GENAU dieser Fall je Markt (19.11.).
-    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && !(gpt.stopLoss > 0 && gpt.takeProfit > 0)) stufen++;
+    if (isRealAnalysis && hasFullData && gpt.direction !== "WAIT" && gpt.confidence >= MIN_SIGNAL_CONFIDENCE && !(gpt.stopLoss > 0 && gpt.takeProfit > 0)) { stufen++; schatten ??= schattenRoh(market, gpt, SCHATTEN_STUFE.ohneStopZiel); }
+    // Ein Richtungssignal ohne jede Stufe (z. B. ohne echte Analyse) wird
+    // ebenfalls festgehalten — sonst fehlte es still im Schattenbuch.
+    schatten ??= schattenRoh(market, gpt, SCHATTEN_STUFE.ohneStufe);
+    if (schatten !== null) schattenListe.push(schatten);
     if (imTrichter) {
       const zuordnung = trichterZuordnung({
         stufen, echteAnalyse: isRealAnalysis, confidence: gpt.confidence,
@@ -2823,6 +2836,9 @@ Rules: approved=true only if riskScore < 60 AND rewardRiskRatio >= 1.5`;
       gptNachgefragt: gptNachfrage.nachgefragt,
       gptNachgeholt: gptNachfrage.nachgeholt,
       gptNachfrageGeprueft: 1,
+      // Schattenbuch (25.11.): die Signale dieses Scans mit ihrer Stufe. Das
+      // Schicksal NACH dem GO bestimmt die Zyklus-Bilanz aus den Toren.
+      schatten: schattenListe,
       // TRICHTER-ZUORDNUNG (19.11.) — siehe trichterZuordnung().
       konsensRichtungen: konsensRichtungenZahl,
       taErsatzRichtungen: taErsatzRichtungenZahl,

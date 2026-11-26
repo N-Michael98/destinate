@@ -9,7 +9,7 @@ gemeinsame *Ressourcen* gekoppelt sind; dafür sind die übrigen Prüfer da.
 
 Vor einer Änderung: `node scripts/checks/system-map.js --impact <datei>`
 
-Dateien mit internen Abhängigkeiten: 364 · Kanten: 924
+Dateien mit internen Abhängigkeiten: 366 · Kanten: 933
 
 
 ## analysis-engine/api
@@ -468,6 +468,8 @@ Dateien mit internen Abhängigkeiten: 364 · Kanten: 924
   - → `frontend/lib/killswitch/index.ts`
   - → `frontend/lib/laufzeit/laufzeit-stand.ts`
   - → `frontend/lib/positionen-lage/positionen-lage.ts`
+  - → `frontend/lib/schattenbuch/schattenbuch-speicher.ts`
+  - → `frontend/lib/schattenbuch/schattenbuch.ts`
   - → `frontend/lib/security-watchdog/ip-blocklist.ts`
   - → `frontend/lib/settings/settings-store.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
@@ -1019,6 +1021,7 @@ Dateien mit internen Abhängigkeiten: 364 · Kanten: 924
   - → `frontend/lib/ki-antwort/ki-antwort.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
   - → `frontend/lib/redis-lage/redis-lage.ts`
+  - → `frontend/lib/schattenbuch/schattenbuch.ts`
   - → `frontend/lib/settings/settings-store.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
   - → `frontend/lib/zyklus-bilanz/zyklus-bilanz.ts`
@@ -1170,6 +1173,13 @@ Dateien mit internen Abhängigkeiten: 364 · Kanten: 924
   - → `frontend/lib/python-backend/python-status.ts`
 - `frontend/lib/python-bridge/python-data.ts`
   - → `frontend/lib/python-backend/auth-header.ts`
+- `frontend/lib/schattenbuch/schattenbuch-speicher.ts`
+  - → `frontend/lib/cache/redis-cache.ts`
+  - → `frontend/lib/redis-lage/redis-lage.ts`
+  - → `frontend/lib/schattenbuch/schattenbuch.ts`
+- `frontend/lib/schattenbuch/schattenbuch.ts`
+  - → `frontend/lib/exit-messung/exit-messung.ts`
+  - → `frontend/lib/html-sicher/html-sicher.ts`
 - `frontend/lib/security-center/index.ts`
   - → `frontend/lib/security-center/security-center-engine.ts`
   - → `frontend/lib/security-center/security-center-types.ts`
@@ -1334,6 +1344,7 @@ Dateien mit internen Abhängigkeiten: 364 · Kanten: 924
   - → `frontend/lib/agents/agent-bus.ts`
   - → `frontend/lib/cache/redis-cache.ts`
   - → `frontend/lib/html-sicher/html-sicher.ts`
+  - → `frontend/lib/schattenbuch/schattenbuch-speicher.ts`
   - → `frontend/lib/telegram-notifications/telegram-sender.ts`
 
 ## frontend/proxy.ts
@@ -1347,8 +1358,8 @@ Dateien mit internen Abhängigkeiten: 364 · Kanten: 924
 - `frontend/lib/smart-broker-selection/index.ts` — von 22 Dateien
 - `frontend/app/lib/prisma.ts` — von 19 Dateien
 - `frontend/lib/capital-com/capital-com-session.ts` — von 18 Dateien
+- `frontend/lib/cache/redis-cache.ts` — von 17 Dateien
 - `frontend/lib/telegram-notifications/telegram-sender.ts` — von 17 Dateien
-- `frontend/lib/cache/redis-cache.ts` — von 16 Dateien
 - `frontend/lib/icmarkets/icmarkets-session.ts` — von 15 Dateien
 - `analysis-engine/core/config.py` — von 14 Dateien
 - `frontend/lib/richtung/richtung.ts` — von 14 Dateien
@@ -1357,6 +1368,6 @@ Dateien mit internen Abhängigkeiten: 364 · Kanten: 924
 - `frontend/lib/settings/settings-store.ts` — von 12 Dateien
 - `frontend/lib/python-backend/auth-header.ts` — von 11 Dateien
 - `analysis-engine/services/storage.py` — von 10 Dateien
+- `frontend/lib/html-sicher/html-sicher.ts` — von 9 Dateien
 - `frontend/lib/paper-trading/paper-singleton.ts` — von 8 Dateien
-- `frontend/lib/html-sicher/html-sicher.ts` — von 8 Dateien
 

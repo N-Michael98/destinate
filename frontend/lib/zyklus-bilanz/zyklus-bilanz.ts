@@ -97,6 +97,10 @@ export type ScanDaten = {
   gptNachgefragt: number;
   gptNachgeholt: number;
   gptNachfrageGeprueft: number;
+  /** Schattenbuch (25.11.): je Richtungssignal die Stufe und die Werte aus
+   *  GPT. OPTIONAL: ein Scan von vor dem Deploy kennt es nicht. Geht NICHT in
+   *  die Tagessumme, sondern ins Schattenbuch (`lib/schattenbuch/`). */
+  schatten?: unknown[];
   konsensRichtungen: number;
   taErsatzRichtungen: number;
   trichterGeprueft: number;
@@ -920,6 +924,16 @@ export async function bilanzAbonnieren(): Promise<void> {
         await cacheSet(TAGESSUMME_SCHLUESSEL(tag), tagessummeAddieren(alt, b, tag), TAGESSUMME_TTL);
       } catch (e) {
         console.warn(`[zyklus] Tagessumme nicht gespeichert: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      // Schattenbuch (25.11.): die Signale dieses Zyklus mit ihrem Schicksal.
+      // Eigener `try` — ein Fehler hier darf die Tagessumme nicht beruehren,
+      // und `schattenTagVerbuchen` wirft ohnehin nicht.
+      try {
+        const { schattenTagVerbuchen } = await import("../schattenbuch/schattenbuch-speicher");
+        // Der Tag des Zyklusbeginns — dort liegt auch der Zeitstempel der Eintraege.
+        await schattenTagVerbuchen(b, handelstag(new Date(b.start)));
+      } catch (e) {
+        console.warn(`[zyklus] Schattenbuch nicht verbucht: ${e instanceof Error ? e.message : String(e)}`);
       }
     });
   } catch (e) {
