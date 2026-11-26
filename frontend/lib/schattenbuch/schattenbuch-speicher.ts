@@ -10,6 +10,15 @@
 // Redis mit einem Bruchstueck. Also: ohne Antwort von Redis wird der Zyklus
 // NICHT verbucht — gedrosselt gemeldet, statt still verloren.
 //
+// NUR REDIS GILT (26.11.). `cacheLesen` kann auch `herkunft: "speicher"`
+// liefern: eine prozesseigene Kopie aus einem frueheren, gescheiterten
+// Schreibvorgang. Sie kann AELTER sein als der Tag in Redis — wird sie gelesen,
+// waehrend Redis kurz nicht antwortet, und gelingt das Schreiben Millisekunden
+// spaeter, drehte sie den Tag in Redis zurueck. Also wird auf einer solchen
+// Kopie weder geschrieben noch gelesen. Ohne konfiguriertes Redis gibt es sie
+// nie (dann lautet die Herkunft `aus`), es geht also nichts verloren, was
+// dauerhaft waere.
+//
 // Ein Fehler hier darf den Handelszyklus NIE stoeren: der Aufrufer faengt,
 // und diese Funktion wirft selbst nicht.
 
@@ -38,10 +47,16 @@ export async function schattenTagVerbuchen(
     const neue = zyklusEintraege(b);
     if (neue.length === 0) return;
     const alt = await cacheLesen<SchattenTag>(SCHATTEN_SCHLUESSEL(datum));
-    if (alt.herkunft === "aus") {
+    // EIN Riegel fuer beide Lagen — zwei Bloecke fuer dieselbe Frage koennten
+    // auseinanderlaufen. Die Meldung nennt, welche Lage es ist.
+    if (alt.herkunft !== "redis") {
       if (lageMelden(SCHATTEN_STELLE, "aus")) {
-        console.warn(`[schatten] ⚠️ Redis antwortet nicht — ${neue.length} Signale dieses Zyklus `
-          + `werden NICHT ins Schattenbuch geschrieben (sonst ueberschriebe ein Bruchstueck den Tag).`);
+        console.warn(alt.herkunft === "aus"
+          ? `[schatten] ⚠️ Redis antwortet nicht — ${neue.length} Signale dieses Zyklus `
+            + `werden NICHT ins Schattenbuch geschrieben (sonst ueberschriebe ein Bruchstueck den Tag).`
+          : `[schatten] ⚠️ Redis antwortet nicht, es gibt nur eine prozesseigene Kopie — `
+            + `${neue.length} Signale dieses Zyklus werden NICHT verbucht (die Kopie kann aelter sein `
+            + `als Redis und drehte den Tag zurueck).`);
       }
       return;
     }
@@ -68,7 +83,9 @@ export async function schattenLesen(
   for (let i = 0; i < n; i++) {
     const datum = utcTag(jetztMs - i * 86_400_000);
     const l = await cacheLesen<SchattenTag>(SCHATTEN_SCHLUESSEL(datum));
-    if (l.herkunft === "aus") {
+    if (l.herkunft !== "redis") {
+      // `speicher` ist eine prozesseigene, womoeglich veraltete Kopie — sie als
+      // Ergebnis auszugeben hiesse, einen Teil als das Ganze zu behaupten.
       return { eintraege: [], tageGelesen: i, fehler: `Redis antwortet nicht (Tag ${datum})` };
     }
     const tag = eintraegeAufnehmen(l.wert, datum, []);

@@ -15165,10 +15165,16 @@ module.exports = async function pruefe() {
         delete global.__agent_bus__; delete global.__zyklus_bilanz__;
         const speicher = new Map();
         let redisAus = false;
+        // 26.11.: Redis antwortet nicht, aber eine prozesseigene Kopie ist da —
+        // absichtlich eine LEERE (aeltere) Kopie desselben Tages. Wird auf ihr
+        // geschrieben, dreht sie den Tag zurueck; der Pruefer sieht es, weil das
+        // Schreiben hier (wie im Ernstfall Millisekunden spaeter) gelingt.
+        let redisNurKopie = false;
         const redisS = {
           cacheGet: async (k) => (speicher.has(k) ? JSON.parse(speicher.get(k)) : null),
           cacheSet: async (k, v) => { speicher.set(k, JSON.stringify(v)); },
           cacheLesen: async (k) => (redisAus ? { wert: null, herkunft: "aus" }
+            : redisNurKopie ? { wert: { datum: k.slice("schatten:tag:".length), eintraege: [], dedupliziert: 0, verworfen: 0 }, herkunft: "speicher" }
             : { wert: speicher.has(k) ? JSON.parse(speicher.get(k)) : null, herkunft: "redis" }),
         };
         const sp = ladeTsModul("lib/schattenbuch/schattenbuch-speicher.ts", {
@@ -15240,6 +15246,21 @@ module.exports = async function pruefe() {
             const g30 = await sp.exports.schattenLesen(30, Date.now());
             torPruefung("schatten: schattenLesen liest zu wenige Tage fuer das Fenster",
               g30.tageGelesen === 31 && g30.eintraege.length === 3, JSON.stringify([g30.tageGelesen, g30.eintraege.length]));
+            // NUR REDIS GILT (26.11.): ein gesunder Zyklus setzt die Drossel auf
+            // „ok" zurueck, damit die Meldung der Kopie-Lage nicht gedrosselt wird.
+            await zyklus();
+            const vorherK = speicher.get(keys[0]);
+            redisNurKopie = true;
+            await zyklus();
+            const gelesenK = await sp.exports.schattenLesen(null, Date.now());
+            redisNurKopie = false;
+            torPruefung("schatten: auf einer prozesseigenen Kopie (herkunft speicher) wird geschrieben — sie kann den Tag in Redis zurueckdrehen",
+              speicher.get(keys[0]) === vorherK && logs.some((l) => l.includes("prozesseigene Kopie")),
+              `${JSON.parse(speicher.get(keys[0])).eintraege.length} Eintraege (vorher ${JSON.parse(vorherK).eintraege.length}) | `
+              + logs.filter((l) => l.includes("[schatten]")).slice(-1).join("").slice(0, 160));
+            torPruefung("schatten: schattenLesen gibt eine prozesseigene Kopie als Ergebnis aus",
+              gelesenK.fehler !== null && gelesenK.eintraege.length === 0,
+              JSON.stringify([gelesenK.fehler, gelesenK.eintraege.length]));
             }
           }
         } finally {

@@ -2774,6 +2774,43 @@ GPT-Lage **21/21**, Veto **17/17**, GPT-Lesart **21/21**.
   Suiten (Trichter T15, `/exitsim` Y35) wurden an die neue Statement-Form
   gezogen, sonst wären sie still übersprungen worden.
 
+### Nur Redis gilt — gefunden bei der Nachkontrolle (26.11.)
+
+`cacheLesen` liefert drei Herkünfte, und der erste Riegel wies nur `aus` ab.
+`speicher` ist eine **prozesseigene Kopie** aus einem früheren, gescheiterten
+Schreibvorgang — sie kann älter sein als der Tag in Redis. Gelesen wird zuerst
+Redis (`redis-cache.ts:100`); antwortet es in genau diesem Moment nicht, kommt
+die Kopie, und gelingt das Schreiben Millisekunden später, **drehte sie den Tag
+in Redis zurück**. Selten (Lesefehler und gelungenes Schreiben im selben
+Durchlauf), aber möglich. Jetzt: geschrieben und gelesen wird **nur** auf einer
+Antwort von Redis, mit **einem** Riegel für beide Lagen und einer eigenen
+Meldung je Lage. Ohne konfiguriertes Redis gibt es die Kopie nie (die Herkunft
+heisst dann `aus`), es geht also nichts Dauerhaftes verloren.
+
+`safety-nets` 2345 → **2347** (Schreiben und Lesen auf einer absichtlich
+**leeren, älteren** Kopie, deren Schreiben gelingt). **6 von 6 Sabotagen**, die
+erste stellt den Fund exakt wieder her; Schattenbuch-Suite **37/37** mit S25 an
+den zusammengefassten Riegel gezogen.
+
+**Benannt, NICHT geändert — dieselbe Lage in bestehendem Code:** die
+Tagessumme (`zyklus-bilanz.ts`, Zyklusende) liest mit `cacheGet` **ohne**
+Herkunft. Scheitert dort das Lesen und gelingt das Schreiben im selben
+Durchlauf, wird der Tag aus **einem** Zyklus neu angelegt und überschreibt die
+Summe in Redis. Sie ist reine Messung (`/status`, Tagesbilanz), keine
+Handelsentscheidung. Die Umstellung auf „nur Redis“ änderte auch, was `/status`
+während eines Ausfalls zeigt — eine eigene Entscheidung.
+
+**Gemessen: die Grösse.** Ein Eintrag 233 Byte (mit vollem Grund 338), ein voller
+Tag 137–199 KB, 45 Tage höchstens **8.7 MB**. Gelesen und geschrieben wird je
+Zyklus der ganze Tag: im ungünstigsten Fall rund **35 MB Verkehr am Tag**. Kein
+Leck — begrenzt durch Deckel und Aufbewahrung. Ob das Kosten erzeugt, hängt
+daran, ob `REDIS_URL` über Railways privates Netz läuft; das ist von hier nicht
+geprüft (`.env` wird nicht gelesen).
+
+**Und ein Feld ohne Leser, benannt:** `grund` wird gespeichert, aber `/schatten`
+zeigt ihn nicht an. Es ist ein Beleg im Datensatz (Regel `icClosedAt`, 08.11.),
+für eine Anzeige je Schicksal wäre es eine eigene Entscheidung.
+
 **Ab wann es etwas sagt:** Einträge entstehen erst ab dem Deploy, und
 nachgerechnet wird ein Signal erst nach seiner Haltedauer (DAYTRADING 24 h, SWING
 168 h). Vorher zählt `/schatten` sie als „Haltedauer noch nicht abgelaufen“
